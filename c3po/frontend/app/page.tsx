@@ -2454,8 +2454,15 @@ function R2D2RisingView() {
     void load();
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") void load();
-    }, 3_000);
-    return () => window.clearInterval(timer);
+    }, 2_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [load]);
 
   if (!data) return error ? <div className="error-banner"><AlertTriangle size={16} />{error}</div> : <LoadingState />;
@@ -3086,10 +3093,10 @@ function MarketsView() {
     loadIndices();
     const marketsInterval = window.setInterval(() => {
       if (document.visibilityState === "visible") loadMarkets();
-    }, 30_000);
+    }, 10_000);
     const indexInterval = window.setInterval(() => {
       if (document.visibilityState === "visible") loadIndices();
-    }, 3_000);
+    }, 10_000);
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
         loadMarkets();
@@ -3120,7 +3127,7 @@ function MarketsView() {
         <PanelHeader title="Live Market Feed" icon={MasterLukeIcon} />
         <div className="live-market-summary">
           <div><span>Coverage</span><strong>{itemCount}</strong><small>tracked instruments</small></div>
-          <div><span>Refresh</span><strong>3s</strong><small>Index · 30s demais mercados</small></div>
+          <div><span>Refresh</span><strong>10s</strong><small>somente enquanto Master Luke estiver visível</small></div>
           <div><span>Sources</span><strong>2</strong><small>EODHD + global public feed</small></div>
           <div><span>Fallbacks</span><strong className={staleCount ? "negative-text" : "positive-text"}>{staleCount}</strong><small>stale quotes retained</small></div>
           <div className="live-market-clock"><span><i /> Feed active</span><strong>{formatDate(latestQuote ?? snapshot?.generated_at)}</strong><small>automatic · no page refresh</small></div>
