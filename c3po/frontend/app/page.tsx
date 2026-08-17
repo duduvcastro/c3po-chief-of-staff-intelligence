@@ -3133,19 +3133,6 @@ function MarketsView() {
 
   return (
     <div className="content-stack live-markets-view">
-      <section className="panel live-markets-control">
-        <PanelHeader title="Live Market Feed" icon={MasterLukeIcon} />
-        <div className="live-market-summary">
-          <div><span>Coverage</span><strong>{itemCount}</strong><small>tracked instruments</small></div>
-          <div><span>Refresh</span><strong>10s</strong><small>somente enquanto Master Luke estiver visível</small></div>
-          <div><span>Sources</span><strong>2</strong><small>EODHD + global public feed</small></div>
-          <div><span>Fallbacks</span><strong className={staleCount ? "negative-text" : "positive-text"}>{staleCount}</strong><small>stale quotes retained</small></div>
-          <div className="live-market-clock"><span><i /> Feed active</span><strong>{formatDate(latestQuote ?? snapshot?.generated_at)}</strong><small>automatic · no page refresh</small></div>
-        </div>
-        {(error || indexError) && <div className="screen-error"><AlertTriangle size={17} /><span>{error || indexError}</span></div>}
-        {!!snapshot?.errors.length && <div className="live-market-warning"><AlertTriangle size={14} /><span>{snapshot.errors.length} source exception(s); last valid prices remain visible.</span></div>}
-      </section>
-
       {loading && !snapshot ? <LiveMarketsLoading /> : snapshot && (
         <div className="live-market-grid">
           {groupOrder.map((group) => {
@@ -3165,6 +3152,19 @@ function MarketsView() {
           })}
         </div>
       )}
+
+      <section className="panel live-markets-control">
+        <PanelHeader title="Live Market Feed" icon={MasterLukeIcon} />
+        <div className="live-market-summary">
+          <div><span>Coverage</span><strong>{itemCount}</strong><small>tracked instruments</small></div>
+          <div><span>Refresh</span><strong>10s</strong><small>somente enquanto Master Luke estiver visível</small></div>
+          <div><span>Sources</span><strong>2</strong><small>EODHD + global public feed</small></div>
+          <div><span>Fallbacks</span><strong className={staleCount ? "negative-text" : "positive-text"}>{staleCount}</strong><small>stale quotes retained</small></div>
+          <div className="live-market-clock"><span><i /> Feed active</span><strong>{formatDate(latestQuote ?? snapshot?.generated_at)}</strong><small>automatic · no page refresh</small></div>
+        </div>
+        {(error || indexError) && <div className="screen-error"><AlertTriangle size={17} /><span>{error || indexError}</span></div>}
+        {!!snapshot?.errors.length && <div className="live-market-warning"><AlertTriangle size={14} /><span>{snapshot.errors.length} source exception(s); last valid prices remain visible.</span></div>}
+      </section>
 
       {snapshot && (
         <section className="panel live-market-method">
