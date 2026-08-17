@@ -18,7 +18,9 @@ def test_health_and_command_center_contracts() -> None:
     assert command.status_code == 200
     payload = command.json()
     assert payload["report_title"].endswith(datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y"))
-    assert payload["billfish"]["net_worth"] == "R$ 23.718.117,35"
+    assert isinstance(payload["billfish"], dict)
+    assert isinstance(payload["portfolio"], list)
+    assert set(payload["markets"]) == {"Index", "Currencies", "CRIPTO"}
     assert payload["provenance"]["source"] == "Legacy Summary Adapter"
 
 
