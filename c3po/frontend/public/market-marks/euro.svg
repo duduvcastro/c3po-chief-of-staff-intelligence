@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Euro">
+  <defs>
+    <linearGradient id="eur-bg" x1="12" y1="8" x2="52" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#356ed4"/>
+      <stop offset="1" stop-color="#153a91"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="30" fill="url(#eur-bg)" stroke="#d7dbe0" stroke-width="2"/>
+  <circle cx="32" cy="32" r="23" fill="none" stroke="#ffd84b" stroke-opacity=".28" stroke-width="1.5"/>
+  <text x="32" y="43" fill="#ffd84b" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" text-anchor="middle">€</text>
+</svg>
