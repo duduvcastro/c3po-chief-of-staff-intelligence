@@ -3213,8 +3213,8 @@ const marketIndexMarks: Record<string, string> = {
   Nikkei: "/market-marks/nikkei.svg",
   DAX: "/market-marks/dax.svg",
   Shanghai: "/market-marks/shanghai.svg",
-  US3Y: "/market-marks/treasury.svg",
-  US10Y: "/market-marks/treasury.svg",
+  US3Y: "/market-marks/us-treasury.svg",
+  US10Y: "/market-marks/us-treasury.svg",
   IBOV: "/market-marks/b3.svg",
   NASDAQ: "/market-marks/nasdaq.svg",
   NYSE: "/market-marks/nyse.svg"
