@@ -3113,7 +3113,17 @@ function MarketsView() {
   }, [loadIndices, loadMarkets]);
 
   const groupOrder = ["Index", "Future Index", "Currencies", "Crypto"];
-  const visibleMarketItems = snapshot ? groupOrder.flatMap((group) => snapshot.groups[group] ?? []) : [];
+  const promotedIndexSymbols = ["Nikkei", "Shanghai", "DAX"];
+  const futureItems = snapshot?.groups["Future Index"] ?? [];
+  const promotedIndexItems = promotedIndexSymbols
+    .map((symbol) => futureItems.find((item) => item.symbol === symbol))
+    .filter((item): item is LiveMarketItem => Boolean(item));
+  const displayGroups: Record<string, LiveMarketItem[]> = snapshot ? {
+    ...snapshot.groups,
+    Index: [...(snapshot.groups.Index ?? []), ...promotedIndexItems],
+    "Future Index": futureItems.filter((item) => !promotedIndexSymbols.includes(item.symbol))
+  } : {};
+  const visibleMarketItems = groupOrder.flatMap((group) => displayGroups[group] ?? []);
   const itemCount = visibleMarketItems.length;
   const staleCount = visibleMarketItems.filter((item) => item.status === "stale").length;
   const latestQuote = visibleMarketItems.reduce<string | undefined>((latest, item) => {
@@ -3139,9 +3149,9 @@ function MarketsView() {
       {loading && !snapshot ? <LiveMarketsLoading /> : snapshot && (
         <div className="live-market-grid">
           {groupOrder.map((group) => {
-            const items = snapshot.groups[group] ?? [];
+            const items = displayGroups[group] ?? [];
             return (
-              <section className={`panel live-market-panel live-market-panel-${group.toLowerCase().replace(/\s+/g, "-")}`} key={group}>
+              <section className={`panel live-market-panel live-market-panel-cards live-market-panel-${group.toLowerCase().replace(/\s+/g, "-")}`} key={group}>
                 <div className="live-market-group-head">
                   <div><span>{group}</span><strong>{items.length} instruments</strong></div>
                   <small>{marketGroupSourceLabel(group)}</small>
@@ -3174,7 +3184,7 @@ function LiveMarketRow({ item }: { item: LiveMarketItem }) {
   return (
     <article className="live-market-row">
       <div className="live-market-instrument">
-        {isIndexGroup(item.group) && <MarketIndexMark symbol={item.symbol} name={item.name} />}
+        <MarketInstrumentMark symbol={item.symbol} name={item.name} />
         <div>
           <InstrumentPreviewTarget
             instrument={{ symbol: item.symbol, name: item.name, market: item.group }}
@@ -3210,18 +3220,26 @@ const marketIndexMarks: Record<string, string> = {
   NYSE: "/market-marks/nyse.svg"
 };
 
-function isIndexGroup(group: string) {
-  return group === "Future Index" || group === "Index";
-}
+const marketInstrumentMarks: Record<string, string> = {
+  ...marketIndexMarks,
+  "USD/BRL": "/market-marks/usd-brl.svg",
+  "EUR/BRL": "/market-marks/eur-brl.svg",
+  "GBP/BRL": "/market-marks/gbp-brl.svg",
+  BTC: "/market-marks/btc.svg",
+  ETH: "/market-marks/eth.svg",
+  SOL: "/market-marks/sol.svg",
+  BONK: "/market-marks/bonk.svg",
+  DOGE: "/market-marks/doge.svg"
+};
 
-function MarketIndexMark({ symbol, name }: { symbol: string; name: string }) {
-  const source = marketIndexMarks[symbol] ?? "/market-marks/global-index.svg";
+function MarketInstrumentMark({ symbol, name }: { symbol: string; name: string }) {
+  const source = marketInstrumentMarks[symbol] ?? "/market-marks/global-index.svg";
   return <span className="market-index-mark"><img src={source} alt={`${name} mark`} /></span>;
 }
 
 function marketGroupSourceLabel(group: string) {
-  if (group === "Index") return "B3, Nasdaq and NYSE · automatic 3-second refresh";
-  if (group === "Future Index") return "Global futures, benchmarks and US Treasury yields";
+  if (group === "Index") return "B3, Nasdaq, NYSE and global benchmarks · automatic 10-second refresh";
+  if (group === "Future Index") return "US futures and Treasury yields";
   return "EODHD All-In-One";
 }
 
