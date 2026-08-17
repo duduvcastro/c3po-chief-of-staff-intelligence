@@ -270,13 +270,17 @@ button { cursor: pointer; }
 .r2d2-counter-positive strong { color: #19764f; }
 .r2d2-counter-critical strong { color: #ae3029; }
 .r2d2-counter small { margin-top: 7px; color: #9098a3; font-size: 9px; }
-.r2d2-ledger-head { min-height: 38px; display: grid; grid-template-columns: 1.01fr .46fr .5fr .74fr .66fr .68fr .6fr .68fr .62fr .78fr; align-items: center; gap: 8px; padding: 0 16px; color: #89929d; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 8px; font-weight: 800; text-transform: uppercase; }
-.r2d2-ledger-row { min-height: 68px; display: grid; grid-template-columns: 1.01fr .46fr .5fr .74fr .66fr .68fr .6fr .68fr .62fr .78fr; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 10px; }
+.r2d2-ledger-head { min-height: 38px; display: grid; grid-template-columns: 1.18fr .62fr .5fr .76fr .76fr .6fr .72fr .62fr .82fr; align-items: center; gap: 8px; padding: 0 16px; color: #89929d; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.r2d2-ledger-row { min-height: 68px; display: grid; grid-template-columns: 1.18fr .62fr .5fr .76fr .76fr .6fr .72fr .62fr .82fr; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 10px; }
 .r2d2-ledger-row:last-child { border-bottom: 0; }
 .r2d2-ledger-row > div { min-width: 0; }
 .r2d2-ledger-row > div strong, .r2d2-ledger-row > div small { display: block; }
 .r2d2-ledger-row > div strong { color: #171c24; font-size: 12px; }
 .r2d2-ledger-row > div small { margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.r2d2-asset-cell { display: flex; align-items: center; gap: 9px; }
+.r2d2-company-logo { width: 30px; height: 30px; display: grid; flex: 0 0 30px; place-items: center; overflow: hidden; color: #6e7783; background: #f5f7f9; border: 1px solid #e1e5e9; border-radius: 5px; font-size: 8px; font-weight: 850; }
+.r2d2-company-logo img { width: 100%; height: 100%; object-fit: contain; padding: 3px; }
+.r2d2-last-price { color: #171c24; font-weight: 800; white-space: nowrap; }
 .r2d2-ticker { position: relative; display: inline-flex; width: fit-content; max-width: 100%; align-items: center; color: #171c24; cursor: default; outline: none; }
 .r2d2-ticker > strong { color: #171c24; font-size: 12px; font-weight: 800; }
 .r2d2-ticker-tooltip { position: absolute; z-index: 80; bottom: calc(100% + 8px); left: 0; width: max-content; max-width: min(320px, calc(100vw - 32px)); padding: 7px 9px; color: #fff !important; background: #11151c; border: 1px solid #303744; border-radius: 4px; box-shadow: 0 8px 24px rgba(15,20,28,.22); font-size: 10px; font-weight: 700; line-height: 1.3; opacity: 0; pointer-events: none; transform: translateY(3px); transition: opacity .14s ease, transform .14s ease; white-space: normal; }
