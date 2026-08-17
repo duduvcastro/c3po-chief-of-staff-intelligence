@@ -496,6 +496,7 @@ class R2D2Position(BaseModel):
     market: Literal["B3", "NASDAQ", "NYSE"]
     symbol: str
     name: str
+    logo_url: str | None = None
     currency: str
     quantity: float
     average_cost_local: float
