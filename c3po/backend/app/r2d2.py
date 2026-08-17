@@ -17,6 +17,7 @@ from .market_data.eodhd import EodhdClient
 from .market_data.models import canonical_us_security_type
 from .market_data.realtime import RealtimeMarketsService
 from .one_pager import OnePagerService
+from . import r2d2_strategy
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
@@ -1208,14 +1209,78 @@ class R2D2PaperService:
             strategy.pop("pending_anomaly_price", None)
             strategy.pop("pending_anomaly_at", None)
             high_water = max(_float(position["high_water_price_local"]), quote.price)
+            average_cost = _float(position["average_cost_local"])
+            held_minutes = max(0.0, (now - position["opened_at"]).total_seconds() / 60)
+            bearish_votes = sum((
+                quote.price < _float(technical.get("vwap"), quote.price),
+                quote.price < _float(technical.get("ema8"), quote.price),
+                _float(technical.get("ema8")) < _float(technical.get("ema20")),
+                _float(technical.get("macd_histogram")) < 0 and _float(technical.get("macd_acceleration")) < 0,
+                _float(technical.get("momentum30")) < -0.35,
+                str(technical.get("price_structure")) == "breakdown",
+            ))
+            failed_entry_votes = sum((
+                quote.price < _float(technical.get("vwap"), quote.price),
+                quote.price < _float(technical.get("ema8"), quote.price),
+                _float(technical.get("momentum15")) < 0,
+                _float(technical.get("momentum30")) < 0,
+                _float(technical.get("macd_histogram")) < 0
+                and _float(technical.get("macd_acceleration")) <= 0,
+            ))
+            defense = self._technical_defense(
+                technical=technical,
+                price=quote.price,
+                day_change=_float(getattr(quote, "change_percent", 0.0)),
+                market_change=market_reference_change.get(position["market"], 0.0),
+            )
+            technical_score = _float(technical.get("score"))
+            entry_fundamental = _float(strategy.get("fundamental_score"), 50.0)
+            live_composite = round(entry_fundamental * 0.48 + technical_score * 0.52, 2)
             atr = max(_float(technical.get("atr")), quote.price * 0.004)
+            weekly_conviction = self._weekly_conviction(
+                strategy=strategy,
+                technical=technical,
+                price=quote.price,
+                high_water=high_water,
+                atr=atr,
+                bearish_votes=bearish_votes,
+            )
+            risk_state = r2d2_strategy.PositionRiskState(
+                defense_streak=int(strategy.get("defense_streak") or 0),
+                defense_reductions=int(strategy.get("defense_reductions") or 0),
+                stop_breach_count=int(strategy.get("stop_breach_count") or 0),
+                profit_harvest_count=int(strategy.get("profit_harvest_count") or 0),
+            )
+            exit_result, risk_state = r2d2_strategy.exit_decision(
+                technical=technical,
+                quote_price=quote.price,
+                average_cost=average_cost,
+                high_water=high_water,
+                held_minutes=held_minutes,
+                day_change=_float(getattr(quote, "change_percent", 0.0)),
+                market_change=market_reference_change.get(position["market"], 0.0),
+                state=risk_state,
+                weekly_conviction_state=weekly_conviction,
+                stop_price=_float(position["stop_price_local"]),
+                max_position_loss_percent=self.settings.r2d2_max_position_loss_percent,
+                soft_loss_exit_percent=self.settings.r2d2_soft_loss_exit_percent,
+            )
+            reason = exit_result.reason
+            sell_fraction = exit_result.sell_fraction
+            decision_state = exit_result.decision_state
+            defense_streak = risk_state.defense_streak
+            defense_reductions = risk_state.defense_reductions
+            stop_breaches = risk_state.stop_breach_count
+            profit_harvest_count = risk_state.profit_harvest_count
+
+            # Mirrors r2d2_strategy.exit_decision's internal stop/pnl math so the
+            # live cache can persist the same stop price and telemetry it decided against.
             trailing_distance = min(
                 high_water * 0.009,
                 max(atr * 0.7, high_water * 0.0045),
             )
             trailing = high_water - trailing_distance
             stop = max(_float(position["stop_price_local"]), trailing)
-            average_cost = _float(position["average_cost_local"])
             pnl_pct = (quote.price / average_cost - 1) * 100
             peak_pnl_pct = (high_water / average_cost - 1) * 100
             hard_stop = average_cost * (
@@ -1242,222 +1307,10 @@ class R2D2PaperService:
             elif peak_pnl_pct >= 1.0:
                 # A modest winner must not become a loser while its trend remains healthy.
                 stop = max(stop, average_cost * 1.003)
-            held_minutes = max(0.0, (now - position["opened_at"]).total_seconds() / 60)
-            bearish_votes = sum((
-                quote.price < _float(technical.get("vwap"), quote.price),
-                quote.price < _float(technical.get("ema8"), quote.price),
-                _float(technical.get("ema8")) < _float(technical.get("ema20")),
-                _float(technical.get("macd_histogram")) < 0 and _float(technical.get("macd_acceleration")) < 0,
-                _float(technical.get("momentum30")) < -0.35,
-                str(technical.get("price_structure")) == "breakdown",
-            ))
-            failed_entry_votes = sum((
-                quote.price < _float(technical.get("vwap"), quote.price),
-                quote.price < _float(technical.get("ema8"), quote.price),
-                _float(technical.get("momentum15")) < 0,
-                _float(technical.get("momentum30")) < 0,
-                _float(technical.get("macd_histogram")) < 0
-                and _float(technical.get("macd_acceleration")) <= 0,
-            ))
-            defense = self._technical_defense(
-                technical=technical,
-                price=quote.price,
-                day_change=_float(getattr(quote, "change_percent", 0.0)),
-                market_change=market_reference_change.get(position["market"], 0.0),
-            )
-            previous_defense_streak = int(strategy.get("defense_streak") or 0)
-            defense_streak = (
-                previous_defense_streak + 1
-                if defense["actionable"] and defense["score"] >= 45
-                else max(0, previous_defense_streak - 1)
-            )
-            defense_reductions = int(strategy.get("defense_reductions") or 0)
-            stop_breaches = int(strategy.get("stop_breach_count") or 0)
-            stop_breaches = stop_breaches + 1 if quote.price <= stop else 0
-            technical_score = _float(technical.get("score"))
-            entry_fundamental = _float(strategy.get("fundamental_score"), 50.0)
-            live_composite = round(entry_fundamental * 0.48 + technical_score * 0.52, 2)
-            weekly_conviction = self._weekly_conviction(
-                strategy=strategy,
-                technical=technical,
-                price=quote.price,
-                high_water=high_water,
-                atr=atr,
-                bearish_votes=bearish_votes,
-            )
-            profit_harvest_count = int(strategy.get("profit_harvest_count") or 0)
-            reason = None
-            sell_fraction = 1.0
-            decision_state = "hold"
             profit_lock_level = max(
                 PROFIT_LOCK_FLOOR_PERCENT,
                 peak_pnl_pct - PROFIT_PULLBACK_PERCENT,
             )
-            if quote.price <= hard_stop:
-                reason = (
-                    f"Immediate hard stop at {pnl_pct:+.2f}% on a live quote; "
-                    f"maximum position-loss policy is {self.settings.r2d2_max_position_loss_percent:.2f}%."
-                )
-            elif (
-                held_minutes >= FAILED_ENTRY_MINUTES
-                and pnl_pct <= -FAILED_ENTRY_LOSS_PERCENT
-                and failed_entry_votes >= 3
-            ):
-                reason = (
-                    f"Failed-entry fast exit at {pnl_pct:+.2f}% after {held_minutes:.1f} minutes: "
-                    f"{failed_entry_votes}/5 live timing signals invalidated the setup."
-                )
-            elif defense["critical"]:
-                reason = (
-                    f"Critical technical-defense exit at {pnl_pct:+.2f}%: "
-                    f"{'; '.join(defense['drivers'][:4])}. Defense score {defense['score']:.0f}/100."
-                )
-            elif (
-                held_minutes >= MIN_HOLD_MINUTES
-                and defense["actionable"]
-                and defense["score"] >= 72
-                and defense_streak >= 2
-            ):
-                reason = (
-                    f"Confirmed technical-defense exit at {pnl_pct:+.2f}% after {defense_streak} reviews: "
-                    f"{'; '.join(defense['drivers'][:4])}. Defense score {defense['score']:.0f}/100."
-                )
-            elif (
-                held_minutes >= MIN_HOLD_MINUTES
-                and defense_reductions >= 1
-                and defense["actionable"]
-                and defense["score"] >= 58
-                and defense_streak >= 3
-            ):
-                reason = (
-                    f"Technical deterioration persisted after risk reduction at {pnl_pct:+.2f}%: "
-                    f"{'; '.join(defense['drivers'][:4])}. Remaining position exited."
-                )
-            elif (
-                pnl_pct <= -soft_loss_threshold
-                and defense["actionable"]
-                and defense["score"] >= 45
-                and defense_streak >= 2
-            ):
-                reason = (
-                    f"Defensive loss exit at {pnl_pct:+.2f}% on a live quote; "
-                    f"dynamic defense was {soft_loss_threshold:.2f}% and the multicriteria "
-                    f"defense score reached {defense['score']:.0f}/100."
-                )
-            elif (
-                quote.price <= stop
-                and defense["actionable"]
-                and defense["score"] >= 45
-                and stop_breaches >= 2
-            ):
-                reason = (
-                    f"Adaptive intraday stop executed at {stop:.2f} after two live confirmations; "
-                    f"defense score {defense['score']:.0f}/100."
-                )
-            elif (
-                held_minutes >= MIN_HOLD_MINUTES
-                and weekly_conviction["active"]
-                and profit_harvest_count == 0
-                and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT
-                and PROFIT_LOCK_FLOOR_PERCENT <= pnl_pct <= profit_lock_level
-            ):
-                reason = (
-                    f"Weekly-conviction profit locked at {pnl_pct:+.2f}% after a pullback from the "
-                    f"{peak_pnl_pct:+.2f}% peak before the first harvest; the position was released "
-                    "for same-cycle replacement."
-                )
-            elif (
-                held_minutes >= MIN_HOLD_MINUTES
-                and weekly_conviction["active"]
-                and profit_harvest_count == 0
-                and pnl_pct >= PROFIT_TRIGGER_PERCENT
-            ):
-                sell_fraction = WEEKLY_PROFIT_HARVEST_FRACTION
-                profit_harvest_count = 1
-                reason = (
-                    f"Weekly-conviction profit layer harvested at {pnl_pct:+.2f}%: "
-                    f"{WEEKLY_PROFIT_HARVEST_FRACTION * 100:.0f}% of the position was realized "
-                    "and the remainder stays under the live profit lock."
-                )
-            elif (
-                held_minutes >= MIN_HOLD_MINUTES
-                and weekly_conviction["active"]
-                and profit_harvest_count >= 1
-                and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT
-                and PROFIT_LOCK_FLOOR_PERCENT <= pnl_pct <= profit_lock_level
-            ):
-                reason = (
-                    f"Weekly-conviction remainder locked at {pnl_pct:+.2f}% after a pullback from the "
-                    f"{peak_pnl_pct:+.2f}% peak; the protected balance was released for replacement."
-                )
-            elif (
-                held_minutes >= MIN_HOLD_MINUTES
-                and not weekly_conviction["active"]
-                and pnl_pct >= PROFIT_TRIGGER_PERCENT
-            ):
-                reason = (
-                    f"Tactical profit harvested at {pnl_pct:+.2f}% after reaching the "
-                    f"{PROFIT_TRIGGER_PERCENT:.2f}% execution trigger; capital released for same-cycle replacement."
-                )
-            elif (
-                held_minutes >= MIN_HOLD_MINUTES
-                and not weekly_conviction["active"]
-                and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT
-                and PROFIT_LOCK_FLOOR_PERCENT <= pnl_pct <= profit_lock_level
-            ):
-                reason = (
-                    f"Armed profit locked at {pnl_pct:+.2f}% after a pullback from the "
-                    f"{peak_pnl_pct:+.2f}% peak; capital released for same-cycle replacement."
-                )
-            elif (
-                held_minutes >= MIN_HOLD_MINUTES
-                and pnl_pct >= 0.75
-                and bearish_votes >= 1
-                and technical_score < 60
-            ):
-                reason = (
-                    f"Early tactical profit harvested at {pnl_pct:+.2f}% as live momentum weakened; "
-                    f"technical score {technical_score:.0f}/100."
-                )
-            elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 2.5 and bearish_votes >= 3:
-                reason = f"Profit harvested at {pnl_pct:+.2f}% after a {bearish_votes}-signal momentum reversal."
-            elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 1.0 and bearish_votes >= 2 and technical_score < 55:
-                reason = (
-                    f"Early profit harvested at {pnl_pct:+.2f}% after momentum weakened "
-                    f"across {bearish_votes} signals; technical score {technical_score:.0f}/100."
-                )
-            elif held_minutes >= MIN_HOLD_MINUTES and technical_score < 32 and bearish_votes >= 4:
-                reason = f"Trend breakdown confirmed by {bearish_votes} signals; technical score {technical_score:.0f}/100."
-            elif (
-                held_minutes >= MIN_HOLD_MINUTES
-                and pnl_pct < PROFIT_TRIGGER_PERCENT
-                and defense_reductions == 0
-                and defense["actionable"]
-                and defense["score"] >= 55
-                and defense_streak >= 2
-            ):
-                sell_fraction = 0.5
-                defense_reductions = 1
-                reason = (
-                    f"Progressive technical-defense reduction: 50% of the position released at {pnl_pct:+.2f}% "
-                    f"after {defense_streak} reviews; {'; '.join(defense['drivers'][:3])}."
-                )
-            elif held_minutes >= 180 and pnl_pct < 0.5 and technical_score < 45:
-                reason = f"Stagnation exit after {held_minutes / 60:.1f}h; return {pnl_pct:+.2f}% and technical score {technical_score:.0f}/100."
-            elif quote.price <= stop:
-                decision_state = "stop armed"
-            elif defense["severity"] == "reduce":
-                decision_state = "defense reduction armed"
-            elif defense["severity"] == "watch":
-                decision_state = "technical defense watch"
-            elif weekly_conviction["active"]:
-                decision_state = "weekly conviction hold"
-            elif peak_pnl_pct >= 4.0:
-                decision_state = "profit protected"
-            elif peak_pnl_pct >= 1.0:
-                decision_state = "profit armed"
-            elif technical_score < 45:
-                decision_state = "trend under review"
             strategy.update({
                 "live_technical": technical,
                 "live_composite_score": live_composite,
@@ -1516,131 +1369,19 @@ class R2D2PaperService:
     def _technical_defense(*, technical: dict[str, Any], price: float,
                            day_change: float, market_change: float) -> dict[str, Any]:
         """Weight trend, structure, flow and volatility instead of relying on a raw loss percentage."""
-        drivers: list[str] = []
-        score = 0.0
-
-        def add(condition: bool, weight: float, label: str) -> None:
-            nonlocal score
-            if condition:
-                score += weight
-                drivers.append(label)
-
-        vwap = _float(technical.get("vwap"), price)
-        ema8 = _float(technical.get("ema8"), price)
-        ema20 = _float(technical.get("ema20"), price)
-        ema50 = _float(technical.get("ema50"), price)
-        momentum15 = _float(technical.get("momentum15"))
-        momentum30 = _float(technical.get("momentum30"))
-        momentum60 = _float(technical.get("momentum60"))
-        relative_volume = _float(technical.get("relative_volume"), 1.0)
-        sell_volume_ratio = _float(technical.get("sell_volume_ratio"), 0.5)
-        drawdown_atr = _float(technical.get("drawdown_atr"))
-        relative_strength = day_change - market_change
-        structure = str(technical.get("price_structure") or "range")
-        trend_state = str(technical.get("trend_state") or "neutral")
-        volume_state = str(technical.get("volume_state") or "neutral")
-        actionable = str(technical.get("data_status") or "unavailable") == "live"
-
-        add(price < vwap, 6, "price below VWAP")
-        add(price < ema8, 6, "price below EMA8")
-        add(ema8 < ema20, 10, "EMA8 below EMA20")
-        add(ema20 < ema50, 8, "EMA20 below EMA50")
-        add(_float(technical.get("ema8_slope15")) < -0.05, 6, "EMA8 falling")
-        add(_float(technical.get("ema20_slope15")) < -0.03, 6, "EMA20 falling")
-        add(trend_state == "bearish", 8, "bearish trend regime")
-        add(structure == "breakdown", 22, "support breakdown")
-        add(structure == "failed-breakout", 16, "failed breakout")
-        add(structure == "lower-lows", 14, "lower highs and lower lows")
-        add(
-            _float(technical.get("macd_histogram")) < 0
-            and _float(technical.get("macd_acceleration")) < 0,
-            8, "MACD weakening",
+        return r2d2_strategy.technical_defense(
+            technical=technical, price=price, day_change=day_change, market_change=market_change,
         )
-        add(momentum15 < -0.15, 4, "15-minute momentum negative")
-        add(momentum30 < -0.35, 6, "30-minute momentum negative")
-        add(momentum60 < -0.60, 6, "60-minute momentum negative")
-        add(_float(technical.get("rsi14"), 50.0) < 38, 4, "RSI below 38")
-        add(volume_state == "distribution", 9, "volume distribution")
-        add(relative_volume >= 1.2 and momentum15 < 0, 8, "selloff on elevated volume")
-        add(_float(technical.get("obv_slope")) < -0.5, 4, "OBV declining")
-        add(sell_volume_ratio >= 0.62, 6, "selling dominates recent volume")
-        add(drawdown_atr >= 0.75, 4, "pullback exceeds 0.75 ATR")
-        add(drawdown_atr >= 1.25, 5, "pullback exceeds 1.25 ATR")
-        add(relative_strength <= -0.50, 4, "underperforming held-market peers")
-        add(relative_strength <= -1.00, 4, "severe relative underperformance")
-
-        score = round(min(100.0, score), 1)
-        critical = actionable and (
-            score >= 82
-            or (
-                structure == "breakdown"
-                and (volume_state == "distribution" or sell_volume_ratio >= 0.62)
-                and relative_volume >= 1.05
-            )
-        )
-        severity = "exit" if critical or score >= 72 else "reduce" if score >= 55 else "watch" if score >= 40 else "healthy"
-        return {
-            "score": score,
-            "severity": severity,
-            "critical": critical,
-            "actionable": actionable,
-            "drivers": drivers,
-            "relative_strength_percent": round(relative_strength, 3),
-            "model": "weighted trend-structure-flow-volatility v1",
-        }
 
     @staticmethod
     def _weekly_conviction(*, strategy: dict[str, Any], technical: dict[str, Any],
                            price: float, high_water: float, atr: float,
                            bearish_votes: int) -> dict[str, Any]:
         """Classify a multi-session hold without weakening execution risk controls."""
-        fundamental = max(0.0, min(100.0, _float(strategy.get("fundamental_score"), 50.0)))
-        confidence = max(0.0, min(100.0, _float(strategy.get("confidence"), 50.0)))
-        technical_score = max(0.0, min(100.0, _float(technical.get("score"), 50.0)))
-        trend_state = str(technical.get("trend_state") or "neutral")
-        volume_state = str(technical.get("volume_state") or "neutral")
-        price_structure = str(technical.get("price_structure") or "neutral")
-        data_status = str(technical.get("data_status") or "unavailable")
-        trend_score = _float(
-            technical.get("trend_score"),
-            82.0 if trend_state == "bullish" else 30.0 if trend_state == "bearish" else 50.0,
+        return r2d2_strategy.weekly_conviction(
+            strategy=strategy, technical=technical, price=price,
+            high_water=high_water, atr=atr, bearish_votes=bearish_votes,
         )
-        flow_score = _float(
-            technical.get("flow_score"),
-            78.0 if volume_state == "accumulation" else 30.0 if volume_state == "distribution" else 50.0,
-        )
-        momentum_score = _float(technical.get("momentum_score"), 50.0)
-        if "momentum_score" not in technical:
-            momentum_score += 15.0 if _float(technical.get("momentum30")) > 0 else -15.0
-            momentum_score += 10.0 if _float(technical.get("macd_histogram")) > 0 else -10.0
-        momentum_score = max(0.0, min(100.0, momentum_score))
-        score = round(
-            fundamental * 0.25
-            + confidence * 0.15
-            + technical_score * 0.25
-            + trend_score * 0.15
-            + flow_score * 0.10
-            + momentum_score * 0.10,
-            2,
-        )
-        drawdown = max(0.0, high_water - price)
-        drawdown_limit = max(atr * 1.75, high_water * 0.0175)
-        gates = {
-            "fresh market data": data_status == "live",
-            "fundamental conviction": fundamental >= 68.0 and confidence >= 60.0,
-            "bullish live trend": technical_score >= 65.0 and trend_state == "bullish",
-            "constructive price structure": price_structure in {"higher-highs", "breakout"},
-            "non-distributive flow": volume_state != "distribution" and flow_score >= 55.0,
-            "positive momentum": momentum_score >= 60.0,
-            "controlled pullback": drawdown <= drawdown_limit,
-            "no confirmed reversal": bearish_votes <= 1,
-        }
-        reasons = [label for label, passed in gates.items() if passed]
-        return {
-            "active": score >= WEEKLY_CONVICTION_MIN_SCORE and all(gates.values()),
-            "score": score,
-            "reasons": reasons,
-        }
 
     @staticmethod
     def _quote_is_anomalous(position: dict[str, Any], price: float, technical: dict[str, Any],
@@ -2156,13 +1897,7 @@ class R2D2PaperService:
 
     @staticmethod
     def _ema(values: list[float], period: int) -> float:
-        if not values:
-            return 0.0
-        multiplier = 2 / (period + 1)
-        result = values[0]
-        for value in values[1:]:
-            result = (value - result) * multiplier + result
-        return result
+        return r2d2_strategy.ema(values, period)
 
     @staticmethod
     def _day_technical_score(change: float) -> float:
@@ -2177,146 +1912,14 @@ class R2D2PaperService:
         return round(item["fundamental_score"] * 0.55 + item["technical_score"] * 0.30 + entry * 0.15, 3)
 
     def _entry_decision(self, item: dict[str, Any]) -> tuple[str, list[str]]:
-        policy = self._active_policy
-        indicators = dict(item.get("technical_indicators") or {})
-        tactical_structure = (
-            str(indicators.get("price_structure")) in {"higher-highs", "breakout"}
-            or (
-                str(indicators.get("volume_state")) == "accumulation"
-                and item["technical_score"] >= 78.0
-            )
-        )
-        tactical_route = all((
-            bool(item.get("technical_validated")),
-            item.get("market") not in ACTIVE_MARKETS or item.get("quote_status") == "live",
-            item["upside"] >= 20.0,
-            item["risk_score"] <= 55.0,
-            item["confidence"] >= 65.0,
-            item["buy_in_distance"] <= 20.0,
-            item["technical_score"] >= 72.0,
-            item["composite_score"] >= 72.0,
-            str(indicators.get("data_status")) == "live",
-            str(indicators.get("trend_state")) == "bullish",
-            str(indicators.get("volume_state")) != "distribution",
-            tactical_structure,
-            _float(indicators.get("relative_volume"), 1.0) >= 1.05,
-            _float(item.get("price")) >= _float(indicators.get("vwap")) > 0,
-            _float(item.get("price")) >= _float(indicators.get("ema8")) > 0,
-            _float(indicators.get("ema8")) > _float(indicators.get("ema20")) > 0,
-            _float(indicators.get("momentum15")) >= 0.10,
-            _float(indicators.get("momentum30")) >= 0.15,
-            _float(indicators.get("macd_histogram")) > 0,
-            _float(indicators.get("macd_acceleration")) >= 0,
-            48.0 <= _float(indicators.get("rsi14")) <= 76.0,
-            _float(indicators.get("relative_strength")) > 0,
-        ))
-        if tactical_route:
-            return "BUY", [
-                item["thesis"],
-                "Tactical quality-momentum route passed with fresh data, bullish structure and controlled risk.",
-            ]
-        momentum15 = _float(indicators.get("momentum15"))
-        momentum30 = _float(indicators.get("momentum30"))
-        momentum60 = _float(indicators.get("momentum60"))
-        relative_volume = _float(indicators.get("relative_volume"), 1.0)
-        price = _float(item.get("price"))
-        vwap = _float(indicators.get("vwap"))
-        ema8 = _float(indicators.get("ema8"))
-        ema20 = _float(indicators.get("ema20"))
-        macd_histogram = _float(indicators.get("macd_histogram"))
-        macd_acceleration = _float(indicators.get("macd_acceleration"))
-        rsi14 = _float(indicators.get("rsi14"))
-        relative_strength = _float(indicators.get("relative_strength"))
-        modeled_edge = round(
-            max(momentum15, 0.0) * 0.45
-            + max(momentum30, 0.0) * 0.25
-            + max(momentum60, 0.0) * 0.10
-            + max(relative_volume - 1.0, 0.0) * 0.20
-            + max(item["technical_score"] - 60.0, 0.0) * 0.015,
-            3,
-        )
-        intraday_structure = str(indicators.get("price_structure")) in {"higher-highs", "breakout"}
-        intraday_route = all((
-            bool(item.get("technical_validated")),
-            item.get("market") in ACTIVE_MARKETS,
-            item.get("quote_status") == "live",
-            item["upside"] >= 0.0,
-            item["risk_score"] <= 55.0,
-            item["confidence"] >= 55.0,
-            item["buy_in_distance"] <= 25.0,
-            item["technical_score"] >= 72.0,
-            item["composite_score"] >= 62.0,
-            str(indicators.get("data_status")) == "live",
-            str(indicators.get("trend_state")) == "bullish",
-            str(indicators.get("volume_state")) != "distribution",
-            intraday_structure,
-            momentum15 >= 0.15,
-            momentum30 >= 0.20,
-            momentum60 > 0,
-            relative_volume >= 1.05,
-            price > 0 and vwap > 0 and price >= vwap,
-            ema8 > 0 and ema20 > 0 and price >= ema8 and ema8 > ema20,
-            macd_histogram > 0 and macd_acceleration >= 0,
-            48.0 <= rsi14 <= 74.0,
-            relative_strength > 0,
-            modeled_edge >= MIN_INTRADAY_EDGE_PERCENT,
-        ))
-        item["modeled_intraday_edge_percent"] = modeled_edge
-        item["simulated_round_trip_cost_percent"] = SIMULATED_ROUND_TRIP_COST_PERCENT
-        if intraday_route:
-            return "BUY", [
-                item["thesis"],
-                (
-                    f"Cost-aware intraday route passed with {modeled_edge:.2f}% modeled edge "
-                    f"versus {SIMULATED_ROUND_TRIP_COST_PERCENT:.2f}% simulated round-trip friction."
-                ),
-            ]
-        reasons: list[str] = []
-        if item.get("market") in ACTIVE_MARKETS and item.get("quote_status") != "live":
-            reasons.append("Current US quote is not live; paper entry blocked")
-        if not item.get("technical_validated"):
-            reasons.append("Five-minute technical confirmation is unavailable")
-        if item["upside"] < policy["entry_upside_floor"]:
-            reasons.append(f"C3PO TP upside below {policy['entry_upside_floor']:.2f}% adaptive paper-entry floor")
-        if item["risk_score"] > policy["max_risk_score"]:
-            reasons.append(f"Risk score above adaptive {policy['max_risk_score']:.2f}/100 ceiling")
-        if item["confidence"] < policy["min_confidence"]:
-            reasons.append(f"Valuation confidence below adaptive {policy['min_confidence']:.2f}% floor")
-        if item["buy_in_distance"] > policy["max_buy_in_distance"]:
-            reasons.append(f"Price is more than {policy['max_buy_in_distance']:.2f}% above disciplined buy-in")
-        if item["technical_score"] < policy["min_technical_score"]:
-            reasons.append("Intraday/day momentum confirmation is insufficient")
-        if item["composite_score"] < policy["min_composite_score"]:
-            reasons.append(f"Hybrid score below adaptive {policy['min_composite_score']:.2f}/100 floor")
-        return ("REJECT", reasons) if reasons else ("BUY", [item["thesis"], "Hybrid fundamental and timing gates passed"])
+        return r2d2_strategy.entry_decision(item, self._active_policy)
 
     def _target_position_percent(self, item: dict[str, Any], *, cash_overhang_percent: float = 0.0) -> float:
         """Size conviction while reducing capital assigned to risk and volatility."""
-        composite = max(0.0, min(100.0, _float(item.get("composite_score"), 50.0)))
-        confidence = max(0.0, min(100.0, _float(item.get("confidence"), 50.0)))
-        technical = max(0.0, min(100.0, _float(item.get("technical_score"), 50.0)))
-        risk = max(0.0, min(100.0, _float(item.get("risk_score"), 50.0)))
-        indicators = dict(item.get("technical_indicators") or {})
-        atr_percent = max(0.0, _float(indicators.get("atr_percent"), 2.5))
-
-        conviction_adjustment = (
-            (composite - 65.0) * 0.08
-            + (confidence - 65.0) * 0.03
-            + (technical - 60.0) * 0.03
+        return r2d2_strategy.target_position_percent(
+            item, cash_overhang_percent=cash_overhang_percent,
+            max_position_percent=self.settings.r2d2_max_position_percent,
         )
-        risk_adjustment = -(risk - 35.0) * 0.05
-        volatility_adjustment = (
-            max(0.0, 2.0 - atr_percent) * 0.10
-            - max(0.0, atr_percent - 2.5) * 0.25
-        )
-        maximum = min(MAX_DYNAMIC_POSITION_PERCENT, self.settings.r2d2_max_position_percent)
-        minimum = min(MIN_POSITION_PERCENT, maximum)
-        deployment_adjustment = min(1.5, max(0.0, cash_overhang_percent) * 0.08)
-        target = (
-            BASE_POSITION_PERCENT + conviction_adjustment + risk_adjustment
-            + volatility_adjustment + deployment_adjustment
-        )
-        return round(max(minimum, min(maximum, target)), 2)
 
     def _rotate_if_better(self, experiment: dict[str, Any], cycle_id: str, candidate: dict[str, Any],
                           positions: list[dict[str, Any]], quotes: dict[tuple[str, str], Any],
