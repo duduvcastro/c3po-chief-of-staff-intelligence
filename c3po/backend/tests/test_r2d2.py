@@ -682,7 +682,7 @@ def test_r2d2_retires_existing_b3_position_during_b3_session() -> None:
     assert "B3 position retired" in service.repo.trades(experiment["id"])[0]["reason"]
 
 
-def test_r2d2_arms_profit_above_one_percent_without_cutting_a_healthy_trend() -> None:
+def test_r2d2_locks_unharvested_weekly_profit_after_pullback() -> None:
     service = _service()
     experiment = service.ensure_initialized()
     cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ"])
@@ -715,13 +715,52 @@ def test_r2d2_arms_profit_above_one_percent_without_cutting_a_healthy_trend() ->
         experiment, cycle_id, service.repo.positions(experiment["id"]),
         {("NASDAQ", "WIN"): quote}, quote.as_of,
     )
-    position = service.repo.positions(experiment["id"])[0]
+    assert exits == 1
+    assert service.repo.positions(experiment["id"]) == []
+    trade = service.repo.trades(experiment["id"])[0]
+    assert "Weekly-conviction profit locked" in trade["reason"]
 
-    assert exits == 0
-    assert round(position["stop_price_local"], 2) >= 100.3
-    assert position["strategy_snapshot"]["decision_state"] == "weekly conviction hold"
-    assert position["strategy_snapshot"]["weekly_conviction_active"] is True
-    assert position["strategy_snapshot"]["daily_objective_percent"] == 0.5
+
+def test_r2d2_harvests_half_of_a_weekly_winner_at_trigger() -> None:
+    service = _service()
+    experiment = service.ensure_initialized()
+    cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ"])
+    candidate = {
+        "market": "NASDAQ", "symbol": "RIOT", "name": "Riot Platforms", "currency": "USD",
+        "stop_price": 95.0, "fundamental_score": 80.0, "technical_score": 76.0,
+        "risk_score": 25.0, "composite_score": 80.0, "confidence": 80.0,
+    }
+    opened = datetime(2026, 8, 17, 13, 0, tzinfo=timezone.utc)
+    service.repo.execute_trade(
+        experiment, cycle_id=cycle_id, candidate=candidate, side="BUY", quantity=100,
+        signal_price=100.0, fill_price=100.0, fx=1.0, fees=0.0, slippage=0.0,
+        reason="test entry", decision=candidate, quote_as_of=opened,
+    )
+    position = service.repo.memory["positions"][("NASDAQ", "RIOT")]
+    position["opened_at"] = opened
+    service._technical_snapshot = lambda item: {  # type: ignore[method-assign]
+        "score": 80.0, "atr": 1.0, "atr_percent": 1.0, "vwap": 100.2,
+        "ema8": 100.7, "ema20": 100.3, "macd_histogram": 0.8,
+        "macd_acceleration": 0.2, "momentum30": 0.7, "price_structure": "higher-highs",
+        "trend_state": "bullish", "volume_state": "accumulation", "data_status": "live",
+        "as_of": datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc).isoformat(),
+    }
+    quote = SimpleNamespace(
+        price=100.97, change_percent=0.97,
+        as_of=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
+    )
+
+    exits = service._mark_and_exit(
+        experiment, cycle_id, service.repo.positions(experiment["id"]),
+        {("NASDAQ", "RIOT"): quote}, quote.as_of,
+    )
+
+    assert exits == 1
+    remaining = service.repo.positions(experiment["id"])[0]
+    assert remaining["quantity"] == 50
+    assert remaining["strategy_snapshot"]["profit_harvest_count"] == 1
+    trade = service.repo.trades(experiment["id"])[0]
+    assert "Weekly-conviction profit layer harvested" in trade["reason"]
 
 
 def test_r2d2_harvests_tactical_profit_above_cost_aware_trigger() -> None:

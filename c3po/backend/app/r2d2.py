@@ -30,7 +30,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
-METHODOLOGY_VERSION = "R2D2-HYBRID-V14-TECHNICAL-DEFENSE"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V15-PROFIT-HARVEST"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
 MIN_HOLD_MINUTES = 5
 ROTATION_MIN_HOLD_MINUTES = 10
@@ -40,6 +40,7 @@ WEEKLY_CONVICTION_MIN_SCORE = 72.0
 PROFIT_TRIGGER_PERCENT = 0.65
 PROFIT_LOCK_FLOOR_PERCENT = 0.35
 PROFIT_PULLBACK_PERCENT = 0.20
+WEEKLY_PROFIT_HARVEST_FRACTION = 0.50
 MIN_POSITION_PERCENT = 2.5
 BASE_POSITION_PERCENT = 4.5
 MAX_DYNAMIC_POSITION_PERCENT = 6.0
@@ -1238,6 +1239,7 @@ class R2D2PaperService:
                 atr=atr,
                 bearish_votes=bearish_votes,
             )
+            profit_harvest_count = int(strategy.get("profit_harvest_count") or 0)
             reason = None
             sell_fraction = 1.0
             decision_state = "hold"
@@ -1296,6 +1298,42 @@ class R2D2PaperService:
                 reason = (
                     f"Adaptive intraday stop executed at {stop:.2f} after two live confirmations; "
                     f"defense score {defense['score']:.0f}/100."
+                )
+            elif (
+                held_minutes >= MIN_HOLD_MINUTES
+                and weekly_conviction["active"]
+                and profit_harvest_count == 0
+                and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT
+                and PROFIT_LOCK_FLOOR_PERCENT <= pnl_pct <= profit_lock_level
+            ):
+                reason = (
+                    f"Weekly-conviction profit locked at {pnl_pct:+.2f}% after a pullback from the "
+                    f"{peak_pnl_pct:+.2f}% peak before the first harvest; the position was released "
+                    "for same-cycle replacement."
+                )
+            elif (
+                held_minutes >= MIN_HOLD_MINUTES
+                and weekly_conviction["active"]
+                and profit_harvest_count == 0
+                and pnl_pct >= PROFIT_TRIGGER_PERCENT
+            ):
+                sell_fraction = WEEKLY_PROFIT_HARVEST_FRACTION
+                profit_harvest_count = 1
+                reason = (
+                    f"Weekly-conviction profit layer harvested at {pnl_pct:+.2f}%: "
+                    f"{WEEKLY_PROFIT_HARVEST_FRACTION * 100:.0f}% of the position was realized "
+                    "and the remainder stays under the live profit lock."
+                )
+            elif (
+                held_minutes >= MIN_HOLD_MINUTES
+                and weekly_conviction["active"]
+                and profit_harvest_count >= 1
+                and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT
+                and PROFIT_LOCK_FLOOR_PERCENT <= pnl_pct <= profit_lock_level
+            ):
+                reason = (
+                    f"Weekly-conviction remainder locked at {pnl_pct:+.2f}% after a pullback from the "
+                    f"{peak_pnl_pct:+.2f}% peak; the protected balance was released for replacement."
                 )
             elif (
                 held_minutes >= MIN_HOLD_MINUTES
@@ -1377,6 +1415,8 @@ class R2D2PaperService:
                 "peak_pnl_percent": round(peak_pnl_pct, 3),
                 "profit_trigger_percent": PROFIT_TRIGGER_PERCENT,
                 "profit_lock_level_percent": round(profit_lock_level, 3),
+                "profit_harvest_count": profit_harvest_count,
+                "profit_harvest_fraction": WEEKLY_PROFIT_HARVEST_FRACTION,
                 "weekly_conviction_active": weekly_conviction["active"],
                 "weekly_conviction_score": weekly_conviction["score"],
                 "weekly_conviction_reasons": weekly_conviction["reasons"],
