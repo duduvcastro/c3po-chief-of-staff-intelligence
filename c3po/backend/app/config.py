@@ -94,8 +94,8 @@ class Settings(BaseSettings):
     r2d2_min_cash_buffer_percent: float = 5.0
     r2d2_max_gross_exposure_percent: float = 95.0
     r2d2_daily_loss_limit_percent: float = 1.5
-    r2d2_soft_loss_exit_percent: float = 0.4
-    r2d2_max_position_loss_percent: float = 0.9
+    r2d2_soft_loss_exit_percent: float = 0.25
+    r2d2_max_position_loss_percent: float = 0.65
     r2d2_live_quote_max_age_seconds: int = 90
     r2d2_trade_cooldown_minutes: int = 8
     r2d2_max_daily_orders: int = 120
