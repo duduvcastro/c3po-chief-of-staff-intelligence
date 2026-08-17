@@ -8,7 +8,7 @@ import pytest
 
 from app.config import Settings
 from app.database import Database
-from app.r2d2 import R2D2PaperService, R2D2Repository, _date_value
+from app.r2d2 import SAO_PAULO, R2D2PaperService, R2D2Repository, _date_value
 from app.market_data.eodhd_stream import EodhdRealtimeStream
 from fastapi.testclient import TestClient
 from app import main as app_main
@@ -633,6 +633,71 @@ def test_r2d2_hard_stop_exits_immediately_on_live_quote() -> None:
     assert service.repo.positions(experiment["id"]) == []
 
 
+def test_r2d2_failed_entry_exits_before_the_hard_stop() -> None:
+    service = _service()
+    experiment = service.ensure_initialized()
+    cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ"])
+    candidate = {
+        "market": "NASDAQ", "symbol": "FAIL", "name": "Failed Setup", "currency": "USD",
+        "stop_price": 99.35, "fundamental_score": 75.0, "technical_score": 76.0,
+        "risk_score": 35.0, "composite_score": 76.0,
+    }
+    opened = datetime(2026, 8, 17, 14, 0, tzinfo=timezone.utc)
+    service.repo.execute_trade(
+        experiment, cycle_id=cycle_id, candidate=candidate, side="BUY", quantity=100,
+        signal_price=100.0, fill_price=100.0, fx=1.0, fees=0.0, slippage=0.0,
+        reason="test entry", decision=candidate, quote_as_of=opened,
+    )
+    service.repo.memory["positions"][("NASDAQ", "FAIL")]["opened_at"] = opened
+    service._technical_snapshot = lambda item: {  # type: ignore[method-assign]
+        "score": 48.0, "atr": 0.8, "atr_percent": 0.8, "vwap": 100.1,
+        "ema8": 100.0, "ema20": 100.2, "macd_histogram": -0.1,
+        "macd_acceleration": -0.05, "momentum15": -0.2, "momentum30": -0.1,
+        "price_structure": "lower-highs", "trend_state": "bearish",
+        "volume_state": "distribution", "data_status": "live",
+        "as_of": datetime(2026, 8, 17, 14, 4, tzinfo=timezone.utc).isoformat(),
+    }
+    quote = SimpleNamespace(
+        price=99.65, change_percent=-0.35,
+        as_of=datetime(2026, 8, 17, 14, 4, tzinfo=timezone.utc),
+    )
+
+    exits = service._mark_and_exit(
+        experiment, cycle_id, service.repo.positions(experiment["id"]),
+        {("NASDAQ", "FAIL"): quote}, quote.as_of,
+    )
+
+    assert exits == 1
+    assert service.repo.positions(experiment["id"]) == []
+    assert "Failed-entry fast exit" in service.repo.trades(experiment["id"])[0]["reason"]
+
+
+def test_r2d2_blocks_reentry_after_a_same_session_sell() -> None:
+    service = _service()
+    experiment = service.ensure_initialized()
+    cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ"])
+    candidate = {
+        "market": "NASDAQ", "symbol": "CHURN", "name": "No Churn Corp", "currency": "USD",
+        "stop_price": 99.35, "fundamental_score": 75.0, "technical_score": 76.0,
+        "risk_score": 35.0, "composite_score": 76.0,
+    }
+    now = datetime.now(timezone.utc)
+    service.repo.execute_trade(
+        experiment, cycle_id=cycle_id, candidate=candidate, side="BUY", quantity=10,
+        signal_price=100.0, fill_price=100.0, fx=1.0, fees=0.0, slippage=0.0,
+        reason="test entry", decision=candidate, quote_as_of=now,
+    )
+    service.repo.execute_trade(
+        experiment, cycle_id=cycle_id, candidate=candidate, side="SELL", quantity=10,
+        signal_price=101.0, fill_price=101.0, fx=1.0, fees=0.0, slippage=0.0,
+        reason="test exit", decision=candidate, quote_as_of=now,
+    )
+
+    assert service.repo.sold_on_session(
+        experiment["id"], "NASDAQ", "CHURN", now.astimezone(SAO_PAULO).date(),
+    ) is True
+
+
 def test_r2d2_blocks_us_entry_without_a_live_quote() -> None:
     service = _service()
     experiment = service.ensure_initialized()
@@ -721,7 +786,7 @@ def test_r2d2_locks_unharvested_weekly_profit_after_pullback() -> None:
     assert "Weekly-conviction profit locked" in trade["reason"]
 
 
-def test_r2d2_harvests_half_of_a_weekly_winner_at_trigger() -> None:
+def test_r2d2_harvests_seventy_percent_of_a_weekly_winner_at_trigger() -> None:
     service = _service()
     experiment = service.ensure_initialized()
     cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ"])
@@ -757,7 +822,7 @@ def test_r2d2_harvests_half_of_a_weekly_winner_at_trigger() -> None:
 
     assert exits == 1
     remaining = service.repo.positions(experiment["id"])[0]
-    assert remaining["quantity"] == 50
+    assert remaining["quantity"] == 30
     assert remaining["strategy_snapshot"]["profit_harvest_count"] == 1
     trade = service.repo.trades(experiment["id"])[0]
     assert "Weekly-conviction profit layer harvested" in trade["reason"]
@@ -843,14 +908,18 @@ def test_r2d2_locks_an_armed_profit_after_pullback() -> None:
 def test_r2d2_tactical_quality_momentum_route_expands_the_entry_funnel() -> None:
     service = _service()
     candidate = {
-        "market": "NASDAQ", "quote_status": "live",
-        "upside": 35.0, "risk_score": 58.0, "confidence": 74.0,
+        "market": "NASDAQ", "quote_status": "live", "price": 101.0,
+        "upside": 35.0, "risk_score": 52.0, "confidence": 74.0,
         "buy_in_distance": 8.0, "technical_score": 76.0,
         "technical_validated": True, "composite_score": 76.0,
         "thesis": "Fresh momentum with controlled valuation risk",
         "technical_indicators": {
             "data_status": "live", "trend_state": "bullish",
             "volume_state": "accumulation", "price_structure": "breakout",
+            "relative_volume": 1.25, "vwap": 100.5, "ema8": 100.8, "ema20": 100.4,
+            "momentum15": 0.20, "momentum30": 0.35,
+            "macd_histogram": 0.2, "macd_acceleration": 0.1, "rsi14": 60.0,
+            "relative_strength": 0.4,
         },
     }
 
@@ -863,8 +932,8 @@ def test_r2d2_tactical_quality_momentum_route_expands_the_entry_funnel() -> None
 def test_r2d2_cost_aware_intraday_route_accepts_live_liquid_momentum() -> None:
     service = _service()
     candidate = {
-        "market": "NYSE", "quote_status": "live",
-        "upside": 12.0, "risk_score": 55.0, "confidence": 58.0,
+        "market": "NYSE", "quote_status": "live", "price": 101.0,
+        "upside": 12.0, "risk_score": 52.0, "confidence": 58.0,
         "buy_in_distance": 12.0, "technical_score": 72.0,
         "technical_validated": True, "composite_score": 64.0,
         "thesis": "Live momentum with positive modeled edge after costs",
@@ -872,21 +941,23 @@ def test_r2d2_cost_aware_intraday_route_accepts_live_liquid_momentum() -> None:
             "data_status": "live", "trend_state": "bullish",
             "volume_state": "accumulation", "price_structure": "higher-highs",
             "momentum15": 0.30, "momentum30": 0.55, "momentum60": 0.80,
-            "relative_volume": 1.35,
+            "relative_volume": 1.35, "vwap": 100.5, "ema8": 100.8, "ema20": 100.4,
+            "macd_histogram": 0.2, "macd_acceleration": 0.1, "rsi14": 60.0,
+            "relative_strength": 0.4,
         },
     }
 
     action, reasons = service._entry_decision(candidate)
 
     assert action == "BUY"
-    assert candidate["modeled_intraday_edge_percent"] >= 0.42
+    assert candidate["modeled_intraday_edge_percent"] >= 0.55
     assert "Cost-aware intraday route passed" in reasons[-1]
 
 
-def test_r2d2_cost_aware_route_can_trade_flat_fundamental_upside_with_strong_live_edge() -> None:
+def test_r2d2_cost_aware_route_rejects_weak_fundamental_anchor_despite_momentum() -> None:
     service = _service()
     candidate = {
-        "market": "NASDAQ", "quote_status": "live",
+        "market": "NASDAQ", "quote_status": "live", "price": 101.0,
         "upside": 0.5, "risk_score": 68.0, "confidence": 42.0,
         "buy_in_distance": 32.0, "technical_score": 69.0,
         "technical_validated": True, "composite_score": 58.0,
@@ -895,21 +966,23 @@ def test_r2d2_cost_aware_route_can_trade_flat_fundamental_upside_with_strong_liv
             "data_status": "live", "trend_state": "bullish",
             "volume_state": "accumulation", "price_structure": "breakout",
             "momentum15": 0.35, "momentum30": 0.45, "momentum60": 0.70,
-            "relative_volume": 1.4,
+            "relative_volume": 1.4, "vwap": 100.5, "ema8": 100.8, "ema20": 100.4,
+            "macd_histogram": 0.2, "macd_acceleration": 0.1, "rsi14": 60.0,
+            "relative_strength": 0.4,
         },
     }
 
     action, reasons = service._entry_decision(candidate)
 
-    assert action == "BUY"
-    assert candidate["modeled_intraday_edge_percent"] >= 0.42
-    assert "Cost-aware intraday route passed" in reasons[-1]
+    assert action == "REJECT"
+    assert candidate["modeled_intraday_edge_percent"] >= 0.55
+    assert any("Risk score" in reason for reason in reasons)
 
 
 def test_r2d2_cost_aware_intraday_route_rejects_edge_below_friction_buffer() -> None:
     service = _service()
     candidate = {
-        "market": "NASDAQ", "quote_status": "live",
+        "market": "NASDAQ", "quote_status": "live", "price": 101.0,
         "upside": 12.0, "risk_score": 55.0, "confidence": 58.0,
         "buy_in_distance": 12.0, "technical_score": 64.0,
         "technical_validated": True, "composite_score": 59.0,
@@ -918,14 +991,16 @@ def test_r2d2_cost_aware_intraday_route_rejects_edge_below_friction_buffer() -> 
             "data_status": "live", "trend_state": "bullish",
             "volume_state": "neutral", "price_structure": "higher-highs",
             "momentum15": 0.05, "momentum30": 0.05, "momentum60": 0.05,
-            "relative_volume": 1.0,
+            "relative_volume": 1.0, "vwap": 100.5, "ema8": 100.8, "ema20": 100.4,
+            "macd_histogram": 0.1, "macd_acceleration": 0.0, "rsi14": 58.0,
+            "relative_strength": 0.1,
         },
     }
 
     action, _ = service._entry_decision(candidate)
 
     assert action == "REJECT"
-    assert candidate["modeled_intraday_edge_percent"] < 0.42
+    assert candidate["modeled_intraday_edge_percent"] < 0.55
 
 
 def test_r2d2_daily_order_cap_blocks_new_entries() -> None:
@@ -997,5 +1072,6 @@ def test_r2d2_exit_triggers_an_immediate_replacement_scan() -> None:
     assert calls == ["NASDAQ", "NYSE"]
     assert dashboard.open_positions == 1
     assert dashboard.positions[0].symbol == "NEXT"
+    assert dashboard.positions[0].logo_url == "https://eodhd.com/img/logos/US/next.png"
     assert dashboard.last_cycle is not None
     assert dashboard.last_cycle.trade_count == 2
