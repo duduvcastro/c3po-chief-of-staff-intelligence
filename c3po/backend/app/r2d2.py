@@ -30,7 +30,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
-METHODOLOGY_VERSION = "R2D2-HYBRID-V15-PROFIT-HARVEST"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V16-ASYMMETRIC-DEFENSE"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
 MIN_HOLD_MINUTES = 5
 ROTATION_MIN_HOLD_MINUTES = 10
@@ -40,12 +40,14 @@ WEEKLY_CONVICTION_MIN_SCORE = 72.0
 PROFIT_TRIGGER_PERCENT = 0.65
 PROFIT_LOCK_FLOOR_PERCENT = 0.35
 PROFIT_PULLBACK_PERCENT = 0.20
-WEEKLY_PROFIT_HARVEST_FRACTION = 0.50
+WEEKLY_PROFIT_HARVEST_FRACTION = 0.70
 MIN_POSITION_PERCENT = 2.5
 BASE_POSITION_PERCENT = 4.5
 MAX_DYNAMIC_POSITION_PERCENT = 6.0
 SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
-MIN_INTRADAY_EDGE_PERCENT = 0.42
+MIN_INTRADAY_EDGE_PERCENT = 0.55
+FAILED_ENTRY_MINUTES = 3
+FAILED_ENTRY_LOSS_PERCENT = 0.30
 US_STOCK_SHORTLIST_PER_MARKET = 300
 US_ETF_SHORTLIST_PER_MARKET = 50
 US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
@@ -199,11 +201,11 @@ class R2D2Repository:
             ],
             "exit_layer": [
                 "live-quote hard stop", "weighted technical-defense score",
-                "two-review confirmation", "progressive 50% risk reduction",
+                "failed-entry fast exit", "two-review confirmation", "progressive 50% risk reduction",
                 "defensive soft-loss exit", "adaptive ATR stop", "profit lock",
                 "multi-horizon trend and flow reversal",
                 "weekly-conviction hold", "stagnation time stop", "opportunity-cost rotation",
-                "same-cycle replacement", "anomalous tick guard",
+                "same-cycle replacement", "same-session full-exit re-entry lock", "anomalous tick guard",
             ],
             "turnover_policy": {
                 "style": "high-turnover paper intraday",
@@ -212,6 +214,7 @@ class R2D2Repository:
                 "minimum_hold_minutes": MIN_HOLD_MINUTES,
                 "rotation_hold_minutes": ROTATION_MIN_HOLD_MINUTES,
                 "reentry_cooldown_minutes": settings.r2d2_trade_cooldown_minutes,
+                "full_exit_reentry_policy": "blocked until the next Sao Paulo trading date",
                 "profit_trigger_percent": PROFIT_TRIGGER_PERCENT,
                 "simulated_round_trip_cost_percent": SIMULATED_ROUND_TRIP_COST_PERCENT,
                 "minimum_modeled_edge_percent": MIN_INTRADAY_EDGE_PERCENT,
@@ -622,7 +625,9 @@ class R2D2Repository:
     def in_cooldown(self, experiment_id: str, market: str, symbol: str, since: datetime) -> bool:
         if not self.database.database_url:
             return any(
-                row["market"] == market and row["symbol"] == symbol and row["executed_at"] >= since
+                row["experiment_id"] == experiment_id
+                and row["market"] == market and row["symbol"] == symbol
+                and row["executed_at"] >= since
                 for row in self.memory["trades"]
             )
         with self.database.connection() as connection:
@@ -631,6 +636,27 @@ class R2D2Repository:
                    WHERE experiment_id=%s AND market=%s AND symbol=%s AND executed_at >= %s
                    LIMIT 1""",
                 (experiment_id, market, symbol, since),
+            ).fetchone()
+        return bool(row)
+
+    def sold_on_session(self, experiment_id: str, market: str, symbol: str,
+                        session_date: date) -> bool:
+        """Blocks churn after a full exit; partial harvests remain represented by an open position."""
+        if not self.database.database_url:
+            return any(
+                row["experiment_id"] == experiment_id
+                and row["market"] == market and row["symbol"] == symbol
+                and row["side"] == "SELL"
+                and row["executed_at"].astimezone(SAO_PAULO).date() == session_date
+                for row in self.memory["trades"]
+            )
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """SELECT 1 FROM r2d2_trades
+                   WHERE experiment_id=%s AND market=%s AND symbol=%s AND side='SELL'
+                     AND (executed_at AT TIME ZONE 'America/Sao_Paulo')::date=%s
+                   LIMIT 1""",
+                (experiment_id, market, symbol, session_date),
             ).fetchone()
         return bool(row)
 
@@ -849,6 +875,9 @@ class R2D2PaperService:
         for row in positions:
             strategy = dict(row.get("strategy_snapshot") or {})
             technical = dict(strategy.get("live_technical") or strategy.get("technical_indicators") or {})
+            logo_url = str(strategy.get("logo_url") or "").strip() or None
+            if not logo_url and row["market"] in ACTIVE_MARKETS:
+                logo_url = f"https://eodhd.com/img/logos/US/{str(row['symbol']).lower()}.png"
             display_price, quote_status, quote_as_of = display_marks[(row["market"], row["symbol"])]
             market_value = _float(row["quantity"]) * display_price * _float(row["fx_to_usd"], 1)
             cost = _float(row["quantity"]) * _float(row["average_cost_usd"])
@@ -857,7 +886,8 @@ class R2D2PaperService:
             if quote_status == "live" and decision_state == "awaiting live quote":
                 decision_state = "live monitoring"
             position_models.append(R2D2Position(
-                market=row["market"], symbol=row["symbol"], name=row["name"], currency=row["currency"],
+                market=row["market"], symbol=row["symbol"], name=row["name"], logo_url=logo_url,
+                currency=row["currency"],
                 quantity=_float(row["quantity"]), average_cost_local=_float(row["average_cost_local"]),
                 last_price_local=display_price, market_value_usd=round(market_value, 2),
                 unrealized_pnl_usd=round(pnl, 2), unrealized_return_percent=round(pnl / cost * 100, 2) if cost else 0,
@@ -1031,6 +1061,14 @@ class R2D2PaperService:
                         orders_today += rotation_trades
                         signals += 1
                         positions = self.repo.positions(experiment["id"])
+                    continue
+                if self.repo.sold_on_session(
+                    experiment["id"], candidate["market"], candidate["symbol"], local_day,
+                ):
+                    self.repo.save_decision(
+                        experiment["id"], cycle_id, candidate, "REJECT",
+                        ["Full exit already executed in this session; capital must rotate to another opportunity"],
+                    )
                     continue
                 cooldown_since = now - timedelta(minutes=self.settings.r2d2_trade_cooldown_minutes)
                 if self.repo.in_cooldown(
@@ -1213,6 +1251,14 @@ class R2D2PaperService:
                 _float(technical.get("momentum30")) < -0.35,
                 str(technical.get("price_structure")) == "breakdown",
             ))
+            failed_entry_votes = sum((
+                quote.price < _float(technical.get("vwap"), quote.price),
+                quote.price < _float(technical.get("ema8"), quote.price),
+                _float(technical.get("momentum15")) < 0,
+                _float(technical.get("momentum30")) < 0,
+                _float(technical.get("macd_histogram")) < 0
+                and _float(technical.get("macd_acceleration")) <= 0,
+            ))
             defense = self._technical_defense(
                 technical=technical,
                 price=quote.price,
@@ -1251,6 +1297,15 @@ class R2D2PaperService:
                 reason = (
                     f"Immediate hard stop at {pnl_pct:+.2f}% on a live quote; "
                     f"maximum position-loss policy is {self.settings.r2d2_max_position_loss_percent:.2f}%."
+                )
+            elif (
+                held_minutes >= FAILED_ENTRY_MINUTES
+                and pnl_pct <= -FAILED_ENTRY_LOSS_PERCENT
+                and failed_entry_votes >= 3
+            ):
+                reason = (
+                    f"Failed-entry fast exit at {pnl_pct:+.2f}% after {held_minutes:.1f} minutes: "
+                    f"{failed_entry_votes}/5 live timing signals invalidated the setup."
                 )
             elif defense["critical"]:
                 reason = (
@@ -1408,6 +1463,7 @@ class R2D2PaperService:
                 "live_composite_score": live_composite,
                 "stop_breach_count": stop_breaches,
                 "bearish_votes": bearish_votes,
+                "failed_entry_votes": failed_entry_votes,
                 "technical_defense": defense,
                 "defense_streak": defense_streak,
                 "defense_reductions": defense_reductions,
@@ -1611,6 +1667,7 @@ class R2D2PaperService:
                 continue
             output.append({
                 "market": "B3", "symbol": item.symbol, "name": item.name, "currency": "BRL",
+                "logo_url": item.logo_url,
                 "price": item.price, "quote_as_of": item.as_of, "upside": item.tp_upside_percent,
                 "buy_in_distance": item.price_vs_buy_in_percent, "risk_score": item.risk_score,
                 "fundamental_score": min(100.0, item.power_score),
@@ -1785,6 +1842,7 @@ class R2D2PaperService:
             day_score = self._day_technical_score(row.change_percent)
             item = {
                 "market": market, "symbol": row.symbol, "name": row.name, "currency": "USD",
+                "logo_url": f"https://eodhd.com/img/logos/US/{row.symbol.lower()}.png",
                 "security_type": security_type,
                 "price": row.price, "quote_as_of": row.as_of, "upside": upside,
                 "buy_in_distance": distance, "risk_score": risk, "fundamental_score": fundamental_score,
@@ -2132,7 +2190,7 @@ class R2D2PaperService:
             bool(item.get("technical_validated")),
             item.get("market") not in ACTIVE_MARKETS or item.get("quote_status") == "live",
             item["upside"] >= 20.0,
-            item["risk_score"] <= 60.0,
+            item["risk_score"] <= 55.0,
             item["confidence"] >= 65.0,
             item["buy_in_distance"] <= 20.0,
             item["technical_score"] >= 72.0,
@@ -2141,6 +2199,16 @@ class R2D2PaperService:
             str(indicators.get("trend_state")) == "bullish",
             str(indicators.get("volume_state")) != "distribution",
             tactical_structure,
+            _float(indicators.get("relative_volume"), 1.0) >= 1.05,
+            _float(item.get("price")) >= _float(indicators.get("vwap")) > 0,
+            _float(item.get("price")) >= _float(indicators.get("ema8")) > 0,
+            _float(indicators.get("ema8")) > _float(indicators.get("ema20")) > 0,
+            _float(indicators.get("momentum15")) >= 0.10,
+            _float(indicators.get("momentum30")) >= 0.15,
+            _float(indicators.get("macd_histogram")) > 0,
+            _float(indicators.get("macd_acceleration")) >= 0,
+            48.0 <= _float(indicators.get("rsi14")) <= 76.0,
+            _float(indicators.get("relative_strength")) > 0,
         ))
         if tactical_route:
             return "BUY", [
@@ -2151,6 +2219,14 @@ class R2D2PaperService:
         momentum30 = _float(indicators.get("momentum30"))
         momentum60 = _float(indicators.get("momentum60"))
         relative_volume = _float(indicators.get("relative_volume"), 1.0)
+        price = _float(item.get("price"))
+        vwap = _float(indicators.get("vwap"))
+        ema8 = _float(indicators.get("ema8"))
+        ema20 = _float(indicators.get("ema20"))
+        macd_histogram = _float(indicators.get("macd_histogram"))
+        macd_acceleration = _float(indicators.get("macd_acceleration"))
+        rsi14 = _float(indicators.get("rsi14"))
+        relative_strength = _float(indicators.get("relative_strength"))
         modeled_edge = round(
             max(momentum15, 0.0) * 0.45
             + max(momentum30, 0.0) * 0.25
@@ -2159,24 +2235,30 @@ class R2D2PaperService:
             + max(item["technical_score"] - 60.0, 0.0) * 0.015,
             3,
         )
-        intraday_structure = (
-            str(indicators.get("price_structure")) in {"higher-highs", "breakout"}
-            or (momentum15 > 0.05 and momentum30 > 0.0)
-        )
+        intraday_structure = str(indicators.get("price_structure")) in {"higher-highs", "breakout"}
         intraday_route = all((
             bool(item.get("technical_validated")),
             item.get("market") in ACTIVE_MARKETS,
             item.get("quote_status") == "live",
             item["upside"] >= 0.0,
-            item["risk_score"] <= 72.0,
-            item["confidence"] >= 40.0,
-            item["buy_in_distance"] <= 40.0,
-            item["technical_score"] >= 62.0,
-            item["composite_score"] >= 55.0,
+            item["risk_score"] <= 55.0,
+            item["confidence"] >= 55.0,
+            item["buy_in_distance"] <= 25.0,
+            item["technical_score"] >= 72.0,
+            item["composite_score"] >= 62.0,
             str(indicators.get("data_status")) == "live",
             str(indicators.get("trend_state")) == "bullish",
             str(indicators.get("volume_state")) != "distribution",
             intraday_structure,
+            momentum15 >= 0.15,
+            momentum30 >= 0.20,
+            momentum60 > 0,
+            relative_volume >= 1.05,
+            price > 0 and vwap > 0 and price >= vwap,
+            ema8 > 0 and ema20 > 0 and price >= ema8 and ema8 > ema20,
+            macd_histogram > 0 and macd_acceleration >= 0,
+            48.0 <= rsi14 <= 74.0,
+            relative_strength > 0,
             modeled_edge >= MIN_INTRADAY_EDGE_PERCENT,
         ))
         item["modeled_intraday_edge_percent"] = modeled_edge
