@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Hyperspace tunnel mark</title>
+  <defs>
+    <radialGradient id="space" cx="42%" cy="48%" r="70%">
+      <stop offset="0" stop-color="#050617"/>
+      <stop offset=".35" stop-color="#171153"/>
+      <stop offset=".72" stop-color="#301071"/>
+      <stop offset="1" stop-color="#080a19"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="42" y1="35" x2="217" y2="222" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a0"/>
+      <stop offset=".27" stop-color="#e8ba36"/>
+      <stop offset=".67" stop-color="#91600f"/>
+      <stop offset="1" stop-color="#f2cf62"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="73" y1="126" x2="226" y2="45" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".26" stop-color="#70e4ff"/>
+      <stop offset=".6" stop-color="#6f58ff"/>
+      <stop offset="1" stop-color="#ee4cff"/>
+    </linearGradient>
+    <filter id="glow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <circle cx="128" cy="128" r="105" fill="url(#space)" stroke="url(#gold)" stroke-width="8"/>
+  <g fill="none" stroke-linecap="round" filter="url(#glow)">
+    <path d="M108 126 28 45M107 132 21 115M108 138 31 202M114 119 83 25M116 142 92 231M122 115l4-92M124 145l7 88M132 115l42-88M133 143l50 82M139 120l86-68M141 127l93-11M141 134l83 76" stroke="url(#beam)" stroke-width="5"/>
+    <path d="M103 122 48 75M103 136 48 176M111 114 97 57M114 147l-7 53M139 114l31-56M144 124l55-37M145 139l49 43" stroke="#fff" stroke-width="2.5" opacity=".92"/>
+  </g>
+  <ellipse cx="121" cy="130" rx="31" ry="27" fill="#03040c" stroke="#765cff" stroke-width="4"/>
+  <ellipse cx="121" cy="130" rx="12" ry="10" fill="#000" stroke="#f1cd5c" stroke-width="3" filter="url(#glow)"/>
+  <path d="M54 62A97 97 0 0 1 202 54M204 199A98 98 0 0 1 60 204" fill="none" stroke="#f7dc78" stroke-width="4" stroke-linecap="round" opacity=".75"/>
+</svg>

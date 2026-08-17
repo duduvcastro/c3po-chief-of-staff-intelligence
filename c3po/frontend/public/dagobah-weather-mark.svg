@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Dagobah weather sentinel</title>
+  <defs>
+    <linearGradient id="gold" x1="38" y1="30" x2="206" y2="222" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a0"/>
+      <stop offset=".28" stop-color="#e8ba36"/>
+      <stop offset=".67" stop-color="#9c6710"/>
+      <stop offset="1" stop-color="#f2cf62"/>
+    </linearGradient>
+    <linearGradient id="sage" x1="84" y1="76" x2="153" y2="177" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#98ad69"/>
+      <stop offset=".48" stop-color="#627d4d"/>
+      <stop offset="1" stop-color="#304a37"/>
+    </linearGradient>
+    <linearGradient id="bronze" x1="76" y1="169" x2="171" y2="227" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dfbc72"/>
+      <stop offset=".5" stop-color="#76502a"/>
+      <stop offset="1" stop-color="#b98a42"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <path d="M42 151A92 92 0 0 1 197 58" fill="none" stroke="url(#gold)" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="190" cy="55" r="21" fill="url(#gold)" filter="url(#glow)"/>
+  <path d="M166 64c9-11 27-12 38-3 13-1 24 7 25 18H158c0-7 3-12 8-15Z" fill="#d8d5bd" stroke="#7b6a35" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M58 108 9 91c-7-2-10 7-5 12l53 49 26-19Z" fill="url(#sage)" stroke="url(#gold)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="m198 108 49-17c7-2 10 7 5 12l-53 49-26-19Z" fill="url(#sage)" stroke="url(#gold)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M80 193c-12-15-18-34-18-58 0-45 27-79 66-79s66 34 66 79c0 24-6 43-18 58Z" fill="url(#sage)" stroke="url(#gold)" stroke-width="6"/>
+  <path d="M88 118c11-14 27-13 35 1-9 16-27 16-35-1Z" fill="#11130f" stroke="#c8a13b" stroke-width="3"/>
+  <path d="M133 119c9-14 26-15 35-1-8 17-26 17-35 1Z" fill="#11130f" stroke="#c8a13b" stroke-width="3"/>
+  <circle cx="108" cy="116" r="3" fill="#f6d66d"/>
+  <circle cx="149" cy="116" r="3" fill="#f6d66d"/>
+  <path d="M112 93q16-17 32 0M106 82q22-19 44 0M119 136q9 7 18 0M113 153q15 9 30 0" fill="none" stroke="#2d4434" stroke-width="4" stroke-linecap="round"/>
+  <path d="M63 221c5-39 29-59 65-59s60 20 65 59l-23 20H86Z" fill="url(#bronze)" stroke="url(#gold)" stroke-width="6" stroke-linejoin="round"/>
+  <path d="m89 181 39 29 39-29M79 211h98" fill="none" stroke="#e4c474" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>
+</svg>

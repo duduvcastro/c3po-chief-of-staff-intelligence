@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Last Jedi opportunity mark</title>
+  <defs>
+    <radialGradient id="field" cx="46%" cy="38%" r="68%">
+      <stop offset="0" stop-color="#332410"/>
+      <stop offset=".58" stop-color="#12100d"/>
+      <stop offset="1" stop-color="#050607"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="44" y1="31" x2="211" y2="226" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a0"/>
+      <stop offset=".24" stop-color="#eec84f"/>
+      <stop offset=".55" stop-color="#a16c14"/>
+      <stop offset=".78" stop-color="#6f4308"/>
+      <stop offset="1" stop-color="#f0cb5d"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="93" y1="67" x2="158" y2="159" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f4d99a"/>
+      <stop offset=".45" stop-color="#c99747"/>
+      <stop offset="1" stop-color="#754311"/>
+    </linearGradient>
+    <linearGradient id="robe" x1="76" y1="139" x2="176" y2="229" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f0d889"/>
+      <stop offset=".42" stop-color="#9c721f"/>
+      <stop offset="1" stop-color="#3e2c0c"/>
+    </linearGradient>
+    <linearGradient id="saber" x1="192" y1="37" x2="90" y2="187" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".44" stop-color="#d9f7ff"/>
+      <stop offset="1" stop-color="#69d8ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity=".58"/>
+    </filter>
+    <filter id="saberGlow" x="-110%" y="-110%" width="320%" height="320%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="crest"><circle cx="128" cy="128" r="112"/></clipPath>
+  </defs>
+
+  <circle cx="128" cy="128" r="112" fill="url(#field)" stroke="url(#gold)" stroke-width="7"/>
+  <circle cx="128" cy="128" r="102" fill="none" stroke="#d9ab35" stroke-width="2" opacity=".58"/>
+  <g clip-path="url(#crest)" filter="url(#shadow)">
+    <path d="M54 232c5-38 22-65 49-79h48c30 15 47 42 51 79Z" fill="url(#robe)" stroke="#d5a83c" stroke-width="4"/>
+    <path d="m78 229 13-58 29 21 10 37Zm100 0-13-60-30 23-8 37Z" fill="#2a2112" opacity=".72"/>
+    <path d="M99 158c6 19 14 31 29 34 15-3 24-16 29-34l-14-13h-31Z" fill="url(#skin)" stroke="#7e5015" stroke-width="3"/>
+    <path d="M85 99c0-40 17-65 45-65 31 0 48 24 48 65l-12 36-31 24-34-19Z" fill="#2b1a0e" stroke="#c5912c" stroke-width="4"/>
+    <path d="M99 77c6-21 21-31 41-28 18 3 29 17 29 41l-7 43-28 24-30-18-10-36Z" fill="url(#skin)" stroke="#e4bd55" stroke-width="3"/>
+    <path d="M91 91c1-39 17-61 43-61 21 0 36 13 43 39-14-11-27-15-42-15-16 0-30 8-44 37Z" fill="#28180c" stroke="#b47f22" stroke-width="4"/>
+    <path d="M142 33c19 0 32 9 40 25l-14 4-18-9Z" fill="#1b120a" stroke="#9f6d1d" stroke-width="3"/>
+    <circle cx="169" cy="51" r="17" fill="#1a1109" stroke="url(#gold)" stroke-width="4"/>
+    <path d="M105 102c8-6 16-6 23-1M140 99c8-4 15-3 22 2" fill="none" stroke="#4a290d" stroke-width="4" stroke-linecap="round"/>
+    <path d="M108 108c6 4 12 4 18 0M142 106c6 4 12 4 18-1" fill="none" stroke="#111317" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="119" cy="107" r="2" fill="#f6db6c"/>
+    <circle cx="151" cy="105" r="2" fill="#f6db6c"/>
+    <path d="m135 108-5 18 9 2" fill="none" stroke="#7b4b18" stroke-width="3" stroke-linecap="round"/>
+    <path d="M123 139c8 4 16 4 24-1" fill="none" stroke="#6c3017" stroke-width="3" stroke-linecap="round"/>
+    <path d="M103 84c8-17 22-27 43-29M101 92c14-10 29-14 47-12" fill="none" stroke="#e2b846" stroke-width="2" opacity=".65"/>
+    <path d="M76 204c13-21 27-36 43-44l15 23-24 32Z" fill="#c2953b" stroke="#4d330d" stroke-width="4"/>
+    <path d="M181 207c-11-23-22-37-38-46l-14 22 23 35Z" fill="#b6872f" stroke="#4d330d" stroke-width="4"/>
+    <path d="M103 186c8-9 17-11 25-5l10 13-14 14-25-7Z" fill="url(#skin)" stroke="#755019" stroke-width="3"/>
+    <path d="M142 171c9-4 17 0 23 11l-12 19-22-9Z" fill="url(#skin)" stroke="#755019" stroke-width="3"/>
+    <g transform="rotate(35 132 177)">
+      <rect x="123" y="157" width="18" height="54" rx="6" fill="#1b1e21" stroke="url(#gold)" stroke-width="4"/>
+      <path d="M127 165h10M127 176h10M127 188h10M130 157v54" stroke="#e8bd43" stroke-width="2" opacity=".8"/>
+    </g>
+    <path d="M145 160 216 55" stroke="#45c7ff" stroke-width="15" stroke-linecap="round" opacity=".42" filter="url(#saberGlow)"/>
+    <path d="M145 160 216 55" stroke="url(#saber)" stroke-width="7" stroke-linecap="round" filter="url(#saberGlow)"/>
+    <path d="M145 160 216 55" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+  <path d="M46 190c17 30 45 50 82 50s66-20 82-50" fill="none" stroke="url(#gold)" stroke-width="5" stroke-linecap="round" opacity=".82"/>
+</svg>

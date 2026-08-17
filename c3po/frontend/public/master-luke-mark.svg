@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Master Luke mark</title>
+  <defs>
+    <radialGradient id="field" cx="48%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#202936"/>
+      <stop offset=".5" stop-color="#101318"/>
+      <stop offset="1" stop-color="#050607"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="37" y1="28" x2="219" y2="231" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a0"/>
+      <stop offset=".24" stop-color="#edc54b"/>
+      <stop offset=".58" stop-color="#9c6812"/>
+      <stop offset=".82" stop-color="#5d3e08"/>
+      <stop offset="1" stop-color="#f2cf62"/>
+    </linearGradient>
+    <linearGradient id="hair" x1="94" y1="54" x2="163" y2="126" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e1be70"/>
+      <stop offset=".34" stop-color="#9e6a29"/>
+      <stop offset=".72" stop-color="#593210"/>
+      <stop offset="1" stop-color="#25170c"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="106" y1="79" x2="157" y2="163" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f0c18d"/>
+      <stop offset=".52" stop-color="#bd7948"/>
+      <stop offset="1" stop-color="#6c351b"/>
+    </linearGradient>
+    <linearGradient id="tunic" x1="78" y1="151" x2="185" y2="231" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff9dc"/>
+      <stop offset=".42" stop-color="#d8cba7"/>
+      <stop offset="1" stop-color="#7b6c4e"/>
+    </linearGradient>
+    <linearGradient id="saber" x1="70" y1="24" x2="113" y2="204" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset=".36" stop-color="#d9f7ff"/>
+      <stop offset="1" stop-color="#42c9ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity=".68"/>
+    </filter>
+    <filter id="blueGlow" x="-120%" y="-80%" width="340%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="crest"><circle cx="128" cy="128" r="110"/></clipPath>
+  </defs>
+
+  <circle cx="128" cy="128" r="112" fill="url(#field)" stroke="url(#gold)" stroke-width="7"/>
+  <circle cx="128" cy="128" r="102" fill="none" stroke="#d5a735" stroke-width="2" opacity=".54"/>
+  <g clip-path="url(#crest)" filter="url(#shadow)">
+    <path d="M53 232c7-38 31-66 69-79h30c35 15 55 41 61 79Z" fill="url(#tunic)" stroke="#a9863b" stroke-width="4"/>
+    <path d="m91 170 34-19 33 2 31 19-20 61H91Z" fill="#e9dfbf" stroke="#796543" stroke-width="4"/>
+    <path d="m106 161 22 36 21-43 18 16-15 63h-50l-14-57Z" fill="url(#tunic)" stroke="#a58c57" stroke-width="3"/>
+    <path d="M98 101c1-33 15-53 38-56 25 4 39 24 40 57l-7 38-31 31-33-29Z" fill="url(#skin)" stroke="#c88f52" stroke-width="3"/>
+    <path d="M94 103c-3-31 9-56 35-67 30-2 50 18 54 52-7-9-16-15-26-19-9 12-29 20-58 23Z" fill="url(#hair)" stroke="#b98236" stroke-width="4"/>
+    <path d="M99 83c6-24 21-38 44-42 15 4 26 14 32 30-14-8-26-10-36-6-9 8-22 14-40 18Z" fill="#d0a45f" opacity=".68"/>
+    <path d="M98 92c-7 11-7 25 0 41l9-24Zm77-7c8 12 9 26 3 42l-10-23Z" fill="url(#hair)" stroke="#754416" stroke-width="3"/>
+    <path d="M108 111c7-5 14-5 21-1m15 0c7-4 14-3 21 2" fill="none" stroke="#5b2f18" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M111 116c5 3 11 3 16 0m19 0c5 3 10 3 16 0" fill="none" stroke="#17171a" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="121" cy="115" r="2" fill="#7edcff"/>
+    <circle cx="154" cy="115" r="2" fill="#7edcff"/>
+    <path d="m137 117-5 18 9 2" fill="none" stroke="#7a4425" stroke-width="3" stroke-linecap="round"/>
+    <path d="M122 146c10 6 20 6 30 0" fill="none" stroke="#6e311f" stroke-width="3" stroke-linecap="round"/>
+    <path d="M109 156c17 12 36 12 56-1" fill="none" stroke="#d69b61" stroke-width="2" opacity=".72"/>
+    <g transform="rotate(-14 88 189)">
+      <rect x="78" y="158" width="19" height="64" rx="6" fill="#171a1e" stroke="url(#gold)" stroke-width="4"/>
+      <path d="M82 168h11m-11 12h11m-11 13h11m-7-35v64" stroke="#e8bd43" stroke-width="2" opacity=".82"/>
+    </g>
+    <path d="M88 160 60 22" stroke="#42c8ff" stroke-width="17" stroke-linecap="round" opacity=".38" filter="url(#blueGlow)"/>
+    <path d="M88 160 60 22" stroke="url(#saber)" stroke-width="7" stroke-linecap="round" filter="url(#blueGlow)"/>
+    <path d="M88 160 60 22" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+  <path d="M46 190c17 30 45 50 82 50s66-20 82-50" fill="none" stroke="url(#gold)" stroke-width="5" stroke-linecap="round" opacity=".8"/>
+</svg>

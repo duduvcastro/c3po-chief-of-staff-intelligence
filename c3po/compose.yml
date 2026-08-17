@@ -1,0 +1,163 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: c3po
+      POSTGRES_USER: c3po
+      POSTGRES_PASSWORD: ${C3PO_DB_PASSWORD:-c3po-local-only}
+    volumes:
+      - c3po_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U c3po -d c3po"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - c3po_internal
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
+      C3PO_LEGACY_ROOT: /legacy
+      C3PO_MIGRATIONS_DIR: /app/db
+      C3PO_CORS_ORIGINS: http://localhost:8081,http://127.0.0.1:8081,http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - ..:/legacy:ro
+      - c3po_one_pagers:/app/generated-one-pagers
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - c3po_internal
+      - legacy_proxy
+
+  investor-relations-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
+      C3PO_MIGRATIONS_DIR: /app/db
+    command: ["python", "-m", "app.ir_worker"]
+    volumes:
+      - c3po_one_pagers:/app/generated-one-pagers
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - c3po_internal
+      - legacy_proxy
+
+  valuation-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
+      C3PO_MIGRATIONS_DIR: /app/db
+      TZ: America/Sao_Paulo
+    command: ["python", "-m", "app.valuation_worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - c3po_internal
+      - legacy_proxy
+
+  server-usage-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
+      C3PO_MIGRATIONS_DIR: /app/db
+      C3PO_SERVER_USAGE_SERVER_ID: lightsail-sa-east-1
+      C3PO_SERVER_USAGE_SERVER_NAME: Chief of Staff Digital
+      C3PO_SERVER_USAGE_REGION: São Paulo · sa-east-1
+      C3PO_SERVER_USAGE_CPU_COUNT: 2
+      C3PO_SERVER_USAGE_PROC_STAT_PATH: /host/proc/stat
+      C3PO_SERVER_USAGE_DISK_PATH: /host/disk
+      C3PO_SERVER_USAGE_INTERVAL_SECONDS: 60
+    command: ["python", "-m", "app.server_usage_worker"]
+    volumes:
+      - /proc/stat:/host/proc/stat:ro
+      - /opt/chief-of-staff-digital:/host/disk:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - c3po_internal
+
+  r2d2-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
+      C3PO_MIGRATIONS_DIR: /app/db
+      C3PO_R2D2_EXPERIMENT_CODE: R2D2-90D-001
+      C3PO_R2D2_START_DATE: "2026-08-17"
+      C3PO_R2D2_CHECKPOINT_DAYS: 90
+      C3PO_R2D2_STARTING_CAPITAL_USD: 1000000
+      C3PO_R2D2_CYCLE_SECONDS: 60
+      C3PO_R2D2_MAX_POSITIONS: 20
+      C3PO_R2D2_MAX_POSITION_PERCENT: 6
+      C3PO_R2D2_MAX_MARKET_PERCENT: 48
+      C3PO_R2D2_TRADE_COOLDOWN_MINUTES: 8
+      C3PO_R2D2_MAX_DAILY_ORDERS: 120
+      TZ: America/Sao_Paulo
+    command: ["python", "-m", "app.r2d2_worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - c3po_internal
+      - legacy_proxy
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_C3PO_API_URL: ${C3PO_PUBLIC_API_URL:-}
+    ports:
+      - "127.0.0.1:8081:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      c3po_internal:
+      legacy_proxy:
+        aliases:
+          - c3po-web
+
+volumes:
+  c3po_postgres:
+  c3po_one_pagers:
+
+networks:
+  c3po_internal:
+    internal: true
+  legacy_proxy:
+    external: true
+    name: chief-of-staff-digital_default

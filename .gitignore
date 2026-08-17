@@ -1,0 +1,60 @@
+# Secrets and local configuration
+.secrets/
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+
+# Python
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+**/.pytest_cache/
+.venv/
+**/.venv/
+venv/
+**/venv/
+.coverage
+htmlcov/
+
+# Node and Next.js
+node_modules/
+**/node_modules/
+.pnpm-store/
+**/.next/
+**/frontend/out/
+npm-debug.log*
+pnpm-debug.log*
+
+# Generated reports, private source documents and runtime state
+output/
+outputs/
+tmp/
+c3po/data/
+work/billfish_reports/
+work/whatsapp_unread_*.json
+whatsapp_session/
+**/whatsapp_session/
+*.sqlite
+*.sqlite3
+*.db
+
+# OS and editor files
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+*~
+
+# Deployment state
+.deploy-version
+.deployments/
+.git-c3po/

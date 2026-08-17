@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Midi-Chlorians Finance mark</title>
+  <defs>
+    <radialGradient id="field" cx="50%" cy="45%" r="72%">
+      <stop offset="0" stop-color="#32152b"/>
+      <stop offset=".5" stop-color="#15101c"/>
+      <stop offset="1" stop-color="#050608"/>
+    </radialGradient>
+    <radialGradient id="scan" cx="55%" cy="44%" r="58%">
+      <stop offset="0" stop-color="#ffbddc" stop-opacity=".92"/>
+      <stop offset=".38" stop-color="#d62572" stop-opacity=".52"/>
+      <stop offset=".76" stop-color="#5e1b51" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#0a0c13" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="38" y1="24" x2="218" y2="231" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a0"/>
+      <stop offset=".24" stop-color="#edc54b"/>
+      <stop offset=".58" stop-color="#9c6812"/>
+      <stop offset=".82" stop-color="#f1c84d"/>
+      <stop offset="1" stop-color="#62420b"/>
+    </linearGradient>
+    <linearGradient id="cell" x1="72" y1="80" x2="190" y2="172" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffe4f1"/>
+      <stop offset=".38" stop-color="#aeefff"/>
+      <stop offset=".7" stop-color="#55b9dd"/>
+      <stop offset="1" stop-color="#f68dc2"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.4"/>
+    </filter>
+  </defs>
+  <rect x="5" y="5" width="246" height="246" rx="20" fill="url(#field)" stroke="#7d5d14" stroke-width="2"/>
+  <path d="M25 65V25h40M191 25h40v40M231 191v40h-40M65 231H25v-40" fill="none" stroke="url(#gold)" stroke-linecap="round" stroke-width="4"/>
+  <circle cx="128" cy="128" r="91" fill="url(#scan)" stroke="url(#gold)" stroke-width="3"/>
+  <circle cx="128" cy="128" r="73" fill="none" stroke="#d6a92f" stroke-opacity=".5"/>
+  <circle cx="128" cy="128" r="53" fill="none" stroke="#f1c84d" stroke-dasharray="3 7" stroke-opacity=".58"/>
+  <g fill="#ff9dcc" filter="url(#soft)" opacity=".78">
+    <circle cx="89" cy="73" r="8"/><circle cx="166" cy="69" r="6"/><circle cx="188" cy="118" r="8"/>
+    <circle cx="70" cy="145" r="7"/><circle cx="96" cy="189" r="6"/><circle cx="177" cy="177" r="9"/>
+  </g>
+  <g transform="rotate(-17 130 129)" filter="url(#glow)">
+    <ellipse cx="130" cy="129" rx="61" ry="34" fill="url(#cell)" stroke="#e9faff" stroke-width="2"/>
+    <ellipse cx="130" cy="129" rx="46" ry="24" fill="#dffaff" fill-opacity=".28" stroke="#6ac8e7" stroke-opacity=".72"/>
+    <ellipse cx="137" cy="126" rx="17" ry="11" fill="#fff7ff" fill-opacity=".9"/>
+    <path d="M85 122c22-18 45-21 72-12M100 146c20 6 42 4 61-9" fill="none" stroke="#7cc8df" stroke-linecap="round" stroke-opacity=".75"/>
+  </g>
+  <circle cx="128" cy="128" r="91" fill="none" stroke="#ff536f" stroke-opacity=".38"/>
+  <g fill="none" stroke="#f4cc58" stroke-linecap="round" stroke-width="2">
+    <path d="M128 33v12M128 211v12M33 128h12M211 128h12"/>
+    <path d="M62 62l8 8M186 186l8 8M194 62l-8 8M70 186l-8 8" opacity=".7"/>
+  </g>
+  <circle cx="47" cy="47" r="17" fill="#0b0c10" stroke="#e9c34d" stroke-width="2"/>
+  <text x="47" y="52" fill="#f6d76f" font-family="Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle">31</text>
+  <path d="M104 218h48" stroke="#f4cc58" stroke-linecap="round" stroke-width="3"/>
+</svg>

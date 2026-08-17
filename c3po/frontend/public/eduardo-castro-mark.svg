@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Eduardo Castro illustrated profile mark</title>
+  <defs>
+    <radialGradient id="space" cx="50%" cy="36%" r="72%">
+      <stop offset="0" stop-color="#2b261a"/>
+      <stop offset=".5" stop-color="#111319"/>
+      <stop offset="1" stop-color="#05070a"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="33" y1="25" x2="223" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a1"/>
+      <stop offset=".3" stop-color="#efc64a"/>
+      <stop offset=".66" stop-color="#8b5e13"/>
+      <stop offset="1" stop-color="#f3d16d"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="104" y1="78" x2="151" y2="181" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f2c09a"/>
+      <stop offset=".58" stop-color="#d98d62"/>
+      <stop offset="1" stop-color="#a95636"/>
+    </linearGradient>
+    <linearGradient id="hair" x1="81" y1="47" x2="172" y2="137" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8a4c20"/>
+      <stop offset=".48" stop-color="#4b250f"/>
+      <stop offset="1" stop-color="#211007"/>
+    </linearGradient>
+    <linearGradient id="shirt" x1="108" y1="170" x2="145" y2="237" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff6d9"/>
+      <stop offset="1" stop-color="#c5b792"/>
+    </linearGradient>
+    <clipPath id="disc"><circle cx="128" cy="128" r="108"/></clipPath>
+  </defs>
+
+  <rect x="5" y="5" width="246" height="246" rx="30" fill="#08090c" stroke="#7d6119" stroke-width="3"/>
+  <circle cx="128" cy="128" r="112" fill="url(#space)" stroke="url(#gold)" stroke-width="7"/>
+  <circle cx="128" cy="128" r="102" fill="none" stroke="#d9ad3e" stroke-width="1.5" opacity=".48"/>
+
+  <g clip-path="url(#disc)">
+    <g fill="#f3cf61" opacity=".72">
+      <circle cx="51" cy="67" r="1.7"/>
+      <circle cx="77" cy="42" r="1.2"/>
+      <circle cx="198" cy="58" r="1.5"/>
+      <circle cx="213" cy="117" r="1.2"/>
+      <circle cx="45" cy="151" r="1.1"/>
+    </g>
+
+    <path d="M43 246c4-41 34-68 85-73 51 5 81 32 85 73Z" fill="#111319" stroke="#050609" stroke-width="6"/>
+    <path d="M54 242c7-31 27-52 57-62l17 27 17-27c30 10 50 31 57 62Z" fill="#17191e"/>
+    <path d="M100 177h56l-7 65h-42Z" fill="url(#shirt)" stroke="#8c7b57" stroke-width="4"/>
+    <path d="m105 181 23 26 23-26-6 51h-34Z" fill="#f5e9c6"/>
+    <path d="M52 242c7-33 27-54 59-65l-12 65ZM204 242c-7-33-27-54-59-65l12 65Z" fill="#090b0e" stroke="#2b2e35" stroke-width="4"/>
+    <path d="M88 184c-16 9-27 24-31 46M168 184c16 9 27 24 31 46" fill="none" stroke="#5c3a20" stroke-width="4" opacity=".65"/>
+
+    <path d="M110 148h36v35c-4 10-10 15-18 15s-14-5-18-15Z" fill="url(#skin)" stroke="#6f341f" stroke-width="4"/>
+    <path d="M79 105c0-46 20-72 49-72s49 26 49 72v25c0 36-20 58-49 58s-49-22-49-58Z" fill="url(#skin)" stroke="#4d2416" stroke-width="5"/>
+    <path d="M79 110c-8-10-16-4-15 10 1 12 8 22 18 22M177 110c8-10 16-4 15 10-1 12-8 22-18 22" fill="url(#skin)" stroke="#69341f" stroke-width="4"/>
+
+    <path d="M78 107c-1-43 19-75 52-75 31 0 48 24 48 66-11-9-18-21-22-35-8 19-28 29-55 31l-5 24-12-13-4 23c-4-7-4-14-2-21Z" fill="url(#hair)" stroke="#271208" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M86 73c15-25 39-35 67-27M96 86c22-5 39-16 52-34M157 60c2 14 8 26 18 36" fill="none" stroke="#a35c28" stroke-width="4" stroke-linecap="round" opacity=".55"/>
+    <path d="M82 103c-6 16-7 32-2 48M174 99c7 18 7 34 1 50" fill="none" stroke="#35170a" stroke-width="7" stroke-linecap="round"/>
+
+    <path d="M95 116c8-6 18-7 27-2M135 114c9-5 18-4 26 2" fill="none" stroke="#55301f" stroke-width="5" stroke-linecap="round"/>
+    <path d="M98 124c7-5 15-5 22 0M137 123c7-5 15-5 22 0" fill="none" stroke="#272229" stroke-width="3" stroke-linecap="round"/>
+    <ellipse cx="110" cy="128" rx="5" ry="6.5" fill="#21181a"/>
+    <ellipse cx="148" cy="128" rx="5" ry="6.5" fill="#21181a"/>
+    <circle cx="112" cy="126" r="1.4" fill="#fff"/>
+    <circle cx="150" cy="126" r="1.4" fill="#fff"/>
+    <path d="m129 129-5 16 8 2" fill="none" stroke="#9b573c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M116 158c7 4 16 4 24-1" fill="none" stroke="#682d2b" stroke-width="4" stroke-linecap="round"/>
+    <path d="M119 166c7 3 14 3 20-1" fill="none" stroke="#bc765e" stroke-width="2" stroke-linecap="round" opacity=".8"/>
+    <path d="M102 146c-4 3-7 6-8 10M155 146c4 3 7 6 8 10" fill="none" stroke="#b9684b" stroke-width="2.5" stroke-linecap="round" opacity=".45"/>
+
+    <path d="M55 220c19 16 43 24 73 24s54-8 73-24" fill="none" stroke="url(#gold)" stroke-width="4" stroke-linecap="round" opacity=".76"/>
+  </g>
+</svg>

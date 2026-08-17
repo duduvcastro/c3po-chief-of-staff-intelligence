@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">TIE Fighter Usage mark</title>
+  <defs>
+    <radialGradient id="space" cx="48%" cy="40%" r="72%">
+      <stop offset="0" stop-color="#253020"/>
+      <stop offset=".48" stop-color="#11140f"/>
+      <stop offset="1" stop-color="#050607"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="38" y1="28" x2="218" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a0"/>
+      <stop offset=".24" stop-color="#edc54b"/>
+      <stop offset=".58" stop-color="#9b6711"/>
+      <stop offset=".82" stop-color="#563907"/>
+      <stop offset="1" stop-color="#f2cf62"/>
+    </linearGradient>
+    <linearGradient id="wingLeft" x1="47" y1="42" x2="100" y2="216" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#497737"/>
+      <stop offset=".34" stop-color="#1d3520"/>
+      <stop offset="1" stop-color="#080b0a"/>
+    </linearGradient>
+    <linearGradient id="wingRight" x1="162" y1="61" x2="211" y2="215" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#30363a"/>
+      <stop offset=".46" stop-color="#12171a"/>
+      <stop offset="1" stop-color="#060809"/>
+    </linearGradient>
+    <radialGradient id="cockpit" cx="42%" cy="34%" r="68%">
+      <stop offset="0" stop-color="#dbe3db"/>
+      <stop offset=".3" stop-color="#8e9993"/>
+      <stop offset=".72" stop-color="#323a3b"/>
+      <stop offset="1" stop-color="#111516"/>
+    </radialGradient>
+    <radialGradient id="window" cx="50%" cy="50%" r="62%">
+      <stop offset="0" stop-color="#9dff57"/>
+      <stop offset=".28" stop-color="#39751f"/>
+      <stop offset=".66" stop-color="#10170d"/>
+      <stop offset="1" stop-color="#020302"/>
+    </radialGradient>
+    <linearGradient id="laser" x1="130" y1="145" x2="31" y2="218" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset=".24" stop-color="#dfffaa"/>
+      <stop offset=".72" stop-color="#8dff31"/>
+      <stop offset="1" stop-color="#46b900"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity=".72"/>
+    </filter>
+    <filter id="greenGlow" x="-120%" y="-120%" width="340%" height="340%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="crest"><circle cx="128" cy="128" r="110"/></clipPath>
+  </defs>
+
+  <circle cx="128" cy="128" r="112" fill="url(#space)" stroke="url(#gold)" stroke-width="7"/>
+  <circle cx="128" cy="128" r="102" fill="none" stroke="#d6a936" stroke-width="2" opacity=".52"/>
+  <g clip-path="url(#crest)" filter="url(#shadow)">
+    <path d="M36 52 92 35l8 170-61 22Z" fill="url(#wingLeft)" stroke="#c69a37" stroke-width="5" stroke-linejoin="round"/>
+    <path d="m164 72 54-22-7 162-58 25Z" fill="url(#wingRight)" stroke="#9d8039" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M44 67 92 52M42 98l53-11M40 131l57-3M39 164l59 6M38 198l62 10M66 43l4 176" fill="none" stroke="#8cb76b" stroke-width="2.5" opacity=".62"/>
+    <path d="m169 84 43-18m-45 52 44-14m-46 49 44-9m-47 44 46 1m-25-125-7 158" fill="none" stroke="#778184" stroke-width="2.5" opacity=".58"/>
+    <path d="m88 110 34 10m37-7 20-6m-89 55 33-15m34 7 21 11" fill="none" stroke="#b58c2d" stroke-width="9" stroke-linecap="round"/>
+    <ellipse cx="140" cy="134" rx="47" ry="45" fill="url(#cockpit)" stroke="url(#gold)" stroke-width="5"/>
+    <ellipse cx="140" cy="134" rx="32" ry="31" fill="url(#window)" stroke="#202720" stroke-width="4"/>
+    <circle cx="140" cy="134" r="8" fill="#070a07" stroke="#a7ff58" stroke-width="3"/>
+    <path d="M140 103v23m0 16v23m-31-31h23m16 0h24m-54-22 16 16m12 12 17 17m0-45-17 16m-12 12-17 17" fill="none" stroke="#c1c9c1" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M111 154 20 218M128 164 56 234" stroke="#73e41d" stroke-width="14" stroke-linecap="round" opacity=".3" filter="url(#greenGlow)"/>
+    <path d="M111 154 20 218M128 164 56 234" stroke="url(#laser)" stroke-width="6" stroke-linecap="round" filter="url(#greenGlow)"/>
+    <path d="M111 154 20 218M128 164 56 234" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <path d="M46 190c17 30 45 50 82 50s66-20 82-50" fill="none" stroke="url(#gold)" stroke-width="5" stroke-linecap="round" opacity=".78"/>
+</svg>

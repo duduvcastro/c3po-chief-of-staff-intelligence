@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Dark Side helmet mark</title>
+  <defs>
+    <linearGradient id="helmet" x1="55" y1="29" x2="196" y2="224" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#49515b"/>
+      <stop offset=".25" stop-color="#171a20"/>
+      <stop offset=".67" stop-color="#030508"/>
+      <stop offset="1" stop-color="#242a31"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="54" y1="42" x2="203" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a0"/>
+      <stop offset=".27" stop-color="#e8ba36"/>
+      <stop offset=".68" stop-color="#91600f"/>
+      <stop offset="1" stop-color="#f2cf62"/>
+    </linearGradient>
+    <radialGradient id="eye" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#f0b94c"/>
+      <stop offset=".38" stop-color="#9e211c"/>
+      <stop offset="1" stop-color="#220507"/>
+    </radialGradient>
+    <filter id="glow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="2.2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <path d="M128 20c-49 0-76 35-80 91L29 211l47-12 13 28h78l13-28 47 12-19-100c-4-56-31-91-80-91Z" fill="url(#helmet)" stroke="url(#gold)" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M128 24v78M55 110c10-16 31-27 56-29l17 25 17-25c25 2 46 13 56 29" fill="none" stroke="#69727c" stroke-width="6" stroke-linecap="round" opacity=".72"/>
+  <path d="M58 111c15-12 34-16 55-13l-14 31-35-5Zm140 0c-15-12-34-16-55-13l14 31 35-5Z" fill="#080a0e" stroke="url(#gold)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="m71 112 31-6-9 15-25-3Zm114 0-31-6 9 15 25-3Z" fill="url(#eye)" filter="url(#glow)"/>
+  <path d="m128 105-24 66 24 19 24-19Z" fill="#0a0d11" stroke="url(#gold)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="m116 157 12-22 12 22-12 11Z" fill="#57616b" stroke="#d9b74e" stroke-width="3"/>
+  <path d="M87 147 68 187l40 16 20-13 20 13 40-16-19-40" fill="#080a0e" stroke="#545d67" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M104 173h48M101 183h54M106 193h44M113 165v35M128 163v38M143 165v35" fill="none" stroke="#c39a31" stroke-width="3" opacity=".9"/>
+  <path d="M87 225h82" stroke="url(#gold)" stroke-width="7" stroke-linecap="round"/>
+</svg>

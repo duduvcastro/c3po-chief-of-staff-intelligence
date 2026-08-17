@@ -1,0 +1,2394 @@
+from __future__ import annotations
+
+import json
+import logging
+import math
+import statistics
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Any
+from uuid import uuid4
+from zoneinfo import ZoneInfo
+
+from .config import Settings
+from .database import Database
+from .market_data.b3_screener import B3ScreenerService
+from .market_data.brapi import BrapiClient
+from .market_data.eodhd import EodhdClient
+from .market_data.models import canonical_us_security_type
+from .market_data.realtime import RealtimeMarketsService
+from .one_pager import OnePagerService
+from .schemas import (
+    R2D2CycleStatus,
+    R2D2DashboardResponse,
+    R2D2LearningState,
+    R2D2Position,
+    R2D2SummaryStats,
+    R2D2TrackPoint,
+    R2D2Trade,
+)
+
+logger = logging.getLogger(__name__)
+SAO_PAULO = ZoneInfo("America/Sao_Paulo")
+NEW_YORK = ZoneInfo("America/New_York")
+METHODOLOGY_VERSION = "R2D2-HYBRID-V14-TECHNICAL-DEFENSE"
+ACTIVE_MARKETS = ("NASDAQ", "NYSE")
+MIN_HOLD_MINUTES = 5
+ROTATION_MIN_HOLD_MINUTES = 10
+ROTATION_SCORE_GAP = 6.0
+DAILY_OBJECTIVE_PERCENT = 0.5
+WEEKLY_CONVICTION_MIN_SCORE = 72.0
+PROFIT_TRIGGER_PERCENT = 0.65
+PROFIT_LOCK_FLOOR_PERCENT = 0.35
+PROFIT_PULLBACK_PERCENT = 0.20
+MIN_POSITION_PERCENT = 2.5
+BASE_POSITION_PERCENT = 4.5
+MAX_DYNAMIC_POSITION_PERCENT = 6.0
+SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
+MIN_INTRADAY_EDGE_PERCENT = 0.42
+US_STOCK_SHORTLIST_PER_MARKET = 300
+US_ETF_SHORTLIST_PER_MARKET = 50
+US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
+DEPLOYMENT_TECHNICAL_REVIEW_PER_MARKET = 24
+STANDARD_TECHNICAL_REVIEW_PER_MARKET = 16
+BASE_ENTRY_POLICY = {
+    "entry_upside_floor": 20.0,
+    "max_risk_score": 48.0,
+    "min_confidence": 60.0,
+    "max_buy_in_distance": 15.0,
+    "min_technical_score": 58.0,
+    "min_composite_score": 62.0,
+}
+ENTRY_POLICY_BOUNDS = {
+    "entry_upside_floor": (18.0, 28.0),
+    "max_risk_score": (40.0, 52.0),
+    "min_confidence": (58.0, 72.0),
+    "max_buy_in_distance": (8.0, 15.0),
+    "min_technical_score": (55.0, 68.0),
+    "min_composite_score": (60.0, 72.0),
+}
+
+
+def _float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _realized_return_percent(*, gross_value_usd: Any, fees_usd: Any,
+                             realized_pnl_usd: Any) -> float | None:
+    if realized_pnl_usd is None:
+        return None
+    realized = _float(realized_pnl_usd)
+    released_cost_basis = _float(gross_value_usd) - _float(fees_usd) - realized
+    if released_cost_basis <= 0:
+        return None
+    return round(realized / released_cost_basis * 100, 4)
+
+
+def _date_value(value: Any) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value).strip().split()[0])
+
+
+class R2D2Repository:
+    """Persistent paper ledger. It deliberately exposes no real-broker operation."""
+
+    def __init__(self, database: Database) -> None:
+        self.database = database
+        if not hasattr(database, "_r2d2_memory"):
+            database._r2d2_memory = {  # type: ignore[attr-defined]
+                "experiment": None, "positions": {}, "trades": [], "snapshots": {},
+                "cycles": [], "decisions": [], "learning": [],
+            }
+
+    @property
+    def memory(self) -> dict[str, Any]:
+        return self.database._r2d2_memory  # type: ignore[attr-defined]
+
+    def ensure_experiment(self, settings: Settings) -> dict[str, Any]:
+        start = _date_value(settings.r2d2_start_date)
+        checkpoint = start + timedelta(days=max(settings.r2d2_checkpoint_days, 1) - 1)
+        mandate = {
+            "mode": "paper_only",
+            "real_broker_execution": False,
+            "markets": list(ACTIVE_MARKETS),
+            "retired_markets": {
+                "B3": "Disabled for paper intraday execution because the available quote feed is delayed by five minutes.",
+            },
+            "max_positions": settings.r2d2_max_positions,
+            "max_position_percent": settings.r2d2_max_position_percent,
+            "max_market_percent": settings.r2d2_max_market_percent,
+            "max_cash_percent": settings.r2d2_max_cash_percent,
+            "minimum_invested_percent": 100.0 - settings.r2d2_max_cash_percent,
+            "minimum_cash_buffer_percent": settings.r2d2_min_cash_buffer_percent,
+            "max_gross_exposure_percent": settings.r2d2_max_gross_exposure_percent,
+            "daily_loss_limit_percent": settings.r2d2_daily_loss_limit_percent,
+            "soft_loss_exit_percent": settings.r2d2_soft_loss_exit_percent,
+            "max_position_loss_percent": settings.r2d2_max_position_loss_percent,
+            "leverage": False,
+            "short_selling": False,
+            "derivatives": False,
+            "decision_cadence_seconds": 20,
+            "candidate_scan_seconds": settings.r2d2_cycle_seconds,
+            "daily_order_target_range": [20, 80],
+            "max_daily_orders": settings.r2d2_max_daily_orders,
+            "order_target_is_mandatory": False,
+            "efficiency_definition": "net P&L after simulated fees and slippage, never raw order count",
+            "performance_target_percent": DAILY_OBJECTIVE_PERCENT,
+            "performance_target_is_mandatory": False,
+            "horizon_policy": {
+                "daily_objective": (
+                    "Seek +0.5% at portfolio level through the tactical sleeve; never force a trade "
+                    "or weaken hard risk controls to manufacture the target."
+                ),
+                "weekly_conviction": (
+                    "A position may cross sessions while fundamental conviction, live trend, flow, "
+                    "momentum and price structure remain aligned."
+                ),
+                "decision_priority": [
+                    "confirmed hard risk", "confirmed reversal", "capital preservation",
+                    "daily portfolio objective", "weekly expected value", "turnover minimization",
+                ],
+            },
+            "exit_replacement": "immediate eligible scan across open US markets",
+            "opportunity_funnel": {
+                "coverage": "full quoted EODHD catalog for NASDAQ, NYSE, NYSE Arca and NYSE American",
+                "security_types": ["stocks", "ETFs"],
+                "deep_shortlist_per_market": {
+                    "stocks": US_STOCK_SHORTLIST_PER_MARKET,
+                    "etfs": US_ETF_SHORTLIST_PER_MARKET,
+                },
+                "technical_reviews_per_market": {
+                    "cash_deployment": DEPLOYMENT_TECHNICAL_REVIEW_PER_MARKET,
+                    "standard": STANDARD_TECHNICAL_REVIEW_PER_MARKET,
+                },
+                "entry_routes": [
+                    "strategic valuation", "tactical quality momentum",
+                    "cost-aware intraday momentum",
+                ],
+            },
+            "position_sizing": {
+                "model": "dynamic conviction-risk-volatility",
+                "minimum_percent": MIN_POSITION_PERCENT,
+                "base_percent": BASE_POSITION_PERCENT,
+                "maximum_percent": min(
+                    MAX_DYNAMIC_POSITION_PERCENT,
+                    settings.r2d2_max_position_percent,
+                ),
+                "portfolio_pacing": (
+                    "treat 25% cash as a normal ceiling, seek at least 75% invested with eligible signals, "
+                    "and preserve a 5% execution buffer"
+                ),
+                "cash_deployment": "expand technical review and size eligible entries while cash exceeds the ceiling",
+            },
+            "continuous_operation": True,
+            "checkpoint_days": settings.r2d2_checkpoint_days,
+            "checkpoint_is_termination": False,
+            "daily_learning": "versioned, bounded and audit-trailed",
+            "fundamental_layer": ["C3PO TP", "DCF", "multiples", "consensus", "buy-in", "quality", "CVM/SEC/RI"],
+            "technical_layer": [
+                "session VWAP", "EMA 8/20/50", "RSI 14", "MACD acceleration",
+                "momentum 15/30/60m", "relative volume", "OBV slope", "MFI 14",
+                "price structure", "EMA slope", "selling-volume pressure",
+                "ATR drawdown", "relative strength", "ATR regime",
+            ],
+            "exit_layer": [
+                "live-quote hard stop", "weighted technical-defense score",
+                "two-review confirmation", "progressive 50% risk reduction",
+                "defensive soft-loss exit", "adaptive ATR stop", "profit lock",
+                "multi-horizon trend and flow reversal",
+                "weekly-conviction hold", "stagnation time stop", "opportunity-cost rotation",
+                "same-cycle replacement", "anomalous tick guard",
+            ],
+            "turnover_policy": {
+                "style": "high-turnover paper intraday",
+                "target_orders_per_session": "20-80 when qualified signals exist",
+                "hard_order_cap": settings.r2d2_max_daily_orders,
+                "minimum_hold_minutes": MIN_HOLD_MINUTES,
+                "rotation_hold_minutes": ROTATION_MIN_HOLD_MINUTES,
+                "reentry_cooldown_minutes": settings.r2d2_trade_cooldown_minutes,
+                "profit_trigger_percent": PROFIT_TRIGGER_PERCENT,
+                "simulated_round_trip_cost_percent": SIMULATED_ROUND_TRIP_COST_PERCENT,
+                "minimum_modeled_edge_percent": MIN_INTRADAY_EDGE_PERCENT,
+            },
+            "quote_policy": {
+                "execution_markets": list(ACTIVE_MARKETS),
+                "required_status": "live",
+                "maximum_age_seconds": settings.r2d2_live_quote_max_age_seconds,
+                "b3_policy": "exit existing paper positions during the B3 session; never open a new B3 position",
+            },
+        }
+        now = datetime.now(timezone.utc)
+        status = "scheduled" if now.astimezone(SAO_PAULO).date() < start else "running"
+        payload = {
+            "id": str(uuid4()), "code": settings.r2d2_experiment_code, "status": status,
+            "base_currency": "USD", "starting_capital": settings.r2d2_starting_capital_usd,
+            "cash_balance": settings.r2d2_starting_capital_usd, "start_date": start,
+            "checkpoint_date": checkpoint, "methodology_version": METHODOLOGY_VERSION,
+            "mandate": mandate, "created_at": now, "updated_at": now,
+        }
+        if not self.database.database_url:
+            if not self.memory["experiment"]:
+                self.memory["experiment"] = payload
+            elif now.astimezone(SAO_PAULO).date() >= self.memory["experiment"]["start_date"]:
+                self.memory["experiment"]["status"] = "running"
+            return dict(self.memory["experiment"])
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """
+                INSERT INTO r2d2_experiments
+                    (id, code, status, starting_capital, cash_balance, start_date, end_date,
+                     checkpoint_date, is_continuous, methodology_version, mandate)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s, %s::jsonb)
+                ON CONFLICT (code) DO UPDATE SET mandate = EXCLUDED.mandate,
+                    checkpoint_date = EXCLUDED.checkpoint_date, is_continuous = TRUE,
+                    methodology_version = EXCLUDED.methodology_version, updated_at = now(),
+                    status = CASE
+                        WHEN r2d2_experiments.status = 'paused' THEN 'paused'
+                        WHEN (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+                             < r2d2_experiments.start_date THEN 'scheduled'
+                        ELSE 'running' END
+                RETURNING id::text, code, status, base_currency, starting_capital, cash_balance,
+                          start_date, checkpoint_date, methodology_version, mandate, created_at, updated_at
+                """,
+                (payload["id"], payload["code"], payload["status"], payload["starting_capital"],
+                 payload["cash_balance"], start, checkpoint, checkpoint, METHODOLOGY_VERSION, json.dumps(mandate)),
+            ).fetchone()
+            connection.commit()
+        return self._experiment(row)
+
+    @staticmethod
+    def _experiment(row: Any) -> dict[str, Any]:
+        keys = ("id", "code", "status", "base_currency", "starting_capital", "cash_balance",
+                "start_date", "checkpoint_date", "methodology_version", "mandate", "created_at", "updated_at")
+        return dict(zip(keys, row))
+
+    def positions(self, experiment_id: str) -> list[dict[str, Any]]:
+        if not self.database.database_url:
+            return [dict(value) for value in self.memory["positions"].values()]
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """SELECT market, symbol, name, currency, quantity, average_cost_local,
+                          average_cost_usd, last_price_local, fx_to_usd, high_water_price_local,
+                          stop_price_local, opened_at, updated_at, strategy_snapshot
+                   FROM r2d2_positions WHERE experiment_id = %s ORDER BY market, symbol""",
+                (experiment_id,),
+            ).fetchall()
+        keys = ("market", "symbol", "name", "currency", "quantity", "average_cost_local",
+                "average_cost_usd", "last_price_local", "fx_to_usd", "high_water_price_local",
+                "stop_price_local", "opened_at", "updated_at", "strategy_snapshot")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def update_mark(self, experiment_id: str, market: str, symbol: str, price: float, fx: float,
+                    high_water: float, stop: float, updated_at: datetime,
+                    strategy_snapshot: dict[str, Any] | None = None) -> None:
+        if not self.database.database_url:
+            item = self.memory["positions"].get((market, symbol))
+            if item:
+                item.update(last_price_local=price, fx_to_usd=fx, high_water_price_local=high_water,
+                            stop_price_local=stop, updated_at=updated_at)
+                if strategy_snapshot is not None:
+                    item["strategy_snapshot"] = strategy_snapshot
+            return
+        with self.database.connection() as connection:
+            connection.execute(
+                """UPDATE r2d2_positions SET last_price_local=%s, fx_to_usd=%s,
+                          high_water_price_local=%s, stop_price_local=%s, updated_at=%s,
+                          strategy_snapshot=COALESCE(%s::jsonb, strategy_snapshot)
+                   WHERE experiment_id=%s AND market=%s AND symbol=%s""",
+                (price, fx, high_water, stop, updated_at,
+                 json.dumps(strategy_snapshot) if strategy_snapshot is not None else None,
+                 experiment_id, market, symbol),
+            )
+            connection.commit()
+
+    def execute_trade(self, experiment: dict[str, Any], *, cycle_id: str, candidate: dict[str, Any],
+                      side: str, quantity: float, signal_price: float, fill_price: float, fx: float,
+                      fees: float, slippage: float, reason: str, decision: dict[str, Any],
+                      quote_as_of: datetime) -> dict[str, Any]:
+        trade_id = str(uuid4())
+        now = datetime.now(timezone.utc)
+        gross = quantity * fill_price * fx
+        position_key = (candidate["market"], candidate["symbol"])
+        realized: float | None = None
+        if not self.database.database_url:
+            current = self.memory["positions"].get(position_key)
+            cash = _float(experiment["cash_balance"])
+            if side == "BUY":
+                total_cost = gross + fees
+                if total_cost > cash + 0.01:
+                    raise ValueError("Paper order exceeds available cash")
+                old_qty = _float(current.get("quantity")) if current else 0.0
+                old_cost = _float(current.get("average_cost_usd")) if current else 0.0
+                new_qty = old_qty + quantity
+                avg_usd = ((old_qty * old_cost) + gross + fees) / new_qty
+                self.memory["positions"][position_key] = {
+                    "market": candidate["market"], "symbol": candidate["symbol"], "name": candidate["name"],
+                    "currency": candidate["currency"], "quantity": new_qty,
+                    "average_cost_local": avg_usd / fx, "average_cost_usd": avg_usd,
+                    "last_price_local": fill_price, "fx_to_usd": fx,
+                    "high_water_price_local": fill_price, "stop_price_local": candidate["stop_price"],
+                    "opened_at": current.get("opened_at", now) if current else now, "updated_at": now,
+                    "strategy_snapshot": decision,
+                }
+                experiment["cash_balance"] = cash - total_cost
+            else:
+                if not current or quantity > _float(current["quantity"]) + 1e-8:
+                    raise ValueError("Paper sell exceeds the virtual position")
+                realized = gross - fees - quantity * _float(current["average_cost_usd"])
+                remaining = _float(current["quantity"]) - quantity
+                experiment["cash_balance"] = cash + gross - fees
+                if remaining <= 1e-8:
+                    self.memory["positions"].pop(position_key, None)
+                else:
+                    current.update(quantity=remaining, last_price_local=fill_price, updated_at=now)
+            self.memory["experiment"].update(cash_balance=experiment["cash_balance"], status="running", updated_at=now)
+        else:
+            with self.database.connection() as connection:
+                locked = connection.execute(
+                    "SELECT cash_balance FROM r2d2_experiments WHERE id=%s FOR UPDATE",
+                    (experiment["id"],),
+                ).fetchone()
+                cash = _float(locked[0])
+                current = connection.execute(
+                    """SELECT quantity, average_cost_usd, opened_at FROM r2d2_positions
+                       WHERE experiment_id=%s AND market=%s AND symbol=%s FOR UPDATE""",
+                    (experiment["id"], candidate["market"], candidate["symbol"]),
+                ).fetchone()
+                if side == "BUY":
+                    if gross + fees > cash + 0.01:
+                        raise ValueError("Paper order exceeds available cash")
+                    old_qty, old_cost = (_float(current[0]), _float(current[1])) if current else (0.0, 0.0)
+                    new_qty = old_qty + quantity
+                    avg_usd = ((old_qty * old_cost) + gross + fees) / new_qty
+                    connection.execute(
+                        """INSERT INTO r2d2_positions
+                           (experiment_id, market, symbol, name, currency, quantity, average_cost_local,
+                            average_cost_usd, last_price_local, fx_to_usd, high_water_price_local,
+                            stop_price_local, opened_at, updated_at, strategy_snapshot)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                           ON CONFLICT (experiment_id, market, symbol) DO UPDATE SET
+                             quantity=EXCLUDED.quantity, average_cost_local=EXCLUDED.average_cost_local,
+                             average_cost_usd=EXCLUDED.average_cost_usd, last_price_local=EXCLUDED.last_price_local,
+                             fx_to_usd=EXCLUDED.fx_to_usd, high_water_price_local=GREATEST(r2d2_positions.high_water_price_local, EXCLUDED.high_water_price_local),
+                             stop_price_local=EXCLUDED.stop_price_local, updated_at=EXCLUDED.updated_at,
+                             strategy_snapshot=EXCLUDED.strategy_snapshot""",
+                        (experiment["id"], candidate["market"], candidate["symbol"], candidate["name"],
+                         candidate["currency"], new_qty, avg_usd / fx, avg_usd, fill_price, fx, fill_price,
+                         candidate["stop_price"], current[2] if current else now, now, json.dumps(decision, default=str)),
+                    )
+                    cash -= gross + fees
+                else:
+                    if not current or quantity > _float(current[0]) + 1e-8:
+                        raise ValueError("Paper sell exceeds the virtual position")
+                    realized = gross - fees - quantity * _float(current[1])
+                    remaining = _float(current[0]) - quantity
+                    if remaining <= 1e-8:
+                        connection.execute(
+                            "DELETE FROM r2d2_positions WHERE experiment_id=%s AND market=%s AND symbol=%s",
+                            (experiment["id"], candidate["market"], candidate["symbol"]),
+                        )
+                    else:
+                        connection.execute(
+                            """UPDATE r2d2_positions SET quantity=%s, last_price_local=%s,
+                                      fx_to_usd=%s, updated_at=%s
+                               WHERE experiment_id=%s AND market=%s AND symbol=%s""",
+                            (remaining, fill_price, fx, now, experiment["id"], candidate["market"], candidate["symbol"]),
+                        )
+                    cash += gross - fees
+                connection.execute(
+                    "UPDATE r2d2_experiments SET cash_balance=%s, status='running', updated_at=%s WHERE id=%s",
+                    (cash, now, experiment["id"]),
+                )
+                connection.execute(
+                    """INSERT INTO r2d2_trades
+                       (id, experiment_id, cycle_id, market, symbol, name, side, quantity,
+                        signal_price_local, fill_price_local, fx_to_usd, gross_value_usd, fees_usd,
+                        slippage_usd, realized_pnl_usd, reason, decision_snapshot, executed_at, quote_as_of)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)""",
+                    (trade_id, experiment["id"], cycle_id, candidate["market"], candidate["symbol"],
+                     candidate["name"], side, quantity, signal_price, fill_price, fx, gross, fees,
+                     slippage, realized, reason, json.dumps(decision, default=str), now, quote_as_of),
+                )
+                connection.commit()
+            experiment["cash_balance"] = cash
+        trade = {
+            "id": trade_id, "experiment_id": experiment["id"], "cycle_id": cycle_id,
+            "market": candidate["market"], "symbol": candidate["symbol"], "name": candidate["name"],
+            "side": side, "quantity": quantity, "signal_price_local": signal_price,
+            "fill_price_local": fill_price, "fx_to_usd": fx, "gross_value_usd": gross,
+            "fees_usd": fees, "slippage_usd": slippage, "realized_pnl_usd": realized,
+            "realized_return_percent": _realized_return_percent(
+                gross_value_usd=gross, fees_usd=fees, realized_pnl_usd=realized,
+            ),
+            "reason": reason, "decision_snapshot": decision, "executed_at": now,
+            "quote_as_of": quote_as_of, "currency": candidate["currency"],
+        }
+        if not self.database.database_url:
+            self.memory["trades"].append(trade)
+        return trade
+
+    def save_decision(self, experiment_id: str, cycle_id: str, candidate: dict[str, Any],
+                      action: str, reasons: list[str], trade_id: str | None = None) -> None:
+        payload = {
+            "id": str(uuid4()), "experiment_id": experiment_id, "cycle_id": cycle_id,
+            "evaluated_at": datetime.now(timezone.utc), "market": candidate["market"],
+            "symbol": candidate["symbol"], "action": action,
+            "fundamental_score": candidate.get("fundamental_score", 0),
+            "technical_score": candidate.get("technical_score", 0),
+            "risk_score": candidate.get("risk_score", 100),
+            "composite_score": candidate.get("composite_score", 0),
+            "reasons": reasons, "inputs": candidate, "trade_id": trade_id,
+        }
+        if not self.database.database_url:
+            self.memory["decisions"].append(payload)
+            return
+        with self.database.connection() as connection:
+            connection.execute(
+                """INSERT INTO r2d2_decisions
+                   (id, experiment_id, cycle_id, evaluated_at, market, symbol, action,
+                    fundamental_score, technical_score, risk_score, composite_score,
+                    reasons, inputs, trade_id)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)""",
+                (payload["id"], experiment_id, cycle_id, payload["evaluated_at"], payload["market"],
+                 payload["symbol"], action, payload["fundamental_score"], payload["technical_score"],
+                 payload["risk_score"], payload["composite_score"], json.dumps(reasons),
+                 json.dumps(candidate, default=str), trade_id),
+            )
+            connection.commit()
+
+    def save_snapshot(self, experiment_id: str, session_date: date, nav: float, cash: float,
+                      exposure: float, positions: int, is_final: bool = False) -> dict[str, Any]:
+        snapshots = self.snapshots(experiment_id)
+        prior = next((item for item in reversed(snapshots) if item["session_date"] < session_date), None)
+        if prior:
+            base = _float(prior["nav_usd"])
+        elif not self.database.database_url:
+            base = _float((self.memory.get("experiment") or {}).get("starting_capital"), nav)
+        else:
+            with self.database.connection() as connection:
+                row = connection.execute(
+                    "SELECT starting_capital FROM r2d2_experiments WHERE id=%s",
+                    (experiment_id,),
+                ).fetchone()
+            base = _float(row[0], nav) if row else nav
+        pnl = nav - base
+        daily_return = pnl / base * 100 if base else 0.0
+        payload = {
+            "session_date": session_date, "nav_usd": nav, "cash_usd": cash,
+            "daily_pnl_usd": pnl, "daily_return_percent": daily_return,
+            "gross_exposure_usd": exposure, "open_positions": positions, "is_final": is_final,
+        }
+        if not self.database.database_url:
+            self.memory["snapshots"][session_date] = payload
+            return payload
+        with self.database.connection() as connection:
+            connection.execute(
+                """INSERT INTO r2d2_daily_snapshots
+                   (experiment_id, session_date, nav_usd, cash_usd, daily_pnl_usd,
+                    daily_return_percent, gross_exposure_usd, open_positions, is_final)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (experiment_id, session_date) DO UPDATE SET
+                     nav_usd=EXCLUDED.nav_usd, cash_usd=EXCLUDED.cash_usd,
+                     daily_pnl_usd=EXCLUDED.daily_pnl_usd,
+                     daily_return_percent=EXCLUDED.daily_return_percent,
+                     gross_exposure_usd=EXCLUDED.gross_exposure_usd,
+                     open_positions=EXCLUDED.open_positions,
+                     is_final=r2d2_daily_snapshots.is_final OR EXCLUDED.is_final, updated_at=now()""",
+                (experiment_id, session_date, nav, cash, pnl, daily_return, exposure, positions, is_final),
+            )
+            connection.commit()
+        return payload
+
+    def snapshots(self, experiment_id: str) -> list[dict[str, Any]]:
+        if not self.database.database_url:
+            return [dict(value) for _, value in sorted(self.memory["snapshots"].items())]
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """SELECT session_date, nav_usd, cash_usd, daily_pnl_usd,
+                          daily_return_percent, gross_exposure_usd, open_positions, is_final
+                   FROM r2d2_daily_snapshots WHERE experiment_id=%s ORDER BY session_date""",
+                (experiment_id,),
+            ).fetchall()
+        keys = ("session_date", "nav_usd", "cash_usd", "daily_pnl_usd", "daily_return_percent",
+                "gross_exposure_usd", "open_positions", "is_final")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def finalize_before(self, experiment_id: str, session_date: date) -> None:
+        if not self.database.database_url:
+            for key, item in self.memory["snapshots"].items():
+                if key < session_date:
+                    item["is_final"] = True
+            return
+        with self.database.connection() as connection:
+            connection.execute(
+                """UPDATE r2d2_daily_snapshots SET is_final=TRUE, updated_at=now()
+                   WHERE experiment_id=%s AND session_date < %s AND is_final=FALSE""",
+                (experiment_id, session_date),
+            )
+            connection.commit()
+
+    def trades(self, experiment_id: str, limit: int = 250) -> list[dict[str, Any]]:
+        if not self.database.database_url:
+            return [dict(item) for item in reversed(self.memory["trades"][-limit:])]
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """SELECT id::text, market, symbol, name, side, quantity, signal_price_local,
+                          fill_price_local, fx_to_usd, gross_value_usd, fees_usd, slippage_usd,
+                          realized_pnl_usd, reason, executed_at, quote_as_of
+                   FROM r2d2_trades WHERE experiment_id=%s ORDER BY executed_at DESC LIMIT %s""",
+                (experiment_id, limit),
+            ).fetchall()
+        keys = ("id", "market", "symbol", "name", "side", "quantity", "signal_price_local",
+                "fill_price_local", "fx_to_usd", "gross_value_usd", "fees_usd", "slippage_usd",
+                "realized_pnl_usd", "reason", "executed_at", "quote_as_of")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def trade_summary(self, experiment_id: str) -> dict[str, int]:
+        if not self.database.database_url:
+            trades = [item for item in self.memory["trades"] if item.get("experiment_id") == experiment_id]
+            return {
+                "total_transactions": len(trades),
+                "positive_transactions": sum(_float(item.get("realized_pnl_usd")) > 0 for item in trades),
+                "negative_transactions": sum(_float(item.get("realized_pnl_usd")) < 0 for item in trades),
+            }
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """SELECT COUNT(*),
+                          COUNT(*) FILTER (WHERE realized_pnl_usd > 0),
+                          COUNT(*) FILTER (WHERE realized_pnl_usd < 0)
+                   FROM r2d2_trades WHERE experiment_id=%s""",
+                (experiment_id,),
+            ).fetchone()
+        return dict(zip(
+            ("total_transactions", "positive_transactions", "negative_transactions"),
+            (int(value or 0) for value in (row or (0, 0, 0))),
+        ))
+
+    def learning_states(self, experiment_id: str) -> list[dict[str, Any]]:
+        if not self.database.database_url:
+            return [dict(item) for item in self.memory["learning"]]
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """SELECT version, effective_date, sample_days, sample_trades,
+                          parameters, metrics, rationale, created_at
+                   FROM r2d2_learning_states
+                   WHERE experiment_id=%s ORDER BY effective_date""",
+                (experiment_id,),
+            ).fetchall()
+        keys = ("version", "effective_date", "sample_days", "sample_trades",
+                "parameters", "metrics", "rationale", "created_at")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def save_learning_state(self, experiment_id: str, state: dict[str, Any]) -> dict[str, Any]:
+        if not self.database.database_url:
+            existing = next(
+                (item for item in self.memory["learning"] if item["effective_date"] == state["effective_date"]),
+                None,
+            )
+            if existing:
+                return dict(existing)
+            payload = {**state, "created_at": datetime.now(timezone.utc)}
+            self.memory["learning"].append(payload)
+            return dict(payload)
+        with self.database.connection() as connection:
+            connection.execute(
+                """INSERT INTO r2d2_learning_states
+                       (id, experiment_id, effective_date, version, sample_days, sample_trades,
+                        parameters, metrics, rationale)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb)
+                   ON CONFLICT (experiment_id, effective_date) DO NOTHING""",
+                (str(uuid4()), experiment_id, state["effective_date"], state["version"],
+                 state["sample_days"], state["sample_trades"], json.dumps(state["parameters"]),
+                 json.dumps(state["metrics"]), json.dumps(state["rationale"])),
+            )
+            row = connection.execute(
+                """SELECT version, effective_date, sample_days, sample_trades,
+                          parameters, metrics, rationale, created_at
+                   FROM r2d2_learning_states
+                   WHERE experiment_id=%s AND effective_date=%s""",
+                (experiment_id, state["effective_date"]),
+            ).fetchone()
+            connection.commit()
+        keys = ("version", "effective_date", "sample_days", "sample_trades",
+                "parameters", "metrics", "rationale", "created_at")
+        return dict(zip(keys, row))
+
+    def in_cooldown(self, experiment_id: str, market: str, symbol: str, since: datetime) -> bool:
+        if not self.database.database_url:
+            return any(
+                row["market"] == market and row["symbol"] == symbol and row["executed_at"] >= since
+                for row in self.memory["trades"]
+            )
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """SELECT 1 FROM r2d2_trades
+                   WHERE experiment_id=%s AND market=%s AND symbol=%s AND executed_at >= %s
+                   LIMIT 1""",
+                (experiment_id, market, symbol, since),
+            ).fetchone()
+        return bool(row)
+
+    def start_cycle(self, experiment_id: str, markets: list[str], status: str = "running") -> str:
+        cycle_id = str(uuid4())
+        payload = {"id": cycle_id, "experiment_id": experiment_id, "started_at": datetime.now(timezone.utc),
+                   "completed_at": None, "status": status, "markets": markets, "scanned_count": 0,
+                   "signal_count": 0, "trade_count": 0, "error_summary": None}
+        if not self.database.database_url:
+            self.memory["cycles"].append(payload)
+            return cycle_id
+        with self.database.connection() as connection:
+            connection.execute(
+                """INSERT INTO r2d2_cycles (id, experiment_id, started_at, status, markets)
+                   VALUES (%s,%s,%s,%s,%s::jsonb)""",
+                (cycle_id, experiment_id, payload["started_at"], status, json.dumps(markets)),
+            )
+            connection.commit()
+        return cycle_id
+
+    def finish_cycle(self, cycle_id: str, status: str, scanned: int, signals: int, trades: int,
+                     error: str | None = None) -> None:
+        now = datetime.now(timezone.utc)
+        if not self.database.database_url:
+            item = next((row for row in self.memory["cycles"] if row["id"] == cycle_id), None)
+            if item:
+                item.update(completed_at=now, status=status, scanned_count=scanned,
+                            signal_count=signals, trade_count=trades, error_summary=error)
+            return
+        with self.database.connection() as connection:
+            connection.execute(
+                """UPDATE r2d2_cycles SET completed_at=%s, status=%s, scanned_count=%s,
+                          signal_count=%s, trade_count=%s, error_summary=%s WHERE id=%s""",
+                (now, status, scanned, signals, trades, error, cycle_id),
+            )
+            connection.commit()
+
+    def last_cycle(self, experiment_id: str) -> dict[str, Any] | None:
+        if not self.database.database_url:
+            matches = [item for item in self.memory["cycles"] if item["experiment_id"] == experiment_id]
+            return dict(matches[-1]) if matches else None
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """SELECT status, started_at, completed_at, scanned_count, signal_count,
+                          trade_count, error_summary FROM r2d2_cycles
+                   WHERE experiment_id=%s ORDER BY started_at DESC LIMIT 1""",
+                (experiment_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return dict(zip(("status", "started_at", "completed_at", "scanned_count", "signal_count",
+                         "trade_count", "error_summary"), row))
+
+
+class R2D2PaperService:
+    def __init__(self, settings: Settings, database: Database, realtime: RealtimeMarketsService,
+                 b3_screener: B3ScreenerService, one_pagers: OnePagerService) -> None:
+        self.settings = settings
+        self.repo = R2D2Repository(database)
+        self.realtime = realtime
+        self.b3_screener = b3_screener
+        self.one_pagers = one_pagers
+        self._us_basis: dict[str, tuple[date, dict[str, Any]]] = {}
+        self._us_backfill_attempted: dict[str, date] = {}
+        self._us_scan_counts: dict[str, dict[str, int]] = {}
+        self._intraday_cache: dict[tuple[str, str], tuple[datetime, list[dict[str, Any]]]] = {}
+        self._fx_cache: tuple[datetime, float] | None = None
+        self._active_policy = dict(BASE_ENTRY_POLICY)
+        self._learning_state: dict[str, Any] | None = None
+
+    def ensure_initialized(self) -> dict[str, Any]:
+        experiment = self.repo.ensure_experiment(self.settings)
+        if not self.repo.snapshots(experiment["id"]):
+            self.repo.save_snapshot(
+                experiment["id"], experiment["start_date"], _float(experiment["starting_capital"]),
+                _float(experiment["cash_balance"]), 0.0, 0, False,
+            )
+        self._ensure_daily_learning(experiment, datetime.now(SAO_PAULO).date())
+        return experiment
+
+    def _ensure_daily_learning(self, experiment: dict[str, Any], effective_date: date) -> dict[str, Any]:
+        states = self.repo.learning_states(experiment["id"])
+        current = next((item for item in reversed(states) if item["effective_date"] == effective_date), None)
+        if current:
+            self._active_policy = {**BASE_ENTRY_POLICY, **dict(current["parameters"])}
+            self._learning_state = current
+            return current
+
+        previous = states[-1] if states else None
+        parameters = {**BASE_ENTRY_POLICY, **(dict(previous["parameters"]) if previous else {})}
+        snapshots = [
+            item for item in self.repo.snapshots(experiment["id"])
+            if item.get("is_final") and item["session_date"] < effective_date
+        ][-30:]
+        exits = [
+            item for item in self.repo.trades(experiment["id"], limit=250)
+            if item.get("realized_pnl_usd") is not None
+            and item["executed_at"].astimezone(SAO_PAULO).date() < effective_date
+        ][:50]
+        returns = [_float(item["daily_return_percent"]) for item in snapshots]
+        realized = [_float(item["realized_pnl_usd"]) for item in exits]
+        wins = [value for value in realized if value > 0]
+        losses = [value for value in realized if value < 0]
+        gross_profit = sum(wins)
+        gross_loss = abs(sum(losses))
+        profit_factor = min(99.0, gross_profit / gross_loss) if gross_loss else (99.0 if gross_profit else 0.0)
+        peak = 0.0
+        max_drawdown = 0.0
+        for item in snapshots:
+            nav = _float(item["nav_usd"])
+            peak = max(peak, nav)
+            if peak:
+                max_drawdown = max(max_drawdown, (peak - nav) / peak * 100)
+        metrics = {
+            "win_rate_percent": round(len(wins) / len(realized) * 100, 2) if realized else 0.0,
+            "average_daily_return_percent": round(statistics.mean(returns), 4) if returns else 0.0,
+            "profit_factor": round(profit_factor, 3),
+            "max_drawdown_percent": round(max_drawdown, 3),
+        }
+        rationale: list[str] = []
+        if previous is None:
+            rationale.append("Baseline policy registered before the first autonomous session.")
+        elif len(snapshots) < 5 or len(realized) < 8:
+            rationale.append("Daily evidence recorded; parameters held until at least 5 sessions and 8 completed exits exist.")
+        elif metrics["win_rate_percent"] < 45 or profit_factor < 1.0 or max_drawdown > 4.0:
+            parameters.update({
+                "entry_upside_floor": parameters["entry_upside_floor"] + 0.5,
+                "max_risk_score": parameters["max_risk_score"] - 0.5,
+                "max_buy_in_distance": parameters["max_buy_in_distance"] - 0.5,
+                "min_technical_score": parameters["min_technical_score"] + 0.5,
+                "min_composite_score": parameters["min_composite_score"] + 0.5,
+            })
+            rationale.append("Risk gates tightened after weak realized outcomes or elevated drawdown.")
+        elif metrics["win_rate_percent"] >= 60 and profit_factor >= 1.35 and max_drawdown <= 2.5:
+            parameters.update({
+                "entry_upside_floor": parameters["entry_upside_floor"] - 0.25,
+                "max_buy_in_distance": parameters["max_buy_in_distance"] + 0.25,
+                "min_technical_score": parameters["min_technical_score"] - 0.25,
+                "min_composite_score": parameters["min_composite_score"] - 0.25,
+            })
+            rationale.append("Entry gates widened marginally after persistent positive risk-adjusted outcomes.")
+        else:
+            rationale.append("Daily review completed; evidence did not justify a parameter change.")
+        parameters = {
+            key: round(max(ENTRY_POLICY_BOUNDS[key][0], min(ENTRY_POLICY_BOUNDS[key][1], value)), 2)
+            for key, value in parameters.items()
+        }
+        state = self.repo.save_learning_state(experiment["id"], {
+            "version": int(previous["version"]) + 1 if previous else 1,
+            "effective_date": effective_date,
+            "sample_days": len(snapshots),
+            "sample_trades": len(realized),
+            "parameters": parameters,
+            "metrics": metrics,
+            "rationale": rationale,
+        })
+        self._active_policy = dict(state["parameters"])
+        self._learning_state = state
+        return state
+
+    def dashboard(self) -> R2D2DashboardResponse:
+        experiment = self.ensure_initialized()
+        positions = self.repo.positions(experiment["id"])
+        stream = getattr(self.realtime, "stream", None)
+        if stream:
+            stream.set_group(
+                "r2d2-dashboard",
+                [row["symbol"] for row in positions if row["market"] in ACTIVE_MARKETS],
+                priority=140,
+            )
+        cash = _float(experiment["cash_balance"])
+        now = datetime.now(timezone.utc)
+        display_marks: dict[tuple[str, str], tuple[float, str, datetime | None]] = {}
+        for row in positions:
+            stored_price = _float(row["last_price_local"])
+            tick = stream.quote(row["symbol"]) if stream and row["market"] in ACTIVE_MARKETS else None
+            if (
+                tick
+                and self._live_us_quote(tick, now)
+                and stored_price > 0
+                and abs(tick.price / stored_price - 1) <= 0.35
+            ):
+                display_marks[(row["market"], row["symbol"])] = (tick.price, "live", tick.as_of)
+            else:
+                display_marks[(row["market"], row["symbol"])] = (
+                    stored_price,
+                    "stored",
+                    row.get("updated_at"),
+                )
+        exposure = sum(
+            _float(row["quantity"])
+            * display_marks[(row["market"], row["symbol"])][0]
+            * _float(row["fx_to_usd"], 1)
+            for row in positions
+        )
+        nav = cash + exposure
+        snapshots = self.repo.snapshots(experiment["id"])
+        local_date = datetime.now(SAO_PAULO).date()
+        current = next((row for row in reversed(snapshots) if row["session_date"] <= local_date), None)
+        daily_pnl = _float(current.get("daily_pnl_usd")) if current else 0.0
+        daily_return = _float(current.get("daily_return_percent")) if current else 0.0
+        closed = [row for row in snapshots if row.get("is_final")]
+        positives = sum(_float(row["daily_return_percent"]) > 0 for row in closed)
+        negatives = sum(_float(row["daily_return_percent"]) < 0 for row in closed)
+        trade_summary = self.repo.trade_summary(experiment["id"])
+        stats = R2D2SummaryStats(
+            closed_days=len(closed), positive_days=positives,
+            above_half_percent_days=sum(_float(row["daily_return_percent"]) >= 0.5 for row in closed),
+            negative_days=negatives,
+            below_minus_half_percent_days=sum(_float(row["daily_return_percent"]) <= -0.5 for row in closed),
+            flat_days=sum(abs(_float(row["daily_return_percent"])) < 1e-9 for row in closed),
+            win_rate_percent=round(positives / len(closed) * 100, 2) if closed else 0.0,
+            **trade_summary,
+        )
+        position_models = []
+        for row in positions:
+            strategy = dict(row.get("strategy_snapshot") or {})
+            technical = dict(strategy.get("live_technical") or strategy.get("technical_indicators") or {})
+            display_price, quote_status, quote_as_of = display_marks[(row["market"], row["symbol"])]
+            market_value = _float(row["quantity"]) * display_price * _float(row["fx_to_usd"], 1)
+            cost = _float(row["quantity"]) * _float(row["average_cost_usd"])
+            pnl = market_value - cost
+            decision_state = str(strategy.get("decision_state") or "monitor")
+            if quote_status == "live" and decision_state == "awaiting live quote":
+                decision_state = "live monitoring"
+            position_models.append(R2D2Position(
+                market=row["market"], symbol=row["symbol"], name=row["name"], currency=row["currency"],
+                quantity=_float(row["quantity"]), average_cost_local=_float(row["average_cost_local"]),
+                last_price_local=display_price, market_value_usd=round(market_value, 2),
+                unrealized_pnl_usd=round(pnl, 2), unrealized_return_percent=round(pnl / cost * 100, 2) if cost else 0,
+                allocation_percent=round(market_value / nav * 100, 2) if nav else 0,
+                stop_price_local=_float(row["stop_price_local"]),
+                technical_score=_float(technical.get("score")),
+                trend_state=str(technical.get("trend_state") or "pending"),
+                volume_state=str(technical.get("volume_state") or "pending"),
+                data_status=str(technical.get("data_status") or "pending"),
+                decision_state=decision_state,
+                quote_status=quote_status,
+                quote_as_of=quote_as_of,
+                technical_as_of=technical.get("as_of"),
+                opened_at=row["opened_at"], updated_at=row["updated_at"],
+            ))
+        trades = [R2D2Trade(
+            id=row["id"], market=row["market"], symbol=row["symbol"], name=row["name"], side=row["side"],
+            quantity=_float(row["quantity"]), signal_price_local=_float(row["signal_price_local"]),
+            fill_price_local=_float(row["fill_price_local"]), currency="BRL" if row["market"] == "B3" else "USD",
+            gross_value_usd=_float(row["gross_value_usd"]), fees_usd=_float(row["fees_usd"]),
+            slippage_usd=_float(row["slippage_usd"]),
+            realized_pnl_usd=_float(row["realized_pnl_usd"]) if row.get("realized_pnl_usd") is not None else None,
+            realized_return_percent=_realized_return_percent(
+                gross_value_usd=row["gross_value_usd"], fees_usd=row["fees_usd"],
+                realized_pnl_usd=row.get("realized_pnl_usd"),
+            ),
+            reason=row["reason"], executed_at=row["executed_at"], quote_as_of=row["quote_as_of"],
+        ) for row in self.repo.trades(experiment["id"])]
+        last_cycle = self.repo.last_cycle(experiment["id"])
+        today = datetime.now(SAO_PAULO).date()
+        learning = self._learning_state or self._ensure_daily_learning(experiment, today)
+        return R2D2DashboardResponse(
+            experiment_code=experiment["code"], status=experiment["status"],
+            methodology_version=experiment["methodology_version"], start_date=experiment["start_date"].isoformat(),
+            checkpoint_date=experiment["checkpoint_date"].isoformat(),
+            checkpoint_reached=today >= experiment["checkpoint_date"],
+            checkpoint_days=(experiment["checkpoint_date"] - experiment["start_date"]).days + 1,
+            operating_days_elapsed=max(0, (today - experiment["start_date"]).days + 1),
+            starting_capital_usd=_float(experiment["starting_capital"]), nav_usd=round(nav, 2), cash_usd=round(cash, 2),
+            gross_exposure_usd=round(exposure, 2),
+            total_return_percent=round((nav / _float(experiment["starting_capital"]) - 1) * 100, 4),
+            daily_pnl_usd=round(daily_pnl, 2), daily_return_percent=round(daily_return, 4),
+            open_positions=len(positions), stats=stats,
+            track_record=[R2D2TrackPoint(
+                session_date=row["session_date"].isoformat(), nav_usd=_float(row["nav_usd"]),
+                daily_pnl_usd=_float(row["daily_pnl_usd"]), daily_return_percent=_float(row["daily_return_percent"]),
+                is_final=bool(row["is_final"]),
+            ) for row in snapshots], positions=position_models, trades=trades,
+            last_cycle=R2D2CycleStatus(**last_cycle) if last_cycle else None,
+            learning=R2D2LearningState(
+                version=int(learning["version"]), effective_date=learning["effective_date"].isoformat(),
+                sample_days=int(learning["sample_days"]), sample_trades=int(learning["sample_trades"]),
+                parameters={key: _float(value) for key, value in dict(learning["parameters"]).items()},
+                metrics={key: _float(value) for key, value in dict(learning["metrics"]).items()},
+                rationale=list(learning["rationale"]),
+            ),
+            mandate=dict(experiment["mandate"]), generated_at=datetime.now(timezone.utc),
+        )
+
+    @staticmethod
+    def open_markets(now: datetime) -> list[str]:
+        markets: list[str] = []
+        us = now.astimezone(NEW_YORK)
+        if us.weekday() < 5 and time(9, 40) <= us.time() <= time(15, 50):
+            markets.extend(("NASDAQ", "NYSE"))
+        return markets
+
+    @staticmethod
+    def _b3_session_open(now: datetime) -> bool:
+        local = now.astimezone(SAO_PAULO)
+        return local.weekday() < 5 and time(10, 10) <= local.time() <= time(17, 50)
+
+    def run_cycle(self, now: datetime | None = None, *, force: bool = False,
+                  scan_entries: bool = True) -> R2D2DashboardResponse:
+        now = now or datetime.now(timezone.utc)
+        experiment = self.ensure_initialized()
+        local_day = now.astimezone(SAO_PAULO).date()
+        self.repo.finalize_before(experiment["id"], local_day)
+        learning = self._ensure_daily_learning(experiment, local_day)
+        markets = self.open_markets(now)
+        if local_day < experiment["start_date"]:
+            cycle_id = self.repo.start_cycle(experiment["id"], [], "scheduled")
+            self.repo.finish_cycle(cycle_id, "scheduled", 0, 0, 0)
+            return self.dashboard()
+        positions_at_start = self.repo.positions(experiment["id"])
+        legacy_b3_exit_window = (
+            self._b3_session_open(now)
+            and any(position["market"] == "B3" for position in positions_at_start)
+        )
+        if force and not markets:
+            markets = list(ACTIVE_MARKETS)
+        cycle_markets = [*markets, *(["B3-EXIT-ONLY"] if legacy_b3_exit_window else [])]
+        cycle_id = self.repo.start_cycle(
+            experiment["id"], cycle_markets,
+            "running" if cycle_markets else "market_closed",
+        )
+        if not cycle_markets:
+            self.repo.finish_cycle(cycle_id, "market_closed", 0, 0, 0)
+            return self.dashboard()
+        scanned = signals = trade_count = 0
+        errors: list[str] = []
+        try:
+            positions = positions_at_start
+            stream = getattr(self.realtime, "stream", None)
+            if stream:
+                stream.set_group(
+                    "r2d2-positions",
+                    [position["symbol"] for position in positions if position["market"] != "B3"],
+                    priority=130,
+                )
+            quote_map = self._position_quotes(positions, now)
+            exit_count = self._mark_and_exit(experiment, cycle_id, positions, quote_map, now)
+            trade_count += exit_count
+            self._snapshot(experiment, local_day, now)
+            positions = self.repo.positions(experiment["id"])
+            # Risk checks run every 20 seconds, while candidate scans run every minute.
+            # An exit must reopen the opportunity set immediately instead of leaving a
+            # vacant slot idle until the next scheduled full scan.
+            replacement_scan = exit_count > 0
+            if not scan_entries and not replacement_scan:
+                self.repo.finish_cycle(cycle_id, "succeeded", 0, 0, trade_count)
+                return self.dashboard()
+            candidates: list[dict[str, Any]] = []
+            self._us_scan_counts = {}
+            for market in ACTIVE_MARKETS:
+                if market in markets:
+                    candidates.extend(self._us_candidates(market, now))
+            scanned = sum(
+                self._us_scan_counts.get(market, {}).get(
+                    "universe_count",
+                    sum(item["market"] == market for item in candidates),
+                )
+                for market in ACTIVE_MARKETS
+                if market in markets
+            )
+            pre_entry_dashboard = self.dashboard()
+            cash_percent = (
+                pre_entry_dashboard.cash_usd / pre_entry_dashboard.nav_usd * 100
+                if pre_entry_dashboard.nav_usd else 100.0
+            )
+            deployment_mode = cash_percent > self.settings.r2d2_max_cash_percent
+            self._enrich_technicals(
+                candidates,
+                review_limit=(
+                    DEPLOYMENT_TECHNICAL_REVIEW_PER_MARKET
+                    if deployment_mode
+                    else STANDARD_TECHNICAL_REVIEW_PER_MARKET
+                ),
+            )
+            for candidate in candidates:
+                candidate["learning_version"] = int(learning["version"])
+                candidate["entry_policy"] = dict(self._active_policy)
+            candidates.sort(key=lambda item: item["composite_score"], reverse=True)
+            orders_today = sum(
+                row["executed_at"].astimezone(SAO_PAULO).date() == local_day
+                for row in self.repo.trades(experiment["id"], limit=500)
+            )
+            for candidate in candidates:
+                if candidate.get("technical_reviewed") is False:
+                    continue
+                if orders_today >= self.settings.r2d2_max_daily_orders:
+                    break
+                if any(row["market"] == candidate["market"] and row["symbol"] == candidate["symbol"] for row in positions):
+                    continue
+                if len(positions) >= self.settings.r2d2_max_positions:
+                    rotation_trades = self._rotate_if_better(
+                        experiment, cycle_id, candidate, positions, quote_map, now,
+                    )
+                    if rotation_trades:
+                        trade_count += rotation_trades
+                        orders_today += rotation_trades
+                        signals += 1
+                        positions = self.repo.positions(experiment["id"])
+                    continue
+                cooldown_since = now - timedelta(minutes=self.settings.r2d2_trade_cooldown_minutes)
+                if self.repo.in_cooldown(
+                    experiment["id"], candidate["market"], candidate["symbol"], cooldown_since,
+                ):
+                    self.repo.save_decision(
+                        experiment["id"], cycle_id, candidate, "REJECT",
+                        [f"{self.settings.r2d2_trade_cooldown_minutes}-minute re-entry cooldown is active"],
+                    )
+                    continue
+                action, reasons = self._entry_decision(candidate)
+                if action != "BUY":
+                    self.repo.save_decision(experiment["id"], cycle_id, candidate, action, reasons)
+                    continue
+                signals += 1
+                trade = self._buy(experiment, cycle_id, candidate, positions)
+                if trade:
+                    trade_count += 1
+                    orders_today += 1
+                    positions = self.repo.positions(experiment["id"])
+            self._snapshot(experiment, local_day, now)
+            self.repo.finish_cycle(cycle_id, "succeeded" if not errors else "partial", scanned, signals, trade_count,
+                                   "; ".join(errors)[:1000] or None)
+        except Exception as exc:
+            logger.exception("R2D2 cycle failed")
+            self.repo.finish_cycle(cycle_id, "failed", scanned, signals, trade_count, str(exc)[:1000])
+        return self.dashboard()
+
+    def _position_quotes(self, positions: list[dict[str, Any]], now: datetime) -> dict[tuple[str, str], Any]:
+        output: dict[tuple[str, str], Any] = {}
+        for market in {row["market"] for row in positions}:
+            symbols = [row["symbol"] for row in positions if row["market"] == market]
+            rows = self.realtime._b3_portfolio_rows(now, symbols) if market == "B3" else self.realtime._us_portfolio_rows(market, now, symbols)
+            if market in ACTIVE_MARKETS:
+                rows = [self.realtime._apply_stream_row(row) for row in rows]
+            output.update({(market, row.symbol): row for row in rows})
+        return output
+
+    def _live_us_quote(self, quote: Any, now: datetime) -> bool:
+        if str(getattr(quote, "status", "live")) != "live":
+            return False
+        as_of = getattr(quote, "as_of", None)
+        if not isinstance(as_of, datetime):
+            return False
+        if as_of.tzinfo is None:
+            as_of = as_of.replace(tzinfo=timezone.utc)
+        age_seconds = max(0.0, (now - as_of.astimezone(timezone.utc)).total_seconds())
+        return age_seconds <= self.settings.r2d2_live_quote_max_age_seconds
+
+    def _mark_and_exit(self, experiment: dict[str, Any], cycle_id: str, positions: list[dict[str, Any]],
+                       quotes: dict[tuple[str, str], Any], now: datetime) -> int:
+        portfolio_daily_return = self.dashboard().daily_return_percent
+        market_reference_change = {
+            market: statistics.median(changes)
+            for market in ACTIVE_MARKETS
+            if (changes := [
+                _float(getattr(quote, "change_percent", 0.0))
+                for (quote_market, _), quote in quotes.items()
+                if quote_market == market and getattr(quote, "change_percent", None) is not None
+            ])
+        }
+        exits = 0
+        for position in positions:
+            quote = quotes.get((position["market"], position["symbol"]))
+            if not quote:
+                continue
+            conversion = _float(position.get("fx_to_usd"), 0.2) if position["market"] == "B3" else 1.0
+            strategy = dict(position.get("strategy_snapshot") or {})
+            if position["market"] == "B3":
+                strategy.update({
+                    "decision_state": "exit delayed market",
+                    "last_review_at": now.isoformat(),
+                    "retirement_policy": "B3 removed from R2D2 intraday execution",
+                })
+                self.repo.update_mark(
+                    experiment["id"], position["market"], position["symbol"], quote.price,
+                    conversion, max(_float(position["high_water_price_local"]), quote.price),
+                    _float(position["stop_price_local"]), now, strategy,
+                )
+                if self._b3_session_open(now):
+                    candidate = {
+                        "market": position["market"], "symbol": position["symbol"],
+                        "name": position["name"], "currency": position["currency"],
+                        "stop_price": _float(position["stop_price_local"]),
+                        "fundamental_score": 0, "technical_score": 0, "risk_score": 0,
+                        "composite_score": 0,
+                    }
+                    self._sell(
+                        experiment, cycle_id, candidate, position, quote, conversion,
+                        "B3 position retired: the five-minute delayed feed is incompatible with the R2D2 intraday mandate.",
+                    )
+                    exits += 1
+                continue
+            if position["market"] not in ACTIVE_MARKETS:
+                continue
+            if not self._live_us_quote(quote, now):
+                strategy.update({
+                    "decision_state": "awaiting live quote",
+                    "last_review_at": now.isoformat(),
+                    "quote_status": str(getattr(quote, "status", "unavailable")),
+                })
+                self.repo.update_mark(
+                    experiment["id"], position["market"], position["symbol"],
+                    _float(position["last_price_local"]), conversion,
+                    _float(position["high_water_price_local"]),
+                    _float(position["stop_price_local"]), now, strategy,
+                )
+                continue
+            technical: dict[str, Any]
+            try:
+                technical = self._technical_snapshot({
+                    "market": position["market"], "symbol": position["symbol"],
+                    "price": quote.price, "day_change": quote.change_percent or 0.0,
+                    "quote_as_of": quote.as_of,
+                })
+            except Exception as exc:
+                technical = dict(strategy.get("live_technical") or strategy.get("technical_indicators") or {})
+                technical.update({
+                    "data_status": "stale" if technical else "unavailable",
+                    "error": f"{type(exc).__name__}: {exc}"[:180],
+                    "as_of": now.isoformat(),
+                })
+            if self._quote_is_anomalous(position, quote.price, technical, strategy):
+                strategy.update({
+                    "live_technical": technical,
+                    "decision_state": "validating quote",
+                    "pending_anomaly_price": quote.price,
+                    "pending_anomaly_at": now.isoformat(),
+                })
+                self.repo.update_mark(
+                    experiment["id"], position["market"], position["symbol"],
+                    _float(position["last_price_local"]), conversion,
+                    _float(position["high_water_price_local"]), _float(position["stop_price_local"]),
+                    now, strategy,
+                )
+                continue
+            strategy.pop("pending_anomaly_price", None)
+            strategy.pop("pending_anomaly_at", None)
+            high_water = max(_float(position["high_water_price_local"]), quote.price)
+            atr = max(_float(technical.get("atr")), quote.price * 0.004)
+            trailing_distance = min(
+                high_water * 0.009,
+                max(atr * 0.7, high_water * 0.0045),
+            )
+            trailing = high_water - trailing_distance
+            stop = max(_float(position["stop_price_local"]), trailing)
+            average_cost = _float(position["average_cost_local"])
+            pnl_pct = (quote.price / average_cost - 1) * 100
+            peak_pnl_pct = (high_water / average_cost - 1) * 100
+            hard_stop = average_cost * (
+                1 - self.settings.r2d2_max_position_loss_percent / 100
+            )
+            stop = max(stop, hard_stop)
+            atr_percent = max(0.0, _float(technical.get("atr_percent")))
+            soft_loss_threshold = max(
+                self.settings.r2d2_soft_loss_exit_percent,
+                min(0.7, atr_percent * 0.4),
+            )
+            if peak_pnl_pct >= 8.0:
+                stop = max(
+                    stop,
+                    average_cost * 1.04,
+                    high_water - max(atr * 1.5, high_water * 0.0175),
+                )
+            elif peak_pnl_pct >= 4.0:
+                stop = max(
+                    stop,
+                    average_cost * 1.015,
+                    high_water - max(atr * 2.0, high_water * 0.0225),
+                )
+            elif peak_pnl_pct >= 1.0:
+                # A modest winner must not become a loser while its trend remains healthy.
+                stop = max(stop, average_cost * 1.003)
+            held_minutes = max(0.0, (now - position["opened_at"]).total_seconds() / 60)
+            bearish_votes = sum((
+                quote.price < _float(technical.get("vwap"), quote.price),
+                quote.price < _float(technical.get("ema8"), quote.price),
+                _float(technical.get("ema8")) < _float(technical.get("ema20")),
+                _float(technical.get("macd_histogram")) < 0 and _float(technical.get("macd_acceleration")) < 0,
+                _float(technical.get("momentum30")) < -0.35,
+                str(technical.get("price_structure")) == "breakdown",
+            ))
+            defense = self._technical_defense(
+                technical=technical,
+                price=quote.price,
+                day_change=_float(getattr(quote, "change_percent", 0.0)),
+                market_change=market_reference_change.get(position["market"], 0.0),
+            )
+            previous_defense_streak = int(strategy.get("defense_streak") or 0)
+            defense_streak = (
+                previous_defense_streak + 1
+                if defense["actionable"] and defense["score"] >= 45
+                else max(0, previous_defense_streak - 1)
+            )
+            defense_reductions = int(strategy.get("defense_reductions") or 0)
+            stop_breaches = int(strategy.get("stop_breach_count") or 0)
+            stop_breaches = stop_breaches + 1 if quote.price <= stop else 0
+            technical_score = _float(technical.get("score"))
+            entry_fundamental = _float(strategy.get("fundamental_score"), 50.0)
+            live_composite = round(entry_fundamental * 0.48 + technical_score * 0.52, 2)
+            weekly_conviction = self._weekly_conviction(
+                strategy=strategy,
+                technical=technical,
+                price=quote.price,
+                high_water=high_water,
+                atr=atr,
+                bearish_votes=bearish_votes,
+            )
+            reason = None
+            sell_fraction = 1.0
+            decision_state = "hold"
+            profit_lock_level = max(
+                PROFIT_LOCK_FLOOR_PERCENT,
+                peak_pnl_pct - PROFIT_PULLBACK_PERCENT,
+            )
+            if quote.price <= hard_stop:
+                reason = (
+                    f"Immediate hard stop at {pnl_pct:+.2f}% on a live quote; "
+                    f"maximum position-loss policy is {self.settings.r2d2_max_position_loss_percent:.2f}%."
+                )
+            elif defense["critical"]:
+                reason = (
+                    f"Critical technical-defense exit at {pnl_pct:+.2f}%: "
+                    f"{'; '.join(defense['drivers'][:4])}. Defense score {defense['score']:.0f}/100."
+                )
+            elif (
+                held_minutes >= MIN_HOLD_MINUTES
+                and defense["actionable"]
+                and defense["score"] >= 72
+                and defense_streak >= 2
+            ):
+                reason = (
+                    f"Confirmed technical-defense exit at {pnl_pct:+.2f}% after {defense_streak} reviews: "
+                    f"{'; '.join(defense['drivers'][:4])}. Defense score {defense['score']:.0f}/100."
+                )
+            elif (
+                held_minutes >= MIN_HOLD_MINUTES
+                and defense_reductions >= 1
+                and defense["actionable"]
+                and defense["score"] >= 58
+                and defense_streak >= 3
+            ):
+                reason = (
+                    f"Technical deterioration persisted after risk reduction at {pnl_pct:+.2f}%: "
+                    f"{'; '.join(defense['drivers'][:4])}. Remaining position exited."
+                )
+            elif (
+                pnl_pct <= -soft_loss_threshold
+                and defense["actionable"]
+                and defense["score"] >= 45
+                and defense_streak >= 2
+            ):
+                reason = (
+                    f"Defensive loss exit at {pnl_pct:+.2f}% on a live quote; "
+                    f"dynamic defense was {soft_loss_threshold:.2f}% and the multicriteria "
+                    f"defense score reached {defense['score']:.0f}/100."
+                )
+            elif (
+                quote.price <= stop
+                and defense["actionable"]
+                and defense["score"] >= 45
+                and stop_breaches >= 2
+            ):
+                reason = (
+                    f"Adaptive intraday stop executed at {stop:.2f} after two live confirmations; "
+                    f"defense score {defense['score']:.0f}/100."
+                )
+            elif (
+                held_minutes >= MIN_HOLD_MINUTES
+                and not weekly_conviction["active"]
+                and pnl_pct >= PROFIT_TRIGGER_PERCENT
+            ):
+                reason = (
+                    f"Tactical profit harvested at {pnl_pct:+.2f}% after reaching the "
+                    f"{PROFIT_TRIGGER_PERCENT:.2f}% execution trigger; capital released for same-cycle replacement."
+                )
+            elif (
+                held_minutes >= MIN_HOLD_MINUTES
+                and not weekly_conviction["active"]
+                and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT
+                and PROFIT_LOCK_FLOOR_PERCENT <= pnl_pct <= profit_lock_level
+            ):
+                reason = (
+                    f"Armed profit locked at {pnl_pct:+.2f}% after a pullback from the "
+                    f"{peak_pnl_pct:+.2f}% peak; capital released for same-cycle replacement."
+                )
+            elif (
+                held_minutes >= MIN_HOLD_MINUTES
+                and pnl_pct >= 0.75
+                and bearish_votes >= 1
+                and technical_score < 60
+            ):
+                reason = (
+                    f"Early tactical profit harvested at {pnl_pct:+.2f}% as live momentum weakened; "
+                    f"technical score {technical_score:.0f}/100."
+                )
+            elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 2.5 and bearish_votes >= 3:
+                reason = f"Profit harvested at {pnl_pct:+.2f}% after a {bearish_votes}-signal momentum reversal."
+            elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 1.0 and bearish_votes >= 2 and technical_score < 55:
+                reason = (
+                    f"Early profit harvested at {pnl_pct:+.2f}% after momentum weakened "
+                    f"across {bearish_votes} signals; technical score {technical_score:.0f}/100."
+                )
+            elif held_minutes >= MIN_HOLD_MINUTES and technical_score < 32 and bearish_votes >= 4:
+                reason = f"Trend breakdown confirmed by {bearish_votes} signals; technical score {technical_score:.0f}/100."
+            elif (
+                held_minutes >= MIN_HOLD_MINUTES
+                and pnl_pct < PROFIT_TRIGGER_PERCENT
+                and defense_reductions == 0
+                and defense["actionable"]
+                and defense["score"] >= 55
+                and defense_streak >= 2
+            ):
+                sell_fraction = 0.5
+                defense_reductions = 1
+                reason = (
+                    f"Progressive technical-defense reduction: 50% of the position released at {pnl_pct:+.2f}% "
+                    f"after {defense_streak} reviews; {'; '.join(defense['drivers'][:3])}."
+                )
+            elif held_minutes >= 180 and pnl_pct < 0.5 and technical_score < 45:
+                reason = f"Stagnation exit after {held_minutes / 60:.1f}h; return {pnl_pct:+.2f}% and technical score {technical_score:.0f}/100."
+            elif quote.price <= stop:
+                decision_state = "stop armed"
+            elif defense["severity"] == "reduce":
+                decision_state = "defense reduction armed"
+            elif defense["severity"] == "watch":
+                decision_state = "technical defense watch"
+            elif weekly_conviction["active"]:
+                decision_state = "weekly conviction hold"
+            elif peak_pnl_pct >= 4.0:
+                decision_state = "profit protected"
+            elif peak_pnl_pct >= 1.0:
+                decision_state = "profit armed"
+            elif technical_score < 45:
+                decision_state = "trend under review"
+            strategy.update({
+                "live_technical": technical,
+                "live_composite_score": live_composite,
+                "stop_breach_count": stop_breaches,
+                "bearish_votes": bearish_votes,
+                "technical_defense": defense,
+                "defense_streak": defense_streak,
+                "defense_reductions": defense_reductions,
+                "held_minutes": round(held_minutes, 1),
+                "peak_pnl_percent": round(peak_pnl_pct, 3),
+                "profit_trigger_percent": PROFIT_TRIGGER_PERCENT,
+                "profit_lock_level_percent": round(profit_lock_level, 3),
+                "weekly_conviction_active": weekly_conviction["active"],
+                "weekly_conviction_score": weekly_conviction["score"],
+                "weekly_conviction_reasons": weekly_conviction["reasons"],
+                "daily_objective_percent": DAILY_OBJECTIVE_PERCENT,
+                "daily_objective_status": (
+                    "reached" if portfolio_daily_return >= DAILY_OBJECTIVE_PERCENT else "in progress"
+                ),
+                "portfolio_daily_return_percent": round(portfolio_daily_return, 4),
+                "quote_status": "live",
+                "quote_as_of": quote.as_of.isoformat(),
+                "soft_loss_threshold_percent": round(soft_loss_threshold, 3),
+                "hard_stop_percent": self.settings.r2d2_max_position_loss_percent,
+                "decision_state": "exit" if reason else decision_state,
+                "last_review_at": now.isoformat(),
+            })
+            self.repo.update_mark(
+                experiment["id"], position["market"], position["symbol"], quote.price,
+                conversion, high_water, stop, now, strategy,
+            )
+            if reason:
+                candidate = {"market": position["market"], "symbol": position["symbol"], "name": position["name"],
+                             "currency": position["currency"], "stop_price": stop, "fundamental_score": 0,
+                             "technical_score": technical_score, "risk_score": 0,
+                             "composite_score": live_composite, "technical_indicators": technical}
+                candidate["defense_sell_fraction"] = sell_fraction
+                self._sell(
+                    experiment, cycle_id, candidate, position, quote, conversion, reason,
+                    quantity_fraction=sell_fraction,
+                )
+                if sell_fraction < 1.0:
+                    strategy["decision_state"] = "position reduced"
+                    strategy["last_defense_action_at"] = now.isoformat()
+                    self.repo.update_mark(
+                        experiment["id"], position["market"], position["symbol"], quote.price,
+                        conversion, high_water, stop, now, strategy,
+                    )
+                exits += 1
+        return exits
+
+    @staticmethod
+    def _technical_defense(*, technical: dict[str, Any], price: float,
+                           day_change: float, market_change: float) -> dict[str, Any]:
+        """Weight trend, structure, flow and volatility instead of relying on a raw loss percentage."""
+        drivers: list[str] = []
+        score = 0.0
+
+        def add(condition: bool, weight: float, label: str) -> None:
+            nonlocal score
+            if condition:
+                score += weight
+                drivers.append(label)
+
+        vwap = _float(technical.get("vwap"), price)
+        ema8 = _float(technical.get("ema8"), price)
+        ema20 = _float(technical.get("ema20"), price)
+        ema50 = _float(technical.get("ema50"), price)
+        momentum15 = _float(technical.get("momentum15"))
+        momentum30 = _float(technical.get("momentum30"))
+        momentum60 = _float(technical.get("momentum60"))
+        relative_volume = _float(technical.get("relative_volume"), 1.0)
+        sell_volume_ratio = _float(technical.get("sell_volume_ratio"), 0.5)
+        drawdown_atr = _float(technical.get("drawdown_atr"))
+        relative_strength = day_change - market_change
+        structure = str(technical.get("price_structure") or "range")
+        trend_state = str(technical.get("trend_state") or "neutral")
+        volume_state = str(technical.get("volume_state") or "neutral")
+        actionable = str(technical.get("data_status") or "unavailable") == "live"
+
+        add(price < vwap, 6, "price below VWAP")
+        add(price < ema8, 6, "price below EMA8")
+        add(ema8 < ema20, 10, "EMA8 below EMA20")
+        add(ema20 < ema50, 8, "EMA20 below EMA50")
+        add(_float(technical.get("ema8_slope15")) < -0.05, 6, "EMA8 falling")
+        add(_float(technical.get("ema20_slope15")) < -0.03, 6, "EMA20 falling")
+        add(trend_state == "bearish", 8, "bearish trend regime")
+        add(structure == "breakdown", 22, "support breakdown")
+        add(structure == "failed-breakout", 16, "failed breakout")
+        add(structure == "lower-lows", 14, "lower highs and lower lows")
+        add(
+            _float(technical.get("macd_histogram")) < 0
+            and _float(technical.get("macd_acceleration")) < 0,
+            8, "MACD weakening",
+        )
+        add(momentum15 < -0.15, 4, "15-minute momentum negative")
+        add(momentum30 < -0.35, 6, "30-minute momentum negative")
+        add(momentum60 < -0.60, 6, "60-minute momentum negative")
+        add(_float(technical.get("rsi14"), 50.0) < 38, 4, "RSI below 38")
+        add(volume_state == "distribution", 9, "volume distribution")
+        add(relative_volume >= 1.2 and momentum15 < 0, 8, "selloff on elevated volume")
+        add(_float(technical.get("obv_slope")) < -0.5, 4, "OBV declining")
+        add(sell_volume_ratio >= 0.62, 6, "selling dominates recent volume")
+        add(drawdown_atr >= 0.75, 4, "pullback exceeds 0.75 ATR")
+        add(drawdown_atr >= 1.25, 5, "pullback exceeds 1.25 ATR")
+        add(relative_strength <= -0.50, 4, "underperforming held-market peers")
+        add(relative_strength <= -1.00, 4, "severe relative underperformance")
+
+        score = round(min(100.0, score), 1)
+        critical = actionable and (
+            score >= 82
+            or (
+                structure == "breakdown"
+                and (volume_state == "distribution" or sell_volume_ratio >= 0.62)
+                and relative_volume >= 1.05
+            )
+        )
+        severity = "exit" if critical or score >= 72 else "reduce" if score >= 55 else "watch" if score >= 40 else "healthy"
+        return {
+            "score": score,
+            "severity": severity,
+            "critical": critical,
+            "actionable": actionable,
+            "drivers": drivers,
+            "relative_strength_percent": round(relative_strength, 3),
+            "model": "weighted trend-structure-flow-volatility v1",
+        }
+
+    @staticmethod
+    def _weekly_conviction(*, strategy: dict[str, Any], technical: dict[str, Any],
+                           price: float, high_water: float, atr: float,
+                           bearish_votes: int) -> dict[str, Any]:
+        """Classify a multi-session hold without weakening execution risk controls."""
+        fundamental = max(0.0, min(100.0, _float(strategy.get("fundamental_score"), 50.0)))
+        confidence = max(0.0, min(100.0, _float(strategy.get("confidence"), 50.0)))
+        technical_score = max(0.0, min(100.0, _float(technical.get("score"), 50.0)))
+        trend_state = str(technical.get("trend_state") or "neutral")
+        volume_state = str(technical.get("volume_state") or "neutral")
+        price_structure = str(technical.get("price_structure") or "neutral")
+        data_status = str(technical.get("data_status") or "unavailable")
+        trend_score = _float(
+            technical.get("trend_score"),
+            82.0 if trend_state == "bullish" else 30.0 if trend_state == "bearish" else 50.0,
+        )
+        flow_score = _float(
+            technical.get("flow_score"),
+            78.0 if volume_state == "accumulation" else 30.0 if volume_state == "distribution" else 50.0,
+        )
+        momentum_score = _float(technical.get("momentum_score"), 50.0)
+        if "momentum_score" not in technical:
+            momentum_score += 15.0 if _float(technical.get("momentum30")) > 0 else -15.0
+            momentum_score += 10.0 if _float(technical.get("macd_histogram")) > 0 else -10.0
+        momentum_score = max(0.0, min(100.0, momentum_score))
+        score = round(
+            fundamental * 0.25
+            + confidence * 0.15
+            + technical_score * 0.25
+            + trend_score * 0.15
+            + flow_score * 0.10
+            + momentum_score * 0.10,
+            2,
+        )
+        drawdown = max(0.0, high_water - price)
+        drawdown_limit = max(atr * 1.75, high_water * 0.0175)
+        gates = {
+            "fresh market data": data_status == "live",
+            "fundamental conviction": fundamental >= 68.0 and confidence >= 60.0,
+            "bullish live trend": technical_score >= 65.0 and trend_state == "bullish",
+            "constructive price structure": price_structure in {"higher-highs", "breakout"},
+            "non-distributive flow": volume_state != "distribution" and flow_score >= 55.0,
+            "positive momentum": momentum_score >= 60.0,
+            "controlled pullback": drawdown <= drawdown_limit,
+            "no confirmed reversal": bearish_votes <= 1,
+        }
+        reasons = [label for label, passed in gates.items() if passed]
+        return {
+            "active": score >= WEEKLY_CONVICTION_MIN_SCORE and all(gates.values()),
+            "score": score,
+            "reasons": reasons,
+        }
+
+    @staticmethod
+    def _quote_is_anomalous(position: dict[str, Any], price: float, technical: dict[str, Any],
+                            strategy: dict[str, Any]) -> bool:
+        previous = _float(position.get("last_price_local"))
+        if previous <= 0 or price <= 0:
+            return True
+        move_percent = abs(price / previous - 1) * 100
+        threshold = max(8.0, _float(technical.get("atr_percent"), 1.5) * 5.0)
+        if move_percent <= threshold:
+            return False
+        pending = _float(strategy.get("pending_anomaly_price"))
+        return not pending or abs(price / pending - 1) > 0.012
+
+    def _b3_candidates(self) -> list[dict[str, Any]]:
+        response = self.b3_screener.matrix()
+        output = []
+        for item in response.items:
+            # Matrix remains the fundamental source of truth, but the execution
+            # engine needs a wider funnel than the displayed top-ten table.
+            if item.signal_quality != "validated":
+                continue
+            if item.tp_upside_percent < 10 or item.risk_score > 60:
+                continue
+            output.append({
+                "market": "B3", "symbol": item.symbol, "name": item.name, "currency": "BRL",
+                "price": item.price, "quote_as_of": item.as_of, "upside": item.tp_upside_percent,
+                "buy_in_distance": item.price_vs_buy_in_percent, "risk_score": item.risk_score,
+                "fundamental_score": min(100.0, item.power_score),
+                "technical_score": self._day_technical_score(item.change_percent or 0.0),
+                "technical_validated": False, "day_change": item.change_percent or 0.0,
+                "confidence": item.valuation_confidence, "stop_price": item.price * 0.955,
+                "thesis": f"Validated C3PO TP {item.our_tp:.2f}; upside {item.tp_upside_percent:.1f}%; risk {item.risk_score:.0f}/100.",
+            })
+        for item in output:
+            item["composite_score"] = self._composite(item)
+        return sorted(output, key=lambda item: item["composite_score"], reverse=True)[:40]
+
+    def _us_candidates(self, market: str, now: datetime) -> list[dict[str, Any]]:
+        rows = self.realtime._us_investable_rows(market, now)
+        catalog = self.realtime._us_symbol_catalog(now)
+        catalog_securities = [
+            (symbol, metadata)
+            for symbol, metadata in catalog.items()
+            if self.realtime._portfolio_catalog_market(metadata) == market
+            and self.realtime._is_portfolio_security(metadata)
+        ]
+        classified: list[tuple[Any, str]] = []
+        for row in rows:
+            metadata = catalog.get(row.symbol) or {}
+            security_type = canonical_us_security_type(
+                row.symbol,
+                metadata.get("Type") or metadata.get("type"),
+            )
+            classified.append((row, security_type))
+
+        eligible: list[tuple[Any, str]] = []
+        for row, security_type in classified:
+            minimum_cash_volume = 10_000_000 if security_type == "ETF" else 20_000_000
+            if row.price < 3 or row.cash_volume < minimum_cash_volume:
+                continue
+            eligible.append((row, security_type))
+
+        rank_key = lambda item: item[0].cash_volume * (  # noqa: E731
+            1 + max(-2.0, min(6.0, item[0].change_percent)) / 20
+        )
+        stocks = sorted(
+            (item for item in eligible if item[1] == "Stock"),
+            key=rank_key,
+            reverse=True,
+        )[:US_STOCK_SHORTLIST_PER_MARKET]
+        etfs = sorted(
+            (item for item in eligible if item[1] == "ETF"),
+            key=rank_key,
+            reverse=True,
+        )[:US_ETF_SHORTLIST_PER_MARKET]
+        shortlist = [*stocks, *etfs]
+        self._us_scan_counts[market] = {
+            "universe_count": len(catalog_securities),
+            "quoted_count": len(classified),
+            "missing_quote_count": max(0, len(catalog_securities) - len(classified)),
+            "tradeable_count": len(eligible),
+            "stock_count": sum(
+                canonical_us_security_type(
+                    symbol,
+                    metadata.get("Type") or metadata.get("type"),
+                ) == "Stock"
+                for symbol, metadata in catalog_securities
+            ),
+            "etf_count": sum(
+                canonical_us_security_type(
+                    symbol,
+                    metadata.get("Type") or metadata.get("type"),
+                ) == "ETF"
+                for symbol, metadata in catalog_securities
+            ),
+            "deep_shortlist_count": len(shortlist),
+        }
+        if not shortlist:
+            return []
+
+        snapshot = self.repo.database.latest_analysis_snapshot(
+            "valuation_universe", f"{market}_UNIVERSE",
+        )
+        snapshot_outputs = snapshot.get("outputs") if snapshot and isinstance(snapshot.get("outputs"), dict) else {}
+        snapshot_rows = snapshot_outputs.get("rows") if isinstance(snapshot_outputs.get("rows"), list) else []
+        canonical = {
+            str(item.get("symbol") or "").upper(): item
+            for item in snapshot_rows
+            if isinstance(item, dict) and item.get("symbol")
+        }
+
+        today = now.date()
+        missing = [
+            row.symbol
+            for row, security_type in stocks
+            if row.symbol not in canonical
+            and (row.symbol not in self._us_basis or self._us_basis[row.symbol][0] != today)
+            and self._us_backfill_attempted.get(row.symbol) != today
+        ][:US_FUNDAMENTAL_BACKFILL_PER_CYCLE]
+        if missing and self.one_pagers is not None:
+            self._us_backfill_attempted.update({symbol: today for symbol in missing})
+            client = EodhdClient(
+                self.settings.eodhd_base_url,
+                self.settings.eodhd_api_token,
+                self.one_pagers.market_data.http,
+            )
+            fundamentals = client.fundamentals(missing, exchange="US", workers=8)
+            histories = client.histories(missing, exchange="US", days=365, workers=8)
+            quote_by_symbol = {row.symbol: row for row, _ in shortlist}
+            for symbol in missing:
+                row = quote_by_symbol.get(symbol)
+                fundamental = fundamentals.get(symbol)
+                history = histories.get(symbol, [])
+                if not row or not fundamental or len(history) < 40:
+                    continue
+                try:
+                    analysis = self.one_pagers._analyze(
+                        symbol, "US", {"price": row.price, "currency": "USD", "as_of": row.as_of,
+                                        "change_percent": row.change_percent}, fundamental, history,
+                    )
+                except Exception:
+                    continue
+                self._us_basis[symbol] = (today, analysis)
+
+        output: list[dict[str, Any]] = []
+        for row, security_type in shortlist:
+            canonical_row = canonical.get(row.symbol)
+            cached = self._us_basis.get(row.symbol)
+            if canonical_row:
+                c3po_tp = _float(canonical_row.get("our_tp"))
+                upside = (c3po_tp / row.price - 1) * 100 if c3po_tp else 0.0
+                risk = _float(canonical_row.get("risk_score"), 55.0)
+                confidence = _float(canonical_row.get("valuation_confidence"), 55.0)
+                buy_in = _float(canonical_row.get("buy_in"))
+                distance = (row.price / buy_in - 1) * 100 if buy_in else 0.0
+                fundamental_score = _float(canonical_row.get("score"), 50.0)
+                thesis = str(canonical_row.get("thesis") or "Canonical C3PO valuation evidence.")
+                basis_source = "canonical C3PO valuation universe"
+            elif cached:
+                analysis = cached[1]
+                c3po_tp = _float(analysis.get("c3po_tp"))
+                upside = (c3po_tp / row.price - 1) * 100 if c3po_tp else _float(analysis.get("upside_percent"))
+                risk = _float(analysis.get("risk_score"), 55.0)
+                confidence = _float(analysis.get("confidence"), 55.0)
+                buy_in = _float(analysis.get("buy_in"))
+                distance = (row.price / buy_in - 1) * 100 if buy_in else 0.0
+                fundamental_score = max(
+                    0.0,
+                    min(100.0, upside * 1.15 + (100 - risk) * 0.28 + confidence * 0.25),
+                )
+                thesis = f"C3PO TP {c3po_tp:.2f}; valuation backfill completed for the current session."
+                basis_source = "same-day C3PO valuation backfill"
+            else:
+                minimum_cash_volume = 10_000_000 if security_type == "ETF" else 20_000_000
+                liquidity_score = max(
+                    40.0,
+                    min(95.0, 48.0 + math.log10(max(row.cash_volume / minimum_cash_volume, 1.0)) * 18.0),
+                )
+                day_score = self._day_technical_score(row.change_percent)
+                risk = max(38.0, min(70.0, 58.0 + abs(row.change_percent) * 1.4 - (liquidity_score - 50) * 0.18))
+                confidence = max(40.0, min(58.0, 42.0 + (liquidity_score - 40) * 0.22))
+                upside = 0.0
+                distance = 0.0
+                c3po_tp = 0.0
+                fundamental_score = max(40.0, min(62.0, 36.0 + liquidity_score * 0.30 + day_score * 0.12))
+                thesis = (
+                    f"Full-exchange {security_type.lower()} scan; live technical confirmation is required "
+                    "before any paper order because canonical valuation evidence is not yet available."
+                )
+                basis_source = "full-exchange provisional technical scan"
+
+            minimum_cash_volume = 10_000_000 if security_type == "ETF" else 20_000_000
+            liquidity_score = max(
+                0.0,
+                min(100.0, 50.0 + math.log10(max(row.cash_volume / minimum_cash_volume, 1.0)) * 20.0),
+            )
+            day_score = self._day_technical_score(row.change_percent)
+            item = {
+                "market": market, "symbol": row.symbol, "name": row.name, "currency": "USD",
+                "security_type": security_type,
+                "price": row.price, "quote_as_of": row.as_of, "upside": upside,
+                "buy_in_distance": distance, "risk_score": risk, "fundamental_score": fundamental_score,
+                "technical_score": day_score, "confidence": confidence,
+                "technical_validated": False, "day_change": row.change_percent,
+                "technical_reviewed": False,
+                "quote_status": row.status,
+                "stop_price": row.price * (1 - self.settings.r2d2_max_position_loss_percent / 100),
+                "thesis": thesis,
+                "valuation_basis": basis_source,
+            }
+            item["composite_score"] = self._composite(item)
+            item["pretrade_rank"] = round(
+                item["composite_score"] * 0.45 + day_score * 0.35 + liquidity_score * 0.20,
+                3,
+            )
+            output.append(item)
+        return sorted(output, key=lambda item: item["pretrade_rank"], reverse=True)
+
+    def _enrich_technicals(self, candidates: list[dict[str, Any]], *, review_limit: int = 16) -> None:
+        """Confirm entry timing with five-minute candles for the best fundamental names."""
+        selected: list[dict[str, Any]] = []
+        review_sets: list[list[dict[str, Any]]] = []
+        for market in ("B3", "NASDAQ", "NYSE"):
+            rows = sorted(
+                (item for item in candidates if item["market"] == market),
+                key=lambda item: item.get("pretrade_rank", item["fundamental_score"]), reverse=True,
+            )[:max(1, review_limit)]
+            for item in rows:
+                item["technical_reviewed"] = True
+            review_sets.append(rows)
+        for index in range(max((len(rows) for rows in review_sets), default=0)):
+            for rows in review_sets:
+                if index < len(rows):
+                    selected.append(rows[index])
+        stream = getattr(self.realtime, "stream", None)
+        if stream:
+            stream.set_group(
+                "r2d2-analysis",
+                [item["symbol"] for item in selected if item["market"] != "B3"],
+                priority=110,
+            )
+        market_changes = {
+            market: statistics.median([item["day_change"] for item in candidates if item["market"] == market])
+            for market in ("B3", "NASDAQ", "NYSE")
+            if any(item["market"] == market for item in candidates)
+        }
+        for item in selected:
+            try:
+                if item["market"] in ACTIVE_MARKETS and stream:
+                    live_quote = stream.quote(item["symbol"])
+                    if live_quote:
+                        item["price"] = live_quote.price
+                        item["quote_as_of"] = live_quote.as_of
+                        item["quote_status"] = (
+                            "live" if self._live_us_quote(live_quote, datetime.now(timezone.utc))
+                            else "stale"
+                        )
+                snapshot = self._technical_snapshot(item)
+                relative_strength = item["day_change"] - market_changes.get(item["market"], 0.0)
+                score = snapshot["score"] + max(-8.0, min(8.0, relative_strength * 3.0))
+                item["technical_score"] = round(max(0.0, min(100.0, score)), 2)
+                item["technical_validated"] = (
+                    snapshot.get("data_status") == "live"
+                    and item.get("quote_status") == "live"
+                )
+                item["technical_indicators"] = {**snapshot, "relative_strength": round(relative_strength, 3)}
+                stop_distance = min(
+                    item["price"] * self.settings.r2d2_max_position_loss_percent / 100,
+                    max(snapshot["atr"] * 0.45, item["price"] * 0.004),
+                )
+                item["stop_price"] = item["price"] - stop_distance
+                item["composite_score"] = self._composite(item)
+            except Exception as exc:
+                item["technical_error"] = f"{type(exc).__name__}: {exc}"[:240]
+                item["technical_score"] = 0.0
+                item["technical_validated"] = False
+                item["composite_score"] = self._composite(item)
+
+    def _technical_snapshot(self, item: dict[str, Any]) -> dict[str, Any]:
+        live_rows: list[dict[str, Any]] = []
+        rows = self._historical_intraday(item)
+        if item["market"] != "B3":
+            stream = getattr(self.realtime, "stream", None)
+            if stream:
+                live_rows = stream.bars(item["symbol"], limit=180)
+        merged: dict[datetime, dict[str, Any]] = {}
+        for row in [*rows, *live_rows]:
+            timestamp = self._bar_timestamp(row.get("timestamp"))
+            updated_at = self._bar_timestamp(row.get("updated_at")) or timestamp
+            close = _float(row.get("close"))
+            if timestamp is None or close <= 0:
+                continue
+            merged[timestamp] = {
+                "timestamp": timestamp,
+                "open": _float(row.get("open"), close),
+                "close": close,
+                "high": max(close, _float(row.get("high"), close)),
+                "low": min(close, _float(row.get("low"), close)),
+                "volume": max(0.0, _float(row.get("volume"))),
+                "source": row.get("source") or "historical",
+                "updated_at": updated_at,
+            }
+        bars = [merged[key] for key in sorted(merged)][-180:]
+        if len(bars) < 35:
+            raise ValueError("fewer than 35 valid five-minute candles")
+        current_price = _float(item.get("price"))
+        if live_rows and current_price > 0:
+            latest = bars[-1]
+            latest["close"] = current_price
+            latest["high"] = max(_float(latest.get("high"), current_price), current_price)
+            latest["low"] = min(_float(latest.get("low"), current_price), current_price)
+            latest["source"] = "EODHD Real-Time WebSocket"
+            latest["updated_at"] = self._bar_timestamp(item.get("quote_as_of")) or latest["updated_at"]
+        closes = [bar["close"] for bar in bars]
+        volumes = [bar["volume"] for bar in bars]
+        ema8 = self._ema(closes, 8)
+        ema12 = self._ema(closes, 12)
+        ema20 = self._ema(closes, 20)
+        ema26 = self._ema(closes, 26)
+        ema50 = self._ema(closes, 50)
+        macd_series = [
+            self._ema(closes[:index], 12) - self._ema(closes[:index], 26)
+            for index in range(26, len(closes) + 1)
+        ]
+        macd = ema12 - ema26
+        macd_signal = self._ema(macd_series, 9)
+        macd_histogram = macd - macd_signal
+        prior_macd_signal = self._ema(macd_series[:-1], 9) if len(macd_series) > 9 else macd_signal
+        prior_macd = macd_series[-2] if len(macd_series) > 1 else macd
+        macd_acceleration = macd_histogram - (prior_macd - prior_macd_signal)
+        deltas = [current - prior for prior, current in zip(closes[-15:-1], closes[-14:])]
+        gains = sum(max(delta, 0.0) for delta in deltas) / 14
+        losses = sum(max(-delta, 0.0) for delta in deltas) / 14
+        rsi = 100.0 if losses == 0 else 100 - 100 / (1 + gains / losses)
+        session_date = bars[-1]["timestamp"].date()
+        session_bars = [bar for bar in bars if bar["timestamp"].date() == session_date] or bars[-78:]
+        typical = [(bar["high"] + bar["low"] + bar["close"]) / 3 for bar in session_bars]
+        session_volumes = [bar["volume"] for bar in session_bars]
+        volume_sum = sum(session_volumes)
+        vwap = (
+            sum(price * volume for price, volume in zip(typical, session_volumes)) / volume_sum
+            if volume_sum else statistics.mean([bar["close"] for bar in session_bars])
+        )
+        true_ranges = []
+        for previous, bar in zip(bars[-15:-1], bars[-14:]):
+            true_ranges.append(max(
+                bar["high"] - bar["low"], abs(bar["high"] - previous["close"]),
+                abs(bar["low"] - previous["close"]),
+            ))
+        atr = statistics.mean(true_ranges) if true_ranges else closes[-1] * 0.02
+        median_volume = statistics.median(volumes[-23:-3]) or 1.0
+        relative_volume = statistics.mean(volumes[-3:]) / median_volume
+        momentum15 = (closes[-1] / closes[-4] - 1) * 100
+        momentum30 = (closes[-1] / closes[-7] - 1) * 100
+        momentum60 = (closes[-1] / closes[-13] - 1) * 100
+        ema8_prior = self._ema(closes[:-3], 8)
+        ema20_prior = self._ema(closes[:-3], 20)
+        ema8_slope = (ema8 / ema8_prior - 1) * 100 if ema8_prior else 0.0
+        ema20_slope = (ema20 / ema20_prior - 1) * 100 if ema20_prior else 0.0
+        vwap_distance = (closes[-1] / vwap - 1) * 100 if vwap else 0.0
+        prior_high = max(bar["high"] for bar in bars[-21:-1])
+        recent = bars[-6:]
+        previous_window = bars[-12:-6]
+        older_window = bars[-21:-6]
+        higher_high = max(bar["high"] for bar in recent) > max(bar["high"] for bar in previous_window)
+        higher_low = min(bar["low"] for bar in recent) > min(bar["low"] for bar in previous_window)
+        lower_high = max(bar["high"] for bar in recent) < max(bar["high"] for bar in previous_window)
+        lower_low = min(bar["low"] for bar in recent) < min(bar["low"] for bar in previous_window)
+        failed_breakout = (
+            max(bar["high"] for bar in recent) > max(bar["high"] for bar in older_window)
+            and closes[-1] < max(bar["high"] for bar in older_window)
+            and momentum15 < 0
+        )
+        if closes[-1] >= prior_high:
+            price_structure = "breakout"
+        elif closes[-1] < min(bar["low"] for bar in previous_window):
+            price_structure = "breakdown"
+        elif failed_breakout:
+            price_structure = "failed-breakout"
+        elif lower_high and lower_low:
+            price_structure = "lower-lows"
+        elif higher_high and higher_low:
+            price_structure = "higher-highs"
+        else:
+            price_structure = "range"
+        obv = [0.0]
+        for prior, current, volume in zip(closes[-25:-1], closes[-24:], volumes[-24:]):
+            obv.append(obv[-1] + (volume if current > prior else -volume if current < prior else 0.0))
+        obv_scale = max(sum(volumes[-12:]), 1.0)
+        obv_slope = (obv[-1] - obv[-7]) / obv_scale * 100 if len(obv) >= 7 else 0.0
+        positive_flow = negative_flow = 0.0
+        flow_bars = bars[-15:]
+        flow_typical = [(bar["high"] + bar["low"] + bar["close"]) / 3 for bar in flow_bars]
+        for prior, current, bar in zip(flow_typical[:-1], flow_typical[1:], flow_bars[1:]):
+            flow = current * bar["volume"]
+            if current >= prior:
+                positive_flow += flow
+            else:
+                negative_flow += flow
+        mfi = 100.0 if negative_flow == 0 else 100 - 100 / (1 + positive_flow / negative_flow)
+        atr_percent = atr / closes[-1] * 100
+        recent_high = max(bar["high"] for bar in bars[-13:])
+        drawdown_atr = max(0.0, (recent_high - closes[-1]) / max(atr, closes[-1] * 0.001))
+        pressure_bars = bars[-6:]
+        pressure_volume = sum(bar["volume"] for bar in pressure_bars)
+        sell_volume_ratio = (
+            sum(bar["volume"] for bar in pressure_bars if bar["close"] < bar["open"]) / pressure_volume
+            if pressure_volume else 0.5
+        )
+        path = sum(abs(current - prior) for prior, current in zip(closes[-13:-1], closes[-12:]))
+        trend_efficiency = abs(closes[-1] - closes[-13]) / path if path else 0.0
+        trend_score = 50.0
+        trend_score += 18 if closes[-1] > vwap else -18
+        trend_score += 18 if ema8 > ema20 else -18
+        trend_score += 10 if ema20 > ema50 else -10
+        trend_score += min(10.0, trend_efficiency * 20) if momentum60 > 0 else -min(10.0, trend_efficiency * 20)
+        momentum_score = 50.0
+        momentum_score += 12 if 50 <= rsi <= 68 else 5 if 44 <= rsi < 50 else -15 if rsi < 38 or rsi > 78 else -4
+        momentum_score += 14 if macd_histogram > 0 else -14
+        momentum_score += 10 if macd_acceleration > 0 else -10
+        momentum_score += 8 if momentum15 > 0 and momentum30 > 0 else -8
+        flow_score = 50.0
+        flow_score += 18 if relative_volume >= 1.2 and momentum15 > 0 else -14 if relative_volume >= 1.2 and momentum15 < 0 else 4 if relative_volume >= 0.8 else -8
+        flow_score += max(-15.0, min(15.0, obv_slope * 3.0))
+        flow_score += 8 if 52 <= mfi <= 78 else -8 if mfi < 35 or mfi > 88 else 0
+        structure_score = {
+            "breakout": 90.0, "higher-highs": 75.0, "range": 50.0,
+            "failed-breakout": 28.0, "lower-lows": 24.0, "breakdown": 12.0,
+        }[price_structure]
+        volatility_score = 72.0 if 0.25 <= atr_percent <= 3.5 else 48.0 if atr_percent <= 5 else 20.0
+        score = (
+            max(0.0, min(100.0, trend_score)) * 0.30
+            + max(0.0, min(100.0, momentum_score)) * 0.25
+            + max(0.0, min(100.0, flow_score)) * 0.20
+            + structure_score * 0.15
+            + volatility_score * 0.10
+        )
+        latest_at = bars[-1]["timestamp"]
+        has_live = any(bar.get("source") == "EODHD Real-Time WebSocket" for bar in bars[-3:])
+        latest_observed_at = max(
+            (
+                bar.get("updated_at") or bar["timestamp"]
+                for bar in bars[-3:]
+                if bar.get("source") == "EODHD Real-Time WebSocket"
+            ),
+            default=latest_at,
+        )
+        age_minutes = max(0.0, (datetime.now(timezone.utc) - latest_observed_at).total_seconds() / 60)
+        data_status = "live" if has_live and age_minutes <= 3 else "near-live" if item["market"] == "B3" and age_minutes <= 20 else "delayed"
+        trend_state = "bullish" if trend_score >= 65 else "bearish" if trend_score < 42 else "neutral"
+        volume_state = "accumulation" if flow_score >= 65 else "distribution" if flow_score < 40 else "neutral"
+        return {
+            "score": round(max(0.0, min(100.0, score)), 2), "vwap": round(vwap, 6),
+            "ema8": round(ema8, 6), "ema20": round(ema20, 6), "ema50": round(ema50, 6),
+            "rsi14": round(rsi, 3), "macd": round(macd, 6), "macd_signal": round(macd_signal, 6),
+            "macd_histogram": round(macd_histogram, 6), "macd_acceleration": round(macd_acceleration, 6),
+            "momentum15": round(momentum15, 3), "momentum30": round(momentum30, 3),
+            "momentum60": round(momentum60, 3),
+            "ema8_slope15": round(ema8_slope, 4), "ema20_slope15": round(ema20_slope, 4),
+            "vwap_distance_percent": round(vwap_distance, 4),
+            "relative_volume": round(relative_volume, 3), "atr": round(atr, 6),
+            "atr_percent": round(atr_percent, 3), "obv_slope": round(obv_slope, 3),
+            "sell_volume_ratio": round(sell_volume_ratio, 4),
+            "drawdown_atr": round(drawdown_atr, 3),
+            "mfi14": round(mfi, 3), "trend_efficiency": round(trend_efficiency, 3),
+            "price_structure": price_structure, "trend_state": trend_state,
+            "volume_state": volume_state, "data_status": data_status,
+            "data_age_minutes": round(age_minutes, 1), "as_of": latest_observed_at.isoformat(),
+            "trend_score": round(max(0.0, min(100.0, trend_score)), 2),
+            "momentum_score": round(max(0.0, min(100.0, momentum_score)), 2),
+            "flow_score": round(max(0.0, min(100.0, flow_score)), 2),
+        }
+
+    def _historical_intraday(self, item: dict[str, Any]) -> list[dict[str, Any]]:
+        """Cache the candle baseline while live ticks keep the active bar current."""
+        market = str(item["market"])
+        symbol = str(item["symbol"]).upper()
+        key = (market, symbol)
+        now = datetime.now(timezone.utc)
+        ttl = timedelta(minutes=5 if market == "B3" else 60)
+        cached = self._intraday_cache.get(key)
+        if cached and now - cached[0] < ttl:
+            return [dict(row) for row in cached[1]]
+        if market == "B3":
+            rows = BrapiClient(
+                self.settings.brapi_base_url, self.settings.brapi_token, self.one_pagers.market_data.http,
+            ).intraday(symbol, interval="5m", days=5)
+        else:
+            rows = EodhdClient(
+                self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.one_pagers.market_data.http,
+            ).intraday(symbol, exchange="US", interval="5m", days=7)
+        normalized = [dict(row) for row in rows]
+        self._intraday_cache[key] = (now, normalized)
+        return [dict(row) for row in normalized]
+
+    @staticmethod
+    def _bar_timestamp(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        try:
+            if isinstance(value, (int, float)) or str(value).strip().isdigit():
+                timestamp = float(value)
+                if timestamp > 10_000_000_000:
+                    timestamp /= 1000
+                return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError, OSError):
+            return None
+
+    @staticmethod
+    def _ema(values: list[float], period: int) -> float:
+        if not values:
+            return 0.0
+        multiplier = 2 / (period + 1)
+        result = values[0]
+        for value in values[1:]:
+            result = (value - result) * multiplier + result
+        return result
+
+    @staticmethod
+    def _day_technical_score(change: float) -> float:
+        # Avoids chasing parabolic moves while rewarding confirmed positive momentum.
+        if change < -3 or change > 6:
+            return 25.0
+        return max(20.0, min(88.0, 52 + change * 8))
+
+    @staticmethod
+    def _composite(item: dict[str, Any]) -> float:
+        entry = max(0.0, min(100.0, 100 - max(item["buy_in_distance"], 0) * 5))
+        return round(item["fundamental_score"] * 0.55 + item["technical_score"] * 0.30 + entry * 0.15, 3)
+
+    def _entry_decision(self, item: dict[str, Any]) -> tuple[str, list[str]]:
+        policy = self._active_policy
+        indicators = dict(item.get("technical_indicators") or {})
+        tactical_structure = (
+            str(indicators.get("price_structure")) in {"higher-highs", "breakout"}
+            or (
+                str(indicators.get("volume_state")) == "accumulation"
+                and item["technical_score"] >= 78.0
+            )
+        )
+        tactical_route = all((
+            bool(item.get("technical_validated")),
+            item.get("market") not in ACTIVE_MARKETS or item.get("quote_status") == "live",
+            item["upside"] >= 20.0,
+            item["risk_score"] <= 60.0,
+            item["confidence"] >= 65.0,
+            item["buy_in_distance"] <= 20.0,
+            item["technical_score"] >= 72.0,
+            item["composite_score"] >= 72.0,
+            str(indicators.get("data_status")) == "live",
+            str(indicators.get("trend_state")) == "bullish",
+            str(indicators.get("volume_state")) != "distribution",
+            tactical_structure,
+        ))
+        if tactical_route:
+            return "BUY", [
+                item["thesis"],
+                "Tactical quality-momentum route passed with fresh data, bullish structure and controlled risk.",
+            ]
+        momentum15 = _float(indicators.get("momentum15"))
+        momentum30 = _float(indicators.get("momentum30"))
+        momentum60 = _float(indicators.get("momentum60"))
+        relative_volume = _float(indicators.get("relative_volume"), 1.0)
+        modeled_edge = round(
+            max(momentum15, 0.0) * 0.45
+            + max(momentum30, 0.0) * 0.25
+            + max(momentum60, 0.0) * 0.10
+            + max(relative_volume - 1.0, 0.0) * 0.20
+            + max(item["technical_score"] - 60.0, 0.0) * 0.015,
+            3,
+        )
+        intraday_structure = (
+            str(indicators.get("price_structure")) in {"higher-highs", "breakout"}
+            or (momentum15 > 0.05 and momentum30 > 0.0)
+        )
+        intraday_route = all((
+            bool(item.get("technical_validated")),
+            item.get("market") in ACTIVE_MARKETS,
+            item.get("quote_status") == "live",
+            item["upside"] >= 0.0,
+            item["risk_score"] <= 72.0,
+            item["confidence"] >= 40.0,
+            item["buy_in_distance"] <= 40.0,
+            item["technical_score"] >= 62.0,
+            item["composite_score"] >= 55.0,
+            str(indicators.get("data_status")) == "live",
+            str(indicators.get("trend_state")) == "bullish",
+            str(indicators.get("volume_state")) != "distribution",
+            intraday_structure,
+            modeled_edge >= MIN_INTRADAY_EDGE_PERCENT,
+        ))
+        item["modeled_intraday_edge_percent"] = modeled_edge
+        item["simulated_round_trip_cost_percent"] = SIMULATED_ROUND_TRIP_COST_PERCENT
+        if intraday_route:
+            return "BUY", [
+                item["thesis"],
+                (
+                    f"Cost-aware intraday route passed with {modeled_edge:.2f}% modeled edge "
+                    f"versus {SIMULATED_ROUND_TRIP_COST_PERCENT:.2f}% simulated round-trip friction."
+                ),
+            ]
+        reasons: list[str] = []
+        if item.get("market") in ACTIVE_MARKETS and item.get("quote_status") != "live":
+            reasons.append("Current US quote is not live; paper entry blocked")
+        if not item.get("technical_validated"):
+            reasons.append("Five-minute technical confirmation is unavailable")
+        if item["upside"] < policy["entry_upside_floor"]:
+            reasons.append(f"C3PO TP upside below {policy['entry_upside_floor']:.2f}% adaptive paper-entry floor")
+        if item["risk_score"] > policy["max_risk_score"]:
+            reasons.append(f"Risk score above adaptive {policy['max_risk_score']:.2f}/100 ceiling")
+        if item["confidence"] < policy["min_confidence"]:
+            reasons.append(f"Valuation confidence below adaptive {policy['min_confidence']:.2f}% floor")
+        if item["buy_in_distance"] > policy["max_buy_in_distance"]:
+            reasons.append(f"Price is more than {policy['max_buy_in_distance']:.2f}% above disciplined buy-in")
+        if item["technical_score"] < policy["min_technical_score"]:
+            reasons.append("Intraday/day momentum confirmation is insufficient")
+        if item["composite_score"] < policy["min_composite_score"]:
+            reasons.append(f"Hybrid score below adaptive {policy['min_composite_score']:.2f}/100 floor")
+        return ("REJECT", reasons) if reasons else ("BUY", [item["thesis"], "Hybrid fundamental and timing gates passed"])
+
+    def _target_position_percent(self, item: dict[str, Any], *, cash_overhang_percent: float = 0.0) -> float:
+        """Size conviction while reducing capital assigned to risk and volatility."""
+        composite = max(0.0, min(100.0, _float(item.get("composite_score"), 50.0)))
+        confidence = max(0.0, min(100.0, _float(item.get("confidence"), 50.0)))
+        technical = max(0.0, min(100.0, _float(item.get("technical_score"), 50.0)))
+        risk = max(0.0, min(100.0, _float(item.get("risk_score"), 50.0)))
+        indicators = dict(item.get("technical_indicators") or {})
+        atr_percent = max(0.0, _float(indicators.get("atr_percent"), 2.5))
+
+        conviction_adjustment = (
+            (composite - 65.0) * 0.08
+            + (confidence - 65.0) * 0.03
+            + (technical - 60.0) * 0.03
+        )
+        risk_adjustment = -(risk - 35.0) * 0.05
+        volatility_adjustment = (
+            max(0.0, 2.0 - atr_percent) * 0.10
+            - max(0.0, atr_percent - 2.5) * 0.25
+        )
+        maximum = min(MAX_DYNAMIC_POSITION_PERCENT, self.settings.r2d2_max_position_percent)
+        minimum = min(MIN_POSITION_PERCENT, maximum)
+        deployment_adjustment = min(1.5, max(0.0, cash_overhang_percent) * 0.08)
+        target = (
+            BASE_POSITION_PERCENT + conviction_adjustment + risk_adjustment
+            + volatility_adjustment + deployment_adjustment
+        )
+        return round(max(minimum, min(maximum, target)), 2)
+
+    def _rotate_if_better(self, experiment: dict[str, Any], cycle_id: str, candidate: dict[str, Any],
+                          positions: list[dict[str, Any]], quotes: dict[tuple[str, str], Any],
+                          now: datetime) -> int:
+        action, reasons = self._entry_decision(candidate)
+        if action != "BUY":
+            return 0
+        dashboard = self.dashboard()
+        candidate_market_exposure = sum(
+            position.market_value_usd for position in dashboard.positions
+            if position.market == candidate["market"]
+        )
+        if candidate_market_exposure >= dashboard.nav_usd * self.settings.r2d2_max_market_percent / 100:
+            eligible_markets = {candidate["market"]}
+        else:
+            eligible_markets = set(ACTIVE_MARKETS)
+        ranked: list[tuple[float, float, dict[str, Any]]] = []
+        for position in positions:
+            if position["market"] not in eligible_markets:
+                continue
+            held_minutes = max(0.0, (now - position["opened_at"]).total_seconds() / 60)
+            if held_minutes < ROTATION_MIN_HOLD_MINUTES:
+                continue
+            strategy = dict(position.get("strategy_snapshot") or {})
+            technical = dict(strategy.get("live_technical") or {})
+            current_score = _float(
+                strategy.get("live_composite_score"),
+                _float(strategy.get("composite_score"), 50.0),
+            )
+            pnl_pct = (
+                _float(position["last_price_local"]) / _float(position["average_cost_local"]) - 1
+            ) * 100
+            technical_score = _float(technical.get("score"), _float(strategy.get("technical_score"), 50.0))
+            score_gap = candidate["composite_score"] - current_score
+            if bool(strategy.get("weekly_conviction_active")):
+                continue
+            weak_enough = technical_score < 52 or pnl_pct <= 0.5 or score_gap >= ROTATION_SCORE_GAP + 6
+            if score_gap >= ROTATION_SCORE_GAP and weak_enough:
+                ranked.append((score_gap, -technical_score, position))
+        if not ranked:
+            return 0
+        score_gap, _, position = max(ranked, key=lambda item: (item[0], item[1]))
+        quote = quotes.get((position["market"], position["symbol"]))
+        if not quote or not self._live_us_quote(quote, now):
+            return 0
+        fx = 1 / self._usd_fx(now) if position["market"] == "B3" else 1.0
+        reason = (
+            f"Opportunity-cost rotation: {candidate['symbol']} scored {candidate['composite_score']:.1f}/100, "
+            f"{score_gap:.1f} points above {position['symbol']}; the incumbent's live trend no longer justified the slot."
+        )
+        exit_item = {
+            "market": position["market"], "symbol": position["symbol"], "name": position["name"],
+            "currency": position["currency"], "stop_price": _float(position["stop_price_local"]),
+            "fundamental_score": 0, "technical_score": 0, "risk_score": 0,
+            "composite_score": candidate["composite_score"] - score_gap,
+        }
+        self._sell(experiment, cycle_id, exit_item, position, quote, fx, reason)
+        refreshed = self.repo.positions(experiment["id"])
+        trade = self._buy(experiment, cycle_id, candidate, refreshed)
+        if not trade:
+            self.repo.save_decision(
+                experiment["id"], cycle_id, candidate, "REJECT",
+                [*reasons, "Rotation exit completed, but portfolio capacity blocked the replacement order."],
+            )
+            return 1
+        return 2
+
+    def _buy(self, experiment: dict[str, Any], cycle_id: str, item: dict[str, Any],
+             positions: list[dict[str, Any]]) -> dict[str, Any] | None:
+        if item.get("market") not in ACTIVE_MARKETS or item.get("quote_status") != "live":
+            return None
+        dashboard = self.dashboard()
+        if dashboard.daily_return_percent <= -self.settings.r2d2_daily_loss_limit_percent:
+            return None
+        nav = dashboard.nav_usd
+        cash_percent = dashboard.cash_usd / nav * 100 if nav else 100.0
+        cash_overhang_percent = max(0.0, cash_percent - self.settings.r2d2_max_cash_percent)
+        target_position_percent = self._target_position_percent(
+            item, cash_overhang_percent=cash_overhang_percent,
+        )
+        minimum_position_usd = nav * MIN_POSITION_PERCENT / 100
+        market_exposure = sum(position.market_value_usd for position in dashboard.positions if position.market == item["market"])
+        max_market = nav * self.settings.r2d2_max_market_percent / 100
+        max_gross_percent = min(
+            self.settings.r2d2_max_gross_exposure_percent,
+            100.0 - self.settings.r2d2_min_cash_buffer_percent,
+        )
+        max_gross = nav * max_gross_percent / 100
+        execution_cost_buffer = nav * 0.0005
+        remaining_slots_after_buy = max(0, self.settings.r2d2_max_positions - len(positions) - 1)
+        reserved_for_remaining_slots = minimum_position_usd * remaining_slots_after_buy
+        portfolio_pacing_capacity = (
+            max_gross - dashboard.gross_exposure_usd
+            - reserved_for_remaining_slots - execution_cost_buffer
+        )
+        capacity = min(
+            nav * self.settings.r2d2_max_position_percent / 100,
+            max_market - market_exposure,
+            max_gross - dashboard.gross_exposure_usd - execution_cost_buffer,
+            portfolio_pacing_capacity,
+            dashboard.cash_usd,
+        )
+        # Fees and simulated slippage reduce NAV by a few dollars after each fill.
+        # A 10% tolerance on the minimum ticket prevents fees and simulated
+        # slippage from blocking the final diversification slot while the 95%
+        # gross exposure ceiling and 5% cash buffer remain hard.
+        if capacity < minimum_position_usd * 0.90:
+            return None
+        allocation = min(capacity, nav * target_position_percent / 100)
+        fx = 1 / self._usd_fx(datetime.now(timezone.utc)) if item["market"] == "B3" else 1.0
+        slippage_rate = 0.0015 if item["market"] == "B3" else 0.0010
+        fee_rate = 0.0006 if item["market"] == "B3" else 0.0004
+        fill = item["price"] * (1 + slippage_rate)
+        item = {
+            **item,
+            "stop_price": max(
+                _float(item.get("stop_price")),
+                fill * (1 - self.settings.r2d2_max_position_loss_percent / 100),
+            ),
+        }
+        precision = 1 if item["market"] == "B3" else 100
+        quantity = math.floor((allocation / (fill * fx)) * precision) / precision
+        if quantity <= 0:
+            return None
+        gross = quantity * fill * fx
+        fees = gross * fee_rate
+        slippage = quantity * (fill - item["price"]) * fx
+        actual_position_percent = allocation / nav * 100 if nav else 0.0
+        sizing_factors = {
+            "composite_score": round(_float(item.get("composite_score")), 2),
+            "confidence": round(_float(item.get("confidence")), 2),
+            "technical_score": round(_float(item.get("technical_score")), 2),
+            "risk_score": round(_float(item.get("risk_score")), 2),
+            "atr_percent": round(_float((item.get("technical_indicators") or {}).get("atr_percent"), 2.5), 3),
+        }
+        decision = {
+            **item,
+            "allocation_usd": allocation,
+            "target_position_percent": target_position_percent,
+            "actual_position_percent": round(actual_position_percent, 3),
+            "cash_before_percent": round(cash_percent, 3),
+            "cash_ceiling_percent": self.settings.r2d2_max_cash_percent,
+            "cash_deployment_mode": cash_overhang_percent > 0,
+            "sizing_model": "dynamic conviction-risk-volatility",
+            "sizing_factors": sizing_factors,
+            "paper_only": True,
+        }
+        sizing_reason = (
+            f"Dynamic sizing {actual_position_percent:.2f}% of NAV "
+            f"(target {target_position_percent:.2f}%; conviction, risk and ATR adjusted"
+            f"{' with cash deployment active' if cash_overhang_percent > 0 else ''})."
+        )
+        trade = self.repo.execute_trade(
+            experiment, cycle_id=cycle_id, candidate=item, side="BUY", quantity=quantity,
+            signal_price=item["price"], fill_price=fill, fx=fx, fees=fees, slippage=slippage,
+            reason=f"Hybrid entry: {item['thesis']} {sizing_reason}",
+            decision=decision, quote_as_of=item["quote_as_of"],
+        )
+        self.repo.save_decision(experiment["id"], cycle_id, item, "BUY", [trade["reason"]], trade["id"])
+        return trade
+
+    def _sell(self, experiment: dict[str, Any], cycle_id: str, item: dict[str, Any], position: dict[str, Any],
+              quote: Any, fx: float, reason: str, *, quantity_fraction: float = 1.0) -> dict[str, Any]:
+        slip_rate = 0.0015 if item["market"] == "B3" else 0.0010
+        fee_rate = 0.0006 if item["market"] == "B3" else 0.0004
+        fill = quote.price * (1 - slip_rate)
+        full_quantity = _float(position["quantity"])
+        fraction = max(0.0, min(1.0, quantity_fraction))
+        quantity = math.floor(full_quantity * fraction * 100) / 100
+        if quantity <= 0 or full_quantity - quantity < 0.01:
+            quantity = full_quantity
+        gross = quantity * fill * fx
+        fees = gross * fee_rate
+        slippage = quantity * (quote.price - fill) * fx
+        trade = self.repo.execute_trade(
+            experiment, cycle_id=cycle_id, candidate=item, side="SELL", quantity=quantity,
+            signal_price=quote.price, fill_price=fill, fx=fx, fees=fees, slippage=slippage,
+            reason=reason, decision={**item, "paper_only": True}, quote_as_of=quote.as_of,
+        )
+        self.repo.save_decision(experiment["id"], cycle_id, item, "SELL", [reason], trade["id"])
+        return trade
+
+    def _usd_fx(self, now: datetime) -> float:
+        if self._fx_cache and now < self._fx_cache[0]:
+            return self._fx_cache[1]
+        client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.one_pagers.market_data.http)
+        quote = client.quotes(["USDBRL.FOREX"])[0]
+        self._fx_cache = (now + timedelta(minutes=10), quote.price)
+        return quote.price
+
+    def _snapshot(self, experiment: dict[str, Any], local_day: date, now: datetime) -> None:
+        positions = self.repo.positions(experiment["id"])
+        exposure = sum(_float(row["quantity"]) * _float(row["last_price_local"]) * _float(row["fx_to_usd"], 1)
+                       for row in positions)
+        cash = _float(experiment["cash_balance"])
+        all_closed = not self.open_markets(now) and now.astimezone(NEW_YORK).time() >= time(16, 5)
+        self.repo.save_snapshot(experiment["id"], local_day, cash + exposure, cash, exposure, len(positions), all_closed)

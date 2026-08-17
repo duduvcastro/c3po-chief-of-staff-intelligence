@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="NYSE">
+  <rect width="64" height="64" rx="10" fill="#0b2f58"/>
+  <path d="M14 46V33h7v13h-7zm10 0V26h7v20h-7zm10 0V18h7v28h-7zm10 0V11h7v35h-7z" fill="#fff"/>
+  <path d="M12 51h41" stroke="#54b9e8" stroke-width="3"/>
+</svg>

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Death Star emblem">
+  <defs>
+    <radialGradient id="shell" cx="34%" cy="28%" r="78%">
+      <stop offset="0" stop-color="#d8dde2"/>
+      <stop offset="0.38" stop-color="#737d86"/>
+      <stop offset="0.76" stop-color="#303841"/>
+      <stop offset="1" stop-color="#141a20"/>
+    </radialGradient>
+    <radialGradient id="dish" cx="47%" cy="46%" r="56%">
+      <stop offset="0" stop-color="#0c1116"/>
+      <stop offset="0.72" stop-color="#333d46"/>
+      <stop offset="1" stop-color="#68737c"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff0a0"/>
+      <stop offset="0.46" stop-color="#efc64d"/>
+      <stop offset="1" stop-color="#a56d05"/>
+    </linearGradient>
+    <clipPath id="sphere">
+      <circle cx="128" cy="128" r="106"/>
+    </clipPath>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3.2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="128" cy="128" r="109" fill="#080b0e" opacity=".48"/>
+  <circle cx="128" cy="128" r="106" fill="url(#shell)" stroke="url(#gold)" stroke-width="6"/>
+
+  <g clip-path="url(#sphere)" fill="none" stroke="#d6dde2" stroke-linecap="round">
+    <path d="M37 78C80 51 176 46 222 75M25 117c58-17 151-14 208 3M25 151c68 13 147 13 207-1M42 190c55 22 120 22 172-1" opacity=".25" stroke-width="2"/>
+    <path d="M65 36c8 34 9 140-5 178M111 23c-3 52-1 159 8 211M159 25c10 46 11 148 1 206M203 53c-13 48-11 113 8 151" opacity=".21" stroke-width="2"/>
+    <path d="M50 96h31m45-52h28m36 53h28M45 177h41m15 28h39m33-28h35" opacity=".42" stroke-width="3"/>
+  </g>
+
+  <path d="M23 132C73 141 180 143 233 132L232 151C173 161 77 159 24 150Z" fill="#0b1015" opacity=".8"/>
+  <path d="M26 136C83 146 175 147 230 136" fill="none" stroke="url(#gold)" stroke-width="2.5" opacity=".8"/>
+  <path d="M28 149C87 157 171 158 229 149" fill="none" stroke="#aeb8c0" stroke-width="1.5" opacity=".42"/>
+
+  <circle cx="87" cy="82" r="42" fill="#141a20" stroke="#111820" stroke-width="9"/>
+  <circle cx="87" cy="82" r="36" fill="url(#dish)" stroke="url(#gold)" stroke-width="4"/>
+  <g stroke="#bcc5cc" stroke-width="2" opacity=".54">
+    <path d="M87 48v68M53 82h68M63 58l48 48M63 106l48-48"/>
+  </g>
+  <circle cx="87" cy="82" r="10" fill="#0a0e12" stroke="url(#gold)" stroke-width="3"/>
+  <circle cx="87" cy="82" r="4.5" fill="#fff3ad" filter="url(#glow)"/>
+  <path d="M87 82L53 36M87 82l-9-55M87 82l20-51" stroke="url(#gold)" stroke-width="3" opacity=".92" filter="url(#glow)"/>
+
+  <path d="M220 56l-10 8 9 7-5 11 11 7-8 10 13 8-8 12 12 7v12l-10 6 8 12-11 8 7 12-13 7 5 13-14 5" fill="#0a0e12" opacity=".72"/>
+  <circle cx="128" cy="128" r="106" fill="none" stroke="#fff2ad" stroke-width="1.5" opacity=".42"/>
+</svg>

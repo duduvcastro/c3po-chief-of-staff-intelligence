@@ -1,0 +1,181 @@
+name: C3PO pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit SHA to validate and deploy
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c3po-production
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.15.0"
+
+jobs:
+  sensitive-files:
+    name: Sensitive files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+
+      - name: Reject credentials and private runtime data
+        run: python3 .github/scripts/check_sensitive_files.py
+
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: c3po/backend
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: c3po/backend/requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Run tests
+        run: pytest -q
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: c3po/frontend
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Activate pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${PNPM_VERSION} --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm build
+
+  deploy-production:
+    name: Deploy production
+    needs: [sensitive-files, backend-tests, frontend-build]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+
+      - name: Record deployment revision
+        id: revision
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Package tracked source
+        run: git archive --format=tar.gz --output=/tmp/c3po-release.tar.gz HEAD
+
+      - name: Configure deployment SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload release
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          scp -i ~/.ssh/c3po_deploy \
+            /tmp/c3po-release.tar.gz \
+            "$USER@$HOST:/tmp/c3po-release-${{ steps.revision.outputs.sha }}.tar.gz"
+
+      - name: Deploy and verify
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          REVISION: ${{ steps.revision.outputs.sha }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "REVISION='$REVISION' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          APP_DIR=/opt/chief-of-staff-digital
+          ARCHIVE="/tmp/c3po-release-${REVISION}.tar.gz"
+          RELEASE_DIR="/tmp/c3po-release-${REVISION}"
+
+          rm -rf "$RELEASE_DIR"
+          mkdir -p "$RELEASE_DIR"
+          tar -xzf "$ARCHIVE" -C "$RELEASE_DIR"
+
+          rsync -a --delete \
+            --exclude='.env' \
+            --exclude='.deploy-version' \
+            --exclude='.deployments/' \
+            --exclude='output/' \
+            --exclude='outputs/' \
+            --exclude='tmp/' \
+            --exclude='c3po/data/' \
+            --exclude='whatsapp_session/' \
+            "$RELEASE_DIR/" "$APP_DIR/"
+
+          cd "$APP_DIR"
+          docker compose -f c3po/compose.yml config --quiet
+          docker compose -f c3po/compose.yml up -d --build
+
+          for attempt in $(seq 1 30); do
+            web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
+            api_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/health || true)
+            if [ "$web_code" = "200" ] && { [ "$api_code" = "200" ] || [ "$api_code" = "401" ]; }; then
+              printf '%s\n' "$REVISION" > .deploy-version
+              rm -rf "$RELEASE_DIR" "$ARCHIVE"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          docker compose -f c3po/compose.yml ps
+          docker compose -f c3po/compose.yml logs --tail=120 api web
+          exit 1
+          REMOTE
+

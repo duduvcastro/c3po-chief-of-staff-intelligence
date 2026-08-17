@@ -1,0 +1,69 @@
+services:
+  morning-summary:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./outputs:/app/outputs
+      - ./work/billfish_reports:/app/work/billfish_reports
+      - ./work/whatsapp_unread_today.json:/app/work/whatsapp_unread_today.json
+      - ./whatsapp_session:/app/whatsapp_session
+    restart: "no"
+    command: ["sh", "work/cloud_run.sh", "--audit-only", "--no-send"]
+
+  whatsapp-login:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./outputs:/app/outputs
+      - ./work/whatsapp_unread_today.json:/app/work/whatsapp_unread_today.json
+      - ./whatsapp_session:/app/whatsapp_session
+    restart: "no"
+    command: ["python", "work/whatsapp_web_capture.py", "login", "--timeout", "420"]
+
+  whatsapp-capture:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./outputs:/app/outputs
+      - ./work/whatsapp_unread_today.json:/app/work/whatsapp_unread_today.json
+      - ./whatsapp_session:/app/whatsapp_session
+    restart: "no"
+    command: ["python", "work/whatsapp_web_capture.py", "capture", "--timeout", "90"]
+
+  pluggy-webhook:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./outputs:/app/outputs
+    restart: unless-stopped
+    command: ["python", "work/pluggy_webhook.py"]
+
+  caddy:
+    image: caddy:2-alpine
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - pluggy-webhook
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

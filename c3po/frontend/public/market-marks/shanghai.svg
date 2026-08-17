@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Shanghai Composite">
+  <rect width="64" height="64" rx="10" fill="#a90f1c"/>
+  <path d="M13 46h38M18 42V29h7v13m5 0V20h7v22m5 0V13h7v29" stroke="#ffd75b" stroke-width="4" fill="none"/>
+  <text x="32" y="57" fill="#fff" font-family="Arial, sans-serif" font-size="10" font-weight="800" text-anchor="middle">SSE</text>
+</svg>

@@ -1,0 +1,2 @@
+CRON_TZ=America/Sao_Paulo
+0 7,13,19 * * * cd /opt/chief-of-staff-digital && /usr/bin/docker compose run --rm --entrypoint "" morning-summary sh work/cloud_run.sh >> /opt/chief-of-staff-digital/outputs/cron.log 2>&1

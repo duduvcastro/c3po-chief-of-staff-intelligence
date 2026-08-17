@@ -1,0 +1,9 @@
+fastapi>=0.116,<1
+uvicorn[standard]>=0.35,<1
+psycopg[binary]>=3.2,<4
+pydantic-settings>=2.10,<3
+pytest>=8,<9
+httpx>=0.28,<1
+curl-cffi>=0.13,<1
+websockets>=14,<16
+reportlab>=4.2,<5

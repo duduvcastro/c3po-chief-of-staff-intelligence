@@ -1,0 +1,10 @@
+{$PLUGGY_WEBHOOK_HOST} {
+    encode zstd gzip
+    reverse_proxy pluggy-webhook:8080
+}
+
+{$C3PO_HOST} {
+    encode zstd gzip
+    header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex"
+    reverse_proxy c3po-web:80
+}

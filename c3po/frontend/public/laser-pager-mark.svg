@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Laser Pager mark</title>
+  <defs>
+    <radialGradient id="field" cx="43%" cy="44%" r="72%">
+      <stop offset="0" stop-color="#321113"/>
+      <stop offset=".46" stop-color="#150a0b"/>
+      <stop offset="1" stop-color="#050607"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="37" y1="28" x2="219" y2="231" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a0"/>
+      <stop offset=".24" stop-color="#edc54b"/>
+      <stop offset=".58" stop-color="#9c6812"/>
+      <stop offset=".82" stop-color="#5d3e08"/>
+      <stop offset="1" stop-color="#f2cf62"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="197" y1="187" x2="73" y2="102" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7b0005"/>
+      <stop offset=".28" stop-color="#ff131d"/>
+      <stop offset=".62" stop-color="#ff5b61"/>
+      <stop offset="1" stop-color="#fff"/>
+    </linearGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="55%">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset=".24" stop-color="#fff1f1"/>
+      <stop offset=".55" stop-color="#ff1f28"/>
+      <stop offset="1" stop-color="#8a0008" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse">
+      <path d="M26 0H0v26" fill="none" stroke="#6d4040" stroke-width="1" opacity=".22"/>
+    </pattern>
+    <filter id="redGlow" x="-120%" y="-120%" width="340%" height="340%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity=".68"/>
+    </filter>
+    <clipPath id="crest"><circle cx="128" cy="128" r="110"/></clipPath>
+  </defs>
+
+  <circle cx="128" cy="128" r="112" fill="url(#field)" stroke="url(#gold)" stroke-width="7"/>
+  <circle cx="128" cy="128" r="102" fill="url(#grid)" stroke="#d5a735" stroke-width="2" opacity=".58"/>
+  <g clip-path="url(#crest)" filter="url(#shadow)">
+    <path d="M28 198 229 89" stroke="#f20d18" stroke-width="24" stroke-linecap="round" opacity=".18" filter="url(#redGlow)"/>
+    <path d="M28 198 229 89" stroke="url(#beam)" stroke-width="10" stroke-linecap="round" filter="url(#redGlow)"/>
+    <path d="M28 198 229 89" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <g transform="translate(79 170)" stroke-linecap="round" filter="url(#redGlow)">
+      <path d="M0 0-57-3M0 0-47-33M0 0-27-54M0 0 4-66M0 0 35-53M0 0 61-33M0 0 68-4M0 0 53 26M0 0 29 50M0 0-3 61M0 0-34 49M0 0-56 27" stroke="#ff1d27" stroke-width="3"/>
+      <path d="M0 0-34-2M0 0-28-20M0 0-16-32M0 0 2-39M0 0 20-31M0 0 36-19M0 0 40-2" stroke="#fff" stroke-width="1.5" opacity=".88"/>
+    </g>
+    <circle cx="79" cy="170" r="31" fill="url(#core)" opacity=".9" filter="url(#redGlow)"/>
+    <circle cx="79" cy="170" r="9" fill="#fff"/>
+    <path d="M174 119 225 92M42 190 11 207" stroke="#ff6d72" stroke-width="2" opacity=".58"/>
+  </g>
+  <path d="M46 190c17 30 45 50 82 50s66-20 82-50" fill="none" stroke="url(#gold)" stroke-width="5" stroke-linecap="round" opacity=".8"/>
+</svg>

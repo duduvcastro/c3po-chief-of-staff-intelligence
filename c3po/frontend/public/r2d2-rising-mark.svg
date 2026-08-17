@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">R2D2 Rising mark</title>
+  <defs>
+    <radialGradient id="space" cx="48%" cy="38%" r="72%">
+      <stop offset="0" stop-color="#17263d"/>
+      <stop offset=".52" stop-color="#0c111b"/>
+      <stop offset="1" stop-color="#040608"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="38" y1="28" x2="218" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a0"/>
+      <stop offset=".24" stop-color="#edc54b"/>
+      <stop offset=".58" stop-color="#9b6711"/>
+      <stop offset=".82" stop-color="#563907"/>
+      <stop offset="1" stop-color="#f2cf62"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="80" y1="61" x2="176" y2="226" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".28" stop-color="#cbd2d6"/>
+      <stop offset=".63" stop-color="#80898f"/>
+      <stop offset="1" stop-color="#353c42"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="91" y1="71" x2="166" y2="213" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7aa5ff"/>
+      <stop offset=".32" stop-color="#345dc7"/>
+      <stop offset=".72" stop-color="#182b72"/>
+      <stop offset="1" stop-color="#090f31"/>
+    </linearGradient>
+    <radialGradient id="eye" cx="40%" cy="35%" r="66%">
+      <stop offset="0" stop-color="#e8f5ff"/>
+      <stop offset=".22" stop-color="#85b9e7"/>
+      <stop offset=".6" stop-color="#263847"/>
+      <stop offset="1" stop-color="#050709"/>
+    </radialGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000" flood-opacity=".74"/>
+    </filter>
+    <filter id="blueGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="crest"><circle cx="128" cy="128" r="110"/></clipPath>
+  </defs>
+
+  <circle cx="128" cy="128" r="112" fill="url(#space)" stroke="url(#gold)" stroke-width="7"/>
+  <circle cx="128" cy="128" r="102" fill="none" stroke="#d6a936" stroke-width="2" opacity=".52"/>
+  <g clip-path="url(#crest)">
+    <g fill="#cce7ff" opacity=".62">
+      <circle cx="61" cy="61" r="1.6"/><circle cx="199" cy="78" r="1.2"/><circle cx="51" cy="145" r="1.1"/>
+      <circle cx="210" cy="157" r="1.5"/><circle cx="183" cy="39" r=".9"/><circle cx="75" cy="202" r="1.2"/>
+    </g>
+    <ellipse cx="128" cy="215" rx="68" ry="17" fill="#05070a" opacity=".84"/>
+    <g filter="url(#shadow)">
+      <path d="M78 111c0-40 20-66 50-66s50 26 50 66Z" fill="url(#steel)" stroke="#d8e0e4" stroke-width="4"/>
+      <path d="M84 96c5-28 21-44 44-44 22 0 38 16 44 44Z" fill="url(#blue)" stroke="#18265e" stroke-width="3"/>
+      <path d="M90 78h76M82 98h92" fill="none" stroke="#eef4f5" stroke-width="4" opacity=".76"/>
+      <path d="M103 57v39m50-39v39" fill="none" stroke="#c8d1d6" stroke-width="3"/>
+      <rect x="116" y="57" width="25" height="27" rx="5" fill="#c9d1d4" stroke="#f2f4f4" stroke-width="3"/>
+      <circle cx="128.5" cy="69.5" r="8.5" fill="url(#eye)" stroke="#15191d" stroke-width="3"/>
+      <circle cx="126" cy="67" r="2" fill="#fff" opacity=".8"/>
+      <rect x="148" y="76" width="13" height="13" rx="3" fill="#080b0e" stroke="#8cc6ff" stroke-width="2"/>
+      <circle cx="154.5" cy="82.5" r="3" fill="#f5825f" filter="url(#blueGlow)"/>
+
+      <path d="M79 105h98v111c0 12-10 22-22 22H101c-12 0-22-10-22-22Z" fill="url(#steel)" stroke="#d5dde1" stroke-width="4"/>
+      <path d="M84 108h88v20H84Z" fill="url(#blue)" stroke="#162764" stroke-width="3"/>
+      <path d="M94 109v19m18-19v19m33-19v19m17-19v19" stroke="#d9e1e5" stroke-width="3" opacity=".85"/>
+      <path d="M88 135h28v44H88Zm52 0h28v44h-28Z" fill="#e7ecee" stroke="#4e5b64" stroke-width="3"/>
+      <path d="M94 141h16v31H94Zm52 0h16v31h-16Z" fill="url(#blue)"/>
+      <path d="M119 137h18v22h-18Z" fill="#1d2530" stroke="#82919b" stroke-width="3"/>
+      <circle cx="128" cy="148" r="5" fill="#69d0ff" filter="url(#blueGlow)"/>
+      <path d="M88 186h80v38H88Z" fill="#d4dbde" stroke="#58636a" stroke-width="3"/>
+      <path d="M97 191h20v27H97Zm42 0h20v27h-20Z" fill="url(#blue)"/>
+      <path d="M121 185h14v40h-14Z" fill="#454f55"/>
+      <circle cx="128" cy="205" r="8" fill="#10151a" stroke="#aebbc2" stroke-width="3"/>
+
+      <path d="M79 133 58 151l-8 65 24 18 16-18-4-76Z" fill="url(#steel)" stroke="#cdd5d9" stroke-width="4"/>
+      <path d="m177 133 21 18 8 65-24 18-16-18 4-76Z" fill="url(#steel)" stroke="#cdd5d9" stroke-width="4"/>
+      <path d="m59 159 19 8m-23 26 25 5m118-39-19 8m23 26-25 5" fill="none" stroke="#284da7" stroke-width="5"/>
+      <path d="M50 217h40l-7 18H55Zm116 0h40l-5 18h-40Z" fill="#6d767b" stroke="#d2dade" stroke-width="4"/>
+    </g>
+  </g>
+  <path d="M46 190c17 30 45 50 82 50s66-20 82-50" fill="none" stroke="url(#gold)" stroke-width="5" stroke-linecap="round" opacity=".78"/>
+</svg>
