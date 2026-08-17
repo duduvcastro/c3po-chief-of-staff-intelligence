@@ -3222,9 +3222,9 @@ const marketIndexMarks: Record<string, string> = {
 
 const marketInstrumentMarks: Record<string, string> = {
   ...marketIndexMarks,
-  "USD/BRL": "/market-marks/usd-brl.svg",
-  "EUR/BRL": "/market-marks/eur-brl.svg",
-  "GBP/BRL": "/market-marks/gbp-brl.svg",
+  "USD/BRL": "/market-marks/usd.svg",
+  "EUR/BRL": "/market-marks/euro.svg",
+  "GBP/BRL": "/market-marks/pound.svg",
   BTC: "/market-marks/btc.svg",
   ETH: "/market-marks/eth.svg",
   SOL: "/market-marks/sol.svg",
