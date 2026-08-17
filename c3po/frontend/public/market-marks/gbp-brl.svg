@@ -1,1 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#fff" stroke="#d7dbe0" stroke-width="2"/><path d="M32 2a30 30 0 0 0 0 60Z" fill="#263d82"/><path d="M32 2a30 30 0 0 1 0 60Z" fill="#159447"/><path d="m38 32-6 5-6-5 6-5Z" fill="#f5d447"/><text x="17" y="37" fill="#fff" font-family="Arial" font-size="18" font-weight="700" text-anchor="middle">£</text><text x="47" y="36" fill="#fff" font-family="Arial" font-size="11" font-weight="700" text-anchor="middle">BR</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="British Pound">
+  <defs>
+    <linearGradient id="gbp-bg" x1="12" y1="8" x2="52" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7a58b8"/>
+      <stop offset="1" stop-color="#3d246f"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="30" fill="url(#gbp-bg)" stroke="#d7dbe0" stroke-width="2"/>
+  <circle cx="32" cy="32" r="23" fill="none" stroke="#ffffff" stroke-opacity=".2" stroke-width="1.5"/>
+  <text x="32" y="43" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" text-anchor="middle">£</text>
+</svg>
