@@ -220,6 +220,7 @@ interface R2D2DashboardData {
     market: "B3" | "NASDAQ" | "NYSE";
     symbol: string;
     name: string;
+    logo_url: string | null;
     currency: string;
     quantity: number;
     average_cost_local: number;
@@ -2471,7 +2472,7 @@ function R2D2RisingView() {
   const launchChecks = [
     { label: "Market feeds", detail: "EODHD live · Nasdaq + NYSE · B3 execution disabled", state: "ready" },
     { label: "Canonical valuation", detail: "Dark Side + Last Jedi + Laser Pager", state: "ready" },
-    { label: "Risk mandate", detail: "No leverage · dynamic defense -0.4%/-0.7% · hard stop -0.9%", state: "ready" },
+    { label: "Risk mandate", detail: "No leverage · failed-entry defense -0.3% · hard stop -0.65%", state: "ready" },
     { label: "Paper execution", detail: `20-second risk monitor · one-minute opportunity scan · ${data.status}`, state: data.status === "paused" ? "pending" : "ready" },
     { label: "Turnover policy", detail: "20-80 qualified orders/session · 120 hard cap · costs included", state: "ready" },
     { label: "Daily learning loop", detail: `Version ${data.learning.version} · ${data.learning.sample_days} sessions · ${data.learning.sample_trades} completed exits`, state: "ready" }
@@ -2603,14 +2604,17 @@ function R2D2RisingView() {
       <section className="panel r2d2-ledger-panel">
         <PanelHeader title="Virtual Positions" icon={WalletCards} />
         <div className="r2d2-ledger-head">
-          <span>Asset</span><span>Market</span><span>Allocation</span><span>Position value</span><span>Last price</span><span>P&amp;L</span><span>Technical</span><span>Trend / Flow</span><span>Stop</span><span>Decision</span>
+          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span>P&amp;L</span><span>Technical</span><span>Trend / Flow</span><span>Stop</span><span>Decision</span>
         </div>
         {data.positions.length ? data.positions.map((position) => (
           <div className="r2d2-ledger-row" key={`${position.market}-${position.symbol}`}>
-            <div><R2D2Ticker symbol={position.symbol} name={position.name} /></div>
-            <span>{position.market}</span><span>{position.allocation_percent.toFixed(1)}%</span>
+            <div className="r2d2-asset-cell">
+              <div className="r2d2-company-logo"><CompanyLogo logoUrl={position.logo_url} symbol={position.symbol} /></div>
+              <R2D2Ticker symbol={position.symbol} name={position.name} />
+            </div>
+            <span className="r2d2-last-price">{formatCurrency(position.last_price_local, position.currency)}</span>
+            <span>{position.allocation_percent.toFixed(1)}%</span>
             <strong className="r2d2-position-value">{moneyExact(position.market_value_usd)}</strong>
-            <span>{formatCurrency(position.last_price_local, position.currency)}</span>
             <div className="r2d2-live-pnl">
               <strong className={position.unrealized_pnl_usd >= 0 ? "positive" : "negative"}>{signedPercent(position.unrealized_return_percent)}</strong>
               <span className={position.unrealized_pnl_usd >= 0 ? "positive" : "negative"}>
