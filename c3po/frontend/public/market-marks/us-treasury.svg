@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="United States Treasury">
+  <defs>
+    <clipPath id="flag-circle">
+      <circle cx="120" cy="120" r="78"/>
+    </clipPath>
+    <pattern id="stars" width="13" height="13" patternUnits="userSpaceOnUse">
+      <circle cx="3.25" cy="3.25" r="1.65" fill="#fff"/>
+      <circle cx="9.75" cy="9.75" r="1.65" fill="#fff"/>
+    </pattern>
+  </defs>
+  <rect width="240" height="240" rx="20" fill="#172b50"/>
+  <circle cx="120" cy="120" r="82" fill="#fff"/>
+  <g clip-path="url(#flag-circle)">
+    <rect x="42" y="42" width="156" height="156" fill="#fff"/>
+    <path d="M42 42h156v12H42zm0 24h156v12H42zm0 24h156v12H42zm0 24h156v12H42zm0 24h156v12H42zm0 24h156v12H42zm0 24h156v12H42z" fill="#c3414b"/>
+    <rect x="42" y="42" width="82" height="84" fill="#172b50"/>
+    <rect x="45" y="45" width="76" height="78" fill="url(#stars)"/>
+  </g>
+  <circle cx="120" cy="120" r="78" fill="none" stroke="#fff" stroke-width="6"/>
+</svg>
