@@ -422,20 +422,30 @@ button { cursor: pointer; }
 .live-market-range span:last-child { text-align: right; }
 .live-market-quote > strong { display: block; margin-top: 5px; font-size: 9px; }
 .live-market-quote small { display: block; margin-top: 3px; overflow: hidden; color: #949ca5; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.live-market-panel-index .live-market-table { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.live-market-panel-index .live-market-table-head { display: none; }
-.live-market-panel-index .live-market-row { min-width: 0; min-height: 154px; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "instrument quote" "price change" "range range"; gap: 11px 16px; align-content: center; padding: 15px 16px; border-right: 1px solid #e9ebed; border-bottom: 0; }
-.live-market-panel-index .live-market-row:last-child { border-right: 0; }
-.live-market-panel-index .live-market-instrument { grid-area: instrument; }
-.live-market-panel-index .live-market-price { grid-area: price; }
+.live-market-panel-cards .live-market-table { display: grid; overflow: visible; }
+.live-market-panel-cards .live-market-table-head { display: none; }
+.live-market-panel-index .live-market-table { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.live-market-panel-future-index .live-market-table { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.live-market-panel-currencies .live-market-table { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.live-market-panel-crypto .live-market-table { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.live-market-panel-cards .live-market-row { min-width: 0; min-height: 142px; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "instrument quote" "price change" "range range"; gap: 10px 12px; align-content: center; padding: 14px; border-right: 1px solid #e9ebed; border-bottom: 0; }
+.live-market-panel-index .live-market-row { min-height: 154px; }
+.live-market-panel-index .live-market-row:nth-of-type(-n+3) { border-bottom: 1px solid #e9ebed; }
+.live-market-panel-index .live-market-row:nth-of-type(3n),
+.live-market-panel-future-index .live-market-row:last-child,
+.live-market-panel-currencies .live-market-row:last-child,
+.live-market-panel-crypto .live-market-row:last-child { border-right: 0; }
+.live-market-panel-cards .live-market-instrument { grid-area: instrument; }
+.live-market-panel-cards .live-market-price { grid-area: price; }
+.live-market-panel-cards .live-market-price strong { font-size: 16px; }
 .live-market-panel-index .live-market-price strong { font-size: 18px; }
-.live-market-panel-index .live-market-change { grid-area: change; align-self: center; justify-self: end; }
+.live-market-panel-cards .live-market-change { grid-area: change; align-self: center; justify-self: end; }
+.live-market-panel-cards .live-market-change strong { font-size: 11px; }
 .live-market-panel-index .live-market-change strong { font-size: 12px; }
-.live-market-panel-index .live-market-range { grid-area: range; }
-.live-market-panel-index .live-market-quote { grid-area: quote; justify-self: end; text-align: right; }
-.live-market-panel-index .market-index-mark { width: 46px; height: 46px; flex-basis: 46px; border-radius: 6px; }
-.live-market-panel-future-index .live-market-table-head,
-.live-market-panel-future-index .live-market-row { grid-template-columns: minmax(190px, 1.45fr) minmax(82px, .65fr) minmax(78px, .62fr) minmax(155px, 1.1fr) minmax(125px, .95fr); }
+.live-market-panel-cards .live-market-range { grid-area: range; }
+.live-market-panel-cards .live-market-quote { grid-area: quote; justify-self: end; text-align: right; }
+.live-market-panel-cards .market-index-mark { width: 42px; height: 42px; flex-basis: 42px; border-radius: 6px; }
+.live-market-panel-index .market-index-mark { width: 46px; height: 46px; flex-basis: 46px; }
 .market-state { min-height: 18px; display: inline-flex; align-items: center; padding: 0 6px; border-radius: 3px; font-size: 8px; font-weight: 900; text-transform: uppercase; }
 .market-state-live { color: var(--green); background: var(--green-soft); }
 .market-state-delayed { color: var(--blue); background: var(--blue-soft); }
@@ -1873,9 +1883,12 @@ button { cursor: pointer; }
   .live-market-summary > div:nth-child(-n+4) { border-bottom: 1px solid var(--line); }
   .live-market-clock { grid-column: 1 / -1; }
   .live-market-table-head, .live-market-row { min-width: 610px; }
-  .live-market-panel-index .live-market-table { grid-template-columns: 1fr; }
-  .live-market-panel-index .live-market-row { min-width: 0; border-right: 0; border-bottom: 1px solid #eef0f2; }
-  .live-market-panel-index .live-market-row:last-child { border-bottom: 0; }
+  .live-market-panel-index .live-market-table,
+  .live-market-panel-future-index .live-market-table,
+  .live-market-panel-currencies .live-market-table,
+  .live-market-panel-crypto .live-market-table { grid-template-columns: 1fr; }
+  .live-market-panel-cards .live-market-row { min-width: 0; border-right: 0; border-bottom: 1px solid #eef0f2; }
+  .live-market-panel-cards .live-market-row:last-child { border-bottom: 0; }
   .realtime-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .realtime-tab { min-width: 0; width: 100%; padding: 0 8px; }
   .realtime-refresh { grid-column: 1 / -1; justify-self: stretch; justify-content: center; margin-left: 0; }
