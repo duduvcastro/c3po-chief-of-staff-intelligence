@@ -1924,8 +1924,18 @@ class Database:
             return
 
         inputs = current_snapshot.get("inputs") if isinstance(current_snapshot.get("inputs"), dict) else {}
-        market = str(inputs.get("market") or ("B3" if analysis_type != "one_pager_valuation" else "US")).upper()
-        if market not in {"B3", "US"}:
+        raw_market = str(inputs.get("market") or ("B3" if analysis_type != "one_pager_valuation" else "US")).upper()
+        # US screener valuation_universe snapshots carry the exchange ("NASDAQ"/"NYSE")
+        # in inputs.market, not "US" -- every one of them was falling through the old
+        # "if market not in {B3, US}: market = B3" fallback and getting mislabeled as
+        # B3 here. That's what made Ben Kenobi Records' "US" filter show only a handful
+        # of records while "Todos" (unfiltered, ordered by recency) was dominated by
+        # these mislabeled entries.
+        if raw_market in {"NASDAQ", "NYSE"}:
+            market = "US"
+        elif raw_market in {"B3", "US"}:
+            market = raw_market
+        else:
             market = "B3"
         events = self.latest_valuation_ir_events(
             [str(current.get("symbol") or "") for current, _, _ in changed_rows],
