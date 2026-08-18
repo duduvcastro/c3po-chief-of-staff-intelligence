@@ -2519,6 +2519,34 @@ function R2D2RisingView() {
   const todayTrades = data.trades.filter((trade) => saoPauloDateKey(trade.executed_at) === todayKey);
   const todayPositiveTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
   const todayNegativeTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
+  const intelligenceLog = [
+    ...todayTrades.map((trade) => ({
+      id: `trade-${trade.id}`,
+      timestamp: trade.executed_at,
+      action: trade.side,
+      symbol: trade.symbol,
+      name: trade.name,
+      market: trade.market,
+      rationale: trade.reason,
+      detail: trade.side === "BUY"
+        ? `${trade.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares acquired at ${trade.currency} ${trade.fill_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
+        : `${trade.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares sold · ${trade.realized_pnl_usd === null ? "P&L pending" : `${signedMoney(trade.realized_pnl_usd)} realized`}.`,
+      tone: trade.side === "BUY" ? "buy" : (trade.realized_pnl_usd ?? 0) >= 0 ? "sell-positive" : "sell-negative"
+    })),
+    ...data.positions
+      .filter((position) => saoPauloDateKey(position.updated_at) === todayKey)
+      .map((position) => ({
+        id: `position-${position.market}-${position.symbol}`,
+        timestamp: position.updated_at,
+        action: position.decision_state || "MONITOR",
+        symbol: position.symbol,
+        name: position.name,
+        market: position.market,
+        rationale: `Motor state: ${position.decision_state || "monitoring"}. Technical score ${position.technical_score.toFixed(1)}; trend ${position.trend_state}; flow ${position.volume_state}.`,
+        detail: `Position ${signedPercent(position.unrealized_return_percent)} · stop ${position.currency} ${position.stop_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · quote ${position.quote_status}.`,
+        tone: "monitor"
+      }))
+  ].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
   const launchChecks = [
     { label: "Market feeds", detail: "EODHD live · Nasdaq + NYSE · B3 execution disabled", state: "ready" },
     { label: "Canonical valuation", detail: "Dark Side + Last Jedi + Laser Pager", state: "ready" },
@@ -2634,21 +2662,21 @@ function R2D2RisingView() {
           </div>
         </section>
 
-        <section className="panel r2d2-gates-panel">
-          <PanelHeader title="Launch Gates" icon={ShieldCheck} />
-          <div className="r2d2-gate-list">
-            {launchChecks.map((check) => (
-              <div key={check.label}>
-                <span className={`r2d2-gate-dot r2d2-gate-${check.state}`} />
-                <div><strong>{check.label}</strong><small>{check.detail}</small></div>
-                <b>{check.state === "ready" ? "READY" : "REVIEW"}</b>
-              </div>
-            ))}
+        <section className="panel r2d2-intelligence-panel">
+          <PanelHeader title="Intelligence Log" icon={Activity} />
+          <div className="r2d2-intelligence-list">
+            {intelligenceLog.length ? intelligenceLog.map((entry) => (
+              <article className={`r2d2-intelligence-entry r2d2-intelligence-${entry.tone}`} key={entry.id}>
+                <time>{new Date(entry.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" })}</time>
+                <span className="r2d2-intelligence-action">{entry.action}</span>
+                <div>
+                  <header><R2D2Ticker symbol={entry.symbol} name={entry.name} /><small>{entry.market}</small></header>
+                  <p>{entry.rationale}</p>
+                  <small>{entry.detail}</small>
+                </div>
+              </article>
+            )) : <div className="r2d2-intelligence-empty"><Activity size={24} /><strong>No intelligence events today</strong><span>Trades and live position decisions will appear here as the engine evaluates the session.</span></div>}
           </div>
-          <footer className="r2d2-gates-foot">
-            <LockKeyhole size={14} />
-            <span>Live brokerage execution remains technically absent and locked.</span>
-          </footer>
         </section>
       </div>
 
@@ -2799,6 +2827,25 @@ function R2D2RisingView() {
         <span>Method: <strong>{data.methodology_version}</strong></span>
         <span>Learning: <strong>v{data.learning.version} · {data.learning.effective_date}</strong></span>
       </footer>
+
+      <section className="panel r2d2-gates-panel r2d2-gates-horizontal">
+        <PanelHeader title="Launch Gates" icon={ShieldCheck} />
+        <div className="r2d2-gates-horizontal-body">
+          <div className="r2d2-gate-list">
+            {launchChecks.map((check) => (
+              <div key={check.label}>
+                <span className={`r2d2-gate-dot r2d2-gate-${check.state}`} />
+                <div><strong>{check.label}</strong><small>{check.detail}</small></div>
+                <b>{check.state === "ready" ? "READY" : "REVIEW"}</b>
+              </div>
+            ))}
+          </div>
+          <footer className="r2d2-gates-foot">
+            <LockKeyhole size={14} />
+            <span>Live brokerage execution remains technically absent and locked.</span>
+          </footer>
+        </div>
+      </section>
     </div>
   );
 }
