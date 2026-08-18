@@ -3,6 +3,9 @@
 -- exchange for every bulk US screener record (NASDAQ_UNIVERSE/NYSE_UNIVERSE),
 -- so only those unambiguous records are split; anything without a traceable
 -- snapshot (e.g. One Pager-sourced "US" records) is left as-is.
+ALTER TABLE valuation_change_records
+    DROP CONSTRAINT IF EXISTS valuation_change_records_market_check;
+
 UPDATE valuation_change_records AS valuation
 SET market = CASE snapshot.entity_key
         WHEN 'NASDAQ_UNIVERSE' THEN 'NASDAQ'
@@ -23,3 +26,7 @@ WHERE valuation.snapshot_id = snapshot.id
   AND snapshot.analysis_type = 'valuation_universe'
   AND snapshot.entity_key IN ('NASDAQ_UNIVERSE', 'NYSE_UNIVERSE')
   AND valuation.market NOT IN ('NASDAQ', 'NYSE');
+
+ALTER TABLE valuation_change_records
+    ADD CONSTRAINT valuation_change_records_market_check
+    CHECK (market IN ('B3', 'US', 'NASDAQ', 'NYSE'));
