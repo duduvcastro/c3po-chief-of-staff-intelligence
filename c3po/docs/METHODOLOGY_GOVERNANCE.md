@@ -92,3 +92,35 @@ risk that this backtest doesn't price in. Conclusion for now: neither
 direction has real evidence behind it -- wait for real R2D2 trade history
 (`backtest_data.py` once the sample clears METHODOLOGY_GOVERNANCE's
 minimum) before touching this constant either way.
+
+**2026-08-18 -- profit-lock pullback tolerance (`profit_pullback_percent`),
+wider vs. current.** Raised by observing the exits are asymmetric: a
+position can drift to -0.90% before the hard stop fires, but once armed
+in profit it only tolerates a ~0.20pp give-back from its high-water mark
+before locking out. `profit_lock_floor_percent`/`profit_pullback_percent`
+were made configurable (`r2d2_strategy.exit_decision`, `backtest.run_backtest`,
+both default to the unchanged live values) so this could actually be
+tested. Swept pullback in [0.20%, 0.35%, 0.50%, 0.65%, 0.90%] on the same
+technical-only setup as the hard-stop investigation above (neutral
+fundamentals, real 60-day 5-minute data, 20 symbols, 3-fold walk-forward).
+**Result: full-sample and every out-of-sample fold were bit-for-bit
+identical across all five values.** Root cause, confirmed by counting exit
+reasons on a smaller 3-symbol run: the "Armed profit locked" /
+"Weekly-conviction profit locked" branches -- the ones this parameter
+actually governs -- fired **zero** times. The dominant profit exit,
+"Tactical profit harvested," triggers immediately at the 0.65% trigger
+threshold and short-circuits the `exit_decision` cascade before the
+peak-then-pullback branch is ever reached; it never fires from a real
+peak/give-back sequence in this dataset. **Not acted on -- this is an
+inconclusive test, not a negative result.** The mechanism in question is
+essentially untested here, not proven safe or unsafe: this technical-only
+20-symbol/60-day sample apparently never produces the "ran up well past
+the trigger, then gave back ground before the lock lands" pattern the
+parameter is meant to guard. A real test needs either historical
+fundamentals-driven entries that hold positions longer/further before
+harvesting, or -- more reliably -- real R2D2 trade history once enough
+"Armed profit locked"/"Weekly-conviction profit locked" exits accumulate
+organically (`backtest_data.py`, once the sample clears the minimum
+above). The underlying asymmetry concern (harder on the upside than the
+downside) is not addressed by this finding either way and should stay
+open until a test actually exercises the branch.
