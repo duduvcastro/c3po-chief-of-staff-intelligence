@@ -1520,14 +1520,14 @@ button { cursor: pointer; }
 .iq-record-row:hover { background: #fffdf7; }
 .iq-record-row > div { min-width: 0; }
 .iq-record-company time { display: block; color: #838c97; font-size: 8px; font-weight: 700; }
-.iq-record-identity { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 10px; margin-top: 7px; }
-.iq-record-logo { flex: 0 0 auto; width: 32px; height: 32px; display: grid; place-items: center; overflow: hidden; border: 1px solid #e0e3e6; border-radius: 5px; background: #fff; }
-.iq-record-logo img { display: block; width: 24px; height: 24px; object-fit: contain; }
+.iq-record-identity { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: flex-start; gap: 10px; margin-top: 7px; }
+.iq-record-logo { flex: 0 0 auto; width: 28px; height: 28px; margin-top: 1px; display: grid; place-items: center; overflow: hidden; border: 1px solid #e0e3e6; border-radius: 5px; background: #fff; }
+.iq-record-logo img { display: block; width: 20px; height: 20px; object-fit: contain; }
 .iq-record-logo span { color: var(--gold-deep); font-size: 9px; font-weight: 900; }
 .iq-record-identity > div { min-width: 0; }
-.iq-record-company strong { display: block; font-size: 14px; }
+.iq-record-company strong { display: block; font-size: 14px; line-height: 1.2; }
 .iq-record-company span { display: block; margin-top: 4px; overflow: hidden; color: #626c78; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.iq-record-market-mark { display: inline-flex; align-items: center; margin-top: 6px; opacity: .75; }
+.iq-record-market-mark { display: inline-flex; align-items: center; margin-top: 10px; opacity: .75; }
 .iq-record-market-mark img { display: block; width: 13px; height: 13px; object-fit: contain; }
 .iq-record-market-mark-text { padding: 2px 4px; color: var(--gold-deep); background: var(--gold-soft); border-radius: 3px; font-size: 7px; font-weight: 900; opacity: 1; }
 .iq-record-trigger { padding: 12px 0; }
