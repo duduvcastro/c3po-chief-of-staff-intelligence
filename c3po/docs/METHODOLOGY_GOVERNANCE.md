@@ -124,3 +124,42 @@ organically (`backtest_data.py`, once the sample clears the minimum
 above). The underlying asymmetry concern (harder on the upside than the
 downside) is not addressed by this finding either way and should stay
 open until a test actually exercises the branch.
+
+**2026-08-18 -- follow-up: ATR-scaled (volatility-normalized) barriers,
+symmetric by construction, vs. the fixed asymmetric values above.**
+Instead of guessing at another fixed pullback value, tried the standard
+quant approach for this exact question -- the "triple-barrier method"
+(Lopez de Prado, *Advances in Financial Machine Learning*): size the
+stop-loss and profit-pullback distances as `k * atr_percent` (each
+symbol's own volatility at entry) instead of two independently-chosen
+fixed percentages, with `k_loss == k_gain` as the symmetric null
+hypothesis. Implemented as a standalone test harness only (not merged
+into `r2d2_strategy.py`/`backtest.py`) that reuses the real
+`exit_decision`/`entry_decision`/`target_position_percent` functions
+unmodified; swept `k` in [0.5, 1.0, 1.5, 2.0] on the same 20-symbol,
+60-day, 3-fold walk-forward setup as both investigations above.
+**Two separate results:**
+1. The profit-lock side is still untestable here for the same
+   structural reason as the entry above: "Armed profit locked" /
+   "Weekly-conviction profit locked" fired **zero** times at every `k`,
+   ATR-scaled or not. Volatility-normalizing that distance doesn't
+   change the fact that "Tactical profit harvested" short-circuits the
+   cascade first in this dataset.
+2. The stop-loss side *is* exercised constantly (215 hard stops at the
+   fixed -0.90% baseline vs. 960 at `k=1.0`, since most symbols in this
+   basket have `atr_percent` well under 0.90 -- ATR-scaling tightened
+   the stop for calmer names). Out-of-sample: `k=0.5`/`k=1.0` (tighter
+   than baseline for most symbols) were worse than the fixed baseline
+   (avg test return -3.40%/-3.23% vs. -3.03%); `k=2.0` (looser) came out
+   about even (-2.99%). No `k` beat the baseline by a margin that isn't
+   noise.
+**Not acted on.** Neither an independently-chosen fixed asymmetry nor a
+volatility-normalized symmetric one shows a real edge on this sample --
+the honest reading is that this specific technical-only dataset doesn't
+have enough signal to prefer any of these variants over another, not
+that the current values are validated. The original asymmetry concern
+remains open on its own merits (it is a reasonable thing to be
+suspicious of) but two independent test designs now failed to find
+either a benefit to changing it or a reason it must stay as-is -- next
+real attempt should use actual R2D2 trade history, not another
+synthetic technical-only sweep.
