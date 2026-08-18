@@ -78,7 +78,7 @@ class SystemHealthService:
         if self.settings.eodhd_api_token:
             try:
                 response = self.external_get(
-                    f"{self.settings.eodhd_base_url.rstrip('/')}/api/user/",
+                    f"{self.settings.eodhd_base_url.rstrip('/')}/user/",
                     params={"api_token": self.settings.eodhd_api_token, "fmt": "json"},
                     timeout=self.settings.system_health_external_timeout_seconds,
                     follow_redirects=True,
