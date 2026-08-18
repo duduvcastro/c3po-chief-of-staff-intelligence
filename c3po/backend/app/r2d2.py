@@ -1191,23 +1191,70 @@ class R2D2PaperService:
                         _float(position["stop_price_local"]), now, strategy,
                     )
                     continue
-                # EMERGENCY DISABLED 2026-08-18: the auto-sell fallback below acted on
-                # quote.price from a "delayed" feed without validating it against the
-                # position's own recent price history. That price is not vetted for
-                # sanity when non-live -- nothing consumed it before this fallback
-                # existed -- and it produced at least two exits (SPCX, DINO) at wildly
-                # implausible prices (-85%, -61%) that don't match the price seen
-                # moments earlier from the same feed. Auto-selling on this path is
-                # disabled until a sanity check against average_cost/high_water is
-                # added; the position is still flagged loudly for manual review so
-                # the gap this was meant to close stays visible instead of silent.
-                strategy["decision_state"] = "delayed quote past grace period -- needs manual review"
-                self.repo.update_mark(
-                    experiment["id"], position["market"], position["symbol"],
-                    _float(position["last_price_local"]), conversion,
-                    _float(position["high_water_price_local"]),
-                    _float(position["stop_price_local"]), now, strategy,
+                # Grace period exceeded. Root-caused 2026-08-18: an earlier version of
+                # this fallback trusted quote.price purely because status != "live",
+                # and that field turned out to sometimes carry genuinely ancient data
+                # (observed: a quote timestamped in 2022 and one in April while "today"
+                # was August) rather than a merely-delayed live tick -- producing two
+                # exits (SPCX, DINO) at wildly wrong prices. The "delayed" label alone
+                # does not mean "a few minutes behind"; it can mean "arbitrarily stale
+                # cached data of unknown age." So: validate the quote's own as_of
+                # timestamp directly before ever using its price for an exit fill,
+                # independent of what status string it carries.
+                quote_as_of = getattr(quote, "as_of", None)
+                quote_age_minutes: float | None = None
+                if isinstance(quote_as_of, datetime):
+                    as_of_utc = quote_as_of if quote_as_of.tzinfo else quote_as_of.replace(tzinfo=timezone.utc)
+                    quote_age_minutes = max(0.0, (now - as_of_utc.astimezone(timezone.utc)).total_seconds() / 60)
+                data_trustworthy = (
+                    quote_age_minutes is not None
+                    and quote_age_minutes <= self.settings.r2d2_delayed_quote_fallback_max_age_minutes
                 )
+                strategy["quote_data_age_minutes"] = round(quote_age_minutes, 1) if quote_age_minutes is not None else None
+                if not data_trustworthy:
+                    strategy["decision_state"] = "delayed quote past grace period -- needs manual review"
+                    self.repo.update_mark(
+                        experiment["id"], position["market"], position["symbol"],
+                        _float(position["last_price_local"]), conversion,
+                        _float(position["high_water_price_local"]),
+                        _float(position["stop_price_local"]), now, strategy,
+                    )
+                    continue
+                # The quote's own timestamp is recent enough to trust: fall back to
+                # the hard stop only -- not the full technical cascade, which needs
+                # fresh indicators this feed can't currently supply.
+                average_cost = _float(position["average_cost_local"])
+                hard_stop = average_cost * (1 - self.settings.r2d2_max_position_loss_percent / 100)
+                high_water = max(_float(position["high_water_price_local"]), quote.price)
+                if quote.price > hard_stop:
+                    self.repo.update_mark(
+                        experiment["id"], position["market"], position["symbol"],
+                        _float(position["last_price_local"]), conversion, high_water,
+                        _float(position["stop_price_local"]), now, strategy,
+                    )
+                    continue
+                pnl_pct = (quote.price / average_cost - 1) * 100
+                strategy["decision_state"] = "exit"
+                self.repo.update_mark(
+                    experiment["id"], position["market"], position["symbol"], quote.price,
+                    conversion, high_water, _float(position["stop_price_local"]), now, strategy,
+                )
+                candidate = {
+                    "market": position["market"], "symbol": position["symbol"], "name": position["name"],
+                    "currency": position["currency"], "stop_price": hard_stop, "fundamental_score": 0,
+                    "technical_score": 0, "risk_score": 0, "composite_score": 0,
+                }
+                self._sell(
+                    experiment, cycle_id, candidate, position, quote, conversion,
+                    f"Protective hard-stop exit on a delayed quote at {pnl_pct:+.2f}%: no live "
+                    f"quote for {awaiting_minutes:.1f} minutes (grace period "
+                    f"{self.settings.r2d2_delayed_quote_protection_grace_minutes:.1f} min); the quote's "
+                    f"own timestamp was {quote_age_minutes:.1f} minutes old (within the "
+                    f"{self.settings.r2d2_delayed_quote_fallback_max_age_minutes:.0f}-minute trust bound), "
+                    "so it was used as a protective backstop rather than leaving the position "
+                    f"unprotected. Maximum position-loss policy is {self.settings.r2d2_max_position_loss_percent:.2f}%.",
+                )
+                exits += 1
                 continue
             technical: dict[str, Any]
             try:
