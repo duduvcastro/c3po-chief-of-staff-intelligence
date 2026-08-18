@@ -80,6 +80,16 @@ def _float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _trade_is_corrected(trade: dict[str, Any]) -> bool:
+    """True if a trade's realized_pnl_usd is known-bad (see 2026-08-18 incident,
+    PRs #5-#7): a manual cash_balance correction was posted for it and its
+    decision_snapshot is annotated accordingly. The raw row is left unmodified
+    for the audit trail, so anything that aggregates realized_pnl_usd for a
+    performance or learning signal must exclude these explicitly instead."""
+    snapshot = trade.get("decision_snapshot")
+    return isinstance(snapshot, dict) and "correction" in snapshot
+
+
 def _realized_return_percent(*, gross_value_usd: Any, fees_usd: Any,
                              realized_pnl_usd: Any) -> float | None:
     if realized_pnl_usd is None:
@@ -545,18 +555,21 @@ class R2D2Repository:
             rows = connection.execute(
                 """SELECT id::text, market, symbol, name, side, quantity, signal_price_local,
                           fill_price_local, fx_to_usd, gross_value_usd, fees_usd, slippage_usd,
-                          realized_pnl_usd, reason, executed_at, quote_as_of
+                          realized_pnl_usd, reason, decision_snapshot, executed_at, quote_as_of
                    FROM r2d2_trades WHERE experiment_id=%s ORDER BY executed_at DESC LIMIT %s""",
                 (experiment_id, limit),
             ).fetchall()
         keys = ("id", "market", "symbol", "name", "side", "quantity", "signal_price_local",
                 "fill_price_local", "fx_to_usd", "gross_value_usd", "fees_usd", "slippage_usd",
-                "realized_pnl_usd", "reason", "executed_at", "quote_as_of")
+                "realized_pnl_usd", "reason", "decision_snapshot", "executed_at", "quote_as_of")
         return [dict(zip(keys, row)) for row in rows]
 
     def trade_summary(self, experiment_id: str) -> dict[str, int]:
         if not self.database.database_url:
-            trades = [item for item in self.memory["trades"] if item.get("experiment_id") == experiment_id]
+            trades = [
+                item for item in self.memory["trades"]
+                if item.get("experiment_id") == experiment_id and not _trade_is_corrected(item)
+            ]
             return {
                 "total_transactions": len(trades),
                 "positive_transactions": sum(_float(item.get("realized_pnl_usd")) > 0 for item in trades),
@@ -567,7 +580,8 @@ class R2D2Repository:
                 """SELECT COUNT(*),
                           COUNT(*) FILTER (WHERE realized_pnl_usd > 0),
                           COUNT(*) FILTER (WHERE realized_pnl_usd < 0)
-                   FROM r2d2_trades WHERE experiment_id=%s""",
+                   FROM r2d2_trades
+                   WHERE experiment_id=%s AND NOT (decision_snapshot ? 'correction')""",
                 (experiment_id,),
             ).fetchone()
         return dict(zip(
@@ -757,6 +771,7 @@ class R2D2PaperService:
             item for item in self.repo.trades(experiment["id"], limit=250)
             if item.get("realized_pnl_usd") is not None
             and item["executed_at"].astimezone(SAO_PAULO).date() < effective_date
+            and not _trade_is_corrected(item)
         ][:50]
         returns = [_float(item["daily_return_percent"]) for item in snapshots]
         realized = [_float(item["realized_pnl_usd"]) for item in exits]
