@@ -1167,17 +1167,65 @@ class R2D2PaperService:
             if position["market"] not in ACTIVE_MARKETS:
                 continue
             if not self._live_us_quote(quote, now):
+                awaiting_since_raw = strategy.get("awaiting_live_quote_since")
+                try:
+                    awaiting_since = datetime.fromisoformat(awaiting_since_raw) if awaiting_since_raw else now
+                except ValueError:
+                    awaiting_since = now
+                if awaiting_since.tzinfo is None:
+                    awaiting_since = awaiting_since.replace(tzinfo=timezone.utc)
+                awaiting_minutes = max(0.0, (now - awaiting_since).total_seconds() / 60)
                 strategy.update({
                     "decision_state": "awaiting live quote",
                     "last_review_at": now.isoformat(),
                     "quote_status": str(getattr(quote, "status", "unavailable")),
+                    "awaiting_live_quote_since": awaiting_since.isoformat(),
+                    "awaiting_live_quote_minutes": round(awaiting_minutes, 1),
                 })
+                grace_exceeded = awaiting_minutes >= self.settings.r2d2_delayed_quote_protection_grace_minutes
+                if not grace_exceeded or quote.price <= 0:
+                    self.repo.update_mark(
+                        experiment["id"], position["market"], position["symbol"],
+                        _float(position["last_price_local"]), conversion,
+                        _float(position["high_water_price_local"]),
+                        _float(position["stop_price_local"]), now, strategy,
+                    )
+                    continue
+                # Grace period exceeded: the feed still isn't live, but leaving an
+                # open position with zero protection is worse than acting on the
+                # best price available. Fall back to the hard stop only -- not the
+                # full technical cascade, which needs fresh indicators this feed
+                # can't currently supply.
+                average_cost = _float(position["average_cost_local"])
+                hard_stop = average_cost * (1 - self.settings.r2d2_max_position_loss_percent / 100)
+                high_water = max(_float(position["high_water_price_local"]), quote.price)
+                if quote.price > hard_stop:
+                    self.repo.update_mark(
+                        experiment["id"], position["market"], position["symbol"],
+                        _float(position["last_price_local"]), conversion, high_water,
+                        _float(position["stop_price_local"]), now, strategy,
+                    )
+                    continue
+                pnl_pct = (quote.price / average_cost - 1) * 100
+                strategy["decision_state"] = "exit"
                 self.repo.update_mark(
-                    experiment["id"], position["market"], position["symbol"],
-                    _float(position["last_price_local"]), conversion,
-                    _float(position["high_water_price_local"]),
-                    _float(position["stop_price_local"]), now, strategy,
+                    experiment["id"], position["market"], position["symbol"], quote.price,
+                    conversion, high_water, _float(position["stop_price_local"]), now, strategy,
                 )
+                candidate = {
+                    "market": position["market"], "symbol": position["symbol"], "name": position["name"],
+                    "currency": position["currency"], "stop_price": hard_stop, "fundamental_score": 0,
+                    "technical_score": 0, "risk_score": 0, "composite_score": 0,
+                }
+                self._sell(
+                    experiment, cycle_id, candidate, position, quote, conversion,
+                    f"Protective hard-stop exit on a delayed quote at {pnl_pct:+.2f}%: no live "
+                    f"quote for {awaiting_minutes:.1f} minutes (grace period "
+                    f"{self.settings.r2d2_delayed_quote_protection_grace_minutes:.1f} min); acted "
+                    "on the best available price rather than leaving the position unprotected. "
+                    f"Maximum position-loss policy is {self.settings.r2d2_max_position_loss_percent:.2f}%.",
+                )
+                exits += 1
                 continue
             technical: dict[str, Any]
             try:
@@ -1209,6 +1257,8 @@ class R2D2PaperService:
                 continue
             strategy.pop("pending_anomaly_price", None)
             strategy.pop("pending_anomaly_at", None)
+            strategy.pop("awaiting_live_quote_since", None)
+            strategy.pop("awaiting_live_quote_minutes", None)
             high_water = max(_float(position["high_water_price_local"]), quote.price)
             average_cost = _float(position["average_cost_local"])
             held_minutes = max(0.0, (now - position["opened_at"]).total_seconds() / 60)

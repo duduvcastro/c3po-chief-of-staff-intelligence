@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     r2d2_soft_loss_exit_percent: float = 0.25
     r2d2_max_position_loss_percent: float = 0.65
     r2d2_live_quote_max_age_seconds: int = 90
+    r2d2_delayed_quote_protection_grace_minutes: float = 3.0
     r2d2_trade_cooldown_minutes: int = 8
     r2d2_max_daily_orders: int = 120
 
