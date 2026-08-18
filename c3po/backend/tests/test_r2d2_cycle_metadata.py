@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.config import Settings
 from app.database import Database
-from app.r2d2 import R2D2PaperService
+from app.r2d2 import R2D2PaperService, _estimate_eodhd_credits
 
 
 def _settings() -> Settings:
@@ -60,3 +60,33 @@ def test_finish_cycle_defaults_metadata_to_empty_dict_when_not_provided() -> Non
 
     stored = next(row for row in service.repo.memory["cycles"] if row["id"] == cycle_id)
     assert stored["metadata"] == {}
+
+
+def test_estimate_eodhd_credits_uses_confirmed_weights_only() -> None:
+    """Weights confirmed 2026-08-18 by EODHD's own accounting (relayed via Codex,
+    cross-checked against https://eodhd.com/financial-apis/api-limits):
+    fundamentals=10, intraday=5, simple quotes=1. backfill_history_symbols has no
+    confirmed weight, so it must show up as a raw count, never folded into the
+    credit total -- that would be asserting a number nobody has verified.
+    """
+    counts = {
+        "backfill_fundamentals_symbols": 40,
+        "backfill_history_symbols": 40,
+        "intraday_cache_misses": 12,
+        "intraday_cache_hits": 88,
+        "fx_quote_calls": 3,
+    }
+
+    result = _estimate_eodhd_credits(counts)
+
+    assert result["call_counts"] == counts
+    # 40*10 (fundamentals) + 12*5 (intraday misses) + 3*1 (fx) = 463.
+    # backfill_history_symbols and intraday_cache_hits contribute nothing --
+    # unconfirmed weight and free cache hit, respectively.
+    assert result["estimated_credits"] == 463
+    assert result["unweighted_categories"] == ["backfill_history_symbols", "intraday_cache_hits"]
+
+
+def test_estimate_eodhd_credits_handles_empty_counts() -> None:
+    result = _estimate_eodhd_credits({})
+    assert result == {"call_counts": {}, "estimated_credits": 0, "unweighted_categories": []}
