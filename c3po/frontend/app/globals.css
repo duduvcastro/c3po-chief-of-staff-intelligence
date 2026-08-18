@@ -739,6 +739,10 @@ button { cursor: pointer; }
 .falcon-ai-provider em { padding: 4px 7px; border-radius: 3px; color: #147c55; background: #e7f7f0; font-size: 8px; font-style: normal; font-weight: 900; text-transform: uppercase; }
 .falcon-ai-attention .falcon-ai-provider em { color: #a45b09; background: #fff1dc; }
 .falcon-ai-unavailable .falcon-ai-provider em { color: #68727f; background: #edf0f3; }
+.falcon-ai-capacity-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin-top: 14px; overflow: hidden; border: 1px solid var(--line); background: var(--line); }
+.falcon-ai-capacity-summary > div { min-width: 0; padding: 10px 11px; background: #fff; }
+.falcon-ai-capacity-summary span { display: block; color: var(--muted); font-size: 7px; font-weight: 900; text-transform: uppercase; }
+.falcon-ai-capacity-summary strong { display: block; margin-top: 5px; overflow-wrap: anywhere; font-size: 11px; line-height: 1.3; }
 .falcon-ai-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 14px; border: 1px solid var(--line); }
 .falcon-ai-stat-grid > div { min-width: 0; padding: 9px 10px; }
 .falcon-ai-stat-grid > div + div { border-left: 1px solid var(--line); }
@@ -1713,6 +1717,7 @@ button { cursor: pointer; }
   .falcon-capcom-readiness-with-usage > .quality-meter { grid-column: 1 / -1; }
   .falcon-ai-usage-head { align-items: flex-start; flex-direction: column; gap: 5px; }
   .falcon-ai-usage-grid { grid-template-columns: 1fr; }
+  .falcon-ai-capacity-summary { grid-template-columns: 1fr; }
   .falcon-ai-card + .falcon-ai-card { border-top: 1px solid var(--line); border-left: 0; }
   .app-shell { grid-template-columns: 1fr; }
   .system-health-group-grid { grid-template-columns: 1fr; }
