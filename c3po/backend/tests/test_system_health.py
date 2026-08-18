@@ -121,6 +121,7 @@ class _ExternalResponse:
 
 
 def _external_get(url: str, **_kwargs):
+    assert "/api/api/" not in url
     return _ExternalResponse(cloudflare="robots.txt" in url, usage="/api/user/" in url)
 
 
