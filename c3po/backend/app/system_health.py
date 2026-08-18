@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from .config import Settings
-from .schemas import ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
+from .schemas import AiUsageMetric, ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
 
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
@@ -48,6 +48,7 @@ class SystemHealthService:
             return self._cached_response
 
         api_usage = self._api_usage(now)
+        ai_usage = self._ai_usage(now)
         groups = [
             self._group("apis", "Core APIs", [*self._core_api_health(now), self._api_usage_health(api_usage, now)]),
             self._group("external_services", "Contracted & External Services", self._external_services_health(now)),
@@ -67,6 +68,7 @@ class SystemHealthService:
             healthy_count=healthy_count,
             total_count=len(items),
             api_usage=api_usage,
+            ai_usage=ai_usage,
             groups=groups,
         )
         self._cached_at = now
@@ -104,6 +106,106 @@ class SystemHealthService:
             except Exception:
                 pass
         return metrics
+
+    def _ai_usage(self, now: datetime) -> list[AiUsageMetric]:
+        return [self._openai_usage(now), self._anthropic_usage(now)]
+
+    def _openai_usage(self, now: datetime) -> AiUsageMetric:
+        if not self.settings.openai_admin_api_key:
+            return AiUsageMetric(
+                provider="OpenAI",
+                product="GPT Codex",
+                status="unavailable",
+                detail="OpenAI Admin API key required for organization usage telemetry",
+                measured_at=now,
+            )
+        try:
+            params: list[tuple[str, str | int]] = [
+                ("start_time", int(now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp())),
+                ("bucket_width", "1d"),
+                ("limit", 31),
+                ("group_by", "model"),
+            ]
+            params.extend(("project_ids", value) for value in self.settings.openai_usage_projects)
+            response = self.external_get(
+                "https://api.openai.com/v1/organization/usage/completions",
+                params=params,
+                timeout=self.settings.system_health_external_timeout_seconds,
+                headers={"Authorization": f"Bearer {self.settings.openai_admin_api_key}", "Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+            results = [result for bucket in response.json().get("data", []) for result in bucket.get("results", [])]
+            codex_results = [result for result in results if "codex" in str(result.get("model") or "").lower()]
+            scoped_results = codex_results or results
+            input_tokens = sum(int(result.get("input_tokens") or 0) for result in scoped_results)
+            output_tokens = sum(int(result.get("output_tokens") or 0) for result in scoped_results)
+            cached_tokens = sum(int(result.get("input_cached_tokens") or 0) for result in scoped_results)
+            requests = sum(int(result.get("num_model_requests") or 0) for result in scoped_results)
+            detail = "Codex model usage" if codex_results else "OpenAI organization usage; no Codex model breakdown returned"
+            return AiUsageMetric(
+                provider="OpenAI", product="GPT Codex", status="healthy",
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                cached_input_tokens=cached_tokens, requests=requests,
+                detail=detail, measured_at=now,
+            )
+        except Exception as exc:
+            return AiUsageMetric(
+                provider="OpenAI", product="GPT Codex", status="attention",
+                detail=f"Usage API unavailable · {self._safe_error(exc)}", measured_at=now,
+            )
+
+    def _anthropic_usage(self, now: datetime) -> AiUsageMetric:
+        if not self.settings.anthropic_admin_api_key:
+            detail = (
+                "Claude runtime key connected; Anthropic Admin API key required for usage telemetry"
+                if self.settings.anthropic_api_key else
+                "Anthropic Admin API key required for organization usage telemetry"
+            )
+            return AiUsageMetric(
+                provider="Anthropic", product="Claude Code", status="unavailable",
+                detail=detail, measured_at=now,
+            )
+        try:
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat().replace("+00:00", "Z")
+            params: list[tuple[str, str | int]] = [
+                ("starting_at", month_start), ("bucket_width", "1d"), ("limit", 31), ("group_by[]", "model"),
+            ]
+            params.extend(("workspace_ids[]", value) for value in self.settings.anthropic_usage_workspaces)
+            response = self.external_get(
+                "https://api.anthropic.com/v1/organizations/usage_report/messages",
+                params=params,
+                timeout=self.settings.system_health_external_timeout_seconds,
+                headers={
+                    "x-api-key": self.settings.anthropic_admin_api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+            )
+            response.raise_for_status()
+            results = [result for bucket in response.json().get("data", []) for result in bucket.get("results", [])]
+            input_tokens = sum(
+                int(result.get("uncached_input_tokens") or 0)
+                + int(result.get("cache_read_input_tokens") or 0)
+                + sum(int(value or 0) for value in (result.get("cache_creation") or {}).values())
+                for result in results
+            )
+            output_tokens = sum(int(result.get("output_tokens") or 0) for result in results)
+            cached_tokens = sum(
+                int(result.get("cache_read_input_tokens") or 0)
+                + sum(int(value or 0) for value in (result.get("cache_creation") or {}).values())
+                for result in results
+            )
+            return AiUsageMetric(
+                provider="Anthropic", product="Claude Code", status="healthy",
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                cached_input_tokens=cached_tokens,
+                detail="Anthropic workspace usage", measured_at=now,
+            )
+        except Exception as exc:
+            return AiUsageMetric(
+                provider="Anthropic", product="Claude Code", status="attention",
+                detail=f"Usage API unavailable · {self._safe_error(exc)}", measured_at=now,
+            )
 
     def _api_usage_health(self, metrics: list[ApiUsageMetric], now: datetime) -> IntegrationHealth:
         if not metrics:

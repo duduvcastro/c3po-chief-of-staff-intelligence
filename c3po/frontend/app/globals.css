@@ -722,6 +722,31 @@ button { cursor: pointer; }
 .falcon-capcom-consumption .api-usage-meter { position: absolute; top: 50%; right: 0; left: 20px; margin: 0; transform: translateY(-50%); background: #3a3425; }
 .falcon-capcom-consumption > small { position: absolute; right: 0; bottom: 0; left: 20px; color: #b7b09d; font-size: 9px; }
 .falcon-capcom-consumption.api-usage-healthy header strong { color: #298fe0; }
+.falcon-ai-usage { overflow: hidden; }
+.falcon-ai-usage-head { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.falcon-ai-usage-head > div { min-width: 0; display: flex; flex-direction: column; }
+.falcon-ai-usage-head span { color: var(--gold-deep); font-size: 9px; font-weight: 900; text-transform: uppercase; }
+.falcon-ai-usage-head strong { margin-top: 4px; font-size: 16px; }
+.falcon-ai-usage-head small { color: var(--muted); font-size: 9px; }
+.falcon-ai-usage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.falcon-ai-card { min-width: 0; padding: 16px 18px 14px; background: #fff; }
+.falcon-ai-card + .falcon-ai-card { border-left: 1px solid var(--line); }
+.falcon-ai-provider { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 11px; }
+.falcon-ai-provider .service-logo { width: 38px; height: 38px; }
+.falcon-ai-provider > div { min-width: 0; display: flex; flex-direction: column; }
+.falcon-ai-provider span { color: var(--muted); font-size: 8px; font-weight: 900; text-transform: uppercase; }
+.falcon-ai-provider strong { margin-top: 3px; font-size: 15px; }
+.falcon-ai-provider em { padding: 4px 7px; border-radius: 3px; color: #147c55; background: #e7f7f0; font-size: 8px; font-style: normal; font-weight: 900; text-transform: uppercase; }
+.falcon-ai-attention .falcon-ai-provider em { color: #a45b09; background: #fff1dc; }
+.falcon-ai-unavailable .falcon-ai-provider em { color: #68727f; background: #edf0f3; }
+.falcon-ai-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 14px; border: 1px solid var(--line); }
+.falcon-ai-stat-grid > div { min-width: 0; padding: 9px 10px; }
+.falcon-ai-stat-grid > div + div { border-left: 1px solid var(--line); }
+.falcon-ai-stat-grid span { display: block; overflow: hidden; color: var(--muted); font-size: 7px; font-weight: 900; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.falcon-ai-stat-grid strong { display: block; margin-top: 5px; font-size: 15px; }
+.falcon-ai-card p { min-height: 18px; margin: 10px 0 0; color: var(--muted); font-size: 8px; line-height: 1.45; }
+.service-logo-openai { color: #fff; background: #111; }
+.service-logo-anthropic { color: #2c211d; background: #d9aa84; }
 .falcon-flight-gold strong { color: var(--gold-bright); }
 .falcon-flight-blue strong { color: #65b6d7; }
 .falcon-flight-green strong { color: #61c993; }
@@ -1609,6 +1634,9 @@ button { cursor: pointer; }
   .falcon-capcom-readiness-with-usage .falcon-capcom-consumption header { top: 14px; left: 0; }
   .falcon-capcom-readiness-with-usage .falcon-capcom-consumption .api-usage-meter { top: calc(50% + 7px); left: 0; }
   .falcon-capcom-readiness-with-usage .falcon-capcom-consumption > small { left: 0; }
+  .falcon-ai-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .falcon-ai-stat-grid > div:nth-child(3) { border-top: 1px solid var(--line); border-left: 0; }
+  .falcon-ai-stat-grid > div:nth-child(4) { border-top: 1px solid var(--line); }
   .falcon-flight-identity { grid-row: span 2; }
   .falcon-flight-metric:nth-child(4), .falcon-flight-metric:nth-child(5) { border-top: 1px solid #343238; }
   .falcon-primary-grid { grid-template-columns: 1fr; }
@@ -1683,6 +1711,9 @@ button { cursor: pointer; }
   .api-usage-grid { grid-template-columns: 1fr; }
   .quality-banner.falcon-capcom-readiness-with-usage { grid-template-columns: 62px 1fr; }
   .falcon-capcom-readiness-with-usage > .quality-meter { grid-column: 1 / -1; }
+  .falcon-ai-usage-head { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .falcon-ai-usage-grid { grid-template-columns: 1fr; }
+  .falcon-ai-card + .falcon-ai-card { border-top: 1px solid var(--line); border-left: 0; }
   .app-shell { grid-template-columns: 1fr; }
   .system-health-group-grid { grid-template-columns: 1fr; }
   .health-list-horizontal { grid-template-columns: 1fr; }
