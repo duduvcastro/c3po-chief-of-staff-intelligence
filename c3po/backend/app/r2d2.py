@@ -16,6 +16,7 @@ from .market_data.brapi import BrapiClient
 from .market_data.eodhd import EodhdClient
 from .market_data.models import canonical_us_security_type
 from .market_data.realtime import RealtimeMarketsService
+from .market_data.us_screener import USScreeningService, clamp, normalized_percent
 from .one_pager import OnePagerService
 from . import r2d2_strategy
 from .schemas import (
@@ -720,7 +721,7 @@ class R2D2PaperService:
         self.realtime = realtime
         self.b3_screener = b3_screener
         self.one_pagers = one_pagers
-        self._us_basis: dict[str, tuple[date, dict[str, Any]]] = {}
+        self._us_basis: dict[str, tuple[date, dict[str, Any], float]] = {}
         self._us_backfill_attempted: dict[str, date] = {}
         self._us_scan_counts: dict[str, dict[str, int]] = {}
         self._intraday_cache: dict[tuple[str, str], tuple[datetime, list[dict[str, Any]]]] = {}
@@ -1526,7 +1527,13 @@ class R2D2PaperService:
                     )
                 except Exception:
                     continue
-                self._us_basis[symbol] = (today, analysis)
+                operating_quality = clamp(
+                    50
+                    + (normalized_percent(fundamental.get("returnOnEquity")) or 0) * 0.45
+                    + (normalized_percent(fundamental.get("profitMargins")) or 0) * 0.30,
+                    20, 95,
+                )
+                self._us_basis[symbol] = (today, analysis, operating_quality)
 
         output: list[dict[str, Any]] = []
         for row, security_type in shortlist:
@@ -1550,9 +1557,8 @@ class R2D2PaperService:
                 confidence = _float(analysis.get("confidence"), 55.0)
                 buy_in = _float(analysis.get("buy_in"))
                 distance = (row.price / buy_in - 1) * 100 if buy_in else 0.0
-                fundamental_score = max(
-                    0.0,
-                    min(100.0, upside * 1.15 + (100 - risk) * 0.28 + confidence * 0.25),
+                fundamental_score = USScreeningService._power_score(
+                    upside, risk, cached[2], confidence, distance,
                 )
                 thesis = f"C3PO TP {c3po_tp:.2f}; valuation backfill completed for the current session."
                 basis_source = "same-day C3PO valuation backfill"
