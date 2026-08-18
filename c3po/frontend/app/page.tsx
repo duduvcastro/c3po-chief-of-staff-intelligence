@@ -881,7 +881,7 @@ type ValuationTrigger = "initial" | "financial_results" | "material_event" | "we
 interface ValuationChangeRecord {
   id: string;
   snapshot_id: string | null;
-  market: "B3" | "US";
+  market: "B3" | "NASDAQ" | "NYSE" | "US";
   symbol: string;
   company_name: string;
   changed_at: string;
@@ -4622,7 +4622,7 @@ function IQRecordsView() {
   const [data, setData] = useState<ValuationChangeResponse | null>(null);
   const [query, setQuery] = useState(initialQuery);
   const [activeQuery, setActiveQuery] = useState(initialQuery);
-  const [market, setMarket] = useState<"" | "B3" | "US">("");
+  const [market, setMarket] = useState<"" | "B3" | "NASDAQ" | "NYSE">("");
   const [triggerType, setTriggerType] = useState<"" | ValuationTrigger>("");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -4708,7 +4708,7 @@ function IQRecordsView() {
             <button type="submit">Buscar</button>
           </form>
           <div className="iq-market-filter" aria-label="Filtrar mercado">
-            {(["", "B3", "US"] as const).map((value) => (
+            {(["", "B3", "NASDAQ", "NYSE"] as const).map((value) => (
               <button key={value || "all"} className={market === value ? "active" : ""} onClick={() => { setPage(1); setMarket(value); }}>
                 {value || "Todos"}
               </button>
@@ -4788,9 +4788,14 @@ function IQRecordRow({ record }: { record: ValuationChangeRecord }) {
     <article className="iq-record-row">
       <div className="iq-record-company" data-label="Data & empresa">
         <time>{formatRecordDate(record.changed_at)}</time>
-        <InstrumentPreviewTarget instrument={{ symbol: record.symbol, name: record.company_name, market: record.market }}><strong>{record.symbol}</strong></InstrumentPreviewTarget>
-        <span>{record.company_name}</span>
-        <small>{record.market}</small>
+        <div className="iq-record-identity">
+          <div className="iq-record-logo"><CompanyLogo symbol={record.symbol} /></div>
+          <div>
+            <InstrumentPreviewTarget instrument={{ symbol: record.symbol, name: record.company_name, market: record.market }}><strong>{record.symbol}</strong></InstrumentPreviewTarget>
+            <span>{record.company_name}</span>
+            <small>{record.market}</small>
+          </div>
+        </div>
       </div>
       <div className="iq-record-trigger" data-label="Gatilho & fonte">
         <span className={`iq-trigger-badge iq-trigger-${record.trigger_type}`}>{valuationTriggerLabels[record.trigger_type]}</span>

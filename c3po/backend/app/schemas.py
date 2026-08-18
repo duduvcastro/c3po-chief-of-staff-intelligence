@@ -647,7 +647,7 @@ class OnePagerListResponse(BaseModel):
 class ValuationChangeRecord(BaseModel):
     id: str
     snapshot_id: str | None = None
-    market: Literal["B3", "US"]
+    market: Literal["B3", "NASDAQ", "NYSE", "US"]
     symbol: str
     company_name: str
     changed_at: datetime

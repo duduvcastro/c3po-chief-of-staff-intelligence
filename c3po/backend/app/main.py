@@ -858,7 +858,7 @@ def valuation_records(
     limit: int = Query(default=100, ge=1, le=300),
     offset: int = Query(default=0, ge=0),
     q: str | None = Query(default=None, max_length=100),
-    market: str | None = Query(default=None, pattern=r"^(B3|US)$"),
+    market: str | None = Query(default=None, pattern=r"^(B3|NASDAQ|NYSE|US)$"),
     trigger_type: str | None = Query(
         default=None,
         pattern=r"^(initial|financial_results|material_event|web_research|market_data|methodology)$",

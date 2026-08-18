@@ -76,6 +76,28 @@ def test_symbol_normalization_supports_b3_and_us(tmp_path) -> None:
         service._normalize_symbol("AMZN; rm -rf")
 
 
+def test_resolve_us_exchange_cross_references_screener_universes(tmp_path) -> None:
+    """Ben Kenobi Records classifies by exchange (B3/NASDAQ/NYSE), but One Pager
+    itself only knows the binary B3/US split -- this resolver fills the gap by
+    checking which bulk US screener universe (already computed, no extra API
+    calls) the symbol showed up in most recently."""
+    service = service_for(tmp_path)
+    methodology_id = service.database.ensure_methodology_version("us-screener", 1, {}, "test")
+    now = datetime(2026, 8, 18, 12, 0, tzinfo=timezone.utc)
+    service.database.save_analysis_snapshot(
+        "valuation_universe", "NASDAQ_UNIVERSE", methodology_id,
+        {"market": "NASDAQ"}, {"rows": [{"symbol": "AAPL"}]}, now,
+    )
+    service.database.save_analysis_snapshot(
+        "valuation_universe", "NYSE_UNIVERSE", methodology_id,
+        {"market": "NYSE"}, {"rows": [{"symbol": "JPM"}]}, now,
+    )
+
+    assert service._resolve_us_exchange("aapl") == "NASDAQ"
+    assert service._resolve_us_exchange("JPM") == "NYSE"
+    assert service._resolve_us_exchange("UNKNOWN") == "US"
+
+
 def test_b3_quote_falls_back_to_eodhd_when_brapi_rejects_a_unit(tmp_path) -> None:
     service = service_for(tmp_path)
 

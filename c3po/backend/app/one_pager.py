@@ -725,6 +725,27 @@ class OnePagerService:
             calls.append(f"{firm} {cls._money(target, currency)} ({published})")
         return "Cobertura da ação principal: " + "; ".join(calls) + "." if calls else ""
 
+    def _resolve_us_exchange(self, symbol: str) -> str:
+        """Best-effort NASDAQ/NYSE lookup for a One Pager symbol, for Ben Kenobi
+        Records' exchange classification. One Pager itself only knows the binary
+        B3/US split (``_normalize_symbol``), so this cross-references the bulk US
+        screener's own universe snapshots (already computed, no extra API calls).
+        Falls back to the generic "US" bucket if the symbol isn't found in either
+        -- e.g. it was covered by One Pager before ever appearing in a screener
+        cycle. Never raises; a resolution failure just leaves the record generic.
+        """
+        target = symbol.strip().upper()
+        snapshots = self.database.latest_analysis_snapshots(
+            "valuation_universe", ["NASDAQ_UNIVERSE", "NYSE_UNIVERSE"],
+        )
+        for entity_key, snapshot in snapshots.items():
+            rows = (snapshot.get("outputs") or {}).get("rows")
+            if not isinstance(rows, list):
+                continue
+            if any(str(row.get("symbol") or "").upper() == target for row in rows if isinstance(row, dict)):
+                return entity_key.split("_")[0]
+        return "US"
+
     def _persist_us_valuation_snapshot(self, data: dict[str, Any], report: OnePagerReport) -> None:
         """B3 already persists its canonical universe; US valuations are born in One Pager."""
         if report.market != "US":
@@ -735,12 +756,13 @@ class OnePagerService:
         disclosure = data.get("official_disclosure") if isinstance(data.get("official_disclosure"), dict) else {}
         source_url = disclosure.get("document_url") or data.get("ri_url")
         trigger_title = disclosure.get("title") or f"One Pager de {report.symbol} recalculado"
+        exchange = self._resolve_us_exchange(report.symbol)
         self.database.save_analysis_snapshot(
             "one_pager_valuation",
             f"US:{report.symbol}",
             methodology_id,
             {
-                "market": "US",
+                "market": exchange,
                 "source": report.source,
                 "source_url": source_url,
                 "trigger_title": trigger_title,
