@@ -3,6 +3,38 @@
 -- exchange for every bulk US screener record (NASDAQ_UNIVERSE/NYSE_UNIVERSE),
 -- so only those unambiguous records are split; anything without a traceable
 -- snapshot (e.g. One Pager-sourced "US" records) is left as-is.
+--
+-- 007_valuation_change_records.sql's market column still only allowed
+-- ('B3', 'US') -- this constraint has to widen before anything can write
+-- 'NASDAQ'/'NYSE' into this table, or every insert/update (including the
+-- one below) fails and crashes app startup (CheckViolation on
+-- valuation_change_records_market_check, observed 2026-08-18).
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'valuation_change_records'::regclass
+          AND conname = 'valuation_change_records_market_check'
+          AND pg_get_constraintdef(oid) NOT LIKE '%NASDAQ%'
+    ) THEN
+        ALTER TABLE valuation_change_records
+            DROP CONSTRAINT valuation_change_records_market_check;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'valuation_change_records'::regclass
+          AND conname = 'valuation_change_records_market_check'
+    ) THEN
+        ALTER TABLE valuation_change_records
+            ADD CONSTRAINT valuation_change_records_market_check
+            CHECK (market IN ('B3', 'NASDAQ', 'NYSE', 'US'));
+    END IF;
+END
+$$;
+
 UPDATE valuation_change_records AS valuation
 SET market = CASE snapshot.entity_key
         WHEN 'NASDAQ_UNIVERSE' THEN 'NASDAQ'
