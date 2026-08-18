@@ -30,6 +30,7 @@ import {
   FileDown,
   FilePlus2,
   Github,
+  Gauge,
   HeartPulse,
   HardDrive,
   Inbox,
@@ -177,7 +178,19 @@ interface SystemHealthData {
   quality: number;
   healthy_count: number;
   total_count: number;
+  api_usage: ApiUsageMetric[];
   groups: SystemHealthGroup[];
+}
+
+interface ApiUsageMetric {
+  provider: string;
+  used: number;
+  limit: number;
+  percent_used: number;
+  period: string;
+  status: "healthy" | "attention" | "critical";
+  detail: string;
+  measured_at: string;
 }
 
 interface R2D2DashboardData {
@@ -1213,7 +1226,7 @@ function R2D2RisingIcon({ size = 24 }: { size?: number }) {
 }
 
 const navItems: { key: ViewKey; label: string; icon: ComponentType<{ size?: number }> }[] = [
-  { key: "command", label: "Millennium Falcon", icon: MillenniumFalconIcon },
+  { key: "command", label: "Falcon CAPCOM", icon: MillenniumFalconIcon },
   { key: "markets", label: "Master Luke", icon: MasterLukeIcon },
   { key: "realtime", label: "Hyperspace", icon: HyperspaceIcon },
   { key: "weather", label: "Dagobah Weather", icon: DagobahWeatherIcon },
@@ -1259,7 +1272,7 @@ const helmNavItem: { key: ViewKey; label: string; icon: ComponentType<{ size?: n
 
 const viewTitles: Record<ViewKey, { title: string; eyebrow: string }> = {
   home: { title: "C3PO", eyebrow: "Chief of Staff Intelligence" },
-  command: { title: "Millennium Falcon", eyebrow: "Executive cockpit · Live intelligence across C3PO" },
+  command: { title: "Falcon CAPCOM", eyebrow: "Mission control · R2D2 performance and live market intelligence" },
   markets: { title: "Master Luke", eyebrow: "Protocol intelligence · Near-real-time market console" },
   realtime: { title: "Hyperspace", eyebrow: "Protocol intelligence · Market-wide leaders" },
   weather: { title: "Dagobah Weather", eyebrow: "Atmospheric intelligence · 24-hour operational forecast" },
@@ -1750,11 +1763,17 @@ function normalizeCompanyLogoUrl(value?: string | null) {
 }
 
 function CompanyLogo({ logoUrl, symbol }: { logoUrl?: string | null; symbol: string }) {
-  const [failed, setFailed] = useState(false);
-  const source = normalizeCompanyLogoUrl(logoUrl);
-  useEffect(() => setFailed(false), [source]);
-  return source && !failed
-    ? <img src={source} alt="" onError={() => setFailed(true)} />
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const sources = useMemo(() => Array.from(new Set([
+    `/api/v1/company-logo/${encodeURIComponent(normalizedSymbol)}`,
+    normalizeCompanyLogoUrl(logoUrl),
+    `https://eodhd.com/img/logos/US/${normalizedSymbol.toLowerCase()}.png`,
+    `https://financialmodelingprep.com/image-stock/${encodeURIComponent(normalizedSymbol)}.png`
+  ].filter(Boolean))), [logoUrl, normalizedSymbol]);
+  const [sourceIndex, setSourceIndex] = useState(0);
+  useEffect(() => setSourceIndex(0), [sources.join("|")]);
+  return sources[sourceIndex]
+    ? <img src={sources[sourceIndex]} alt="" onError={() => setSourceIndex((current) => current + 1)} />
     : <span>{symbol.slice(0, 2)}</span>;
 }
 
@@ -2319,7 +2338,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
               <h1>{viewTitles[activeView].title}</h1>
               <p>
                 {activeView === "command"
-                  ? "Seu cockpit executivo com mercados, carteira e decisões operacionais nas fontes canônicas do C3PO."
+                  ? "Controle executivo do R2D2, índices globais e prontidão operacional em uma única tela."
                   : activeView === "relations"
                   ? "Official disclosures, issuer updates and valuation-review status in one audit trail."
                   : activeView === "news"
@@ -2344,7 +2363,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
             </div>
             <div className={`freshness freshness-${activeView === "relations" || activeView === "news" || activeView === "r2d2" || activeView === "intelligence" || activeView === "health" || activeView === "serverusage" || activeView === "weather" ? "current" : data?.provenance.status ?? "unavailable"}`}>
               <ShieldCheck size={16} />
-              <span>{activeView === "command" ? "Markets + Hyperspace sources" : activeView === "relations" ? "CVM / SEC official sources" : activeView === "news" ? "Globo + UOL + Bloomberg + CNBC" : activeView === "r2d2" ? "Paper strategy enabled · real brokerage disabled" : activeView === "intelligence" ? "C3PO valuation audit trail" : activeView === "health" ? "Cloudflare + APIs + Pluggy + AWS + data sources" : activeView === "serverusage" ? "60-second host samples" : activeView === "weather" ? "Open-Meteo multi-model" : data?.provenance.source ?? "Source pending"}</span>
+              <span>{activeView === "command" ? "R2D2 + Master Luke + Storm Troops" : activeView === "relations" ? "CVM / SEC official sources" : activeView === "news" ? "Globo + UOL + Bloomberg + CNBC" : activeView === "r2d2" ? "Paper strategy enabled · real brokerage disabled" : activeView === "intelligence" ? "C3PO valuation audit trail" : activeView === "health" ? "Cloudflare + APIs + Pluggy + AWS + data sources" : activeView === "serverusage" ? "60-second host samples" : activeView === "weather" ? "Open-Meteo multi-model" : data?.provenance.source ?? "Source pending"}</span>
             </div>
           </div>}
 
@@ -2417,7 +2436,7 @@ function ViewRouter({
   if (activeView === "candidates") return <CandidatesView reports={reports} marketProviders={marketProviders} />;
   if (activeView === "matrix") return <MatrixPowerView />;
   if (activeView === "onepager") return <OnePagerView canGenerate={canGenerateOnePagers} />;
-  if (activeView === "command" && data) return <MillenniumFalconView data={data} onNavigate={onNavigate} />;
+  if (activeView === "command") return <MillenniumFalconView systemHealth={systemHealth} />;
   return <LoadingState />;
 }
 
@@ -2476,6 +2495,16 @@ function R2D2RisingView() {
   const signedMoney = (value: number) => `${value >= 0 ? "+" : "-"}${money(Math.abs(value))}`;
   const signedPercent = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
   const cashPercent = data.nav_usd > 0 ? data.cash_usd / data.nav_usd * 100 : 100;
+  const saoPauloDateKey = (value: string | Date) => new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(value));
+  const todayKey = saoPauloDateKey(new Date());
+  const todayTrades = data.trades.filter((trade) => saoPauloDateKey(trade.executed_at) === todayKey);
+  const todayPositiveTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
+  const todayNegativeTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
   const launchChecks = [
     { label: "Market feeds", detail: "EODHD live · Nasdaq + NYSE · B3 execution disabled", state: "ready" },
     { label: "Canonical valuation", detail: "Dark Side + Last Jedi + Laser Pager", state: "ready" },
@@ -2513,11 +2542,12 @@ function R2D2RisingView() {
       .map((position, index) => ({
         label: position.symbol,
         name: position.name,
+        logoUrl: position.logo_url,
         detail: position.market,
         value: position.market_value_usd,
         color: allocationPalette[index % (allocationPalette.length - 1)]
       })),
-    { label: "Cash", name: "Available cash", detail: "Available", value: data.cash_usd, color: allocationPalette[allocationPalette.length - 1] }
+    { label: "Cash", name: "Available cash", logoUrl: "/market-marks/usd.svg", detail: "Available", value: data.cash_usd, color: allocationPalette[allocationPalette.length - 1] }
   ].map((item) => ({
     ...item,
     percent: allocationTotal > 0 ? item.value / allocationTotal * 100 : 0
@@ -2692,6 +2722,11 @@ function R2D2RisingView() {
                 className={hoveredAllocation?.label === item.label ? "r2d2-allocation-legend-active" : undefined}
               >
                 <i style={{ backgroundColor: item.color }} />
+                <span className="r2d2-allocation-logo">
+                  {item.label === "Cash"
+                    ? <img src={item.logoUrl ?? "/market-marks/usd.svg"} alt="USD" />
+                    : <CompanyLogo logoUrl={item.logoUrl} symbol={item.label} />}
+                </span>
                 <div>{item.label === "Cash" ? <strong>Cash</strong> : <R2D2Ticker symbol={item.label} name={item.name} />}<small>{item.detail}</small></div>
                 <span>{moneyExact(item.value)}</span>
                 <b>{item.percent.toFixed(1)}%</b>
@@ -2705,13 +2740,13 @@ function R2D2RisingView() {
         <header className="panel-header r2d2-trades-header">
           <div><BookOpenCheck size={18} /><h2>Daily Buy / Sell Log</h2></div>
           <div className="r2d2-trade-summary" aria-label="Resumo das transações">
-            <span><b>{data.stats.total_transactions}</b> transações</span>
-            <span className="positive" title="Vendas encerradas com P&L realizado positivo"><b>{data.stats.positive_transactions}</b> positivas</span>
-            <span className="negative" title="Vendas encerradas com P&L realizado negativo"><b>{data.stats.negative_transactions}</b> negativas</span>
+            <span><b>{todayTrades.length}</b> transações hoje</span>
+            <span className="positive" title="Vendas encerradas hoje com P&L realizado positivo"><b>{todayPositiveTrades}</b> positivas</span>
+            <span className="negative" title="Vendas encerradas hoje com P&L realizado negativo"><b>{todayNegativeTrades}</b> negativas</span>
           </div>
         </header>
         <div className="r2d2-trade-head"><span>Time</span><span>Side</span><span>Asset</span><span>Market</span><span>Quantity</span><span>Cash transaction</span><span>Realized P&amp;L</span><span>Decision rationale</span></div>
-        {data.trades.length ? data.trades.map((trade) => {
+        {todayTrades.length ? todayTrades.map((trade) => {
           const sideTone = trade.side === "BUY"
             ? "buy"
             : trade.realized_pnl_usd !== null && trade.realized_pnl_usd > 0
@@ -2738,7 +2773,7 @@ function R2D2RisingView() {
               <p>{trade.reason}</p>
             </div>
           );
-        }) : <div className="r2d2-ledger-empty"><BookOpenCheck size={24} /><div><strong>No executions recorded</strong><span>Every virtual fill, fee, slippage and rationale will appear here.</span></div></div>}
+        }) : <div className="r2d2-ledger-empty"><BookOpenCheck size={24} /><div><strong>No executions today</strong><span>Today&apos;s virtual fills and rationales will appear here.</span></div></div>}
       </section>
 
       <footer className="r2d2-cycle-strip">
@@ -2793,7 +2828,7 @@ function C3POOpeningView({ onEnter }: { onEnter: () => void }) {
       <div className="c3po-opening-stars" aria-hidden="true">
         {stars.map((style, index) => <i key={index} style={style} />)}
       </div>
-      <button className="c3po-opening-skip" type="button" onClick={onEnter} aria-label="Pular introdução e entrar no Millennium Falcon">
+      <button className="c3po-opening-skip" type="button" onClick={onEnter} aria-label="Pular introdução e entrar no Falcon CAPCOM">
         <span>Pular introdução</span>
         <ChevronRight size={17} />
       </button>
@@ -2838,183 +2873,128 @@ function C3POOpeningView({ onEnter }: { onEnter: () => void }) {
   );
 }
 
-function MillenniumFalconView({
-  data,
-  onNavigate
-}: {
-  data: CommandCenterData;
-  onNavigate: (view: ViewKey, realtimeTab?: RealtimeTabKey) => void;
-}) {
-  const [markets, setMarkets] = useState<LiveMarketsResponse | null>(null);
-  const [portfolio, setPortfolio] = useState<RealtimePortfolioResponse | null>(null);
-  const [loadingMarkets, setLoadingMarkets] = useState(true);
-  const [loadingPortfolio, setLoadingPortfolio] = useState(true);
-  const [errors, setErrors] = useState<string[]>([]);
+function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData | null }) {
+  const [r2d2, setR2d2] = useState<R2D2DashboardData | null>(null);
+  const [indices, setIndices] = useState<LiveMarketItem[]>([]);
+  const [health, setHealth] = useState<SystemHealthData | null>(systemHealth);
+  const [error, setError] = useState("");
   const mountedRef = useRef(true);
+  const r2d2RequestInFlight = useRef(false);
+  const marketRequestInFlight = useRef(false);
 
-  const loadMarkets = useCallback(async () => {
+  const loadR2D2 = useCallback(async () => {
+    if (r2d2RequestInFlight.current) return;
+    r2d2RequestInFlight.current = true;
     try {
-      const response = await fetch(`${API_URL}/api/v1/markets/live`, { cache: "no-store", credentials: "include" });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail ?? `Markets API ${response.status}`);
-      if (mountedRef.current) {
-        setMarkets(payload);
-        setErrors((current) => current.filter((item) => !item.startsWith("Markets:")));
-      }
+      const response = await fetch(`${API_URL}/api/v1/r2d2`, { cache: "no-store", credentials: "include" });
+      if (!response.ok) throw new Error(`R2D2 API ${response.status}`);
+      if (mountedRef.current) setR2d2(await response.json());
     } catch (requestError) {
-      if (mountedRef.current) setErrors((current) => [...current.filter((item) => !item.startsWith("Markets:")), `Markets: ${requestError instanceof Error ? requestError.message : "unavailable"}`]);
+      if (mountedRef.current) setError(requestError instanceof Error ? requestError.message : "R2D2 unavailable");
     } finally {
-      if (mountedRef.current) setLoadingMarkets(false);
+      r2d2RequestInFlight.current = false;
     }
   }, []);
 
-  const loadPortfolio = useCallback(async () => {
+  const loadIndices = useCallback(async () => {
+    if (marketRequestInFlight.current) return;
+    marketRequestInFlight.current = true;
     try {
-      const response = await fetch(`${API_URL}/api/v1/realtime/portfolio/items`, { cache: "no-store", credentials: "include" });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail ?? `Portfolio API ${response.status}`);
-      if (mountedRef.current) {
-        setPortfolio(payload);
-        setErrors((current) => current.filter((item) => !item.startsWith("Portfolio:")));
-      }
+      const [indexResponse, marketResponse] = await Promise.all([
+        fetch(`${API_URL}/api/v1/markets/live/index`, { cache: "no-store", credentials: "include" }),
+        fetch(`${API_URL}/api/v1/markets/live`, { cache: "no-store", credentials: "include" })
+      ]);
+      if (!indexResponse.ok || !marketResponse.ok) throw new Error(`Markets API ${indexResponse.ok ? marketResponse.status : indexResponse.status}`);
+      const indexPayload: LiveMarketIndexResponse = await indexResponse.json();
+      const marketPayload: LiveMarketsResponse = await marketResponse.json();
+      const promotedSymbols = ["Nikkei", "Shanghai", "DAX"];
+      const promoted = promotedSymbols
+        .map((symbol) => (marketPayload.groups["Future Index"] ?? []).find((item) => item.symbol === symbol))
+        .filter((item): item is LiveMarketItem => Boolean(item));
+      if (mountedRef.current) setIndices([...indexPayload.items, ...promoted]);
     } catch (requestError) {
-      if (mountedRef.current) setErrors((current) => [...current.filter((item) => !item.startsWith("Portfolio:")), `Portfolio: ${requestError instanceof Error ? requestError.message : "unavailable"}`]);
+      if (mountedRef.current) setError(requestError instanceof Error ? requestError.message : "Indices unavailable");
     } finally {
-      if (mountedRef.current) setLoadingPortfolio(false);
+      marketRequestInFlight.current = false;
+    }
+  }, []);
+
+  const loadHealth = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/system-health`, { cache: "no-store", credentials: "include" });
+      if (response.ok && mountedRef.current) setHealth(await response.json());
+    } catch {
+      // The last valid readiness bar remains visible during transient failures.
     }
   }, []);
 
   useEffect(() => {
     mountedRef.current = true;
-    loadMarkets();
-    loadPortfolio();
-    const marketsInterval = window.setInterval(() => {
-      if (document.visibilityState === "visible") loadMarkets();
-    }, 30_000);
-    const portfolioInterval = window.setInterval(() => {
-      if (document.visibilityState === "visible") loadPortfolio();
-    }, 5_000);
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
-        loadMarkets();
-        loadPortfolio();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
+    void loadR2D2();
+    void loadIndices();
+    void loadHealth();
+    const r2d2Timer = window.setInterval(() => document.visibilityState === "visible" && void loadR2D2(), 2_000);
+    const marketTimer = window.setInterval(() => document.visibilityState === "visible" && void loadIndices(), 10_000);
+    const healthTimer = window.setInterval(() => document.visibilityState === "visible" && void loadHealth(), 60_000);
     return () => {
       mountedRef.current = false;
-      window.clearInterval(marketsInterval);
-      window.clearInterval(portfolioInterval);
-      document.removeEventListener("visibilitychange", handleVisibility);
+      window.clearInterval(r2d2Timer);
+      window.clearInterval(marketTimer);
+      window.clearInterval(healthTimer);
     };
-  }, [loadMarkets, loadPortfolio]);
+  }, [loadHealth, loadIndices, loadR2D2]);
 
-  const marketItems = markets ? Object.values(markets.groups).flat() : [];
-  const advancingMarkets = marketItems.filter((item) => (item.change_percent ?? 0) > 0).length;
-  const portfolioItems = portfolio?.items ?? [];
-  const advancingPortfolio = portfolioItems.filter((item) => item.change_percent > 0).length;
-  const visibleIntegrations = data.integrations.filter((item) => item.name.toLowerCase() !== "whatsapp");
-  const nominalIntegrations = visibleIntegrations.filter((item) => item.status === "healthy").length;
-  const marketGroups = ["Index", "Future Index", "Currencies", "Crypto"];
+  const usd = (value: number) => new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2
+  }).format(value).replace("$", "US$ ");
+  const signedUsd = (value: number) => `${value >= 0 ? "+" : "-"}${usd(Math.abs(value))}`;
+  const healthHeadline = health?.status === "healthy"
+    ? "All services operational"
+    : health?.status === "offline"
+      ? "Service interruption detected"
+      : "Conditions require attention";
+  const healthTone = !health ? "warning" : health.quality >= 100 ? "good" : health.quality >= 80 ? "warning" : "critical";
+  const dailyConsumption = health?.api_usage?.[0] ?? null;
 
   return (
-    <div className="falcon-view">
-      <section className="falcon-flight-deck" aria-label="Millennium Falcon flight status">
-        <div className="falcon-flight-identity">
-          <div><MillenniumFalconIcon size={29} /></div>
-          <span>Flight deck</span>
-          <strong>Systems online</strong>
-          <small>{formatDate(markets?.generated_at ?? portfolio?.generated_at ?? data.generated_at)}</small>
+    <div className="falcon-view falcon-capcom-view">
+      <section className="falcon-capcom-metrics" aria-label="R2D2 mission telemetry">
+        <div className="falcon-capcom-identity">
+          <MillenniumFalconIcon size={42} />
+          <div><span>R2D2 live telemetry</span><strong>{r2d2?.experiment_code ?? "Connecting"}</strong><small>2-second mission refresh</small></div>
         </div>
-        <FalconMetric label="Market coverage" value={`${marketItems.length}`} detail={`${advancingMarkets} advancing`} tone="gold" />
-        <FalconMetric label="My Portfolio" value={`${portfolioItems.length}`} detail={`${advancingPortfolio} advancing`} tone="blue" />
-        <FalconMetric label="Decision queue" value={`${data.decision_queue.length}`} detail="items requiring review" tone={data.decision_queue.length ? "red" : "green"} />
-        <FalconMetric label="System coverage" value={`${nominalIntegrations}/${visibleIntegrations.length}`} detail="integrations nominal" tone="green" />
+        <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.nav_usd) : "—"} detail={`${r2d2?.open_positions ?? 0} open positions`} tone="gold" />
+        <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}% today` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
+        <FalconMetric label="Positive Transactions" value={`${r2d2?.stats.positive_transactions ?? 0}`} detail="realized winning trades" tone="green" />
+        <FalconMetric label="Negative Transactions" value={`${r2d2?.stats.negative_transactions ?? 0}`} detail="realized losing trades" tone="red" />
       </section>
 
-      {errors.length > 0 && <div className="error-banner"><AlertTriangle size={18} /><span>{errors.join(" · ")}</span><button onClick={() => { loadMarkets(); loadPortfolio(); }}>Retry</button></div>}
+      {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => { setError(""); void loadR2D2(); void loadIndices(); }}>Retry</button></div>}
 
-      <div className="falcon-primary-grid">
-        <section className="panel falcon-markets-panel">
-          <PanelHeader title="Markets Radar" icon={MasterLukeIcon} action="Open Master Luke" onAction={() => onNavigate("markets")} />
-          {loadingMarkets && !markets ? <div className="falcon-panel-loading" /> : (
-            <div className="falcon-market-groups">
-              {marketGroups.map((group) => {
-                const items = markets?.groups[group] ?? [];
-                return (
-                  <div className="falcon-market-group" key={group}>
-                    <div className="falcon-group-head"><span>{group}</span><small>{items.length} instruments</small></div>
-                    {items.slice(0, 5).map((item) => {
-                      const direction: Direction = (item.change_percent ?? 0) > 0 ? "up" : (item.change_percent ?? 0) < 0 ? "down" : "flat";
-                      return (
-                        <article className="falcon-market-row" key={item.symbol}>
-                          <div><InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.name, market: item.group }}><strong>{item.symbol}</strong></InstrumentPreviewTarget><span>{item.name}</span></div>
-                          <div><strong>{formatLiveMarketPrice(item)}</strong><span className={`change-${direction}`}><DirectionIcon direction={direction} size={12} />{formatPercent(item.change_percent, 2)}</span></div>
-                        </article>
-                      );
-                    })}
-                    {!items.length && <EmptyLine label="Market feed unavailable" />}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <div className="falcon-source-line"><ShieldCheck size={13} /><span>Same canonical feed as Master Luke</span><small>{markets ? `${markets.methodology.b3} ${markets.methodology.global}` : "Connecting to market sources"}</small></div>
-        </section>
+      <section className="panel live-market-panel live-market-panel-cards live-market-panel-index falcon-capcom-index">
+        <div className="live-market-group-head">
+          <div><span>Index</span><strong>{indices.length} instruments</strong></div>
+          <small>Same canonical feed as Master Luke</small>
+        </div>
+        <div className="live-market-table">
+          <div className="live-market-table-head"><span>Instrument</span><span>Price</span><span>Change</span><span>Session range</span><span>Quote</span></div>
+          {indices.map((item) => <LiveMarketRow key={item.symbol} item={item} />)}
+          {!indices.length && <div className="falcon-panel-loading" />}
+        </div>
+      </section>
 
-        <section className="panel falcon-portfolio-panel">
-          <PanelHeader title="My Portfolio" icon={BriefcaseBusiness} action="Open Hyperspace" onAction={() => onNavigate("realtime", "PORTFOLIO")} />
-          <div className="falcon-portfolio-summary">
-            <div><span>Tracked</span><strong>{portfolioItems.length}</strong></div>
-            <div><span>Advancing</span><strong className="positive-text">{advancingPortfolio}</strong></div>
-            <div><span>Declining</span><strong className="negative-text">{portfolioItems.filter((item) => item.change_percent < 0).length}</strong></div>
-          </div>
-          {loadingPortfolio && !portfolio ? <div className="falcon-panel-loading falcon-portfolio-loading" /> : portfolioItems.length ? (
-            <div className="falcon-portfolio-list">
-              {portfolioItems.slice(0, 8).map((item) => (
-                <article className="falcon-portfolio-row" key={item.symbol}>
-                  <div><InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.name, market: item.market }}><strong>{item.symbol}</strong></InstrumentPreviewTarget><span>{item.name}</span></div>
-                  <span className="falcon-market-badge">{item.market}</span>
-                  <strong>{formatCurrency(item.price, item.currency)}</strong>
-                  <span className={item.change_percent >= 0 ? "change-up" : "change-down"}><DirectionIcon direction={item.change_percent >= 0 ? "up" : "down"} size={12} />{formatPercent(item.change_percent, 2)}</span>
-                </article>
-              ))}
-            </div>
-          ) : <div className="falcon-empty"><BriefcaseBusiness size={21} /><strong>No securities tracked</strong><button onClick={() => onNavigate("realtime", "PORTFOLIO")}>Build My Portfolio</button></div>}
-          <div className="falcon-source-line"><HyperspaceIcon size={15} /><span>Same canonical list as Hyperspace</span><small>Automatic refresh every 5 seconds</small></div>
-        </section>
-      </div>
-
-      <div className="falcon-operations-grid">
-        <section className="panel">
-          <PanelHeader title="Decision Queue" icon={BookOpenCheck} action="Radar Alerts" onAction={() => onNavigate("alerts")} />
-          <div className="decision-list">
-            {data.decision_queue.slice(0, 4).map((decision, index) => (
-              <article className="decision-item" key={`${decision.subject}-${index}`}>
-                <div className="decision-number">{String(index + 1).padStart(2, "0")}</div>
-                <div><strong>{decision.subject}</strong><p>{decision.action}</p></div>
-              </article>
-            ))}
-            {!data.decision_queue.length && <EmptyLine label="No decisions waiting" />}
-          </div>
-        </section>
-
-        <section className="panel">
-          <PanelHeader title="Daily Priorities" icon={Target} />
-          <ol className="priority-list">
-            {data.priorities.slice(0, 4).map((priority, index) => (
-              <li key={`${priority}-${index}`}><span>{index + 1}</span><p>{priority}</p></li>
-            ))}
-            {!data.priorities.length && <EmptyLine label="No priorities queued" />}
-          </ol>
-        </section>
-
-        <section className="panel">
-          <PanelHeader title="System Coverage" icon={HeartPulse} action="Health" onAction={() => onNavigate("health")} />
-          <div className="health-list">
-            {visibleIntegrations.slice(0, 5).map((item) => <HealthRow key={item.name} item={item} />)}
-          </div>
-        </section>
+      <div className={`quality-banner quality-${healthTone} falcon-capcom-readiness falcon-capcom-readiness-with-usage`}>
+        <div className="quality-score">{health?.quality ?? 0}%</div>
+        <div><span>Storm Troops Readiness</span><strong>{healthHeadline}</strong><small>{health ? `${health.healthy_count}/${health.total_count} services operational · ${formatDate(health.generated_at)}` : "Collecting service conditions"}</small></div>
+        <div className="quality-meter"><span style={{ width: `${health?.quality ?? 0}%` }} /></div>
+        <div className={`falcon-capcom-consumption api-usage-${dailyConsumption?.status ?? "healthy"}`}>
+          <header>
+            <div><ServiceLogo name={dailyConsumption?.provider ?? "EODHD"} groupKey="quotes" /><span>Daily Consumption</span></div>
+            <strong>{dailyConsumption ? `${dailyConsumption.percent_used.toFixed(1).replace(".", ",")}%` : "—"}</strong>
+          </header>
+          <div className="api-usage-meter"><span style={{ width: `${Math.min(100, dailyConsumption?.percent_used ?? 0)}%` }} /></div>
+          <small>{dailyConsumption ? `${dailyConsumption.used.toLocaleString("pt-BR")} of ${dailyConsumption.limit.toLocaleString("pt-BR")} calls` : "Collecting API usage"}</small>
+        </div>
       </div>
     </div>
   );
@@ -5988,6 +5968,7 @@ function ServerUsageView() {
 
 function HealthView({ data }: { data: SystemHealthData | null }) {
   if (!data) return <LoadingState />;
+  const apiUsage = data.api_usage ?? [];
   const groupIcons: Record<SystemHealthGroupKey, ComponentType<{ size?: number }>> = {
     apis: Activity,
     external_services: Cloud,
@@ -6007,6 +5988,29 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
     : data.quality >= 80
       ? "warning"
       : "critical";
+  const orderedGroups = [...data.groups].sort((left, right) => {
+    const order: Record<SystemHealthGroupKey, number> = {
+      aws: 0,
+      apis: 1,
+      external_services: 2,
+      open_finance: 3,
+      quotes: 4,
+      official_sources: 5,
+      automations: 6
+    };
+    return order[left.key] - order[right.key];
+  });
+  const renderHealthGroup = (group: SystemHealthGroup) => {
+    const GroupIcon = groupIcons[group.key];
+    return (
+      <section className={`panel system-health-group system-health-group-${group.key}`} key={group.key}>
+        <PanelHeader title={`${group.label} · ${group.healthy_count}/${group.total_count}`} icon={GroupIcon} />
+        <div className={`health-list health-list-large health-list-horizontal health-list-${group.items.length}`}>
+          {group.items.map((item) => <HealthRow key={`${group.key}-${item.name}`} item={item} groupKey={group.key} />)}
+        </div>
+      </section>
+    );
+  };
   return (
     <div className="content-stack">
       <div className={`quality-banner quality-${qualityTone}`}>
@@ -6014,18 +6018,26 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
         <div><span>Storm Troops Readiness</span><strong>{headline}</strong><small>{data.healthy_count}/{data.total_count} services operational · {formatDate(data.generated_at)}</small></div>
         <div className="quality-meter"><span style={{ width: `${data.quality}%` }} /></div>
       </div>
+      <div className="system-health-group-grid system-health-infrastructure-grid">
+        {orderedGroups.filter((group) => group.key === "aws").map(renderHealthGroup)}
+      </div>
+      <section className="panel api-usage-panel">
+        <PanelHeader title="Daily API Usage" icon={Gauge} />
+        {apiUsage.length ? (
+          <div className="api-usage-grid">
+            {apiUsage.map((metric) => (
+              <article className={`api-usage-card api-usage-${metric.status}`} key={metric.provider}>
+                <header><ServiceLogo name={metric.provider} groupKey="quotes" /><div><span>Daily consumption</span><strong>{metric.percent_used.toFixed(1).replace(".", ",")}%</strong></div></header>
+                <div className="api-usage-meter"><span style={{ width: `${Math.min(100, metric.percent_used)}%` }} /></div>
+                <div className="api-usage-numbers"><strong>{metric.used.toLocaleString("pt-BR")}</strong><span>of {metric.limit.toLocaleString("pt-BR")} calls</span></div>
+                <small>{metric.detail} · {metric.measured_at}</small>
+              </article>
+            ))}
+          </div>
+        ) : <div className="api-usage-empty">No provider exposes an official usage counter right now.</div>}
+      </section>
       <div className="system-health-group-grid">
-        {data.groups.map((group) => {
-          const GroupIcon = groupIcons[group.key];
-          return (
-            <section className="panel" key={group.key}>
-              <PanelHeader title={`${group.label} · ${group.healthy_count}/${group.total_count}`} icon={GroupIcon} />
-              <div className="health-list health-list-large">
-                {group.items.map((item) => <HealthRow key={`${group.key}-${item.name}`} item={item} groupKey={group.key} />)}
-              </div>
-            </section>
-          );
-        })}
+        {orderedGroups.filter((group) => group.key !== "aws").map(renderHealthGroup)}
       </div>
     </div>
   );
@@ -6142,8 +6154,15 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
 }
 
 function HealthRow({ item, groupKey = "apis" }: { item: Integration; groupKey?: SystemHealthGroupKey }) {
+  const statusLabel = item.status === "healthy" ? "Operational" : item.status === "attention" ? "Needs attention" : "Offline";
   return (
-    <div className="health-row"><span className={`status-dot dot-${item.status}`} /><ServiceLogo name={item.name} groupKey={groupKey} /><div><strong>{item.name}</strong><span>{item.detail}</span></div><small>{item.last_update}</small></div>
+    <div className="health-row">
+      <span className={`health-status-mark health-status-${item.status}`} aria-label={statusLabel} title={statusLabel}>
+        {item.status === "healthy" ? <Check size={15} strokeWidth={3} /> : item.status === "offline" ? <span aria-hidden="true">×</span> : null}
+      </span>
+      <ServiceLogo name={item.name} groupKey={groupKey} />
+      <div><strong>{item.name}</strong><span>{item.detail}</span></div>
+    </div>
   );
 }
 
