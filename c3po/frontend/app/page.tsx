@@ -6091,7 +6091,15 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
           <div className="api-usage-grid">
             {apiUsage.map((metric) => (
               <article className={`api-usage-card api-usage-${metric.status}`} key={metric.provider}>
-                <header><ServiceLogo name={metric.provider} groupKey="quotes" /><div><span>Daily consumption</span><strong>{metric.percent_used.toFixed(1).replace(".", ",")}%</strong></div></header>
+                <header>
+                  <div className="api-usage-provider">
+                    <ServiceLogo name={metric.provider} groupKey="quotes" />
+                    <span className="api-usage-operational" title={`${metric.provider} API operational`} aria-label={`${metric.provider} API operational`}>
+                      <Check size={14} strokeWidth={3.4} />
+                    </span>
+                  </div>
+                  <div className="api-usage-consumption"><span>Daily consumption</span><strong>{metric.percent_used.toFixed(1).replace(".", ",")}%</strong></div>
+                </header>
                 <div className="api-usage-meter"><span style={{ width: `${Math.min(100, metric.percent_used)}%` }} /></div>
                 <div className="api-usage-numbers"><strong>{metric.used.toLocaleString("pt-BR")}</strong><span>of {metric.limit.toLocaleString("pt-BR")} calls</span></div>
                 <small>{metric.detail} · {metric.measured_at}</small>
