@@ -112,6 +112,17 @@ class IntegrationHealth(BaseModel):
     last_update: str
 
 
+class ApiUsageMetric(BaseModel):
+    provider: str
+    used: int = Field(ge=0)
+    limit: int = Field(gt=0)
+    percent_used: float = Field(ge=0)
+    period: str = "daily"
+    status: Literal["healthy", "attention", "critical"]
+    detail: str
+    measured_at: datetime
+
+
 class SystemHealthGroup(BaseModel):
     key: Literal["apis", "external_services", "open_finance", "aws", "quotes", "official_sources", "automations"]
     label: str
@@ -127,6 +138,7 @@ class SystemHealthResponse(BaseModel):
     quality: int = Field(ge=0, le=100)
     healthy_count: int = Field(ge=0)
     total_count: int = Field(ge=0)
+    api_usage: list[ApiUsageMetric] = Field(default_factory=list)
     groups: list[SystemHealthGroup]
 
 

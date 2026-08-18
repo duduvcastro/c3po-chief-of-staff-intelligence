@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from .config import Settings
-from .schemas import IntegrationHealth, SystemHealthGroup, SystemHealthResponse
+from .schemas import ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
 
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
@@ -47,8 +47,9 @@ class SystemHealthService:
         ):
             return self._cached_response
 
+        api_usage = self._api_usage(now)
         groups = [
-            self._group("apis", "Core APIs", self._core_api_health(now)),
+            self._group("apis", "Core APIs", [*self._core_api_health(now), self._api_usage_health(api_usage, now)]),
             self._group("external_services", "Contracted & External Services", self._external_services_health(now)),
             self._group("open_finance", "Pluggy & Banks", self._safe_items("Pluggy API", self.open_finance.integration_health, now)),
             self._group("aws", "AWS Infrastructure", self._aws_health(now)),
@@ -65,11 +66,64 @@ class SystemHealthService:
             quality=round(healthy_count / len(items) * 100) if items else 0,
             healthy_count=healthy_count,
             total_count=len(items),
+            api_usage=api_usage,
             groups=groups,
         )
         self._cached_at = now
         self._cached_response = response
         return response
+
+    def _api_usage(self, now: datetime) -> list[ApiUsageMetric]:
+        metrics: list[ApiUsageMetric] = []
+        if self.settings.eodhd_api_token:
+            try:
+                response = self.external_get(
+                    f"{self.settings.eodhd_base_url.rstrip('/')}/api/user/",
+                    params={"api_token": self.settings.eodhd_api_token, "fmt": "json"},
+                    timeout=self.settings.system_health_external_timeout_seconds,
+                    follow_redirects=True,
+                    headers={"User-Agent": "C3PO-API-Usage/1.0"},
+                )
+                response.raise_for_status()
+                payload = response.json()
+                used = max(0, int(payload.get("apiRequests") or 0))
+                limit = max(1, int(payload.get("dailyRateLimit") or 0))
+                percent = round(used / limit * 100, 2)
+                status = "critical" if percent > 90 else "attention" if percent > 70 else "healthy"
+                metrics.append(ApiUsageMetric(
+                    provider="EODHD",
+                    used=used,
+                    limit=limit,
+                    percent_used=percent,
+                    status=status,
+                    detail=f"Official provider counter · resets daily · {max(0, limit - used):,} remaining",
+                    measured_at=now,
+                ))
+            except Exception:
+                pass
+        return metrics
+
+    def _api_usage_health(self, metrics: list[ApiUsageMetric], now: datetime) -> IntegrationHealth:
+        if not metrics:
+            return IntegrationHealth(
+                name="Daily API Usage",
+                status="attention",
+                detail="Official daily usage counter unavailable",
+                last_update=self._format_time(now),
+            )
+
+        highest_status = "healthy"
+        if any(metric.status == "critical" for metric in metrics):
+            highest_status = "attention"
+        elif any(metric.status == "attention" for metric in metrics):
+            highest_status = "attention"
+        summary = " · ".join(f"{metric.provider} {metric.percent_used:.1f}%" for metric in metrics)
+        return IntegrationHealth(
+            name="Daily API Usage",
+            status=highest_status,
+            detail=f"Official counter active · {summary}",
+            last_update=self._format_time(now),
+        )
 
     def _core_api_health(self, now: datetime) -> list[IntegrationHealth]:
         timestamp = self._format_time(now)
