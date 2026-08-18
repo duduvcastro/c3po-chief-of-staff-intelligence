@@ -53,6 +53,20 @@ class Settings(BaseSettings):
     eodhd_api_token: str = Field(default="", validation_alias=AliasChoices("C3PO_EODHD_API_TOKEN", "EODHD_API_TOKEN"))
     eodhd_base_url: str = "https://eodhd.com"
     eodhd_plan: str = "unconfigured"
+    openai_admin_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("C3PO_OPENAI_ADMIN_API_KEY", "OPENAI_ADMIN_KEY"),
+    )
+    openai_usage_project_ids: str = ""
+    anthropic_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("C3PO_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
+    )
+    anthropic_admin_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("C3PO_ANTHROPIC_ADMIN_API_KEY", "ANTHROPIC_ADMIN_KEY"),
+    )
+    anthropic_usage_workspace_ids: str = ""
     market_data_timeout_seconds: float = 15.0
     market_data_max_retries: int = 2
     one_pager_output_dir: Path = DEFAULT_ONE_PAGER_OUTPUT_DIR
@@ -114,6 +128,14 @@ class Settings(BaseSettings):
     def pluggy_items(self) -> list[str]:
         normalized = self.pluggy_item_ids.replace(";", ",").replace("\n", ",")
         return [value.strip() for value in normalized.split(",") if value.strip()]
+
+    @property
+    def openai_usage_projects(self) -> list[str]:
+        return [value.strip() for value in self.openai_usage_project_ids.split(",") if value.strip()]
+
+    @property
+    def anthropic_usage_workspaces(self) -> list[str]:
+        return [value.strip() for value in self.anthropic_usage_workspace_ids.split(",") if value.strip()]
 
 
 @lru_cache

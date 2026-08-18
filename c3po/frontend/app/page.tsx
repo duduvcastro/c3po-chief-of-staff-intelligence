@@ -179,6 +179,7 @@ interface SystemHealthData {
   healthy_count: number;
   total_count: number;
   api_usage: ApiUsageMetric[];
+  ai_usage: AiUsageMetric[];
   groups: SystemHealthGroup[];
 }
 
@@ -189,6 +190,19 @@ interface ApiUsageMetric {
   percent_used: number;
   period: string;
   status: "healthy" | "attention" | "critical";
+  detail: string;
+  measured_at: string;
+}
+
+interface AiUsageMetric {
+  provider: "OpenAI" | "Anthropic";
+  product: string;
+  status: "healthy" | "attention" | "unavailable";
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_input_tokens: number | null;
+  requests: number | null;
+  period: string;
   detail: string;
   measured_at: string;
 }
@@ -2983,6 +2997,19 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         </div>
       </section>
 
+      <section className="panel falcon-ai-usage" aria-label="AI compute consumption">
+        <div className="falcon-ai-usage-head">
+          <div><span>AI Compute</span><strong>GPT Codex & Claude Code</strong></div>
+          <small>Official provider APIs · month to date</small>
+        </div>
+        <div className="falcon-ai-usage-grid">
+          {(health?.ai_usage ?? [
+            { provider: "OpenAI", product: "GPT Codex", status: "unavailable", detail: "Collecting OpenAI telemetry" },
+            { provider: "Anthropic", product: "Claude Code", status: "unavailable", detail: "Collecting Anthropic telemetry" },
+          ]).map((metric) => <AiUsageCard key={metric.provider} metric={metric as AiUsageMetric} />)}
+        </div>
+      </section>
+
       <div className={`quality-banner quality-${healthTone} falcon-capcom-readiness falcon-capcom-readiness-with-usage`}>
         <div className="quality-score">{health?.quality ?? 0}%</div>
         <div><span>Storm Troops Readiness</span><strong>{healthHeadline}</strong><small>{health ? `${health.healthy_count}/${health.total_count} services operational · ${formatDate(health.generated_at)}` : "Collecting service conditions"}</small></div>
@@ -3002,6 +3029,31 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
 
 function FalconMetric({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: "gold" | "blue" | "green" | "red" }) {
   return <div className={`falcon-flight-metric falcon-flight-${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>;
+}
+
+function AiUsageCard({ metric }: { metric: AiUsageMetric }) {
+  const compact = (value: number | null) => value == null ? "—" : new Intl.NumberFormat("en-US", {
+    notation: "compact", maximumFractionDigits: 1
+  }).format(value);
+  const totalTokens = metric.input_tokens == null || metric.output_tokens == null
+    ? null : metric.input_tokens + metric.output_tokens;
+  const statusLabel = metric.status === "healthy" ? "Live" : metric.status === "attention" ? "Review" : "Setup required";
+  return (
+    <article className={`falcon-ai-card falcon-ai-${metric.status}`}>
+      <div className="falcon-ai-provider">
+        <ServiceLogo name={metric.provider} />
+        <div><span>{metric.provider}</span><strong>{metric.product}</strong></div>
+        <em>{statusLabel}</em>
+      </div>
+      <div className="falcon-ai-stat-grid">
+        <div><span>Total tokens</span><strong>{compact(totalTokens)}</strong></div>
+        <div><span>Input</span><strong>{compact(metric.input_tokens)}</strong></div>
+        <div><span>Output</span><strong>{compact(metric.output_tokens)}</strong></div>
+        <div><span>Requests</span><strong>{compact(metric.requests)}</strong></div>
+      </div>
+      <p>{metric.detail}</p>
+    </article>
+  );
 }
 
 function MarketsView() {
@@ -6081,6 +6133,8 @@ type ServiceLogoKind =
   | "aws"
   | "brapi"
   | "eodhd"
+  | "openai"
+  | "anthropic"
   | "cvm"
   | "sec"
   | "issuer"
@@ -6102,6 +6156,8 @@ function serviceLogoKind(name: string, groupKey: SystemHealthGroupKey): ServiceL
   if (normalized.includes("itau")) return "itau";
   if (normalized.includes("brapi")) return "brapi";
   if (normalized.includes("eodhd")) return "eodhd";
+  if (normalized.includes("openai") || normalized.includes("codex")) return "openai";
+  if (normalized.includes("anthropic") || normalized.includes("claude")) return "anthropic";
   if (normalized.includes("cvm")) return "cvm";
   if (normalized.includes("sec") || normalized.includes("edgar")) return "sec";
   if (normalized.includes("issuer") || normalized === "ri") return "issuer";
@@ -6148,6 +6204,8 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
   if (kind === "btg") return <span className="service-logo service-logo-btg service-logo-word" aria-hidden="true"><b>BTG</b></span>;
   if (kind === "itau") return <span className="service-logo service-logo-itau service-logo-word" aria-hidden="true"><b>itaú</b></span>;
   if (kind === "eodhd") return <span className="service-logo service-logo-eodhd service-logo-word" aria-hidden="true"><i /><i /><i /><b>EOD</b></span>;
+  if (kind === "openai") return <span className="service-logo service-logo-openai service-logo-word" aria-hidden="true"><b>AI</b></span>;
+  if (kind === "anthropic") return <span className="service-logo service-logo-anthropic service-logo-word" aria-hidden="true"><b>CL</b></span>;
   if (kind === "issuer") return <span className="service-logo service-logo-issuer service-logo-word" aria-hidden="true"><b>RI</b></span>;
   if (kind === "summary") return <span className="service-logo service-logo-summary" aria-hidden="true"><Clock3 size={22} /></span>;
   if (kind === "pdf") return <span className="service-logo service-logo-pdf" aria-hidden="true"><FileChartColumn size={21} /><b>PDF</b></span>;

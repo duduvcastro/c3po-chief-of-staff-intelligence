@@ -209,3 +209,56 @@ def test_high_api_consumption_does_not_mark_operational_connection_unhealthy() -
     assert usage_health.status == "healthy"
     assert response.status == "healthy"
     assert response.quality == 100
+
+
+def test_ai_usage_reports_setup_requirements_without_admin_credentials() -> None:
+    service = _service()
+    service.settings.anthropic_api_key = "runtime-configured"
+
+    response = service.snapshot(force=True)
+
+    openai, anthropic = response.ai_usage
+    assert openai.provider == "OpenAI"
+    assert openai.status == "unavailable"
+    assert "Admin API key" in openai.detail
+    assert anthropic.provider == "Anthropic"
+    assert anthropic.status == "unavailable"
+    assert "runtime key connected" in anthropic.detail
+    assert response.quality == 100
+
+
+def test_ai_usage_aggregates_official_provider_reports() -> None:
+    service = _service()
+    service.settings.openai_admin_api_key = "openai-admin"
+    service.settings.anthropic_admin_api_key = "anthropic-admin"
+
+    def usage_get(url: str, **_kwargs):
+        response = _ExternalResponse(usage="/api/user/" in url)
+        if "openai.com" in url:
+            response.json = lambda: {"data": [{"results": [{
+                "model": "gpt-5-codex", "input_tokens": 12_000,
+                "output_tokens": 3_000, "input_cached_tokens": 5_000,
+                "num_model_requests": 18,
+            }]}]}
+        elif "anthropic.com" in url:
+            response.json = lambda: {"data": [{"results": [{
+                "model": "claude-sonnet-4", "uncached_input_tokens": 7_000,
+                "cache_read_input_tokens": 2_000,
+                "cache_creation": {"ephemeral_5m_input_tokens": 1_000},
+                "output_tokens": 4_000,
+            }]}]}
+        return response
+
+    service.external_get = usage_get
+    response = service.snapshot(force=True)
+
+    openai, anthropic = response.ai_usage
+    assert openai.status == "healthy"
+    assert openai.input_tokens == 12_000
+    assert openai.output_tokens == 3_000
+    assert openai.cached_input_tokens == 5_000
+    assert openai.requests == 18
+    assert anthropic.status == "healthy"
+    assert anthropic.input_tokens == 10_000
+    assert anthropic.output_tokens == 4_000
+    assert anthropic.cached_input_tokens == 3_000

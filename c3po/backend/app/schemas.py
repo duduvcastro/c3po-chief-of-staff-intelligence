@@ -123,6 +123,19 @@ class ApiUsageMetric(BaseModel):
     measured_at: datetime
 
 
+class AiUsageMetric(BaseModel):
+    provider: Literal["OpenAI", "Anthropic"]
+    product: str
+    status: Literal["healthy", "attention", "unavailable"]
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    cached_input_tokens: int | None = Field(default=None, ge=0)
+    requests: int | None = Field(default=None, ge=0)
+    period: str = "month_to_date"
+    detail: str
+    measured_at: datetime
+
+
 class SystemHealthGroup(BaseModel):
     key: Literal["apis", "external_services", "open_finance", "aws", "quotes", "official_sources", "automations"]
     label: str
@@ -139,6 +152,7 @@ class SystemHealthResponse(BaseModel):
     healthy_count: int = Field(ge=0)
     total_count: int = Field(ge=0)
     api_usage: list[ApiUsageMetric] = Field(default_factory=list)
+    ai_usage: list[AiUsageMetric] = Field(default_factory=list)
     groups: list[SystemHealthGroup]
 
 
