@@ -107,14 +107,21 @@ class _ServerUsage:
 
 
 class _ExternalResponse:
-    def __init__(self, *, cloudflare: bool = False) -> None:
+    def __init__(self, *, cloudflare: bool = False, usage: bool = False) -> None:
         self.status_code = 200
         self.headers = {"server": "cloudflare", "cf-ray": "test-GRU"} if cloudflare else {}
         self.text = "User-agent: *\nDisallow: /" if cloudflare else "{}"
+        self.usage = usage
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"apiRequests": 60_000, "dailyRateLimit": 100_000} if self.usage else {}
 
 
 def _external_get(url: str, **_kwargs):
-    return _ExternalResponse(cloudflare="robots.txt" in url)
+    return _ExternalResponse(cloudflare="robots.txt" in url, usage="/api/user/" in url)
 
 
 def _service(*, disk_percent: float = 62.0) -> SystemHealthService:
@@ -124,6 +131,7 @@ def _service(*, disk_percent: float = 62.0) -> SystemHealthService:
         exchange_server="east.EXCH025.serverdata.net",
         exchange_user="eu@eduardocastro.com.br",
         exchange_app_password="configured",
+        eodhd_api_token="configured",
         server_usage_disk_warning_percent=70,
         server_usage_cpu_peak_warning_percent=85,
     )
@@ -147,7 +155,7 @@ def test_consolidated_health_covers_every_operational_area() -> None:
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler",
     }
     assert "WhatsApp capture" not in {item.name for group in response.groups for item in group.items}
 
@@ -159,3 +167,17 @@ def test_resource_pressure_marks_aws_and_overall_health_for_review() -> None:
     assert aws.status == "attention"
     assert response.status == "attention"
     assert response.quality < 100
+
+
+def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
+    service = _service()
+    service.settings.eodhd_api_token = ""
+
+    response = service.snapshot(force=True)
+
+    usage = next(item for group in response.groups for item in group.items if item.name == "Daily API Usage")
+    assert usage.status == "attention"
+    assert response.status == "attention"
+    assert response.quality == 95
+    assert response.healthy_count == 19
+    assert response.total_count == 20
