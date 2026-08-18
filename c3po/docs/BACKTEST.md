@@ -32,51 +32,43 @@ fix yesterday?"*
 - `work/run_r2d2_backtest.py` -- example script wiring real EODHD
   intraday history into the harness.
 
-## Known gap: `r2d2.py` still has its own copy of this logic
+## Resolved: `r2d2.py` no longer has its own copy of this logic
 
-`r2d2_strategy.py` is a new module, not yet imported by `r2d2.py`. Until
-`r2d2.py` is refactored to call into it instead of its own inline copies,
-**there are two copies of the same logic and they can drift** the next
-time someone (human or Codex) tweaks a threshold in one place and not the
-other. Recommended follow-up, in order:
+As of the migration merged 2026-08-17, `R2D2PaperService._technical_defense`,
+`_weekly_conviction`, `_ema`, `_entry_decision`, `_target_position_percent`,
+and the exit cascade inside `_mark_and_exit` all delegate to
+`r2d2_strategy.py`. There is one copy of the decision logic; `r2d2.py` still
+locally recomputes the stop-price/telemetry bookkeeping that
+`exit_decision` doesn't return (needed to persist `strategy_snapshot` for
+the live cache), using the identical formula -- see the comment above that
+block in `_mark_and_exit`. `pytest c3po/backend/tests/test_r2d2.py
+c3po/backend/tests/test_backtest.py` (196 cases) covers both.
 
-1. Run `pytest c3po/backend/tests/test_r2d2.py c3po/backend/tests/test_backtest.py`
-   to confirm nothing is broken today.
-2. Replace the bodies of `R2D2PaperService._technical_defense`,
-   `_weekly_conviction`, `_ema`, `_entry_decision`, `_target_position_percent`,
-   and the exit cascade in `_mark_and_exit` with thin calls into
-   `r2d2_strategy.py`, keeping the method names/signatures the existing
-   tests already reference.
-3. Re-run both test files. If they still pass, `r2d2_strategy.py` is now
-   the single source of truth and the backtest can never drift from
-   production again.
+## Resolved: entry backtesting now has real historical fundamentals to draw on
 
-## Known gap: entry backtesting needs historical fundamentals
+The `r2d2_decisions` table (see `db/016_r2d2_paper_trading.sql`) already
+stores `fundamental_score`, `technical_score`, `risk_score`,
+`composite_score`, `reasons` and the full `inputs` JSONB (including
+`technical_indicators`) for every entry decision, BUY or REJECT -- this
+was already true before this doc was corrected, the earlier claim that
+"those snapshots don't exist yet" was checked against the code, not the
+database. The `r2d2_experiments` row for the live 90-day experiment shows
+`start_date = 2026-08-17`, so that's when real per-symbol fundamental
+history starts accumulating from a cold start.
 
-R2D2's entry decision blends a technical score (computed here, fully
-faithful) with a fundamental valuation score -- upside, confidence,
-risk_score, buy_in_distance -- produced by the separate One Pager
-pipeline. This harness accepts those as an optional input
-(`fundamentals=` in `run_backtest`); without them it uses a neutral
-placeholder, which means:
+`app/backtest_data.py` (added alongside this note) converts a
+`decisions_buy.csv`-style export (or any iterable of decision rows) into
+the `fundamentals` callable `run_backtest` accepts, so once enough real
+trading days exist the entry side stops being technical-only. See that
+module's docstring for the minimum-sample guidance before trusting the
+result -- a handful of trades on day one is not a backtest input, it's an
+anecdote.
 
-- **Exit/defense backtesting is fully faithful today** -- hard stop,
-  failed-entry exit, technical-defense reduce/exit, profit harvesting
-  don't depend on fundamentals in the live code either.
-- **Entry backtesting is technical-only** until you can supply historical
-  valuation snapshots per symbol/day. If those snapshots don't exist yet,
-  the practical path is to start persisting them going forward (the
-  `learning_state` table already tracks `sample_days`/`sample_trades`
-  outcomes -- the fundamental inputs used for each entry could be stored
-  the same way) so a fully faithful entry backtest becomes possible after
-  a few months of data.
+## Methodology-change governance
 
-## Suggested next use of this harness
-
-Bring the V14/V15/V16-style constant changes under the same evidence bar
-the `_ensure_daily_learning` loop already enforces for the small entry
-parameters (minimum sample size before changing anything, small bounded
-steps, versioned rationale). Concretely: before changing
-`FAILED_ENTRY_LOSS_PERCENT`, the hard stop, or any other headline
-constant, run it through `split_walk_forward` here and require the change
-to hold up on the held-out fold, not just the day that motivated it.
+Read `METHODOLOGY_GOVERNANCE.md` before changing any constant in
+`r2d2_strategy.py`. Short version: no `METHODOLOGY_VERSION` bump ships
+without a `split_walk_forward` result attached, on a minimum sample, with
+the out-of-sample fold reported alongside the day that motivated the
+change -- this is the rule the V14/V15/V16 jumps skipped, and skipping it
+again defeats the entire point of this harness.
