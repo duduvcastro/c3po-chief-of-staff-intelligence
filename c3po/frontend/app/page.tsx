@@ -3675,12 +3675,16 @@ function MyRealtimePortfolio({
                 <span>{item.name}</span>
               </div>
               <span className="realtime-portfolio-market">{item.market}</span>
-              <strong className="realtime-portfolio-price">{formatCurrency(item.price, item.currency)}</strong>
-              <span className={`realtime-portfolio-change ${item.change_percent >= 0 ? "change-up" : "change-down"}`}>
-                <DirectionIcon direction={item.change_percent >= 0 ? "up" : "down"} size={13} />{formatPercent(item.change_percent, 2)}
-              </span>
-              <span className="realtime-portfolio-volume">{formatCompact(item.volume)}</span>
-              <span className="realtime-portfolio-cash">{formatCompact(item.cash_volume)}</span>
+              <strong className="realtime-portfolio-price">{item.status === "stale" ? "N/D" : formatCurrency(item.price, item.currency)}</strong>
+              {item.status === "stale" ? (
+                <span className="realtime-portfolio-change">N/D</span>
+              ) : (
+                <span className={`realtime-portfolio-change ${item.change_percent >= 0 ? "change-up" : "change-down"}`}>
+                  <DirectionIcon direction={item.change_percent >= 0 ? "up" : "down"} size={13} />{formatPercent(item.change_percent, 2)}
+                </span>
+              )}
+              <span className="realtime-portfolio-volume">{item.status === "stale" ? "N/D" : formatCompact(item.volume)}</span>
+              <span className="realtime-portfolio-cash">{item.status === "stale" ? "N/D" : formatCompact(item.cash_volume)}</span>
               <div className="realtime-portfolio-quote"><span className={`market-state market-state-${item.status}`}>{item.status}</span><small>{formatDate(item.as_of)} · ~{item.delay_minutes}m</small></div>
               {canDelete ? <button className="realtime-portfolio-delete" onClick={() => removeSymbol(item.symbol)} disabled={mutating === item.symbol} title={`Remover ${item.symbol}`} aria-label={`Remover ${item.symbol}`}>
                 <Trash2 size={15} />
