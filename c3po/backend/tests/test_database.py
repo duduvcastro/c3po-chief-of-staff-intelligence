@@ -59,12 +59,15 @@ def test_mark_alerts_read_uses_postgres_cursor_executemany(monkeypatch, tmp_path
     ]
 
 
-def test_capture_valuation_changes_labels_nasdaq_and_nyse_as_us(tmp_path) -> None:
+def test_capture_valuation_changes_labels_nasdaq_and_nyse_by_exchange(tmp_path) -> None:
     """Ben Kenobi Records bug (2026-08-18): the US screener's valuation_universe
     snapshots carry the exchange ("NASDAQ"/"NYSE") in inputs.market, not "US". The
     old fallback (`if market not in {"B3", "US"}: market = "B3"`) caught every one
     of those and mislabeled it as B3 -- polluting the "Todos" view with mislabeled
     US entries and starving real B3 coverage off the first (most-recent) page.
+    Market is now derived from the snapshot's own entity_key (NASDAQ_UNIVERSE/
+    NYSE_UNIVERSE/B3_UNIVERSE), which is authoritative, so Ben Kenobi Records can
+    classify by exchange (B3/NASDAQ/NYSE) instead of a generic B3/US split.
     """
     database = Database(Settings(database_url="", migrations_dir=tmp_path))
     methodology_id = database.ensure_methodology_version("us-screener", 1, {}, "test")
@@ -88,4 +91,4 @@ def test_capture_valuation_changes_labels_nasdaq_and_nyse_as_us(tmp_path) -> Non
 
     assert total == 3
     by_symbol = {item["symbol"]: item["market"] for item in records}
-    assert by_symbol == {"AAPL": "US", "JPM": "US", "PETR4": "B3"}
+    assert by_symbol == {"AAPL": "NASDAQ", "JPM": "NYSE", "PETR4": "B3"}

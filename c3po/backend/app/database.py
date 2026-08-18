@@ -1924,19 +1924,19 @@ class Database:
             return
 
         inputs = current_snapshot.get("inputs") if isinstance(current_snapshot.get("inputs"), dict) else {}
-        raw_market = str(inputs.get("market") or ("B3" if analysis_type != "one_pager_valuation" else "US")).upper()
-        # US screener valuation_universe snapshots carry the exchange ("NASDAQ"/"NYSE")
-        # in inputs.market, not "US" -- every one of them was falling through the old
-        # "if market not in {B3, US}: market = B3" fallback and getting mislabeled as
-        # B3 here. That's what made Ben Kenobi Records' "US" filter show only a handful
-        # of records while "Todos" (unfiltered, ordered by recency) was dominated by
-        # these mislabeled entries.
-        if raw_market in {"NASDAQ", "NYSE"}:
-            market = "US"
-        elif raw_market in {"B3", "US"}:
-            market = raw_market
-        else:
+        entity_key = str(current_snapshot.get("entity_key") or "")
+        if entity_key in {"NASDAQ_UNIVERSE", "NYSE_UNIVERSE"}:
+            # The bulk US screener snapshot's own entity_key names the exact
+            # exchange -- authoritative, unlike inputs.market (which historically
+            # carried the same "NASDAQ"/"NYSE" string but got collapsed to a
+            # generic "US" or mislabeled "B3" by earlier fallback logic; see
+            # db/018_correct_us_valuation_change_markets.sql for the backfill).
+            market = entity_key.split("_")[0]
+        elif entity_key == "B3_UNIVERSE":
             market = "B3"
+        else:
+            raw_market = str(inputs.get("market") or ("B3" if analysis_type != "one_pager_valuation" else "US")).upper()
+            market = raw_market if raw_market in {"B3", "NASDAQ", "NYSE", "US"} else "B3"
         events = self.latest_valuation_ir_events(
             [str(current.get("symbol") or "") for current, _, _ in changed_rows],
             market=market,
