@@ -154,6 +154,8 @@ def run_backtest(
     max_position_percent: float = strategy.DEFAULT_MAX_POSITION_PERCENT,
     max_position_loss_percent: float = strategy.DEFAULT_MAX_POSITION_LOSS_PERCENT,
     soft_loss_exit_percent: float = strategy.DEFAULT_SOFT_LOSS_EXIT_PERCENT,
+    profit_lock_floor_percent: float = strategy.PROFIT_LOCK_FLOOR_PERCENT,
+    profit_pullback_percent: float = strategy.PROFIT_PULLBACK_PERCENT,
     entry_policy: dict[str, float] | None = None,
     fees_bps: float = 5.0,
     slippage_bps: float = 5.0,
@@ -231,6 +233,8 @@ def run_backtest(
                 weekly_conviction_state=weekly, stop_price=position.stop_price,
                 max_position_loss_percent=max_position_loss_percent,
                 soft_loss_exit_percent=soft_loss_exit_percent,
+                profit_lock_floor_percent=profit_lock_floor_percent,
+                profit_pullback_percent=profit_pullback_percent,
             )
             position.high_water = high_water
             position.risk_state = new_state

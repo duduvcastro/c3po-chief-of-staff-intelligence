@@ -111,6 +111,45 @@ def test_exit_decision_holds_when_nothing_triggers():
     assert decision.reason is None
 
 
+def _armed_profit_lock_scenario(**overrides):
+    technical = {"atr": 1.0, "atr_percent": 1.0, "vwap": 100.4, "ema8": 100.5, "ema20": 100.3,
+                 "momentum15": 0.0, "momentum30": 0.0, "macd_histogram": 0.1,
+                 "macd_acceleration": 0.0, "price_structure": "range", "score": 58.0}
+    kwargs = dict(
+        technical=technical, quote_price=100.45, average_cost=100.0, high_water=101.35,
+        held_minutes=10.0, day_change=0.45, market_change=0.0,
+        state=strategy.PositionRiskState(), weekly_conviction_state={"active": False},
+        stop_price=95.0, max_position_loss_percent=0.65,
+    )
+    kwargs.update(overrides)
+    return strategy.exit_decision(**kwargs)
+
+
+def test_exit_decision_locks_armed_profit_with_default_pullback():
+    """Same scenario the r2d2.py-level test_r2d2_locks_an_armed_profit_after_pullback
+    exercises, called directly through the parameterized function: peak +1.35%,
+    pulled back to +0.45% -- inside the default 0.35%-1.15% lock band, so it exits.
+    """
+    decision, _state = _armed_profit_lock_scenario()
+    assert decision.reason is not None
+    assert "Armed profit locked" in decision.reason
+
+
+def test_exit_decision_profit_pullback_tolerance_is_now_configurable():
+    """The conceptual question raised 2026-08-18: R2D2 tolerates -0.90% of raw
+    drawdown before a hard stop, but only ~0.20pp of give-back from a peak before
+    locking a small profit -- a real asymmetry. These constants were previously
+    hardcoded inside exit_decision with no way to test an alternative. Same
+    scenario as the test above, but with a much wider pullback tolerance
+    (1.00 vs the default 0.20): profit_lock_level becomes max(0.35, 1.35-1.00) =
+    0.35, a single point -- +0.45% no longer falls in the lock band, so the
+    position stays open instead of exiting. Proves the parameter is live, doesn't
+    claim a wider tolerance is better (that needs real evidence, not this test).
+    """
+    decision, _state = _armed_profit_lock_scenario(profit_pullback_percent=1.00)
+    assert decision.reason is None
+
+
 def test_run_backtest_produces_consistent_report_over_synthetic_data():
     bars_by_symbol = {
         "TESTA": _make_bars(days=8, seed=1, drift=0.0015, vol=0.004),

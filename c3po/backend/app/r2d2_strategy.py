@@ -551,6 +551,8 @@ def exit_decision(
     state: PositionRiskState, weekly_conviction_state: dict[str, Any],
     stop_price: float, max_position_loss_percent: float = DEFAULT_MAX_POSITION_LOSS_PERCENT,
     soft_loss_exit_percent: float = DEFAULT_SOFT_LOSS_EXIT_PERCENT,
+    profit_lock_floor_percent: float = PROFIT_LOCK_FLOOR_PERCENT,
+    profit_pullback_percent: float = PROFIT_PULLBACK_PERCENT,
 ) -> tuple[ExitDecision, PositionRiskState]:
     """Faithful port of the elif cascade in ``_mark_and_exit``.
 
@@ -600,7 +602,7 @@ def exit_decision(
     )
     stop_breaches = state.stop_breach_count + 1 if quote_price <= stop else 0
     technical_score = _float(technical.get("score"))
-    profit_lock_level = max(PROFIT_LOCK_FLOOR_PERCENT, peak_pnl_pct - PROFIT_PULLBACK_PERCENT)
+    profit_lock_level = max(profit_lock_floor_percent, peak_pnl_pct - profit_pullback_percent)
 
     reason: str | None = None
     sell_fraction = 1.0
@@ -622,17 +624,17 @@ def exit_decision(
         reason = f"Defensive loss exit at {pnl_pct:+.2f}% on a live quote; dynamic defense was {soft_loss_threshold:.2f}% and the multicriteria defense score reached {defense['score']:.0f}/100."
     elif quote_price <= stop and defense["actionable"] and defense["score"] >= 45 and stop_breaches >= 2:
         reason = f"Adaptive intraday stop executed at {stop:.2f} after two live confirmations; defense score {defense['score']:.0f}/100."
-    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT and PROFIT_LOCK_FLOOR_PERCENT <= pnl_pct <= profit_lock_level:
+    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
         reason = f"Weekly-conviction profit locked at {pnl_pct:+.2f}% after a pullback from the {peak_pnl_pct:+.2f}% peak before the first harvest; the position was released for same-cycle replacement."
     elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and pnl_pct >= PROFIT_TRIGGER_PERCENT:
         sell_fraction = WEEKLY_PROFIT_HARVEST_FRACTION
         profit_harvest_count = 1
         reason = f"Weekly-conviction profit layer harvested at {pnl_pct:+.2f}%: {WEEKLY_PROFIT_HARVEST_FRACTION * 100:.0f}% of the position was realized and the remainder stays under the live profit lock."
-    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count >= 1 and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT and PROFIT_LOCK_FLOOR_PERCENT <= pnl_pct <= profit_lock_level:
+    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count >= 1 and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
         reason = f"Weekly-conviction remainder locked at {pnl_pct:+.2f}% after a pullback from the {peak_pnl_pct:+.2f}% peak; the protected balance was released for replacement."
     elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and pnl_pct >= PROFIT_TRIGGER_PERCENT:
         reason = f"Tactical profit harvested at {pnl_pct:+.2f}% after reaching the {PROFIT_TRIGGER_PERCENT:.2f}% execution trigger; capital released for same-cycle replacement."
-    elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT and PROFIT_LOCK_FLOOR_PERCENT <= pnl_pct <= profit_lock_level:
+    elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
         reason = f"Armed profit locked at {pnl_pct:+.2f}% after a pullback from the {peak_pnl_pct:+.2f}% peak; capital released for same-cycle replacement."
     elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 0.75 and bearish_votes >= 1 and technical_score < 60:
         reason = f"Early tactical profit harvested at {pnl_pct:+.2f}% as live momentum weakened; technical score {technical_score:.0f}/100."
