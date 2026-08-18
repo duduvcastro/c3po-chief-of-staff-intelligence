@@ -682,15 +682,27 @@ class R2D2Repository:
             ).fetchone()
         return bool(row)
 
-    def sold_on_session(self, experiment_id: str, market: str, symbol: str,
-                        session_date: date) -> bool:
-        """Blocks churn after a full exit; partial harvests remain represented by an open position."""
+    def loss_exit_on_session(self, experiment_id: str, market: str, symbol: str,
+                             session_date: date) -> bool:
+        """True if a full exit realized a LOSS for this symbol so far this session.
+
+        Only a loss-side exit blocks same-day re-entry -- repeatedly buying
+        back into a setup that just got stopped out is the churn this guard
+        exists to prevent. A profit-taking exit (tactical/weekly harvest,
+        armed profit lock) does not block: every one of those exit reasons
+        says the capital was "released for same-cycle replacement" -- a
+        blanket same-day block on the same symbol directly contradicted that
+        stated intent (see 2026-08-18 investigation). Corrected/phantom
+        trades are excluded, matching trade_summary()'s exclusion.
+        """
         if not self.database.database_url:
             return any(
                 row["experiment_id"] == experiment_id
                 and row["market"] == market and row["symbol"] == symbol
                 and row["side"] == "SELL"
                 and row["executed_at"].astimezone(SAO_PAULO).date() == session_date
+                and _float(row.get("realized_pnl_usd")) <= 0
+                and not _trade_is_corrected(row)
                 for row in self.memory["trades"]
             )
         with self.database.connection() as connection:
@@ -698,6 +710,8 @@ class R2D2Repository:
                 """SELECT 1 FROM r2d2_trades
                    WHERE experiment_id=%s AND market=%s AND symbol=%s AND side='SELL'
                      AND (executed_at AT TIME ZONE 'America/Sao_Paulo')::date=%s
+                     AND realized_pnl_usd <= 0
+                     AND NOT (decision_snapshot ? 'correction')
                    LIMIT 1""",
                 (experiment_id, market, symbol, session_date),
             ).fetchone()
@@ -1109,12 +1123,12 @@ class R2D2PaperService:
                         signals += 1
                         positions = self.repo.positions(experiment["id"])
                     continue
-                if self.repo.sold_on_session(
+                if self.repo.loss_exit_on_session(
                     experiment["id"], candidate["market"], candidate["symbol"], local_day,
                 ):
                     self.repo.save_decision(
                         experiment["id"], cycle_id, candidate, "REJECT",
-                        ["Full exit already executed in this session; capital must rotate to another opportunity"],
+                        ["A loss exit already executed for this symbol in this session; capital must rotate to another opportunity"],
                     )
                     continue
                 cooldown_since = now - timedelta(minutes=self.settings.r2d2_trade_cooldown_minutes)

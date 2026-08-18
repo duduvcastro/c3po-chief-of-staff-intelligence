@@ -672,7 +672,7 @@ def test_r2d2_failed_entry_exits_before_the_hard_stop() -> None:
     assert "Failed-entry fast exit" in service.repo.trades(experiment["id"])[0]["reason"]
 
 
-def test_r2d2_blocks_reentry_after_a_same_session_sell() -> None:
+def test_r2d2_blocks_reentry_after_a_same_session_loss() -> None:
     service = _service()
     experiment = service.ensure_initialized()
     cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ"])
@@ -689,13 +689,44 @@ def test_r2d2_blocks_reentry_after_a_same_session_sell() -> None:
     )
     service.repo.execute_trade(
         experiment, cycle_id=cycle_id, candidate=candidate, side="SELL", quantity=10,
-        signal_price=101.0, fill_price=101.0, fx=1.0, fees=0.0, slippage=0.0,
-        reason="test exit", decision=candidate, quote_as_of=now,
+        signal_price=99.0, fill_price=99.0, fx=1.0, fees=0.0, slippage=0.0,
+        reason="test stop-loss exit", decision=candidate, quote_as_of=now,
     )
 
-    assert service.repo.sold_on_session(
+    assert service.repo.loss_exit_on_session(
         experiment["id"], "NASDAQ", "CHURN", now.astimezone(SAO_PAULO).date(),
     ) is True
+
+
+def test_r2d2_allows_reentry_after_a_same_session_profit_exit() -> None:
+    """A profit-taking exit ("Tactical profit harvested", "Armed profit locked", etc.)
+    explicitly says the capital is "released for same-cycle replacement" -- blocking
+    re-entry into the SAME symbol after a WIN contradicted that stated intent. Only a
+    same-day LOSS exit should still block re-entry (see loss_exit_on_session docstring).
+    """
+    service = _service()
+    experiment = service.ensure_initialized()
+    cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ"])
+    candidate = {
+        "market": "NASDAQ", "symbol": "WINNER", "name": "Profit Corp", "currency": "USD",
+        "stop_price": 99.35, "fundamental_score": 75.0, "technical_score": 76.0,
+        "risk_score": 35.0, "composite_score": 76.0,
+    }
+    now = datetime.now(timezone.utc)
+    service.repo.execute_trade(
+        experiment, cycle_id=cycle_id, candidate=candidate, side="BUY", quantity=10,
+        signal_price=100.0, fill_price=100.0, fx=1.0, fees=0.0, slippage=0.0,
+        reason="test entry", decision=candidate, quote_as_of=now,
+    )
+    service.repo.execute_trade(
+        experiment, cycle_id=cycle_id, candidate=candidate, side="SELL", quantity=10,
+        signal_price=101.0, fill_price=101.0, fx=1.0, fees=0.0, slippage=0.0,
+        reason="Tactical profit harvested at +1.00%", decision=candidate, quote_as_of=now,
+    )
+
+    assert service.repo.loss_exit_on_session(
+        experiment["id"], "NASDAQ", "WINNER", now.astimezone(SAO_PAULO).date(),
+    ) is False
 
 
 def test_r2d2_blocks_us_entry_without_a_live_quote() -> None:
