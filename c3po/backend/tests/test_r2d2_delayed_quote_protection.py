@@ -70,11 +70,16 @@ def test_delayed_quote_within_grace_period_leaves_position_open() -> None:
     assert float(positions[0]["last_price_local"]) == 150.0
 
 
-def test_delayed_quote_past_grace_period_below_hard_stop_exits_as_protective_backstop() -> None:
+def test_delayed_quote_past_grace_period_flags_for_manual_review_without_auto_selling() -> None:
+    """Auto-sell on this path is emergency-disabled (2026-08-18): it acted on an
+    unvalidated delayed-quote price and produced implausible fills in production
+    (SPCX, DINO exited around -85%/-61% off a feed that hadn't moved meaningfully
+    moments earlier). Until a sanity check against average_cost/high_water lands,
+    this path only flags the position loudly -- it must NOT execute a sale.
+    """
     service = _service()
     opened = datetime(2026, 8, 18, 13, 0, tzinfo=timezone.utc)
     experiment, cycle_id = _open_position(service, "BACKSTOP", opened)
-    # First tick: registers the start of the "awaiting live quote" window.
     first_now = opened + timedelta(minutes=1)
     first_quote = SimpleNamespace(price=149.0, change_percent=-0.67, status="delayed", as_of=opened)
     service._mark_and_exit(
@@ -83,7 +88,7 @@ def test_delayed_quote_past_grace_period_below_hard_stop_exits_as_protective_bac
     )
 
     # Second tick: still delayed, now past the 3-minute grace period, price well
-    # below the hard stop (0.65% default -> hard stop ~= 149.03).
+    # below the hard stop (0.65% default -> hard stop ~= 149.03) -- must NOT sell.
     second_now = opened + timedelta(minutes=4)
     second_quote = SimpleNamespace(price=140.0, change_percent=-6.67, status="delayed", as_of=opened)
     exits = service._mark_and_exit(
@@ -91,11 +96,14 @@ def test_delayed_quote_past_grace_period_below_hard_stop_exits_as_protective_bac
         {("NASDAQ", "BACKSTOP"): second_quote}, second_now,
     )
 
-    assert exits == 1
-    assert service.repo.positions(experiment["id"]) == []
-    reason = service.repo.trades(experiment["id"])[0]["reason"]
-    assert "Protective hard-stop exit on a delayed quote" in reason
-    assert "no live quote for" in reason
+    assert exits == 0
+    positions = service.repo.positions(experiment["id"])
+    assert len(positions) == 1
+    assert positions[0]["strategy_snapshot"]["decision_state"] == (
+        "delayed quote past grace period -- needs manual review"
+    )
+    sells = [t for t in service.repo.trades(experiment["id"]) if t["side"] == "SELL"]
+    assert sells == []
 
 
 def test_delayed_quote_past_grace_period_above_hard_stop_stays_open() -> None:
