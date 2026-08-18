@@ -69,8 +69,8 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
         "etfs": 50,
     }
     assert experiment["mandate"]["opportunity_funnel"]["technical_reviews_per_market"] == {
-        "cash_deployment": 24,
-        "standard": 16,
+        "cash_deployment": 32,
+        "standard": 24,
     }
     assert experiment["mandate"]["turnover_policy"]["minimum_hold_minutes"] == 5
     assert experiment["mandate"]["performance_target_percent"] == 0.5

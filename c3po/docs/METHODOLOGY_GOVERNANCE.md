@@ -8,6 +8,13 @@ exit-cascade percentages, position-sizing coefficients, `METHODOLOGY_VERSION`
 request.** No exceptions for "obviously correct" fixes reacting to a bad
 session; those are exactly the changes this rule exists to slow down.
 
+This bar applies to *strategy* constants -- what R2D2 decides to buy/sell
+and when. It does not apply to *capacity/throughput* constants in
+`app/r2d2.py` (shortlist size, technical-reviews-per-cycle) that don't
+change entry/exit logic at all, only how many already-defined candidates
+get evaluated per cycle. Those still get logged below with their evidence,
+just not gated on a walk-forward result.
+
 ## Why this exists
 
 The jump from V14 to V15 to V16 of the R2D2 methodology was, in every
@@ -124,3 +131,32 @@ organically (`backtest_data.py`, once the sample clears the minimum
 above). The underlying asymmetry concern (harder on the upside than the
 downside) is not addressed by this finding either way and should stay
 open until a test actually exercises the branch.
+
+## Capacity/throughput changes
+
+**2026-08-18 -- technical-review capacity raised 16->24 (standard) and
+24->32 (cash-deployment mode).** Real trade data for 2026-08-18 (`gh`
+export via Codex, `operations_today.csv`/`cycles_metadata_today.csv`)
+showed: (1) the deep shortlist (`US_STOCK_SHORTLIST_PER_MARKET` +
+`US_ETF_SHORTLIST_PER_MARKET` = 350) was saturated at its cap on both
+NASDAQ and NYSE for every sampled cycle from 12:41 to 16:49, while
+`tradeable_count` kept growing (553->869 NASDAQ, 974->1504 NYSE) --
+more eligible candidates existed than the shortlist could even hold;
+(2) EODHD usage for the day was ~6,505 estimated credits against the
+confirmed 100K/day budget -- budget was not close to a constraint, which
+is what blocked this same change when proposed a few days earlier under
+a mistaken 500K/day assumption; (3) the portfolio still net-closed 14
+more positions than it opened that afternoon (51 buys vs. 65 sells) and
+ended the day at only 3 open positions / ~84% cash, well past the
+`r2d2_max_cash_percent` trigger that should have put every cycle in the
+higher (24, now 32) deployment-mode review limit -- i.e. even the
+"aggressive" cap wasn't enough that day.
+Only the review cap changed here, not `US_STOCK_SHORTLIST_PER_MARKET`
+(still 300) -- the shortlist being saturated doesn't by itself mean
+raising it helps, since only the review cap controls how many
+shortlisted names get evaluated per cycle regardless of shortlist size.
+Revisit the shortlist cap separately if raising the review cap alone
+doesn't fix replenishment. One day of data; watch
+`r2d2_cycles.metadata` (scan_funnel/eodhd_usage, live since PR #9) over
+the next several sessions to confirm this actually helps instead of just
+raising cost.
