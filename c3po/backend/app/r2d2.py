@@ -53,8 +53,17 @@ FAILED_ENTRY_LOSS_PERCENT = 0.30
 US_STOCK_SHORTLIST_PER_MARKET = 300
 US_ETF_SHORTLIST_PER_MARKET = 50
 US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
-DEPLOYMENT_TECHNICAL_REVIEW_PER_MARKET = 24
-STANDARD_TECHNICAL_REVIEW_PER_MARKET = 16
+# Raised 24->32 / 16->24 on 2026-08-18: real EODHD usage that day was ~6.5K of
+# the confirmed 100K/day budget (huge headroom), and the deep shortlist
+# (US_STOCK_SHORTLIST_PER_MARKET/US_ETF_SHORTLIST_PER_MARKET) was saturated at
+# its cap all afternoon while tradeable_count kept growing -- the review cap,
+# not EODHD budget, was the binding throughput constraint on position
+# replenishment. This is a capacity change (how many shortlisted candidates
+# get reviewed per cycle), not a change to entry/exit strategy logic, so it
+# ships without METHODOLOGY_GOVERNANCE.md's walk-forward evidence bar --
+# monitor via r2d2_cycles.metadata (scan_funnel/eodhd_usage) instrumentation.
+DEPLOYMENT_TECHNICAL_REVIEW_PER_MARKET = 32
+STANDARD_TECHNICAL_REVIEW_PER_MARKET = 24
 BASE_ENTRY_POLICY = {
     "entry_upside_floor": 20.0,
     "max_risk_score": 48.0,
