@@ -35,6 +35,7 @@ STREAM_REFRESH_SECONDS = 3
 CACHE_SECONDS = 55
 SYMBOL_CATALOG_SECONDS = 24 * 60 * 60
 MAX_STREAM_PRICE_DEVIATION = 0.35
+DIRECT_QUOTE_FALLBACK_AGE = timedelta(days=30)
 
 
 @dataclass(frozen=True)
@@ -1055,7 +1056,11 @@ class RealtimeMarketsService:
         now: datetime,
         symbols: list[str],
     ) -> list[RealtimeMarketLeader]:
-        rows = {row.symbol: row for row in self._us_rows(market, now)}
+        rows = {
+            row.symbol: row
+            for row in self._us_rows(market, now)
+            if now - row.as_of <= DIRECT_QUOTE_FALLBACK_AGE
+        }
         missing = [symbol for symbol in symbols if symbol not in rows]
         catalog = self._us_symbol_catalog(now)
         quotes = {
@@ -1072,6 +1077,8 @@ class RealtimeMarketsService:
                 continue
             raw = quotes.get(symbol)
             row = self._us_row(raw, metadata, market, now) if raw else self._portfolio_quote(symbol, now)
+            if row and now - row.as_of > DIRECT_QUOTE_FALLBACK_AGE:
+                row = None
             if row:
                 rows[symbol] = row
                 missing.remove(symbol)

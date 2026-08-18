@@ -1203,6 +1203,46 @@ def test_realtime_portfolio_accepts_nasdaq_and_nyse_arca_etfs() -> None:
     assert {item.name for item in added.items} == {"Invesco QQQ Trust", "Vanguard S&P 500 ETF"}
 
 
+def test_realtime_portfolio_replaces_ancient_bulk_quote_with_direct_quote() -> None:
+    now = datetime.now(timezone.utc)
+    stale_timestamp = int((now - timedelta(days=120)).timestamp())
+    current_timestamp = int((now - timedelta(minutes=15)).timestamp())
+    catalog = [{
+        "Code": "SPCX",
+        "Name": "Space Exploration Technologies Corp. Class A Common Stock",
+        "Exchange": "NASDAQ",
+        "Type": "Common Stock",
+        "Currency": "USD",
+    }]
+    http = RoutingStubHttp({
+        "/api/exchange-symbol-list/US": catalog,
+        "/api/real-time/AAPL.US": [{
+            "code": "SPCX.US",
+            "timestamp": stale_timestamp,
+            "close": 21.98,
+            "change_p": 4.78,
+            "volume": 0,
+        }],
+        "/api/real-time/SPCX.US": {
+            "code": "SPCX.US",
+            "timestamp": current_timestamp,
+            "close": 143.34,
+            "change_p": -1.9763,
+            "volume": 83_583_757,
+        },
+    })
+    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    added = service.add_portfolio_symbol("SPCX")
+
+    assert added.item_count == 1
+    assert added.items[0].price == 143.34
+    assert added.items[0].change_percent == -1.9763
+    assert added.items[0].status == "delayed"
+    assert any("/api/real-time/SPCX.US" in call["url"] for call in http.calls)
+
+
 def test_realtime_portfolio_accepts_otc_common_stock() -> None:
     timestamp = 1786720920
     catalog = [
