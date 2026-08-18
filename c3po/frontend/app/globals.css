@@ -1472,11 +1472,11 @@ button { cursor: pointer; }
 .iq-records-metrics > div:last-child strong { font-size: 11px; }
 .iq-records-panel { min-width: 0; }
 .iq-records-toolbar { min-height: 64px; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: #fbfbfa; }
-.iq-records-search { height: 38px; min-width: 250px; flex: 1 1 360px; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding-left: 11px; color: #827449; background: #fff; border: 1px solid #d6d9dd; border-radius: 5px; }
+.iq-records-search { height: 38px; min-width: 160px; flex: 1 1 200px; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding-left: 11px; color: #827449; background: #fff; border: 1px solid #d6d9dd; border-radius: 5px; }
 .iq-records-search:focus-within { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(184,137,23,.09); }
 .iq-records-search input { min-width: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 11px; }
 .iq-records-search button { height: 100%; padding: 0 13px; border: 0; border-left: 1px solid #dfca8b; color: #33280e; background: var(--gold-bright); font-size: 9px; font-weight: 900; }
-.iq-market-filter { height: 38px; display: grid; grid-template-columns: repeat(3, 56px); overflow: hidden; border: 1px solid #d6d9dd; border-radius: 5px; }
+.iq-market-filter { height: 38px; flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 56px); overflow: hidden; border: 1px solid #d6d9dd; border-radius: 5px; }
 .iq-market-filter button { border: 0; border-right: 1px solid #e1e3e5; color: #747d88; background: #fff; font-size: 9px; font-weight: 800; }
 .iq-market-filter button:last-child { border-right: 0; }
 .iq-market-filter button.active { color: var(--gold-deep); background: var(--gold-soft); }
@@ -1492,14 +1492,16 @@ button { cursor: pointer; }
 .iq-record-row:hover { background: #fffdf7; }
 .iq-record-row > div { min-width: 0; }
 .iq-record-company time { display: block; color: #838c97; font-size: 8px; font-weight: 700; }
-.iq-record-identity { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
+.iq-record-identity { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 10px; margin-top: 7px; }
 .iq-record-logo { flex: 0 0 auto; width: 32px; height: 32px; display: grid; place-items: center; overflow: hidden; border: 1px solid #e0e3e6; border-radius: 5px; background: #fff; }
 .iq-record-logo img { display: block; width: 24px; height: 24px; object-fit: contain; }
 .iq-record-logo span { color: var(--gold-deep); font-size: 9px; font-weight: 900; }
 .iq-record-identity > div { min-width: 0; }
 .iq-record-company strong { display: block; font-size: 14px; }
 .iq-record-company span { display: block; margin-top: 4px; overflow: hidden; color: #626c78; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.iq-record-company small { display: inline-flex; margin-top: 6px; padding: 3px 5px; color: var(--gold-deep); background: var(--gold-soft); border-radius: 3px; font-size: 7px; font-weight: 900; }
+.iq-record-market-mark { display: inline-flex; align-items: center; margin-top: 6px; opacity: .75; }
+.iq-record-market-mark img { display: block; width: 13px; height: 13px; object-fit: contain; }
+.iq-record-market-mark-text { padding: 2px 4px; color: var(--gold-deep); background: var(--gold-soft); border-radius: 3px; font-size: 7px; font-weight: 900; opacity: 1; }
 .iq-record-trigger { padding: 12px 0; }
 .iq-trigger-badge { display: inline-flex; align-items: center; min-height: 21px; padding: 0 7px; border-radius: 3px; font-size: 7px; font-weight: 900; text-transform: uppercase; }
 .iq-trigger-initial { color: #5c6570; background: #eef0f2; }
