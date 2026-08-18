@@ -15,6 +15,7 @@ def _settings() -> Settings:
         r2d2_checkpoint_days=90,
         r2d2_starting_capital_usd=1_000_000,
         r2d2_delayed_quote_protection_grace_minutes=3.0,
+        r2d2_delayed_quote_fallback_max_age_minutes=30.0,
     )
 
 
@@ -44,7 +45,6 @@ def test_delayed_quote_within_grace_period_leaves_position_open() -> None:
     service = _service()
     opened = datetime(2026, 8, 18, 13, 0, tzinfo=timezone.utc)
     experiment, cycle_id = _open_position(service, "GRACE", opened)
-    # First tick starts the "awaiting live quote" clock at t+1min.
     first_now = opened + timedelta(minutes=1)
     first_quote = SimpleNamespace(price=140.0, change_percent=-6.67, status="delayed", as_of=opened)
     service._mark_and_exit(
@@ -52,7 +52,6 @@ def test_delayed_quote_within_grace_period_leaves_position_open() -> None:
         {("NASDAQ", "GRACE"): first_quote}, first_now,
     )
 
-    # Second tick one minute later -- still well inside the 3-minute grace window.
     second_now = first_now + timedelta(minutes=1)
     second_quote = SimpleNamespace(price=140.0, change_percent=-6.67, status="delayed", as_of=opened)
     exits = service._mark_and_exit(
@@ -66,34 +65,31 @@ def test_delayed_quote_within_grace_period_leaves_position_open() -> None:
     snapshot = positions[0]["strategy_snapshot"]
     assert snapshot["decision_state"] == "awaiting live quote"
     assert snapshot["awaiting_live_quote_minutes"] == 1.0
-    # Price shown to the operator does NOT silently jump to the delayed tick.
     assert float(positions[0]["last_price_local"]) == 150.0
 
 
-def test_delayed_quote_past_grace_period_flags_for_manual_review_without_auto_selling() -> None:
-    """Auto-sell on this path is emergency-disabled (2026-08-18): it acted on an
-    unvalidated delayed-quote price and produced implausible fills in production
-    (SPCX, DINO exited around -85%/-61% off a feed that hadn't moved meaningfully
-    moments earlier). Until a sanity check against average_cost/high_water lands,
-    this path only flags the position loudly -- it must NOT execute a sale.
+def test_stale_quote_timestamp_past_grace_period_is_flagged_not_sold() -> None:
+    """Root cause of the 2026-08-18 incident: quote.price came from data whose own
+    as_of was ancient (observed: 2022 and April-while-today-was-August), not a
+    merely-delayed live tick. The fallback must reject on the quote's own age,
+    regardless of how implausible-looking the price is on its face.
     """
     service = _service()
     opened = datetime(2026, 8, 18, 13, 0, tzinfo=timezone.utc)
-    experiment, cycle_id = _open_position(service, "BACKSTOP", opened)
+    experiment, cycle_id = _open_position(service, "STALE", opened)
+    ancient_as_of = datetime(2022, 3, 22, 13, 40, tzinfo=timezone.utc)
     first_now = opened + timedelta(minutes=1)
-    first_quote = SimpleNamespace(price=149.0, change_percent=-0.67, status="delayed", as_of=opened)
+    first_quote = SimpleNamespace(price=36.57, change_percent=-75.6, status="delayed", as_of=ancient_as_of)
     service._mark_and_exit(
         experiment, cycle_id, service.repo.positions(experiment["id"]),
-        {("NASDAQ", "BACKSTOP"): first_quote}, first_now,
+        {("NASDAQ", "STALE"): first_quote}, first_now,
     )
 
-    # Second tick: still delayed, now past the 3-minute grace period, price well
-    # below the hard stop (0.65% default -> hard stop ~= 149.03) -- must NOT sell.
     second_now = opened + timedelta(minutes=4)
-    second_quote = SimpleNamespace(price=140.0, change_percent=-6.67, status="delayed", as_of=opened)
+    second_quote = SimpleNamespace(price=36.57, change_percent=-75.6, status="delayed", as_of=ancient_as_of)
     exits = service._mark_and_exit(
         experiment, cycle_id, service.repo.positions(experiment["id"]),
-        {("NASDAQ", "BACKSTOP"): second_quote}, second_now,
+        {("NASDAQ", "STALE"): second_quote}, second_now,
     )
 
     assert exits == 0
@@ -106,19 +102,79 @@ def test_delayed_quote_past_grace_period_flags_for_manual_review_without_auto_se
     assert sells == []
 
 
-def test_delayed_quote_past_grace_period_above_hard_stop_stays_open() -> None:
+def test_missing_as_of_on_a_stale_quote_is_treated_as_untrustworthy() -> None:
+    service = _service()
+    opened = datetime(2026, 8, 18, 13, 0, tzinfo=timezone.utc)
+    experiment, cycle_id = _open_position(service, "NOTIME", opened)
+    first_now = opened + timedelta(minutes=1)
+    first_quote = SimpleNamespace(price=100.0, change_percent=-33.0, status="delayed", as_of=None)
+    service._mark_and_exit(
+        experiment, cycle_id, service.repo.positions(experiment["id"]),
+        {("NASDAQ", "NOTIME"): first_quote}, first_now,
+    )
+
+    second_now = opened + timedelta(minutes=4)
+    second_quote = SimpleNamespace(price=100.0, change_percent=-33.0, status="delayed", as_of=None)
+    exits = service._mark_and_exit(
+        experiment, cycle_id, service.repo.positions(experiment["id"]),
+        {("NASDAQ", "NOTIME"): second_quote}, second_now,
+    )
+
+    assert exits == 0
+    sells = [t for t in service.repo.trades(experiment["id"]) if t["side"] == "SELL"]
+    assert sells == []
+
+
+def test_recent_delayed_quote_past_grace_period_below_hard_stop_exits() -> None:
+    """The restored, validated behavior: once the quote's own timestamp is recent
+    enough to trust (within r2d2_delayed_quote_fallback_max_age_minutes), the hard
+    stop still applies as a backstop rather than leaving the position unprotected.
+    """
+    service = _service()
+    opened = datetime(2026, 8, 18, 13, 0, tzinfo=timezone.utc)
+    experiment, cycle_id = _open_position(service, "BACKSTOP", opened)
+    first_now = opened + timedelta(minutes=1)
+    first_quote = SimpleNamespace(
+        price=149.0, change_percent=-0.67, status="delayed", as_of=first_now - timedelta(minutes=2),
+    )
+    service._mark_and_exit(
+        experiment, cycle_id, service.repo.positions(experiment["id"]),
+        {("NASDAQ", "BACKSTOP"): first_quote}, first_now,
+    )
+
+    second_now = opened + timedelta(minutes=4)
+    second_quote = SimpleNamespace(
+        price=140.0, change_percent=-6.67, status="delayed", as_of=second_now - timedelta(minutes=5),
+    )
+    exits = service._mark_and_exit(
+        experiment, cycle_id, service.repo.positions(experiment["id"]),
+        {("NASDAQ", "BACKSTOP"): second_quote}, second_now,
+    )
+
+    assert exits == 1
+    assert service.repo.positions(experiment["id"]) == []
+    reason = service.repo.trades(experiment["id"])[0]["reason"]
+    assert "Protective hard-stop exit on a delayed quote" in reason
+    assert "own timestamp was 5.0 minutes old" in reason
+
+
+def test_recent_delayed_quote_past_grace_period_above_hard_stop_stays_open() -> None:
     service = _service()
     opened = datetime(2026, 8, 18, 13, 0, tzinfo=timezone.utc)
     experiment, cycle_id = _open_position(service, "SAFE", opened)
     first_now = opened + timedelta(minutes=1)
-    first_quote = SimpleNamespace(price=149.9, change_percent=-0.07, status="delayed", as_of=opened)
+    first_quote = SimpleNamespace(
+        price=149.9, change_percent=-0.07, status="delayed", as_of=first_now - timedelta(minutes=1),
+    )
     service._mark_and_exit(
         experiment, cycle_id, service.repo.positions(experiment["id"]),
         {("NASDAQ", "SAFE"): first_quote}, first_now,
     )
 
     second_now = opened + timedelta(minutes=4)
-    second_quote = SimpleNamespace(price=149.8, change_percent=-0.13, status="delayed", as_of=opened)
+    second_quote = SimpleNamespace(
+        price=149.8, change_percent=-0.13, status="delayed", as_of=second_now - timedelta(minutes=2),
+    )
     exits = service._mark_and_exit(
         experiment, cycle_id, service.repo.positions(experiment["id"]),
         {("NASDAQ", "SAFE"): second_quote}, second_now,
