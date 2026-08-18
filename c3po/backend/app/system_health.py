@@ -77,8 +77,10 @@ class SystemHealthService:
         metrics: list[ApiUsageMetric] = []
         if self.settings.eodhd_api_token:
             try:
+                base_url = self.settings.eodhd_base_url.rstrip("/")
+                usage_url = f"{base_url}/user/" if base_url.endswith("/api") else f"{base_url}/api/user/"
                 response = self.external_get(
-                    f"{self.settings.eodhd_base_url.rstrip('/')}/user/",
+                    usage_url,
                     params={"api_token": self.settings.eodhd_api_token, "fmt": "json"},
                     timeout=self.settings.system_health_external_timeout_seconds,
                     follow_redirects=True,

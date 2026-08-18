@@ -125,7 +125,7 @@ def _external_get(url: str, **_kwargs):
     return _ExternalResponse(cloudflare="robots.txt" in url, usage="/api/user/" in url)
 
 
-def _service(*, disk_percent: float = 62.0) -> SystemHealthService:
+def _service(*, disk_percent: float = 62.0, eodhd_base_url: str = "https://eodhd.com") -> SystemHealthService:
     now = datetime.now(timezone.utc)
     settings = Settings(
         database_url="postgresql://configured",
@@ -133,6 +133,7 @@ def _service(*, disk_percent: float = 62.0) -> SystemHealthService:
         exchange_user="eu@eduardocastro.com.br",
         exchange_app_password="configured",
         eodhd_api_token="configured",
+        eodhd_base_url=eodhd_base_url,
         server_usage_disk_warning_percent=70,
         server_usage_cpu_peak_warning_percent=85,
     )
@@ -182,3 +183,10 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     assert response.quality == 95
     assert response.healthy_count == 19
     assert response.total_count == 20
+
+
+def test_daily_api_usage_accepts_base_url_that_already_contains_api_path() -> None:
+    response = _service(eodhd_base_url="https://eodhd.com/api").snapshot(force=True)
+
+    assert response.api_usage[0].provider == "EODHD"
+    assert response.api_usage[0].percent_used == 60.0
