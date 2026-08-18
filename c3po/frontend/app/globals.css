@@ -229,7 +229,7 @@ button { cursor: pointer; }
 .r2d2-capital-identity div { min-width: 0; }
 .r2d2-capital-identity strong { display: block; color: #f0c64e; font-size: 15px; }
 .r2d2-primary-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(310px, .75fr); gap: 12px; }
-.r2d2-track-panel, .r2d2-gates-panel { min-height: 330px; }
+.r2d2-track-panel, .r2d2-intelligence-panel { min-height: 330px; }
 .r2d2-chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px 2px; }
 .r2d2-chart-head span { color: var(--muted); font-size: 9px; font-weight: 800; }
 .r2d2-chart-head strong { display: block; margin-top: 3px; font-size: 22px; }
@@ -256,6 +256,34 @@ button { cursor: pointer; }
 .r2d2-gate-pending { background: var(--amber); box-shadow: 0 0 0 4px rgba(216,156,66,.12); }
 .r2d2-gates-foot { min-height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 16px; color: #7c8794; font-size: 9px; }
 .r2d2-gates-foot svg { color: var(--gold-deep); }
+.r2d2-intelligence-panel { min-width: 0; overflow: hidden; }
+.r2d2-intelligence-list { max-height: 276px; overflow-y: auto; scrollbar-gutter: stable; }
+.r2d2-intelligence-entry { position: relative; min-height: 76px; display: grid; grid-template-columns: 54px 58px minmax(0, 1fr); align-items: start; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.r2d2-intelligence-entry:last-child { border-bottom: 0; }
+.r2d2-intelligence-entry::before { content: ""; position: absolute; top: 14px; bottom: 14px; left: 0; width: 3px; background: #7c8794; }
+.r2d2-intelligence-buy::before { background: #2f71bd; }
+.r2d2-intelligence-sell-positive::before { background: var(--green); }
+.r2d2-intelligence-sell-negative::before { background: var(--red); }
+.r2d2-intelligence-monitor::before { background: var(--gold); }
+.r2d2-intelligence-entry time { padding-top: 2px; color: #8a94a0; font-size: 9px; font-variant-numeric: tabular-nums; }
+.r2d2-intelligence-action { width: fit-content; padding: 4px 6px; color: #52606f; background: #eef1f4; border-radius: 3px; font-size: 8px; font-weight: 900; text-transform: uppercase; }
+.r2d2-intelligence-buy .r2d2-intelligence-action { color: #205f9f; background: #eaf3fc; }
+.r2d2-intelligence-sell-positive .r2d2-intelligence-action { color: #18734d; background: #e7f6ef; }
+.r2d2-intelligence-sell-negative .r2d2-intelligence-action { color: #ac3029; background: #fbeceb; }
+.r2d2-intelligence-entry header { display: flex; align-items: center; gap: 7px; }
+.r2d2-intelligence-entry header > small { color: #8a94a0; font-size: 8px; font-weight: 800; }
+.r2d2-intelligence-entry p { margin: 5px 0 3px; color: #303945; font-size: 9px; line-height: 1.4; }
+.r2d2-intelligence-entry > div > small { color: #818b98; font-size: 8px; line-height: 1.35; }
+.r2d2-intelligence-empty { min-height: 238px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 24px; color: #8a94a0; text-align: center; }
+.r2d2-intelligence-empty svg { color: var(--gold-deep); }
+.r2d2-intelligence-empty strong { color: #303945; font-size: 11px; }
+.r2d2-intelligence-empty span { max-width: 250px; font-size: 9px; line-height: 1.45; }
+.r2d2-gates-horizontal { min-height: 0; }
+.r2d2-gates-horizontal-body { display: grid; grid-template-columns: minmax(0, 1fr) 260px; }
+.r2d2-gates-horizontal .r2d2-gate-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.r2d2-gates-horizontal .r2d2-gate-list > div { min-height: 66px; border-right: 1px solid var(--line); }
+.r2d2-gates-horizontal .r2d2-gate-list > div:nth-child(n+4) { border-bottom: 0; }
+.r2d2-gates-horizontal .r2d2-gates-foot { min-height: 100%; border-left: 1px solid var(--line); }
 .r2d2-up, .r2d2-ledger-row .positive { color: var(--green) !important; }
 .r2d2-down, .r2d2-ledger-row .negative { color: var(--red) !important; }
 .r2d2-scoreboard { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
@@ -1712,6 +1740,8 @@ button { cursor: pointer; }
   .r2d2-capital-band > div:nth-child(2), .r2d2-capital-band > div:nth-child(4) { border-left: 0; }
   .r2d2-capital-band > div:not(:first-child) { border-top: 1px solid #2c2e35; }
   .r2d2-primary-grid { grid-template-columns: 1fr; }
+  .r2d2-gates-horizontal-body { grid-template-columns: 1fr; }
+  .r2d2-gates-horizontal .r2d2-gates-foot { min-height: 54px; border-top: 1px solid var(--line); border-left: 0; }
   .r2d2-scoreboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .r2d2-counter:nth-child(3) { border-left: 0; }
   .r2d2-counter:nth-child(n+3) { border-top: 1px solid var(--line); }
@@ -1766,6 +1796,11 @@ button { cursor: pointer; }
   .r2d2-trade-row { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 12px; padding: 14px 16px; }
   .r2d2-trade-row p { grid-column: 1 / -1; padding-top: 9px; border-top: 1px solid #eef0f2; }
   .r2d2-track-panel, .r2d2-gates-panel { min-height: 0; }
+  .r2d2-intelligence-list { max-height: 330px; }
+  .r2d2-gates-horizontal .r2d2-gate-list { grid-template-columns: 1fr; }
+  .r2d2-gates-horizontal .r2d2-gate-list > div { border-right: 0; }
+  .r2d2-gates-horizontal .r2d2-gate-list > div:nth-child(n+4) { border-bottom: 1px solid var(--line); }
+  .r2d2-gates-horizontal .r2d2-gate-list > div:last-child { border-bottom: 0; }
   .market-groups { grid-template-columns: 1fr; }
   .market-group + .market-group { border-left: 0; border-top: 1px solid var(--line); }
   .falcon-flight-deck { grid-template-columns: repeat(2, minmax(0, 1fr)); }
