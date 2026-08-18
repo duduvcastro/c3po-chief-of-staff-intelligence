@@ -190,3 +190,22 @@ def test_daily_api_usage_accepts_base_url_that_already_contains_api_path() -> No
 
     assert response.api_usage[0].provider == "EODHD"
     assert response.api_usage[0].percent_used == 60.0
+
+
+def test_high_api_consumption_does_not_mark_operational_connection_unhealthy() -> None:
+    service = _service()
+
+    def high_usage_get(url: str, **_kwargs):
+        response = _ExternalResponse(cloudflare="robots.txt" in url, usage=False)
+        if "/api/user/" in url:
+            response.json = lambda: {"apiRequests": 95_000, "dailyRateLimit": 100_000}
+        return response
+
+    service.external_get = high_usage_get
+    response = service.snapshot(force=True)
+
+    assert response.api_usage[0].status == "critical"
+    usage_health = next(item for group in response.groups for item in group.items if item.name == "Daily API Usage")
+    assert usage_health.status == "healthy"
+    assert response.status == "healthy"
+    assert response.quality == 100
