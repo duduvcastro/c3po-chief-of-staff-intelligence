@@ -114,15 +114,13 @@ class SystemHealthService:
                 last_update=self._format_time(now),
             )
 
-        highest_status = "healthy"
-        if any(metric.status == "critical" for metric in metrics):
-            highest_status = "attention"
-        elif any(metric.status == "attention" for metric in metrics):
-            highest_status = "attention"
         summary = " · ".join(f"{metric.provider} {metric.percent_used:.1f}%" for metric in metrics)
         return IntegrationHealth(
             name="Daily API Usage",
-            status=highest_status,
+            # Availability and quota pressure are separate signals. A valid
+            # provider counter proves the integration is operational even when
+            # the consumption gauge is in its warning or critical range.
+            status="healthy",
             detail=f"Official counter active · {summary}",
             last_update=self._format_time(now),
         )
