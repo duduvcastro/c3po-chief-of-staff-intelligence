@@ -6098,10 +6098,10 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
               <article className={`api-usage-card api-usage-${metric.status}`} key={metric.provider}>
                 <header>
                   <div className="api-usage-provider">
-                    <ServiceLogo name={metric.provider} groupKey="quotes" />
-                    <span className="api-usage-operational" title={`${metric.provider} API operational`} aria-label={`${metric.provider} API operational`}>
-                      <Check size={14} strokeWidth={3.4} />
+                    <span className="health-status-mark health-status-healthy" title={`${metric.provider} API operational`} aria-label={`${metric.provider} API operational`}>
+                      <Check size={15} strokeWidth={3} />
                     </span>
+                    <ServiceLogo name={metric.provider} groupKey="quotes" />
                   </div>
                   <div className="api-usage-consumption"><span>Daily consumption</span><strong>{metric.percent_used.toFixed(1).replace(".", ",")}%</strong></div>
                 </header>
