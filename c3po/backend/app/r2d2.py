@@ -694,19 +694,20 @@ class R2D2Repository:
         return cycle_id
 
     def finish_cycle(self, cycle_id: str, status: str, scanned: int, signals: int, trades: int,
-                     error: str | None = None) -> None:
+                     error: str | None = None, metadata: dict[str, Any] | None = None) -> None:
         now = datetime.now(timezone.utc)
         if not self.database.database_url:
             item = next((row for row in self.memory["cycles"] if row["id"] == cycle_id), None)
             if item:
                 item.update(completed_at=now, status=status, scanned_count=scanned,
-                            signal_count=signals, trade_count=trades, error_summary=error)
+                            signal_count=signals, trade_count=trades, error_summary=error,
+                            metadata=metadata or {})
             return
         with self.database.connection() as connection:
             connection.execute(
                 """UPDATE r2d2_cycles SET completed_at=%s, status=%s, scanned_count=%s,
-                          signal_count=%s, trade_count=%s, error_summary=%s WHERE id=%s""",
-                (now, status, scanned, signals, trades, error, cycle_id),
+                          signal_count=%s, trade_count=%s, error_summary=%s, metadata=%s::jsonb WHERE id=%s""",
+                (now, status, scanned, signals, trades, error, json.dumps(metadata or {}), cycle_id),
             )
             connection.commit()
 
@@ -1108,7 +1109,8 @@ class R2D2PaperService:
                     positions = self.repo.positions(experiment["id"])
             self._snapshot(experiment, local_day, now)
             self.repo.finish_cycle(cycle_id, "succeeded" if not errors else "partial", scanned, signals, trade_count,
-                                   "; ".join(errors)[:1000] or None)
+                                   "; ".join(errors)[:1000] or None,
+                                   metadata={"scan_funnel": dict(self._us_scan_counts)})
         except Exception as exc:
             logger.exception("R2D2 cycle failed")
             self.repo.finish_cycle(cycle_id, "failed", scanned, signals, trade_count, str(exc)[:1000])
