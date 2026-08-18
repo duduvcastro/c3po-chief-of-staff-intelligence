@@ -6002,11 +6002,12 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
   });
   const renderHealthGroup = (group: SystemHealthGroup) => {
     const GroupIcon = groupIcons[group.key];
+    const visibleItems = group.items.filter((item) => item.name !== "Daily API Usage");
     return (
       <section className={`panel system-health-group system-health-group-${group.key}`} key={group.key}>
         <PanelHeader title={`${group.label} · ${group.healthy_count}/${group.total_count}`} icon={GroupIcon} />
-        <div className={`health-list health-list-large health-list-horizontal health-list-${group.items.length}`}>
-          {group.items.map((item) => <HealthRow key={`${group.key}-${item.name}`} item={item} groupKey={group.key} />)}
+        <div className={`health-list health-list-large health-list-horizontal health-list-${visibleItems.length}`}>
+          {visibleItems.map((item) => <HealthRow key={`${group.key}-${item.name}`} item={item} groupKey={group.key} />)}
         </div>
       </section>
     );
