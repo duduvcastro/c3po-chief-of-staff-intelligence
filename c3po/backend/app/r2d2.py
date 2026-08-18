@@ -80,6 +80,33 @@ def _float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+# EODHD's own documented per-call weights (confirmed 2026-08-18, see
+# https://eodhd.com/financial-apis/api-limits) for the call types R2D2 makes a
+# countable number of. Historical-price-endpoint weight was not confirmed as of
+# this writing, so it's tracked as a raw count only -- not folded into the
+# credit estimate below, to avoid asserting a number nobody has verified.
+EODHD_CONFIRMED_CREDIT_WEIGHTS: dict[str, int] = {
+    "backfill_fundamentals_symbols": 10,
+    "intraday_cache_misses": 5,
+    "fx_quote_calls": 1,
+}
+
+
+def _estimate_eodhd_credits(call_counts: dict[str, int]) -> dict[str, Any]:
+    """Best-effort credit estimate for this cycle's EODHD usage, from raw call
+    counts R2D2 itself tracked (see EODHD_CONFIRMED_CREDIT_WEIGHTS). Only
+    categories with a confirmed weight are summed; everything else is still
+    reported as a raw count so nothing is silently dropped from visibility."""
+    estimated_total = sum(
+        call_counts.get(key, 0) * weight for key, weight in EODHD_CONFIRMED_CREDIT_WEIGHTS.items()
+    )
+    return {
+        "call_counts": dict(call_counts),
+        "estimated_credits": estimated_total,
+        "unweighted_categories": sorted(set(call_counts) - set(EODHD_CONFIRMED_CREDIT_WEIGHTS)),
+    }
+
+
 def _trade_is_corrected(trade: dict[str, Any]) -> bool:
     """True if a trade's realized_pnl_usd is known-bad (see 2026-08-18 incident,
     PRs #5-#7): a manual cash_balance correction was posted for it and its
@@ -694,19 +721,20 @@ class R2D2Repository:
         return cycle_id
 
     def finish_cycle(self, cycle_id: str, status: str, scanned: int, signals: int, trades: int,
-                     error: str | None = None) -> None:
+                     error: str | None = None, metadata: dict[str, Any] | None = None) -> None:
         now = datetime.now(timezone.utc)
         if not self.database.database_url:
             item = next((row for row in self.memory["cycles"] if row["id"] == cycle_id), None)
             if item:
                 item.update(completed_at=now, status=status, scanned_count=scanned,
-                            signal_count=signals, trade_count=trades, error_summary=error)
+                            signal_count=signals, trade_count=trades, error_summary=error,
+                            metadata=metadata or {})
             return
         with self.database.connection() as connection:
             connection.execute(
                 """UPDATE r2d2_cycles SET completed_at=%s, status=%s, scanned_count=%s,
-                          signal_count=%s, trade_count=%s, error_summary=%s WHERE id=%s""",
-                (now, status, scanned, signals, trades, error, cycle_id),
+                          signal_count=%s, trade_count=%s, error_summary=%s, metadata=%s::jsonb WHERE id=%s""",
+                (now, status, scanned, signals, trades, error, json.dumps(metadata or {}), cycle_id),
             )
             connection.commit()
 
@@ -740,6 +768,7 @@ class R2D2PaperService:
         self._us_scan_counts: dict[str, dict[str, int]] = {}
         self._intraday_cache: dict[tuple[str, str], tuple[datetime, list[dict[str, Any]]]] = {}
         self._fx_cache: tuple[datetime, float] | None = None
+        self._eodhd_call_counts: dict[str, int] = {}
         self._active_policy = dict(BASE_ENTRY_POLICY)
         self._learning_state: dict[str, Any] | None = None
 
@@ -1029,6 +1058,7 @@ class R2D2PaperService:
                 return self.dashboard()
             candidates: list[dict[str, Any]] = []
             self._us_scan_counts = {}
+            self._eodhd_call_counts = {}
             for market in ACTIVE_MARKETS:
                 if market in markets:
                     candidates.extend(self._us_candidates(market, now))
@@ -1108,7 +1138,11 @@ class R2D2PaperService:
                     positions = self.repo.positions(experiment["id"])
             self._snapshot(experiment, local_day, now)
             self.repo.finish_cycle(cycle_id, "succeeded" if not errors else "partial", scanned, signals, trade_count,
-                                   "; ".join(errors)[:1000] or None)
+                                   "; ".join(errors)[:1000] or None,
+                                   metadata={
+                                       "scan_funnel": dict(self._us_scan_counts),
+                                       "eodhd_usage": _estimate_eodhd_credits(self._eodhd_call_counts),
+                                   })
         except Exception as exc:
             logger.exception("R2D2 cycle failed")
             self.repo.finish_cycle(cycle_id, "failed", scanned, signals, trade_count, str(exc)[:1000])
@@ -1607,6 +1641,12 @@ class R2D2PaperService:
             )
             fundamentals = client.fundamentals(missing, exchange="US", workers=8)
             histories = client.histories(missing, exchange="US", days=365, workers=8)
+            self._eodhd_call_counts["backfill_fundamentals_symbols"] = (
+                self._eodhd_call_counts.get("backfill_fundamentals_symbols", 0) + len(missing)
+            )
+            self._eodhd_call_counts["backfill_history_symbols"] = (
+                self._eodhd_call_counts.get("backfill_history_symbols", 0) + len(missing)
+            )
             quote_by_symbol = {row.symbol: row for row, _ in shortlist}
             for symbol in missing:
                 row = quote_by_symbol.get(symbol)
@@ -1967,12 +2007,18 @@ class R2D2PaperService:
         ttl = timedelta(minutes=5 if market == "B3" else 60)
         cached = self._intraday_cache.get(key)
         if cached and now - cached[0] < ttl:
+            self._eodhd_call_counts["intraday_cache_hits"] = (
+                self._eodhd_call_counts.get("intraday_cache_hits", 0) + 1
+            )
             return [dict(row) for row in cached[1]]
         if market == "B3":
             rows = BrapiClient(
                 self.settings.brapi_base_url, self.settings.brapi_token, self.one_pagers.market_data.http,
             ).intraday(symbol, interval="5m", days=5)
         else:
+            self._eodhd_call_counts["intraday_cache_misses"] = (
+                self._eodhd_call_counts.get("intraday_cache_misses", 0) + 1
+            )
             rows = EodhdClient(
                 self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.one_pagers.market_data.http,
             ).intraday(symbol, exchange="US", interval="5m", days=7)
@@ -2206,6 +2252,7 @@ class R2D2PaperService:
         if self._fx_cache and now < self._fx_cache[0]:
             return self._fx_cache[1]
         client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.one_pagers.market_data.http)
+        self._eodhd_call_counts["fx_quote_calls"] = self._eodhd_call_counts.get("fx_quote_calls", 0) + 1
         quote = client.quotes(["USDBRL.FOREX"])[0]
         self._fx_cache = (now + timedelta(minutes=10), quote.price)
         return quote.price
