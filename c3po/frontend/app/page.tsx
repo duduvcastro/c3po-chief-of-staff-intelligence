@@ -4606,6 +4606,19 @@ function OnePagerView({ canGenerate }: { canGenerate: boolean }) {
   );
 }
 
+const valuationMarketMarks: Record<string, string> = {
+  B3: "/market-marks/b3.svg",
+  NASDAQ: "/market-marks/nasdaq.svg",
+  NYSE: "/market-marks/nyse.svg"
+};
+
+function MarketMark({ market }: { market: string }) {
+  const src = valuationMarketMarks[market];
+  return src
+    ? <span className="iq-record-market-mark" title={market}><img src={src} alt={market} /></span>
+    : <span className="iq-record-market-mark iq-record-market-mark-text">{market}</span>;
+}
+
 const valuationTriggerLabels: Record<ValuationTrigger, string> = {
   initial: "Base inicial",
   financial_results: "Resultado",
@@ -4793,7 +4806,7 @@ function IQRecordRow({ record }: { record: ValuationChangeRecord }) {
           <div>
             <InstrumentPreviewTarget instrument={{ symbol: record.symbol, name: record.company_name, market: record.market }}><strong>{record.symbol}</strong></InstrumentPreviewTarget>
             <span>{record.company_name}</span>
-            <small>{record.market}</small>
+            <MarketMark market={record.market} />
           </div>
         </div>
       </div>
