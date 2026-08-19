@@ -120,3 +120,55 @@ def test_daily_learning_ignores_a_corrected_trades_phantom_loss() -> None:
     assert state["metrics"]["win_rate_percent"] == 75.0
     assert state["metrics"]["profit_factor"] == 12.0
     assert "widened" in state["rationale"][0]
+
+
+def test_daily_learning_curve_groups_closed_trades_by_session_day() -> None:
+    """The "Learning Curve" chart (2026-08-19) needs one row per day with at
+    least one closed trade -- deliberately sourced from a dedicated
+    aggregation query, not trades()'s limit=250 list, so it keeps working
+    past the first couple of days at real trading volume.
+    """
+    service = _service()
+    experiment = service.ensure_initialized()
+
+    # Day 1: 3 wins, 1 loss -> 75%.
+    for offset in range(3):
+        service.repo.memory["trades"].append({
+            "experiment_id": experiment["id"], "realized_pnl_usd": 100,
+            "decision_snapshot": {"thesis": "winner"},
+            "executed_at": datetime(2026, 8, 18, 14, offset, tzinfo=timezone.utc),
+        })
+    service.repo.memory["trades"].append({
+        "experiment_id": experiment["id"], "realized_pnl_usd": -50,
+        "decision_snapshot": {"thesis": "loser"},
+        "executed_at": datetime(2026, 8, 18, 15, 0, tzinfo=timezone.utc),
+    })
+    # Day 2: 1 win, 1 loss -> 50%.
+    service.repo.memory["trades"].append({
+        "experiment_id": experiment["id"], "realized_pnl_usd": 200,
+        "decision_snapshot": {"thesis": "winner"},
+        "executed_at": datetime(2026, 8, 19, 14, 0, tzinfo=timezone.utc),
+    })
+    service.repo.memory["trades"].append({
+        "experiment_id": experiment["id"], "realized_pnl_usd": -75,
+        "decision_snapshot": {"thesis": "loser"},
+        "executed_at": datetime(2026, 8, 19, 15, 0, tzinfo=timezone.utc),
+    })
+    # A BUY (no realized P&L yet) must not create a phantom day/row.
+    service.repo.memory["trades"].append({
+        "experiment_id": experiment["id"], "realized_pnl_usd": None,
+        "decision_snapshot": {"thesis": "open position"},
+        "executed_at": datetime(2026, 8, 20, 10, 0, tzinfo=timezone.utc),
+    })
+    # A corrected phantom loss must not drag down its day's percentage.
+    service.repo.memory["trades"].append({
+        "experiment_id": experiment["id"], "realized_pnl_usd": -999_999,
+        "decision_snapshot": {"correction": {"correction_amount_usd": 999_999.0}},
+        "executed_at": datetime(2026, 8, 18, 16, 0, tzinfo=timezone.utc),
+    })
+
+    curve = service.repo.daily_learning_curve(experiment["id"])
+
+    assert [row["session_date"] for row in curve] == [date(2026, 8, 18), date(2026, 8, 19)]
+    assert curve[0] == {"session_date": date(2026, 8, 18), "positive": 3, "negative": 1}
+    assert curve[1] == {"session_date": date(2026, 8, 19), "positive": 1, "negative": 1}

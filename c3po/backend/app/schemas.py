@@ -518,6 +518,13 @@ class R2D2TrackPoint(BaseModel):
     is_final: bool
 
 
+class R2D2LearningCurvePoint(BaseModel):
+    session_date: str
+    positive_percent: float
+    positive_trades: int
+    negative_trades: int
+
+
 class R2D2Position(BaseModel):
     market: Literal["B3", "NASDAQ", "NYSE"]
     symbol: str
@@ -603,6 +610,7 @@ class R2D2DashboardResponse(BaseModel):
     open_positions: int
     stats: R2D2SummaryStats
     track_record: list[R2D2TrackPoint]
+    learning_curve: list[R2D2LearningCurvePoint]
     positions: list[R2D2Position]
     trades: list[R2D2Trade]
     last_cycle: R2D2CycleStatus | None = None

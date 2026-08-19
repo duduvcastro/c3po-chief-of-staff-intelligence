@@ -7,6 +7,7 @@ import {
   ArrowUp,
   Bell,
   BookOpenCheck,
+  Brain,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
@@ -228,6 +229,12 @@ interface R2D2DashboardData {
     daily_pnl_usd: number;
     daily_return_percent: number;
     is_final: boolean;
+  }>;
+  learning_curve: Array<{
+    session_date: string;
+    positive_percent: number;
+    positive_trades: number;
+    negative_trades: number;
   }>;
   positions: Array<{
     market: "B3" | "NASDAQ" | "NYSE";
@@ -2592,6 +2599,35 @@ function R2D2RisingView() {
     allocationCursor += item.percent / 100;
     return { ...item, start };
   });
+  const learningCurve = data.learning_curve;
+  const learningSortedPercents = [...learningCurve.map((point) => point.positive_percent)].sort((left, right) => left - right);
+  const learningMedian = learningSortedPercents.length
+    ? learningSortedPercents.length % 2 === 1
+      ? learningSortedPercents[(learningSortedPercents.length - 1) / 2]
+      : (learningSortedPercents[learningSortedPercents.length / 2 - 1] + learningSortedPercents[learningSortedPercents.length / 2]) / 2
+    : 0;
+  const learningRecentWindow = learningCurve.slice(-Math.min(5, learningCurve.length));
+  const learningRecentAverage = learningRecentWindow.length
+    ? learningRecentWindow.reduce((sum, point) => sum + point.positive_percent, 0) / learningRecentWindow.length
+    : 0;
+  const learningTrendDelta = learningRecentAverage - learningMedian;
+  const learningTrendTone = learningTrendDelta > 1 ? "positive" : learningTrendDelta < -1 ? "negative" : "neutral";
+  const learningTrendLabel = learningCurve.length < 2
+    ? "Aguardando mais dias"
+    : learningTrendDelta > 1
+      ? `Melhorando · ${learningTrendDelta >= 0 ? "+" : ""}${learningTrendDelta.toFixed(1)}pp vs mediana`
+      : learningTrendDelta < -1
+        ? `Piorando · ${learningTrendDelta.toFixed(1)}pp vs mediana`
+        : "Estável vs mediana";
+  const LEARNING_BAR_WIDTH = 20;
+  const LEARNING_GAP = 12;
+  const LEARNING_SLOT = LEARNING_BAR_WIDTH + LEARNING_GAP;
+  const LEARNING_PLOT_LEFT = 34;
+  const LEARNING_PLOT_TOP = 10;
+  const LEARNING_PLOT_HEIGHT = 150;
+  const LEARNING_CHART_HEIGHT = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 28;
+  const learningChartWidth = Math.max(420, LEARNING_PLOT_LEFT + learningCurve.length * LEARNING_SLOT + LEARNING_GAP);
+  const learningMedianY = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (learningMedian / 100) * LEARNING_PLOT_HEIGHT;
   const showAllocationTooltip = (
     event: ReactPointerEvent<SVGCircleElement>,
     item: (typeof allocationSlices)[number]
@@ -2769,6 +2805,66 @@ function R2D2RisingView() {
             ))}
           </div>
         </div>
+      </section>
+
+      <section className="panel r2d2-learning-panel">
+        <header className="panel-header r2d2-learning-header">
+          <div><Brain size={18} /><h2>Learning Curve</h2></div>
+          {learningCurve.length ? (
+            <div className="r2d2-learning-summary">
+              <span>Mediana<strong>{learningMedian.toFixed(1)}%</strong></span>
+              <span>Dias operados<strong>{learningCurve.length}</strong></span>
+              <small className={`r2d2-learning-trend-${learningTrendTone}`}>{learningTrendLabel}</small>
+            </div>
+          ) : null}
+        </header>
+        {learningCurve.length ? (
+          <div className="r2d2-learning-scroll">
+            <svg
+              className="r2d2-learning-svg"
+              viewBox={`0 0 ${learningChartWidth} ${LEARNING_CHART_HEIGHT}`}
+              width={learningChartWidth}
+              height={LEARNING_CHART_HEIGHT}
+              role="img"
+              aria-label="Curva de aprendizado: percentual diário de operações positivas, com linha de mediana"
+            >
+              {[0, 25, 50, 75, 100].map((tick) => {
+                const y = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (tick / 100) * LEARNING_PLOT_HEIGHT;
+                return (
+                  <g key={tick}>
+                    <line x1={LEARNING_PLOT_LEFT} x2={learningChartWidth} y1={y} y2={y} className="r2d2-learning-grid" />
+                    <text x={LEARNING_PLOT_LEFT - 6} y={y + 3} textAnchor="end" className="r2d2-learning-tick">{tick}%</text>
+                  </g>
+                );
+              })}
+              {learningCurve.map((point, index) => {
+                const x = LEARNING_PLOT_LEFT + index * LEARNING_SLOT + LEARNING_GAP / 2;
+                const barHeight = Math.max((point.positive_percent / 100) * LEARNING_PLOT_HEIGHT, 1.5);
+                const y = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - barHeight;
+                const label = new Date(`${point.session_date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+                return (
+                  <g key={point.session_date}>
+                    <rect
+                      x={x}
+                      y={y}
+                      width={LEARNING_BAR_WIDTH}
+                      height={barHeight}
+                      rx={2}
+                      className={point.positive_percent >= 50 ? "r2d2-learning-bar-positive" : "r2d2-learning-bar-negative"}
+                    >
+                      <title>{`${label} · ${point.positive_percent.toFixed(1)}% positivas (${point.positive_trades}/${point.positive_trades + point.negative_trades} operações)`}</title>
+                    </rect>
+                    <text x={x + LEARNING_BAR_WIDTH / 2} y={LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 15} textAnchor="middle" className="r2d2-learning-axis-label">{label}</text>
+                  </g>
+                );
+              })}
+              <line x1={LEARNING_PLOT_LEFT} x2={learningChartWidth} y1={learningMedianY} y2={learningMedianY} className="r2d2-learning-median" />
+              <text x={learningChartWidth - 4} y={learningMedianY - 6} textAnchor="end" className="r2d2-learning-median-label">{`Mediana ${learningMedian.toFixed(1)}%`}</text>
+            </svg>
+          </div>
+        ) : (
+          <div className="r2d2-ledger-empty"><Brain size={24} /><div><strong>Sem dias operados ainda</strong><span>A curva de aprendizado aparece após o primeiro dia com vendas encerradas.</span></div></div>
+        )}
       </section>
 
       <section className="panel r2d2-trades-panel">
