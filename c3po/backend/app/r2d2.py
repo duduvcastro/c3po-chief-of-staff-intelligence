@@ -1165,6 +1165,12 @@ class R2D2PaperService:
                     if deployment_mode
                     else STANDARD_TECHNICAL_REVIEW_PER_MARKET
                 ),
+                max_ws_symbols=(
+                    max(0, stream.max_symbols - len({
+                        position["symbol"] for position in positions if position["market"] != "B3"
+                    }))
+                    if stream else None
+                ),
             )
             for candidate in candidates:
                 candidate["learning_version"] = int(learning["version"])
@@ -1825,7 +1831,8 @@ class R2D2PaperService:
             output.append(item)
         return sorted(output, key=lambda item: item["pretrade_rank"], reverse=True)
 
-    def _enrich_technicals(self, candidates: list[dict[str, Any]], *, review_limit: int = 16) -> None:
+    def _enrich_technicals(self, candidates: list[dict[str, Any]], *, review_limit: int = 16,
+                           max_ws_symbols: int | None = None) -> None:
         """Confirm entry timing with five-minute candles for the best fundamental names."""
         selected: list[dict[str, Any]] = []
         review_sets: list[list[dict[str, Any]]] = []
@@ -1841,6 +1848,28 @@ class R2D2PaperService:
             for rows in review_sets:
                 if index < len(rows):
                     selected.append(rows[index])
+        if max_ws_symbols is not None:
+            # Root-caused 2026-08-19: NASDAQ/NYSE technical confirmation requires a
+            # live EODHD WebSocket tick (see _technical_snapshot's data_status gate --
+            # the REST intraday endpoint alone can lag over a day and must never be
+            # treated as "live"). The stream carries at most max_symbols tickers
+            # total, with open positions reserved first by the caller; requesting
+            # more review slots than remain here just guarantees a chunk of
+            # candidates get zero chance at a tick and fail as "confirmation
+            # unavailable" every cycle, regardless of how liquid they actually are.
+            # Trim to what the stream can actually carry, ranked by pretrade rank
+            # across both markets combined, and mark the rest not-reviewed so they
+            # cleanly wait for a future cycle instead of being evaluated on stale
+            # default technicals.
+            ws_bound = sorted(
+                (item for item in selected if item["market"] != "B3"),
+                key=lambda item: item.get("pretrade_rank", item["fundamental_score"]), reverse=True,
+            )
+            overflow = ws_bound[max(0, max_ws_symbols):]
+            for item in overflow:
+                item["technical_reviewed"] = False
+            dropped = {id(item) for item in overflow}
+            selected = [item for item in selected if id(item) not in dropped]
         stream = getattr(self.realtime, "stream", None)
         if stream:
             stream.set_group(
