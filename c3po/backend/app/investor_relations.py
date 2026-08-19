@@ -34,6 +34,12 @@ from .schemas import (
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 SEC_FORMS = {"8-K", "10-Q", "10-K", "6-K", "20-F", "40-F", "8-K/A", "10-Q/A", "10-K/A", "6-K/A", "20-F/A"}
+SEC_FULLTEXT_KEYWORDS = (
+    "guidance", "acquisition", "merger", "restatement", "material weakness",
+    "impairment", "buyback", "investigation",
+)
+SEC_FULLTEXT_LOOKBACK_DAYS = 14
+SEC_FULLTEXT_CIK_BATCH_SIZE = 40
 RI_KEYWORDS = (
     "resultado", "results", "earnings", "release", "fato relevante", "material fact",
     "comunicado", "guidance", "apresentacao", "presentation", "dividendo", "dividend",
@@ -341,12 +347,77 @@ class InvestorRelationsService:
                     event = self._sec_event(payload, recent, index, company, cutoff)
                     if event:
                         events.append(event)
+            self._enrich_with_sec_fulltext(events)
             written = self.database.save_ir_events(events)
             self.database.finish_ingestion_run(run_id, "succeeded", read, written)
             return read, written
         except Exception as exc:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
             raise
+
+    def _enrich_with_sec_fulltext(self, events: list[dict[str, Any]]) -> None:
+        """Cross-reference recently-discovered SEC filings against EDGAR's full-
+        text search (https://efts.sec.gov) for high-signal keywords, so a
+        generic "Material Filing" title can say what it's actually about --
+        submissions already tell us a filing exists, full-text search is the
+        only way to know what it's about without downloading and parsing the
+        document itself. Scoped to the last SEC_FULLTEXT_LOOKBACK_DAYS only
+        (older events aren't worth the extra requests every poll cycle).
+        Best-effort: any failure here must never break the submissions-based
+        sync it enriches, so events ship unenriched instead of not shipping.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(days=SEC_FULLTEXT_LOOKBACK_DAYS)
+        recent = [event for event in events if event["published_at"] >= cutoff]
+        if not recent:
+            return
+        # EDGAR full-text search matches CIKs by exact stored form (zero-padded to
+        # 10 digits) -- an unpadded CIK doesn't error, it just silently matches
+        # nothing, confirmed against the live API (2026-08-19), so this is not
+        # a defensive no-op.
+        ciks = sorted({
+            event["regulator_id"].zfill(10) for event in recent if event.get("regulator_id")
+        })
+        try:
+            matches = self._sec_fulltext_matches(ciks, cutoff.date())
+        except Exception:
+            return
+        if not matches:
+            return
+        for event in recent:
+            keywords = matches.get(event["external_id"])
+            if not keywords:
+                continue
+            event["summary"] = f"{event['summary']} | Menções: {', '.join(keywords)}"
+            event.setdefault("raw_metadata", {})["fulltext_keywords"] = keywords
+
+    def _sec_fulltext_matches(self, ciks: list[str], since: date) -> dict[str, list[str]]:
+        """{accession_no: [matched keyword, ...]} for SEC_FULLTEXT_KEYWORDS found
+        in filings by the given CIKs since ``since``, via EDGAR's official full-
+        text search API (efts.sec.gov/LATEST/search-index -- free, no API key,
+        requires only the same User-Agent header already set on self.client).
+        """
+        if not ciks:
+            return {}
+        matches: dict[str, list[str]] = {}
+        forms_param = ",".join(sorted(SEC_FORMS))
+        start = since.isoformat()
+        end = datetime.now(timezone.utc).date().isoformat()
+        for batch_start in range(0, len(ciks), SEC_FULLTEXT_CIK_BATCH_SIZE):
+            ciks_param = ",".join(ciks[batch_start:batch_start + SEC_FULLTEXT_CIK_BATCH_SIZE])
+            for keyword in SEC_FULLTEXT_KEYWORDS:
+                response = self.client.get(
+                    f"{self.settings.sec_fulltext_base_url.rstrip('/')}/LATEST/search-index",
+                    params={
+                        "q": f'"{keyword}"', "forms": forms_param, "dateRange": "custom",
+                        "startdt": start, "enddt": end, "ciks": ciks_param,
+                    },
+                )
+                response.raise_for_status()
+                for hit in response.json().get("hits", {}).get("hits", []):
+                    accession = str(hit.get("_id", "")).split(":")[0]
+                    if accession:
+                        matches.setdefault(accession, []).append(keyword)
+        return matches
 
     def sync_ri(self) -> tuple[int, int]:
         run_id = self.database.begin_ingestion_run("ri", "Issuer Investor Relations", "issuer_relations", {"operation": "official_pages"})

@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     cvm_data_base_url: str = "https://dados.cvm.gov.br/dados"
     sec_data_base_url: str = "https://data.sec.gov"
     sec_archives_base_url: str = "https://www.sec.gov"
+    sec_fulltext_base_url: str = "https://efts.sec.gov"
     sec_user_agent: str = "C3PO Chief of Staff Intelligence eu@eduardocastro.com.br"
     investor_relations_poll_minutes: int = 15
     investor_relations_cvm_poll_minutes: int = 120
