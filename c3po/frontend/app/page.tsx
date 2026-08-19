@@ -2630,13 +2630,13 @@ function R2D2RisingView() {
 
       <div className="r2d2-primary-grid">
         <section className="panel r2d2-track-panel">
-          <PanelHeader title="Track Record" icon={LineChart} />
-          <div className="r2d2-chart-head">
-            <div className="r2d2-track-metric"><span>PORTFOLIO VALUE</span><strong>{money(data.nav_usd)}</strong></div>
-            <div className="r2d2-track-metric r2d2-track-positive"><span>POSITIVE TRANSACTIONS</span><strong>{data.stats.positive_transactions}</strong><small>since project launch</small></div>
-            <div className="r2d2-track-metric r2d2-track-negative"><span>NEGATIVE TRANSACTIONS</span><strong>{data.stats.negative_transactions}</strong><small>since project launch</small></div>
-            <span className="r2d2-paper-badge">PAPER ONLY</span>
-          </div>
+          <header className="panel-header r2d2-track-header">
+            <div><LineChart size={18} /><h2>Track Record</h2></div>
+            <div className="r2d2-track-totals">
+              <span className="r2d2-track-positive">Positive <strong>{data.stats.positive_transactions}</strong></span>
+              <span className="r2d2-track-negative">Negative <strong>{data.stats.negative_transactions}</strong></span>
+            </div>
+          </header>
           <div className="r2d2-chart" role="img" aria-label="R2D2 Rising paper portfolio track record">
             <div className="r2d2-chart-scale"><span>{money(chartMax)}</span><span>{money((chartMax + chartMin) / 2)}</span><span>{money(chartMin)}</span></div>
             <div className="r2d2-chart-field">

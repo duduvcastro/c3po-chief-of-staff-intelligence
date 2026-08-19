@@ -230,15 +230,12 @@ button { cursor: pointer; }
 .r2d2-capital-identity strong { display: block; color: #f0c64e; font-size: 15px; }
 .r2d2-primary-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(310px, .75fr); gap: 12px; }
 .r2d2-track-panel, .r2d2-intelligence-panel { min-height: 330px; }
-.r2d2-chart-head { display: grid; grid-template-columns: minmax(150px, 1.3fr) repeat(2, minmax(120px, 1fr)) auto; align-items: stretch; gap: 0; padding: 16px 18px 2px; }
-.r2d2-chart-head span { color: var(--muted); font-size: 9px; font-weight: 800; }
-.r2d2-chart-head strong { display: block; margin-top: 3px; font-size: 22px; }
-.r2d2-track-metric { min-width: 0; padding: 0 14px; border-right: 1px solid var(--line); }
-.r2d2-track-metric:first-child { padding-left: 0; }
-.r2d2-track-metric small { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; }
+.r2d2-track-header { min-height: 58px; }
+.r2d2-track-totals { gap: 0 !important; }
+.r2d2-track-totals > span { display: flex; align-items: baseline; gap: 7px; padding: 0 14px; color: var(--muted); font-size: 10px; font-weight: 800; border-left: 1px solid var(--line); }
+.r2d2-track-totals strong { font-size: 18px; }
 .r2d2-track-positive strong { color: #16825d; }
 .r2d2-track-negative strong { color: #c32f27; }
-.r2d2-chart-head .r2d2-paper-badge { align-self: center; margin-left: 14px; padding: 5px 8px; color: #2766a3; background: #edf5ff; border: 1px solid #c9def3; border-radius: 4px; }
 .r2d2-chart { height: 232px; display: grid; grid-template-columns: 48px minmax(0, 1fr); padding: 8px 18px 16px 12px; }
 .r2d2-chart-scale { display: flex; flex-direction: column; justify-content: space-between; padding: 3px 8px 23px 0; color: #8e98a5; font-size: 9px; text-align: right; }
 .r2d2-chart-field { position: relative; min-width: 0; }
@@ -1771,11 +1768,8 @@ button { cursor: pointer; }
   .r2d2-trade-row { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 12px; padding: 14px 16px; }
   .r2d2-trade-row p { grid-column: 1 / -1; padding-top: 9px; border-top: 1px solid #eef0f2; }
   .r2d2-track-panel, .r2d2-gates-panel { min-height: 0; }
-  .r2d2-chart-head { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 0; }
-  .r2d2-track-metric { padding: 0 12px; }
-  .r2d2-track-metric:nth-child(2) { border-right: 0; }
-  .r2d2-track-metric:nth-child(3) { padding-left: 0; }
-  .r2d2-chart-head .r2d2-paper-badge { justify-self: end; margin-left: 0; }
+  .r2d2-track-totals > span { padding: 0 9px; font-size: 9px; }
+  .r2d2-track-totals strong { font-size: 15px; }
   .r2d2-intelligence-list { max-height: 330px; }
   .r2d2-gates-horizontal .r2d2-gate-list { grid-template-columns: 1fr; }
   .r2d2-gates-horizontal .r2d2-gate-list > div { border-right: 0; }
