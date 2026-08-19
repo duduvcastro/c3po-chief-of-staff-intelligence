@@ -2996,6 +2996,16 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
     style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2
   }).format(value).replace("$", "US$ ");
   const signedUsd = (value: number) => `${value >= 0 ? "+" : "-"}${usd(Math.abs(value))}`;
+  const saoPauloDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+  const todayKey = saoPauloDate.format(new Date());
+  const todayTrades = r2d2?.trades.filter((trade) => saoPauloDate.format(new Date(trade.executed_at)) === todayKey) ?? [];
+  const todayPositiveTransactions = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
+  const todayNegativeTransactions = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
   const healthHeadline = health?.status === "healthy"
     ? "All services operational"
     : health?.status === "offline"
@@ -3013,8 +3023,8 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         </div>
         <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.nav_usd) : "—"} detail={`${r2d2?.open_positions ?? 0} open positions`} tone="gold" />
         <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}% today` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
-        <FalconMetric label="Positive Transactions" value={`${r2d2?.stats.positive_transactions ?? 0}`} detail="realized winning trades" tone="green" />
-        <FalconMetric label="Negative Transactions" value={`${r2d2?.stats.negative_transactions ?? 0}`} detail="realized losing trades" tone="red" />
+        <FalconMetric label="Positive Transactions" value={`${todayPositiveTransactions}`} detail="realized winning trades today" tone="green" />
+        <FalconMetric label="Negative Transactions" value={`${todayNegativeTransactions}`} detail="realized losing trades today" tone="red" />
       </section>
 
       {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => { setError(""); void loadR2D2(); void loadIndices(); }}>Retry</button></div>}
