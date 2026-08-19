@@ -2613,25 +2613,26 @@ function R2D2RisingView() {
     return { ...item, start };
   });
   const learningCurve = data.learning_curve;
-  const learningSortedPercents = [...learningCurve.map((point) => point.positive_percent)].sort((left, right) => left - right);
-  const learningMedian = learningSortedPercents.length
-    ? learningSortedPercents.length % 2 === 1
-      ? learningSortedPercents[(learningSortedPercents.length - 1) / 2]
-      : (learningSortedPercents[learningSortedPercents.length / 2 - 1] + learningSortedPercents[learningSortedPercents.length / 2]) / 2
+  const LEARNING_MOVING_AVERAGE_WINDOW = 3;
+  const learningMovingAverage = learningCurve.map((_, index) => {
+    const window = learningCurve.slice(Math.max(0, index - (LEARNING_MOVING_AVERAGE_WINDOW - 1)), index + 1);
+    return window.reduce((sum, point) => sum + point.positive_percent, 0) / window.length;
+  });
+  const learningLastMovingAverage = learningMovingAverage.length
+    ? learningMovingAverage[learningMovingAverage.length - 1]
     : 0;
-  const learningRecentWindow = learningCurve.slice(-Math.min(5, learningCurve.length));
-  const learningRecentAverage = learningRecentWindow.length
-    ? learningRecentWindow.reduce((sum, point) => sum + point.positive_percent, 0) / learningRecentWindow.length
+  const learningLastActual = learningCurve.length
+    ? learningCurve[learningCurve.length - 1].positive_percent
     : 0;
-  const learningTrendDelta = learningRecentAverage - learningMedian;
+  const learningTrendDelta = learningLastActual - learningLastMovingAverage;
   const learningTrendTone = learningTrendDelta > 1 ? "positive" : learningTrendDelta < -1 ? "negative" : "neutral";
   const learningTrendLabel = learningCurve.length < 2
     ? "Aguardando mais dias"
     : learningTrendDelta > 1
-      ? `Melhorando · ${learningTrendDelta >= 0 ? "+" : ""}${learningTrendDelta.toFixed(1)}pp vs mediana`
+      ? `Melhorando · ${learningTrendDelta >= 0 ? "+" : ""}${learningTrendDelta.toFixed(1)}pp vs média móvel`
       : learningTrendDelta < -1
-        ? `Piorando · ${learningTrendDelta.toFixed(1)}pp vs mediana`
-        : "Estável vs mediana";
+        ? `Piorando · ${learningTrendDelta.toFixed(1)}pp vs média móvel`
+        : "Estável vs média móvel";
   const LEARNING_MIN_SLOT = 32;
   const LEARNING_MAX_BAR_WIDTH = 34;
   const LEARNING_GAP = 12;
@@ -2651,7 +2652,13 @@ function R2D2RisingView() {
   const learningChartWidth = learningFillsContainer
     ? learningContainerWidth
     : LEARNING_PLOT_LEFT + learningCurve.length * learningSlot + LEARNING_GAP;
-  const learningMedianY = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (learningMedian / 100) * LEARNING_PLOT_HEIGHT;
+  const learningMovingAveragePoints = learningMovingAverage.map((value, index) => ({
+    x: LEARNING_PLOT_LEFT + index * learningSlot + learningSlot / 2,
+    y: LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (value / 100) * LEARNING_PLOT_HEIGHT
+  }));
+  const learningMovingAveragePath = learningMovingAveragePoints
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
+    .join(" ");
   const showAllocationTooltip = (
     event: ReactPointerEvent<SVGCircleElement>,
     item: (typeof allocationSlices)[number]
@@ -2836,7 +2843,7 @@ function R2D2RisingView() {
           <div><Brain size={18} /><h2>Learning Curve</h2></div>
           {learningCurve.length ? (
             <div className="r2d2-learning-summary">
-              <span>Mediana<strong>{learningMedian.toFixed(1)}%</strong></span>
+              <span>Média móvel (3d)<strong>{learningLastMovingAverage.toFixed(1)}%</strong></span>
               <span>Dias operados<strong>{learningCurve.length}</strong></span>
               <small className={`r2d2-learning-trend-${learningTrendTone}`}>{learningTrendLabel}</small>
             </div>
@@ -2882,8 +2889,22 @@ function R2D2RisingView() {
                   </g>
                 );
               })}
-              <line x1={LEARNING_PLOT_LEFT} x2={learningChartWidth} y1={learningMedianY} y2={learningMedianY} className="r2d2-learning-median" />
-              <text x={learningChartWidth - 4} y={learningMedianY - 6} textAnchor="end" className="r2d2-learning-median-label">{`Mediana ${learningMedian.toFixed(1)}%`}</text>
+              {learningMovingAveragePoints.length > 1 ? (
+                <path d={learningMovingAveragePath} className="r2d2-learning-ma-line" />
+              ) : null}
+              {learningMovingAveragePoints.map((point, index) => (
+                <circle key={`ma-${learningCurve[index].session_date}`} cx={point.x} cy={point.y} r={2.5} className="r2d2-learning-ma-dot">
+                  <title>{`Média móvel 3 dias em ${learningCurve[index].session_date}: ${learningMovingAverage[index].toFixed(1)}%`}</title>
+                </circle>
+              ))}
+              {learningMovingAveragePoints.length ? (
+                <text
+                  x={learningMovingAveragePoints[learningMovingAveragePoints.length - 1].x}
+                  y={learningMovingAveragePoints[learningMovingAveragePoints.length - 1].y - 8}
+                  textAnchor="middle"
+                  className="r2d2-learning-ma-label"
+                >{`MM3 ${learningLastMovingAverage.toFixed(1)}%`}</text>
+              ) : null}
             </svg>
           ) : (
             <div className="r2d2-ledger-empty"><Brain size={24} /><div><strong>Sem dias operados ainda</strong><span>A curva de aprendizado aparece após o primeiro dia com vendas encerradas.</span></div></div>
