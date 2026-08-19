@@ -706,6 +706,8 @@ button { cursor: pointer; }
 .service-logo-eodhd i:nth-child(2) { height: 13px; background: #8b75e8; }
 .service-logo-eodhd i:nth-child(3) { height: 18px; background: #ef7aa6; }
 .service-logo-eodhd b { align-self: center; margin-left: 1px; font-size: 6px; }
+.service-logo-finnhub { border-color: #4db748; background: #fff; }
+.service-logo-finnhub img { padding: 4px; }
 .service-logo-cvm { border-color: #2c6a55; background: #fff; }
 .service-logo-cvm img { padding: 5px 3px; }
 .service-logo-sec { border-color: #b79a55; background: #f8f3e5; }
