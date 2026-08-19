@@ -179,7 +179,6 @@ interface SystemHealthData {
   healthy_count: number;
   total_count: number;
   api_usage: ApiUsageMetric[];
-  ai_usage: AiUsageMetric[];
   groups: SystemHealthGroup[];
 }
 
@@ -190,19 +189,6 @@ interface ApiUsageMetric {
   percent_used: number;
   period: string;
   status: "healthy" | "attention" | "critical";
-  detail: string;
-  measured_at: string;
-}
-
-interface AiUsageMetric {
-  provider: "OpenAI" | "Anthropic";
-  product: string;
-  status: "healthy" | "attention" | "unavailable";
-  input_tokens: number | null;
-  output_tokens: number | null;
-  cached_input_tokens: number | null;
-  requests: number | null;
-  period: string;
   detail: string;
   measured_at: string;
 }
@@ -3044,19 +3030,6 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         </div>
       </section>
 
-      <section className="panel falcon-ai-usage" aria-label="AI compute consumption">
-        <div className="falcon-ai-usage-head">
-          <div><span>AI Capacity</span><strong>GPT Codex & Claude Code</strong></div>
-          <small>Subscription limits and API credits are tracked separately</small>
-        </div>
-        <div className="falcon-ai-usage-grid">
-          {(health?.ai_usage ?? [
-            { provider: "OpenAI", product: "GPT Codex", status: "unavailable", detail: "Collecting OpenAI telemetry" },
-            { provider: "Anthropic", product: "Claude Code", status: "unavailable", detail: "Collecting Anthropic telemetry" },
-          ]).map((metric) => <AiUsageCard key={metric.provider} metric={metric as AiUsageMetric} />)}
-        </div>
-      </section>
-
       <div className={`quality-banner quality-${healthTone} falcon-capcom-readiness falcon-capcom-readiness-with-usage`}>
         <div className="quality-score">{health?.quality ?? 0}%</div>
         <div><span>Storm Troops Readiness</span><strong>{healthHeadline}</strong><small>{health ? `${health.healthy_count}/${health.total_count} services operational · ${formatDate(health.generated_at)}` : "Collecting service conditions"}</small></div>
@@ -3076,38 +3049,6 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
 
 function FalconMetric({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: "gold" | "blue" | "green" | "red" }) {
   return <div className={`falcon-flight-metric falcon-flight-${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>;
-}
-
-function AiUsageCard({ metric }: { metric: AiUsageMetric }) {
-  const compact = (value: number | null) => value == null ? "—" : new Intl.NumberFormat("en-US", {
-    notation: "compact", maximumFractionDigits: 1
-  }).format(value);
-  const totalTokens = metric.input_tokens == null || metric.output_tokens == null
-    ? null : metric.input_tokens + metric.output_tokens;
-  const isClaude = metric.provider === "Anthropic";
-  const statusLabel = metric.status === "healthy" ? "API measured" : metric.status === "attention" ? "API telemetry partial" : "Plan balance not exposed";
-  const planWindow = isClaude ? "5-hour + weekly windows" : "Codex plan window";
-  const remainingHint = isClaude ? "Check /status in Claude Code" : "Check Codex usage in the OpenAI account";
-  return (
-    <article className={`falcon-ai-card falcon-ai-${metric.status}`}>
-      <div className="falcon-ai-provider">
-        <ServiceLogo name={metric.provider} />
-        <div><span>{metric.provider}</span><strong>{metric.product}</strong></div>
-        <em>{statusLabel}</em>
-      </div>
-      <div className="falcon-ai-capacity-summary">
-        <div><span>Plan remaining</span><strong>{remainingHint}</strong></div>
-        <div><span>Reset window</span><strong>{planWindow}</strong></div>
-      </div>
-      {metric.status !== "unavailable" && <div className="falcon-ai-stat-grid">
-        <div><span>API tokens MTD</span><strong>{compact(totalTokens)}</strong></div>
-        <div><span>API input</span><strong>{compact(metric.input_tokens)}</strong></div>
-        <div><span>API output</span><strong>{compact(metric.output_tokens)}</strong></div>
-        <div><span>API requests</span><strong>{compact(metric.requests)}</strong></div>
-      </div>}
-      <p>{metric.status === "unavailable" ? "The provider does not expose subscription balance through its API. Admin telemetry can measure separate API usage, but not the remaining Codex or Claude Pro allowance." : metric.detail}</p>
-    </article>
-  );
 }
 
 function MarketsView() {
