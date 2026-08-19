@@ -118,6 +118,9 @@ class Settings(BaseSettings):
     r2d2_delayed_quote_fallback_max_age_minutes: float = 30.0
     r2d2_trade_cooldown_minutes: int = 8
     r2d2_max_daily_orders: int = 120
+    r2d2_ws_max_symbols: int = 50
+    r2d2_deployment_technical_review_per_market: int = 32
+    r2d2_standard_technical_review_per_market: int = 24
 
     @property
     def allowed_origins(self) -> list[str]:
