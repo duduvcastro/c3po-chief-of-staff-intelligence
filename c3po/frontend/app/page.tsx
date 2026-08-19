@@ -2461,6 +2461,19 @@ function R2D2RisingView() {
     x: number;
     y: number;
   } | null>(null);
+  const learningScrollRef = useRef<HTMLDivElement | null>(null);
+  const [learningContainerWidth, setLearningContainerWidth] = useState(900);
+
+  useEffect(() => {
+    const node = learningScrollRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setLearningContainerWidth(width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   const load = useCallback(async () => {
     if (requestInFlight.current) return;
@@ -2619,14 +2632,25 @@ function R2D2RisingView() {
       : learningTrendDelta < -1
         ? `Piorando · ${learningTrendDelta.toFixed(1)}pp vs mediana`
         : "Estável vs mediana";
-  const LEARNING_BAR_WIDTH = 20;
+  const LEARNING_MIN_SLOT = 32;
+  const LEARNING_MAX_BAR_WIDTH = 34;
   const LEARNING_GAP = 12;
-  const LEARNING_SLOT = LEARNING_BAR_WIDTH + LEARNING_GAP;
   const LEARNING_PLOT_LEFT = 34;
   const LEARNING_PLOT_TOP = 10;
   const LEARNING_PLOT_HEIGHT = 150;
   const LEARNING_CHART_HEIGHT = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 28;
-  const learningChartWidth = Math.max(420, LEARNING_PLOT_LEFT + learningCurve.length * LEARNING_SLOT + LEARNING_GAP);
+  // Bars stretch to fill the panel's full width (growing toward the right edge as
+  // days are added) as long as they stay legible; once there are too many days to
+  // fit at a comfortable minimum width, the chart switches to a fixed bar width and
+  // scrolls horizontally instead of squeezing bars unreadably thin.
+  const learningPlotWidth = Math.max(0, learningContainerWidth - LEARNING_PLOT_LEFT - LEARNING_GAP);
+  const learningFitSlot = learningCurve.length > 0 ? learningPlotWidth / learningCurve.length : LEARNING_MIN_SLOT;
+  const learningFillsContainer = learningFitSlot >= LEARNING_MIN_SLOT;
+  const learningSlot = learningFillsContainer ? learningFitSlot : LEARNING_MIN_SLOT;
+  const learningBarWidth = Math.max(6, Math.min(LEARNING_MAX_BAR_WIDTH, learningSlot - LEARNING_GAP));
+  const learningChartWidth = learningFillsContainer
+    ? learningContainerWidth
+    : LEARNING_PLOT_LEFT + learningCurve.length * learningSlot + LEARNING_GAP;
   const learningMedianY = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (learningMedian / 100) * LEARNING_PLOT_HEIGHT;
   const showAllocationTooltip = (
     event: ReactPointerEvent<SVGCircleElement>,
@@ -2818,8 +2842,8 @@ function R2D2RisingView() {
             </div>
           ) : null}
         </header>
-        {learningCurve.length ? (
-          <div className="r2d2-learning-scroll">
+        <div className="r2d2-learning-scroll" ref={learningScrollRef}>
+          {learningCurve.length ? (
             <svg
               className="r2d2-learning-svg"
               viewBox={`0 0 ${learningChartWidth} ${LEARNING_CHART_HEIGHT}`}
@@ -2838,7 +2862,7 @@ function R2D2RisingView() {
                 );
               })}
               {learningCurve.map((point, index) => {
-                const x = LEARNING_PLOT_LEFT + index * LEARNING_SLOT + LEARNING_GAP / 2;
+                const x = LEARNING_PLOT_LEFT + index * learningSlot + (learningSlot - learningBarWidth) / 2;
                 const barHeight = Math.max((point.positive_percent / 100) * LEARNING_PLOT_HEIGHT, 1.5);
                 const y = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - barHeight;
                 const label = new Date(`${point.session_date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
@@ -2847,24 +2871,24 @@ function R2D2RisingView() {
                     <rect
                       x={x}
                       y={y}
-                      width={LEARNING_BAR_WIDTH}
+                      width={learningBarWidth}
                       height={barHeight}
                       rx={2}
                       className="r2d2-learning-bar-positive"
                     >
                       <title>{`${label} · ${point.positive_percent.toFixed(1)}% positivas (${point.positive_trades}/${point.positive_trades + point.negative_trades} operações)`}</title>
                     </rect>
-                    <text x={x + LEARNING_BAR_WIDTH / 2} y={LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 15} textAnchor="middle" className="r2d2-learning-axis-label">{label}</text>
+                    <text x={x + learningBarWidth / 2} y={LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 15} textAnchor="middle" className="r2d2-learning-axis-label">{label}</text>
                   </g>
                 );
               })}
               <line x1={LEARNING_PLOT_LEFT} x2={learningChartWidth} y1={learningMedianY} y2={learningMedianY} className="r2d2-learning-median" />
               <text x={learningChartWidth - 4} y={learningMedianY - 6} textAnchor="end" className="r2d2-learning-median-label">{`Mediana ${learningMedian.toFixed(1)}%`}</text>
             </svg>
-          </div>
-        ) : (
-          <div className="r2d2-ledger-empty"><Brain size={24} /><div><strong>Sem dias operados ainda</strong><span>A curva de aprendizado aparece após o primeiro dia com vendas encerradas.</span></div></div>
-        )}
+          ) : (
+            <div className="r2d2-ledger-empty"><Brain size={24} /><div><strong>Sem dias operados ainda</strong><span>A curva de aprendizado aparece após o primeiro dia com vendas encerradas.</span></div></div>
+          )}
+        </div>
       </section>
 
       <section className="panel r2d2-trades-panel">
