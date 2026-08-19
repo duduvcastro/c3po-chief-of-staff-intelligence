@@ -2850,7 +2850,7 @@ function R2D2RisingView() {
                       width={LEARNING_BAR_WIDTH}
                       height={barHeight}
                       rx={2}
-                      className={point.positive_percent >= 50 ? "r2d2-learning-bar-positive" : "r2d2-learning-bar-negative"}
+                      className="r2d2-learning-bar-positive"
                     >
                       <title>{`${label} · ${point.positive_percent.toFixed(1)}% positivas (${point.positive_trades}/${point.positive_trades + point.negative_trades} operações)`}</title>
                     </rect>
