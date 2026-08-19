@@ -422,6 +422,25 @@ def test_eodhd_normalizes_multiple_quotes() -> None:
     assert http.calls[0]["params"]["s"] == "AMZN.US"
 
 
+def test_eodhd_quotes_skips_a_bad_record_without_losing_the_rest_of_the_batch() -> None:
+    """Confirmed live against the real API (2026-08-19): SSEC.INDX came back
+    HTTP 200 with "close"/"change_p"/"timestamp" all the literal string "NA"
+    instead of a real quote or an error status, while N225.INDX and
+    GDAXI.INDX in the same batch returned valid data. The old plain list
+    comprehension let that one record's require_price ValueError abort the
+    whole batch, silently dropping Nikkei/DAX along with Shanghai."""
+    http = StubHttp([
+        {"code": "N225.INDX", "timestamp": 1785859200, "close": 66008.9688, "change_p": -4.6392},
+        {"code": "SSEC.INDX", "timestamp": "NA", "close": "NA", "change_p": "NA"},
+        {"code": "GDAXI.INDX", "timestamp": 1785859200, "close": 26128.3594, "change_p": -0.7983},
+    ])
+    client = EodhdClient("https://eodhd.com", "secret", http)  # type: ignore[arg-type]
+
+    quotes = client.quotes(["N225.INDX", "SSEC.INDX", "GDAXI.INDX"])
+
+    assert [quote.symbol for quote in quotes] == ["N225", "GDAXI"]
+
+
 def test_eodhd_normalizes_b3_fundamentals() -> None:
     payload = {
         "General": {"Code": "PETR4", "UpdatedAt": "2026-08-04"},

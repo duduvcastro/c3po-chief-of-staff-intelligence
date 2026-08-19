@@ -32,7 +32,21 @@ class EodhdClient:
             params["s"] = ",".join(rest)
         payload = self.http.get_json(f"{self.base_url}/api/real-time/{first}", params=params)
         records = payload if isinstance(payload, list) else [payload]
-        return [self._normalize(record) for record in records if isinstance(record, dict)]
+        # One symbol in a batch can come back HTTP 200 with placeholder
+        # ("NA") fields instead of a real quote -- confirmed live for
+        # SSEC.INDX (2026-08-19): the plain list comprehension this used to
+        # be let that one record's ValueError (from require_price) abort the
+        # whole batch, silently dropping every other symbol's valid quote
+        # (N225.INDX/GDAXI.INDX) along with it. Skip bad records individually.
+        quotes: list[NormalizedQuote] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            try:
+                quotes.append(self._normalize(record))
+            except (ValueError, TypeError):
+                continue
+        return quotes
 
     def fundamentals(self, symbols: list[str], *, exchange: str = "SA", workers: int = 8) -> dict[str, dict[str, Any]]:
         clean_symbols = list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
