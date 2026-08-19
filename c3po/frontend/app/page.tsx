@@ -870,6 +870,7 @@ interface ValuationChangeRecord {
   market: "B3" | "NASDAQ" | "NYSE" | "US";
   symbol: string;
   company_name: string;
+  logo_url: string | null;
   changed_at: string;
   trigger_type: ValuationTrigger;
   trigger_title: string;
@@ -4790,7 +4791,7 @@ function IQRecordRow({ record }: { record: ValuationChangeRecord }) {
       <div className="iq-record-company" data-label="Data & empresa">
         <time>{formatRecordDate(record.changed_at)}</time>
         <div className="iq-record-identity">
-          <div className="iq-record-logo"><CompanyLogo symbol={record.symbol} /></div>
+          <div className="iq-record-logo"><CompanyLogo logoUrl={record.logo_url} symbol={record.symbol} /></div>
           <div>
             <InstrumentPreviewTarget instrument={{ symbol: record.symbol, name: record.company_name, market: record.market }}><strong>{record.symbol}</strong></InstrumentPreviewTarget>
             <span>{record.company_name}</span>
