@@ -3032,8 +3032,8 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         </div>
         <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.nav_usd) : "—"} detail={`${r2d2?.open_positions ?? 0} open positions`} tone="gold" />
         <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}% today` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
-        <FalconMetric label="Positive Transactions" value={`${todayPositiveTransactions} · ${todayPositiveShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="green" />
-        <FalconMetric label="Negative Transactions" value={`${todayNegativeTransactions} · ${todayNegativeShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="red" />
+        <FalconMetric label="Positive Transactions" value={`${todayPositiveTransactions}`} secondaryValue={`${todayPositiveShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="green" />
+        <FalconMetric label="Negative Transactions" value={`${todayNegativeTransactions}`} secondaryValue={`${todayNegativeShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="red" />
       </section>
 
       {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => { setError(""); void loadR2D2(); void loadIndices(); }}>Retry</button></div>}
@@ -3067,8 +3067,8 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   );
 }
 
-function FalconMetric({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: "gold" | "blue" | "green" | "red" }) {
-  return <div className={`falcon-flight-metric falcon-flight-${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>;
+function FalconMetric({ label, value, secondaryValue, detail, tone }: { label: string; value: string; secondaryValue?: string; detail: string; tone: "gold" | "blue" | "green" | "red" }) {
+  return <div className={`falcon-flight-metric falcon-flight-${tone}`}><span>{label}</span><strong>{value}{secondaryValue ? <em> · {secondaryValue}</em> : null}</strong><small>{detail}</small></div>;
 }
 
 function MarketsView() {

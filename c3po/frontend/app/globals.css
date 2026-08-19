@@ -735,6 +735,7 @@ button { cursor: pointer; }
 .falcon-flight-metric { display: flex; flex-direction: column; justify-content: center; border-left: 1px solid #343238; }
 .falcon-flight-metric span { color: #a2a7af; font-size: 8px; font-weight: 900; text-transform: uppercase; }
 .falcon-flight-metric strong { margin-top: 7px; font-size: 22px; line-height: 1; }
+.falcon-flight-metric strong em { font-size: 13px; font-style: normal; }
 .falcon-flight-metric small { margin-top: 7px; color: #8c929b; font-size: 8px; white-space: nowrap; }
 .falcon-capcom-view { gap: 16px; }
 .falcon-capcom-metrics { min-width: 0; display: grid; grid-template-columns: minmax(230px, 1.25fr) repeat(4, minmax(150px, 1fr)); overflow: hidden; color: #f8f5e9; background: #111216; border: 1px solid #66531f; border-radius: var(--radius); }
