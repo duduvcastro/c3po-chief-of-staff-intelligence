@@ -173,6 +173,59 @@ def test_r2d2_interleaves_live_reviews_across_us_markets() -> None:
     assert stream.symbols == ["Q0", "Y0", "Q1", "Y1", "Q2", "Y2"]
 
 
+def test_r2d2_trims_review_batch_to_available_websocket_capacity() -> None:
+    """Root-caused 2026-08-19: the EODHD WebSocket only carries max_symbols
+    concurrent tickers (50 on the current plan); requesting more technical
+    review slots than that guarantees some candidates never get a live tick
+    and fail as "confirmation unavailable" every cycle, no matter how liquid
+    they are. _enrich_technicals must trim the batch to what the stream can
+    actually carry, keep the best-ranked candidates across both markets, and
+    mark the rest not-reviewed so they cleanly wait for a future cycle
+    instead of being evaluated on stale/default technicals.
+    """
+    service = _service()
+
+    class FakeStream:
+        symbols: list[str] = []
+
+        def set_group(self, name: str, symbols: list[str], *, priority: int) -> None:
+            self.symbols = symbols
+
+        @staticmethod
+        def quote(symbol: str):
+            return None
+
+    stream = FakeStream()
+    service.realtime = SimpleNamespace(stream=stream)  # type: ignore[assignment]
+    service._technical_snapshot = (  # type: ignore[method-assign]
+        lambda item: (_ for _ in ()).throw(ValueError("test stops after stream selection"))
+    )
+    candidates = [
+        {
+            "market": market,
+            "symbol": f"{'Q' if market == 'NASDAQ' else 'Y'}{index}",
+            "fundamental_score": 70.0 - index,
+            "pretrade_rank": 80.0 - index,
+            "day_change": 0.5,
+            "technical_score": 50.0,
+            "risk_score": 40.0,
+            "confidence": 60.0,
+            "upside": 25.0,
+            "buy_in_distance": 5.0,
+        }
+        for market in ("NASDAQ", "NYSE")
+        for index in range(3)
+    ]
+
+    service._enrich_technicals(candidates, review_limit=3, max_ws_symbols=4)
+
+    # Q0/Y0 (rank 80) and Q1/Y1 (rank 79) fit within the 4-symbol budget; Q2/Y2
+    # (rank 78, the weakest) are bumped.
+    assert stream.symbols == ["Q0", "Y0", "Q1", "Y1"]
+    reviewed = {item["symbol"]: item["technical_reviewed"] for item in candidates}
+    assert reviewed == {"Q0": True, "Y0": True, "Q1": True, "Y1": True, "Q2": False, "Y2": False}
+
+
 def test_r2d2_position_sizing_rewards_conviction_and_penalizes_risk_and_volatility() -> None:
     service = _service()
     high_conviction = {
