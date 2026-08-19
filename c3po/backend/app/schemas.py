@@ -650,6 +650,7 @@ class ValuationChangeRecord(BaseModel):
     market: Literal["B3", "NASDAQ", "NYSE", "US"]
     symbol: str
     company_name: str
+    logo_url: str | None = None
     changed_at: datetime
     trigger_type: Literal["initial", "financial_results", "material_event", "web_research", "market_data", "methodology"]
     trigger_title: str

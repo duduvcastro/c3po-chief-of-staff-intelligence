@@ -68,6 +68,31 @@ def test_valuation_records_capture_only_real_changes_and_sort_newest_first(tmp_p
     assert records[1]["trigger_type"] == "initial"
 
 
+def test_valuation_records_carry_logo_url_from_the_latest_universe_snapshot(tmp_path) -> None:
+    """Ben Kenobi Records bug (2026-08-19): B3 rows showed no company logo at
+    all. valuation_change_records never stored its own logo_url (and never
+    should need to -- no new column/migration), but the B3/US screeners
+    already capture one per company in their own universe snapshot rows.
+    list_valuation_changes() cross-references those (already computed, no
+    extra API calls) instead of relying on the frontend's broken
+    /api/v1/company-logo/{symbol} proxy or a market-agnostic external CDN
+    guess that only ever worked for US tickers.
+    """
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+    methodology_id = database.ensure_methodology_version("c3po_equity_valuation", 9, {}, "test")
+    row = valuation_row(28.0, 17.0, 26.0, 82) | {"logo_url": "https://cdn.example.com/prnr3.png"}
+    database.save_analysis_snapshot(
+        "valuation_universe", "B3_UNIVERSE", methodology_id,
+        {"market": "B3", "methodology_version": 9},
+        {"rows": [row]},
+        datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc),
+    )
+
+    _, records = database.list_valuation_changes(limit=10)
+
+    assert records[0]["logo_url"] == "https://cdn.example.com/prnr3.png"
+
+
 def test_valuation_records_filter_by_company_market_and_trigger(tmp_path) -> None:
     database = Database(Settings(database_url="", migrations_dir=tmp_path))
     methodology_id = database.ensure_methodology_version("c3po_equity_valuation", 9, {}, "test")

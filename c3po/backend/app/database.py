@@ -1831,6 +1831,32 @@ class Database:
             None,
         )
 
+    def _valuation_logo_lookup(self) -> dict[tuple[str, str], str]:
+        """{(market, symbol): logo_url} from each market's latest bulk universe
+        snapshot. Ben Kenobi Records' valuation_change_records never stored its
+        own logo_url (no column, no migration needed for this), but the B3/US
+        screeners already capture one per company in their universe rows -- read
+        it from there instead of a broken/nonexistent proxy endpoint or a
+        market-agnostic external logo CDN guess."""
+        snapshots = self.latest_analysis_snapshots(
+            "valuation_universe", ["B3_UNIVERSE", "NASDAQ_UNIVERSE", "NYSE_UNIVERSE"],
+        )
+        market_by_entity_key = {"B3_UNIVERSE": "B3", "NASDAQ_UNIVERSE": "NASDAQ", "NYSE_UNIVERSE": "NYSE"}
+        lookup: dict[tuple[str, str], str] = {}
+        for entity_key, snapshot in snapshots.items():
+            rows = (snapshot.get("outputs") or {}).get("rows")
+            if not isinstance(rows, list):
+                continue
+            market_for_key = market_by_entity_key[entity_key]
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                logo_url = row.get("logo_url")
+                symbol = str(row.get("symbol") or "").upper()
+                if symbol and logo_url:
+                    lookup[(market_for_key, symbol)] = logo_url
+        return lookup
+
     def list_valuation_changes(
         self,
         *,
@@ -1841,6 +1867,7 @@ class Database:
         trigger_type: str | None = None,
     ) -> tuple[int, list[dict[str, Any]]]:
         clean_symbol = (symbol or "").strip().upper()
+        logo_lookup = self._valuation_logo_lookup()
         if not self.database_url:
             records = [
                 item.copy() for item in self._valuation_changes
@@ -1849,7 +1876,10 @@ class Database:
                 and (not trigger_type or item["trigger_type"] == trigger_type)
             ]
             records.sort(key=lambda item: (item["changed_at"], item["id"]), reverse=True)
-            return len(records), records[offset:offset + limit]
+            page = records[offset:offset + limit]
+            for item in page:
+                item["logo_url"] = logo_lookup.get((item["market"], item["symbol"]))
+            return len(records), page
 
         conditions: list[str] = []
         params: list[Any] = []
@@ -1892,7 +1922,10 @@ class Database:
             "price", "old_confidence", "new_confidence", "methodology_name",
             "methodology_version", "metadata",
         )
-        return total, [dict(zip(keys, row)) for row in rows]
+        items = [dict(zip(keys, row)) for row in rows]
+        for item in items:
+            item["logo_url"] = logo_lookup.get((item["market"], item["symbol"]))
+        return total, items
 
     def _capture_valuation_changes(
         self,
