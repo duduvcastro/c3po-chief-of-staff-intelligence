@@ -524,3 +524,92 @@ def test_finnhub_insider_events_is_best_effort_on_failure(tmp_path):
 
     ir.finnhub.client = FakeClient()
     assert ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc.") == []
+
+
+def test_finnhub_sentiment_event_is_deduped_by_iso_week(tmp_path):
+    ir, _ = _service_with_finnhub(tmp_path)
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "sentiment": {"bullishPercent": 0.7, "bearishPercent": 0.3},
+                "buzz": {"articlesInLastWeek": 12},
+                "companyNewsScore": 0.6,
+            }
+
+    class FakeClient:
+        def get(self, url, *, params=None):
+            return FakeResponse()
+
+    ir.finnhub.client = FakeClient()
+    events = ir._finnhub_sentiment_event("AAPL", None, "Apple Inc.")
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["source_code"] == "finnhub"
+    assert event["event_type"] == "News Sentiment"
+    assert event["materiality"] == "low"
+    assert event["valuation_relevant"] is False
+    iso_year, iso_week, _ = datetime.now(timezone.utc).isocalendar()
+    assert event["external_id"] == f"finnhub-sentiment-AAPL-{iso_year}-W{iso_week:02d}"
+
+
+def test_finnhub_sentiment_event_is_noop_when_no_sentiment_available(tmp_path):
+    ir, _ = _service_with_finnhub(tmp_path)
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {}
+
+    class FakeClient:
+        def get(self, url, *, params=None):
+            return FakeResponse()
+
+    ir.finnhub.client = FakeClient()
+    assert ir._finnhub_sentiment_event("AAPL", None, "Apple Inc.") == []
+
+
+def test_finnhub_news_events_only_keeps_keyword_matches(tmp_path):
+    ir, _ = _service_with_finnhub(tmp_path)
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [
+                {"id": 1, "headline": "Apple announces new acquisition", "summary": "", "source": "Reuters", "url": "https://x/1", "datetime": now_ts},
+                {"id": 2, "headline": "Apple stock closes flat on Tuesday", "summary": "Routine market recap.", "source": "Wire", "url": "https://x/2", "datetime": now_ts},
+            ]
+
+    class FakeClient:
+        def get(self, url, *, params=None):
+            return FakeResponse()
+
+    ir.finnhub.client = FakeClient()
+    events = ir._finnhub_news_events("AAPL", None, "Apple Inc.", date(2026, 8, 1), date(2026, 8, 19))
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["source_code"] == "finnhub"
+    assert event["event_type"] == "News Mention"
+    assert event["external_id"] == "finnhub-news-1"
+    assert "acquisition" in event["raw_metadata"]["matched_keywords"]
+
+
+def test_sync_finnhub_news_is_a_noop_without_an_api_token(tmp_path):
+    ir, _ = service(tmp_path)  # default helper -- no finnhub_api_token configured
+
+    class FakeClient:
+        def get(self, *args, **kwargs):
+            raise AssertionError("must not call Finnhub without a configured API token")
+
+    ir.finnhub.client = FakeClient()
+    assert ir.sync_finnhub_news() == (0, 0)

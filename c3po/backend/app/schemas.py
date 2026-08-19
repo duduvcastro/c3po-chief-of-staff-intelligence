@@ -681,7 +681,7 @@ class ValuationChangeResponse(BaseModel):
 
 
 class InvestorRelationsSourceHealth(BaseModel):
-    code: Literal["cvm", "sec", "ri"]
+    code: Literal["cvm", "sec", "ri", "finnhub"]
     name: str
     status: Literal["healthy", "attention", "unconfigured"]
     last_success_at: datetime | None = None
@@ -691,7 +691,7 @@ class InvestorRelationsSourceHealth(BaseModel):
 
 class InvestorRelationsEvent(BaseModel):
     id: str
-    source: Literal["cvm", "sec", "ri"]
+    source: Literal["cvm", "sec", "ri", "finnhub"]
     market: Literal["B3", "US"]
     symbol: str | None = None
     company_name: str
