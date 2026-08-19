@@ -27,7 +27,7 @@ def main() -> None:
     database = Database(settings)
     database.initialize()
     market_data = MarketDataService(settings, database)
-    stream = EodhdRealtimeStream(settings.eodhd_api_token)
+    stream = EodhdRealtimeStream(settings.eodhd_api_token, max_symbols=settings.r2d2_ws_max_symbols)
     stream.start()
     realtime = RealtimeMarketsService(settings, database, market_data.http, stream=stream)
     screener = B3ScreenerService(settings, database, market_data.http)

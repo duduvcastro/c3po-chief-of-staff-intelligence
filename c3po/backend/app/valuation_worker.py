@@ -64,7 +64,7 @@ def main() -> None:
         settings,
         database,
         market_data.http,
-        stream=EodhdRealtimeStream(settings.eodhd_api_token),
+        stream=EodhdRealtimeStream(settings.eodhd_api_token, max_symbols=settings.r2d2_ws_max_symbols),
     )
     one_pagers = OnePagerService(
         settings,
