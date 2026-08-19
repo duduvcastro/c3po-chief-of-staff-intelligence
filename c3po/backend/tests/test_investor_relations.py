@@ -432,3 +432,95 @@ def test_enrich_with_sec_fulltext_is_best_effort_on_failure(tmp_path):
     ir._enrich_with_sec_fulltext([event])
 
     assert event["summary"] == "SEC form 8-K"
+
+
+def _service_with_finnhub(tmp_path):
+    settings = Settings(
+        database_url="",
+        migrations_dir=tmp_path,
+        investor_relations_output_dir=tmp_path / "ir-pdf",
+        finnhub_api_token="test-token",
+    )
+    database = Database(settings)
+    return InvestorRelationsService(settings, database), database
+
+
+def test_finnhub_insider_events_builds_ir_events_from_recent_transactions(tmp_path):
+    ir, _ = _service_with_finnhub(tmp_path)
+    recent = (date.today() - timedelta(days=5)).isoformat()
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{
+                "name": "COOK TIMOTHY D", "share": 511000, "change": -223986,
+                "filingDate": recent, "transactionDate": recent,
+                "transactionCode": "S", "transactionPrice": 227.5,
+            }]}
+
+    class FakeClient:
+        def get(self, url, *, params=None):
+            assert params["symbol"] == "AAPL"
+            return FakeResponse()
+
+    ir.finnhub.client = FakeClient()
+    events = ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc.")
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["source_code"] == "sec"
+    assert event["market"] == "US"
+    assert event["event_type"] == "Insider Transaction"
+    assert event["materiality"] == "low"
+    assert event["valuation_relevant"] is False
+    assert "venda" in event["title"]
+    assert event["external_id"] == f"finnhub-insider-AAPL-{recent}-cook-timothy-d-S"
+
+
+def test_finnhub_insider_events_filters_out_transactions_older_than_lookback(tmp_path):
+    ir, _ = _service_with_finnhub(tmp_path)
+    stale = (date.today() - timedelta(days=200)).isoformat()
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{
+                "name": "OLD INSIDER", "share": 100, "change": 100,
+                "filingDate": stale, "transactionDate": stale,
+                "transactionCode": "P", "transactionPrice": 10.0,
+            }]}
+
+    class FakeClient:
+        def get(self, url, *, params=None):
+            return FakeResponse()
+
+    ir.finnhub.client = FakeClient()
+    events = ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc.")
+
+    assert events == []
+
+
+def test_finnhub_insider_events_is_a_noop_without_an_api_token(tmp_path):
+    ir, _ = service(tmp_path)  # default helper -- no finnhub_api_token configured
+
+    class FakeClient:
+        def get(self, *args, **kwargs):
+            raise AssertionError("must not call Finnhub without a configured API token")
+
+    ir.finnhub.client = FakeClient()
+    assert ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc.") == []
+
+
+def test_finnhub_insider_events_is_best_effort_on_failure(tmp_path):
+    ir, _ = _service_with_finnhub(tmp_path)
+
+    class FakeClient:
+        def get(self, *args, **kwargs):
+            raise RuntimeError("Finnhub is down")
+
+    ir.finnhub.client = FakeClient()
+    assert ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc.") == []

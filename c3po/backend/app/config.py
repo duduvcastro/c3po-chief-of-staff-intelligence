@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     eodhd_api_token: str = Field(default="", validation_alias=AliasChoices("C3PO_EODHD_API_TOKEN", "EODHD_API_TOKEN"))
     eodhd_base_url: str = "https://eodhd.com"
     eodhd_plan: str = "unconfigured"
+    finnhub_api_token: str = Field(default="", validation_alias=AliasChoices("C3PO_FINNHUB_API_TOKEN", "FINNHUB_API_TOKEN"))
+    finnhub_base_url: str = "https://finnhub.io"
     openai_admin_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("C3PO_OPENAI_ADMIN_API_KEY", "OPENAI_ADMIN_KEY"),
