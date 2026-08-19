@@ -35,9 +35,9 @@ class MarketSpec:
 MARKET_SPECS = (
     MarketSpec("Future Index", "S&P 500 Fut.", "S&P 500 E-mini Futures", "ES=F", "USD"),
     MarketSpec("Future Index", "Nasdaq Fut.", "Nasdaq 100 E-mini Futures", "NQ=F", "USD"),
-    MarketSpec("Future Index", "Nikkei", "Nikkei 225", "^N225", "JPY"),
-    MarketSpec("Future Index", "DAX", "DAX Performance Index", "^GDAXI", "EUR"),
-    MarketSpec("Future Index", "Shanghai", "Shanghai Composite", "000001.SS", "CNY"),
+    MarketSpec("Future Index", "Nikkei", "Nikkei 225", "^N225", "JPY", "eodhd", "N225.INDX"),
+    MarketSpec("Future Index", "DAX", "DAX Performance Index", "^GDAXI", "EUR", "eodhd", "GDAXI.INDX"),
+    MarketSpec("Future Index", "Shanghai", "Shanghai Composite", "000001.SS", "CNY", "eodhd", "SSEC.INDX"),
     MarketSpec("Future Index", "US3Y", "US 3-Year Treasury Yield", "US3Y.GBOND", "%", "eodhd_bond", "US3Y.GBOND"),
     MarketSpec("Future Index", "US10Y", "US 10-Year Treasury Yield", "US10Y.GBOND", "%", "eodhd_bond", "US10Y.GBOND"),
     MarketSpec("Index", "IBOV", "Ibovespa B3", "^BVSP", "BRL"),
@@ -172,8 +172,12 @@ class LiveMarketsService:
         else:
             errors.append("EODHD credential unavailable; Yahoo fallback active")
 
-        # Futures and indices remain on the public chart feed because EODHD's
-        # real-time WebSocket covers US equities, FX and crypto, not these contracts.
+        # E-mini futures have no EODHD .INDX equivalent, so they stay on the
+        # public chart feed. Nikkei/DAX/Shanghai moved to EODHD's .INDX
+        # symbols (2026-08-19) -- Yahoo showed multi-hour-stale prints for
+        # these three specifically; falls back to Yahoo automatically below
+        # if a given .INDX symbol doesn't resolve (same as any other EODHD
+        # spec: see "eodhd_specs if spec.symbol not in items" a few lines down).
         yahoo_specs = [spec for spec in MARKET_SPECS if spec.provider == "yahoo"]
         yahoo_specs.extend(spec for spec in eodhd_specs if spec.symbol not in items)
         with ThreadPoolExecutor(max_workers=8) as executor:
@@ -237,10 +241,18 @@ class LiveMarketsService:
             raise RuntimeError("EODHD credential is not configured")
         client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.http)
         normalized = []
-        for suffix in (".US", ".FOREX", ".CC"):
+        for suffix in (".US", ".FOREX", ".CC", ".INDX"):
             symbols = [spec.eodhd_symbol for spec in specs if spec.eodhd_symbol and spec.eodhd_symbol.endswith(suffix)]
-            if symbols:
+            if not symbols:
+                continue
+            try:
                 normalized.extend(client.quotes(symbols))
+            except Exception:
+                # One bad/unsupported symbol in a batch (e.g. an .INDX code
+                # EODHD doesn't actually carry) must not lose every other
+                # suffix's already-fetched quotes -- each group degrades on
+                # its own via the Yahoo fallback below, independently.
+                continue
         quotes = {item.provider_symbol: item for item in normalized}
         output: list[LiveMarketItem] = []
         for spec in specs:

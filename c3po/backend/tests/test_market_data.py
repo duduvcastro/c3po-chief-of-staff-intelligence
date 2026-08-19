@@ -759,6 +759,67 @@ def test_live_markets_prefers_eodhd_for_us_portfolio_quotes() -> None:
     assert http.calls[0]["url"].endswith("/api/real-time/AMZN.US")
 
 
+def test_nikkei_dax_shanghai_are_registered_on_eodhd_indx_symbols() -> None:
+    """Yahoo's public chart feed was showing multi-hour-stale prints for
+    these three specifically (2026-08-19); moved to EODHD's .INDX exchange,
+    same as every other already-migrated group (forex .FOREX, crypto .CC,
+    portfolio .US)."""
+    by_symbol = {spec.symbol: spec for spec in LIVE_MARKET_SPECS if spec.group == "Future Index"}
+
+    assert by_symbol["Nikkei"].provider == "eodhd"
+    assert by_symbol["Nikkei"].eodhd_symbol == "N225.INDX"
+    assert by_symbol["DAX"].provider == "eodhd"
+    assert by_symbol["DAX"].eodhd_symbol == "GDAXI.INDX"
+    assert by_symbol["Shanghai"].provider == "eodhd"
+    assert by_symbol["Shanghai"].eodhd_symbol == "SSEC.INDX"
+    # E-mini futures have no EODHD .INDX equivalent -- must stay on Yahoo.
+    assert by_symbol["S&P 500 Fut."].provider == "yahoo"
+    assert by_symbol["Nasdaq Fut."].provider == "yahoo"
+
+
+class SequenceHttp:
+    """Returns responses/raises in call order -- StubHttp always returns the
+    same fixed payload, which can't simulate one suffix batch failing while
+    another succeeds (the exact scenario _fetch_eodhd's per-suffix isolation
+    is meant to handle)."""
+
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = []
+
+    def get_json(self, url, *, params=None, headers=None):
+        self.calls.append({"url": url, "params": params, "headers": headers})
+        result = self.results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+def test_fetch_eodhd_isolates_a_failing_suffix_batch_from_the_others() -> None:
+    """A bad/unsupported symbol in one suffix's batch (e.g. an .INDX code
+    EODHD doesn't actually carry) must not lose every other suffix's
+    already-fetched quotes -- regression test for the try/except added
+    alongside the .INDX suffix (2026-08-19)."""
+    http = SequenceHttp([
+        [{
+            "code": "AMZN.US", "timestamp": 1785859200, "open": 225.0, "high": 232.0,
+            "low": 224.0, "close": 230.0, "previousClose": 228.0, "change": 2.0, "change_p": 0.88,
+        }],
+        MarketDataRequestError("EODHD did not recognize SSEC.INDX"),
+    ])
+    settings = Settings(eodhd_api_token="configured", eodhd_plan="all-in-one", auth_cookie_secure=False)
+    service = LiveMarketsService(settings, http)  # type: ignore[arg-type]
+    specs = [
+        MarketSpec("Portfolio", "AMZN", "Amazon", "AMZN", "USD", "eodhd", "AMZN.US"),
+        MarketSpec("Future Index", "Shanghai", "Shanghai Composite", "000001.SS", "CNY", "eodhd", "SSEC.INDX"),
+    ]
+
+    items = service._fetch_eodhd(specs)
+
+    assert [item.symbol for item in items] == ["AMZN"]
+    assert len(http.calls) == 2
+
+
 def test_live_markets_reads_treasury_yields_from_eodhd_government_bonds() -> None:
     http = StubHttp([
         {"date": "2026-08-13", "close": 3.711},
