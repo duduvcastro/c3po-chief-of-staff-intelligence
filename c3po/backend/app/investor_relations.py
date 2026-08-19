@@ -23,6 +23,7 @@ from .config import Settings
 from .cvm_fundamentals import extract_itr_official_fundamentals
 from .database import Database
 from .investor_relations_pdf import InvestorRelationsPdf
+from .market_data.finnhub import FinnhubClient
 from .official_fundamentals import save_official_fundamentals
 from .schemas import (
     InvestorRelationsEvent,
@@ -40,6 +41,7 @@ SEC_FULLTEXT_KEYWORDS = (
 )
 SEC_FULLTEXT_LOOKBACK_DAYS = 14
 SEC_FULLTEXT_CIK_BATCH_SIZE = 40
+FINNHUB_INSIDER_LOOKBACK_DAYS = 90
 RI_KEYWORDS = (
     "resultado", "results", "earnings", "release", "fato relevante", "material fact",
     "comunicado", "guidance", "apresentacao", "presentation", "dividendo", "dividend",
@@ -141,6 +143,7 @@ class InvestorRelationsService:
             follow_redirects=True,
             headers={"User-Agent": settings.sec_user_agent, "Accept-Encoding": "gzip, deflate"},
         )
+        self.finnhub = FinnhubClient(settings.finnhub_base_url, settings.finnhub_api_token, self.client)
 
     def register_b3_universe(self, catalog: list[dict[str, Any]]) -> None:
         companies = []
@@ -347,6 +350,7 @@ class InvestorRelationsService:
                     event = self._sec_event(payload, recent, index, company, cutoff)
                     if event:
                         events.append(event)
+                events.extend(self._finnhub_insider_events(symbol, cik, company, company_name))
             self._enrich_with_sec_fulltext(events)
             written = self.database.save_ir_events(events)
             self.database.finish_ingestion_run(run_id, "succeeded", read, written)
@@ -418,6 +422,63 @@ class InvestorRelationsService:
                     if accession:
                         matches.setdefault(accession, []).append(keyword)
         return matches
+
+    def _finnhub_insider_events(
+        self, symbol: str, cik: str, company: dict[str, Any] | None, company_name: str,
+    ) -> list[dict[str, Any]]:
+        """Recent insider buy/sell activity (Finnhub Fundamental-1 plan, US
+        market only) as its own ir_events, source_code still "sec" -- this is
+        SEC Form 3/4/5-derived data, and keeping the existing source enum
+        avoids touching the Literal["cvm","sec","ri"] type shared elsewhere.
+        Best-effort: a missing API token or any request failure returns []
+        rather than breaking sync_sec()'s submissions-based sync around it.
+        """
+        if not self.settings.finnhub_api_token:
+            return []
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=FINNHUB_INSIDER_LOOKBACK_DAYS)).date()
+        try:
+            transactions = self.finnhub.insider_transactions(symbol, since=cutoff_date)
+        except Exception:
+            return []
+        events = []
+        for transaction in transactions:
+            transaction_date = safe_date(transaction.get("transaction_date"))
+            if not transaction_date or transaction_date < cutoff_date:
+                continue
+            insider_name = clean_text(str(transaction.get("insider_name") or ""))
+            code = str(transaction.get("transaction_code") or "")
+            if not insider_name or not code:
+                continue
+            share_change = float(transaction.get("share_change") or 0)
+            action = "compra" if transaction.get("is_purchase") else "venda" if transaction.get("is_sale") else "movimentação"
+            price = transaction.get("price")
+            price_note = f" a ${price:,.2f}/ação" if price else ""
+            slug = re.sub(r"[^a-z0-9]+", "-", insider_name.lower()).strip("-")
+            published_at = datetime.combine(transaction_date, time.min, tzinfo=timezone.utc)
+            events.append({
+                "source_code": "sec",
+                "external_id": f"finnhub-insider-{symbol}-{transaction_date.isoformat()}-{slug}-{code}",
+                "company_id": company.get("id") if company else None,
+                "market": "US",
+                "symbol": symbol,
+                "company_name": company_name,
+                "regulator_id": cik,
+                "event_type": "Insider Transaction",
+                "form": "Form 4",
+                "title": f"{insider_name}: {action} de {abs(share_change):,.0f} ações",
+                "summary": f"{insider_name} ({action}) {abs(share_change):,.0f} ações{price_note} em {transaction_date.isoformat()}.",
+                "published_at": published_at,
+                "published_time_precision": "date",
+                "reference_date": transaction_date,
+                "official_url": f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}&type=4",
+                "document_url": None,
+                "materiality": "low",
+                "valuation_relevant": False,
+                "valuation_status": "informational",
+                "raw_metadata": {"source": "finnhub", **transaction},
+                "collected_at": datetime.now().astimezone(),
+            })
+        return events
 
     def sync_ri(self) -> tuple[int, int]:
         run_id = self.database.begin_ingestion_run("ri", "Issuer Investor Relations", "issuer_relations", {"operation": "official_pages"})
