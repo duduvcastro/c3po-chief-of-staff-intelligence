@@ -2775,7 +2775,6 @@ function R2D2RisingView() {
         <header className="panel-header r2d2-trades-header">
           <div><BookOpenCheck size={18} /><h2>Daily Buy / Sell Log</h2></div>
           <div className="r2d2-trade-summary" aria-label="Resumo das transações">
-            <span><b>{todayTrades.length}</b> transações hoje</span>
             <span className="positive" title="Vendas encerradas hoje com P&L realizado positivo"><b>{todayPositiveTrades}</b> positivas</span>
             <span className="negative" title="Vendas encerradas hoje com P&L realizado negativo"><b>{todayNegativeTrades}</b> negativas</span>
           </div>
