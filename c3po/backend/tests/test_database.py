@@ -92,3 +92,20 @@ def test_capture_valuation_changes_labels_nasdaq_and_nyse_by_exchange(tmp_path) 
     assert total == 3
     by_symbol = {item["symbol"]: item["market"] for item in records}
     assert by_symbol == {"AAPL": "NASDAQ", "JPM": "NYSE", "PETR4": "B3"}
+
+
+def test_ir_source_health_surfaces_finnhub_runs(tmp_path) -> None:
+    """ir_source_health() had a hardcoded {"cvm", "sec", "ri"} allowlist
+    predating the Finnhub source (db/020_ir_events_finnhub_source.sql) --
+    a "finnhub" ingestion run would silently vanish from this method,
+    leaving the Official Intelligence health card stuck on "attention"
+    forever even while the sync itself succeeded. Regression test for
+    both the in-memory and the equivalent SQL WHERE clause fix.
+    """
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+    run_id = database.begin_ingestion_run("finnhub", "Finnhub", "market_sentiment", {})
+    database.finish_ingestion_run(run_id, "succeeded", 5, 5)
+
+    health = database.ir_source_health()
+
+    assert health["finnhub"]["last_status"] == "succeeded"

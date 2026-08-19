@@ -1439,7 +1439,7 @@ class Database:
             output: dict[str, dict[str, Any]] = {}
             for run in sorted(self._ingestion_runs.values(), key=lambda item: item["started_at"]):
                 code = run.get("source_code")
-                if code not in {"cvm", "sec", "ri"}:
+                if code not in {"cvm", "sec", "ri", "finnhub"}:
                     continue
                 output[code] = {
                     "last_status": run.get("status"),
@@ -1457,7 +1457,7 @@ class Database:
                        CASE WHEN run.status = 'failed' THEN run.error_summary END
                 FROM data_sources source
                 JOIN ingestion_runs run ON run.source_id = source.id
-                WHERE source.code IN ('cvm', 'sec', 'ri')
+                WHERE source.code IN ('cvm', 'sec', 'ri', 'finnhub')
                 ORDER BY source.code, run.started_at DESC
                 """
             ).fetchall()

@@ -42,6 +42,11 @@ SEC_FULLTEXT_KEYWORDS = (
 SEC_FULLTEXT_LOOKBACK_DAYS = 14
 SEC_FULLTEXT_CIK_BATCH_SIZE = 40
 FINNHUB_INSIDER_LOOKBACK_DAYS = 90
+FINNHUB_NEWS_LOOKBACK_DAYS = 7
+FINNHUB_NEWS_KEYWORDS = (
+    "guidance", "acquisition", "merger", "earnings", "upgrade", "downgrade",
+    "lawsuit", "recall", "restructuring", "layoffs", "investigation", "buyback",
+)
 RI_KEYWORDS = (
     "resultado", "results", "earnings", "release", "fato relevante", "material fact",
     "comunicado", "guidance", "apresentacao", "presentation", "dividendo", "dividend",
@@ -207,7 +212,7 @@ class InvestorRelationsService:
         )
 
     def sync(self, source: str = "all") -> InvestorRelationsSyncResponse:
-        selected = ("cvm", "sec", "ri") if source == "all" else (source,)
+        selected = ("cvm", "sec", "ri", "finnhub") if source == "all" else (source,)
         read = 0
         written = 0
         states: dict[str, str] = {}
@@ -219,6 +224,8 @@ class InvestorRelationsService:
                     source_read, source_written = self.sync_sec()
                 elif code == "ri":
                     source_read, source_written = self.sync_ri()
+                elif code == "finnhub":
+                    source_read, source_written = self.sync_finnhub_news()
                 else:
                     raise ValueError(f"Unsupported Investor Relations source: {code}")
                 read += source_read
@@ -476,6 +483,127 @@ class InvestorRelationsService:
                 "valuation_relevant": False,
                 "valuation_status": "informational",
                 "raw_metadata": {"source": "finnhub", **transaction},
+                "collected_at": datetime.now().astimezone(),
+            })
+        return events
+
+    def sync_finnhub_news(self) -> tuple[int, int]:
+        """News sentiment (one snapshot per company per ISO week) and keyword-
+        matched company news for the same watched US companies -- source_code
+        "finnhub" (db/020_ir_events_finnhub_source.sql), separate from "sec"
+        since this isn't SEC-derived data, unlike insider transactions.
+        """
+        run_id = self.database.begin_ingestion_run("finnhub", "Finnhub", "market_sentiment", {"operation": "news_and_sentiment"})
+        try:
+            if not self.settings.finnhub_api_token:
+                self.database.finish_ingestion_run(run_id, "succeeded", 0, 0)
+                return 0, 0
+            watched = {item["symbol"]: item for item in self.database.ir_watch_symbols() if item["market"] == "US"}
+            since = (datetime.now(timezone.utc) - timedelta(days=FINNHUB_NEWS_LOOKBACK_DAYS)).date()
+            until = datetime.now(timezone.utc).date()
+            read = 0
+            events: list[dict[str, Any]] = []
+            for symbol in sorted(watched):
+                company = self._company_for_symbol("US", symbol)
+                company_name = clean_text(str(watched[symbol].get("company_name") or symbol))
+                events.extend(self._finnhub_sentiment_event(symbol, company, company_name))
+                articles = self._finnhub_news_events(symbol, company, company_name, since, until)
+                read += len(articles)
+                events.extend(articles)
+            written = self.database.save_ir_events(events)
+            self.database.finish_ingestion_run(run_id, "succeeded", read, written)
+            return read, written
+        except Exception as exc:
+            self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
+            raise
+
+    def _finnhub_sentiment_event(
+        self, symbol: str, company: dict[str, Any] | None, company_name: str,
+    ) -> list[dict[str, Any]]:
+        """One event per company per ISO week (external_id keyed by
+        year+week), so polling every 15 minutes doesn't spam the feed with
+        near-duplicate snapshots -- save_ir_events upserts on
+        (source_code, external_id), so re-running this same week just
+        refreshes the one row instead of creating a new one.
+        """
+        try:
+            sentiment = self.finnhub.news_sentiment(symbol)
+        except Exception:
+            return []
+        if not sentiment:
+            return []
+        now = datetime.now(timezone.utc)
+        iso_year, iso_week, _ = now.isocalendar()
+        bullish = sentiment["bullish_percent"]
+        bearish = sentiment["bearish_percent"]
+        return [{
+            "source_code": "finnhub",
+            "external_id": f"finnhub-sentiment-{symbol}-{iso_year}-W{iso_week:02d}",
+            "company_id": company.get("id") if company else None,
+            "market": "US",
+            "symbol": symbol,
+            "company_name": company_name,
+            "regulator_id": None,
+            "event_type": "News Sentiment",
+            "form": None,
+            "title": f"Sentimento de notícias: {bullish:.0f}% bullish",
+            "summary": (
+                f"{bullish:.0f}% bullish / {bearish:.0f}% bearish nos artigos recentes; "
+                f"{sentiment['articles_last_week']} artigos na última semana."
+            ),
+            "published_at": now,
+            "published_time_precision": "collected",
+            "reference_date": now.date(),
+            "official_url": f"https://finnhub.io/quote/{symbol}",
+            "document_url": None,
+            "materiality": "low",
+            "valuation_relevant": False,
+            "valuation_status": "informational",
+            "raw_metadata": {"source": "finnhub", **sentiment},
+            "collected_at": datetime.now().astimezone(),
+        }]
+
+    def _finnhub_news_events(
+        self, symbol: str, company: dict[str, Any] | None, company_name: str, since: date, until: date,
+    ) -> list[dict[str, Any]]:
+        """Company news filtered to FINNHUB_NEWS_KEYWORDS -- Finnhub's feed has
+        no server-side relevance filter, and ingesting every routine article
+        would flood ir_events with noise the whole system is designed to
+        avoid (see feed()'s methodology text). Same keyword-gating philosophy
+        as _enrich_with_sec_fulltext, just for a different data source.
+        """
+        try:
+            articles = self.finnhub.company_news(symbol, since=since, until=until)
+        except Exception:
+            return []
+        events = []
+        for article in articles:
+            haystack = f"{article['headline']} {article['summary']}".lower()
+            matched = [keyword for keyword in FINNHUB_NEWS_KEYWORDS if keyword in haystack]
+            if not matched:
+                continue
+            summary = (article["summary"] or article["headline"])[:500]
+            events.append({
+                "source_code": "finnhub",
+                "external_id": f"finnhub-news-{article['article_id']}",
+                "company_id": company.get("id") if company else None,
+                "market": "US",
+                "symbol": symbol,
+                "company_name": company_name,
+                "regulator_id": None,
+                "event_type": "News Mention",
+                "form": None,
+                "title": article["headline"],
+                "summary": f"{summary} (menções: {', '.join(matched)})",
+                "published_at": article["published_at"],
+                "published_time_precision": "datetime",
+                "reference_date": article["published_at"].date(),
+                "official_url": article["url"] or f"https://finnhub.io/quote/{symbol}",
+                "document_url": article["url"],
+                "materiality": "low",
+                "valuation_relevant": False,
+                "valuation_status": "informational",
+                "raw_metadata": {"source": "finnhub", "matched_keywords": matched, "article_source": article["source"]},
                 "collected_at": datetime.now().astimezone(),
             })
         return events
@@ -1168,11 +1296,17 @@ class InvestorRelationsService:
             "cvm": ("CVM Dados Abertos", "Fatos, comunicados, ITR/DFP and issuer documents"),
             "sec": ("SEC EDGAR", "US filings with real-time EDGAR acceptance timestamps"),
             "ri": ("Issuer RI", "Official issuer pages configured in the watchlist"),
+            "finnhub": ("Finnhub", "US news sentiment and company news (Fundamental-1 plan)"),
         }
         output = []
         for code, (name, detail) in definitions.items():
             state = health.get(code, {})
-            configured = code != "ri" or any(item.get("ri_url") for item in self.database.list_ir_companies())
+            if code == "ri":
+                configured = any(item.get("ri_url") for item in self.database.list_ir_companies())
+            elif code == "finnhub":
+                configured = bool(self.settings.finnhub_api_token)
+            else:
+                configured = True
             status = "unconfigured" if not configured else "healthy" if state.get("last_status") == "succeeded" else "attention"
             output.append(InvestorRelationsSourceHealth(
                 code=code,
