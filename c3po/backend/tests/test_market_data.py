@@ -778,22 +778,18 @@ def test_live_markets_prefers_eodhd_for_us_portfolio_quotes() -> None:
     assert http.calls[0]["url"].endswith("/api/real-time/AMZN.US")
 
 
-def test_nikkei_dax_shanghai_are_registered_on_eodhd_indx_symbols() -> None:
-    """Yahoo's public chart feed was showing multi-hour-stale prints for
-    these three specifically (2026-08-19); moved to EODHD's .INDX exchange,
-    same as every other already-migrated group (forex .FOREX, crypto .CC,
-    portfolio .US)."""
+def test_nikkei_dax_shanghai_stayed_on_yahoo() -> None:
+    """EODHD's .INDX symbols were tried for these three (2026-08-19) to fix
+    Yahoo's multi-hour-stale prints, then reverted the same day: EODHD's
+    .INDX responses don't include a currency field, so Nikkei/DAX displayed
+    as USD instead of JPY/EUR (see _normalize's "USD" fallback in eodhd.py).
+    Regression test so this doesn't get silently re-migrated without also
+    fixing the currency gap first."""
     by_symbol = {spec.symbol: spec for spec in LIVE_MARKET_SPECS if spec.group == "Future Index"}
 
-    assert by_symbol["Nikkei"].provider == "eodhd"
-    assert by_symbol["Nikkei"].eodhd_symbol == "N225.INDX"
-    assert by_symbol["DAX"].provider == "eodhd"
-    assert by_symbol["DAX"].eodhd_symbol == "GDAXI.INDX"
-    assert by_symbol["Shanghai"].provider == "eodhd"
-    assert by_symbol["Shanghai"].eodhd_symbol == "SSEC.INDX"
-    # E-mini futures have no EODHD .INDX equivalent -- must stay on Yahoo.
-    assert by_symbol["S&P 500 Fut."].provider == "yahoo"
-    assert by_symbol["Nasdaq Fut."].provider == "yahoo"
+    assert by_symbol["Nikkei"].provider == "yahoo"
+    assert by_symbol["DAX"].provider == "yahoo"
+    assert by_symbol["Shanghai"].provider == "yahoo"
 
 
 class SequenceHttp:

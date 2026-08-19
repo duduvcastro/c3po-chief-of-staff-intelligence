@@ -35,9 +35,9 @@ class MarketSpec:
 MARKET_SPECS = (
     MarketSpec("Future Index", "S&P 500 Fut.", "S&P 500 E-mini Futures", "ES=F", "USD"),
     MarketSpec("Future Index", "Nasdaq Fut.", "Nasdaq 100 E-mini Futures", "NQ=F", "USD"),
-    MarketSpec("Future Index", "Nikkei", "Nikkei 225", "^N225", "JPY", "eodhd", "N225.INDX"),
-    MarketSpec("Future Index", "DAX", "DAX Performance Index", "^GDAXI", "EUR", "eodhd", "GDAXI.INDX"),
-    MarketSpec("Future Index", "Shanghai", "Shanghai Composite", "000001.SS", "CNY", "eodhd", "SSEC.INDX"),
+    MarketSpec("Future Index", "Nikkei", "Nikkei 225", "^N225", "JPY"),
+    MarketSpec("Future Index", "DAX", "DAX Performance Index", "^GDAXI", "EUR"),
+    MarketSpec("Future Index", "Shanghai", "Shanghai Composite", "000001.SS", "CNY"),
     MarketSpec("Future Index", "US3Y", "US 3-Year Treasury Yield", "US3Y.GBOND", "%", "eodhd_bond", "US3Y.GBOND"),
     MarketSpec("Future Index", "US10Y", "US 10-Year Treasury Yield", "US10Y.GBOND", "%", "eodhd_bond", "US10Y.GBOND"),
     MarketSpec("Index", "IBOV", "Ibovespa B3", "^BVSP", "BRL"),
@@ -172,12 +172,13 @@ class LiveMarketsService:
         else:
             errors.append("EODHD credential unavailable; Yahoo fallback active")
 
-        # E-mini futures have no EODHD .INDX equivalent, so they stay on the
-        # public chart feed. Nikkei/DAX/Shanghai moved to EODHD's .INDX
-        # symbols (2026-08-19) -- Yahoo showed multi-hour-stale prints for
-        # these three specifically; falls back to Yahoo automatically below
-        # if a given .INDX symbol doesn't resolve (same as any other EODHD
-        # spec: see "eodhd_specs if spec.symbol not in items" a few lines down).
+        # Futures and indices remain on the public chart feed. Nikkei/DAX/
+        # Shanghai were tried on EODHD's .INDX symbols (2026-08-19) to fix
+        # Yahoo's multi-hour-stale prints; reverted the same day -- EODHD's
+        # .INDX responses don't include a currency field, so Nikkei/DAX
+        # displayed as USD instead of JPY/EUR. _fetch_eodhd still accepts
+        # .INDX symbols (harmless if unused) in case this is revisited with
+        # currency handling fixed first.
         yahoo_specs = [spec for spec in MARKET_SPECS if spec.provider == "yahoo"]
         yahoo_specs.extend(spec for spec in eodhd_specs if spec.symbol not in items)
         with ThreadPoolExecutor(max_workers=8) as executor:
