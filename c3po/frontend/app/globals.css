@@ -234,8 +234,12 @@ button { cursor: pointer; }
 .r2d2-track-totals { gap: 0 !important; }
 .r2d2-track-totals > span { display: flex; align-items: baseline; gap: 7px; padding: 0 14px; color: var(--muted); font-size: 10px; font-weight: 800; border-left: 1px solid var(--line); }
 .r2d2-track-totals strong { font-size: 18px; }
+.r2d2-track-totals em { font-size: 11px; font-style: normal; }
+.r2d2-track-totals > small { align-self: center; padding-left: 12px; color: #8a949f; font-size: 9px; font-weight: 700; white-space: nowrap; }
 .r2d2-track-positive strong { color: #16825d; }
+.r2d2-track-positive em { color: #16825d; }
 .r2d2-track-negative strong { color: #c32f27; }
+.r2d2-track-negative em { color: #c32f27; }
 .r2d2-chart { height: 232px; display: grid; grid-template-columns: 48px minmax(0, 1fr); padding: 8px 18px 16px 12px; }
 .r2d2-chart-scale { display: flex; flex-direction: column; justify-content: space-between; padding: 3px 8px 23px 0; color: #8e98a5; font-size: 9px; text-align: right; }
 .r2d2-chart-field { position: relative; min-width: 0; }
