@@ -47,6 +47,10 @@ FINNHUB_NEWS_KEYWORDS = (
     "guidance", "acquisition", "merger", "earnings", "upgrade", "downgrade",
     "lawsuit", "recall", "restructuring", "layoffs", "investigation", "buyback",
 )
+CVM_INSIDER_MOVEMENT_TYPES = {
+    "Compra", "Compra à vista", "Compra à termo",
+    "Venda", "Venda à vista", "Venda à termo",
+}
 RI_KEYWORDS = (
     "resultado", "results", "earnings", "release", "fato relevante", "material fact",
     "comunicado", "guidance", "apresentacao", "presentation", "dividendo", "dividend",
@@ -303,13 +307,113 @@ class InvestorRelationsService:
             events = [self._cvm_event(row, company_index, collected_at) for row in rows]
             events.extend(self._cvm_structured_event(row, company_index, collected_at) for row in [*itr_rows, *dfp_rows])
             events = [event for event in events if event]
+            company_by_tax_id = {item["tax_id"]: item for item in company_index.values() if item.get("tax_id")}
+            insider_rows = self._cvm_insider_transactions(year, cutoff)
+            insider_events = self._cvm_insider_events(insider_rows, company_by_tax_id)
+            events.extend(insider_events)
             written = self.database.save_ir_events(events)
-            records_read = len(rows) + len(itr_rows) + len(dfp_rows) + ri_channels_read
+            records_read = len(rows) + len(itr_rows) + len(dfp_rows) + ri_channels_read + len(insider_rows)
             self.database.finish_ingestion_run(run_id, "succeeded", records_read, written)
             return records_read, written
         except Exception as exc:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
             raise
+
+    def _cvm_insider_transactions(self, year: int, cutoff: date) -> list[dict[str, str]]:
+        """Row-level insider buy/sell disclosures -- art. 11 of CVM
+        Resolution 44, the direct B3 equivalent of SEC Form 4, and the
+        thing that actually answers "does CVM have something like
+        Finnhub's insider data" (2026-08-19). Verified live against the
+        real dataset: unlike ITR/DFP, the "con" (detail) file already
+        carries CNPJ/company name on every row, so this needs no separate
+        lookup file the way _cvm_structured_package's callers do.
+        """
+        url = f"{self.settings.cvm_data_base_url.rstrip('/')}/CIA_ABERTA/DOC/VLMO/DADOS/vlmo_cia_aberta_con_{year}.zip"
+        response = self.client.get(url)
+        if response.status_code == 404:
+            return []
+        response.raise_for_status()
+        expected = f"vlmo_cia_aberta_con_{year}.csv"
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            filename = next((name for name in archive.namelist() if name.lower() == expected.lower()), None)
+            if not filename:
+                return []
+            text = archive.read(filename).decode("latin-1")
+        rows = list(csv.DictReader(io.StringIO(text), delimiter=";"))
+        return [
+            row for row in rows
+            # "Companhia" means the disclosed securities are the reporting
+            # company's own shares -- "Controlada"/"Controladora" rows are
+            # the insider trading a *related* entity's shares, not this one.
+            if row.get("Tipo_Empresa") == "Companhia"
+            and row.get("Tipo_Movimentacao") in CVM_INSIDER_MOVEMENT_TYPES
+            and (safe_date(row.get("Data_Movimentacao")) or date.min) >= cutoff
+        ]
+
+    def _cvm_insider_events(
+        self, rows: list[dict[str, str]], company_by_tax_id: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        events = []
+        for row in rows:
+            tax_id = clean_text(row.get("CNPJ_Companhia", ""))
+            company = company_by_tax_id.get(tax_id)
+            symbols = company.get("symbols") if company else None
+            symbol = symbols[0] if symbols else None
+            if not company or not symbol:
+                continue
+            transaction_date = safe_date(row.get("Data_Movimentacao"))
+            if not transaction_date:
+                continue
+            try:
+                quantity = float(row.get("Quantidade") or 0)
+            except (TypeError, ValueError):
+                quantity = 0.0
+            if quantity <= 0:
+                continue
+            try:
+                price = float(row.get("Preco_Unitario") or 0) or None
+            except (TypeError, ValueError):
+                price = None
+            movement = clean_text(row.get("Tipo_Movimentacao", ""))
+            action = "compra" if movement.startswith("Compra") else "venda"
+            role = clean_text(row.get("Tipo_Cargo", "")) or "Pessoa ligada"
+            asset_class = clean_text(row.get("Caracteristica_Valor_Mobiliario", ""))
+            key_material = "|".join((
+                tax_id, transaction_date.isoformat(), role, movement,
+                f"{quantity:.0f}", f"{price or 0:.4f}", asset_class,
+            ))
+            external_id = f"cvm-insider-{hashlib.sha1(key_material.encode('utf-8')).hexdigest()[:16]}"
+            price_note = f" a R$ {price:.2f}/ação" if price else ""
+            events.append({
+                "source_code": "cvm",
+                "external_id": external_id,
+                "company_id": company.get("id"),
+                "market": "B3",
+                "symbol": symbol,
+                "company_name": company.get("company_name") or clean_text(row.get("Nome_Companhia", "")),
+                "regulator_id": company.get("regulator_id"),
+                "event_type": "Insider Transaction",
+                "form": "Art. 11 ICVM 44 (VLMO)",
+                "title": f"{role}: {action} de {quantity:,.0f} ações".replace(",", "."),
+                "summary": (
+                    f"{role} realizou {action} de {quantity:,.0f} ações ({asset_class}){price_note} "
+                    f"em {transaction_date.isoformat()}."
+                ).replace(",", "."),
+                "published_at": datetime.combine(transaction_date, time.min, tzinfo=SAO_PAULO),
+                "published_time_precision": "date",
+                "reference_date": transaction_date,
+                "official_url": "https://dados.cvm.gov.br/dataset/cia_aberta-doc-vlmo",
+                "document_url": None,
+                "materiality": "low",
+                "valuation_relevant": False,
+                "valuation_status": "informational",
+                "raw_metadata": {
+                    "source": "cvm_vlmo", "role": role, "movement": movement,
+                    "quantity": quantity, "price": price, "asset_class": asset_class,
+                },
+                "collected_at": datetime.now().astimezone(),
+            })
+        return events
 
     def sync_sec(self) -> tuple[int, int]:
         run_id = self.database.begin_ingestion_run("sec", "SEC EDGAR", "regulatory_disclosure", {"operation": "submissions"})

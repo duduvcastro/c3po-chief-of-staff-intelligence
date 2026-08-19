@@ -613,3 +613,120 @@ def test_sync_finnhub_news_is_a_noop_without_an_api_token(tmp_path):
 
     ir.finnhub.client = FakeClient()
     assert ir.sync_finnhub_news() == (0, 0)
+
+
+def _zip_bytes(filename: str, content: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(filename, content)
+    return buffer.getvalue()
+
+
+def _vlmo_con_csv(rows: list[str]) -> bytes:
+    header = (
+        "CNPJ_Companhia;Nome_Companhia;Data_Referencia;Versao;Tipo_Empresa;Empresa;"
+        "Tipo_Cargo;Tipo_Movimentacao;Descricao_Movimentacao;Tipo_Operacao;Tipo_Ativo;"
+        "Caracteristica_Valor_Mobiliario;Intermediario;Data_Movimentacao;Quantidade;"
+        "Preco_Unitario;Volume\n"
+    )
+    return (header + "\n".join(rows) + "\n").encode("latin-1")
+
+
+class ZipHttpResponse:
+    def __init__(self, *, status_code=200, content=b""):
+        self.status_code = status_code
+        self.content = content
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class ZipHttpClient:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def get(self, url, *args, **kwargs):
+        self.calls.append(url)
+        return self.response
+
+
+def test_cvm_insider_transactions_keeps_only_own_company_buy_sell_rows(tmp_path):
+    """Row shapes below are exactly what dados.cvm.gov.br returned for
+    vlmo_cia_aberta_con_2026.csv when checked live (2026-08-19) -- balance
+    rows (no real transaction), and rows about a *related* entity's shares
+    (Tipo_Empresa != "Companhia") must both be excluded."""
+    rows = [
+        # Real buy of the reporting company's own shares -- keep.
+        "00.001.180/0001-26;AXIA ENERGIA S.A.;2026-01-01;2;Companhia;AXIA ENERGIA S.A.;"
+        "Conselho de Administração ou Vinculado;Compra à vista;;Crédito;Ações;PNB;Itaú;"
+        "2026-01-07;7600;52.3100000000;397556.0000000000",
+        # Opening balance -- not a transaction, drop.
+        "00.000.000/0001-91;BANCO DO BRASIL S.A.;2026-01-01;1;Companhia;BCO BRASIL S.A.;"
+        "Controlador ou Vinculado;Saldo Inicial;;Crédito;Ações;ON;;;2865417084;;",
+        # Sale, but of a *related* (Controlada) entity's shares -- drop.
+        "11.111.111/0001-11;TESTE HOLDING S.A.;2026-01-01;1;Controlada;SUBSIDIARIA S.A.;"
+        "Diretor ou Vinculado;Venda à vista;;Débito;Ações;ON;XP;2026-01-10;1000;10.0000000000;10000.0000000000",
+        # Real sale, but before the cutoff -- drop.
+        "00.001.180/0001-26;AXIA ENERGIA S.A.;2025-06-01;1;Companhia;AXIA ENERGIA S.A.;"
+        "Diretor ou Vinculado;Venda à vista;;Débito;Ações;PNB;Itaú;2025-06-01;500;40.0000000000;20000.0000000000",
+    ]
+    response = ZipHttpResponse(content=_zip_bytes("vlmo_cia_aberta_con_2026.csv", _vlmo_con_csv(rows)))
+    ir, _ = service(tmp_path)
+    ir.client = ZipHttpClient(response)
+
+    result = ir._cvm_insider_transactions(2026, date(2026, 1, 1))
+
+    assert len(result) == 1
+    assert result[0]["Nome_Companhia"] == "AXIA ENERGIA S.A."
+    assert result[0]["Tipo_Movimentacao"] == "Compra à vista"
+
+
+def test_cvm_insider_transactions_returns_empty_on_404(tmp_path):
+    ir, _ = service(tmp_path)
+    ir.client = ZipHttpClient(ZipHttpResponse(status_code=404))
+
+    assert ir._cvm_insider_transactions(2099, date(2026, 1, 1)) == []
+
+
+def test_cvm_insider_events_resolves_symbol_by_cnpj_and_formats_in_portuguese(tmp_path):
+    ir, _ = service(tmp_path)
+    rows = [{
+        "CNPJ_Companhia": "00.001.180/0001-26", "Nome_Companhia": "AXIA ENERGIA S.A.",
+        "Tipo_Empresa": "Companhia", "Tipo_Cargo": "Conselho de Administração ou Vinculado",
+        "Tipo_Movimentacao": "Compra à vista", "Caracteristica_Valor_Mobiliario": "PNB",
+        "Data_Movimentacao": "2026-01-07", "Quantidade": "7600", "Preco_Unitario": "52.31",
+    }]
+    company_by_tax_id = {
+        "00.001.180/0001-26": {
+            "id": "company-1", "symbols": ["ELET3", "ELET6"],
+            "company_name": "AXIA ENERGIA S.A.", "regulator_id": "2437", "tax_id": "00.001.180/0001-26",
+        },
+    }
+
+    events = ir._cvm_insider_events(rows, company_by_tax_id)
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["source_code"] == "cvm"
+    assert event["market"] == "B3"
+    assert event["symbol"] == "ELET3"
+    assert event["event_type"] == "Insider Transaction"
+    assert event["materiality"] == "low"
+    assert event["valuation_relevant"] is False
+    assert "compra de 7.600 ações" in event["title"]
+    assert "R$ 52.31/ação" in event["summary"]
+    assert event["external_id"].startswith("cvm-insider-")
+
+
+def test_cvm_insider_events_skips_rows_with_unresolvable_cnpj(tmp_path):
+    ir, _ = service(tmp_path)
+    rows = [{
+        "CNPJ_Companhia": "99.999.999/0001-99", "Nome_Companhia": "DESCONHECIDA S.A.",
+        "Tipo_Empresa": "Companhia", "Tipo_Cargo": "Diretor ou Vinculado",
+        "Tipo_Movimentacao": "Venda à vista", "Caracteristica_Valor_Mobiliario": "ON",
+        "Data_Movimentacao": "2026-01-07", "Quantidade": "100", "Preco_Unitario": "10.00",
+    }]
+
+    assert ir._cvm_insider_events(rows, {}) == []
