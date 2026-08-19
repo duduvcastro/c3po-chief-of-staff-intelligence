@@ -2506,6 +2506,9 @@ function R2D2RisingView() {
   const todayTrades = data.trades.filter((trade) => saoPauloDateKey(trade.executed_at) === todayKey);
   const todayPositiveTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
   const todayNegativeTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
+  const lifetimeClosedTrades = data.stats.positive_transactions + data.stats.negative_transactions;
+  const lifetimePositiveShare = lifetimeClosedTrades > 0 ? data.stats.positive_transactions / lifetimeClosedTrades * 100 : 0;
+  const lifetimeNegativeShare = lifetimeClosedTrades > 0 ? data.stats.negative_transactions / lifetimeClosedTrades * 100 : 0;
   const intelligenceLog = [
     ...todayTrades.map((trade) => ({
       id: `trade-${trade.id}`,
@@ -2633,8 +2636,9 @@ function R2D2RisingView() {
           <header className="panel-header r2d2-track-header">
             <div><LineChart size={18} /><h2>Track Record</h2></div>
             <div className="r2d2-track-totals">
-              <span className="r2d2-track-positive">Positive <strong>{data.stats.positive_transactions}</strong></span>
-              <span className="r2d2-track-negative">Negative <strong>{data.stats.negative_transactions}</strong></span>
+              <span className="r2d2-track-positive">Positive <strong>{data.stats.positive_transactions}</strong><em>{lifetimePositiveShare.toFixed(1)}%</em></span>
+              <span className="r2d2-track-negative">Negative <strong>{data.stats.negative_transactions}</strong><em>{lifetimeNegativeShare.toFixed(1)}%</em></span>
+              <small>{lifetimeClosedTrades} closed trades</small>
             </div>
           </header>
           <div className="r2d2-chart" role="img" aria-label="R2D2 Rising paper portfolio track record">
@@ -3008,6 +3012,9 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   const todayTrades = r2d2?.trades.filter((trade) => saoPauloDate.format(new Date(trade.executed_at)) === todayKey) ?? [];
   const todayPositiveTransactions = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
   const todayNegativeTransactions = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
+  const todayClosedTransactions = todayPositiveTransactions + todayNegativeTransactions;
+  const todayPositiveShare = todayClosedTransactions > 0 ? todayPositiveTransactions / todayClosedTransactions * 100 : 0;
+  const todayNegativeShare = todayClosedTransactions > 0 ? todayNegativeTransactions / todayClosedTransactions * 100 : 0;
   const healthHeadline = health?.status === "healthy"
     ? "All services operational"
     : health?.status === "offline"
@@ -3025,8 +3032,8 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         </div>
         <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.nav_usd) : "—"} detail={`${r2d2?.open_positions ?? 0} open positions`} tone="gold" />
         <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}% today` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
-        <FalconMetric label="Positive Transactions" value={`${todayPositiveTransactions}`} detail="realized winning trades today" tone="green" />
-        <FalconMetric label="Negative Transactions" value={`${todayNegativeTransactions}`} detail="realized losing trades today" tone="red" />
+        <FalconMetric label="Positive Transactions" value={`${todayPositiveTransactions} · ${todayPositiveShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="green" />
+        <FalconMetric label="Negative Transactions" value={`${todayNegativeTransactions} · ${todayNegativeShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="red" />
       </section>
 
       {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => { setError(""); void loadR2D2(); void loadIndices(); }}>Retry</button></div>}
