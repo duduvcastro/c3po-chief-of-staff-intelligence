@@ -281,12 +281,39 @@ class SystemHealthService:
                 detail=detail,
                 last_update=self._format_time(provider.last_success_at) if provider.last_success_at else "No successful quote yet",
             ))
+        items.append(self._finnhub_health(now))
         return items or [IntegrationHealth(
             name="Market data APIs",
             status="offline",
             detail="No quote provider is registered",
             last_update=self._format_time(now),
         )]
+
+    def _finnhub_health(self, now: datetime) -> IntegrationHealth:
+        if not self.settings.finnhub_api_token:
+            return IntegrationHealth(
+                name="Finnhub",
+                status="offline",
+                detail="Fundamental-1 credential is not configured",
+                last_update=self._format_time(now),
+            )
+        try:
+            response = self.external_get(
+                f"{self.settings.finnhub_base_url.rstrip('/')}/api/v1/stock/insider-transactions",
+                params={"symbol": "AAPL", "token": self.settings.finnhub_api_token},
+                timeout=self.settings.system_health_external_timeout_seconds,
+                follow_redirects=True,
+                headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
+            )
+            response.raise_for_status()
+            return IntegrationHealth(
+                name="Finnhub",
+                status="healthy",
+                detail="United States · Fundamental-1 · insider transactions",
+                last_update=self._format_time(now),
+            )
+        except Exception as exc:
+            return self._offline_item("Finnhub", exc, now)
 
     def _external_services_health(self, now: datetime) -> list[IntegrationHealth]:
         return [
