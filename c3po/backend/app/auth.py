@@ -272,7 +272,10 @@ class AuthService:
         self._send_html_email(subject, body, self.settings.auth_email)
 
     def _send_html_email(self, subject: str, body: str, recipient_email: str) -> None:
-        if not self.settings.exchange_server or not self.settings.exchange_user or not self.settings.exchange_app_password:
+        server = self.settings.notification_exchange_server or self.settings.exchange_server
+        user = self.settings.notification_exchange_user or self.settings.exchange_user
+        password = self.settings.notification_exchange_app_password or self.settings.exchange_app_password
+        if not server or not user or not password:
             raise EmailDeliveryError("Exchange não está configurado para enviar a notificação.")
 
         request_body = f"""
@@ -293,10 +296,10 @@ class AuthService:
           <s:Body>{request_body}</s:Body>
         </s:Envelope>"""
         token = base64.b64encode(
-            f"{self.settings.exchange_user}:{self.settings.exchange_app_password}".encode("utf-8")
+            f"{user}:{password}".encode("utf-8")
         ).decode("ascii")
         request = urllib.request.Request(
-            f"https://{self.settings.exchange_server}/EWS/Exchange.asmx",
+            f"https://{server}/EWS/Exchange.asmx",
             data=envelope.encode("utf-8"),
             method="POST",
             headers={

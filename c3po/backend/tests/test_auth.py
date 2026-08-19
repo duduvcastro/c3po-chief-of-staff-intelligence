@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -401,6 +402,52 @@ def test_login_notification_is_sent_to_security_owner(monkeypatch) -> None:
     assert "12:30:00" in sent[0][1]
     assert "iPadOS 18.6" in sent[0][1]
     assert "Safari 18.6" in sent[0][1]
+
+
+def test_notification_mailbox_overrides_legacy_exchange_credentials(monkeypatch) -> None:
+    settings = Settings(
+        exchange_server="legacy.example.com",
+        exchange_user="eu@eduardocastro.com.br",
+        exchange_app_password="legacy-password",
+        notification_exchange_server="owa.intermedia.net",
+        notification_exchange_user="c3po@eduardocastro.com.br",
+        notification_exchange_app_password="notification-password",
+    )
+    service = AuthService(settings, Database(settings))
+    captured: dict[str, object] = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self) -> bytes:
+            return (
+                b'<m:CreateItemResponse xmlns:m="http://schemas.microsoft.com/'
+                b'exchange/services/2006/messages"><m:CreateItemResponseMessage '
+                b'ResponseClass="Success" /></m:CreateItemResponse>'
+            )
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["authorization"] = request.headers["Authorization"]
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr("app.auth.urllib.request.urlopen", fake_urlopen)
+
+    service._send_html_email("C3PO test", "Body", "recipient@example.com")
+
+    expected_token = base64.b64encode(
+        b"c3po@eduardocastro.com.br:notification-password"
+    ).decode("ascii")
+    assert captured == {
+        "url": "https://owa.intermedia.net/EWS/Exchange.asmx",
+        "authorization": f"Basic {expected_token}",
+        "timeout": 20,
+    }
 
 
 @pytest.mark.parametrize(
