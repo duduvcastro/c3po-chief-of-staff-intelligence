@@ -2632,7 +2632,9 @@ function R2D2RisingView() {
         <section className="panel r2d2-track-panel">
           <PanelHeader title="Track Record" icon={LineChart} />
           <div className="r2d2-chart-head">
-            <div><span>PORTFOLIO VALUE</span><strong>{money(data.nav_usd)}</strong></div>
+            <div className="r2d2-track-metric"><span>PORTFOLIO VALUE</span><strong>{money(data.nav_usd)}</strong></div>
+            <div className="r2d2-track-metric r2d2-track-positive"><span>POSITIVE TRANSACTIONS</span><strong>{data.stats.positive_transactions}</strong><small>since project launch</small></div>
+            <div className="r2d2-track-metric r2d2-track-negative"><span>NEGATIVE TRANSACTIONS</span><strong>{data.stats.negative_transactions}</strong><small>since project launch</small></div>
             <span className="r2d2-paper-badge">PAPER ONLY</span>
           </div>
           <div className="r2d2-chart" role="img" aria-label="R2D2 Rising paper portfolio track record">
