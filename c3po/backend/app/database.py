@@ -1077,11 +1077,17 @@ class Database:
                 existing = self._ir_events.get(key, {})
                 event_id = existing.get("id", event.get("id", str(uuid4())))
                 first_collected_at = existing.get("collected_at") or event.get("collected_at") or datetime.now().astimezone()
+                valuation_status = (
+                    existing.get("valuation_status")
+                    if existing.get("reviewed_at") or existing.get("valuation_status") == "incorporated"
+                    else event.get("valuation_status", "informational")
+                )
                 self._ir_events[key] = {
                     **existing,
                     **event,
                     "id": event_id,
                     "collected_at": first_collected_at,
+                    "valuation_status": valuation_status,
                 }
                 if event.get("valuation_relevant"):
                     market = str(event.get("market") or "").upper()
@@ -1149,7 +1155,9 @@ class Database:
                         materiality = EXCLUDED.materiality,
                         valuation_relevant = EXCLUDED.valuation_relevant,
                         valuation_status = CASE
-                            WHEN ir_events.reviewed_at IS NOT NULL THEN ir_events.valuation_status
+                            WHEN ir_events.reviewed_at IS NOT NULL
+                              OR ir_events.valuation_status = 'incorporated'
+                            THEN ir_events.valuation_status
                             ELSE EXCLUDED.valuation_status
                         END,
                         raw_metadata = EXCLUDED.raw_metadata,
@@ -1229,6 +1237,7 @@ class Database:
         *,
         succeeded: bool,
         error: str = "",
+        incorporate_events: bool = False,
     ) -> None:
         if not updates:
             return
@@ -1247,6 +1256,27 @@ class Database:
                     "last_error": error[:500],
                     "updated_at": now,
                 })
+            if succeeded and incorporate_events:
+                event_ids = {event_id for event_id, _ in keys}
+                for event_id in event_ids:
+                    event_updates = [
+                        item for item in self._ir_valuation_queue.values()
+                        if str(item.get("event_id")) == event_id
+                    ]
+                    if event_updates and all(item.get("status") == "applied" for item in event_updates):
+                        event = next(
+                            (item for item in self._ir_events.values() if str(item.get("id")) == event_id),
+                            None,
+                        )
+                        if event:
+                            event.update({
+                                "valuation_status": "incorporated",
+                                "review_note": (
+                                    event.get("review_note")
+                                    or "Automatically incorporated after successful valuation refresh."
+                                ),
+                                "updated_at": now,
+                            })
             return
         with self.connection() as connection:
             for event_id, symbol in keys:
@@ -1271,6 +1301,28 @@ class Database:
                         """,
                         (error[:500], event_id, symbol),
                     )
+            if succeeded and incorporate_events:
+                event_ids = sorted({event_id for event_id, _ in keys})
+                connection.execute(
+                    """
+                    UPDATE ir_events event
+                    SET valuation_status = 'incorporated',
+                        review_note = CASE
+                            WHEN event.review_note = ''
+                            THEN 'Automatically incorporated after successful valuation refresh.'
+                            ELSE event.review_note
+                        END,
+                        updated_at = now()
+                    WHERE event.id = ANY(%s::uuid[])
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM ir_valuation_queue queue
+                          WHERE queue.event_id = event.id
+                            AND queue.status <> 'applied'
+                      )
+                    """,
+                    (event_ids,),
+                )
             connection.commit()
 
     def queue_ir_event_for_valuation(self, event_id: str) -> int:

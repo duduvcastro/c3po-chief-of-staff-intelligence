@@ -138,11 +138,50 @@ def test_new_ir_event_is_queued_once_for_every_mapped_security(tmp_path):
     database.save_ir_events([event])
     claimed = database.claim_ir_valuation_updates()
     assert [(item["market"], item["symbol"]) for item in claimed] == [("B3", "TEST3")]
-    database.finish_ir_valuation_updates(claimed, succeeded=True)
+    database.finish_ir_valuation_updates(claimed, succeeded=True, incorporate_events=True)
+
+    incorporated = database.latest_valuation_ir_events(["TEST3"])["TEST3"]
+    assert incorporated["valuation_status"] == "incorporated"
+    assert incorporated["review_note"] == "Automatically incorporated after successful valuation refresh."
 
     database.save_ir_events([{**event, "collected_at": first_seen + timedelta(hours=1)}])
     assert database.claim_ir_valuation_updates() == []
-    assert database.latest_valuation_ir_events(["TEST3"])["TEST3"]["collected_at"] == first_seen
+    refreshed = database.latest_valuation_ir_events(["TEST3"])["TEST3"]
+    assert refreshed["collected_at"] == first_seen
+    assert refreshed["valuation_status"] == "incorporated"
+
+
+def test_ir_event_is_incorporated_only_after_every_security_is_applied(tmp_path):
+    _, database = service(tmp_path)
+    for symbol in ("TEST3", "TEST4"):
+        database.register_ir_securities([{
+            "market": "B3", "symbol": symbol, "company_name": "Companhia Teste",
+            "name_key": "COMPANHIA TESTE", "exchange": "B3",
+        }])
+    company = database.list_ir_companies("B3")[0]
+    published_at = datetime(2026, 8, 19, 12, tzinfo=timezone.utc)
+    database.save_ir_events([{
+        "source_code": "cvm", "external_id": "test-multi-security",
+        "company_id": company["id"], "market": "B3", "symbol": "TEST3",
+        "company_name": company["company_name"], "event_type": "Financial Results",
+        "title": "Resultados 2T26", "summary": "Official filing",
+        "published_at": published_at, "published_time_precision": "datetime",
+        "reference_date": date(2026, 6, 30), "official_url": "https://dados.cvm.gov.br/",
+        "document_url": None, "materiality": "high", "valuation_relevant": True,
+        "valuation_status": "pending_review", "raw_metadata": {}, "collected_at": published_at,
+    }])
+
+    claimed = database.claim_ir_valuation_updates()
+    assert {item["symbol"] for item in claimed} == {"TEST3", "TEST4"}
+    database.finish_ir_valuation_updates(
+        [claimed[0]], succeeded=True, incorporate_events=True,
+    )
+    assert database.latest_valuation_ir_events(["TEST3"])["TEST3"]["valuation_status"] == "pending_review"
+
+    database.finish_ir_valuation_updates(
+        [claimed[1]], succeeded=True, incorporate_events=True,
+    )
+    assert database.latest_valuation_ir_events(["TEST3"])["TEST3"]["valuation_status"] == "incorporated"
 
 
 def test_cvm_itr_extraction_quarterizes_ytd_and_scales_thousands():

@@ -33,7 +33,11 @@ class InvestorRelationsValuationProcessor:
                 failed_symbols = set(result["missing"])
                 succeeded = [item for item in b3_updates if item["symbol"] not in failed_symbols]
                 failed_updates = [item for item in b3_updates if item["symbol"] in failed_symbols]
-                self.database.finish_ir_valuation_updates(succeeded, succeeded=True)
+                self.database.finish_ir_valuation_updates(
+                    succeeded,
+                    succeeded=True,
+                    incorporate_events=True,
+                )
                 self.database.finish_ir_valuation_updates(
                     failed_updates,
                     succeeded=False,
