@@ -2637,7 +2637,7 @@ function R2D2RisingView() {
   const LEARNING_MAX_BAR_WIDTH = 34;
   const LEARNING_GAP = 12;
   const LEARNING_PLOT_LEFT = 34;
-  const LEARNING_PLOT_TOP = 10;
+  const LEARNING_PLOT_TOP = 26;
   const LEARNING_PLOT_HEIGHT = 150;
   const LEARNING_CHART_HEIGHT = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 28;
   // Bars stretch to fill the panel's full width (growing toward the right edge as
@@ -2857,7 +2857,7 @@ function R2D2RisingView() {
               width={learningChartWidth}
               height={LEARNING_CHART_HEIGHT}
               role="img"
-              aria-label="Curva de aprendizado: percentual diário de operações positivas, com linha de mediana"
+              aria-label="Curva de aprendizado: percentual diário de operações positivas, com linha de média móvel de 3 dias"
             >
               {[0, 25, 50, 75, 100].map((tick) => {
                 const y = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (tick / 100) * LEARNING_PLOT_HEIGHT;
@@ -2898,12 +2898,11 @@ function R2D2RisingView() {
                 </circle>
               ))}
               {learningMovingAveragePoints.length ? (
-                <text
-                  x={learningMovingAveragePoints[learningMovingAveragePoints.length - 1].x}
-                  y={learningMovingAveragePoints[learningMovingAveragePoints.length - 1].y - 8}
-                  textAnchor="middle"
-                  className="r2d2-learning-ma-label"
-                >{`MM3 ${learningLastMovingAverage.toFixed(1)}%`}</text>
+                <g>
+                  <rect x={learningChartWidth - 104} y={4} width={100} height={18} rx={9} className="r2d2-learning-ma-badge" />
+                  <circle cx={learningChartWidth - 92} cy={13} r={3.5} className="r2d2-learning-ma-dot" />
+                  <text x={learningChartWidth - 84} y={13} className="r2d2-learning-ma-label">{`MM3 ${learningLastMovingAverage.toFixed(1)}%`}</text>
+                </g>
               ) : null}
             </svg>
           ) : (
