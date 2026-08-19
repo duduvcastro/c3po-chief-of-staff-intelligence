@@ -22,6 +22,7 @@ from . import r2d2_strategy
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
+    R2D2LearningCurvePoint,
     R2D2LearningState,
     R2D2Position,
     R2D2SummaryStats,
@@ -625,6 +626,57 @@ class R2D2Repository:
             (int(value or 0) for value in (row or (0, 0, 0))),
         ))
 
+    def daily_learning_curve(self, experiment_id: str) -> list[dict[str, Any]]:
+        """One row per session day with at least one closed (SELL, realized)
+        trade: how many closed positive vs negative -- the "Learning Curve"
+        chart's raw material. Deliberately NOT derived from trades()/limit=250
+        (which only covers the last ~1-2 days at real trading volume); this
+        aggregates the full r2d2_trades history so the chart still works
+        after weeks/months, the same way track_record does via a separate
+        query rather than the capped trades list. Corrected/phantom trades
+        excluded, same as trade_summary().
+        """
+        if not self.database.database_url:
+            trades = [
+                item for item in self.memory["trades"]
+                if item.get("experiment_id") == experiment_id and not _trade_is_corrected(item)
+            ]
+            buckets: dict[date, dict[str, int]] = {}
+            for item in trades:
+                pnl = item.get("realized_pnl_usd")
+                if pnl is None:
+                    continue
+                executed_at = item.get("executed_at")
+                if not isinstance(executed_at, datetime):
+                    continue
+                session_date = executed_at.astimezone(SAO_PAULO).date()
+                bucket = buckets.setdefault(session_date, {"positive": 0, "negative": 0})
+                if _float(pnl) > 0:
+                    bucket["positive"] += 1
+                elif _float(pnl) < 0:
+                    bucket["negative"] += 1
+            return [
+                {"session_date": session_date, "positive": bucket["positive"], "negative": bucket["negative"]}
+                for session_date, bucket in sorted(buckets.items())
+                if bucket["positive"] + bucket["negative"] > 0
+            ]
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """SELECT (executed_at AT TIME ZONE 'America/Sao_Paulo')::date AS session_date,
+                          COUNT(*) FILTER (WHERE realized_pnl_usd > 0),
+                          COUNT(*) FILTER (WHERE realized_pnl_usd < 0)
+                   FROM r2d2_trades
+                   WHERE experiment_id=%s AND realized_pnl_usd IS NOT NULL
+                     AND NOT (decision_snapshot ? 'correction')
+                   GROUP BY session_date
+                   ORDER BY session_date""",
+                (experiment_id,),
+            ).fetchall()
+        return [
+            {"session_date": row[0], "positive": int(row[1] or 0), "negative": int(row[2] or 0)}
+            for row in rows
+        ]
+
     def learning_states(self, experiment_id: str) -> list[dict[str, Any]]:
         if not self.database.database_url:
             return [dict(item) for item in self.memory["learning"]]
@@ -931,6 +983,7 @@ class R2D2PaperService:
         positives = sum(_float(row["daily_return_percent"]) > 0 for row in closed)
         negatives = sum(_float(row["daily_return_percent"]) < 0 for row in closed)
         trade_summary = self.repo.trade_summary(experiment["id"])
+        learning_curve_rows = self.repo.daily_learning_curve(experiment["id"])
         stats = R2D2SummaryStats(
             closed_days=len(closed), positive_days=positives,
             above_half_percent_days=sum(_float(row["daily_return_percent"]) >= 0.5 for row in closed),
@@ -1004,7 +1057,13 @@ class R2D2PaperService:
                 session_date=row["session_date"].isoformat(), nav_usd=_float(row["nav_usd"]),
                 daily_pnl_usd=_float(row["daily_pnl_usd"]), daily_return_percent=_float(row["daily_return_percent"]),
                 is_final=bool(row["is_final"]),
-            ) for row in snapshots], positions=position_models, trades=trades,
+            ) for row in snapshots],
+            learning_curve=[R2D2LearningCurvePoint(
+                session_date=row["session_date"].isoformat(),
+                positive_percent=round(row["positive"] / (row["positive"] + row["negative"]) * 100, 1),
+                positive_trades=row["positive"], negative_trades=row["negative"],
+            ) for row in learning_curve_rows],
+            positions=position_models, trades=trades,
             last_cycle=R2D2CycleStatus(**last_cycle) if last_cycle else None,
             learning=R2D2LearningState(
                 version=int(learning["version"]), effective_date=learning["effective_date"].isoformat(),

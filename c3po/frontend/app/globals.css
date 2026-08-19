@@ -367,6 +367,23 @@ button { cursor: pointer; }
 .r2d2-allocation-legend small { margin-top: 2px; color: var(--muted); font-size: 8px; }
 .r2d2-allocation-legend span { color: #46515e; font-size: 9px; white-space: nowrap; }
 .r2d2-allocation-legend b { color: #20262e; font-size: 10px; text-align: right; }
+.r2d2-learning-header { min-height: 58px; flex-wrap: wrap; row-gap: 8px; }
+.r2d2-learning-summary { display: flex; align-items: center; gap: 0; }
+.r2d2-learning-summary span { display: flex; align-items: baseline; gap: 6px; padding: 0 14px; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; border-left: 1px solid var(--line); }
+.r2d2-learning-summary span:first-child { padding-left: 0; border-left: 0; }
+.r2d2-learning-summary strong { color: #20262e; font-size: 15px; }
+.r2d2-learning-summary small { padding-left: 14px; color: #8a949f; font-size: 9px; font-weight: 800; text-transform: uppercase; white-space: nowrap; border-left: 1px solid var(--line); }
+.r2d2-learning-trend-positive { color: var(--green); }
+.r2d2-learning-trend-negative { color: var(--red); }
+.r2d2-learning-trend-neutral { color: #8a949f; }
+.r2d2-learning-scroll { overflow-x: auto; padding: 18px 18px 14px; }
+.r2d2-learning-svg { display: block; overflow: visible; }
+.r2d2-learning-grid { stroke: #e5e9ed; stroke-width: 1; stroke-dasharray: 4 5; }
+.r2d2-learning-tick, .r2d2-learning-axis-label { fill: #8e98a5; font-size: 8px; }
+.r2d2-learning-bar-positive { fill: var(--green); }
+.r2d2-learning-bar-negative { fill: var(--red); }
+.r2d2-learning-median { stroke: var(--purple); stroke-width: 1.6; stroke-dasharray: 6 4; }
+.r2d2-learning-median-label { fill: var(--purple); font-size: 9px; font-weight: 800; }
 .r2d2-trade-head, .r2d2-trade-row { display: grid; grid-template-columns: .7fr .44fr .58fr .5fr .58fr .88fr .82fr minmax(220px, 2fr); align-items: center; column-gap: 9px; padding-right: 16px; padding-left: 16px; }
 .r2d2-trade-head { min-height: 38px; color: #89929d; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 8px; font-weight: 800; text-transform: uppercase; }
 .r2d2-trade-row { min-height: 62px; border-bottom: 1px solid var(--line); font-size: 9px; }
