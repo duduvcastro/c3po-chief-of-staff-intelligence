@@ -7,6 +7,7 @@ from app.cvm_fundamentals import extract_itr_official_fundamentals
 from app.database import Database
 from app.investor_relations import (
     RI_URL_OVERRIDES,
+    SEC_FULLTEXT_KEYWORDS,
     LinkCollector,
     InvestorRelationsService,
     is_ri_navigation_link,
@@ -311,3 +312,123 @@ def test_regulatory_event_drives_freshness_gate_and_pdf(tmp_path):
     assert feed.items[0].company_name == company["company_name"]
     pdf = ir.pdf.render(feed)
     assert pdf.read_bytes().startswith(b"%PDF")
+
+
+def test_sec_fulltext_matches_aggregates_keywords_per_accession(tmp_path):
+    ir, _ = service(tmp_path)
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, hits):
+            self._hits = hits
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"hits": {"hits": self._hits}}
+
+    class FakeClient:
+        def get(self, url, params=None):
+            calls.append(params)
+            keyword = (params or {}).get("q", "")
+            if keyword == '"guidance"':
+                return FakeResponse([{"_id": "0001234567-26-000111:ex99.htm"}])
+            if keyword == '"acquisition"':
+                return FakeResponse([{"_id": "0001234567-26-000111:ex99.htm"}, {"_id": "0009999999-26-000222:8k.htm"}])
+            return FakeResponse([])
+
+    ir.client = FakeClient()
+    matches = ir._sec_fulltext_matches(["0001234567"], date(2026, 8, 1))
+
+    assert matches == {
+        "0001234567-26-000111": ["guidance", "acquisition"],
+        "0009999999-26-000222": ["acquisition"],
+    }
+    # One request per keyword, all scoped to the given CIK -- confirms the
+    # ciks filter (not just the keyword) is actually sent.
+    assert len(calls) == len(SEC_FULLTEXT_KEYWORDS)
+    assert all(call["ciks"] == "0001234567" for call in calls)
+
+
+def test_sec_fulltext_matches_zero_pads_unpadded_ciks(tmp_path):
+    """EDGAR full-text search matches CIKs by their exact zero-padded (10-digit)
+    stored form -- an unpadded CIK doesn't error, it silently matches nothing
+    (confirmed against the live API). _enrich_with_sec_fulltext must pad
+    event["regulator_id"] before querying, or every match silently vanishes.
+    """
+    captured_ciks = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"hits": {"hits": []}}
+
+    class FakeClient:
+        def get(self, url, params=None):
+            captured_ciks.append((params or {}).get("ciks"))
+            return FakeResponse()
+
+    ir, _ = service(tmp_path)
+    ir.client = FakeClient()
+    ir._sec_fulltext_matches(["320193"], date(2026, 8, 1))
+
+    assert captured_ciks and all(ciks == "320193" for ciks in captured_ciks)
+    # _sec_fulltext_matches itself does no padding -- that's _enrich_with_sec_fulltext's
+    # job, exercised below, so a caller must pad before calling this directly.
+
+
+def test_enrich_with_sec_fulltext_pads_cik_and_skips_stale_events(tmp_path):
+    ir, _ = service(tmp_path)
+    now = datetime.now(timezone.utc)
+    fresh_event = {
+        "external_id": "0001234567-26-000111", "regulator_id": "1234567",
+        "published_at": now - timedelta(days=1), "summary": "SEC form 8-K",
+        "raw_metadata": {},
+    }
+    stale_event = {
+        "external_id": "0009999999-26-000222", "regulator_id": "9999999",
+        "published_at": now - timedelta(days=90), "summary": "SEC form 10-K",
+        "raw_metadata": {},
+    }
+    events = [fresh_event, stale_event]
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"hits": {"hits": [{"_id": "0001234567-26-000111:ex99.htm"}]}}
+
+    class FakeClient:
+        def get(self, url, params=None):
+            assert params["ciks"] == "0001234567"
+            return FakeResponse()
+
+    ir.client = FakeClient()
+    ir._enrich_with_sec_fulltext(events)
+
+    assert "Menções:" in fresh_event["summary"]
+    assert fresh_event["raw_metadata"]["fulltext_keywords"]
+    assert stale_event["summary"] == "SEC form 10-K"
+    assert stale_event["raw_metadata"] == {}
+
+
+def test_enrich_with_sec_fulltext_is_best_effort_on_failure(tmp_path):
+    ir, _ = service(tmp_path)
+    event = {
+        "external_id": "0001234567-26-000111", "regulator_id": "1234567",
+        "published_at": datetime.now(timezone.utc), "summary": "SEC form 8-K",
+        "raw_metadata": {},
+    }
+
+    class FakeClient:
+        def get(self, url, params=None):
+            raise RuntimeError("EDGAR is down")
+
+    ir.client = FakeClient()
+    ir._enrich_with_sec_fulltext([event])
+
+    assert event["summary"] == "SEC form 8-K"
