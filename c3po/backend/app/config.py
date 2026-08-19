@@ -41,6 +41,21 @@ class Settings(BaseSettings):
     exchange_server: str = Field(default="", validation_alias=AliasChoices("C3PO_EXCHANGE_SERVER", "EXCHANGE_SERVER"))
     exchange_user: str = Field(default="", validation_alias=AliasChoices("C3PO_EXCHANGE_USER", "EXCHANGE_USER"))
     exchange_app_password: str = Field(default="", validation_alias=AliasChoices("C3PO_EXCHANGE_APP_PASSWORD", "EXCHANGE_APP_PASSWORD"))
+    notification_exchange_server: str = Field(
+        default="",
+        validation_alias=AliasChoices("C3PO_NOTIFICATION_EXCHANGE_SERVER", "NOTIFICATION_EXCHANGE_SERVER"),
+    )
+    notification_exchange_user: str = Field(
+        default="",
+        validation_alias=AliasChoices("C3PO_NOTIFICATION_EXCHANGE_USER", "NOTIFICATION_EXCHANGE_USER"),
+    )
+    notification_exchange_app_password: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "C3PO_NOTIFICATION_EXCHANGE_APP_PASSWORD",
+            "NOTIFICATION_EXCHANGE_APP_PASSWORD",
+        ),
+    )
     pluggy_base_url: str = Field(default="https://api.pluggy.ai", validation_alias=AliasChoices("C3PO_PLUGGY_BASE_URL", "PLUGGY_BASE_URL"))
     pluggy_client_id: str = Field(default="", validation_alias=AliasChoices("C3PO_PLUGGY_CLIENT_ID", "PLUGGY_CLIENT_ID"))
     pluggy_client_secret: str = Field(default="", validation_alias=AliasChoices("C3PO_PLUGGY_CLIENT_SECRET", "PLUGGY_CLIENT_SECRET"))
