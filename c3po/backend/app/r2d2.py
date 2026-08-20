@@ -35,7 +35,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
-METHODOLOGY_VERSION = "R2D2-HYBRID-V20-TURTLE-CHANDELIER-RISK-SIZING"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V21-END-OF-DAY-TACTICAL-EXIT"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
 MIN_HOLD_MINUTES = 5
 ROTATION_MIN_HOLD_MINUTES = 10
@@ -1116,6 +1116,20 @@ class R2D2PaperService:
         return markets
 
     @staticmethod
+    def _minutes_to_us_close(market: str, now: datetime) -> float | None:
+        """Minutes remaining until this cycle stops scanning NASDAQ/NYSE
+        (open_markets' 15:50 ET cutoff), or None outside that session/market.
+        """
+        if market not in ACTIVE_MARKETS:
+            return None
+        us = now.astimezone(NEW_YORK)
+        if us.weekday() >= 5:
+            return None
+        close = datetime.combine(us.date(), time(15, 50), tzinfo=NEW_YORK)
+        remaining = (close - us).total_seconds() / 60
+        return remaining if 0 <= remaining else None
+
+    @staticmethod
     def _b3_session_open(now: datetime) -> bool:
         local = now.astimezone(SAO_PAULO)
         return local.weekday() < 5 and time(10, 10) <= local.time() <= time(17, 50)
@@ -1589,6 +1603,7 @@ class R2D2PaperService:
                 stop_price=_float(position["stop_price_local"]),
                 max_position_loss_percent=self.settings.r2d2_max_position_loss_percent,
                 soft_loss_exit_percent=self.settings.r2d2_soft_loss_exit_percent,
+                minutes_to_close=self._minutes_to_us_close(position["market"], now),
             )
             reason = exit_result.reason
             sell_fraction = exit_result.sell_fraction

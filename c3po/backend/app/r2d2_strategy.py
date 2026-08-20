@@ -30,7 +30,7 @@ from typing import Any
 # Constants (mirrors the module-level constants in r2d2.py as of V16)
 # ---------------------------------------------------------------------------
 
-METHODOLOGY_VERSION = "R2D2-HYBRID-V20-TURTLE-CHANDELIER-RISK-SIZING"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V21-END-OF-DAY-TACTICAL-EXIT"
 
 RISK_BUDGET_PERCENT = 0.03  # % of NAV risked per trade (Turtle-style; backtested vs. 0.06/0.09)
 
@@ -47,6 +47,7 @@ MIN_INTRADAY_EDGE_PERCENT = 0.55
 FAILED_ENTRY_MINUTES = 3
 FAILED_ENTRY_LOSS_PERCENT = 0.30
 GAIN_PROTECTION_MIN_PERCENT = 0.15
+END_OF_DAY_EXIT_WINDOW_MINUTES = 15
 
 # Defaults for settings that live on Settings() in production.
 DEFAULT_MAX_POSITION_LOSS_PERCENT = 0.65  # hard stop
@@ -558,6 +559,7 @@ def exit_decision(
     soft_loss_exit_percent: float = DEFAULT_SOFT_LOSS_EXIT_PERCENT,
     profit_lock_floor_percent: float = PROFIT_LOCK_FLOOR_PERCENT,
     profit_pullback_percent: float = PROFIT_PULLBACK_PERCENT,
+    minutes_to_close: float | None = None,
 ) -> tuple[ExitDecision, PositionRiskState]:
     """Faithful port of the elif cascade in ``_mark_and_exit``.
 
@@ -632,6 +634,19 @@ def exit_decision(
 
     if quote_price <= hard_stop:
         reason = f"Immediate hard stop at {pnl_pct:+.2f}%; max position-loss policy is {effective_max_loss_percent:.2f}% (base {max_position_loss_percent:.2f}%, ATR-adjusted)."
+    elif (
+        minutes_to_close is not None and minutes_to_close <= END_OF_DAY_EXIT_WINDOW_MINUTES
+        and not weekly_conviction_state["active"] and pnl_pct > 0
+    ):
+        # A tactical (non-weekly-conviction) position was never meant to be
+        # held overnight -- realize the win now instead of carrying gap risk
+        # into tomorrow's open for no reason. Positions under weekly
+        # conviction are explicitly meant to cross sessions and are left to
+        # their own harvest/lock mechanism above and below this branch.
+        reason = (
+            f"End-of-day tactical exit at {pnl_pct:+.2f}% with {minutes_to_close:.0f} minutes to close: "
+            "not a weekly-conviction hold, so the gain is realized instead of carried overnight."
+        )
     elif held_minutes >= FAILED_ENTRY_MINUTES and pnl_pct <= -FAILED_ENTRY_LOSS_PERCENT and failed_entry_votes >= 3:
         reason = f"Failed-entry fast exit at {pnl_pct:+.2f}% after {held_minutes:.1f} minutes: {failed_entry_votes}/5 live timing signals invalidated the setup."
     elif defense["critical"]:

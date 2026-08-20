@@ -143,6 +143,56 @@ def test_exit_decision_holds_when_nothing_triggers():
     assert decision.reason is None
 
 
+def _end_of_day_scenario(**overrides):
+    technical = {"atr": 1.0, "atr_percent": 1.0, "vwap": 99.0, "ema8": 99.0, "ema20": 98.0,
+                 "momentum15": 0.2, "momentum30": 0.2, "macd_histogram": 0.1,
+                 "macd_acceleration": 0.1, "price_structure": "range", "score": 55.0}
+    kwargs = dict(
+        technical=technical, quote_price=100.5, average_cost=100.0, high_water=100.5,
+        held_minutes=20.0, day_change=0.5, market_change=0.0,
+        state=strategy.PositionRiskState(), weekly_conviction_state={"active": False},
+        stop_price=99.0, max_position_loss_percent=0.65, minutes_to_close=10.0,
+    )
+    kwargs.update(overrides)
+    return strategy.exit_decision(**kwargs)
+
+
+def test_exit_decision_realizes_a_tactical_gain_near_the_close():
+    """2026-08-20: a non-weekly-conviction position was never meant to be
+    held overnight -- realize a small gain near close instead of carrying
+    gap risk into tomorrow for no reason."""
+    decision, _state = _end_of_day_scenario()
+    assert decision.reason is not None
+    assert "End-of-day tactical exit" in decision.reason
+
+
+def test_exit_decision_leaves_weekly_conviction_positions_alone_near_the_close():
+    """Weekly-conviction positions are explicitly meant to cross sessions --
+    the end-of-day rule must not override that mechanism."""
+    decision, _state = _end_of_day_scenario(weekly_conviction_state={"active": True})
+    assert decision.reason is None
+
+
+def test_exit_decision_does_not_force_a_loss_at_the_close():
+    """The end-of-day rule only realizes gains -- a position still underwater
+    isn't forced to sell just because the session is ending; the normal loss
+    cascade (or holding into tomorrow) still applies."""
+    decision, _state = _end_of_day_scenario(quote_price=99.9)
+    assert decision.reason is None
+
+
+def test_exit_decision_ignores_the_close_when_minutes_to_close_is_none():
+    """B3 positions (and any caller that doesn't pass minutes_to_close) must
+    not be affected by this NASDAQ/NYSE-specific rule."""
+    decision, _state = _end_of_day_scenario(minutes_to_close=None)
+    assert decision.reason is None
+
+
+def test_exit_decision_does_not_fire_the_close_rule_too_early():
+    decision, _state = _end_of_day_scenario(minutes_to_close=45.0)
+    assert decision.reason is None
+
+
 def _armed_profit_lock_scenario(**overrides):
     technical = {"atr": 1.0, "atr_percent": 1.0, "vwap": 100.4, "ema8": 100.5, "ema20": 100.3,
                  "momentum15": 0.0, "momentum30": 0.0, "macd_histogram": 0.1,
