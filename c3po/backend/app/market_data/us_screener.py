@@ -230,6 +230,7 @@ class USScreeningService:
         risk_free_rate = self.one_pagers._us_risk_free_rate()
         peer_medians = self.one_pagers._us_peer_medians(fundamentals)
         self._peer_medians[market] = peer_medians
+        fmp_consensus_data = self.one_pagers._fmp_consensus_batch(symbols)
         rows: list[dict[str, Any]] = []
         for cash_volume, quote, metadata in selected:
             symbol = quote.symbol
@@ -248,6 +249,7 @@ class USScreeningService:
             if size is None or size < minimum_size:
                 audit["market_cap_gate"] += 1
                 continue
+            fmp_consensus, fmp_summary = fmp_consensus_data.get(symbol, (None, None))
             try:
                 row = (
                     self._analyze_etf(market, quote.model_dump(), fundamental, history, cash_volume)
@@ -258,6 +260,8 @@ class USScreeningService:
                         news_sentiment=news_sentiment.get(symbol),
                         risk_free_rate=risk_free_rate,
                         peer_medians=peer_medians,
+                        fmp_consensus=fmp_consensus,
+                        fmp_summary=fmp_summary,
                     )
                 )
             except Exception:
@@ -303,6 +307,8 @@ class USScreeningService:
         news_sentiment: dict[str, Any] | None = None,
         risk_free_rate: float | None = None,
         peer_medians: dict[str, dict[str, float]] | None = None,
+        fmp_consensus: dict[str, float] | None = None,
+        fmp_summary: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         symbol = str(quote["symbol"])
         analysis = self.one_pagers._analyze(
@@ -311,6 +317,8 @@ class USScreeningService:
             news_sentiment=news_sentiment,
             risk_free_rate=risk_free_rate,
             peer_medians=peer_medians,
+            fmp_consensus=fmp_consensus,
+            fmp_summary=fmp_summary,
         )
         methods = {str(key): float(value) for key, value in analysis["methods"].items() if positive(value)}
         consensus = positive(analysis.get("consensus_tp"))

@@ -466,6 +466,15 @@ def test_us_risk_free_rate_caches_and_falls_back_when_the_feed_is_unavailable(tm
     assert second == 0.099  # cache hit, no re-fetch
 
 
+def test_fmp_consensus_data_and_batch_skip_the_network_call_without_a_configured_token(tmp_path) -> None:
+    service = service_for(tmp_path)
+    assert service.settings.fmp_api_token == ""
+
+    assert service._fmp_consensus_data("JPM") == (None, None)
+    assert service._fmp_consensus_batch(["JPM", "AAPL"]) == {}
+    assert service._fmp_consensus_batch([]) == {}
+
+
 def test_valuation_profile_does_not_pool_banks_with_diversified_financials() -> None:
     """Root-caused 2026-08-20 (production incident): the bare "financial"
     keyword matched EODHD's sector name for the whole Financial Services

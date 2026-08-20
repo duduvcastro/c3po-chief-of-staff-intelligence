@@ -18,9 +18,13 @@ class DummyOnePagers:
     def _us_peer_medians(self, fundamentals_by_symbol):
         return {}
 
+    def _fmp_consensus_batch(self, symbols):
+        return {}
+
     def _analyze(
         self, symbol, market, quote, fundamentals, history, *,
         insider_activity=None, news_sentiment=None, risk_free_rate=None, peer_medians=None,
+        fmp_consensus=None, fmp_summary=None,
     ):
         return {
             "c3po_tp": 145.0,
