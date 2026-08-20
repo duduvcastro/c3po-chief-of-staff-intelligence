@@ -51,7 +51,7 @@ SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
 MIN_INTRADAY_EDGE_PERCENT = 0.55
 FAILED_ENTRY_MINUTES = 3
 FAILED_ENTRY_LOSS_PERCENT = 0.30
-US_STOCK_SHORTLIST_PER_MARKET = 300
+US_STOCK_SHORTLIST_PER_MARKET = {"NASDAQ": 550, "NYSE": 950}
 US_ETF_SHORTLIST_PER_MARKET = 50
 US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
 BASE_ENTRY_POLICY = {
@@ -1662,7 +1662,7 @@ class R2D2PaperService:
             (item for item in eligible if item[1] == "Stock"),
             key=rank_key,
             reverse=True,
-        )[:US_STOCK_SHORTLIST_PER_MARKET]
+        )[:US_STOCK_SHORTLIST_PER_MARKET.get(market, 550)]
         etfs = sorted(
             (item for item in eligible if item[1] == "ETF"),
             key=rank_key,
