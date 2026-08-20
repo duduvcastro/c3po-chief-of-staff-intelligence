@@ -314,6 +314,38 @@ def test_r2d2_rotation_never_displaces_stable_top_ranked_core() -> None:
         assert stats["rotating_count"] == 2
 
 
+def test_r2d2_core_identity_survives_rank_changes_between_cycles() -> None:
+    service = _service()
+    service.settings.r2d2_ws_rotation_grace_cycles = 1
+    service.settings.r2d2_ws_rotation_core_percent = 50.0
+    candidates = [
+        {
+            "market": "NASDAQ",
+            "symbol": f"Q{index}",
+            "fundamental_score": 80.0 - index,
+            "pretrade_rank": 100.0 - index,
+        }
+        for index in range(8)
+    ]
+
+    first, first_stats = service._rotating_ws_batch(candidates, 4)
+    assert [item["symbol"] for item in first[:2]] == ["Q0", "Q1"]
+    assert first_stats["core_retained_count"] == 0
+    assert first_stats["core_replaced_count"] == 2
+
+    # A fresh ranking would previously rebuild the core as Q7/Q6 and evict
+    # both subscriptions before they had time to accumulate live bars.
+    reranked = [
+        {**item, "pretrade_rank": float(index)}
+        for index, item in enumerate(candidates)
+    ]
+    second, second_stats = service._rotating_ws_batch(reranked, 4)
+
+    assert [item["symbol"] for item in second[:2]] == ["Q0", "Q1"]
+    assert second_stats["core_retained_count"] == 2
+    assert second_stats["core_replaced_count"] == 0
+
+
 def test_r2d2_position_sizing_is_risk_normalized_not_conviction_scored() -> None:
     """Replaced 2026-08-20: sizing is now Turtle-style risk-normalized -- a
     flat RISK_BUDGET_PERCENT of NAV, sized inversely to the ATR-derived stop
