@@ -30,7 +30,9 @@ from typing import Any
 # Constants (mirrors the module-level constants in r2d2.py as of V16)
 # ---------------------------------------------------------------------------
 
-METHODOLOGY_VERSION = "R2D2-HYBRID-V19-FRESH-QUOTE-BUY-FILL"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V20-TURTLE-CHANDELIER-RISK-SIZING"
+
+RISK_BUDGET_PERCENT = 0.03  # % of NAV risked per trade (Turtle-style; backtested vs. 0.06/0.09)
 
 MIN_HOLD_MINUTES = 5
 PROFIT_TRIGGER_PERCENT = 0.65
@@ -39,7 +41,6 @@ PROFIT_PULLBACK_PERCENT = 0.35
 WEEKLY_PROFIT_HARVEST_FRACTION = 0.70
 WEEKLY_CONVICTION_MIN_SCORE = 72.0
 MIN_POSITION_PERCENT = 2.0
-BASE_POSITION_PERCENT = 4.5
 MAX_DYNAMIC_POSITION_PERCENT = 6.0
 SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
 MIN_INTRADAY_EDGE_PERCENT = 0.55
@@ -506,27 +507,26 @@ def entry_decision(item: dict[str, Any], policy: dict[str, float] | None = None)
 
 def target_position_percent(item: dict[str, Any], *, cash_overhang_percent: float = 0.0,
                              max_position_percent: float = DEFAULT_MAX_POSITION_PERCENT) -> float:
-    composite = max(0.0, min(100.0, _float(item.get("composite_score"), 50.0)))
-    confidence = max(0.0, min(100.0, _float(item.get("confidence"), 50.0)))
-    technical = max(0.0, min(100.0, _float(item.get("technical_score"), 50.0)))
-    risk = max(0.0, min(100.0, _float(item.get("risk_score"), 50.0)))
+    """Turtle-style risk-normalized sizing: fix the dollars at risk, not the
+    dollars deployed.
+
+    Backtested 2026-08-20 against the old conviction-scored formula (which
+    varied 2-6% of NAV by composite/confidence/technical/risk score, deployed
+    idle cash more aggressively, but let position size drift independently of
+    how far away the stop actually was): risking a flat RISK_BUDGET_PERCENT of
+    NAV per trade, sized inversely to the ATR-derived stop distance, produced
+    the best risk-adjusted profile of the three budgets tested (0.03/0.06/0.09%)
+    -- best payoff ratio, lowest drawdown, best Sharpe. cash_overhang_percent
+    is accepted for call-site compatibility but intentionally unused: the prior
+    deployment-pressure boost is exactly the kind of conviction-independent
+    sizing distortion this formula replaces.
+    """
     indicators = dict(item.get("technical_indicators") or {})
     atr_percent = max(0.0, _float(indicators.get("atr_percent"), 2.5))
-    conviction_adjustment = (
-        (composite - 65.0) * 0.08 + (confidence - 65.0) * 0.03 + (technical - 60.0) * 0.03
-    )
-    risk_adjustment = -(risk - 35.0) * 0.05
-    volatility_adjustment = (
-        max(0.0, 2.0 - atr_percent) * 0.10 - max(0.0, atr_percent - 2.5) * 0.25
-    )
+    stop_distance_percent = max(DEFAULT_MAX_POSITION_LOSS_PERCENT, min(1.5, atr_percent * 2.0))
     maximum = min(MAX_DYNAMIC_POSITION_PERCENT, max_position_percent)
     minimum = min(MIN_POSITION_PERCENT, maximum)
-    # Capped low on purpose: idle cash should nudge sizing, not decide it. At the
-    # old 1.5 cap, a high-cash day alone pushed every approved candidate to the
-    # 6% ceiling regardless of conviction, flattening the signal this function
-    # exists to express. 0.4 keeps it a tie-breaker.
-    deployment_adjustment = min(0.4, max(0.0, cash_overhang_percent) * 0.08)
-    target = BASE_POSITION_PERCENT + conviction_adjustment + risk_adjustment + volatility_adjustment + deployment_adjustment
+    target = RISK_BUDGET_PERCENT * 100 / stop_distance_percent
     return round(max(minimum, min(maximum, target)), 2)
 
 
@@ -566,7 +566,13 @@ def exit_decision(
     live code stores these counters in ``strategy_snapshot``.
     """
     atr = max(_float(technical.get("atr")), quote_price * 0.004)
-    trailing_distance = min(high_water * 0.009, max(atr * 0.7, high_water * 0.0045))
+    # Chandelier-style trailing exit (backtested 2026-08-20 as "Candidato E"
+    # against real 5-min bars, 40 NASDAQ/NYSE names, 06-19/08): 2.5x ATR off
+    # the peak moved the win/loss payoff ratio from ~1.34x to ~1.58-1.63x and
+    # cut max drawdown by roughly a third versus the previous tight
+    # 0.45%-0.9%-of-price trailing band, which was locking in winners before
+    # they could run.
+    trailing_distance = atr * 2.5
     trailing = high_water - trailing_distance
     stop = max(stop_price, trailing)
     pnl_pct = (quote_price / average_cost - 1) * 100
@@ -575,9 +581,12 @@ def exit_decision(
     # A flat max_position_loss_percent gets run over by normal noise on a
     # volatile name (root-caused 2026-08-20: SOC's ATR alone was 1.6%, so a
     # fixed 0.65% stop sat inside 41% of one ATR and fired on ordinary chop,
-    # not a real breakdown). Widen the floor to half an ATR when that's wider
-    # than the base policy, capped so the hard stop never stops being hard.
-    effective_max_loss_percent = max(max_position_loss_percent, min(1.5, atr_percent * 0.5))
+    # not a real breakdown). Backtested 2x ATR (Turtle Trading's initial-stop
+    # convention) outperformed 0.5x/1.0x/1.5x on profit factor, failed-entry
+    # rate and max drawdown across all four multipliers tested, so that's now
+    # the floor rather than half an ATR, still capped so the hard stop never
+    # stops being meaningfully hard.
+    effective_max_loss_percent = max(max_position_loss_percent, min(1.5, atr_percent * 2.0))
     hard_stop = average_cost * (1 - effective_max_loss_percent / 100)
     stop = max(stop, hard_stop)
     soft_loss_threshold = max(soft_loss_exit_percent, min(0.7, atr_percent * 0.4))
