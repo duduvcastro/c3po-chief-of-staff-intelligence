@@ -284,6 +284,41 @@ def test_peer_medians_merges_both_exchanges_when_no_market_is_given() -> None:
         svc.peer_medians("US")
 
 
+def test_peer_medians_hydrates_from_a_persisted_snapshot_across_processes() -> None:
+    """Root-caused 2026-08-20 (second hotfix, found by regenerating JPM's
+    Laser Pager after #75 shipped): the api and valuation-worker containers
+    are separate processes (compose.yml) with no shared Python memory.
+    peer_medians() only ever returned the in-memory dict, which is
+    populated exclusively inside _build() — a method the api container's
+    request-serving path never calls. Every Laser Pager generated from the
+    api container saw an empty dict forever and kept falling back to the
+    pre-#72 hardcoded multiples, even after #75's wiring fix. peer_medians()
+    must hydrate from a persisted snapshot on first use, same idea as
+    _rows/valuation_for()'s _hydrate().
+    """
+    svc = service()
+    methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")
+    svc.database.save_analysis_snapshot(
+        "peer_medians", "NASDAQ_PEER_MEDIANS", methodology_id, {},
+        {"medians": {"technology": {"pe": 23.5, "ev_ebitda": 15.5}}},
+        datetime.now(timezone.utc),
+    )
+
+    assert svc.peer_medians("NASDAQ") == {"technology": {"pe": 23.5, "ev_ebitda": 15.5}}
+
+
+def test_build_persists_peer_medians_for_the_next_process_to_hydrate() -> None:
+    svc = service()
+    svc._rows["NASDAQ"] = []
+    svc._basis_at["NASDAQ"] = datetime.now(timezone.utc)
+    svc._peer_medians["NASDAQ"] = {"financial": {"pe": 11.5, "ev_ebitda": 9.5}}
+
+    svc._persist("NASDAQ")
+    snapshot = svc.database.latest_analysis_snapshot("peer_medians", "NASDAQ_PEER_MEDIANS")
+
+    assert snapshot and snapshot["outputs"]["medians"] == {"financial": {"pe": 11.5, "ev_ebitda": 9.5}}
+
+
 def test_load_calibration_factors_clamps_persisted_values_to_the_documented_limit() -> None:
     svc = service()
     methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")
