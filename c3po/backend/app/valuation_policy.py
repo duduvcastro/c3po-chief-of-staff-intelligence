@@ -22,7 +22,7 @@ class ValuationPolicy:
 C3PO_VALUATION_POLICY = ValuationPolicy(
     key="b3_value_quality",
     name="C3PO Power Model",
-    version=31,
+    version=32,
     surfaces=(
         "candidate_stocks",
         "matrix_power",
@@ -38,9 +38,19 @@ C3PO_VALUATION_POLICY = ValuationPolicy(
         "entry": 0.10,
     },
     release_note=(
-        "Cyclical issuers now use market P/E and EV/EBITDA reconciled against the same normalized earnings "
-        "and EBITDA used by the valuation, preventing incomplete TTM denominators from inflating targets. "
-        "Broader issuer-published analyst consensus takes precedence over narrower secondary feeds."
+        "US financial-profile stocks (banks/insurers) no longer use EV/EBITDA or FCF-DCF -- a bank's "
+        "reported debt is overwhelmingly customer deposits, not leverage, and its free cash flow is "
+        "dominated by loan/deposit balance changes, not owner earnings; both methods produced targets "
+        "2-3x price for real names. Real analyst consensus (FMP Ultimate: price-target-consensus, "
+        "price-target-summary, broker-level grades, 13F institutional positions) now feeds an explicit "
+        "final blend against the internal model and a governance-risk signal, replacing EODHD's single "
+        "target price field, which carried no update date and paired with an analyst count that measured "
+        "a different population of analysts than the ones behind the price target. US peer-median "
+        "benchmarking gained a statistical dispersion guard so a heterogeneous peer bucket (e.g. banks "
+        "pooled with high-multiple diversified financials) can't quietly distort a fair multiple. B3 "
+        "governance risk now factors in disclosure materiality, and the Selic risk-free input is "
+        "cross-checked against real Tesouro Direto market yields and against a staleness warning on its "
+        "hardcoded COPOM governor."
     ),
 )
 
