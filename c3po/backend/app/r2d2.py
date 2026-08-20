@@ -1753,6 +1753,16 @@ class R2D2PaperService:
         for row, security_type in shortlist:
             canonical_row = canonical.get(row.symbol)
             cached = self._us_basis.get(row.symbol)
+            # Root-caused 2026-08-20: B3 candidates already require
+            # signal_quality == "validated" (b3_screener.py's stricter gate)
+            # before R2D2 will trade on them; this US path had no equivalent
+            # check and would happily use a "provisional" canonical row --
+            # the same lower-confidence tier B3 explicitly excludes from
+            # Candidate Stocks / Last Jedi. A provisional row now falls
+            # through to the same-day backfill / technical-only tiers below
+            # instead of being trusted directly.
+            if canonical_row and canonical_row.get("signal_quality") != "validated":
+                canonical_row = None
             if canonical_row:
                 c3po_tp = _float(canonical_row.get("our_tp"))
                 upside = (c3po_tp / row.price - 1) * 100 if c3po_tp else 0.0

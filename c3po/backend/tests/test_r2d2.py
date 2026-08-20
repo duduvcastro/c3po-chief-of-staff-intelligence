@@ -131,6 +131,51 @@ def test_r2d2_scans_full_us_catalog_and_promotes_stocks_and_etfs() -> None:
     }
 
 
+def test_r2d2_us_candidates_rejects_provisional_canonical_valuation() -> None:
+    """Root-caused 2026-08-20: B3 candidates already require signal_quality
+    == "validated" before R2D2 will trade on a canonical row (b3_screener.py's
+    stricter gate); this US path -- R2D2's actual trading market -- had no
+    equivalent check and would use a "provisional" canonical row exactly as
+    trustingly as a validated one. A provisional row must now fall through
+    instead of being read directly as canonical evidence.
+    """
+    service = _service()
+    now = datetime(2026, 8, 17, 14, 0, tzinfo=timezone.utc)
+    rows = [
+        SimpleNamespace(symbol="VALD", name="Validated Co", price=100.0, cash_volume=30_000_000.0,
+                         change_percent=0.5, as_of=now, status="delayed"),
+        SimpleNamespace(symbol="PROV", name="Provisional Co", price=100.0, cash_volume=30_000_000.0,
+                         change_percent=0.5, as_of=now, status="delayed"),
+    ]
+    catalog = {
+        "VALD": {"Code": "VALD", "Exchange": "NASDAQ", "Type": "Common Stock"},
+        "PROV": {"Code": "PROV", "Exchange": "NASDAQ", "Type": "Common Stock"},
+    }
+    service.realtime = SimpleNamespace(
+        _us_investable_rows=lambda market, at: rows,
+        _us_symbol_catalog=lambda at: catalog,
+        _portfolio_catalog_market=lambda metadata: "NASDAQ",
+        _is_portfolio_security=lambda metadata: True,
+    )  # type: ignore[assignment]
+    service.repo.database.save_analysis_snapshot(
+        "valuation_universe", "NASDAQ_UNIVERSE", "test-methodology",
+        {},
+        {"rows": [
+            {"symbol": "VALD", "our_tp": 130.0, "risk_score": 40.0, "valuation_confidence": 80.0,
+             "buy_in": 95.0, "score": 75.0, "signal_quality": "validated", "thesis": "validated thesis"},
+            {"symbol": "PROV", "our_tp": 130.0, "risk_score": 40.0, "valuation_confidence": 60.0,
+             "buy_in": 95.0, "score": 75.0, "signal_quality": "provisional", "thesis": "provisional thesis"},
+        ]},
+        now,
+    )
+
+    candidates = service._us_candidates("NASDAQ", now)
+
+    by_symbol = {item["symbol"]: item for item in candidates}
+    assert by_symbol["VALD"]["valuation_basis"] == "canonical C3PO valuation universe"
+    assert by_symbol["PROV"]["valuation_basis"] != "canonical C3PO valuation universe"
+
+
 def test_r2d2_interleaves_live_reviews_across_us_markets() -> None:
     service = _service()
 
