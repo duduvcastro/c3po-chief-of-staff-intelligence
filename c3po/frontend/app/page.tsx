@@ -2637,8 +2637,9 @@ function R2D2RisingView() {
       : learningTrendDelta < -1
         ? `Piorando · ${learningTrendDelta.toFixed(1)}pp vs média móvel`
         : "Estável vs média móvel";
-  const LEARNING_MIN_SLOT = 32;
-  const LEARNING_MAX_BAR_WIDTH = 34;
+  const LEARNING_MIN_SLOT = 48;
+  const LEARNING_MAX_GROUP_WIDTH = 42;
+  const LEARNING_BAR_GAP = 3;
   const LEARNING_GAP = 12;
   const LEARNING_PLOT_LEFT = 34;
   const LEARNING_PLOT_TOP = 26;
@@ -2652,7 +2653,8 @@ function R2D2RisingView() {
   const learningFitSlot = learningCurve.length > 0 ? learningPlotWidth / learningCurve.length : LEARNING_MIN_SLOT;
   const learningFillsContainer = learningFitSlot >= LEARNING_MIN_SLOT;
   const learningSlot = learningFillsContainer ? learningFitSlot : LEARNING_MIN_SLOT;
-  const learningBarWidth = Math.max(6, Math.min(LEARNING_MAX_BAR_WIDTH, learningSlot - LEARNING_GAP));
+  const learningBarGroupWidth = Math.max(15, Math.min(LEARNING_MAX_GROUP_WIDTH, learningSlot - LEARNING_GAP));
+  const learningBarWidth = (learningBarGroupWidth - LEARNING_BAR_GAP) / 2;
   const learningChartWidth = learningFillsContainer
     ? learningContainerWidth
     : LEARNING_PLOT_LEFT + learningCurve.length * learningSlot + LEARNING_GAP;
@@ -2861,7 +2863,7 @@ function R2D2RisingView() {
               width={learningChartWidth}
               height={LEARNING_CHART_HEIGHT}
               role="img"
-              aria-label="Curva de aprendizado: percentual diário de operações positivas, com linha de média móvel de 5 dias"
+              aria-label="Curva de aprendizado: percentuais diários de operações positivas e negativas, com linha de média móvel de 5 dias para as operações positivas"
             >
               {[0, 25, 50, 75, 100].map((tick) => {
                 const y = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (tick / 100) * LEARNING_PLOT_HEIGHT;
@@ -2873,23 +2875,40 @@ function R2D2RisingView() {
                 );
               })}
               {learningCurve.map((point, index) => {
-                const x = LEARNING_PLOT_LEFT + index * learningSlot + (learningSlot - learningBarWidth) / 2;
-                const barHeight = Math.max((point.positive_percent / 100) * LEARNING_PLOT_HEIGHT, 1.5);
-                const y = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - barHeight;
+                const totalTrades = point.positive_trades + point.negative_trades;
+                const positivePercent = totalTrades ? point.positive_trades / totalTrades * 100 : point.positive_percent;
+                const negativePercent = totalTrades ? point.negative_trades / totalTrades * 100 : Math.max(0, 100 - point.positive_percent);
+                const groupX = LEARNING_PLOT_LEFT + index * learningSlot + (learningSlot - learningBarGroupWidth) / 2;
+                const positiveHeight = Math.max((positivePercent / 100) * LEARNING_PLOT_HEIGHT, 14);
+                const negativeHeight = Math.max((negativePercent / 100) * LEARNING_PLOT_HEIGHT, 14);
+                const positiveY = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - positiveHeight;
+                const negativeY = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - negativeHeight;
                 const label = new Date(`${point.session_date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
                 return (
                   <g key={point.session_date}>
                     <rect
-                      x={x}
-                      y={y}
+                      x={groupX}
+                      y={positiveY}
                       width={learningBarWidth}
-                      height={barHeight}
+                      height={positiveHeight}
                       rx={2}
                       className="r2d2-learning-bar-positive"
                     >
-                      <title>{`${label} · ${point.positive_percent.toFixed(1)}% positivas (${point.positive_trades}/${point.positive_trades + point.negative_trades} operações)`}</title>
+                      <title>{`${label} · ${Math.round(positivePercent)}% positivas (${point.positive_trades}/${totalTrades} operações)`}</title>
                     </rect>
-                    <text x={x + learningBarWidth / 2} y={LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 15} textAnchor="middle" className="r2d2-learning-axis-label">{label}</text>
+                    <text x={groupX + learningBarWidth / 2} y={positiveY + 11} textAnchor="middle" className="r2d2-learning-bar-label">{Math.round(positivePercent)}%</text>
+                    <rect
+                      x={groupX + learningBarWidth + LEARNING_BAR_GAP}
+                      y={negativeY}
+                      width={learningBarWidth}
+                      height={negativeHeight}
+                      rx={2}
+                      className="r2d2-learning-bar-negative"
+                    >
+                      <title>{`${label} · ${Math.round(negativePercent)}% negativas (${point.negative_trades}/${totalTrades} operações)`}</title>
+                    </rect>
+                    <text x={groupX + learningBarWidth + LEARNING_BAR_GAP + learningBarWidth / 2} y={negativeY + 11} textAnchor="middle" className="r2d2-learning-bar-label">{Math.round(negativePercent)}%</text>
+                    <text x={groupX + learningBarGroupWidth / 2} y={LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 15} textAnchor="middle" className="r2d2-learning-axis-label">{label}</text>
                   </g>
                 );
               })}
