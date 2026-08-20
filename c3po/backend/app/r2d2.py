@@ -230,7 +230,10 @@ class R2D2Repository:
             "checkpoint_days": settings.r2d2_checkpoint_days,
             "checkpoint_is_termination": False,
             "daily_learning": "versioned, bounded and audit-trailed",
-            "fundamental_layer": ["C3PO TP", "DCF", "multiples", "consensus", "buy-in", "quality", "CVM/SEC/RI"],
+            "fundamental_layer": [
+                "C3PO TP", "DCF", "multiples", "consensus", "buy-in", "quality",
+                "CVM/Finnhub insider governance signal (borrowed via Dark Side's risk score, not independently checked here)",
+            ],
             "technical_layer": [
                 "session VWAP", "EMA 8/20/50", "RSI 14", "MACD acceleration",
                 "momentum 15/30/60m", "relative volume", "OBV slope", "MFI 14",

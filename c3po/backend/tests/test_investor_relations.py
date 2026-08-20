@@ -730,3 +730,37 @@ def test_cvm_insider_events_skips_rows_with_unresolvable_cnpj(tmp_path):
     }]
 
     assert ir._cvm_insider_events(rows, {}) == []
+
+
+def test_insider_net_signal_reflects_buy_sell_balance_and_sample_confidence():
+    assert B3ScreenerService._insider_net_signal(None) == 0.0
+    assert B3ScreenerService._insider_net_signal({"buy_count": 0, "sell_count": 0, "total_count": 0}) == 0.0
+
+    thin = B3ScreenerService._insider_net_signal({"buy_count": 1, "sell_count": 0, "total_count": 1})
+    full_buy = B3ScreenerService._insider_net_signal({"buy_count": 4, "sell_count": 0, "total_count": 4})
+    full_sell = B3ScreenerService._insider_net_signal({"buy_count": 0, "sell_count": 4, "total_count": 4})
+
+    assert 0 < thin < full_buy
+    assert full_buy == 1.0
+    assert full_sell == -1.0
+
+
+def test_matrix_risk_score_lowers_on_insider_buying_and_raises_on_selling():
+    """Root-caused 2026-08-20: governance_risk (10% weight of _matrix_risk_score)
+    was a hardcoded 50.0 constant despite CVM VLMO insider data being fully
+    ingested and available. Now driven by row["insider_net_signal"], bounded
+    to a governance_risk range of [30, 70] so it can't dominate the score.
+    """
+    row = {
+        "valuation_profile": "general", "beta": 1.0, "volatility_90d": 0.30,
+        "debt_to_equity": 1.0, "earnings_growth": 0.10, "profit_margin": 0.10,
+        "adtv_90d": 20_000_000,
+    }
+
+    neutral = B3ScreenerService._matrix_risk_score({**row, "insider_net_signal": 0.0})
+    buying = B3ScreenerService._matrix_risk_score({**row, "insider_net_signal": 1.0})
+    selling = B3ScreenerService._matrix_risk_score({**row, "insider_net_signal": -1.0})
+    no_signal_at_all = B3ScreenerService._matrix_risk_score(row)
+
+    assert buying < neutral < selling
+    assert no_signal_at_all == neutral
