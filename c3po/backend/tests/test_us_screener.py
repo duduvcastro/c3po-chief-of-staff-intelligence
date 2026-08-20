@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
+
 from app.config import Settings
 from app.database import Database
 from app.market_data.us_screener import USScreeningService
@@ -259,6 +261,27 @@ def test_peer_medians_returns_the_latest_batch_computed_multiples_per_market() -
     svc._peer_medians["NASDAQ"] = {"financial": {"pe": 11.0, "ev_ebitda": 9.0}}
     assert svc.peer_medians("NASDAQ") == {"financial": {"pe": 11.0, "ev_ebitda": 9.0}}
     assert svc.peer_medians("NYSE") == {}
+
+
+def test_peer_medians_merges_both_exchanges_when_no_market_is_given() -> None:
+    """Root-caused 2026-08-20 (hotfix): one_pager.py::generate() only knows
+    market == "US", not the specific exchange a symbol lists on, so passing
+    that straight into peer_medians("US") raised ValueError (_market()
+    only accepts NASDAQ/NYSE) and broke every US Laser Pager in production.
+    peer_medians() must accept no market and merge both exchanges instead.
+    """
+    svc = service()
+    svc._peer_medians["NASDAQ"] = {"technology": {"pe": 24.0, "ev_ebitda": 16.0}}
+    svc._peer_medians["NYSE"] = {"financial": {"pe": 10.5, "ev_ebitda": 8.5}}
+
+    merged = svc.peer_medians()
+
+    assert merged == {
+        "technology": {"pe": 24.0, "ev_ebitda": 16.0},
+        "financial": {"pe": 10.5, "ev_ebitda": 8.5},
+    }
+    with pytest.raises(ValueError):
+        svc.peer_medians("US")
 
 
 def test_load_calibration_factors_clamps_persisted_values_to_the_documented_limit() -> None:
