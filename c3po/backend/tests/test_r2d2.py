@@ -1171,7 +1171,10 @@ def test_r2d2_tactical_quality_momentum_route_expands_the_entry_funnel() -> None
         "technical_indicators": {
             "data_status": "live", "trend_state": "bullish",
             "volume_state": "accumulation", "price_structure": "breakout",
-            "relative_volume": 1.25, "vwap": 100.5, "ema8": 100.8, "ema20": 100.4,
+            # relative_volume raised past ENTRY_RELATIVE_VOLUME_MIN (1.5,
+            # tightened 2026-08-20 from 1.05 -- barely-above-normal volume
+            # doesn't confirm real participation behind a breakout).
+            "relative_volume": 1.6, "vwap": 100.5, "ema8": 100.8, "ema20": 100.4,
             "momentum15": 0.20, "momentum30": 0.35,
             "macd_histogram": 0.2, "macd_acceleration": 0.1, "rsi14": 60.0,
             "relative_strength": 0.4,
@@ -1196,7 +1199,10 @@ def test_r2d2_cost_aware_intraday_route_accepts_live_liquid_momentum() -> None:
             "data_status": "live", "trend_state": "bullish",
             "volume_state": "accumulation", "price_structure": "higher-highs",
             "momentum15": 0.30, "momentum30": 0.55, "momentum60": 0.80,
-            "relative_volume": 1.35, "vwap": 100.5, "ema8": 100.8, "ema20": 100.4,
+            # relative_volume raised past ENTRY_RELATIVE_VOLUME_MIN (1.5,
+            # tightened 2026-08-20); modeled_edge stays above the 0.55
+            # friction buffer either way.
+            "relative_volume": 1.6, "vwap": 100.5, "ema8": 100.8, "ema20": 100.4,
             "macd_histogram": 0.2, "macd_acceleration": 0.1, "rsi14": 60.0,
             "relative_strength": 0.4,
         },

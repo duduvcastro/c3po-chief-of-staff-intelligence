@@ -30,7 +30,7 @@ from typing import Any
 # Constants (mirrors the module-level constants in r2d2.py as of V16)
 # ---------------------------------------------------------------------------
 
-METHODOLOGY_VERSION = "R2D2-HYBRID-V25-GAIN-PROTECTION-PERSISTENCE"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V26-TIGHTER-VOLUME-CONFIRMATION"
 
 RISK_BUDGET_PERCENT = 0.02  # % of NAV risked per trade (Turtle-style; backtested vs. 0.06/0.09)
 # Lowered from 0.03 on 2026-08-20 for the test phase, deliberately in the
@@ -50,6 +50,14 @@ MIN_POSITION_PERCENT = 2.0
 MAX_DYNAMIC_POSITION_PERCENT = 6.0
 SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
 MIN_INTRADAY_EDGE_PERCENT = 0.55
+# Raised from 1.05 on 2026-08-20 per an independent methodology review: 1.05
+# is barely above "normal" volume and does almost nothing to confirm a
+# breakout has real participation behind it. ORB/momentum literature treats
+# a breakout on merely-average volume as a weak signal ("buyer's trap");
+# 1.5x median volume is closer to what's actually used to confirm genuine
+# institutional participation. Tightening only -- makes both entry routes
+# more conservative, not less, so the downside is bounded to fewer trades.
+ENTRY_RELATIVE_VOLUME_MIN = 1.5
 FAILED_ENTRY_MINUTES = 3
 FAILED_ENTRY_LOSS_PERCENT = 0.30
 # Matches FAILED_ENTRY_LOSS_PERCENT on purpose (root-caused 2026-08-20 against
@@ -425,7 +433,7 @@ def entry_decision(item: dict[str, Any], policy: dict[str, float] | None = None)
         str(indicators.get("trend_state")) == "bullish",
         str(indicators.get("volume_state")) != "distribution",
         tactical_structure,
-        _float(indicators.get("relative_volume"), 1.0) >= 1.05,
+        _float(indicators.get("relative_volume"), 1.0) >= ENTRY_RELATIVE_VOLUME_MIN,
         _float(item.get("price")) >= _float(indicators.get("vwap")) > 0,
         _float(item.get("price")) >= _float(indicators.get("ema8")) > 0,
         _float(indicators.get("ema8")) > _float(indicators.get("ema20")) > 0,
@@ -479,7 +487,7 @@ def entry_decision(item: dict[str, Any], policy: dict[str, float] | None = None)
         momentum15 >= 0.15,
         momentum30 >= 0.20,
         momentum60 > 0,
-        relative_volume >= 1.05,
+        relative_volume >= ENTRY_RELATIVE_VOLUME_MIN,
         price > 0 and vwap > 0 and price >= vwap,
         ema8 > 0 and ema20 > 0 and price >= ema8 and ema8 > ema20,
         macd_histogram > 0 and macd_acceleration >= 0,
