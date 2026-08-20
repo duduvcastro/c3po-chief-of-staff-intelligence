@@ -64,10 +64,9 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
     assert experiment["mandate"]["max_daily_orders"] == 120
     assert experiment["mandate"]["opportunity_funnel"]["coverage"].startswith("full quoted EODHD catalog")
     assert experiment["mandate"]["opportunity_funnel"]["security_types"] == ["stocks", "ETFs"]
-    assert experiment["mandate"]["opportunity_funnel"]["deep_shortlist_per_market"] == {
-        "stocks": 300,
-        "etfs": 50,
-    }
+    assert experiment["mandate"]["opportunity_funnel"]["deep_shortlist_per_market"] == (
+        "uncapped -- every symbol clearing the price/liquidity bar"
+    )
     assert experiment["mandate"]["opportunity_funnel"]["technical_reviews_per_market"] == {
         "cash_deployment": 32,
         "standard": 24,
@@ -117,9 +116,9 @@ def test_r2d2_scans_full_us_catalog_and_promotes_stocks_and_etfs() -> None:
 
     candidates = service._us_candidates("NASDAQ", now)
 
-    assert len(candidates) == 350
-    assert sum(item["security_type"] == "Stock" for item in candidates) == 300
-    assert sum(item["security_type"] == "ETF" for item in candidates) == 50
+    assert len(candidates) == 380
+    assert sum(item["security_type"] == "Stock" for item in candidates) == 320
+    assert sum(item["security_type"] == "ETF" for item in candidates) == 60
     assert service._us_scan_counts["NASDAQ"] == {
         "universe_count": 380,
         "quoted_count": 380,
@@ -127,7 +126,7 @@ def test_r2d2_scans_full_us_catalog_and_promotes_stocks_and_etfs() -> None:
         "tradeable_count": 380,
         "stock_count": 320,
         "etf_count": 60,
-        "deep_shortlist_count": 350,
+        "deep_shortlist_count": 380,
     }
 
 
