@@ -52,14 +52,14 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
     assert experiment["mandate"]["checkpoint_is_termination"] is False
     assert experiment["mandate"]["exit_replacement"] == "immediate eligible scan across open US markets"
     assert experiment["mandate"]["max_positions"] == 20
-    assert experiment["mandate"]["max_position_percent"] == 6.0
+    assert experiment["mandate"]["max_position_percent"] == 5.0
     assert experiment["mandate"]["max_cash_percent"] == 25.0
     assert experiment["mandate"]["minimum_invested_percent"] == 75.0
     assert experiment["mandate"]["minimum_cash_buffer_percent"] == 5.0
     assert experiment["mandate"]["max_gross_exposure_percent"] == 95.0
     assert experiment["mandate"]["position_sizing"]["minimum_percent"] == 2.0
     assert experiment["mandate"]["position_sizing"]["risk_budget_percent"] == 0.03
-    assert experiment["mandate"]["position_sizing"]["maximum_percent"] == 6.0
+    assert experiment["mandate"]["position_sizing"]["maximum_percent"] == 5.0
     assert experiment["mandate"]["daily_order_target_range"] == [20, 80]
     assert experiment["mandate"]["max_daily_orders"] == 500
     assert experiment["mandate"]["opportunity_funnel"]["coverage"].startswith("full quoted EODHD catalog")

@@ -30,7 +30,7 @@ from typing import Any
 # Constants (mirrors the module-level constants in r2d2.py as of V16)
 # ---------------------------------------------------------------------------
 
-METHODOLOGY_VERSION = "R2D2-HYBRID-V23-1R-PROFIT-FLOOR"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V24-WIDER-RISK-BAND-TEST-PHASE"
 
 RISK_BUDGET_PERCENT = 0.03  # % of NAV risked per trade (Turtle-style; backtested vs. 0.06/0.09)
 
@@ -57,7 +57,7 @@ END_OF_DAY_EXIT_WINDOW_MINUTES = 1
 # Defaults for settings that live on Settings() in production.
 DEFAULT_MAX_POSITION_LOSS_PERCENT = 0.65  # hard stop
 DEFAULT_SOFT_LOSS_EXIT_PERCENT = 0.25
-DEFAULT_MAX_POSITION_PERCENT = 6.0
+DEFAULT_MAX_POSITION_PERCENT = 5.0
 
 BASE_ENTRY_POLICY: dict[str, float] = {
     "entry_upside_floor": 20.0,
