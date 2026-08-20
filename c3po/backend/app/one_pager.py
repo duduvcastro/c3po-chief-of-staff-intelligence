@@ -39,6 +39,34 @@ INSIDER_RISK_MAX_SWING = 8.0
 SENTIMENT_CONFIDENCE_MAX_SWING = 5.0
 SENTIMENT_MIN_ARTICLES_FOR_FULL_WEIGHT = 5
 
+# Root-caused 2026-08-20 (TP methodology audit): the US DCF used one fixed
+# 10.5% discount rate for every stock regardless of risk, unlike B3's
+# per-security beta/Selic-derived WACC (b3_screener.py). This is a real
+# CAPM-style discount rate instead: US 10-year Treasury yield (live, EODHD
+# GBOND) as the risk-free rate, plus beta times a standard long-run US
+# equity risk premium.
+US_RISK_FREE_FALLBACK_RATE = 0.042
+US_RISK_FREE_CACHE_HOURS = 6
+US_EQUITY_RISK_PREMIUM = 0.055
+US_DISCOUNT_RATE_MIN = 0.06
+US_DISCOUNT_RATE_MAX = 0.16
+
+# Root-caused 2026-08-20 (TP methodology audit): fair_pe/fair_ev_ebitda used a
+# fixed constant per valuation profile with no peer comparison at all, unlike
+# B3's live sector-median benchmarking (b3_screener.py's _sector_medians).
+# These are now only the FALLBACK when a profile bucket in the current
+# screening batch doesn't have enough peers (see _us_peer_medians) --
+# US_PEER_MEDIAN_MIN_SAMPLE mirrors B3's own minimum-peer-count threshold.
+US_PEER_MEDIAN_MIN_SAMPLE = 4
+FAIR_PE_BASE_FALLBACK = {
+    "financial": 9.0, "utilities": 12.0, "cyclical": 10.0, "real_estate": 11.0,
+    "technology": 21.0, "quality": 18.0, "general": 15.0,
+}
+FAIR_EV_EBITDA_BASE_FALLBACK = {
+    "financial": 8.0, "utilities": 9.0, "cyclical": 7.0, "real_estate": 10.0,
+    "technology": 17.0, "quality": 13.0, "general": 10.0,
+}
+
 
 class OnePagerService:
     SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
@@ -60,6 +88,7 @@ class OnePagerService:
         self.us_screener: USScreeningService | None = None
         self.investor_relations = investor_relations
         self.output_dir = output_dir or settings.one_pager_output_dir
+        self._us_risk_free_cache: tuple[datetime, float] | None = None
 
     def set_us_screener(self, screener: USScreeningService) -> None:
         self.us_screener = screener
@@ -119,6 +148,7 @@ class OnePagerService:
             news_sentiment = (
                 self.database.latest_news_sentiment([symbol], market).get(symbol) if market != "B3" else None
             )
+            risk_free_rate = self._us_risk_free_rate() if market != "B3" else None
             shared_valuation = (
                 self.b3_screener.valuation_for(symbol, build_if_missing=True)
                 if market == "B3" and self.b3_screener
@@ -141,6 +171,7 @@ class OnePagerService:
                 shared_valuation=shared_valuation,
                 insider_activity=insider_activity,
                 news_sentiment=news_sentiment,
+                risk_free_rate=risk_free_rate,
             )
             verification_label = (
                 "RI da companhia + regulador verificados"
@@ -302,6 +333,8 @@ class OnePagerService:
         shared_valuation: dict[str, Any] | None = None,
         insider_activity: dict[str, Any] | None = None,
         news_sentiment: dict[str, Any] | None = None,
+        risk_free_rate: float | None = None,
+        peer_medians: dict[str, dict[str, float]] | None = None,
     ) -> dict[str, Any]:
         price = self._positive(quote.get("price"))
         if price is None:
@@ -362,15 +395,8 @@ class OnePagerService:
 
         profile = self._valuation_profile(sector, industry)
         growth = self._clamp(statistics.mean([revenue_growth or 0.0, earnings_growth or 0.0]), -0.08, 0.22)
-        fair_pe_base = {
-            "financial": 9.0,
-            "utilities": 12.0,
-            "cyclical": 10.0,
-            "real_estate": 11.0,
-            "technology": 21.0,
-            "quality": 18.0,
-            "general": 15.0,
-        }[profile]
+        peer = (peer_medians or {}).get(profile, {})
+        fair_pe_base = peer.get("pe") or FAIR_PE_BASE_FALLBACK[profile]
         fair_pe = self._clamp(
             fair_pe_base + max(growth, -0.05) * 35 + max((roe or 0) - 0.12, -0.08) * 16,
             6.0,
@@ -379,15 +405,7 @@ class OnePagerService:
         normalized_eps = forward_eps or trailing_eps
         earnings_tp = self._bounded_tp((normalized_eps or 0) * fair_pe, price)
 
-        fair_ev_base = {
-            "financial": 8.0,
-            "utilities": 9.0,
-            "cyclical": 7.0,
-            "real_estate": 10.0,
-            "technology": 17.0,
-            "quality": 13.0,
-            "general": 10.0,
-        }[profile]
+        fair_ev_base = peer.get("ev_ebitda") or FAIR_EV_EBITDA_BASE_FALLBACK[profile]
         fair_ev_ebitda = self._clamp(fair_ev_base + max(growth, -0.05) * 20 + (operating_margin or margin or 0) * 8, 4.5, 24.0)
         enterprise_tp = None
         if ttm_ebitda and shares:
@@ -402,6 +420,8 @@ class OnePagerService:
             market=market,
             price=price,
             fallback_eps=normalized_eps,
+            beta=beta,
+            risk_free_rate=risk_free_rate,
         )
 
         fundamental_anchor = self._weighted_value(
@@ -671,6 +691,7 @@ class OnePagerService:
             "comparison_period": comparison_period,
             "financial_rows": financial_rows,
             "c3po_tp": c3po_tp,
+            "profile": profile,
             "consensus_tp": consensus,
             "consensus_upside": consensus_upside,
             "analyst_count": analyst_count,
@@ -889,6 +910,65 @@ class OnePagerService:
             return "quality"
         return "general"
 
+    @classmethod
+    def _us_peer_medians(cls, fundamentals_by_symbol: dict[str, dict[str, Any]]) -> dict[str, dict[str, float]]:
+        """Live median trailing P/E and EV/EBITDA per valuation profile across
+        the current US screening batch -- an actual peer comparison instead of
+        the fixed FAIR_PE_BASE_FALLBACK/FAIR_EV_EBITDA_BASE_FALLBACK constants,
+        mirroring B3's _sector_medians (b3_screener.py). Falls back to those
+        constants per-profile whenever a bucket doesn't clear
+        US_PEER_MEDIAN_MIN_SAMPLE peers (the caller does that fallback, not
+        this method -- this only returns what the live data actually supports).
+        """
+        buckets: dict[str, dict[str, list[float]]] = {}
+        for fundamentals in fundamentals_by_symbol.values():
+            sector = str(fundamentals.get("sector") or fundamentals.get("industry") or "")
+            industry = str(fundamentals.get("industry") or sector)
+            profile = cls._valuation_profile(sector, industry)
+            bucket = buckets.setdefault(profile, {"pe": [], "ev_ebitda": []})
+            pe = cls._number(fundamentals.get("trailingPE"))
+            if pe is not None and 3.0 <= pe <= 80.0:
+                bucket["pe"].append(pe)
+            ev_ebitda = cls._number(fundamentals.get("enterpriseToEbitda"))
+            if ev_ebitda is not None and 2.0 <= ev_ebitda <= 40.0:
+                bucket["ev_ebitda"].append(ev_ebitda)
+        medians: dict[str, dict[str, float]] = {}
+        for profile, values in buckets.items():
+            entry: dict[str, float] = {}
+            if len(values["pe"]) >= US_PEER_MEDIAN_MIN_SAMPLE:
+                entry["pe"] = statistics.median(values["pe"])
+            if len(values["ev_ebitda"]) >= US_PEER_MEDIAN_MIN_SAMPLE:
+                entry["ev_ebitda"] = statistics.median(values["ev_ebitda"])
+            if entry:
+                medians[profile] = entry
+        return medians
+
+    def _us_risk_free_rate(self) -> float:
+        """Live US 10-year Treasury yield (EODHD GBOND, same feed and symbol
+        Master Luke's market dashboard already uses), cached for a few hours
+        since it's a slow-moving macro input, not worth re-fetching per
+        valuation call. Falls back to a fixed recent-observed level if the
+        feed is unavailable, mirroring b3_screener.py's LATEST_COPOM_SELIC
+        fallback pattern."""
+        now = datetime.now(timezone.utc)
+        if self._us_risk_free_cache and now < self._us_risk_free_cache[0]:
+            return self._us_risk_free_cache[1]
+        rate = US_RISK_FREE_FALLBACK_RATE
+        try:
+            client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.market_data.http)
+            history = sorted(
+                client.history("US10Y", exchange="GBOND", days=10),
+                key=lambda row: str(row.get("date") or ""),
+            )
+            closes = [self._number(row.get("close")) for row in history]
+            closes = [value for value in closes if value is not None]
+            if closes:
+                rate = self._clamp(closes[-1] / 100.0, 0.02, 0.08)
+        except Exception:
+            pass
+        self._us_risk_free_cache = (now + timedelta(hours=US_RISK_FREE_CACHE_HOURS), rate)
+        return rate
+
     def _dcf_value(
         self,
         *,
@@ -898,9 +978,18 @@ class OnePagerService:
         market: str,
         price: float,
         fallback_eps: float | None,
+        beta: float | None = None,
+        risk_free_rate: float | None = None,
     ) -> float | None:
         if free_cashflow is not None and free_cashflow > 0 and shares:
-            discount = 0.105 if market == "US" else 0.18
+            if market == "US":
+                risk_free = risk_free_rate if risk_free_rate is not None else US_RISK_FREE_FALLBACK_RATE
+                discount = self._clamp(
+                    risk_free + (beta if beta is not None else 1.0) * US_EQUITY_RISK_PREMIUM,
+                    US_DISCOUNT_RATE_MIN, US_DISCOUNT_RATE_MAX,
+                )
+            else:
+                discount = 0.18
             terminal_growth = 0.03 if market == "US" else 0.055
             forecast_growth = self._clamp(growth, 0.01, 0.09)
             fcf_per_share = free_cashflow / shares

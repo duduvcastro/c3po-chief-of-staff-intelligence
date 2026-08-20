@@ -34,6 +34,15 @@ PROVISIONAL_CONFIDENCE = 55.0
 PROVISIONAL_DISPERSION = 60.0
 MATRIX_REFRESH_SECONDS = 60
 INSIDER_GOVERNANCE_LOOKBACK_DAYS = 180
+# Root-caused 2026-08-20 (TP methodology audit): B3 has a rolling backtest
+# that measures forecast bias by valuation profile and multiplicatively
+# corrects internal_tp by up to +/-5% (b3_screener.py's _persist_calibration);
+# the US engine had no equivalent, so a systematic bias would never be
+# detected or corrected. Same thresholds as B3, mirrored exactly.
+CALIBRATION_HORIZON_DAYS = 90
+CALIBRATION_MIN_GLOBAL_SAMPLES = 40
+CALIBRATION_MIN_PROFILE_SAMPLES = 15
+CALIBRATION_FACTOR_LIMIT = 0.05
 PROVIDER_DELAY_MINUTES = 15
 
 
@@ -81,6 +90,7 @@ class USScreeningService:
         self._basis_at: dict[USMarket, datetime | None] = {"NASDAQ": None, "NYSE": None}
         self._universe_size: dict[USMarket, int] = {"NASDAQ": STOCK_LIMIT + ETF_LIMIT, "NYSE": STOCK_LIMIT + ETF_LIMIT}
         self._coverage: dict[USMarket, dict[str, int]] = {"NASDAQ": {}, "NYSE": {}}
+        self._calibration_factors: dict[USMarket, dict[str, float]] = {"NASDAQ": {}, "NYSE": {}}
 
     @staticmethod
     def _market(value: str) -> USMarket:
@@ -124,6 +134,7 @@ class USScreeningService:
     def _build(self, market: USMarket) -> list[dict[str, Any]]:
         if not self.settings.eodhd_api_token:
             raise RuntimeError("EODHD credential is not configured")
+        self._load_calibration_factors(market)
         now = datetime.now(timezone.utc)
         catalog = self.realtime._us_symbol_catalog(now)
         raw_quotes = self.realtime._us_bulk_quotes(now)
@@ -174,6 +185,8 @@ class USScreeningService:
         insider_since = datetime.now(timezone.utc) - timedelta(days=INSIDER_GOVERNANCE_LOOKBACK_DAYS)
         insider_activity = self.database.insider_transaction_activity(symbols, market, insider_since)
         news_sentiment = self.database.latest_news_sentiment(symbols, market="US")
+        risk_free_rate = self.one_pagers._us_risk_free_rate()
+        peer_medians = self.one_pagers._us_peer_medians(fundamentals)
         rows: list[dict[str, Any]] = []
         for cash_volume, quote, metadata in selected:
             symbol = quote.symbol
@@ -200,6 +213,8 @@ class USScreeningService:
                         market, quote.model_dump(), fundamental, history, cash_volume,
                         insider_activity=insider_activity.get(symbol),
                         news_sentiment=news_sentiment.get(symbol),
+                        risk_free_rate=risk_free_rate,
+                        peer_medians=peer_medians,
                     )
                 )
             except Exception:
@@ -243,16 +258,28 @@ class USScreeningService:
         *,
         insider_activity: dict[str, Any] | None = None,
         news_sentiment: dict[str, Any] | None = None,
+        risk_free_rate: float | None = None,
+        peer_medians: dict[str, dict[str, float]] | None = None,
     ) -> dict[str, Any]:
         symbol = str(quote["symbol"])
         analysis = self.one_pagers._analyze(
             symbol, "US", quote, fundamentals, history,
             insider_activity=insider_activity,
             news_sentiment=news_sentiment,
+            risk_free_rate=risk_free_rate,
+            peer_medians=peer_medians,
         )
         methods = {str(key): float(value) for key, value in analysis["methods"].items() if positive(value)}
         consensus = positive(analysis.get("consensus_tp"))
         internal_tp = statistics.mean(methods.values())
+        profile = str(analysis.get("profile") or "general")
+        market_factors = self._calibration_factors.get(market, {})
+        calibration_factor = clamp(
+            market_factors.get(profile, market_factors.get("global", 1.0)),
+            1 - CALIBRATION_FACTOR_LIMIT, 1 + CALIBRATION_FACTOR_LIMIT,
+        )
+        internal_tp *= calibration_factor
+        calibrated_tp = float(analysis["c3po_tp"]) * calibration_factor
         gap = abs(internal_tp / consensus - 1) * 100 if consensus else None
         agreement = clamp(100 - (gap or 45) * 1.35, 25, 100)
         confidence = float(analysis["confidence"])
@@ -279,7 +306,7 @@ class USScreeningService:
             history,
             cash_volume,
             security_type="Stock",
-            our_tp=float(analysis["c3po_tp"]),
+            our_tp=calibrated_tp,
             internal_tp=internal_tp,
             consensus=consensus,
             analyst_count=analyst_count,
@@ -600,16 +627,122 @@ class USScreeningService:
             C3PO_VALUATION_POLICY.release_note,
         )
         rows = [{**row, "as_of": row["as_of"].isoformat() if isinstance(row.get("as_of"), datetime) else row.get("as_of")} for row in self._rows[market]]
+        generated_at = self._basis_at[market] or datetime.now(timezone.utc)
         self.database.save_analysis_snapshot(
             "valuation_universe", f"{market}_UNIVERSE", methodology_id,
             {"methodology_version": METHODOLOGY_VERSION, "market": market, "coverage": self._coverage[market]},
-            {"rows": rows, "universe_size": self._universe_size[market]}, self._basis_at[market] or datetime.now(timezone.utc),
+            {"rows": rows, "universe_size": self._universe_size[market]}, generated_at,
         )
+        self._persist_calibration(market, methodology_id, generated_at, rows)
         response = self._candidate_response(market)
         self.database.save_analysis_snapshot(
             "candidate_screen", f"{market}_TOP_10", methodology_id,
             {"methodology_version": METHODOLOGY_VERSION, "market": market},
             response.model_dump(mode="json"), response.generated_at,
+        )
+
+    def _load_calibration_factors(self, market: USMarket) -> None:
+        snapshot = self.database.latest_analysis_snapshot("valuation_calibration", f"{market}_POWER_MODEL")
+        if not snapshot:
+            self._calibration_factors[market] = {}
+            return
+        outputs = snapshot.get("outputs") if isinstance(snapshot.get("outputs"), dict) else {}
+        raw_factors = outputs.get("factors") if isinstance(outputs, dict) else None
+        if not isinstance(raw_factors, dict):
+            self._calibration_factors[market] = {}
+            return
+        self._calibration_factors[market] = {
+            str(profile): clamp(float(factor), 1 - CALIBRATION_FACTOR_LIMIT, 1 + CALIBRATION_FACTOR_LIMIT)
+            for profile, factor in raw_factors.items()
+            if isinstance(factor, (int, float))
+        }
+
+    def _persist_calibration(
+        self, market: USMarket, methodology_id: str, generated_at: datetime, current_rows: list[dict[str, Any]],
+    ) -> None:
+        """Rolling backtest measuring forecast bias by valuation profile,
+        mirroring b3_screener.py's _persist_calibration exactly (same
+        horizon/sample-size/factor-limit constants) -- compares this
+        symbol's TP-implied expected return from ~90 days ago against the
+        price move that actually happened, and nudges internal_tp by up to
+        +/-5% per profile once enough evidence exists."""
+        prior = self.database.analysis_snapshot_at_or_before(
+            "valuation_universe", f"{market}_UNIVERSE", generated_at - timedelta(days=CALIBRATION_HORIZON_DAYS),
+        )
+        factors = dict(self._calibration_factors.get(market, {}))
+        metrics: dict[str, dict[str, Any]] = {}
+        status = "warming_up"
+        horizon_days = None
+        if prior:
+            prior_published_at = prior.get("published_at")
+            if isinstance(prior_published_at, datetime):
+                horizon_days = max(1, (generated_at - prior_published_at).days)
+            prior_output = prior.get("outputs") if isinstance(prior.get("outputs"), dict) else {}
+            prior_rows = prior_output.get("rows") if isinstance(prior_output, dict) else []
+            previous = {
+                str(row.get("symbol")): row
+                for row in prior_rows or []
+                if isinstance(row, dict) and row.get("symbol")
+            }
+            grouped: dict[str, list[tuple[float, float]]] = {"global": []}
+            if horizon_days is not None:
+                for row in current_rows:
+                    symbol = str(row.get("symbol") or "")
+                    old = previous.get(symbol)
+                    old_price = positive((old or {}).get("price"))
+                    current_price = positive(row.get("price"))
+                    expected_annual = number((old or {}).get("expected_total_return_percent"))
+                    if not old_price or not current_price or expected_annual is None:
+                        continue
+                    annual = clamp(expected_annual / 100, -0.90, 3.0)
+                    expected_period = (1 + annual) ** (horizon_days / 365) - 1
+                    realized = current_price / old_price - 1
+                    if abs(realized) > 0.75:
+                        continue
+                    sample = (realized, expected_period)
+                    grouped["global"].append(sample)
+                    grouped.setdefault(str((old or {}).get("valuation_profile") or "general"), []).append(sample)
+
+            global_factor = 1.0
+            for profile, samples in grouped.items():
+                required = CALIBRATION_MIN_GLOBAL_SAMPLES if profile == "global" else CALIBRATION_MIN_PROFILE_SAMPLES
+                errors = [realized - expected for realized, expected in samples]
+                absolute_errors = [abs(error) for error in errors]
+                directional = [
+                    (realized >= 0) == (expected >= 0)
+                    for realized, expected in samples
+                    if realized != 0 or expected != 0
+                ]
+                factor = 1.0
+                if horizon_days is not None and len(samples) >= required and 60 <= horizon_days <= 150:
+                    factor = clamp(
+                        1 + statistics.median(errors) * 0.25,
+                        1 - CALIBRATION_FACTOR_LIMIT, 1 + CALIBRATION_FACTOR_LIMIT,
+                    )
+                    if profile == "global":
+                        global_factor = factor
+                    else:
+                        factor = factor * 0.70 + global_factor * 0.30
+                    factors[profile] = factor
+                    status = "active"
+                metrics[profile] = {
+                    "samples": len(samples),
+                    "median_forecast_error_percent": round(statistics.median(errors) * 100, 2) if errors else None,
+                    "mean_absolute_error_percent": round(statistics.mean(absolute_errors) * 100, 2) if absolute_errors else None,
+                    "directional_accuracy_percent": round(statistics.mean(directional) * 100, 2) if directional else None,
+                    "factor": round(factor, 5),
+                }
+
+        self.database.save_analysis_snapshot(
+            "valuation_calibration", f"{market}_POWER_MODEL", methodology_id,
+            {
+                "horizon_days": CALIBRATION_HORIZON_DAYS,
+                "minimum_global_samples": CALIBRATION_MIN_GLOBAL_SAMPLES,
+                "minimum_profile_samples": CALIBRATION_MIN_PROFILE_SAMPLES,
+                "factor_limit": CALIBRATION_FACTOR_LIMIT,
+            },
+            {"status": status, "observed_horizon_days": horizon_days, "factors": factors, "metrics": metrics},
+            generated_at,
         )
 
     def _hydrate(self, market: USMarket) -> None:

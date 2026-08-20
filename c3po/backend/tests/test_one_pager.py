@@ -403,3 +403,127 @@ def test_analyze_lowers_risk_and_raises_confidence_on_bullish_insider_and_news_s
     # documented swing, or push confidence past the formula's own ceiling.
     assert baseline["risk_score"] - bullish["risk_score"] <= 8.0
     assert bullish["confidence"] <= 94
+
+
+def test_dcf_value_uses_capm_discount_rate_for_us_and_flat_rate_elsewhere(tmp_path) -> None:
+    """Root-caused 2026-08-20 (TP methodology audit): the US DCF used one
+    fixed 10.5% discount rate for every stock regardless of risk, unlike
+    B3's per-security beta/Selic-derived WACC. Now a real CAPM-style rate
+    for US: risk_free + beta * equity_risk_premium -- a higher-beta
+    (riskier) stock gets a lower DCF TP than a lower-beta one with
+    identical cash flows, and a higher risk-free rate also lowers it. B3
+    keeps its own flat rate, untouched by beta/risk_free_rate.
+    """
+    service = service_for(tmp_path)
+    common = dict(
+        free_cashflow=10_000_000_000.0, shares=1_000_000_000.0,
+        growth=0.08, market="US", price=100.0, fallback_eps=5.0,
+    )
+
+    low_beta_tp = service._dcf_value(**common, beta=0.8, risk_free_rate=0.04)
+    high_beta_tp = service._dcf_value(**common, beta=1.6, risk_free_rate=0.04)
+    higher_rate_tp = service._dcf_value(**common, beta=0.8, risk_free_rate=0.06)
+
+    assert high_beta_tp < low_beta_tp
+    assert higher_rate_tp < low_beta_tp
+
+    b3_common = {**common, "market": "B3"}
+    b3_tp_a = service._dcf_value(**b3_common, beta=0.8, risk_free_rate=0.04)
+    b3_tp_b = service._dcf_value(**b3_common, beta=1.6, risk_free_rate=0.09)
+    assert b3_tp_a == b3_tp_b
+
+
+def test_dcf_value_falls_back_to_a_fixed_rate_without_a_threaded_risk_free_rate(tmp_path) -> None:
+    """_analyze/_dcf_value must stay network-free and deterministic by
+    default (risk_free_rate is fetched once by the caller, not inside the
+    pure valuation function) -- omitting it should use the documented
+    fallback constant, not raise or silently use 0.
+    """
+    from app.one_pager import US_RISK_FREE_FALLBACK_RATE
+
+    service = service_for(tmp_path)
+    common = dict(
+        free_cashflow=10_000_000_000.0, shares=1_000_000_000.0,
+        growth=0.08, market="US", price=100.0, fallback_eps=5.0, beta=1.0,
+    )
+
+    without_rate = service._dcf_value(**common)
+    with_fallback_rate_explicit = service._dcf_value(**common, risk_free_rate=US_RISK_FREE_FALLBACK_RATE)
+
+    assert without_rate == with_fallback_rate_explicit
+
+
+def test_us_risk_free_rate_caches_and_falls_back_when_the_feed_is_unavailable(tmp_path) -> None:
+    service = service_for(tmp_path)
+
+    first = service._us_risk_free_rate()
+    service._us_risk_free_cache = (
+        service._us_risk_free_cache[0], 0.099,
+    )
+    second = service._us_risk_free_rate()
+
+    assert 0.02 <= first <= 0.08
+    assert second == 0.099  # cache hit, no re-fetch
+
+
+def test_us_peer_medians_requires_a_minimum_sample_per_profile(tmp_path) -> None:
+    """Root-caused 2026-08-20 (TP methodology audit): fair_pe/fair_ev_ebitda
+    used a fixed constant per profile with no live peer comparison, unlike
+    B3's sector-median benchmarking. This mirrors B3's minimum-peer-count
+    discipline: a profile bucket only gets a live median once it clears
+    US_PEER_MEDIAN_MIN_SAMPLE peers, otherwise the caller falls back to the
+    documented constants.
+    """
+    service = service_for(tmp_path)
+    technology_funds = {
+        f"T{i}": {"sector": "Technology", "industry": "Software", "trailingPE": pe, "enterpriseToEbitda": ev}
+        for i, (pe, ev) in enumerate([(20.0, 14.0), (24.0, 16.0), (28.0, 18.0), (32.0, 20.0)])
+    }
+    thin_financial_funds = {
+        "F0": {"sector": "Banks", "industry": "Regional Banks", "trailingPE": 10.0, "enterpriseToEbitda": 8.0},
+    }
+
+    medians = service._us_peer_medians({**technology_funds, **thin_financial_funds})
+
+    assert medians["technology"]["pe"] == 26.0
+    assert medians["technology"]["ev_ebitda"] == 17.0
+    assert "financial" not in medians  # only 1 sample, below US_PEER_MEDIAN_MIN_SAMPLE
+
+
+def test_us_peer_medians_ignores_implausible_multiples(tmp_path) -> None:
+    service = service_for(tmp_path)
+    funds = {
+        f"T{i}": {"sector": "Technology", "industry": "Software", "trailingPE": pe, "enterpriseToEbitda": 15.0}
+        for i, pe in enumerate([20.0, 24.0, 28.0, 32.0])
+    }
+    funds["OUTLIER"] = {
+        "sector": "Technology", "industry": "Software",
+        "trailingPE": 500.0, "enterpriseToEbitda": 15.0,  # implausible, must be excluded
+    }
+
+    medians = service._us_peer_medians(funds)
+
+    assert medians["technology"]["pe"] == 26.0
+
+
+def test_analyze_uses_live_peer_medians_over_the_fallback_constants(tmp_path) -> None:
+    service = service_for(tmp_path)
+    fundamentals = {
+        "companyName": "Test Corp",
+        "sector": "Technology",
+        "industry": "Software",
+        "marketCap": 5_000_000_000,
+        "trailingEps": 5.0,
+        "forwardEps": 5.5,
+        "sharesOutstanding": 500_000_000,
+        "beta": 1.0,
+    }
+    quote = {"price": 100.0, "currency": "USD", "change_percent": 0.5, "as_of": datetime.now(timezone.utc)}
+
+    without_peers = service._analyze("TEST", "US", quote, fundamentals, risk_free_rate=0.04)
+    with_low_peer_pe = service._analyze(
+        "TEST", "US", quote, fundamentals, risk_free_rate=0.04,
+        peer_medians={"technology": {"pe": 8.0, "ev_ebitda": 6.0}},
+    )
+
+    assert with_low_peer_pe["c3po_tp"] < without_peers["c3po_tp"]
