@@ -376,7 +376,8 @@ button { cursor: pointer; }
 .r2d2-learning-trend-positive { color: var(--green); }
 .r2d2-learning-trend-negative { color: var(--red); }
 .r2d2-learning-trend-neutral { color: #8a949f; }
-.r2d2-learning-scroll { overflow-x: auto; padding: 18px 18px 14px; }
+.r2d2-learning-content { display: grid; grid-template-columns: minmax(0, 1fr) 210px; align-items: stretch; }
+.r2d2-learning-scroll { min-width: 0; overflow-x: auto; padding: 18px 18px 14px; }
 .r2d2-learning-svg { display: block; overflow: visible; }
 .r2d2-learning-grid { stroke: #e5e9ed; stroke-width: 1; stroke-dasharray: 4 5; }
 .r2d2-learning-tick, .r2d2-learning-axis-label { fill: #8e98a5; font-size: 8px; }
@@ -390,6 +391,15 @@ button { cursor: pointer; }
 .r2d2-learning-legend-negative { fill: var(--red); }
 .r2d2-learning-legend-label { fill: #66717e; font-size: 9px; font-weight: 800; dominant-baseline: middle; }
 .r2d2-learning-ma-label { fill: var(--purple); font-size: 9.5px; font-weight: 800; dominant-baseline: middle; }
+.r2d2-learning-median-card { display: grid; grid-template-rows: repeat(2, 1fr); margin: 22px 18px 22px 0; overflow: hidden; background: #fbfcfd; border: 1px solid var(--line); border-radius: 6px; }
+.r2d2-learning-median-card > div { display: flex; min-height: 78px; flex-direction: column; justify-content: center; padding: 14px 16px; }
+.r2d2-learning-median-card > div + div { border-top: 1px solid var(--line); }
+.r2d2-learning-median-card span { color: #717b88; font-size: 9px; font-weight: 850; text-transform: uppercase; }
+.r2d2-learning-median-card strong { margin-top: 4px; color: #20262e; font-size: 22px; line-height: 1; font-variant-numeric: tabular-nums; }
+.r2d2-learning-median-card small { margin-top: 6px; color: #929ba6; font-size: 8px; font-weight: 700; }
+.r2d2-learning-median-card .r2d2-learning-median-positive { color: var(--green); }
+.r2d2-learning-median-card .r2d2-learning-median-negative { color: var(--red); }
+.r2d2-learning-median-card .r2d2-learning-median-neutral { color: #687483; }
 .r2d2-trade-head, .r2d2-trade-row { display: grid; grid-template-columns: .7fr .44fr .58fr .5fr .58fr .88fr .82fr minmax(220px, 2fr); align-items: center; column-gap: 9px; padding-right: 16px; padding-left: 16px; }
 .r2d2-trade-head { min-height: 38px; color: #89929d; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 8px; font-weight: 800; text-transform: uppercase; }
 .r2d2-trade-row { min-height: 62px; border-bottom: 1px solid var(--line); font-size: 9px; }
@@ -1799,6 +1809,10 @@ button { cursor: pointer; }
   .r2d2-allocation-legend { grid-template-columns: 1fr; }
   .r2d2-allocation-legend > div:nth-child(n) { border-top: 1px solid var(--line); border-left: 0; }
   .r2d2-allocation-legend > div:first-child { border-top: 0; }
+  .r2d2-learning-content { grid-template-columns: 1fr; }
+  .r2d2-learning-median-card { grid-template-rows: none; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 16px 16px; }
+  .r2d2-learning-median-card > div { min-height: 72px; }
+  .r2d2-learning-median-card > div + div { border-top: 0; border-left: 1px solid var(--line); }
   .r2d2-trade-head { display: none; }
   .r2d2-trades-header { min-height: 72px; align-items: flex-start; flex-direction: column; justify-content: center; gap: 7px; padding-top: 9px; padding-bottom: 9px; }
   .r2d2-trade-summary { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
