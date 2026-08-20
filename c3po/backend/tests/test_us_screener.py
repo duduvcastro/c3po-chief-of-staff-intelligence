@@ -10,7 +10,16 @@ class DummyRealtime:
 
 
 class DummyOnePagers:
-    def _analyze(self, symbol, market, quote, fundamentals, history, *, insider_activity=None, news_sentiment=None):
+    def _us_risk_free_rate(self):
+        return 0.042
+
+    def _us_peer_medians(self, fundamentals_by_symbol):
+        return {}
+
+    def _analyze(
+        self, symbol, market, quote, fundamentals, history, *,
+        insider_activity=None, news_sentiment=None, risk_free_rate=None, peer_medians=None,
+    ):
         return {
             "c3po_tp": 145.0,
             "consensus_tp": 150.0,
@@ -197,3 +206,57 @@ def test_ir_freshness_defaults_to_unavailable_without_an_event() -> None:
         "latest_ir_event_at": None,
         "latest_ir_event_type": None,
     }
+
+
+def test_us_valuation_calibration_uses_mature_price_return_samples() -> None:
+    """Root-caused 2026-08-20 (TP methodology audit): B3 has a rolling
+    90-day backtest that measures forecast bias by valuation profile and
+    corrects internal_tp by up to +/-5% (b3_screener.py's
+    _persist_calibration); the US engine had no equivalent, so a systematic
+    bias would never be detected. Mirrors B3's own regression test exactly.
+    """
+    svc = service()
+    methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")
+    generated_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    prior_rows = [
+        {"symbol": f"T{index:03d}", "price": 100.0, "expected_total_return_percent": 15.0, "valuation_profile": "general"}
+        for index in range(40)
+    ]
+    current_rows = [{"symbol": row["symbol"], "price": 110.0, "valuation_profile": "general"} for row in prior_rows]
+    svc.database.save_analysis_snapshot(
+        "valuation_universe", "NASDAQ_UNIVERSE", methodology_id, {}, {"rows": prior_rows},
+        generated_at - timedelta(days=90),
+    )
+
+    svc._persist_calibration("NASDAQ", methodology_id, generated_at, current_rows)
+    calibration = svc.database.latest_analysis_snapshot("valuation_calibration", "NASDAQ_POWER_MODEL")
+
+    assert calibration and calibration["outputs"]["status"] == "active"
+    assert 1.0 < calibration["outputs"]["factors"]["global"] <= 1.05
+    assert calibration["outputs"]["metrics"]["global"]["samples"] == 40
+
+
+def test_us_valuation_calibration_warms_up_without_a_mature_prior_snapshot() -> None:
+    svc = service()
+    methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")
+
+    svc._persist_calibration("NASDAQ", methodology_id, datetime.now(timezone.utc), [])
+    calibration = svc.database.latest_analysis_snapshot("valuation_calibration", "NASDAQ_POWER_MODEL")
+
+    assert calibration and calibration["outputs"]["status"] == "warming_up"
+    assert calibration["outputs"]["factors"] == {}
+
+
+def test_load_calibration_factors_clamps_persisted_values_to_the_documented_limit() -> None:
+    svc = service()
+    methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")
+    svc.database.save_analysis_snapshot(
+        "valuation_calibration", "NASDAQ_POWER_MODEL", methodology_id, {},
+        {"status": "active", "factors": {"global": 1.20, "technology": 0.80}, "metrics": {}},
+        datetime.now(timezone.utc),
+    )
+
+    svc._load_calibration_factors("NASDAQ")
+
+    assert svc._calibration_factors["NASDAQ"]["global"] == 1.05
+    assert svc._calibration_factors["NASDAQ"]["technology"] == 0.95
