@@ -132,14 +132,24 @@ class USScreeningService:
                 return dict(row)
         return None
 
-    def peer_medians(self, market: str) -> dict[str, dict[str, float]]:
-        """Latest batch-computed peer-median multiples for `market`, reused
-        by the single-symbol Laser Pager path so it doesn't need its own
-        bulk fundamentals fetch just to price one stock. Empty until the
-        first background _build() completes for this market (peer medians
+    def peer_medians(self, market: str | None = None) -> dict[str, dict[str, float]]:
+        """Latest batch-computed peer-median multiples, reused by the
+        single-symbol Laser Pager path so it doesn't need its own bulk
+        fundamentals fetch just to price one stock. `market` follows
+        valuation_for()'s convention: pass "NASDAQ"/"NYSE" for one exchange,
+        or omit it (the Laser Pager caller only knows "US", not the
+        specific exchange) to merge both — profile buckets like
+        "technology"/"financial" are the same taxonomy on either exchange.
+        Empty until the first background _build() completes (peer medians
         aren't persisted, unlike _rows/_calibration_factors) — callers
         already fall back to the hardcoded constants when this is empty."""
-        return self._peer_medians[self._market(market)]
+        if market:
+            return self._peer_medians[self._market(market)]
+        merged: dict[str, dict[str, float]] = {}
+        for exchange in ("NASDAQ", "NYSE"):
+            for profile, values in self._peer_medians[exchange].items():
+                merged.setdefault(profile, values)
+        return merged
 
     def _build(self, market: USMarket) -> list[dict[str, Any]]:
         if not self.settings.eodhd_api_token:

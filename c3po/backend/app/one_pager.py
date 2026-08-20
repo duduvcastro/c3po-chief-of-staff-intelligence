@@ -150,7 +150,7 @@ class OnePagerService:
             )
             risk_free_rate = self._us_risk_free_rate() if market != "B3" else None
             peer_medians = (
-                self.us_screener.peer_medians(market) if market != "B3" and self.us_screener else None
+                self.us_screener.peer_medians() if market != "B3" and self.us_screener else None
             )
             shared_valuation = (
                 self.b3_screener.valuation_for(symbol, build_if_missing=True)
