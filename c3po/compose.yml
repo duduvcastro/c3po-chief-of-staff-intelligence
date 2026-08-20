@@ -128,7 +128,7 @@ services:
       C3PO_R2D2_MAX_POSITION_PERCENT: 6
       C3PO_R2D2_MAX_MARKET_PERCENT: 48
       C3PO_R2D2_TRADE_COOLDOWN_MINUTES: 8
-      C3PO_R2D2_MAX_DAILY_ORDERS: 120
+      C3PO_R2D2_MAX_DAILY_ORDERS: ${C3PO_R2D2_MAX_DAILY_ORDERS:-500}
       TZ: America/Sao_Paulo
     command: ["python", "-m", "app.r2d2_worker"]
     depends_on:
