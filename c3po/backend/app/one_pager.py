@@ -12,6 +12,7 @@ from .config import Settings
 from .database import Database
 from .foreign_listings import normalize_foreign_fundamentals, policy_for
 from .market_data.eodhd import EodhdClient
+from .market_data.fmp import FmpClient
 from .market_data.sector_taxonomy import canonical_b3_company_name
 from .market_data.service import MarketDataService
 from .one_pager_pdf import PremiumOnePagerRenderer
@@ -175,6 +176,7 @@ class OnePagerService:
             peer_medians = (
                 self.us_screener.peer_medians() if market != "B3" and self.us_screener else None
             )
+            fmp_consensus, fmp_summary = self._fmp_consensus_data(symbol) if market != "B3" else (None, None)
             shared_valuation = (
                 self.b3_screener.valuation_for(symbol, build_if_missing=True)
                 if market == "B3" and self.b3_screener
@@ -199,6 +201,8 @@ class OnePagerService:
                 news_sentiment=news_sentiment,
                 risk_free_rate=risk_free_rate,
                 peer_medians=peer_medians,
+                fmp_consensus=fmp_consensus,
+                fmp_summary=fmp_summary,
             )
             verification_label = (
                 "RI da companhia + regulador verificados"
@@ -362,6 +366,8 @@ class OnePagerService:
         news_sentiment: dict[str, Any] | None = None,
         risk_free_rate: float | None = None,
         peer_medians: dict[str, dict[str, float]] | None = None,
+        fmp_consensus: dict[str, float] | None = None,
+        fmp_summary: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         price = self._positive(quote.get("price"))
         if price is None:
@@ -385,7 +391,7 @@ class OnePagerService:
         roe = self._ratio(fundamentals.get("returnOnEquity"))
         beta = self._positive(fundamentals.get("beta"))
         analyst_ratings = fundamentals.get("analystRatings") if isinstance(fundamentals.get("analystRatings"), dict) else {}
-        consensus = self._bounded_tp(
+        eodhd_consensus = self._bounded_tp(
             fundamentals.get("targetMeanPrice") or analyst_ratings.get("targetPrice"),
             price,
         )
@@ -393,7 +399,11 @@ class OnePagerService:
         analyst_hold = int(analyst_ratings.get("hold") or 0)
         analyst_sell = sum(int(analyst_ratings.get(key) or 0) for key in ("sell", "strongSell"))
         rating_count = analyst_buy + analyst_hold + analyst_sell
-        analyst_count = max(int(fundamentals.get("numberOfAnalystOpinions") or 0), rating_count) or None
+        eodhd_analyst_count = max(int(fundamentals.get("numberOfAnalystOpinions") or 0), rating_count) or None
+        raw_consensus, analyst_count, consensus_source = self._resolve_us_consensus(
+            fmp_consensus, fmp_summary, eodhd_consensus, eodhd_analyst_count,
+        )
+        consensus = self._bounded_tp(raw_consensus, price)
 
         forward_eps = self._positive(fundamentals.get("forwardEps"))
         trailing_eps = self._positive(fundamentals.get("trailingEps"))
@@ -726,6 +736,7 @@ class OnePagerService:
             "c3po_tp": c3po_tp,
             "profile": profile,
             "consensus_tp": consensus,
+            "consensus_source": consensus_source,
             "consensus_upside": consensus_upside,
             "analyst_count": analyst_count,
             "analyst_buy": analyst_buy if rating_count else None,
@@ -1020,6 +1031,21 @@ class OnePagerService:
         self._us_risk_free_cache = (now + timedelta(hours=US_RISK_FREE_CACHE_HOURS), rate)
         return rate
 
+    def _fmp_consensus_data(self, symbol: str) -> tuple[dict[str, float] | None, dict[str, Any] | None]:
+        """FMP Ultimate price-target-consensus + price-target-summary for a
+        single US symbol, fetched fresh per Laser Pager (unlike the shared,
+        slow-moving risk-free rate, analyst consensus is per-symbol and not
+        worth caching here). Returns (None, None) on any failure or when
+        the credential isn't configured -- _resolve_us_consensus already
+        falls back to EODHD, so this must never raise."""
+        if not self.settings.fmp_api_token:
+            return None, None
+        try:
+            client = FmpClient(self.settings.fmp_base_url, self.settings.fmp_api_token, self.market_data.http)
+            return client.price_target_consensus(symbol), client.price_target_summary(symbol)
+        except Exception:
+            return None, None
+
     @staticmethod
     def _us_consensus_weight(consensus: float | None, analyst_count: int | None) -> float:
         """Mirrors B3's _consensus_weight (b3_screener.py) -- how much real
@@ -1031,6 +1057,35 @@ class OnePagerService:
         analyst_breadth = OnePagerService._clamp(analyst_count / US_CONSENSUS_ANALYST_BREADTH_ANALYSTS, 0, 1)
         weight = US_CONSENSUS_WEIGHT_MIN + analyst_breadth * (US_CONSENSUS_WEIGHT_MAX - US_CONSENSUS_WEIGHT_MIN)
         return OnePagerService._clamp(weight, US_CONSENSUS_WEIGHT_MIN, US_CONSENSUS_WEIGHT_MAX)
+
+    @staticmethod
+    def _resolve_us_consensus(
+        fmp_consensus: dict[str, float] | None,
+        fmp_summary: dict[str, Any] | None,
+        eodhd_consensus: float | None,
+        eodhd_analyst_count: int | None,
+    ) -> tuple[float | None, int | None, str]:
+        """Root-caused 2026-08-20: EODHD's targetMeanPrice carries no update
+        date, and its accompanying numberOfAnalystOpinions counts EPS
+        estimators (Earnings.Trend), not necessarily the analysts behind
+        the price target itself -- confirmed on a live sample where the
+        two counts diverged for the majority of a 50-symbol sample. FMP
+        Ultimate gives broker-level, dated price targets instead; prefers
+        the most recent well-supported window (last month, then quarter)
+        over its own all-time blended consensus, since recency is exactly
+        what EODHD was missing. Falls back to EODHD only when FMP has
+        nothing usable -- verified live that FMP's blended consensus and
+        EODHD's landed within 0.25% of each other for JPM, so this is
+        about provenance and freshness, not disagreement over the number.
+        """
+        if fmp_summary:
+            if fmp_summary.get("last_month_count", 0) >= 3 and fmp_summary.get("last_month_avg"):
+                return fmp_summary["last_month_avg"], fmp_summary["last_month_count"], "fmp_last_month"
+            if fmp_summary.get("last_quarter_count", 0) >= 3 and fmp_summary.get("last_quarter_avg"):
+                return fmp_summary["last_quarter_avg"], fmp_summary["last_quarter_count"], "fmp_last_quarter"
+        if fmp_consensus and fmp_consensus.get("consensus"):
+            return fmp_consensus["consensus"], eodhd_analyst_count, "fmp_all_time"
+        return eodhd_consensus, eodhd_analyst_count, "eodhd"
 
     def _dcf_value(
         self,
