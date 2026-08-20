@@ -5772,14 +5772,26 @@ function AlertsView({ onRead }: { onRead: (count: number) => void }) {
   if (error) return <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span></div>;
   if (!data) return <LoadingState />;
   const stale = data.status !== "fresh";
+  const staleAlert: AlertItem | null = stale ? {
+    id: "stale-snapshot",
+    severity: "High",
+    subject: "Legacy snapshot is stale",
+    context: "A fonte principal não foi atualizada dentro da janela esperada.",
+    action: `Last source update: ${formatDate(data.generated_at)}`,
+    source: "Legacy Summary Adapter",
+    occurred_at: data.generated_at,
+    metadata: {},
+    is_read: true
+  } : null;
+  const displayedAlerts = [...data.items, ...(staleAlert ? [staleAlert] : [])]
+    .sort((left, right) => Date.parse(right.occurred_at ?? "") - Date.parse(left.occurred_at ?? ""));
   return (
     <section className="panel">
       <PanelHeader title="Active Alerts" icon={RadarAlertsIcon} />
       {readError && <div className="screen-error"><AlertTriangle size={16} /><span>{readError}</span></div>}
       <div className="alert-list">
-        {stale && <AlertRow item={{ id: "stale-snapshot", severity: "High", subject: "Legacy snapshot is stale", context: "A fonte principal não foi atualizada dentro da janela esperada.", action: `Last source update: ${formatDate(data.generated_at)}`, source: "Legacy Summary Adapter", occurred_at: data.generated_at, metadata: {}, is_read: true }} expanded={expandedId === "stale-snapshot"} onToggle={() => setExpandedId((current) => current === "stale-snapshot" ? null : "stale-snapshot")} />}
-        {data.items.map((item) => <AlertRow key={item.id} item={item} expanded={expandedId === item.id} onToggle={() => toggleAlert(item)} />)}
-        {!stale && !data.items.length && <EmptyLine label="No active alerts" />}
+        {displayedAlerts.map((item) => <AlertRow key={item.id} item={item} expanded={expandedId === item.id} onToggle={() => toggleAlert(item)} />)}
+        {!displayedAlerts.length && <EmptyLine label="No active alerts" />}
       </div>
     </section>
   );
