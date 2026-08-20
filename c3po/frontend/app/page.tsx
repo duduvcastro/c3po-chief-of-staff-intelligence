@@ -6416,6 +6416,7 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
     weather: "/open-meteo-mark.svg",
     pluggy: "/pluggy-mark.svg",
     brapi: "/brapi-mark.svg",
+    fmp: "/fmp-mark.svg",
     intermedia: "/intermedia-exchange-logo.png",
     finnhub: "/service-finnhub.png",
     cvm: "/cvm-mark.png",
@@ -6447,7 +6448,6 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
   if (kind === "btg") return <span className="service-logo service-logo-btg service-logo-word" aria-hidden="true"><b>BTG</b></span>;
   if (kind === "itau") return <span className="service-logo service-logo-itau service-logo-word" aria-hidden="true"><b>itaú</b></span>;
   if (kind === "eodhd") return <span className="service-logo service-logo-eodhd service-logo-word" aria-hidden="true"><i /><i /><i /><b>EOD</b></span>;
-  if (kind === "fmp") return <span className="service-logo service-logo-fmp service-logo-word" aria-hidden="true"><b>FMP</b></span>;
   if (kind === "openai") return <span className="service-logo service-logo-openai service-logo-word" aria-hidden="true"><b>AI</b></span>;
   if (kind === "anthropic") return <span className="service-logo service-logo-anthropic service-logo-word" aria-hidden="true"><b>CL</b></span>;
   if (kind === "issuer") return <span className="service-logo service-logo-issuer service-logo-word" aria-hidden="true"><b>RI</b></span>;
