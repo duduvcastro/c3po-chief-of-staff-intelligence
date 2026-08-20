@@ -6364,6 +6364,7 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
     weather: "/open-meteo-mark.svg",
     pluggy: "/pluggy-mark.svg",
     brapi: "/brapi-mark.svg",
+    intermedia: "/intermedia-exchange-logo.png",
     finnhub: "/service-finnhub.png",
     cvm: "/cvm-mark.png",
     sec: "/sec-mark.gif",
@@ -6383,7 +6384,6 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
     );
   }
   if (kind === "github") return <span className="service-logo service-logo-github" aria-hidden="true"><Github size={23} /></span>;
-  if (kind === "intermedia") return <span className="service-logo service-logo-intermedia" aria-hidden="true"><Mail size={21} /><b>IX</b></span>;
   if (kind === "santander") {
     return (
       <span className="service-logo service-logo-santander" aria-hidden="true">
