@@ -1,3 +1,4 @@
+import logging
 import math
 import re
 import statistics
@@ -22,6 +23,8 @@ from ..valuation_policy import (
     METHODOLOGY_VERSION,
 )
 
+
+logger = logging.getLogger(__name__)
 
 UNIVERSE_LIMIT = 350
 CATALOG_FETCH_LIMIT = 700
@@ -54,6 +57,8 @@ MATRIX_PROVIDER_DELAY_MINUTES = 5
 INSIDER_GOVERNANCE_LOOKBACK_DAYS = 180
 INSIDER_SIGNAL_MIN_TRANSACTIONS_FOR_FULL_WEIGHT = 4
 INSIDER_GOVERNANCE_MAX_SWING = 20.0
+DISCLOSURE_GOVERNANCE_MAX_SWING = 12.0
+DISCLOSURE_MATERIALITY_WEIGHTS = {"high": 1.0, "medium": 0.5, "low": 0.2}
 PERSISTED_STATE_POLL_SECONDS = 15
 AUXILIARY_CACHE_HOURS = 18
 CALIBRATION_HORIZON_DAYS = 90
@@ -65,6 +70,7 @@ BCB_SELIC_SERIES_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/
 LATEST_COPOM_SELIC = 0.14
 LATEST_COPOM_DECISION_AT = datetime(2026, 8, 5, 18, 30, tzinfo=ZoneInfo("America/Sao_Paulo"))
 LATEST_COPOM_EFFECTIVE_DATE = date(2026, 8, 6)
+SELIC_GOVERNOR_STALE_WARNING_DAYS = 50
 
 
 # Issuer-published consensus takes precedence when it is more broadly covered
@@ -939,6 +945,14 @@ class B3ScreenerService:
         if bcb_value is not None and bcb_as_of is not None and bcb_as_of >= LATEST_COPOM_EFFECTIVE_DATE:
             return bcb_value
         if current_time >= LATEST_COPOM_DECISION_AT:
+            stale_days = (current_time.date() - LATEST_COPOM_DECISION_AT.date()).days
+            if stale_days > SELIC_GOVERNOR_STALE_WARNING_DAYS:
+                logger.warning(
+                    "Selic governor is %d days past LATEST_COPOM_DECISION_AT (%s) with no newer BCB "
+                    "observation (bcb_as_of=%s) — LATEST_COPOM_SELIC/LATEST_COPOM_DECISION_AT/"
+                    "LATEST_COPOM_EFFECTIVE_DATE may need a manual update after a subsequent COPOM meeting.",
+                    stale_days, LATEST_COPOM_DECISION_AT.date(), bcb_as_of,
+                )
             return LATEST_COPOM_SELIC
         return bcb_value or provider_value or LATEST_COPOM_SELIC
 
@@ -1164,9 +1178,12 @@ class B3ScreenerService:
                 "source_comparison_count": comparison_count,
                 "fundamentals_as_of": eod.get("financialsAsOf") or eod.get("updated_at"),
                 **cycle_metrics,
-                **self._ir_freshness(
+                **(ir_freshness := self._ir_freshness(
                     eod.get("financialsAsOf") or eod.get("updated_at"),
                     ir_events.get(symbol),
+                )),
+                "pending_disclosure_risk": self._disclosure_risk_signal(
+                    ir_freshness["ir_status"], (ir_events.get(symbol) or {}).get("materiality")
                 ),
                 "insider_net_signal": self._insider_net_signal(insider_activity.get(symbol)),
                 "history_source": "eodhd" if symbol in self._eodhd_history else "brapi",
@@ -2187,6 +2204,17 @@ class B3ScreenerService:
         confidence = min(1.0, total / INSIDER_SIGNAL_MIN_TRANSACTIONS_FOR_FULL_WEIGHT)
         return net_ratio * confidence
 
+    @staticmethod
+    def _disclosure_risk_signal(ir_status: str, materiality: str | None) -> float:
+        """0..1 governance risk weight for a disclosure still pending review
+        (Tatooine Updates: CVM/RI), scaled by the filing's own materiality so
+        a high-materiality item (restatement, M&A) pressures governance_risk
+        harder than a routine low-materiality one. 0.0 once the disclosure is
+        current/incorporated."""
+        if ir_status != "pending_review":
+            return 0.0
+        return DISCLOSURE_MATERIALITY_WEIGHTS.get(materiality or "medium", 0.5)
+
     @classmethod
     def _provisional_eligibility(cls, row: dict[str, Any]) -> tuple[bool, list[str]]:
         reasons: list[str] = []
@@ -2236,7 +2264,14 @@ class B3ScreenerService:
         earnings_risk = trend_risk * 0.70 + margin_risk * 0.30
         liquidity_risk = clamp((7.8 - math.log10(max(row.get("adtv_90d") or MIN_ADTV_90D, 1))) * 55, 0, 100)
         insider_net_signal = row.get("insider_net_signal") or 0.0
-        governance_risk = clamp(50.0 - insider_net_signal * INSIDER_GOVERNANCE_MAX_SWING, 30.0, 70.0)
+        pending_disclosure_risk = row.get("pending_disclosure_risk") or 0.0
+        governance_risk = clamp(
+            50.0
+            - insider_net_signal * INSIDER_GOVERNANCE_MAX_SWING
+            + pending_disclosure_risk * DISCLOSURE_GOVERNANCE_MAX_SWING,
+            30.0,
+            70.0,
+        )
         macro_risk = {
             "financial": 52.0,
             "real_estate": 62.0,

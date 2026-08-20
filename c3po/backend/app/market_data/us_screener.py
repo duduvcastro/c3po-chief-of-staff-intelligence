@@ -91,6 +91,7 @@ class USScreeningService:
         self._universe_size: dict[USMarket, int] = {"NASDAQ": STOCK_LIMIT + ETF_LIMIT, "NYSE": STOCK_LIMIT + ETF_LIMIT}
         self._coverage: dict[USMarket, dict[str, int]] = {"NASDAQ": {}, "NYSE": {}}
         self._calibration_factors: dict[USMarket, dict[str, float]] = {"NASDAQ": {}, "NYSE": {}}
+        self._peer_medians: dict[USMarket, dict[str, dict[str, float]]] = {"NASDAQ": {}, "NYSE": {}}
 
     @staticmethod
     def _market(value: str) -> USMarket:
@@ -130,6 +131,15 @@ class USScreeningService:
             if row:
                 return dict(row)
         return None
+
+    def peer_medians(self, market: str) -> dict[str, dict[str, float]]:
+        """Latest batch-computed peer-median multiples for `market`, reused
+        by the single-symbol Laser Pager path so it doesn't need its own
+        bulk fundamentals fetch just to price one stock. Empty until the
+        first background _build() completes for this market (peer medians
+        aren't persisted, unlike _rows/_calibration_factors) — callers
+        already fall back to the hardcoded constants when this is empty."""
+        return self._peer_medians[self._market(market)]
 
     def _build(self, market: USMarket) -> list[dict[str, Any]]:
         if not self.settings.eodhd_api_token:
@@ -187,6 +197,7 @@ class USScreeningService:
         news_sentiment = self.database.latest_news_sentiment(symbols, market="US")
         risk_free_rate = self.one_pagers._us_risk_free_rate()
         peer_medians = self.one_pagers._us_peer_medians(fundamentals)
+        self._peer_medians[market] = peer_medians
         rows: list[dict[str, Any]] = []
         for cash_volume, quote, metadata in selected:
             symbol = quote.symbol

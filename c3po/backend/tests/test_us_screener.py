@@ -247,6 +247,20 @@ def test_us_valuation_calibration_warms_up_without_a_mature_prior_snapshot() -> 
     assert calibration["outputs"]["factors"] == {}
 
 
+def test_peer_medians_returns_the_latest_batch_computed_multiples_per_market() -> None:
+    """Root-caused 2026-08-20: the single-symbol Laser Pager path
+    (one_pager.py::generate()) never threaded peer_medians through, so it
+    silently kept using the pre-PR#72 hardcoded multiples for every US
+    symbol regardless of the new methodology. This getter is what
+    generate() now reuses instead of recomputing peer medians itself.
+    """
+    svc = service()
+    assert svc.peer_medians("NASDAQ") == {}
+    svc._peer_medians["NASDAQ"] = {"financial": {"pe": 11.0, "ev_ebitda": 9.0}}
+    assert svc.peer_medians("NASDAQ") == {"financial": {"pe": 11.0, "ev_ebitda": 9.0}}
+    assert svc.peer_medians("NYSE") == {}
+
+
 def test_load_calibration_factors_clamps_persisted_values_to_the_documented_limit() -> None:
     svc = service()
     methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")

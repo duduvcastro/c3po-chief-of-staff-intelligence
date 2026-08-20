@@ -149,6 +149,9 @@ class OnePagerService:
                 self.database.latest_news_sentiment([symbol], market).get(symbol) if market != "B3" else None
             )
             risk_free_rate = self._us_risk_free_rate() if market != "B3" else None
+            peer_medians = (
+                self.us_screener.peer_medians(market) if market != "B3" and self.us_screener else None
+            )
             shared_valuation = (
                 self.b3_screener.valuation_for(symbol, build_if_missing=True)
                 if market == "B3" and self.b3_screener
@@ -172,6 +175,7 @@ class OnePagerService:
                 insider_activity=insider_activity,
                 news_sentiment=news_sentiment,
                 risk_free_rate=risk_free_rate,
+                peer_medians=peer_medians,
             )
             verification_label = (
                 "RI da companhia + regulador verificados"
