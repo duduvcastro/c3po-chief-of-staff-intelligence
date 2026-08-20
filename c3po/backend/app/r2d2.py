@@ -1252,7 +1252,7 @@ class R2D2PaperService:
                     self.repo.save_decision(experiment["id"], cycle_id, candidate, action, reasons)
                     continue
                 signals += 1
-                trade = self._buy(experiment, cycle_id, candidate, positions)
+                trade = self._buy(experiment, cycle_id, candidate, positions, now)
                 if trade:
                     trade_count += 1
                     orders_today += 1
@@ -2462,7 +2462,7 @@ class R2D2PaperService:
         }
         self._sell(experiment, cycle_id, exit_item, position, quote, fx, reason)
         refreshed = self.repo.positions(experiment["id"])
-        trade = self._buy(experiment, cycle_id, candidate, refreshed)
+        trade = self._buy(experiment, cycle_id, candidate, refreshed, now)
         if not trade:
             self.repo.save_decision(
                 experiment["id"], cycle_id, candidate, "REJECT",
@@ -2472,7 +2472,7 @@ class R2D2PaperService:
         return 2
 
     def _buy(self, experiment: dict[str, Any], cycle_id: str, item: dict[str, Any],
-             positions: list[dict[str, Any]]) -> dict[str, Any] | None:
+             positions: list[dict[str, Any]], now: datetime | None = None) -> dict[str, Any] | None:
         if item.get("market") not in ACTIVE_MARKETS or item.get("quote_status") != "live":
             return None
         # Root-caused 2026-08-20: item["price"] was captured during
@@ -2481,14 +2481,24 @@ class R2D2PaperService:
         # same stale-quote class of bug already fixed on the exit side via the
         # Risk Monitor. Re-pull the freshest available tick right before
         # computing the fill so a slow-to-execute BUY doesn't fill on a price
-        # the market has already moved past.
+        # the market has already moved past. If no fresh tick is available
+        # (e.g. the symbol churned out of the WebSocket subscription), fall
+        # back to whatever quote _enrich_technicals captured -- but only if
+        # it's still within the same freshness window every other live-quote
+        # check in this service uses; otherwise the BUY waits for a cycle
+        # where a trustworthy price actually exists instead of filling blind.
+        now = now or datetime.now(timezone.utc)
         stream = getattr(self.realtime, "stream", None)
         if stream:
             fresh_quote = stream.quote(item["symbol"])
             if fresh_quote is not None:
-                if not self._live_us_quote(fresh_quote, datetime.now(timezone.utc)):
-                    return None
                 item = {**item, "price": fresh_quote.price, "quote_as_of": fresh_quote.as_of}
+        quote_as_of = item.get("quote_as_of")
+        if not isinstance(quote_as_of, datetime):
+            return None
+        as_of = quote_as_of if quote_as_of.tzinfo else quote_as_of.replace(tzinfo=timezone.utc)
+        if (now - as_of).total_seconds() > self.settings.r2d2_live_quote_max_age_seconds:
+            return None
         dashboard = self.dashboard()
         if dashboard.daily_return_percent <= -self.settings.r2d2_daily_loss_limit_percent:
             return None
