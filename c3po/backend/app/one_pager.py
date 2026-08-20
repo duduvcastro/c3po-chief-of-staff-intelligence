@@ -899,10 +899,21 @@ class OnePagerService:
 
     @staticmethod
     def _valuation_profile(sector: str, industry: str) -> str:
+        """Root-caused 2026-08-20: the bare "financial" and "electric"
+        keywords match on their own sector names ("Financial Services",
+        "Industrials" -> "Electrical Equipment & Parts"), not just on
+        actual banks/insurers/utilities. That pooled JPM's peer-median
+        basket with Visa/Mastercard/CME/BlackRock (high-multiple
+        diversified financials, not banks) and could pool electrical-
+        equipment industrials into the low-multiple utilities bucket.
+        "bank"/"insurance"/"utility"/"utilities" alone already catch every
+        real bank, insurer, and utility (their EODHD industry values are
+        literally "Banks-...", "Insurance-...", "Utilities-..."), so the
+        broader terms were pure risk with no real coverage benefit."""
         text = f"{sector} {industry}".lower()
-        if any(term in text for term in ("bank", "insurance", "financial", "banco", "segur")):
+        if any(term in text for term in ("bank", "insurance", "banco", "segur")):
             return "financial"
-        if any(term in text for term in ("utility", "utilities", "electric", "water", "energia elétrica", "saneamento")):
+        if any(term in text for term in ("utility", "utilities", "water", "energia elétrica", "saneamento")):
             return "utilities"
         if any(term in text for term in ("real estate", "reit", "property", "imobili")):
             return "real_estate"

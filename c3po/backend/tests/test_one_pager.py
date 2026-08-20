@@ -466,6 +466,36 @@ def test_us_risk_free_rate_caches_and_falls_back_when_the_feed_is_unavailable(tm
     assert second == 0.099  # cache hit, no re-fetch
 
 
+def test_valuation_profile_does_not_pool_banks_with_diversified_financials() -> None:
+    """Root-caused 2026-08-20 (production incident): the bare "financial"
+    keyword matched EODHD's sector name for the whole Financial Services
+    sector, so JPMorgan's peer-median basket got averaged in with Visa/
+    Mastercard (Credit Services), CME/Nasdaq (Financial Data & Stock
+    Exchanges), and BlackRock (Asset Management) -- high-multiple
+    diversified financials, not banks -- pushing bank TPs away from
+    consensus for every bank/insurer in the US universe once this went
+    live in production. "bank"/"insurance" alone already catch every real
+    bank and insurer (their EODHD industry values are literally
+    "Banks-...", "Insurance-..."), so the broader "financial" term was
+    pure risk with no coverage benefit.
+    """
+    assert OnePagerService._valuation_profile("Financial Services", "Banks-Diversified") == "financial"
+    assert OnePagerService._valuation_profile("Financial Services", "Insurance-Life") == "financial"
+    assert OnePagerService._valuation_profile("Financial Services", "Credit Services") != "financial"
+    assert OnePagerService._valuation_profile("Financial Services", "Financial Data & Stock Exchanges") != "financial"
+    assert OnePagerService._valuation_profile("Financial Services", "Asset Management") != "financial"
+
+
+def test_valuation_profile_does_not_pool_electrical_equipment_with_utilities() -> None:
+    """Same root cause as the financial-pooling bug above: the bare
+    "electric" keyword matched "Electrical Equipment & Parts" (an
+    Industrials sub-industry), not just real electric utilities -- whose
+    EODHD industry values already say "Utilities-..." and are caught by
+    "utility"/"utilities" alone."""
+    assert OnePagerService._valuation_profile("Utilities", "Utilities-Regulated Electric") == "utilities"
+    assert OnePagerService._valuation_profile("Industrials", "Electrical Equipment & Parts") != "utilities"
+
+
 def test_us_peer_medians_requires_a_minimum_sample_per_profile(tmp_path) -> None:
     """Root-caused 2026-08-20 (TP methodology audit): fair_pe/fair_ev_ebitda
     used a fixed constant per profile with no live peer comparison, unlike
