@@ -139,6 +139,8 @@ class Settings(BaseSettings):
     r2d2_trade_cooldown_minutes: int = 8
     r2d2_max_daily_orders: int = 120
     r2d2_ws_max_symbols: int = 50
+    r2d2_ws_rotation_grace_cycles: int = 3
+    r2d2_ws_rotation_core_percent: float = 50.0
     r2d2_deployment_technical_review_per_market: int = 32
     r2d2_standard_technical_review_per_market: int = 24
 

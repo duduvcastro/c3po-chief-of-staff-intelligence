@@ -270,6 +270,50 @@ def test_r2d2_trims_review_batch_to_available_websocket_capacity() -> None:
     assert reviewed == {"Q0": True, "Y0": True, "Q1": True, "Y1": True, "Q2": False, "Y2": False}
 
 
+def test_r2d2_keeps_websocket_window_for_grace_then_rotates_deterministically() -> None:
+    service = _service()
+    service.settings.r2d2_ws_rotation_grace_cycles = 3
+    service.settings.r2d2_ws_rotation_core_percent = 50.0
+    candidates = [
+        {
+            "market": "NASDAQ",
+            "symbol": f"Q{index}",
+            "fundamental_score": 80.0 - index,
+            "pretrade_rank": 100.0 - index,
+        }
+        for index in range(8)
+    ]
+
+    batches = [
+        [item["symbol"] for item in service._rotating_ws_batch(candidates, 4)[0]]
+        for _ in range(4)
+    ]
+
+    assert batches[:3] == [["Q0", "Q1", "Q2", "Q3"]] * 3
+    assert batches[3] == ["Q0", "Q1", "Q4", "Q5"]
+
+
+def test_r2d2_rotation_never_displaces_stable_top_ranked_core() -> None:
+    service = _service()
+    service.settings.r2d2_ws_rotation_grace_cycles = 1
+    service.settings.r2d2_ws_rotation_core_percent = 50.0
+    candidates = [
+        {
+            "market": "NYSE",
+            "symbol": f"Y{index}",
+            "fundamental_score": 80.0 - index,
+            "pretrade_rank": 100.0 - index,
+        }
+        for index in range(8)
+    ]
+
+    for _ in range(6):
+        batch, stats = service._rotating_ws_batch(candidates, 4)
+        assert [item["symbol"] for item in batch[:2]] == ["Y0", "Y1"]
+        assert stats["core_count"] == 2
+        assert stats["rotating_count"] == 2
+
+
 def test_r2d2_position_sizing_rewards_conviction_and_penalizes_risk_and_volatility() -> None:
     service = _service()
     high_conviction = {
