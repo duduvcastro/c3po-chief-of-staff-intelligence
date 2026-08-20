@@ -598,6 +598,47 @@ def test_us_consensus_weight_scales_with_analyst_breadth_and_zeroes_without_cove
     assert OnePagerService._us_consensus_weight(100.0, 27) == pytest.approx(0.35)  # clamped, not unbounded
 
 
+def test_resolve_us_consensus_prefers_the_most_recent_well_supported_fmp_window() -> None:
+    """Root-caused 2026-08-20: EODHD's targetMeanPrice carries no update
+    date, and its numberOfAnalystOpinions counts EPS estimators, not
+    necessarily the analysts behind the price target -- confirmed
+    divergent for most of a 50-symbol live sample. FMP Ultimate gives
+    broker-level, dated price targets; recency (last month, then quarter)
+    is preferred over FMP's own all-time consensus for the same reason
+    EODHD's staleness was the problem in the first place.
+    """
+    fmp_consensus = {"consensus": 373.64, "median": 370.0, "high": 420.0, "low": 305.0}
+    fmp_summary_fresh = {"last_month_count": 5, "last_month_avg": 388.33, "last_quarter_count": 12, "last_quarter_avg": 380.0}
+    fmp_summary_thin_month = {"last_month_count": 1, "last_month_avg": 500.0, "last_quarter_count": 12, "last_quarter_avg": 380.0}
+    fmp_summary_empty = {"last_month_count": 0, "last_month_avg": None, "last_quarter_count": 0, "last_quarter_avg": None}
+
+    assert OnePagerService._resolve_us_consensus(fmp_consensus, fmp_summary_fresh, 350.0, 40) == (388.33, 5, "fmp_last_month")
+    assert OnePagerService._resolve_us_consensus(fmp_consensus, fmp_summary_thin_month, 350.0, 40) == (380.0, 12, "fmp_last_quarter")
+    assert OnePagerService._resolve_us_consensus(fmp_consensus, fmp_summary_empty, 350.0, 40) == (373.64, 40, "fmp_all_time")
+    assert OnePagerService._resolve_us_consensus(None, None, 350.0, 40) == (350.0, 40, "eodhd")
+    assert OnePagerService._resolve_us_consensus(None, fmp_summary_empty, 350.0, 40) == (350.0, 40, "eodhd")
+
+
+def test_analyze_uses_fmp_consensus_over_eodhd_when_available(tmp_path) -> None:
+    service = service_for(tmp_path)
+    fundamentals = {
+        "companyName": "Test Bank", "sector": "Financial Services", "industry": "Banks-Diversified",
+        "marketCap": 400_000_000_000, "trailingEps": 18.0, "forwardEps": 19.0,
+        "sharesOutstanding": 2_800_000_000, "beta": 1.1, "returnOnEquity": 0.18,
+        "targetMeanPrice": 500.0, "numberOfAnalystOpinions": 40,
+    }
+    quote = {"price": 357.26, "currency": "USD", "change_percent": 0.3, "as_of": datetime.now(timezone.utc)}
+
+    result = service._analyze(
+        "TESTBANK", "US", quote, fundamentals, risk_free_rate=0.042,
+        fmp_summary={"last_month_count": 5, "last_month_avg": 373.64, "last_quarter_count": 12, "last_quarter_avg": 380.0},
+    )
+
+    assert result["consensus_tp"] == pytest.approx(373.64)
+    assert result["consensus_source"] == "fmp_last_month"
+    assert result["analyst_count"] == 5
+
+
 def test_analyze_pulls_the_final_tp_toward_a_well_covered_consensus(tmp_path) -> None:
     """Root-caused 2026-08-20 (production incident): JPM's blended TP came
     out $625.49 against a real 27-analyst consensus of $374.57 (67% too
