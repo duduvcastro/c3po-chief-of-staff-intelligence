@@ -873,6 +873,10 @@ class R2D2PaperService:
         self._intraday_cache: dict[tuple[str, str], tuple[datetime, list[dict[str, Any]]]] = {}
         self._fx_cache: tuple[datetime, float] | None = None
         self._eodhd_call_counts: dict[str, int] = {}
+        self._ws_rotation_symbols: list[str] = []
+        self._ws_rotation_cursor = 0
+        self._ws_rotation_age = 0
+        self._technical_review_stats: dict[str, Any] = {}
         self._active_policy = dict(BASE_ENTRY_POLICY)
         self._learning_state: dict[str, Any] | None = None
 
@@ -1259,6 +1263,7 @@ class R2D2PaperService:
                                    metadata={
                                        "scan_funnel": dict(self._us_scan_counts),
                                        "eodhd_usage": _estimate_eodhd_credits(self._eodhd_call_counts),
+                                       "technical_review": dict(self._technical_review_stats),
                                    })
         except Exception as exc:
             logger.exception("R2D2 cycle failed")
@@ -1966,6 +1971,7 @@ class R2D2PaperService:
             for rows in review_sets:
                 if index < len(rows):
                     selected.append(rows[index])
+        rotation_stats: dict[str, Any] = {}
         if max_ws_symbols is not None:
             # Root-caused 2026-08-19: NASDAQ/NYSE technical confirmation requires a
             # live EODHD WebSocket tick (see _technical_snapshot's data_status gate --
@@ -1983,7 +1989,12 @@ class R2D2PaperService:
                 (item for item in selected if item["market"] != "B3"),
                 key=lambda item: item.get("pretrade_rank", item["fundamental_score"]), reverse=True,
             )
-            overflow = ws_bound[max(0, max_ws_symbols):]
+            ws_selected, rotation_stats = self._rotating_ws_batch(
+                ws_bound,
+                max(0, max_ws_symbols),
+            )
+            selected_ids = {id(item) for item in ws_selected}
+            overflow = [item for item in ws_bound if id(item) not in selected_ids]
             for item in overflow:
                 item["technical_reviewed"] = False
             dropped = {id(item) for item in overflow}
@@ -2031,6 +2042,102 @@ class R2D2PaperService:
                 item["technical_score"] = 0.0
                 item["technical_validated"] = False
                 item["composite_score"] = self._composite(item)
+
+        us_selected = [item for item in selected if item["market"] in ACTIVE_MARKETS]
+        live_usable = sum(bool(item.get("technical_validated")) for item in us_selected)
+        self._technical_review_stats = {
+            "eligible_count": rotation_stats.get("rotation_eligible_count", len(us_selected)),
+            "subscribed_count": len(us_selected),
+            "live_usable_count": live_usable,
+            "live_usable_percent": round(live_usable / len(us_selected) * 100, 2) if us_selected else 0.0,
+            **rotation_stats,
+        }
+
+    def _rotating_ws_batch(
+        self,
+        candidates: list[dict[str, Any]],
+        capacity: int,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Keep top-ranked names stable while rotating the remaining live slots.
+
+        Replacing the entire analysis group each screening cycle gives newly
+        subscribed symbols almost no opportunity to produce a live tick before
+        technical validation runs. The core remains subscribed continuously;
+        the rotating window advances only after its grace period.
+        """
+        ranked = sorted(
+            candidates,
+            key=lambda item: item.get("pretrade_rank", item["fundamental_score"]),
+            reverse=True,
+        )
+        capacity = min(max(0, capacity), len(ranked))
+        if capacity == 0:
+            self._ws_rotation_symbols = []
+            self._ws_rotation_cursor = 0
+            self._ws_rotation_age = 0
+            return [], {
+                "rotation_eligible_count": len(ranked),
+                "core_count": 0,
+                "rotating_count": 0,
+                "rotation_pool_count": len(ranked),
+                "rotation_window_age_cycles": 0,
+                "rotation_grace_cycles": max(1, self.settings.r2d2_ws_rotation_grace_cycles),
+            }
+
+        core_percent = max(0.0, min(100.0, self.settings.r2d2_ws_rotation_core_percent))
+        core_count = min(capacity, int(round(capacity * core_percent / 100.0)))
+        core = ranked[:core_count]
+        tail = ranked[core_count:]
+        rotating_capacity = min(capacity - core_count, len(tail))
+        tail_by_symbol = {item["symbol"]: item for item in tail}
+        grace_cycles = max(1, self.settings.r2d2_ws_rotation_grace_cycles)
+
+        keep_window = (
+            self._ws_rotation_symbols
+            and self._ws_rotation_age < grace_cycles
+            and any(symbol in tail_by_symbol for symbol in self._ws_rotation_symbols)
+        )
+        if keep_window:
+            rotating = [
+                tail_by_symbol[symbol]
+                for symbol in self._ws_rotation_symbols
+                if symbol in tail_by_symbol
+            ][:rotating_capacity]
+            self._ws_rotation_age += 1
+        else:
+            if self._ws_rotation_symbols and tail:
+                self._ws_rotation_cursor = (
+                    self._ws_rotation_cursor + max(1, rotating_capacity)
+                ) % len(tail)
+            else:
+                self._ws_rotation_cursor = 0
+            rotating = [
+                tail[(self._ws_rotation_cursor + offset) % len(tail)]
+                for offset in range(rotating_capacity)
+            ] if tail else []
+            self._ws_rotation_age = 1
+
+        if len(rotating) < rotating_capacity and tail:
+            retained = {item["symbol"] for item in rotating}
+            for offset in range(len(tail)):
+                item = tail[(self._ws_rotation_cursor + offset) % len(tail)]
+                if item["symbol"] in retained:
+                    continue
+                rotating.append(item)
+                retained.add(item["symbol"])
+                if len(rotating) >= rotating_capacity:
+                    break
+
+        self._ws_rotation_symbols = [item["symbol"] for item in rotating]
+        return [*core, *rotating], {
+            "rotation_eligible_count": len(ranked),
+            "core_count": len(core),
+            "rotating_count": len(rotating),
+            "rotation_pool_count": len(tail),
+            "rotation_cursor": self._ws_rotation_cursor,
+            "rotation_window_age_cycles": self._ws_rotation_age,
+            "rotation_grace_cycles": grace_cycles,
+        }
 
     def _technical_snapshot(self, item: dict[str, Any]) -> dict[str, Any]:
         live_rows: list[dict[str, Any]] = []
