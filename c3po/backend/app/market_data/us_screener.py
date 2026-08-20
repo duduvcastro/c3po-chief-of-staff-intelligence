@@ -169,6 +169,7 @@ class USScreeningService:
         client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.realtime.http)
         fundamentals = client.fundamentals(symbols, exchange="US", workers=10)
         histories = client.histories(symbols, exchange="US", days=400, workers=10)
+        ir_events = self.database.latest_valuation_ir_events(symbols, market=market)
         rows: list[dict[str, Any]] = []
         for cash_volume, quote, metadata in selected:
             symbol = quote.symbol
@@ -196,6 +197,10 @@ class USScreeningService:
             except Exception:
                 audit["fundamental_quality_gate"] += 1
                 continue
+            row.update(self._ir_freshness(
+                fundamental.get("financialsAsOf") or fundamental.get("updated_at"),
+                ir_events.get(symbol),
+            ))
             rows.append(row)
             audit["calculated_tp"] += 1
 
@@ -635,6 +640,33 @@ class USScreeningService:
             metadata.get("Code") or metadata.get("code") or metadata.get("symbol"),
             metadata.get("Type") or metadata.get("type"),
         ) == "ETF"
+
+    @staticmethod
+    def _ir_freshness(fundamentals_as_of: Any, event: dict[str, Any] | None) -> dict[str, Any]:
+        """Mirrors B3ScreeningService._ir_freshness so Dark Side/Ben Kenobi Records/Laser
+        Pager get the same Tatooine Updates freshness signal for US names (SEC EDGAR +
+        Finnhub) that B3 names already get from CVM/RI -- flags whether this valuation's
+        fundamentals already reflect the latest official disclosure, or predate one."""
+        if not event:
+            return {
+                "ir_status": "unavailable",
+                "latest_ir_event_at": None,
+                "latest_ir_event_type": None,
+            }
+        current = bool(event.get("reviewed_at") or event.get("valuation_status") == "incorporated")
+        reference_date = event.get("reference_date")
+        if (
+            not current
+            and event.get("event_type") == "Financial Results"
+            and reference_date
+            and fundamentals_as_of
+        ):
+            current = str(fundamentals_as_of)[:10] >= str(reference_date)[:10]
+        return {
+            "ir_status": "current" if current else "pending_review",
+            "latest_ir_event_at": event.get("published_at"),
+            "latest_ir_event_type": event.get("event_type"),
+        }
 
     @staticmethod
     def _profile(fundamentals: dict[str, Any]) -> str:

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app.config import Settings
 from app.database import Database
@@ -163,3 +163,37 @@ def test_candidate_ranking_combines_stocks_and_etfs_by_tp_upside() -> None:
 
     assert [item.security_type for item in response.items] == ["Stock", "ETF"]
     assert response.items[0].upside_percent > response.items[1].upside_percent
+
+
+def test_ir_freshness_flags_pending_review_when_fundamentals_predate_disclosure() -> None:
+    """Root-caused 2026-08-20: US rows always shipped a hardcoded "current"/"unavailable"
+    placeholder for ir_status because _build() never consulted Tatooine Updates
+    (SEC EDGAR + Finnhub), unlike B3ScreenerService's rows. This mirrors
+    B3ScreenerService._ir_freshness's behavior so Dark Side/Ben Kenobi Records/Laser
+    Pager get a real freshness signal for US names too.
+    """
+    event = {
+        "event_type": "Financial Results",
+        "published_at": datetime(2026, 7, 1, tzinfo=timezone.utc),
+        "reference_date": date(2026, 6, 30),
+        "valuation_status": "pending_review",
+        "reviewed_at": None,
+    }
+
+    stale = USScreeningService._ir_freshness("2026-03-31", event)
+    current = USScreeningService._ir_freshness("2026-06-30", event)
+
+    assert stale == {
+        "ir_status": "pending_review",
+        "latest_ir_event_at": event["published_at"],
+        "latest_ir_event_type": "Financial Results",
+    }
+    assert current["ir_status"] == "current"
+
+
+def test_ir_freshness_defaults_to_unavailable_without_an_event() -> None:
+    assert USScreeningService._ir_freshness("2026-06-30", None) == {
+        "ir_status": "unavailable",
+        "latest_ir_event_at": None,
+        "latest_ir_event_type": None,
+    }
