@@ -565,6 +565,117 @@ def test_finnhub_insider_events_is_best_effort_on_failure(tmp_path):
     assert ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc.") == []
 
 
+def _service_with_eodhd(tmp_path):
+    settings = Settings(
+        database_url="",
+        migrations_dir=tmp_path,
+        investor_relations_output_dir=tmp_path / "ir-pdf",
+        eodhd_api_token="test-token",
+    )
+    database = Database(settings)
+    return InvestorRelationsService(settings, database), database
+
+
+class FakeEodhdHttp:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def get_json(self, url, *, params=None, headers=None):
+        if isinstance(self.payload, Exception):
+            raise self.payload
+        return self.payload
+
+
+def test_eodhd_insider_events_builds_ir_events_from_recent_transactions(tmp_path):
+    """Root-caused 2026-08-20 (data-source audit): EODHD's All-in-one plan
+    includes its own SEC Form 4 feed, but it was never called anywhere --
+    only Finnhub's insider data was ever used. Now used as a fallback
+    (never summed with Finnhub's, since both source the same underlying
+    filings and would double-count the same real-world transactions).
+    """
+    ir, _ = _service_with_eodhd(tmp_path)
+    recent = (date.today() - timedelta(days=5)).isoformat()
+    ir.eodhd.http = FakeEodhdHttp({
+        "data": [{
+            "accession_number": "acc-1", "filed_at": recent, "period_of_report": recent,
+            "non_derivative": [{
+                "reporting_owner_name": "COOK TIMOTHY D", "transaction_code": "S",
+                "acquired_or_disposed": "D", "shares_amount": 223986,
+                "price_per_share": 227.5, "shares_owned_after": 511000,
+                "transaction_date": f"{recent}T00:00:00+00:00",
+            }],
+            "derivative": [], "footnotes": [],
+        }],
+        "meta": {}, "links": {"next": None},
+    })
+
+    events = ir._eodhd_insider_events("AAPL", "0000320193", None, "Apple Inc.")
+
+    assert len(events) == 1
+    event = events[0]
+    assert event["source_code"] == "sec"
+    assert event["market"] == "US"
+    assert event["event_type"] == "Insider Transaction"
+    assert "venda" in event["title"]
+    assert event["external_id"] == f"eodhd-insider-AAPL-{recent}-cook-timothy-d-S"
+    # Deliberately distinct from Finnhub's prefix so the two never collide.
+    assert not event["external_id"].startswith("finnhub-")
+
+
+def test_eodhd_insider_events_is_a_noop_without_an_api_token(tmp_path):
+    ir, _ = service(tmp_path)  # default helper -- no eodhd_api_token configured
+    ir.eodhd.http = FakeEodhdHttp(RuntimeError("must not be called"))
+
+    assert ir._eodhd_insider_events("AAPL", "0000320193", None, "Apple Inc.") == []
+
+
+def test_eodhd_insider_events_is_best_effort_on_failure(tmp_path):
+    ir, _ = _service_with_eodhd(tmp_path)
+    ir.eodhd.http = FakeEodhdHttp(RuntimeError("EODHD is down"))
+
+    assert ir._eodhd_insider_events("AAPL", "0000320193", None, "Apple Inc.") == []
+
+
+def test_eodhd_insider_events_used_only_as_a_fallback_when_finnhub_has_nothing(tmp_path):
+    """Confirms the actual dedup safeguard: EODHD is skipped entirely when
+    Finnhub already returned data for the symbol, so the same real-world
+    transaction never gets counted from both sources."""
+    settings = Settings(
+        database_url="",
+        migrations_dir=tmp_path,
+        investor_relations_output_dir=tmp_path / "ir-pdf",
+        finnhub_api_token="test-token",
+        eodhd_api_token="test-token",
+    )
+    database = Database(settings)
+    ir = InvestorRelationsService(settings, database)
+    recent = (date.today() - timedelta(days=5)).isoformat()
+
+    class FakeFinnhubResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{
+                "name": "COOK TIMOTHY D", "share": 511000, "change": -223986,
+                "filingDate": recent, "transactionDate": recent,
+                "transactionCode": "S", "transactionPrice": 227.5,
+            }]}
+
+    class FakeFinnhubClient:
+        def get(self, url, *, params=None):
+            return FakeFinnhubResponse()
+
+    ir.finnhub.client = FakeFinnhubClient()
+    ir.eodhd.http = FakeEodhdHttp(RuntimeError("must not be called when Finnhub already has data"))
+
+    finnhub_events = ir._finnhub_insider_events("AAPL", "0000320193", None, "Apple Inc.")
+    events = finnhub_events or ir._eodhd_insider_events("AAPL", "0000320193", None, "Apple Inc.")
+
+    assert len(events) == 1
+    assert events[0]["external_id"].startswith("finnhub-")
+
+
 def test_finnhub_sentiment_event_is_deduped_by_iso_week(tmp_path):
     ir, _ = _service_with_finnhub(tmp_path)
 
