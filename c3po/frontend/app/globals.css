@@ -514,8 +514,9 @@ button { cursor: pointer; }
 .realtime-control { min-width: 0; }
 .realtime-tabs { min-height: 54px; display: flex; align-items: center; gap: 5px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: #fafafa; }
 .research-market-tabs { min-height: 48px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: #fafafa; }
-.research-market-tabs button { min-width: 0; min-height: 32px; border: 1px solid #d9dde1; border-radius: 4px; color: #59626d; background: #fff; font-size: 10px; font-weight: 900; }
+.research-market-tabs button { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; min-height: 32px; border: 1px solid #d9dde1; border-radius: 4px; color: #59626d; background: #fff; font-size: 10px; font-weight: 900; }
 .research-market-tabs button:hover, .research-market-tabs button.active { border-color: #b99838; color: var(--gold-deep); background: var(--gold-soft); }
+.research-market-tab-logo { width: 14px; height: 14px; object-fit: contain; }
 .candidate-etf strong, .matrix-etf-symbol { color: #7451a8 !important; }
 .realtime-tab { min-width: 104px; height: 36px; padding: 0 16px; border: 1px solid #d9dde1; border-radius: 5px; color: #66707c; background: #fff; font-size: 11px; font-weight: 900; }
 .realtime-tab:hover { border-color: #b89b48; color: var(--gold-deep); }

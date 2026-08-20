@@ -4320,7 +4320,10 @@ function MatrixPowerView() {
       <section className="panel matrix-control-panel">
         <div className="research-market-tabs" role="tablist" aria-label="Dark Side markets">
           {(["B3", "NASDAQ", "NYSE"] as ResearchMarket[]).map((market) => (
-            <button key={market} role="tab" aria-selected={activeMarket === market} className={activeMarket === market ? "active" : ""} onClick={() => setActiveMarket(market)}>{market}</button>
+            <button key={market} role="tab" aria-selected={activeMarket === market} className={activeMarket === market ? "active" : ""} onClick={() => setActiveMarket(market)}>
+              <img src={valuationMarketMarks[market]} alt="" className="research-market-tab-logo" />
+              {market}
+            </button>
           ))}
         </div>
         <PanelHeader title={`${activeMarket} Dark Side`} icon={DarkSideIcon} />
