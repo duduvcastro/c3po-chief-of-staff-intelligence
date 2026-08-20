@@ -30,7 +30,7 @@ from typing import Any
 # Constants (mirrors the module-level constants in r2d2.py as of V16)
 # ---------------------------------------------------------------------------
 
-METHODOLOGY_VERSION = "R2D2-HYBRID-V21-END-OF-DAY-TACTICAL-EXIT"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V22-SYMMETRIC-GAIN-PROTECTION-FLOOR"
 
 RISK_BUDGET_PERCENT = 0.03  # % of NAV risked per trade (Turtle-style; backtested vs. 0.06/0.09)
 
@@ -46,7 +46,12 @@ SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
 MIN_INTRADAY_EDGE_PERCENT = 0.55
 FAILED_ENTRY_MINUTES = 3
 FAILED_ENTRY_LOSS_PERCENT = 0.30
-GAIN_PROTECTION_MIN_PERCENT = 0.15
+# Matches FAILED_ENTRY_LOSS_PERCENT on purpose (root-caused 2026-08-20 against
+# real trades: RGA/HTHT realized only +0.08%/+0.13% via this exact rule while
+# same-day failed-entry losses ran to -0.44%/-0.76% -- the old 0.15 floor let
+# the fast, vote-based gain protection lock in almost nothing, while its
+# mirror-image loss rule waited for a loss twice as deep before reacting).
+GAIN_PROTECTION_MIN_PERCENT = 0.30
 END_OF_DAY_EXIT_WINDOW_MINUTES = 1
 
 # Defaults for settings that live on Settings() in production.
