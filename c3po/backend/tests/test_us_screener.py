@@ -5,6 +5,7 @@ import pytest
 from app.config import Settings
 from app.database import Database
 from app.market_data.us_screener import USScreeningService
+from app.valuation_policy import METHODOLOGY_VERSION
 
 
 class DummyRealtime:
@@ -309,6 +310,59 @@ def test_peer_medians_hydrates_from_a_persisted_snapshot_across_processes() -> N
     )
 
     assert svc.peer_medians("NASDAQ") == {"technology": {"pe": 23.5, "ev_ebitda": 15.5}}
+
+
+def test_peer_medians_rehydrates_when_a_newer_snapshot_is_persisted() -> None:
+    """Root-caused 2026-08-20 (production incident): peer_medians()/
+    valuation_for() only ever re-hydrated when the in-memory dict was
+    EMPTY -- once populated once, a long-lived api-container process
+    would serve that same snapshot forever, silently ignoring every
+    subsequent valuation-worker refresh (including a full day's worth of
+    TP methodology fixes) until the next deploy happened to restart it
+    and clear the in-memory state. Confirmed live: JPM's Laser Pager kept
+    returning identical numbers across three re-runs of refresh_all()
+    because the api container simply never looked at the database again
+    after its first hydrate.
+    """
+    svc = service()
+    methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")
+    old_at = datetime(2026, 8, 20, 4, 0, tzinfo=timezone.utc)
+    new_at = datetime(2026, 8, 20, 7, 0, tzinfo=timezone.utc)
+    svc.database.save_analysis_snapshot(
+        "peer_medians", "NASDAQ_PEER_MEDIANS", methodology_id, {},
+        {"medians": {"technology": {"pe": 20.0, "ev_ebitda": 14.0}}}, old_at,
+    )
+    assert svc.peer_medians("NASDAQ") == {"technology": {"pe": 20.0, "ev_ebitda": 14.0}}
+
+    svc.database.save_analysis_snapshot(
+        "peer_medians", "NASDAQ_PEER_MEDIANS", methodology_id, {},
+        {"medians": {"technology": {"pe": 25.0, "ev_ebitda": 17.0}}}, new_at,
+    )
+
+    assert svc.peer_medians("NASDAQ") == {"technology": {"pe": 25.0, "ev_ebitda": 17.0}}
+
+
+def test_valuation_for_rehydrates_when_a_newer_snapshot_is_persisted() -> None:
+    svc = service()
+    methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")
+    old_at = datetime(2026, 8, 20, 4, 0, tzinfo=timezone.utc)
+    new_at = datetime(2026, 8, 20, 7, 0, tzinfo=timezone.utc)
+    svc.database.save_analysis_snapshot(
+        "valuation_universe", "NASDAQ_UNIVERSE", methodology_id,
+        {"methodology_version": METHODOLOGY_VERSION},
+        {"rows": [{"symbol": "JPM", "our_tp": 625.49, "buy_in": 500.0, "as_of": old_at.isoformat()}], "universe_size": 1},
+        old_at,
+    )
+    assert svc.valuation_for("JPM", "NASDAQ")["our_tp"] == 625.49
+
+    svc.database.save_analysis_snapshot(
+        "valuation_universe", "NASDAQ_UNIVERSE", methodology_id,
+        {"methodology_version": METHODOLOGY_VERSION},
+        {"rows": [{"symbol": "JPM", "our_tp": 388.33, "buy_in": 340.0, "as_of": new_at.isoformat()}], "universe_size": 1},
+        new_at,
+    )
+
+    assert svc.valuation_for("JPM", "NASDAQ")["our_tp"] == 388.33
 
 
 def test_build_persists_peer_medians_for_the_next_process_to_hydrate() -> None:
