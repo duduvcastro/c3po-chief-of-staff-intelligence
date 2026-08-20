@@ -536,6 +536,37 @@ def test_us_peer_medians_ignores_implausible_multiples(tmp_path) -> None:
     assert medians["technology"]["pe"] == 26.0
 
 
+def test_us_peer_medians_rejects_a_bucket_too_dispersed_to_be_coherent(tmp_path) -> None:
+    """Root-caused 2026-08-20 (production incident): the "financial" keyword
+    matched EODHD's whole Financial Services sector name, so JPM's peer
+    basket got pooled with high-multiple diversified financials (Visa/
+    Mastercard/CME/BlackRock) instead of just banks -- inflating fair_pe for
+    every bank in production before this was caught and the taxonomy fixed
+    (see test_valuation_profile_does_not_pool_banks_with_diversified_financials).
+    This is the general safety net for that same failure mode: even if a
+    future taxonomy gap pools two industries with very different multiple
+    regimes into one bucket, a peer sample whose quartile spread is too wide
+    to be a coherent comparison group gets rejected and falls back to the
+    documented constant, instead of quietly producing a distorted median.
+    Uses two industries that both fall through to "general" (neither matches
+    any _valuation_profile keyword) so the taxonomy fix above doesn't
+    already separate them -- isolating the dispersion guard itself.
+    """
+    service = service_for(tmp_path)
+    low_multiple = {
+        f"LOW{i}": {"sector": "Communication Services", "industry": "Telecom Services", "trailingPE": pe, "enterpriseToEbitda": 8.0}
+        for i, pe in enumerate([9.0, 10.0, 11.0, 12.0])
+    }
+    high_multiple = {
+        f"HIGH{i}": {"sector": "Consumer Cyclical", "industry": "Auto Manufacturers", "trailingPE": pe, "enterpriseToEbitda": 8.0}
+        for i, pe in enumerate([28.0, 30.0, 32.0, 34.0])
+    }
+
+    medians = service._us_peer_medians({**low_multiple, **high_multiple})
+
+    assert "pe" not in medians.get("general", {})
+
+
 def test_analyze_uses_live_peer_medians_over_the_fallback_constants(tmp_path) -> None:
     service = service_for(tmp_path)
     fundamentals = {

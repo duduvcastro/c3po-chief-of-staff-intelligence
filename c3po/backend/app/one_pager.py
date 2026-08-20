@@ -58,6 +58,14 @@ US_DISCOUNT_RATE_MAX = 0.16
 # screening batch doesn't have enough peers (see _us_peer_medians) --
 # US_PEER_MEDIAN_MIN_SAMPLE mirrors B3's own minimum-peer-count threshold.
 US_PEER_MEDIAN_MIN_SAMPLE = 4
+# Root-caused 2026-08-20: _valuation_profile's coarse keyword taxonomy let a
+# genuinely heterogeneous bucket through once (banks pooled with high-multiple
+# diversified financials under "financial"). Rather than trust the taxonomy
+# alone, a peer sample is also rejected if it's statistically too spread out
+# to be a coherent comparison group -- (Q3-Q1)/(Q3+Q1) above this threshold --
+# regardless of which profile it's in. This is the general safety net; the
+# taxonomy fix in _valuation_profile is the specific one.
+US_PEER_MEDIAN_MAX_DISPERSION = 0.40
 FAIR_PE_BASE_FALLBACK = {
     "financial": 9.0, "utilities": 12.0, "cyclical": 10.0, "real_estate": 11.0,
     "technology": 21.0, "quality": 18.0, "general": 15.0,
@@ -932,8 +940,11 @@ class OnePagerService:
         the fixed FAIR_PE_BASE_FALLBACK/FAIR_EV_EBITDA_BASE_FALLBACK constants,
         mirroring B3's _sector_medians (b3_screener.py). Falls back to those
         constants per-profile whenever a bucket doesn't clear
-        US_PEER_MEDIAN_MIN_SAMPLE peers (the caller does that fallback, not
-        this method -- this only returns what the live data actually supports).
+        US_PEER_MEDIAN_MIN_SAMPLE peers, or whenever it clears the sample
+        size but is too dispersed to be a coherent comparison group (see
+        US_PEER_MEDIAN_MAX_DISPERSION) -- the caller does that fallback,
+        not this method -- this only returns what the live data actually
+        supports.
         """
         buckets: dict[str, dict[str, list[float]]] = {}
         for fundamentals in fundamentals_by_symbol.values():
@@ -950,10 +961,14 @@ class OnePagerService:
         medians: dict[str, dict[str, float]] = {}
         for profile, values in buckets.items():
             entry: dict[str, float] = {}
-            if len(values["pe"]) >= US_PEER_MEDIAN_MIN_SAMPLE:
-                entry["pe"] = statistics.median(values["pe"])
-            if len(values["ev_ebitda"]) >= US_PEER_MEDIAN_MIN_SAMPLE:
-                entry["ev_ebitda"] = statistics.median(values["ev_ebitda"])
+            for metric, samples in values.items():
+                if len(samples) < US_PEER_MEDIAN_MIN_SAMPLE:
+                    continue
+                q1, _, q3 = statistics.quantiles(samples, n=4, method="inclusive")
+                dispersion = (q3 - q1) / (q3 + q1) if (q3 + q1) else 0.0
+                if dispersion > US_PEER_MEDIAN_MAX_DISPERSION:
+                    continue
+                entry[metric] = statistics.median(samples)
             if entry:
                 medians[profile] = entry
         return medians
