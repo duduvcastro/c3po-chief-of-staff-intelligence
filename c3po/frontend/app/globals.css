@@ -386,6 +386,9 @@ button { cursor: pointer; }
 .r2d2-learning-ma-line { fill: none; stroke: var(--purple); stroke-width: 2; }
 .r2d2-learning-ma-dot { fill: var(--purple); stroke: #fff; stroke-width: 1.2; }
 .r2d2-learning-ma-badge { fill: var(--purple-soft); stroke: #ddd0ef; stroke-width: 1; }
+.r2d2-learning-legend-positive { fill: var(--green); }
+.r2d2-learning-legend-negative { fill: var(--red); }
+.r2d2-learning-legend-label { fill: #66717e; font-size: 9px; font-weight: 800; dominant-baseline: middle; }
 .r2d2-learning-ma-label { fill: var(--purple); font-size: 9.5px; font-weight: 800; dominant-baseline: middle; }
 .r2d2-trade-head, .r2d2-trade-row { display: grid; grid-template-columns: .7fr .44fr .58fr .5fr .58fr .88fr .82fr minmax(220px, 2fr); align-items: center; column-gap: 9px; padding-right: 16px; padding-left: 16px; }
 .r2d2-trade-head { min-height: 38px; color: #89929d; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 8px; font-weight: 800; text-transform: uppercase; }
