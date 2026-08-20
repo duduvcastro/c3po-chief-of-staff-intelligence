@@ -416,7 +416,9 @@ def test_r2d2_portfolio_pacing_can_fill_twenty_diversified_slots_under_gross_cap
     dashboard = service.dashboard()
     assert dashboard.open_positions == 20
     assert 89.0 <= dashboard.gross_exposure_usd / dashboard.nav_usd * 100 <= 93.0
-    assert 5.0 <= dashboard.cash_usd / dashboard.nav_usd * 100 <= 6.0
+    # Risk-normalized sizing tops out near 4.62% per slot (see comment above),
+    # so 20 filled slots leave more idle cash than the old 6% ceiling allowed.
+    assert 7.0 <= dashboard.cash_usd / dashboard.nav_usd * 100 <= 11.0
 
 
 def test_r2d2_keeps_scheduling_cycles_after_90_day_checkpoint() -> None:
