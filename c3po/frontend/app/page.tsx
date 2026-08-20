@@ -2638,7 +2638,7 @@ function R2D2RisingView() {
         ? `Piorando · ${learningTrendDelta.toFixed(1)}pp vs média móvel`
         : "Estável vs média móvel";
   const LEARNING_MIN_SLOT = 48;
-  const LEARNING_MAX_GROUP_WIDTH = 42;
+  const LEARNING_MAX_GROUP_WIDTH = 46;
   const LEARNING_BAR_GAP = 3;
   const LEARNING_GAP = 12;
   const LEARNING_PLOT_LEFT = 34;
@@ -2922,7 +2922,11 @@ function R2D2RisingView() {
               ))}
               {learningMovingAveragePoints.length ? (
                 <g>
-                  <rect x={learningChartWidth - 104} y={4} width={100} height={18} rx={9} className="r2d2-learning-ma-badge" />
+                  <rect x={learningChartWidth - 264} y={4} width={260} height={18} rx={9} className="r2d2-learning-ma-badge" />
+                  <rect x={learningChartWidth - 252} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-positive" />
+                  <text x={learningChartWidth - 241} y={13} className="r2d2-learning-legend-label">Positivas</text>
+                  <rect x={learningChartWidth - 178} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-negative" />
+                  <text x={learningChartWidth - 167} y={13} className="r2d2-learning-legend-label">Negativas</text>
                   <circle cx={learningChartWidth - 92} cy={13} r={3.5} className="r2d2-learning-ma-dot" />
                   <text x={learningChartWidth - 84} y={13} className="r2d2-learning-ma-label">{`MM5 ${learningLastMovingAverage.toFixed(1)}%`}</text>
                 </g>
