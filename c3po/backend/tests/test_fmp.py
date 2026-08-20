@@ -70,3 +70,34 @@ def test_recent_grades_normalizes_broker_level_rows_and_filters_by_since():
 def test_recent_grades_returns_empty_list_on_failure_rather_than_raising():
     fmp = FmpClient("https://x", "t", FakeHttp(RuntimeError("boom")))
     assert fmp.recent_grades("JPM") == []
+
+
+class FakeHttpPerSymbol:
+    """Routes by the request's `symbol` param -- consensus_batch needs one
+    fake response per symbol, unlike FakeHttp's single fixed payload."""
+
+    def __init__(self, by_symbol):
+        self.by_symbol = by_symbol
+
+    def get_json(self, url, *, params=None, headers=None):
+        symbol = (params or {}).get("symbol")
+        payload = self.by_symbol.get(symbol)
+        if isinstance(payload, Exception):
+            raise payload
+        return payload
+
+
+def test_consensus_batch_fetches_both_endpoints_per_symbol_in_parallel():
+    http = FakeHttpPerSymbol({
+        "JPM": [{"symbol": "JPM", "targetHigh": 420.0, "targetLow": 305.0, "targetConsensus": 373.64, "targetMedian": 370.0}],
+        "AAPL": RuntimeError("boom"),
+    })
+    fmp = FmpClient("https://financialmodelingprep.com", "test-token", http)
+
+    result = fmp.consensus_batch(["JPM", "AAPL", "jpm"])
+
+    assert set(result.keys()) == {"JPM", "AAPL"}  # de-duplicated case-insensitively
+    consensus, summary = result["JPM"]
+    assert consensus == {"consensus": 373.64, "median": 370.0, "high": 420.0, "low": 305.0}
+    assert summary == {"last_month_count": 0, "last_month_avg": None, "last_quarter_count": 0, "last_quarter_avg": None}
+    assert result["AAPL"] == (None, None)  # one symbol failing never breaks the batch

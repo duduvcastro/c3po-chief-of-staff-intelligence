@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from typing import Any
 
@@ -68,6 +69,28 @@ class FmpClient:
             "last_quarter_count": int(number(row.get("lastQuarterCount")) or 0),
             "last_quarter_avg": number(row.get("lastQuarterAvgPriceTarget")),
         }
+
+    def consensus_batch(
+        self, symbols: list[str], *, workers: int = 10,
+    ) -> dict[str, tuple[dict[str, float] | None, dict[str, Any] | None]]:
+        """price_target_consensus + price_target_summary for many symbols in
+        parallel -- mirrors EodhdClient.fundamentals()/histories()'s
+        ThreadPoolExecutor pattern for the batch US screener, where these
+        are single-symbol-only endpoints and a nightly cycle covers ~650
+        symbols across both exchanges. A failed symbol contributes
+        (None, None), never breaks the batch."""
+        clean_symbols = list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
+        if not clean_symbols:
+            return {}
+
+        def fetch(symbol: str) -> tuple[str, tuple[dict[str, float] | None, dict[str, Any] | None]]:
+            return symbol, (self.price_target_consensus(symbol), self.price_target_summary(symbol))
+
+        output: dict[str, tuple[dict[str, float] | None, dict[str, Any] | None]] = {}
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, 20))) as executor:
+            for symbol, result in executor.map(fetch, clean_symbols):
+                output[symbol] = result
+        return output
 
     def recent_grades(self, symbol: str, *, since: date | None = None) -> list[dict[str, Any]]:
         """Individual broker upgrade/downgrade/maintain actions with a real

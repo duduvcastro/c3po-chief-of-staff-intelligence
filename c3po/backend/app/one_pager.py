@@ -1031,6 +1031,25 @@ class OnePagerService:
         self._us_risk_free_cache = (now + timedelta(hours=US_RISK_FREE_CACHE_HOURS), rate)
         return rate
 
+    def _fmp_consensus_batch(
+        self, symbols: list[str],
+    ) -> dict[str, tuple[dict[str, float] | None, dict[str, Any] | None]]:
+        """Batch counterpart of _fmp_consensus_data, for the US screener's
+        nightly cycle (~650 symbols across both exchanges) -- fetched once
+        per _build() call and passed per-row into _analyze_stock, same
+        pattern as insider_activity/news_sentiment. Returns {} when the
+        credential isn't configured or the batch itself fails; per-symbol
+        failures inside the batch already degrade to (None, None) via
+        FmpClient.consensus_batch, which _resolve_us_consensus falls back
+        from to EODHD."""
+        if not self.settings.fmp_api_token or not symbols:
+            return {}
+        try:
+            client = FmpClient(self.settings.fmp_base_url, self.settings.fmp_api_token, self.market_data.http)
+            return client.consensus_batch(symbols)
+        except Exception:
+            return {}
+
     def _fmp_consensus_data(self, symbol: str) -> tuple[dict[str, float] | None, dict[str, Any] | None]:
         """FMP Ultimate price-target-consensus + price-target-summary for a
         single US symbol, fetched fresh per Laser Pager (unlike the shared,
