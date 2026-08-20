@@ -1054,6 +1054,7 @@ button { cursor: pointer; }
 .one-pager-history > a { min-height: 76px; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto 18px; gap: 11px; align-items: center; padding: 13px 15px; color: inherit; background: #fff; text-decoration: none; }
 .one-pager-history > a:hover { background: #fcfaf2; }
 .one-pager-history-mark { width: 36px; height: 36px; font-size: 10px; }
+.one-pager-symbol-mark img, .one-pager-history-mark img { width: 100%; height: 100%; display: block; object-fit: contain; padding: 4px; }
 .one-pager-history > a > div:nth-child(2) strong { display: block; font-size: 11px; }
 .one-pager-history > a > div:nth-child(2) span { display: block; margin-top: 5px; color: var(--muted); font-size: 8px; }
 .one-pager-history-upside { text-align: right; }

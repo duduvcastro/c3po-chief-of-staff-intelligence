@@ -4730,7 +4730,7 @@ function OnePagerView({ canGenerate }: { canGenerate: boolean }) {
       {latest && (
         <section className="panel one-pager-ready">
           <div className="one-pager-ready-head">
-            <div className="one-pager-symbol-mark">{latest.symbol.slice(0, 2)}</div>
+            <div className="one-pager-symbol-mark"><CompanyLogo symbol={latest.symbol} /></div>
             <div><span>One Pager concluído</span><InstrumentPreviewTarget instrument={{ symbol: latest.symbol, name: latest.company_name, market: latest.market }}><strong>{latest.symbol} | {latest.company_name}</strong></InstrumentPreviewTarget><small>{latest.market} · {latest.methodology_name}{latest.methodology_version ? ` v${latest.methodology_version}` : ""} · {formatDate(latest.generated_at)}</small></div>
             <a href={`${API_URL}${latest.download_url}`} target="_blank" rel="noreferrer"><Download size={17} /><span>Abrir PDF</span></a>
           </div>
@@ -4750,7 +4750,7 @@ function OnePagerView({ canGenerate }: { canGenerate: boolean }) {
           <div className="one-pager-history">
             {reports.map((report) => (
               <a href={`${API_URL}${report.download_url}`} target="_blank" rel="noreferrer" key={report.filename}>
-                <div className="one-pager-history-mark">{report.symbol.slice(0, 2)}</div>
+                <div className="one-pager-history-mark"><CompanyLogo symbol={report.symbol} /></div>
                 <div><InstrumentPreviewTarget instrument={{ symbol: report.symbol, name: report.company_name, market: report.market }} nested pinOnClick={false}><strong>{report.symbol} | {report.company_name}</strong></InstrumentPreviewTarget><span>{formatDate(report.generated_at)}{report.methodology_version ? ` · v${report.methodology_version}` : " · legacy"} · {report.method_count} methods · confidence {report.confidence}</span></div>
                 <div className="one-pager-history-upside"><span>Upside</span><strong className={report.upside_percent >= 0 ? "positive-text" : "negative-text"}>{formatPercent(report.upside_percent)}</strong></div>
                 <Download size={17} />
