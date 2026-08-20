@@ -444,22 +444,37 @@ class OnePagerService:
 
         fair_ev_base = peer.get("ev_ebitda") or FAIR_EV_EBITDA_BASE_FALLBACK[profile]
         fair_ev_ebitda = self._clamp(fair_ev_base + max(growth, -0.05) * 20 + (operating_margin or margin or 0) * 8, 4.5, 24.0)
+        # Root-caused 2026-08-20 (production incident): for JPM, enterprise_tp
+        # came out to $1,096.77 -- 3x price -- because EV/EBITDA-minus-net-debt
+        # is not a valid framework for banks. A bank's "total debt" is
+        # dominated by customer deposits and borrowings ($1.24T for JPM),
+        # which are the raw material of the banking business, not financial
+        # leverage the way it is for a non-financial company -- no real
+        # equity analyst uses EV/EBITDA to value a bank. Same reasoning for
+        # dcf_tp ($578, still elevated after the fix above): a bank's
+        # reported "free cash flow" is dominated by financing/investing
+        # activity (loan originations, deposit changes), not owner earnings
+        # -- banks are valued on P/E and P/B (or DDM), not FCF-DCF. Both are
+        # skipped for the financial profile; _weighted_value already treats
+        # None as "not usable" and re-normalizes over what's left.
         enterprise_tp = None
-        if ttm_ebitda and shares:
+        if profile != "financial" and ttm_ebitda and shares:
             enterprise_tp = self._bounded_tp((ttm_ebitda * fair_ev_ebitda - total_debt + total_cash) / shares, price)
 
         fair_pb = self._clamp(0.8 + max((roe or 0) - 0.08, 0) * 10 + max(growth, 0) * 2, 0.7, 6.0)
         book_tp = self._bounded_tp((book_value or 0) * fair_pb, price)
-        dcf_tp = self._dcf_value(
-            free_cashflow=free_cashflow,
-            shares=shares,
-            growth=growth,
-            market=market,
-            price=price,
-            fallback_eps=normalized_eps,
-            beta=beta,
-            risk_free_rate=risk_free_rate,
-        )
+        dcf_tp = None
+        if profile != "financial":
+            dcf_tp = self._dcf_value(
+                free_cashflow=free_cashflow,
+                shares=shares,
+                growth=growth,
+                market=market,
+                price=price,
+                fallback_eps=normalized_eps,
+                beta=beta,
+                risk_free_rate=risk_free_rate,
+            )
 
         fundamental_anchor = self._weighted_value(
             ((earnings_tp, 0.40), (enterprise_tp, 0.30), (dcf_tp, 0.20), (book_tp, 0.10)),
