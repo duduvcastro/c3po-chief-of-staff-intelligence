@@ -39,6 +39,14 @@ INSIDER_SIGNAL_MIN_TRANSACTIONS_FOR_FULL_WEIGHT = 4
 INSIDER_RISK_MAX_SWING = 8.0
 SENTIMENT_CONFIDENCE_MAX_SWING = 5.0
 SENTIMENT_MIN_ARTICLES_FOR_FULL_WEIGHT = 5
+# FMP Ultimate Phase 2 (2026-08-20): 13F institutional-conviction signal,
+# same role as _insider_net_signal but for "big money" (funds, institutions)
+# instead of company insiders. INSTITUTIONAL_SIGNAL_MIN_POSITIONS_FOR_FULL_WEIGHT
+# is far larger than insider's threshold (4) because institutional position
+# counts operate at a different scale -- AAPL alone sees thousands of
+# new/increased/reduced/closed positions per quarter.
+INSTITUTIONAL_SIGNAL_MIN_POSITIONS_FOR_FULL_WEIGHT = 50
+INSTITUTIONAL_RISK_MAX_SWING = 8.0
 
 # Root-caused 2026-08-20 (TP methodology audit): the US DCF used one fixed
 # 10.5% discount rate for every stock regardless of risk, unlike B3's
@@ -177,6 +185,7 @@ class OnePagerService:
                 self.us_screener.peer_medians() if market != "B3" and self.us_screener else None
             )
             fmp_consensus, fmp_summary = self._fmp_consensus_data(symbol) if market != "B3" else (None, None)
+            institutional_positions = self._fmp_institutional_data(symbol) if market != "B3" else None
             shared_valuation = (
                 self.b3_screener.valuation_for(symbol, build_if_missing=True)
                 if market == "B3" and self.b3_screener
@@ -203,6 +212,7 @@ class OnePagerService:
                 peer_medians=peer_medians,
                 fmp_consensus=fmp_consensus,
                 fmp_summary=fmp_summary,
+                institutional_positions=institutional_positions,
             )
             verification_label = (
                 "RI da companhia + regulador verificados"
@@ -368,6 +378,7 @@ class OnePagerService:
         peer_medians: dict[str, dict[str, float]] | None = None,
         fmp_consensus: dict[str, float] | None = None,
         fmp_summary: dict[str, Any] | None = None,
+        institutional_positions: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         price = self._positive(quote.get("price"))
         if price is None:
@@ -497,6 +508,8 @@ class OnePagerService:
             risk_score += 9
         insider_signal = self._insider_net_signal(insider_activity)
         risk_score -= insider_signal * INSIDER_RISK_MAX_SWING
+        institutional_signal = self._institutional_conviction_signal(institutional_positions)
+        risk_score -= institutional_signal * INSTITUTIONAL_RISK_MAX_SWING
         risk_score = self._clamp(risk_score, 15, 90)
         risk_adjustment = self._clamp((risk_score - 40) / 500, -0.04, 0.10)
         quality_adjustment = self._clamp((roe or 0.12) * 0.20 + (margin or 0.08) * 0.15 + max(growth, -0.05) * 0.20, -0.04, 0.12)
@@ -922,6 +935,26 @@ class OnePagerService:
         return net_ratio * confidence
 
     @staticmethod
+    def _institutional_conviction_signal(positions: dict[str, Any] | None) -> float:
+        """-1..1: net institutional accumulation vs distribution this quarter
+        (FMP Ultimate 13F positions summary -- new/increased positions vs
+        reduced/closed ones), same role as _insider_net_signal but for
+        "big money" instead of company insiders. Scaled down when few
+        institutions report the stock so a handful of filers can't swing
+        it to the full extent. 0.0 (neutral) when there's no data yet for
+        the quarter."""
+        if not positions:
+            return 0.0
+        bullish = positions.get("new_positions", 0) + positions.get("increased_positions", 0)
+        bearish = positions.get("reduced_positions", 0) + positions.get("closed_positions", 0)
+        total = bullish + bearish
+        if total <= 0:
+            return 0.0
+        net_ratio = (bullish - bearish) / total
+        confidence = min(1.0, total / INSTITUTIONAL_SIGNAL_MIN_POSITIONS_FOR_FULL_WEIGHT)
+        return net_ratio * confidence
+
+    @staticmethod
     def _sentiment_confidence_adjustment(sentiment: dict[str, Any] | None) -> float:
         """Bounded +/-SENTIMENT_CONFIDENCE_MAX_SWING points from Finnhub weekly
         news sentiment (US-only source), scaled down on thin news coverage."""
@@ -1079,6 +1112,35 @@ class OnePagerService:
             return client.price_target_consensus(symbol), client.price_target_summary(symbol)
         except Exception:
             return None, None
+
+    def _fmp_institutional_data(self, symbol: str) -> dict[str, Any] | None:
+        """FMP Ultimate 13F positions summary for a single US symbol, for
+        the most recent quarter whose filing deadline has passed. Returns
+        None on any failure or when the credential isn't configured --
+        _institutional_conviction_signal already treats None as neutral,
+        so this must never raise."""
+        if not self.settings.fmp_api_token:
+            return None
+        try:
+            client = FmpClient(self.settings.fmp_base_url, self.settings.fmp_api_token, self.market_data.http)
+            year, quarter = client.latest_reportable_13f_quarter(datetime.now(timezone.utc).date())
+            return client.institutional_positions(symbol, year=year, quarter=quarter)
+        except Exception:
+            return None
+
+    def _fmp_institutional_batch(self, symbols: list[str]) -> dict[str, dict[str, Any] | None]:
+        """Batch counterpart of _fmp_institutional_data, for the US
+        screener's nightly cycle -- same quarter for every symbol in one
+        run. Returns {} when the credential isn't configured or the batch
+        itself fails; per-symbol failures already degrade to None."""
+        if not self.settings.fmp_api_token or not symbols:
+            return {}
+        try:
+            client = FmpClient(self.settings.fmp_base_url, self.settings.fmp_api_token, self.market_data.http)
+            year, quarter = client.latest_reportable_13f_quarter(datetime.now(timezone.utc).date())
+            return client.institutional_positions_batch(symbols, year=year, quarter=quarter)
+        except Exception:
+            return {}
 
     @staticmethod
     def _us_consensus_weight(consensus: float | None, analyst_count: int | None) -> float:

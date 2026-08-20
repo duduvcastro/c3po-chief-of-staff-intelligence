@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from .http import JsonHttpClient
@@ -92,6 +92,25 @@ class FmpClient:
                 output[symbol] = result
         return output
 
+    def institutional_positions_batch(
+        self, symbols: list[str], *, year: int, quarter: int, workers: int = 10,
+    ) -> dict[str, dict[str, Any] | None]:
+        """institutional_positions() for many symbols in parallel, same
+        quarter for the whole batch (one nightly cycle run against the
+        same "today") -- mirrors consensus_batch's pattern."""
+        clean_symbols = list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
+        if not clean_symbols:
+            return {}
+
+        def fetch(symbol: str) -> tuple[str, dict[str, Any] | None]:
+            return symbol, self.institutional_positions(symbol, year=year, quarter=quarter)
+
+        output: dict[str, dict[str, Any] | None] = {}
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, 20))) as executor:
+            for symbol, result in executor.map(fetch, clean_symbols):
+                output[symbol] = result
+        return output
+
     def recent_grades(self, symbol: str, *, since: date | None = None) -> list[dict[str, Any]]:
         """Individual broker upgrade/downgrade/maintain actions with a real
         date and grading company name -- the broker-level provenance
@@ -120,6 +139,49 @@ class FmpClient:
                 "action": str(row.get("action") or "").lower(),
             })
         return output
+
+    def institutional_positions(self, symbol: str, *, year: int, quarter: int) -> dict[str, Any] | None:
+        """Quarterly 13F positioning snapshot for one symbol -- how many
+        institutions hold it, how that count and share count changed, and
+        the breakdown of new/increased/reduced/closed positions this
+        quarter. Phase 2's institutional-conviction signal, mirroring
+        _insider_net_signal's role for Form 4 insider activity."""
+        try:
+            payload = self.http.get_json(
+                f"{self.base_url}/stable/institutional-ownership/symbol-positions-summary",
+                params={"symbol": symbol, "year": year, "quarter": quarter, "apikey": self.token},
+            )
+        except Exception:
+            return None
+        row = self._first_row(payload)
+        if row is None:
+            return None
+        return {
+            "investors_holding": int(number(row.get("investorsHolding")) or 0),
+            "investors_holding_change": int(number(row.get("investorsHoldingChange")) or 0),
+            "shares": number(row.get("numberOf13Fshares")),
+            "shares_change": number(row.get("numberOf13FsharesChange")),
+            "new_positions": int(number(row.get("newPositions")) or 0),
+            "increased_positions": int(number(row.get("increasedPositions")) or 0),
+            "reduced_positions": int(number(row.get("reducedPositions")) or 0),
+            "closed_positions": int(number(row.get("closedPositions")) or 0),
+        }
+
+    @staticmethod
+    def latest_reportable_13f_quarter(today: date) -> tuple[int, int]:
+        """13F filings are due 45 days after quarter-end; picks the most
+        recent calendar quarter whose deadline (plus a few days for FMP to
+        finish processing) has already passed, so a request made right at
+        the edge of a deadline doesn't get back a mostly-empty quarter."""
+        quarter_end = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
+        year, quarter = today.year, (today.month - 1) // 3 + 1
+        while True:
+            month, day = quarter_end[quarter]
+            if today >= date(year, month, day) + timedelta(days=50):
+                return year, quarter
+            quarter -= 1
+            if quarter == 0:
+                quarter, year = 4, year - 1
 
     @staticmethod
     def _first_row(payload: Any) -> dict[str, Any] | None:

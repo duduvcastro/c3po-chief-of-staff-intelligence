@@ -101,3 +101,56 @@ def test_consensus_batch_fetches_both_endpoints_per_symbol_in_parallel():
     assert consensus == {"consensus": 373.64, "median": 370.0, "high": 420.0, "low": 305.0}
     assert summary == {"last_month_count": 0, "last_month_avg": None, "last_quarter_count": 0, "last_quarter_avg": None}
     assert result["AAPL"] == (None, None)  # one symbol failing never breaks the batch
+
+
+def test_institutional_positions_parses_the_documented_response_shape():
+    http = FakeHttp([{
+        "symbol": "AAPL", "cik": "0000320193", "date": "2023-09-30",
+        "investorsHolding": 4863, "lastInvestorsHolding": 4805, "investorsHoldingChange": 58,
+        "numberOf13Fshares": 9139920744, "numberOf13FsharesChange": -221018965,
+        "newPositions": 162, "increasedPositions": 1941, "closedPositions": 158, "reducedPositions": 2408,
+    }])
+    fmp = FmpClient("https://financialmodelingprep.com", "test-token", http)
+
+    result = fmp.institutional_positions("AAPL", year=2023, quarter=3)
+
+    assert result == {
+        "investors_holding": 4863, "investors_holding_change": 58,
+        "shares": 9139920744.0, "shares_change": -221018965.0,
+        "new_positions": 162, "increased_positions": 1941,
+        "reduced_positions": 2408, "closed_positions": 158,
+    }
+    url, params = http.calls[0]
+    assert url == "https://financialmodelingprep.com/stable/institutional-ownership/symbol-positions-summary"
+    assert params == {"symbol": "AAPL", "year": 2023, "quarter": 3, "apikey": "test-token"}
+
+
+def test_institutional_positions_returns_none_on_empty_or_failed_response():
+    assert FmpClient("https://x", "t", FakeHttp([])).institutional_positions("AAPL", year=2023, quarter=3) is None
+    assert FmpClient("https://x", "t", FakeHttp(RuntimeError("boom"))).institutional_positions("AAPL", year=2023, quarter=3) is None
+
+
+def test_latest_reportable_13f_quarter_waits_out_the_filing_deadline():
+    """13F filings are due 45 days after quarter-end. A request made right
+    at that edge should NOT get back a mostly-unfiled quarter -- it should
+    fall back to the prior one, whose deadline has cleared with margin."""
+    # Q2 2026 ends 2026-06-30; deadline+buffer is 2026-08-19.
+    assert FmpClient.latest_reportable_13f_quarter(date(2026, 8, 18)) == (2026, 1)
+    assert FmpClient.latest_reportable_13f_quarter(date(2026, 8, 20)) == (2026, 2)
+    assert FmpClient.latest_reportable_13f_quarter(date(2026, 1, 1)) == (2025, 3)
+
+
+def test_institutional_positions_batch_isolates_per_symbol_failures():
+    http = FakeHttpPerSymbol({
+        "AAPL": [{
+            "symbol": "AAPL", "investorsHolding": 4863, "newPositions": 162,
+            "increasedPositions": 1941, "closedPositions": 158, "reducedPositions": 2408,
+        }],
+        "JPM": RuntimeError("boom"),
+    })
+    fmp = FmpClient("https://financialmodelingprep.com", "test-token", http)
+
+    result = fmp.institutional_positions_batch(["AAPL", "JPM"], year=2026, quarter=2)
+
+    assert result["AAPL"]["investors_holding"] == 4863
+    assert result["JPM"] is None

@@ -330,6 +330,41 @@ def test_insider_net_signal_reflects_buy_sell_balance_and_sample_confidence(tmp_
     assert all_sells_full_sample == pytest.approx(-1.0)
 
 
+def test_institutional_conviction_signal_reflects_accumulation_vs_distribution(tmp_path) -> None:
+    """FMP Ultimate Phase 2 (2026-08-20): same role as
+    _insider_net_signal but for 13F institutional positioning instead of
+    company insiders."""
+    service = service_for(tmp_path)
+
+    assert service._institutional_conviction_signal(None) == 0.0
+    assert service._institutional_conviction_signal({
+        "new_positions": 0, "increased_positions": 0, "reduced_positions": 0, "closed_positions": 0,
+    }) == 0.0
+
+    thin_accumulation = service._institutional_conviction_signal(
+        {"new_positions": 10, "increased_positions": 0, "reduced_positions": 0, "closed_positions": 0}
+    )
+    full_accumulation = service._institutional_conviction_signal(
+        {"new_positions": 30, "increased_positions": 20, "reduced_positions": 0, "closed_positions": 0}
+    )
+    full_distribution = service._institutional_conviction_signal(
+        {"new_positions": 0, "increased_positions": 0, "reduced_positions": 30, "closed_positions": 20}
+    )
+
+    assert 0 < thin_accumulation < full_accumulation
+    assert full_accumulation == pytest.approx(1.0)
+    assert full_distribution == pytest.approx(-1.0)
+
+
+def test_fmp_institutional_data_and_batch_skip_the_network_call_without_a_configured_token(tmp_path) -> None:
+    service = service_for(tmp_path)
+    assert service.settings.fmp_api_token == ""
+
+    assert service._fmp_institutional_data("JPM") is None
+    assert service._fmp_institutional_batch(["JPM", "AAPL"]) == {}
+    assert service._fmp_institutional_batch([]) == {}
+
+
 def test_sentiment_confidence_adjustment_is_bounded_and_scaled_by_coverage(tmp_path) -> None:
     service = service_for(tmp_path)
 
@@ -403,6 +438,58 @@ def test_analyze_lowers_risk_and_raises_confidence_on_bullish_insider_and_news_s
     # documented swing, or push confidence past the formula's own ceiling.
     assert baseline["risk_score"] - bullish["risk_score"] <= 8.0
     assert bullish["confidence"] <= 94
+
+
+def test_analyze_lowers_risk_on_institutional_accumulation(tmp_path) -> None:
+    """FMP Ultimate Phase 2: end-to-end, heavy institutional accumulation
+    (13F new/increased positions outweighing reduced/closed) should
+    measurably lower risk_score, same role as the insider-buying signal,
+    bounded by INSTITUTIONAL_RISK_MAX_SWING."""
+    service = service_for(tmp_path)
+    baseline = sample_analysis(service)
+
+    accumulating = service._analyze(
+        "MSFT",
+        "US",
+        {
+            "price": 500.0,
+            "currency": "USD",
+            "change_percent": 1.25,
+            "as_of": datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc),
+        },
+        {
+            "companyName": "Microsoft Corporation",
+            "sector": "Technology",
+            "marketCap": 3_700_000_000_000,
+            "trailingPE": 31.0,
+            "forwardPE": 27.0,
+            "enterpriseToEbitda": 22.0,
+            "pegRatio": 1.8,
+            "trailingEps": 16.0,
+            "forwardEps": 18.5,
+            "bookValue": 42.0,
+            "sharesOutstanding": 7_430_000_000,
+            "freeCashflow": 92_000_000_000,
+            "ebitda": 150_000_000_000,
+            "totalDebt": 80_000_000_000,
+            "totalCash": 90_000_000_000,
+            "targetMeanPrice": 610.0,
+            "numberOfAnalystOpinions": 48,
+            "analystRatings": {"strongBuy": 12, "buy": 18, "hold": 15, "sell": 2, "strongSell": 1},
+            "returnOnEquity": 0.34,
+            "profitMargins": 0.36,
+            "revenueGrowthAnnual": 0.15,
+            "earningsGrowthAnnual": 0.17,
+            "beta": 0.95,
+        },
+        institutional_positions={
+            "new_positions": 200, "increased_positions": 300,
+            "reduced_positions": 20, "closed_positions": 10,
+        },
+    )
+
+    assert accumulating["risk_score"] < baseline["risk_score"]
+    assert baseline["risk_score"] - accumulating["risk_score"] <= 8.0
 
 
 def test_dcf_value_uses_capm_discount_rate_for_us_and_flat_rate_elsewhere(tmp_path) -> None:
