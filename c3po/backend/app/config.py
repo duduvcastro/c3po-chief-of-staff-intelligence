@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     eodhd_plan: str = "unconfigured"
     finnhub_api_token: str = Field(default="", validation_alias=AliasChoices("C3PO_FINNHUB_API_TOKEN", "FINNHUB_API_TOKEN"))
     finnhub_base_url: str = "https://finnhub.io"
+    fmp_api_token: str = Field(default="", validation_alias=AliasChoices("C3PO_FMP_API_TOKEN", "FMP_API_TOKEN"))
+    fmp_base_url: str = "https://financialmodelingprep.com"
+    fmp_plan: str = "unconfigured"
     openai_admin_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("C3PO_OPENAI_ADMIN_API_KEY", "OPENAI_ADMIN_KEY"),
