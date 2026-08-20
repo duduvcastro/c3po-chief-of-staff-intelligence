@@ -51,6 +51,47 @@ class BrapiClient:
         rows = details.get("historicalDataPrice") or details.get("historicalData") or []
         return [self._normalize_intraday(item) for item in rows if isinstance(item, dict)]
 
+    def treasury_rates(self, *, indexer: str = "prefixado", limit: int = 20) -> list[dict[str, Any]]:
+        """Currently-offered Tesouro Direto bonds, sorted by maturity
+        (longest first) -- a real market-observed long-term BRL yield
+        curve (Brapi Pro plan), unlike the policy-rate Selic figure
+        b3_screener.py's _effective_selic() already uses. "prefixado"
+        bonds quote a plain nominal annualized yield in buyRate/sellRate
+        (unlike Tesouro Selic, whose buyRate/sellRate are a spread over
+        Selic, not a standalone rate) -- see rateInfo.rateType on each
+        result if using a different indexer. Returns [] on any failure;
+        callers must never let this break the caller's own risk-free
+        calculation."""
+        try:
+            payload = self.http.get_json(
+                f"{self.base_url}/api/v2/treasury/list",
+                params={"indexer": indexer, "sortBy": "maturityDate", "sortOrder": "desc", "limit": limit},
+                headers={"Authorization": f"Bearer {self.token}"},
+            )
+        except Exception:
+            return []
+        rows = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            return []
+        output: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            buy_rate = number(row.get("buyRate"))
+            sell_rate = number(row.get("sellRate"))
+            if buy_rate is None and sell_rate is None:
+                continue
+            output.append({
+                "symbol": str(row.get("symbol") or ""),
+                "bond_type": str(row.get("bondType") or ""),
+                "indexer": str(row.get("indexer") or ""),
+                "maturity_date": str(row.get("maturityDate") or ""),
+                "duration_days": int(number(row.get("durationDays")) or 0),
+                "buy_rate": buy_rate,
+                "sell_rate": sell_rate,
+            })
+        return output
+
     @staticmethod
     def _normalize_intraday(item: dict[str, Any]) -> dict[str, Any]:
         return {

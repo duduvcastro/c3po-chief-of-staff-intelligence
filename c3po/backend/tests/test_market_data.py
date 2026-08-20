@@ -1764,6 +1764,47 @@ def test_effective_selic_does_not_warn_shortly_after_the_copom_decision(caplog: 
     assert "Selic governor" not in caplog.text
 
 
+def test_check_selic_against_market_yield_warns_on_a_large_divergence(caplog: pytest.LogCaptureFixture) -> None:
+    """Data-source audit (2026-08-20): Brapi Pro's Tesouro Direto endpoints
+    were never used at all, even though they're included in the plan we
+    already pay for. Used as a divergence cross-check against the Selic-
+    derived risk-free rate -- purely informational, catches the exact
+    "feed silently goes stale/wrong" failure mode this session spent all
+    day chasing elsewhere in Selic/peer-median/consensus code.
+    """
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    http = StubHttp({
+        "results": [{
+            "symbol": "tesouro-prefixado-01012037", "bondType": "Tesouro Prefixado",
+            "indexer": "prefixado", "maturityDate": "2037-01-01", "durationDays": 4000,
+            "buyRate": 0.13, "sellRate": 0.135,
+        }],
+    })
+    service = B3ScreenerService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    with caplog.at_level("WARNING", logger="app.market_data.b3_screener"):
+        service._check_selic_against_market_yield(0.02)  # far below the observed 13.5% market yield
+
+    assert "diverges" in caplog.text
+
+
+def test_check_selic_against_market_yield_is_silent_on_a_normal_term_spread(caplog: pytest.LogCaptureFixture) -> None:
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    http = StubHttp({
+        "results": [{
+            "symbol": "tesouro-prefixado-01012037", "bondType": "Tesouro Prefixado",
+            "indexer": "prefixado", "maturityDate": "2037-01-01", "durationDays": 4000,
+            "buyRate": 0.13, "sellRate": 0.135,
+        }],
+    })
+    service = B3ScreenerService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    with caplog.at_level("WARNING", logger="app.market_data.b3_screener"):
+        service._check_selic_against_market_yield(0.14)  # a plausible term spread vs. the 13.5% observed yield
+
+    assert "diverges" not in caplog.text
+
+
 def test_disclosure_risk_signal_scales_by_materiality_and_zeroes_when_current() -> None:
     """Root-caused 2026-08-20 (B3 TP audit): disclosure materiality was
     computed and persisted per filing but never fed into governance_risk —
