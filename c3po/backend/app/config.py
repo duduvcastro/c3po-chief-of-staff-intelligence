@@ -137,7 +137,18 @@ class Settings(BaseSettings):
     r2d2_delayed_quote_protection_grace_minutes: float = 3.0
     r2d2_delayed_quote_fallback_max_age_minutes: float = 30.0
     r2d2_trade_cooldown_minutes: int = 8
-    r2d2_max_daily_orders: int = 120
+    # Root-caused 2026-08-20: this default (not an env override) is what the
+    # worker falls back to whenever a deploy doesn't carry forward a manual
+    # production tweak -- it silently reverted from a 200 override earlier
+    # today, hit the cap at 131 orders by mid-afternoon, and starved the rest
+    # of the session of any new BUYs. Raised the versioned default itself so
+    # this can't regress again. Risk per trade is now normalized (V20:
+    # RISK_BUDGET_PERCENT of NAV per position), so the order count itself
+    # carries far less risk than it did under the old fixed 2-6%-of-NAV
+    # sizing -- 500 is generous headroom above a realistic day's volume
+    # (~180 extrapolated from today) while still tripping on genuine
+    # runaway/erratic behavior.
+    r2d2_max_daily_orders: int = 500
     r2d2_ws_max_symbols: int = 50
     r2d2_ws_rotation_grace_cycles: int = 3
     r2d2_ws_rotation_core_percent: float = 50.0
