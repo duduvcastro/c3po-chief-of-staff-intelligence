@@ -3466,7 +3466,7 @@ const marketInstrumentMarks: Record<string, string> = {
   "USD/BRL": "/market-marks/usd.svg",
   "EUR/BRL": "/market-marks/euro.svg",
   "GBP/BRL": "/market-marks/pound.svg",
-  BTC: "/market-marks/btc.svg",
+  BTC: "/market-marks/btc-coin.jpg",
   ETH: "/market-marks/eth.svg",
   SOL: "/market-marks/sol.svg",
   BONK: "/market-marks/bonk.svg",
