@@ -366,7 +366,7 @@ def test_r2d2_buy_records_dynamic_position_size_in_trade_audit() -> None:
         "quote_as_of": datetime(2026, 8, 17, 14, 0, tzinfo=timezone.utc),
     }
 
-    trade = service._buy(experiment, cycle_id, candidate, [])
+    trade = service._buy(experiment, cycle_id, candidate, [], candidate["quote_as_of"])
 
     assert trade is not None
     assert trade["decision_snapshot"]["sizing_model"] == "dynamic conviction-risk-volatility"
@@ -398,6 +398,7 @@ def test_r2d2_portfolio_pacing_can_fill_twenty_diversified_slots_under_gross_cap
         }
         trade = service._buy(
             experiment, cycle_id, candidate, service.repo.positions(experiment["id"]),
+            candidate["quote_as_of"],
         )
         assert trade is not None
 
