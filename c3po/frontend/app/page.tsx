@@ -2628,6 +2628,16 @@ function R2D2RisingView() {
   const learningLastActual = learningCurve.length
     ? learningCurve[learningCurve.length - 1].positive_percent
     : 0;
+  const learningPositiveValues = learningCurve
+    .map((point) => point.positive_percent)
+    .sort((left, right) => left - right);
+  const learningPositiveMedian = learningPositiveValues.length
+    ? learningPositiveValues.length % 2
+      ? learningPositiveValues[Math.floor(learningPositiveValues.length / 2)]
+      : (learningPositiveValues[learningPositiveValues.length / 2 - 1] + learningPositiveValues[learningPositiveValues.length / 2]) / 2
+    : 0;
+  const learningMedianDelta = learningLastActual - learningPositiveMedian;
+  const learningMedianDeltaTone = learningMedianDelta > 0 ? "positive" : learningMedianDelta < 0 ? "negative" : "neutral";
   const learningTrendDelta = learningLastActual - learningLastMovingAverage;
   const learningTrendTone = learningTrendDelta > 1 ? "positive" : learningTrendDelta < -1 ? "negative" : "neutral";
   const learningTrendLabel = learningCurve.length < 2
@@ -2855,8 +2865,9 @@ function R2D2RisingView() {
             </div>
           ) : null}
         </header>
-        <div className="r2d2-learning-scroll" ref={learningScrollRef}>
-          {learningCurve.length ? (
+        <div className="r2d2-learning-content">
+          <div className="r2d2-learning-scroll" ref={learningScrollRef}>
+            {learningCurve.length ? (
             <svg
               className="r2d2-learning-svg"
               viewBox={`0 0 ${learningChartWidth} ${LEARNING_CHART_HEIGHT}`}
@@ -2932,9 +2943,26 @@ function R2D2RisingView() {
                 </g>
               ) : null}
             </svg>
-          ) : (
-            <div className="r2d2-ledger-empty"><Brain size={24} /><div><strong>Sem dias operados ainda</strong><span>A curva de aprendizado aparece após o primeiro dia com vendas encerradas.</span></div></div>
-          )}
+            ) : (
+              <div className="r2d2-ledger-empty"><Brain size={24} /><div><strong>Sem dias operados ainda</strong><span>A curva de aprendizado aparece após o primeiro dia com vendas encerradas.</span></div></div>
+            )}
+          </div>
+          {learningCurve.length ? (
+            <aside className="r2d2-learning-median-card" aria-label="Mediana de operações positivas">
+              <div>
+                <span>Mediana positiva</span>
+                <strong>{learningPositiveMedian.toFixed(1)}%</strong>
+                <small>{learningCurve.length} dias operados</small>
+              </div>
+              <div>
+                <span>Delta diário</span>
+                <strong className={`r2d2-learning-median-${learningMedianDeltaTone}`}>
+                  {learningMedianDelta >= 0 ? "+" : ""}{learningMedianDelta.toFixed(1)}pp
+                </strong>
+                <small>Último dia vs mediana</small>
+              </div>
+            </aside>
+          ) : null}
         </div>
       </section>
 
