@@ -282,6 +282,7 @@ class SystemHealthService:
                 last_update=self._format_time(provider.last_success_at) if provider.last_success_at else "No successful quote yet",
             ))
         items.append(self._finnhub_health(now))
+        items.append(self._fmp_health(now))
         return items or [IntegrationHealth(
             name="Market data APIs",
             status="offline",
@@ -314,6 +315,32 @@ class SystemHealthService:
             )
         except Exception as exc:
             return self._offline_item("Finnhub", exc, now)
+
+    def _fmp_health(self, now: datetime) -> IntegrationHealth:
+        if not self.settings.fmp_api_token:
+            return IntegrationHealth(
+                name="FMP",
+                status="offline",
+                detail="Ultimate credential is not configured",
+                last_update=self._format_time(now),
+            )
+        try:
+            response = self.external_get(
+                f"{self.settings.fmp_base_url.rstrip('/')}/stable/price-target-consensus",
+                params={"symbol": "AAPL", "apikey": self.settings.fmp_api_token},
+                timeout=self.settings.system_health_external_timeout_seconds,
+                follow_redirects=True,
+                headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
+            )
+            response.raise_for_status()
+            return IntegrationHealth(
+                name="FMP",
+                status="healthy",
+                detail="United States · Ultimate · consensus, grades, 13F",
+                last_update=self._format_time(now),
+            )
+        except Exception as exc:
+            return self._offline_item("FMP", exc, now)
 
     def _external_services_health(self, now: datetime) -> list[IntegrationHealth]:
         return [
