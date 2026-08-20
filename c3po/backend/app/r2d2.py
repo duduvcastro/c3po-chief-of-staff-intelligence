@@ -4,8 +4,10 @@ import json
 import logging
 import math
 import statistics
+from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any
+from threading import Lock
+from typing import Any, Iterator
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -54,6 +56,7 @@ FAILED_ENTRY_LOSS_PERCENT = 0.30
 US_STOCK_SHORTLIST_PER_MARKET = 300
 US_ETF_SHORTLIST_PER_MARKET = 50
 US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
+POSITION_STREAM_PRIORITY = 200
 BASE_ENTRY_POLICY = {
     "entry_upside_floor": 20.0,
     "max_risk_score": 48.0,
@@ -145,10 +148,43 @@ class R2D2Repository:
                 "experiment": None, "positions": {}, "trades": [], "snapshots": {},
                 "cycles": [], "decisions": [], "learning": [],
             }
+        if not hasattr(database, "_r2d2_risk_evaluation_lock"):
+            database._r2d2_risk_evaluation_lock = Lock()  # type: ignore[attr-defined]
 
     @property
     def memory(self) -> dict[str, Any]:
         return self.database._r2d2_memory  # type: ignore[attr-defined]
+
+    @contextmanager
+    def risk_evaluation_lock(self, experiment_id: str) -> Iterator[bool]:
+        """Serialize position evaluation across the normal and dedicated loops.
+
+        PostgreSQL owns the production lock, so the guarantee also holds if the
+        worker is ever split across processes. The in-memory lock keeps unit
+        tests and local paper runs equivalent.
+        """
+        if not self.database.database_url:
+            lock: Lock = self.database._r2d2_risk_evaluation_lock  # type: ignore[attr-defined]
+            acquired = lock.acquire(blocking=False)
+            try:
+                yield acquired
+            finally:
+                if acquired:
+                    lock.release()
+            return
+
+        lock_name = f"r2d2-risk-evaluation:{experiment_id}"
+        with self.database.connection() as connection:
+            acquired = bool(connection.execute(
+                "SELECT pg_try_advisory_xact_lock(hashtext(%s))",
+                (lock_name,),
+            ).fetchone()[0])
+            try:
+                yield acquired
+            finally:
+                # The transaction-scoped advisory lock is released here even
+                # when evaluation or paper execution raises.
+                connection.rollback()
 
     def ensure_experiment(self, settings: Settings) -> dict[str, Any]:
         start = _date_value(settings.r2d2_start_date)
@@ -807,13 +843,19 @@ class R2D2Repository:
 
     def last_cycle(self, experiment_id: str) -> dict[str, Any] | None:
         if not self.database.database_url:
-            matches = [item for item in self.memory["cycles"] if item["experiment_id"] == experiment_id]
+            matches = [
+                item for item in self.memory["cycles"]
+                if item["experiment_id"] == experiment_id
+                and not item.get("metadata", {}).get("risk_monitor")
+            ]
             return dict(matches[-1]) if matches else None
         with self.database.connection() as connection:
             row = connection.execute(
                 """SELECT status, started_at, completed_at, scanned_count, signal_count,
                           trade_count, error_summary FROM r2d2_cycles
-                   WHERE experiment_id=%s ORDER BY started_at DESC LIMIT 1""",
+                   WHERE experiment_id=%s
+                     AND NOT (COALESCE(metadata, '{}'::jsonb) ? 'risk_monitor')
+                   ORDER BY started_at DESC LIMIT 1""",
                 (experiment_id,),
             ).fetchone()
         if not row:
@@ -1116,7 +1158,7 @@ class R2D2PaperService:
                 stream.set_group(
                     "r2d2-positions",
                     [position["symbol"] for position in positions if position["market"] != "B3"],
-                    priority=130,
+                    priority=POSITION_STREAM_PRIORITY,
                 )
             quote_map = self._position_quotes(positions, now)
             exit_count = self._mark_and_exit(experiment, cycle_id, positions, quote_map, now)
@@ -1228,6 +1270,53 @@ class R2D2PaperService:
             self.repo.finish_cycle(cycle_id, "failed", scanned, signals, trade_count, str(exc)[:1000])
         return self.dashboard()
 
+    def run_risk_monitor_cycle(self, now: datetime | None = None) -> int:
+        """Re-evaluate open positions without entering the screening pipeline."""
+        now = now or datetime.now(timezone.utc)
+        experiment = self.ensure_initialized()
+        positions = self.repo.positions(experiment["id"])
+        if not positions:
+            return 0
+
+        markets = self.open_markets(now)
+        legacy_b3_exit_window = (
+            self._b3_session_open(now)
+            and any(position["market"] == "B3" for position in positions)
+        )
+        cycle_markets = [*markets, *(["B3-EXIT-ONLY"] if legacy_b3_exit_window else [])]
+        if not cycle_markets:
+            return 0
+
+        stream = getattr(self.realtime, "stream", None)
+        if stream:
+            stream.set_group(
+                "r2d2-positions",
+                [position["symbol"] for position in positions if position["market"] != "B3"],
+                priority=POSITION_STREAM_PRIORITY,
+            )
+
+        cycle_id = self.repo.start_cycle(experiment["id"], cycle_markets, "running")
+        exits = 0
+        try:
+            quotes = self._position_quotes(positions, now)
+            exits = self._mark_and_exit(experiment, cycle_id, positions, quotes, now)
+            if exits:
+                self._snapshot(experiment, now.astimezone(SAO_PAULO).date(), now)
+            self.repo.finish_cycle(
+                cycle_id, "succeeded", 0, 0, exits,
+                metadata={
+                    "risk_monitor": {
+                        "enabled": True,
+                        "positions": len(positions),
+                        "interval_seconds": self.settings.r2d2_risk_monitor_interval_seconds,
+                    },
+                },
+            )
+        except Exception as exc:
+            logger.exception("R2D2 dedicated risk-monitor cycle failed")
+            self.repo.finish_cycle(cycle_id, "failed", 0, 0, exits, str(exc)[:1000])
+        return exits
+
     def _position_quotes(self, positions: list[dict[str, Any]], now: datetime) -> dict[tuple[str, str], Any]:
         output: dict[tuple[str, str], Any] = {}
         for market in {row["market"] for row in positions}:
@@ -1249,8 +1338,32 @@ class R2D2PaperService:
         age_seconds = max(0.0, (now - as_of.astimezone(timezone.utc)).total_seconds())
         return age_seconds <= self.settings.r2d2_live_quote_max_age_seconds
 
+    @staticmethod
+    def _risk_priority(position: dict[str, Any], quotes: dict[tuple[str, str], Any]) -> tuple[float, ...]:
+        quote = quotes.get((position["market"], position["symbol"]))
+        price = _float(getattr(quote, "price", None), _float(position.get("last_price_local")))
+        average_cost = _float(position.get("average_cost_local"))
+        stop = _float(position.get("stop_price_local"))
+        pnl_percent = (price / average_cost - 1) * 100 if price > 0 and average_cost > 0 else 0.0
+        stop_buffer_percent = (price / stop - 1) * 100 if price > 0 and stop > 0 else 999.0
+        risk_tier = 0.0 if stop_buffer_percent <= 0.25 else (1.0 if pnl_percent < 0 else 2.0)
+        return (risk_tier, stop_buffer_percent, pnl_percent)
+
     def _mark_and_exit(self, experiment: dict[str, Any], cycle_id: str, positions: list[dict[str, Any]],
                        quotes: dict[tuple[str, str], Any], now: datetime) -> int:
+        with self.repo.risk_evaluation_lock(experiment["id"]) as acquired:
+            if not acquired:
+                logger.debug("R2D2 risk evaluation skipped because another loop owns the lock")
+                return 0
+            # Refresh under the lock so a caller cannot act on a position that
+            # the competing loop sold after the caller built its original list.
+            current_positions = self.repo.positions(experiment["id"])
+            prioritized = sorted(current_positions, key=lambda item: self._risk_priority(item, quotes))
+            return self._mark_and_exit_locked(experiment, cycle_id, prioritized, quotes, now)
+
+    def _mark_and_exit_locked(self, experiment: dict[str, Any], cycle_id: str,
+                              positions: list[dict[str, Any]],
+                              quotes: dict[tuple[str, str], Any], now: datetime) -> int:
         portfolio_daily_return = self.dashboard().daily_return_percent
         market_reference_change = {
             market: statistics.median(changes)
