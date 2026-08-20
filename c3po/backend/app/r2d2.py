@@ -872,6 +872,7 @@ class R2D2PaperService:
         self._intraday_cache: dict[tuple[str, str], tuple[datetime, list[dict[str, Any]]]] = {}
         self._fx_cache: tuple[datetime, float] | None = None
         self._eodhd_call_counts: dict[str, int] = {}
+        self._ws_core_symbols: list[str] = []
         self._ws_rotation_symbols: list[str] = []
         self._ws_rotation_cursor = 0
         self._ws_rotation_age = 0
@@ -2085,6 +2086,7 @@ class R2D2PaperService:
         )
         capacity = min(max(0, capacity), len(ranked))
         if capacity == 0:
+            self._ws_core_symbols = []
             self._ws_rotation_symbols = []
             self._ws_rotation_cursor = 0
             self._ws_rotation_age = 0
@@ -2099,8 +2101,24 @@ class R2D2PaperService:
 
         core_percent = max(0.0, min(100.0, self.settings.r2d2_ws_rotation_core_percent))
         core_count = min(capacity, int(round(capacity * core_percent / 100.0)))
-        core = ranked[:core_count]
-        tail = ranked[core_count:]
+        ranked_by_symbol = {item["symbol"]: item for item in ranked}
+        retained_core = [
+            ranked_by_symbol[symbol]
+            for symbol in self._ws_core_symbols
+            if symbol in ranked_by_symbol
+        ][:core_count]
+        retained_symbols = {item["symbol"] for item in retained_core}
+        core = list(retained_core)
+        for item in ranked:
+            if len(core) >= core_count:
+                break
+            if item["symbol"] in retained_symbols:
+                continue
+            core.append(item)
+            retained_symbols.add(item["symbol"])
+        self._ws_core_symbols = [item["symbol"] for item in core]
+        core_symbols = set(self._ws_core_symbols)
+        tail = [item for item in ranked if item["symbol"] not in core_symbols]
         rotating_capacity = min(capacity - core_count, len(tail))
         tail_by_symbol = {item["symbol"]: item for item in tail}
         grace_cycles = max(1, self.settings.r2d2_ws_rotation_grace_cycles)
@@ -2145,6 +2163,8 @@ class R2D2PaperService:
         return [*core, *rotating], {
             "rotation_eligible_count": len(ranked),
             "core_count": len(core),
+            "core_retained_count": len(retained_core),
+            "core_replaced_count": max(0, len(core) - len(retained_core)),
             "rotating_count": len(rotating),
             "rotation_pool_count": len(tail),
             "rotation_cursor": self._ws_rotation_cursor,
