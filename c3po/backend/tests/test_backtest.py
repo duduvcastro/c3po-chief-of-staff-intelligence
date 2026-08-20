@@ -230,12 +230,15 @@ def test_exit_decision_gain_protection_floor_matches_failed_entry_loss_percent()
 
 
 def _armed_profit_lock_scenario(**overrides):
+    # atr_percent 1.0 caps the ATR-derived stop distance -- and, since the 1R
+    # floor added 2026-08-20, the profit-lock trigger too -- at 1.5%. peak/pnl
+    # raised accordingly from the pre-1R-floor 1.35%/0.45%.
     technical = {"atr": 1.0, "atr_percent": 1.0, "vwap": 100.4, "ema8": 100.5, "ema20": 100.3,
                  "momentum15": 0.0, "momentum30": 0.0, "macd_histogram": 0.1,
                  "macd_acceleration": 0.0, "price_structure": "range", "score": 58.0}
     kwargs = dict(
-        technical=technical, quote_price=100.45, average_cost=100.0, high_water=101.35,
-        held_minutes=10.0, day_change=0.45, market_change=0.0,
+        technical=technical, quote_price=101.0, average_cost=100.0, high_water=101.6,
+        held_minutes=10.0, day_change=1.0, market_change=0.0,
         state=strategy.PositionRiskState(), weekly_conviction_state={"active": False},
         stop_price=95.0, max_position_loss_percent=0.65,
     )
@@ -245,8 +248,8 @@ def _armed_profit_lock_scenario(**overrides):
 
 def test_exit_decision_locks_armed_profit_with_default_pullback():
     """Same scenario the r2d2.py-level test_r2d2_locks_an_armed_profit_after_pullback
-    exercises, called directly through the parameterized function: peak +1.35%,
-    pulled back to +0.45% -- inside the default 0.35%-1.00% lock band, so it exits.
+    exercises, called directly through the parameterized function: peak +1.6%,
+    pulled back to +1.0% -- inside the default 0.35%-1.25% lock band, so it exits.
     """
     decision, _state = _armed_profit_lock_scenario()
     assert decision.reason is not None
@@ -261,8 +264,8 @@ def test_exit_decision_profit_pullback_tolerance_is_now_configurable():
     with no way to test an alternative -- this test proves the parameter is live
     by going further still: with an even wider pullback tolerance (1.00), the
     same scenario as the test above no longer locks. profit_lock_level becomes
-    max(0.35, 1.35-1.00) = 0.35, a single point -- +0.45% no longer falls in the
-    lock band, so the position stays open instead of exiting.
+    max(0.35, 1.6-1.00) = 0.60 -- +1.0% no longer falls in the lock band, so
+    the position stays open instead of exiting.
     """
     decision, _state = _armed_profit_lock_scenario(profit_pullback_percent=1.00)
     assert decision.reason is None
