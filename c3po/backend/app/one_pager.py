@@ -51,6 +51,21 @@ US_EQUITY_RISK_PREMIUM = 0.055
 US_DISCOUNT_RATE_MIN = 0.06
 US_DISCOUNT_RATE_MAX = 0.16
 
+# Root-caused 2026-08-20 (production incident): the 5 "methods" (Goldman
+# Sachs/Morgan Stanley/etc -- fictional internal labels, not real data from
+# those firms) each only bake real analyst consensus in at a modest,
+# diluted 10-25% weight alongside fundamentals-derived components. When
+# those fundamentals-derived components move together (as they did for
+# JPM: consensus $374.57, our blended TP $625.49 -- 67% too high), nothing
+# pulls the final number back toward the one real, externally-sourced
+# anchor we have. B3 avoids this with an explicit, separate final blend
+# against public_consensus_tp (b3_screener.py's _consensus_weight, 20-35%
+# scaled by analyst coverage) -- applied once, after the internal model,
+# not diluted inside it. Mirrored here as US_CONSENSUS_WEIGHT_MIN/MAX.
+US_CONSENSUS_WEIGHT_MIN = 0.20
+US_CONSENSUS_WEIGHT_MAX = 0.35
+US_CONSENSUS_ANALYST_BREADTH_ANALYSTS = 10
+
 # Root-caused 2026-08-20 (TP methodology audit): fair_pe/fair_ev_ebitda used a
 # fixed constant per valuation profile with no peer comparison at all, unlike
 # B3's live sector-median benchmarking (b3_screener.py's _sector_medians).
@@ -499,7 +514,13 @@ class OnePagerService:
             (name, self._clamp(value, max(price * 0.40, method_median * 0.68), min(price * 2.75, method_median * 1.45)))
             for name, value in raw_methods.items()
         )
-        c3po_tp = statistics.mean(methods.values())
+        internal_tp = statistics.mean(methods.values())
+        consensus_weight = self._us_consensus_weight(consensus, analyst_count)
+        c3po_tp = (
+            internal_tp * (1 - consensus_weight) + consensus * consensus_weight
+            if consensus_weight
+            else internal_tp
+        )
         foreign_policy = fundamentals.get("foreignListingPolicy")
         foreign_buy_in_override = None
         if isinstance(foreign_policy, dict):
@@ -998,6 +1019,18 @@ class OnePagerService:
             pass
         self._us_risk_free_cache = (now + timedelta(hours=US_RISK_FREE_CACHE_HOURS), rate)
         return rate
+
+    @staticmethod
+    def _us_consensus_weight(consensus: float | None, analyst_count: int | None) -> float:
+        """Mirrors B3's _consensus_weight (b3_screener.py) -- how much real
+        external analyst consensus should count in the FINAL target price,
+        applied once after the internal model, not diluted inside it. 0.0
+        when there's no consensus or analyst coverage to lean on."""
+        if not consensus or not analyst_count or analyst_count <= 0:
+            return 0.0
+        analyst_breadth = OnePagerService._clamp(analyst_count / US_CONSENSUS_ANALYST_BREADTH_ANALYSTS, 0, 1)
+        weight = US_CONSENSUS_WEIGHT_MIN + analyst_breadth * (US_CONSENSUS_WEIGHT_MAX - US_CONSENSUS_WEIGHT_MIN)
+        return OnePagerService._clamp(weight, US_CONSENSUS_WEIGHT_MIN, US_CONSENSUS_WEIGHT_MAX)
 
     def _dcf_value(
         self,

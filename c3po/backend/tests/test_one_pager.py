@@ -588,3 +588,46 @@ def test_analyze_uses_live_peer_medians_over_the_fallback_constants(tmp_path) ->
     )
 
     assert with_low_peer_pe["c3po_tp"] < without_peers["c3po_tp"]
+
+
+def test_us_consensus_weight_scales_with_analyst_breadth_and_zeroes_without_coverage() -> None:
+    assert OnePagerService._us_consensus_weight(None, 20) == 0.0
+    assert OnePagerService._us_consensus_weight(100.0, 0) == 0.0
+    assert OnePagerService._us_consensus_weight(100.0, 1) == pytest.approx(0.215)
+    assert OnePagerService._us_consensus_weight(100.0, 10) == pytest.approx(0.35)
+    assert OnePagerService._us_consensus_weight(100.0, 27) == pytest.approx(0.35)  # clamped, not unbounded
+
+
+def test_analyze_pulls_the_final_tp_toward_a_well_covered_consensus(tmp_path) -> None:
+    """Root-caused 2026-08-20 (production incident): JPM's blended TP came
+    out $625.49 against a real 27-analyst consensus of $374.57 (67% too
+    high) -- because consensus only entered each of the 5 internal
+    "methods" (Goldman Sachs/Morgan Stanley/etc, fictional labels for our
+    own model, not real bank data) diluted at 10-25% weight, with nothing
+    pulling the final number back toward the one real, externally-sourced
+    signal we have. Mirrors B3's _consensus_weight: real analyst consensus
+    now gets an explicit final blend (20-35%, scaled by analyst coverage),
+    applied once after the internal model instead of diluted inside it.
+    """
+    service = service_for(tmp_path)
+    fundamentals = {
+        "companyName": "Test Bank",
+        "sector": "Financial Services",
+        "industry": "Banks-Diversified",
+        "marketCap": 400_000_000_000,
+        "trailingEps": 18.0,
+        "forwardEps": 19.0,
+        "sharesOutstanding": 2_800_000_000,
+        "beta": 1.1,
+        "returnOnEquity": 0.18,
+    }
+    quote = {"price": 357.26, "currency": "USD", "change_percent": 0.3, "as_of": datetime.now(timezone.utc)}
+
+    without_consensus = service._analyze("TESTBANK", "US", quote, fundamentals, risk_free_rate=0.042)
+    with_consensus = service._analyze(
+        "TESTBANK", "US", quote,
+        {**fundamentals, "targetMeanPrice": 374.57, "numberOfAnalystOpinions": 27},
+        risk_free_rate=0.042,
+    )
+
+    assert abs(with_consensus["c3po_tp"] - 374.57) < abs(without_consensus["c3po_tp"] - 374.57)
