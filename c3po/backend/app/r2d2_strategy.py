@@ -30,9 +30,15 @@ from typing import Any
 # Constants (mirrors the module-level constants in r2d2.py as of V16)
 # ---------------------------------------------------------------------------
 
-METHODOLOGY_VERSION = "R2D2-HYBRID-V24-WIDER-RISK-BAND-TEST-PHASE"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V25-GAIN-PROTECTION-PERSISTENCE"
 
-RISK_BUDGET_PERCENT = 0.03  # % of NAV risked per trade (Turtle-style; backtested vs. 0.06/0.09)
+RISK_BUDGET_PERCENT = 0.02  # % of NAV risked per trade (Turtle-style; backtested vs. 0.06/0.09)
+# Lowered from 0.03 on 2026-08-20 for the test phase, deliberately in the
+# opposite direction of widening the daily loss limit: the actual goal
+# (accumulate enough real fills to learn from) is measured in trade count,
+# not dollars. At 2/3 the risk per trade, the same daily loss-limit ceiling
+# takes ~50% more losing trades to reach, so a wider limit doesn't have to
+# mean proportionally more dollars at risk.
 
 MIN_HOLD_MINUTES = 5
 PROFIT_TRIGGER_PERCENT = 0.65
@@ -554,6 +560,7 @@ class PositionRiskState:
     defense_reductions: int = 0
     stop_breach_count: int = 0
     profit_harvest_count: int = 0
+    gain_protection_streak: int = 0
 
 
 def exit_decision(
@@ -639,6 +646,18 @@ def exit_decision(
         else max(0, state.defense_streak - 1)
     )
     stop_breaches = state.stop_breach_count + 1 if quote_price <= stop else 0
+    # 2-review persistence for the early-gain-protection rule (root-caused
+    # 2026-08-20: once the 1R profit floor raised every OTHER harvest rule's
+    # bar, exits are water and find the lowest open gate -- a winner pulling
+    # back would just route through this rule instead at its unchanged 0.30%
+    # floor, largely defeating the 1R floor's point). Mirrors defense_streak's
+    # pattern exactly: requires the same read to hold for two consecutive
+    # reviews before it fires, instead of on the first occurrence.
+    gain_protection_streak = (
+        state.gain_protection_streak + 1
+        if pnl_pct >= GAIN_PROTECTION_MIN_PERCENT and failed_entry_votes >= 3
+        else max(0, state.gain_protection_streak - 1)
+    )
     technical_score = _float(technical.get("score"))
     profit_lock_level = max(profit_lock_floor_percent, peak_pnl_pct - profit_pullback_percent)
 
@@ -693,13 +712,15 @@ def exit_decision(
         reason = f"Profit harvested at {pnl_pct:+.2f}% after a {bearish_votes}-signal momentum reversal."
     elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 1.0 and bearish_votes >= 2 and technical_score < 55:
         reason = f"Early profit harvested at {pnl_pct:+.2f}% after momentum weakened across {bearish_votes} signals; technical score {technical_score:.0f}/100."
-    elif pnl_pct >= GAIN_PROTECTION_MIN_PERCENT and failed_entry_votes >= 3:
+    elif pnl_pct >= GAIN_PROTECTION_MIN_PERCENT and failed_entry_votes >= 3 and gain_protection_streak >= 2:
         # Mirrors the failed-entry fast exit's vote-based read on the winning
         # side, deliberately with no held_minutes gate: a small unrealized gain
         # can round-trip into a loss faster than any fixed time window would
         # react, and every other profit rule above requires >=0.75% before it
         # offers any protection at all. Below that, a positive position had none.
-        reason = f"Early gain protection at {pnl_pct:+.2f}%: {failed_entry_votes}/5 live timing signals reversed before the position could round-trip into a loss."
+        # 2-review persistence added 2026-08-20 alongside the 1R profit floor,
+        # so this fast rule can't become the path of least resistance around it.
+        reason = f"Early gain protection at {pnl_pct:+.2f}% after {gain_protection_streak} reviews: {failed_entry_votes}/5 live timing signals reversed before the position could round-trip into a loss."
     elif held_minutes >= MIN_HOLD_MINUTES and technical_score < 32 and bearish_votes >= 4:
         reason = f"Trend breakdown confirmed by {bearish_votes} signals; technical score {technical_score:.0f}/100."
     elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct < profit_trigger_percent and defense_reductions == 0 and defense["actionable"] and defense["score"] >= 55 and defense_streak >= 2:
@@ -726,5 +747,6 @@ def exit_decision(
     new_state = PositionRiskState(
         defense_streak=defense_streak, defense_reductions=defense_reductions,
         stop_breach_count=stop_breaches, profit_harvest_count=profit_harvest_count,
+        gain_protection_streak=gain_protection_streak,
     )
     return ExitDecision(reason=reason, sell_fraction=sell_fraction, decision_state="exit" if reason else decision_state), new_state
