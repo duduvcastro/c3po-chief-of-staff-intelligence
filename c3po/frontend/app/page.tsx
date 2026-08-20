@@ -753,6 +753,8 @@ interface AlertsData {
   detail?: string;
 }
 
+const ALERTS_PAGE_SIZE = 20;
+
 type NavigationFeedKey = "relations" | "intelligence";
 
 interface NavigationIndicator {
@@ -5694,6 +5696,7 @@ function formatFinanceStatus(value: string) {
 
 function AlertsView({ onRead }: { onRead: (count: number) => void }) {
   const [data, setData] = useState<AlertsData | null>(null);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState("");
   const [readError, setReadError] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -5785,14 +5788,40 @@ function AlertsView({ onRead }: { onRead: (count: number) => void }) {
   } : null;
   const displayedAlerts = [...data.items, ...(staleAlert ? [staleAlert] : [])]
     .sort((left, right) => Date.parse(right.occurred_at ?? "") - Date.parse(left.occurred_at ?? ""));
+  const totalPages = Math.max(1, Math.ceil(displayedAlerts.length / ALERTS_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const firstAlert = displayedAlerts.length ? ((currentPage - 1) * ALERTS_PAGE_SIZE) + 1 : 0;
+  const lastAlert = Math.min(currentPage * ALERTS_PAGE_SIZE, displayedAlerts.length);
+  const paginatedAlerts = displayedAlerts.slice(firstAlert ? firstAlert - 1 : 0, lastAlert);
+  const changePage = (nextPage: number) => {
+    setExpandedId(null);
+    setPage(Math.max(1, Math.min(totalPages, nextPage)));
+  };
   return (
     <section className="panel">
       <PanelHeader title="Active Alerts" icon={RadarAlertsIcon} />
       {readError && <div className="screen-error"><AlertTriangle size={16} /><span>{readError}</span></div>}
       <div className="alert-list">
-        {displayedAlerts.map((item) => <AlertRow key={item.id} item={item} expanded={expandedId === item.id} onToggle={() => toggleAlert(item)} />)}
+        {paginatedAlerts.map((item) => <AlertRow key={item.id} item={item} expanded={expandedId === item.id} onToggle={() => toggleAlert(item)} />)}
         {!displayedAlerts.length && <EmptyLine label="No active alerts" />}
       </div>
+      {displayedAlerts.length > ALERTS_PAGE_SIZE && (
+        <footer className="iq-records-pagination" aria-label="Paginação dos alertas">
+          <div>
+            <strong>{firstAlert}–{lastAlert}</strong>
+            <span>de {displayedAlerts.length} alertas</span>
+          </div>
+          <div className="iq-pagination-controls">
+            <button type="button" onClick={() => changePage(currentPage - 1)} disabled={currentPage === 1} aria-label="Página anterior" title="Página anterior">
+              <ChevronLeft size={16} />
+            </button>
+            <span>Página <strong>{currentPage}</strong> de {totalPages}</span>
+            <button type="button" onClick={() => changePage(currentPage + 1)} disabled={currentPage === totalPages} aria-label="Próxima página" title="Próxima página">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </footer>
+      )}
     </section>
   );
 }
