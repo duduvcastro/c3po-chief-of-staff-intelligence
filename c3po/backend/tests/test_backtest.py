@@ -195,6 +195,40 @@ def test_exit_decision_does_not_fire_the_close_rule_too_early():
     assert decision.reason is None
 
 
+def _gain_protection_scenario(**overrides):
+    technical = {"atr": 1.0, "atr_percent": 1.0, "vwap": 101.0, "ema8": 101.0, "ema20": 100.5,
+                 "momentum15": -0.1, "momentum30": -0.1, "macd_histogram": -0.1,
+                 "macd_acceleration": -0.05, "price_structure": "range", "score": 50.0}
+    kwargs = dict(
+        technical=technical, quote_price=100.35, average_cost=100.0, high_water=100.35,
+        held_minutes=2.0, day_change=0.35, market_change=0.0,
+        state=strategy.PositionRiskState(), weekly_conviction_state={"active": False},
+        stop_price=99.0, max_position_loss_percent=0.65,
+    )
+    kwargs.update(overrides)
+    return strategy.exit_decision(**kwargs)
+
+
+def test_exit_decision_protects_a_small_gain_with_no_held_minutes_gate():
+    """Root-caused 2026-08-20 against real trades (RGA/HTHT): mirrors the
+    failed-entry fast exit's vote-based read on the winning side. held_minutes
+    here (2.0) is below MIN_HOLD_MINUTES (5) on purpose -- this rule has no
+    time gate, since a fast reversal can beat any fixed window."""
+    decision, _state = _gain_protection_scenario()
+    assert decision.reason is not None
+    assert "Early gain protection" in decision.reason
+
+
+def test_exit_decision_gain_protection_floor_matches_failed_entry_loss_percent():
+    """The floor (0.30) now matches FAILED_ENTRY_LOSS_PERCENT exactly -- a gain
+    just above the old 0.15 floor (e.g. +0.20%) is real evidence of the same
+    asymmetry root-caused today (RGA realized only +0.08%, HTHT only +0.13%,
+    while same-day failed-entry losses ran to -0.44%/-0.76%): it must NOT lock
+    in a near-nothing gain anymore."""
+    decision, _state = _gain_protection_scenario(quote_price=100.20, day_change=0.20)
+    assert decision.reason is None
+
+
 def _armed_profit_lock_scenario(**overrides):
     technical = {"atr": 1.0, "atr_percent": 1.0, "vwap": 100.4, "ema8": 100.5, "ema20": 100.3,
                  "momentum15": 0.0, "momentum30": 0.0, "macd_histogram": 0.1,
