@@ -901,7 +901,7 @@ def test_r2d2_locks_unharvested_weekly_profit_after_pullback() -> None:
         "as_of": datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc).isoformat(),
     }
     quote = SimpleNamespace(
-        price=100.9, change_percent=0.9,
+        price=100.6, change_percent=0.6,
         as_of=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
     )
 
