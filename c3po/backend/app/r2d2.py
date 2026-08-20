@@ -1292,6 +1292,13 @@ class R2D2PaperService:
 
         cycle_id = self.repo.start_cycle(experiment["id"], cycle_markets, "running")
         exits = 0
+        monitor_metadata = {
+            "risk_monitor": {
+                "enabled": True,
+                "positions": len(positions),
+                "interval_seconds": self.settings.r2d2_risk_monitor_interval_seconds,
+            },
+        }
         try:
             quotes = self._position_quotes(positions, now)
             exits = self._mark_and_exit(experiment, cycle_id, positions, quotes, now)
@@ -1299,17 +1306,14 @@ class R2D2PaperService:
                 self._snapshot(experiment, now.astimezone(SAO_PAULO).date(), now)
             self.repo.finish_cycle(
                 cycle_id, "succeeded", 0, 0, exits,
-                metadata={
-                    "risk_monitor": {
-                        "enabled": True,
-                        "positions": len(positions),
-                        "interval_seconds": self.settings.r2d2_risk_monitor_interval_seconds,
-                    },
-                },
+                metadata=monitor_metadata,
             )
         except Exception as exc:
             logger.exception("R2D2 dedicated risk-monitor cycle failed")
-            self.repo.finish_cycle(cycle_id, "failed", 0, 0, exits, str(exc)[:1000])
+            self.repo.finish_cycle(
+                cycle_id, "failed", 0, 0, exits, str(exc)[:1000],
+                metadata=monitor_metadata,
+            )
         return exits
 
     def _position_quotes(self, positions: list[dict[str, Any]], now: datetime) -> dict[tuple[str, str], Any]:

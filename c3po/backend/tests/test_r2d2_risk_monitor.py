@@ -119,6 +119,20 @@ def test_risk_monitor_cycle_never_enters_the_screening_pipeline() -> None:
     assert cycle["trade_count"] == 0
 
 
+def test_failed_risk_cycle_keeps_monitor_telemetry() -> None:
+    service = _service()
+    _open_position(service, "FAIL")
+    service._position_quotes = lambda positions, now: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        RuntimeError("quote failure")
+    )
+
+    service.run_risk_monitor_cycle(datetime(2026, 8, 20, 15, 0, tzinfo=timezone.utc))
+
+    cycle = service.repo.memory["cycles"][-1]
+    assert cycle["status"] == "failed"
+    assert cycle["metadata"]["risk_monitor"]["positions"] == 1
+
+
 def test_risk_priority_puts_stop_proximity_then_losses_first() -> None:
     positions = [
         {"market": "NASDAQ", "symbol": "GAIN", "average_cost_local": 100, "last_price_local": 102,
