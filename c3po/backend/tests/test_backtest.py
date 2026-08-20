@@ -128,7 +128,7 @@ def _armed_profit_lock_scenario(**overrides):
 def test_exit_decision_locks_armed_profit_with_default_pullback():
     """Same scenario the r2d2.py-level test_r2d2_locks_an_armed_profit_after_pullback
     exercises, called directly through the parameterized function: peak +1.35%,
-    pulled back to +0.45% -- inside the default 0.35%-1.15% lock band, so it exits.
+    pulled back to +0.45% -- inside the default 0.35%-1.00% lock band, so it exits.
     """
     decision, _state = _armed_profit_lock_scenario()
     assert decision.reason is not None
@@ -136,15 +136,15 @@ def test_exit_decision_locks_armed_profit_with_default_pullback():
 
 
 def test_exit_decision_profit_pullback_tolerance_is_now_configurable():
-    """The conceptual question raised 2026-08-18: R2D2 tolerates -0.90% of raw
-    drawdown before a hard stop, but only ~0.20pp of give-back from a peak before
-    locking a small profit -- a real asymmetry. These constants were previously
-    hardcoded inside exit_decision with no way to test an alternative. Same
-    scenario as the test above, but with a much wider pullback tolerance
-    (1.00 vs the default 0.20): profit_lock_level becomes max(0.35, 1.35-1.00) =
-    0.35, a single point -- +0.45% no longer falls in the lock band, so the
-    position stays open instead of exiting. Proves the parameter is live, doesn't
-    claim a wider tolerance is better (that needs real evidence, not this test).
+    """The asymmetry raised 2026-08-18 (R2D2 tolerated -0.90% of raw drawdown
+    before a hard stop, but only ~0.20pp of give-back from a peak before locking
+    a small profit) was addressed 2026-08-20 by widening the module default from
+    0.20 to 0.35. These constants were previously hardcoded inside exit_decision
+    with no way to test an alternative -- this test proves the parameter is live
+    by going further still: with an even wider pullback tolerance (1.00), the
+    same scenario as the test above no longer locks. profit_lock_level becomes
+    max(0.35, 1.35-1.00) = 0.35, a single point -- +0.45% no longer falls in the
+    lock band, so the position stays open instead of exiting.
     """
     decision, _state = _armed_profit_lock_scenario(profit_pullback_percent=1.00)
     assert decision.reason is None
