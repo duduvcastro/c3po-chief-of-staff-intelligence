@@ -150,7 +150,10 @@ def test_alerts_include_cpu_and_disk_capacity_incidents() -> None:
         response = client.get("/api/v1/alerts")
 
     assert response.status_code == 200
-    capacity = [item for item in response.json()["items"] if item["source"] == "AWS Lightsail Telemetry"]
+    items = response.json()["items"]
+    occurred_at = [datetime.fromisoformat(item["occurred_at"]) for item in items]
+    assert occurred_at == sorted(occurred_at, reverse=True)
+    capacity = [item for item in items if item["source"] == "AWS Lightsail Telemetry"]
     assert {item["id"].split(":")[1] for item in capacity} == {"cpu", "disk"}
     assert next(item for item in capacity if ":cpu:" in item["id"])["severity"] == "Critical"
     assert next(item for item in capacity if ":disk:" in item["id"])["metadata"]["Disco usado"] == "72.0%"
