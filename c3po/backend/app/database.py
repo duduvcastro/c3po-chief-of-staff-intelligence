@@ -1503,6 +1503,110 @@ class Database:
         )
         return {row[0]: dict(zip(keys, row)) for row in rows}
 
+    @staticmethod
+    def _insider_transaction_direction(metadata: dict[str, Any]) -> int:
+        """+1 buy, -1 sell, 0 unknown. Handles the two raw_metadata shapes
+        insider Tatooine Updates events are stored with: CVM VLMO
+        ({"movement": "Compra ..."/"Venda ..."}) and Finnhub/SEC Form 4
+        ({"is_purchase": bool, "is_sale": bool, ...raw transaction})."""
+        if metadata.get("source") == "cvm_vlmo":
+            movement = str(metadata.get("movement") or "")
+            return 1 if movement.startswith("Compra") else -1 if movement.startswith("Venda") else 0
+        if metadata.get("is_purchase"):
+            return 1
+        if metadata.get("is_sale"):
+            return -1
+        return 0
+
+    def insider_transaction_activity(
+        self, symbols: list[str], market: str, since: datetime,
+    ) -> dict[str, dict[str, int]]:
+        """Buy/sell transaction counts per symbol over the lookback window, from
+        CVM VLMO (B3) or Finnhub Form 4 (US) insider events -- both stored as
+        source_code-tagged Tatooine Updates events with valuation_relevant=False
+        (informational only), so this deliberately bypasses that filter and
+        latest_valuation_ir_events entirely."""
+        clean = [symbol.upper() for symbol in symbols if symbol]
+        if not clean:
+            return {}
+        source_codes = ("cvm",) if market == "B3" else ("sec",)
+        buckets: dict[str, dict[str, int]] = {}
+
+        def accumulate(symbol: str, metadata: dict[str, Any]) -> None:
+            direction = self._insider_transaction_direction(metadata)
+            if direction == 0:
+                return
+            bucket = buckets.setdefault(symbol, {"buy_count": 0, "sell_count": 0})
+            bucket["buy_count" if direction > 0 else "sell_count"] += 1
+
+        if not self.database_url:
+            for event in self._ir_events.values():
+                symbol = event.get("symbol")
+                published_at = event.get("published_at")
+                if (
+                    symbol not in clean
+                    or event.get("market") != market
+                    or event.get("source_code") not in source_codes
+                    or event.get("event_type") != "Insider Transaction"
+                    or not isinstance(published_at, datetime)
+                    or published_at < since
+                ):
+                    continue
+                accumulate(symbol, event.get("raw_metadata") or {})
+        else:
+            with self.connection() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT symbol, raw_metadata
+                    FROM ir_events
+                    WHERE market = %s AND source_code = ANY(%s) AND event_type = 'Insider Transaction'
+                      AND symbol = ANY(%s) AND published_at >= %s
+                    """,
+                    (market, list(source_codes), clean, since),
+                ).fetchall()
+            for symbol, raw_metadata in rows:
+                metadata = raw_metadata if isinstance(raw_metadata, dict) else (json.loads(raw_metadata) if raw_metadata else {})
+                accumulate(symbol, metadata)
+        return {
+            symbol: {**bucket, "total_count": bucket["buy_count"] + bucket["sell_count"]}
+            for symbol, bucket in buckets.items()
+        }
+
+    def latest_news_sentiment(self, symbols: list[str], market: str = "US") -> dict[str, dict[str, Any]]:
+        """Latest weekly Finnhub news-sentiment snapshot per symbol (raw_metadata
+        with bullish_percent/bearish_percent/articles_last_week). US-only source."""
+        clean = [symbol.upper() for symbol in symbols if symbol]
+        if not clean:
+            return {}
+        if not self.database_url:
+            output: dict[str, dict[str, Any]] = {}
+            for symbol in clean:
+                matches = [
+                    event for event in self._ir_events.values()
+                    if event.get("symbol") == symbol
+                    and event.get("market") == market
+                    and event.get("source_code") == "finnhub"
+                    and event.get("event_type") == "News Sentiment"
+                ]
+                if matches:
+                    output[symbol] = dict(max(matches, key=lambda event: event["published_at"]).get("raw_metadata") or {})
+            return output
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT ON (symbol) symbol, raw_metadata
+                FROM ir_events
+                WHERE market = %s AND source_code = 'finnhub' AND event_type = 'News Sentiment'
+                  AND symbol = ANY(%s)
+                ORDER BY symbol, published_at DESC
+                """,
+                (market, clean),
+            ).fetchall()
+        return {
+            symbol: (raw_metadata if isinstance(raw_metadata, dict) else (json.loads(raw_metadata) if raw_metadata else {}))
+            for symbol, raw_metadata in rows
+        }
+
     def reconcile_ir_results(self, fundamentals_by_symbol: dict[str, str | None], market: str = "B3") -> None:
         """Auto-incorporate only financial-result filings covered by an equal/newer reporting period."""
         valid_fundamentals: dict[str, str] = {}

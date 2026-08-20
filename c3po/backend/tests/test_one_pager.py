@@ -310,3 +310,96 @@ def test_mhvyf_uses_primary_listing_currency_and_public_coverage(tmp_path) -> No
     assert analysis["buy_in"] == pytest.approx(19.522, rel=1e-3)
     assert analysis["c3po_tp"] > analysis["price"]
     assert "Goldman Sachs" in analysis["thesis"][2]
+
+
+def test_insider_net_signal_reflects_buy_sell_balance_and_sample_confidence(tmp_path) -> None:
+    """Root-caused 2026-08-20: Tatooine Updates insider data (CVM VLMO / Finnhub
+    Form 4) was fully ingested but never read back into any scoring formula.
+    """
+    service = service_for(tmp_path)
+
+    assert service._insider_net_signal(None) == 0.0
+    assert service._insider_net_signal({"buy_count": 0, "sell_count": 0, "total_count": 0}) == 0.0
+
+    all_buys_thin_sample = service._insider_net_signal({"buy_count": 1, "sell_count": 0, "total_count": 1})
+    all_buys_full_sample = service._insider_net_signal({"buy_count": 4, "sell_count": 0, "total_count": 4})
+    all_sells_full_sample = service._insider_net_signal({"buy_count": 0, "sell_count": 4, "total_count": 4})
+
+    assert 0 < all_buys_thin_sample < all_buys_full_sample
+    assert all_buys_full_sample == pytest.approx(1.0)
+    assert all_sells_full_sample == pytest.approx(-1.0)
+
+
+def test_sentiment_confidence_adjustment_is_bounded_and_scaled_by_coverage(tmp_path) -> None:
+    service = service_for(tmp_path)
+
+    assert service._sentiment_confidence_adjustment(None) == 0.0
+    assert service._sentiment_confidence_adjustment({"bullish_percent": 80.0}) == 0.0
+
+    thin_bullish = service._sentiment_confidence_adjustment(
+        {"bullish_percent": 100.0, "bearish_percent": 0.0, "articles_last_week": 1},
+    )
+    full_bullish = service._sentiment_confidence_adjustment(
+        {"bullish_percent": 100.0, "bearish_percent": 0.0, "articles_last_week": 10},
+    )
+    full_bearish = service._sentiment_confidence_adjustment(
+        {"bullish_percent": 0.0, "bearish_percent": 100.0, "articles_last_week": 10},
+    )
+
+    assert 0 < thin_bullish < full_bullish
+    assert full_bullish == pytest.approx(5.0)
+    assert full_bearish == pytest.approx(-5.0)
+
+
+def test_analyze_lowers_risk_and_raises_confidence_on_bullish_insider_and_news_signal(tmp_path) -> None:
+    """End-to-end: heavy insider buying should measurably lower risk_score
+    (governance signal), and strongly bullish, well-covered news sentiment
+    should measurably raise confidence -- both bounded, neither swamping the
+    rest of each formula."""
+    service = service_for(tmp_path)
+    baseline = sample_analysis(service)
+
+    bullish = service._analyze(
+        "MSFT",
+        "US",
+        {
+            "price": 500.0,
+            "currency": "USD",
+            "change_percent": 1.25,
+            "as_of": datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc),
+        },
+        {
+            "companyName": "Microsoft Corporation",
+            "sector": "Technology",
+            "marketCap": 3_700_000_000_000,
+            "trailingPE": 31.0,
+            "forwardPE": 27.0,
+            "enterpriseToEbitda": 22.0,
+            "pegRatio": 1.8,
+            "trailingEps": 16.0,
+            "forwardEps": 18.5,
+            "bookValue": 42.0,
+            "sharesOutstanding": 7_430_000_000,
+            "freeCashflow": 92_000_000_000,
+            "ebitda": 150_000_000_000,
+            "totalDebt": 80_000_000_000,
+            "totalCash": 90_000_000_000,
+            "targetMeanPrice": 610.0,
+            "numberOfAnalystOpinions": 48,
+            "analystRatings": {"strongBuy": 12, "buy": 18, "hold": 15, "sell": 2, "strongSell": 1},
+            "returnOnEquity": 0.34,
+            "profitMargins": 0.36,
+            "revenueGrowthAnnual": 0.15,
+            "earningsGrowthAnnual": 0.17,
+            "beta": 0.95,
+        },
+        insider_activity={"buy_count": 5, "sell_count": 0, "total_count": 5},
+        news_sentiment={"bullish_percent": 90.0, "bearish_percent": 10.0, "articles_last_week": 12},
+    )
+
+    assert bullish["risk_score"] < baseline["risk_score"]
+    assert bullish["confidence"] > baseline["confidence"]
+    # Bounded: a maximally bullish signal still can't move risk more than the
+    # documented swing, or push confidence past the formula's own ceiling.
+    assert baseline["risk_score"] - bullish["risk_score"] <= 8.0
+    assert bullish["confidence"] <= 94

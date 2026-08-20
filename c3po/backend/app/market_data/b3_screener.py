@@ -51,6 +51,9 @@ ABSOLUTE_LOW_RISK_LIMIT = 40.0
 MATRIX_QUOTE_CACHE_SECONDS = 45
 MATRIX_REFRESH_SECONDS = 60
 MATRIX_PROVIDER_DELAY_MINUTES = 5
+INSIDER_GOVERNANCE_LOOKBACK_DAYS = 180
+INSIDER_SIGNAL_MIN_TRANSACTIONS_FOR_FULL_WEIGHT = 4
+INSIDER_GOVERNANCE_MAX_SWING = 20.0
 PERSISTED_STATE_POLL_SECONDS = 15
 AUXILIARY_CACHE_HOURS = 18
 CALIBRATION_HORIZON_DAYS = 90
@@ -963,9 +966,10 @@ class B3ScreenerService:
                 coverage_audit[reason] = coverage_audit.get(reason, 0) + 1
 
         rows: list[dict[str, Any]] = []
-        ir_events = self.database.latest_valuation_ir_events(
-            [str(item.get("symbol", "")).upper() for item in catalog if item.get("symbol")],
-            market="B3",
+        catalog_symbols = [str(item.get("symbol", "")).upper() for item in catalog if item.get("symbol")]
+        ir_events = self.database.latest_valuation_ir_events(catalog_symbols, market="B3")
+        insider_activity = self.database.insider_transaction_activity(
+            catalog_symbols, "B3", datetime.now(timezone.utc) - timedelta(days=INSIDER_GOVERNANCE_LOOKBACK_DAYS),
         )
         for item in catalog:
             symbol = str(item.get("symbol", "")).upper()
@@ -1164,6 +1168,7 @@ class B3ScreenerService:
                     eod.get("financialsAsOf") or eod.get("updated_at"),
                     ir_events.get(symbol),
                 ),
+                "insider_net_signal": self._insider_net_signal(insider_activity.get(symbol)),
                 "history_source": "eodhd" if symbol in self._eodhd_history else "brapi",
                 **annual_growth_metrics,
             }
@@ -2167,6 +2172,21 @@ class B3ScreenerService:
             "latest_ir_event_type": event.get("event_type"),
         }
 
+    @staticmethod
+    def _insider_net_signal(activity: dict[str, Any] | None) -> float:
+        """-1..1: net insider selling to net insider buying over the lookback
+        window (Tatooine Updates: CVM VLMO art. 11 ICVM 44), scaled down when
+        the sample is thin so one lone filing can't swing it to the full
+        extent. 0.0 (neutral) when there's no recent activity."""
+        if not activity:
+            return 0.0
+        total = int(activity.get("total_count") or 0)
+        if total <= 0:
+            return 0.0
+        net_ratio = (int(activity.get("buy_count") or 0) - int(activity.get("sell_count") or 0)) / total
+        confidence = min(1.0, total / INSIDER_SIGNAL_MIN_TRANSACTIONS_FOR_FULL_WEIGHT)
+        return net_ratio * confidence
+
     @classmethod
     def _provisional_eligibility(cls, row: dict[str, Any]) -> tuple[bool, list[str]]:
         reasons: list[str] = []
@@ -2215,7 +2235,8 @@ class B3ScreenerService:
         margin_risk = 55.0 if margin is None else clamp((0.08 - margin) / 0.18 * 100, 0, 100)
         earnings_risk = trend_risk * 0.70 + margin_risk * 0.30
         liquidity_risk = clamp((7.8 - math.log10(max(row.get("adtv_90d") or MIN_ADTV_90D, 1))) * 55, 0, 100)
-        governance_risk = 50.0
+        insider_net_signal = row.get("insider_net_signal") or 0.0
+        governance_risk = clamp(50.0 - insider_net_signal * INSIDER_GOVERNANCE_MAX_SWING, 30.0, 70.0)
         macro_risk = {
             "financial": 52.0,
             "real_estate": 62.0,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import statistics
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import Lock, RLock
 from typing import Any, Literal, TYPE_CHECKING
 
@@ -33,6 +33,7 @@ MAX_DISPERSION = 45.0
 PROVISIONAL_CONFIDENCE = 55.0
 PROVISIONAL_DISPERSION = 60.0
 MATRIX_REFRESH_SECONDS = 60
+INSIDER_GOVERNANCE_LOOKBACK_DAYS = 180
 PROVIDER_DELAY_MINUTES = 15
 
 
@@ -170,6 +171,9 @@ class USScreeningService:
         fundamentals = client.fundamentals(symbols, exchange="US", workers=10)
         histories = client.histories(symbols, exchange="US", days=400, workers=10)
         ir_events = self.database.latest_valuation_ir_events(symbols, market=market)
+        insider_since = datetime.now(timezone.utc) - timedelta(days=INSIDER_GOVERNANCE_LOOKBACK_DAYS)
+        insider_activity = self.database.insider_transaction_activity(symbols, market, insider_since)
+        news_sentiment = self.database.latest_news_sentiment(symbols, market="US")
         rows: list[dict[str, Any]] = []
         for cash_volume, quote, metadata in selected:
             symbol = quote.symbol
@@ -192,7 +196,11 @@ class USScreeningService:
                 row = (
                     self._analyze_etf(market, quote.model_dump(), fundamental, history, cash_volume)
                     if is_etf
-                    else self._analyze_stock(market, quote.model_dump(), fundamental, history, cash_volume)
+                    else self._analyze_stock(
+                        market, quote.model_dump(), fundamental, history, cash_volume,
+                        insider_activity=insider_activity.get(symbol),
+                        news_sentiment=news_sentiment.get(symbol),
+                    )
                 )
             except Exception:
                 audit["fundamental_quality_gate"] += 1
@@ -232,9 +240,16 @@ class USScreeningService:
         fundamentals: dict[str, Any],
         history: list[dict[str, Any]],
         cash_volume: float,
+        *,
+        insider_activity: dict[str, Any] | None = None,
+        news_sentiment: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         symbol = str(quote["symbol"])
-        analysis = self.one_pagers._analyze(symbol, "US", quote, fundamentals, history)
+        analysis = self.one_pagers._analyze(
+            symbol, "US", quote, fundamentals, history,
+            insider_activity=insider_activity,
+            news_sentiment=news_sentiment,
+        )
         methods = {str(key): float(value) for key, value in analysis["methods"].items() if positive(value)}
         consensus = positive(analysis.get("consensus_tp"))
         internal_tp = statistics.mean(methods.values())

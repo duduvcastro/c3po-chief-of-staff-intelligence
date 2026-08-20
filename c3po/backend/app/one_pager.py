@@ -4,7 +4,7 @@ import math
 import re
 import statistics
 from collections import OrderedDict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +27,17 @@ if TYPE_CHECKING:
 
 class OnePagerGenerationError(RuntimeError):
     pass
+
+
+# Bounded, evidence-scaled contributions from Tatooine Updates content (as opposed
+# to the pre-existing pure freshness/staleness gate) -- see _insider_net_signal and
+# _sentiment_confidence_adjustment. Kept small relative to the rest of each formula
+# so a single filing or a thin news week can't dominate the score.
+INSIDER_GOVERNANCE_LOOKBACK_DAYS = 180
+INSIDER_SIGNAL_MIN_TRANSACTIONS_FOR_FULL_WEIGHT = 4
+INSIDER_RISK_MAX_SWING = 8.0
+SENTIMENT_CONFIDENCE_MAX_SWING = 5.0
+SENTIMENT_MIN_ARTICLES_FOR_FULL_WEIGHT = 5
 
 
 class OnePagerService:
@@ -103,6 +114,11 @@ class OnePagerService:
             self.database.reconcile_ir_results({symbol: fundamentals_period}, market)
             official_disclosure = self._official_disclosure_context(symbol, market, fundamentals_period)
             history = eodhd.history(symbol, exchange=exchange, days=365)
+            insider_since = datetime.now(timezone.utc) - timedelta(days=INSIDER_GOVERNANCE_LOOKBACK_DAYS)
+            insider_activity = self.database.insider_transaction_activity([symbol], market, insider_since).get(symbol)
+            news_sentiment = (
+                self.database.latest_news_sentiment([symbol], market).get(symbol) if market != "B3" else None
+            )
             shared_valuation = (
                 self.b3_screener.valuation_for(symbol, build_if_missing=True)
                 if market == "B3" and self.b3_screener
@@ -123,6 +139,8 @@ class OnePagerService:
                 fundamentals,
                 history,
                 shared_valuation=shared_valuation,
+                insider_activity=insider_activity,
+                news_sentiment=news_sentiment,
             )
             verification_label = (
                 "RI da companhia + regulador verificados"
@@ -282,6 +300,8 @@ class OnePagerService:
         history: list[dict[str, Any]] | None = None,
         *,
         shared_valuation: dict[str, Any] | None = None,
+        insider_activity: dict[str, Any] | None = None,
+        news_sentiment: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         price = self._positive(quote.get("price"))
         if price is None:
@@ -403,6 +423,8 @@ class OnePagerService:
             risk_score += min(16, abs(earnings_growth) * 38)
         if free_cashflow is not None and free_cashflow < 0:
             risk_score += 9
+        insider_signal = self._insider_net_signal(insider_activity)
+        risk_score -= insider_signal * INSIDER_RISK_MAX_SWING
         risk_score = self._clamp(risk_score, 15, 90)
         risk_adjustment = self._clamp((risk_score - 40) / 500, -0.04, 0.10)
         quality_adjustment = self._clamp((roe or 0.12) * 0.20 + (margin or 0.08) * 0.15 + max(growth, -0.05) * 0.20, -0.04, 0.12)
@@ -478,7 +500,11 @@ class OnePagerService:
             beta,
         )
         completeness = sum(value is not None for value in completeness_fields) / len(completeness_fields)
-        confidence = self._clamp(45 + completeness * 28 + min(analyst_count or 0, 30) * 0.35 - dispersion * 0.35, 45, 94)
+        sentiment_adjustment = self._sentiment_confidence_adjustment(news_sentiment)
+        confidence = self._clamp(
+            45 + completeness * 28 + min(analyst_count or 0, 30) * 0.35 - dispersion * 0.35 + sentiment_adjustment,
+            45, 94,
+        )
         required_return = 0.12 if market == "US" else 0.20
         entry_discount = required_return + risk_score / 100 * 0.11 + (100 - confidence) / 100 * 0.06
         if foreign_buy_in_override is None:
@@ -799,6 +825,46 @@ class OnePagerService:
         except (TypeError, ValueError):
             return None
         return number if math.isfinite(number) else None
+
+    @staticmethod
+    def _insider_net_signal(activity: dict[str, Any] | None) -> float:
+        """-1..1: net insider selling to net insider buying over the lookback
+        window (Tatooine Updates: CVM VLMO for B3, Finnhub Form 4 for US),
+        scaled down when the sample is thin so one lone filing can't swing it
+        to the full extent. 0.0 (neutral) when there's no recent activity."""
+        if not activity:
+            return 0.0
+        total = int(activity.get("total_count") or 0)
+        if total <= 0:
+            return 0.0
+        net_ratio = (int(activity.get("buy_count") or 0) - int(activity.get("sell_count") or 0)) / total
+        confidence = min(1.0, total / INSIDER_SIGNAL_MIN_TRANSACTIONS_FOR_FULL_WEIGHT)
+        return net_ratio * confidence
+
+    @staticmethod
+    def _sentiment_confidence_adjustment(sentiment: dict[str, Any] | None) -> float:
+        """Bounded +/-SENTIMENT_CONFIDENCE_MAX_SWING points from Finnhub weekly
+        news sentiment (US-only source), scaled down on thin news coverage."""
+        if not sentiment:
+            return 0.0
+        bullish = sentiment.get("bullish_percent")
+        bearish = sentiment.get("bearish_percent")
+        if bullish is None or bearish is None:
+            return 0.0
+        try:
+            net = (float(bullish) - float(bearish)) / 100.0
+        except (TypeError, ValueError):
+            return 0.0
+        articles = 0.0
+        try:
+            articles = float(sentiment.get("articles_last_week") or 0)
+        except (TypeError, ValueError):
+            pass
+        weight = min(1.0, articles / SENTIMENT_MIN_ARTICLES_FOR_FULL_WEIGHT)
+        return max(
+            -SENTIMENT_CONFIDENCE_MAX_SWING,
+            min(SENTIMENT_CONFIDENCE_MAX_SWING, net * SENTIMENT_CONFIDENCE_MAX_SWING * weight),
+        )
 
     @classmethod
     def _sum_rows(cls, rows: list[dict[str, Any]], field: str, limit: int) -> float | None:

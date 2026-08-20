@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.config import Settings
 from app.database import Database
@@ -109,3 +109,80 @@ def test_ir_source_health_surfaces_finnhub_runs(tmp_path) -> None:
     health = database.ir_source_health()
 
     assert health["finnhub"]["last_status"] == "succeeded"
+
+
+def test_insider_transaction_activity_counts_buys_and_sells_from_both_shapes(tmp_path) -> None:
+    """Root-caused 2026-08-20: CVM VLMO insider data was fully ingested and
+    stored but never read back by anything -- governance_risk was a hardcoded
+    neutral constant. This covers the two raw_metadata shapes insider events
+    are stored with: CVM VLMO (movement string) and Finnhub/SEC Form 4
+    (is_purchase/is_sale booleans).
+    """
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+    now = datetime.now(timezone.utc)
+    database.save_ir_events([
+        {
+            "source_code": "cvm", "external_id": "cvm-1", "market": "B3", "symbol": "PRNR3",
+            "company_name": "Priner", "event_type": "Insider Transaction", "title": "t", "summary": "",
+            "published_at": now, "official_url": "https://dados.cvm.gov.br/", "valuation_relevant": False,
+            "raw_metadata": {"source": "cvm_vlmo", "movement": "Compra à vista", "quantity": 1000, "price": 5.0},
+        },
+        {
+            "source_code": "cvm", "external_id": "cvm-2", "market": "B3", "symbol": "PRNR3",
+            "company_name": "Priner", "event_type": "Insider Transaction", "title": "t", "summary": "",
+            "published_at": now, "official_url": "https://dados.cvm.gov.br/", "valuation_relevant": False,
+            "raw_metadata": {"source": "cvm_vlmo", "movement": "Venda à vista", "quantity": 200, "price": 5.5},
+        },
+        {
+            "source_code": "sec", "external_id": "finnhub-1", "market": "US", "symbol": "AMZN",
+            "company_name": "Amazon", "event_type": "Insider Transaction", "title": "t", "summary": "",
+            "published_at": now, "official_url": "https://sec.gov/", "valuation_relevant": False,
+            "raw_metadata": {"source": "finnhub", "is_purchase": True, "is_sale": False, "share_change": 500},
+        },
+    ])
+
+    b3_activity = database.insider_transaction_activity(["PRNR3"], "B3", now - timedelta(days=30))
+    us_activity = database.insider_transaction_activity(["AMZN"], "US", now - timedelta(days=30))
+
+    assert b3_activity["PRNR3"] == {"buy_count": 1, "sell_count": 1, "total_count": 2}
+    assert us_activity["AMZN"] == {"buy_count": 1, "sell_count": 0, "total_count": 1}
+
+
+def test_insider_transaction_activity_ignores_events_outside_lookback_window(tmp_path) -> None:
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+    old_event_at = datetime.now(timezone.utc) - timedelta(days=400)
+    database.save_ir_events([{
+        "source_code": "cvm", "external_id": "cvm-old", "market": "B3", "symbol": "PRNR3",
+        "company_name": "Priner", "event_type": "Insider Transaction", "title": "t", "summary": "",
+        "published_at": old_event_at, "official_url": "https://dados.cvm.gov.br/", "valuation_relevant": False,
+        "raw_metadata": {"source": "cvm_vlmo", "movement": "Compra à vista", "quantity": 1000, "price": 5.0},
+    }])
+
+    activity = database.insider_transaction_activity(["PRNR3"], "B3", datetime.now(timezone.utc) - timedelta(days=180))
+
+    assert activity == {}
+
+
+def test_latest_news_sentiment_returns_the_most_recent_snapshot(tmp_path) -> None:
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+    stale_at = datetime.now(timezone.utc) - timedelta(days=7)
+    fresh_at = datetime.now(timezone.utc)
+    database.save_ir_events([
+        {
+            "source_code": "finnhub", "external_id": "finnhub-sentiment-AMZN-2026-W32", "market": "US", "symbol": "AMZN",
+            "company_name": "Amazon", "event_type": "News Sentiment", "title": "t", "summary": "",
+            "published_at": stale_at, "official_url": "https://finnhub.io/quote/AMZN", "valuation_relevant": False,
+            "raw_metadata": {"source": "finnhub", "bullish_percent": 40.0, "bearish_percent": 60.0, "articles_last_week": 3},
+        },
+        {
+            "source_code": "finnhub", "external_id": "finnhub-sentiment-AMZN-2026-W33", "market": "US", "symbol": "AMZN",
+            "company_name": "Amazon", "event_type": "News Sentiment", "title": "t", "summary": "",
+            "published_at": fresh_at, "official_url": "https://finnhub.io/quote/AMZN", "valuation_relevant": False,
+            "raw_metadata": {"source": "finnhub", "bullish_percent": 72.0, "bearish_percent": 28.0, "articles_last_week": 9},
+        },
+    ])
+
+    sentiment = database.latest_news_sentiment(["AMZN"], "US")
+
+    assert sentiment["AMZN"]["bullish_percent"] == 72.0
+    assert sentiment["AMZN"]["articles_last_week"] == 9

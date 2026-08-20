@@ -10,7 +10,7 @@ class DummyRealtime:
 
 
 class DummyOnePagers:
-    def _analyze(self, symbol, market, quote, fundamentals, history):
+    def _analyze(self, symbol, market, quote, fundamentals, history, *, insider_activity=None, news_sentiment=None):
         return {
             "c3po_tp": 145.0,
             "consensus_tp": 150.0,
