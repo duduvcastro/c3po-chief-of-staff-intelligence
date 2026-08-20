@@ -101,6 +101,77 @@ class EodhdClient:
                 })
         return output
 
+    def insider_transactions(
+        self, symbol: str, *, since: date | None = None, max_pages: int = 5,
+    ) -> list[dict[str, Any]]:
+        """SEC Form 4 filings (EODHD All-in-one plan, US-listed issuers
+        only), sourced directly from SEC EDGAR -- normalized to the same
+        shape as FinnhubClient.insider_transactions (insider_name,
+        transaction_code, is_purchase, is_sale, share_change,
+        shares_held_after, price, transaction_date, filing_date) so it's a
+        drop-in complement, used by investor_relations.py as a fallback
+        when Finnhub returns nothing for a symbol -- not summed with it,
+        since both ultimately source the same underlying SEC filings and
+        would double-count. Returns [] on any failure or missing token."""
+        if not self.token:
+            return []
+        provider_symbol = self._provider_symbol(symbol)
+        output: list[dict[str, Any]] = []
+        offset = 0
+        limit = 100
+        for _ in range(max_pages):
+            try:
+                payload = self.http.get_json(
+                    f"{self.base_url}/api/sec-filings/{provider_symbol}/form4",
+                    params={"api_token": self.token, "page[offset]": offset, "page[limit]": limit},
+                )
+            except Exception:
+                break
+            if not isinstance(payload, dict):
+                break
+            filings = payload.get("data")
+            if not isinstance(filings, list) or not filings:
+                break
+            stop = False
+            for filing in filings:
+                if not isinstance(filing, dict):
+                    continue
+                filed_at = self._valid_date(filing.get("filed_at"))
+                if since and filed_at and filed_at < since.isoformat():
+                    stop = True
+                    continue
+                for row in filing.get("non_derivative") or []:
+                    if not isinstance(row, dict):
+                        continue
+                    transaction = self._normalize_form4_row(row, filed_at)
+                    if transaction:
+                        output.append(transaction)
+            if stop or len(filings) < limit:
+                break
+            offset += limit
+        return output
+
+    @staticmethod
+    def _normalize_form4_row(row: dict[str, Any], filed_at: str | None) -> dict[str, Any] | None:
+        name = str(row.get("reporting_owner_name") or "").strip()
+        code = str(row.get("transaction_code") or "").strip().upper()
+        transaction_date = EodhdClient._valid_date(row.get("transaction_date"))
+        if not name or not code or not transaction_date:
+            return None
+        shares = number(row.get("shares_amount")) or 0.0
+        direction = 1 if str(row.get("acquired_or_disposed") or "").upper() == "A" else -1
+        return {
+            "insider_name": name,
+            "transaction_code": code,
+            "is_purchase": code == "P",
+            "is_sale": code == "S",
+            "share_change": shares * direction,
+            "shares_held_after": number(row.get("shares_owned_after")),
+            "price": number(row.get("price_per_share")),
+            "transaction_date": transaction_date,
+            "filing_date": filed_at,
+        }
+
     def intraday(
         self,
         symbol: str,
