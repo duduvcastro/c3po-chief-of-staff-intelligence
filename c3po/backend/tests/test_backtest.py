@@ -101,6 +101,8 @@ def test_exit_decision_hard_stop_fires_below_max_loss():
 def _volatile_hard_stop_scenario(quote_price: float):
     """Root-caused 2026-08-20: SOC's ATR was 1.6%, so a flat 0.65% hard stop
     sat inside 41% of one ATR and fired on ordinary chop, not a breakdown.
+    Backtesting later found 2x ATR (not 0.5x) the best-performing multiplier,
+    which for this 1.6% ATR name is capped at the 1.5% ceiling either way.
     """
     technical = {"atr": 1.6, "atr_percent": 1.6, "vwap": 100.0, "ema8": 100.0, "ema20": 99.0,
                  "momentum15": 0.0, "momentum30": 0.0, "macd_histogram": 0.0,
@@ -114,8 +116,8 @@ def _volatile_hard_stop_scenario(quote_price: float):
 
 
 def test_exit_decision_widens_hard_stop_for_a_volatile_name():
-    """-0.68% is inside the ATR-adjusted 0.8% floor (1.6% ATR * 0.5), so a
-    volatile name riding ordinary chop should not be stopped out here."""
+    """-0.68% is inside the ATR-adjusted 1.5% floor (1.6% ATR * 2.0, capped),
+    so a volatile name riding ordinary chop should not be stopped out here."""
     decision, _state = _volatile_hard_stop_scenario(99.32)
     assert decision.reason is None
 

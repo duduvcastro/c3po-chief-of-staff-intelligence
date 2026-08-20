@@ -35,7 +35,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
-METHODOLOGY_VERSION = "R2D2-HYBRID-V19-FRESH-QUOTE-BUY-FILL"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V20-TURTLE-CHANDELIER-RISK-SIZING"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
 MIN_HOLD_MINUTES = 5
 ROTATION_MIN_HOLD_MINUTES = 10
@@ -47,7 +47,6 @@ PROFIT_LOCK_FLOOR_PERCENT = 0.35
 PROFIT_PULLBACK_PERCENT = 0.35
 WEEKLY_PROFIT_HARVEST_FRACTION = 0.70
 MIN_POSITION_PERCENT = 2.0
-BASE_POSITION_PERCENT = 4.5
 MAX_DYNAMIC_POSITION_PERCENT = 6.0
 SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
 MIN_INTRADAY_EDGE_PERCENT = 0.55
@@ -244,9 +243,9 @@ class R2D2Repository:
                 ],
             },
             "position_sizing": {
-                "model": "dynamic conviction-risk-volatility",
+                "model": "risk-normalized (Turtle-style)",
                 "minimum_percent": MIN_POSITION_PERCENT,
-                "base_percent": BASE_POSITION_PERCENT,
+                "risk_budget_percent": r2d2_strategy.RISK_BUDGET_PERCENT,
                 "maximum_percent": min(
                     MAX_DYNAMIC_POSITION_PERCENT,
                     settings.r2d2_max_position_percent,
@@ -1601,10 +1600,7 @@ class R2D2PaperService:
 
             # Mirrors r2d2_strategy.exit_decision's internal stop/pnl math so the
             # live cache can persist the same stop price and telemetry it decided against.
-            trailing_distance = min(
-                high_water * 0.009,
-                max(atr * 0.7, high_water * 0.0045),
-            )
+            trailing_distance = atr * 2.5
             trailing = high_water - trailing_distance
             stop = max(_float(position["stop_price_local"]), trailing)
             pnl_pct = (quote.price / average_cost - 1) * 100
@@ -1612,7 +1608,7 @@ class R2D2PaperService:
             atr_percent = max(0.0, _float(technical.get("atr_percent")))
             effective_max_loss_percent = max(
                 self.settings.r2d2_max_position_loss_percent,
-                min(1.5, atr_percent * 0.5),
+                min(1.5, atr_percent * 2.0),
             )
             hard_stop = average_cost * (1 - effective_max_loss_percent / 100)
             stop = max(stop, hard_stop)
@@ -2562,6 +2558,7 @@ class R2D2PaperService:
             "technical_score": round(_float(item.get("technical_score")), 2),
             "risk_score": round(_float(item.get("risk_score")), 2),
             "atr_percent": round(_float((item.get("technical_indicators") or {}).get("atr_percent"), 2.5), 3),
+            "risk_budget_percent": r2d2_strategy.RISK_BUDGET_PERCENT,
         }
         decision = {
             **item,
@@ -2571,7 +2568,7 @@ class R2D2PaperService:
             "cash_before_percent": round(cash_percent, 3),
             "cash_ceiling_percent": self.settings.r2d2_max_cash_percent,
             "cash_deployment_mode": cash_overhang_percent > 0,
-            "sizing_model": "dynamic conviction-risk-volatility",
+            "sizing_model": "risk-normalized (Turtle-style)",
             "sizing_factors": sizing_factors,
             "paper_only": True,
         }

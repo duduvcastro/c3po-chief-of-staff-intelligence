@@ -58,7 +58,7 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
     assert experiment["mandate"]["minimum_cash_buffer_percent"] == 5.0
     assert experiment["mandate"]["max_gross_exposure_percent"] == 95.0
     assert experiment["mandate"]["position_sizing"]["minimum_percent"] == 2.0
-    assert experiment["mandate"]["position_sizing"]["base_percent"] == 4.5
+    assert experiment["mandate"]["position_sizing"]["risk_budget_percent"] == 0.03
     assert experiment["mandate"]["position_sizing"]["maximum_percent"] == 6.0
     assert experiment["mandate"]["daily_order_target_range"] == [20, 80]
     assert experiment["mandate"]["max_daily_orders"] == 120
@@ -314,42 +314,44 @@ def test_r2d2_rotation_never_displaces_stable_top_ranked_core() -> None:
         assert stats["rotating_count"] == 2
 
 
-def test_r2d2_position_sizing_rewards_conviction_and_penalizes_risk_and_volatility() -> None:
+def test_r2d2_position_sizing_is_risk_normalized_not_conviction_scored() -> None:
+    """Replaced 2026-08-20: sizing is now Turtle-style risk-normalized -- a
+    flat RISK_BUDGET_PERCENT of NAV, sized inversely to the ATR-derived stop
+    distance. Backtested against the prior conviction/risk/volatility-scored
+    formula (which let position size drift independently of how far away the
+    stop actually was) and found to produce the best risk-adjusted profile of
+    the three risk budgets tested. composite/confidence/risk_score no longer
+    factor into sizing at all -- only atr_percent does.
+    """
     service = _service()
-    high_conviction = {
-        "composite_score": 82.0, "confidence": 82.0, "technical_score": 78.0,
-        "risk_score": 22.0, "technical_indicators": {"atr_percent": 1.8},
-    }
-    balanced = {
-        "composite_score": 70.0, "confidence": 70.0, "technical_score": 65.0,
-        "risk_score": 35.0, "technical_indicators": {"atr_percent": 2.5},
-    }
-    volatile = {
-        "composite_score": 64.0, "confidence": 62.0, "technical_score": 60.0,
-        "risk_score": 47.0, "technical_indicators": {"atr_percent": 4.5},
-    }
+    low_vol = {"technical_indicators": {"atr_percent": 0.3}}
+    mid_vol = {"technical_indicators": {"atr_percent": 0.5}}
+    high_vol = {"technical_indicators": {"atr_percent": 0.9}}
 
-    high_size = service._target_position_percent(high_conviction)
-    balanced_size = service._target_position_percent(balanced)
-    volatile_size = service._target_position_percent(volatile)
+    low_vol_size = service._target_position_percent(low_vol)
+    mid_vol_size = service._target_position_percent(mid_vol)
+    high_vol_size = service._target_position_percent(high_vol)
 
-    assert high_size == 6.0
-    assert 5.0 < balanced_size < high_size
-    assert 3.0 <= volatile_size < balanced_size
+    assert low_vol_size == 4.62
+    assert mid_vol_size == 3.0
+    assert high_vol_size == 2.0
+    assert low_vol_size > mid_vol_size > high_vol_size
 
 
-def test_r2d2_cash_overhang_increases_size_without_breaching_position_cap() -> None:
+def test_r2d2_cash_overhang_no_longer_influences_position_sizing() -> None:
+    """Replaced 2026-08-20: the old deployment_adjustment term boosted size
+    for ANY approved candidate on a high-cash day, independent of conviction
+    or risk -- exactly the kind of size-inflation the risk-normalized formula
+    is meant to prevent. cash_overhang_percent is still accepted for call-site
+    compatibility but is now a no-op.
+    """
     service = _service()
-    balanced = {
-        "composite_score": 70.0, "confidence": 70.0, "technical_score": 65.0,
-        "risk_score": 35.0, "technical_indicators": {"atr_percent": 2.5},
-    }
+    item = {"technical_indicators": {"atr_percent": 0.5}}
 
-    normal_size = service._target_position_percent(balanced)
-    deployment_size = service._target_position_percent(balanced, cash_overhang_percent=50.0)
+    normal_size = service._target_position_percent(item)
+    deployment_size = service._target_position_percent(item, cash_overhang_percent=50.0)
 
-    assert deployment_size > normal_size
-    assert deployment_size <= 6.0
+    assert deployment_size == normal_size
 
 
 def test_r2d2_buy_records_dynamic_position_size_in_trade_audit() -> None:
@@ -369,12 +371,16 @@ def test_r2d2_buy_records_dynamic_position_size_in_trade_audit() -> None:
     trade = service._buy(experiment, cycle_id, candidate, [], candidate["quote_as_of"])
 
     assert trade is not None
-    assert trade["decision_snapshot"]["sizing_model"] == "dynamic conviction-risk-volatility"
-    assert trade["decision_snapshot"]["target_position_percent"] == 6.0
-    assert 5.99 <= trade["decision_snapshot"]["actual_position_percent"] <= 6.0
+    assert trade["decision_snapshot"]["sizing_model"] == "risk-normalized (Turtle-style)"
+    # atr_percent 1.8 pushes the ATR-derived stop distance past the 1.5% cap,
+    # so the risk-normalized formula bottoms out at the 2.0% floor here --
+    # unlike the old conviction-scored formula, sizing no longer rewards a
+    # high composite/confidence/technical_score directly.
+    assert trade["decision_snapshot"]["target_position_percent"] == 2.0
+    assert 1.99 <= trade["decision_snapshot"]["actual_position_percent"] <= 2.0
     assert trade["decision_snapshot"]["cash_deployment_mode"] is True
     assert trade["decision_snapshot"]["cash_ceiling_percent"] == 25.0
-    assert 59_900 <= trade["gross_value_usd"] <= 60_000
+    assert 19_900 <= trade["gross_value_usd"] <= 20_000
 
 
 def test_r2d2_portfolio_pacing_can_fill_twenty_diversified_slots_under_gross_cap() -> None:
@@ -393,7 +399,12 @@ def test_r2d2_portfolio_pacing_can_fill_twenty_diversified_slots_under_gross_cap
             "buy_in_distance": 2.0, "technical_score": 78.0,
             "technical_validated": True, "quote_status": "live", "composite_score": 82.0,
             "fundamental_score": 84.0, "thesis": "Diversification pacing test",
-            "technical_indicators": {"atr_percent": 1.8},
+            # Low ATR so the risk-normalized formula sizes near its practical
+            # ceiling (RISK_BUDGET_PERCENT / DEFAULT_MAX_POSITION_LOSS_PERCENT
+            # =~ 4.62%, since the stop-distance floor never goes below the
+            # base policy) -- 20 slots at that size approach, but no longer
+            # reach, the old 95% gross-exposure ceiling.
+            "technical_indicators": {"atr_percent": 0.1},
             "quote_as_of": datetime(2026, 8, 17, 14, index, tzinfo=timezone.utc),
         }
         trade = service._buy(
@@ -404,7 +415,7 @@ def test_r2d2_portfolio_pacing_can_fill_twenty_diversified_slots_under_gross_cap
 
     dashboard = service.dashboard()
     assert dashboard.open_positions == 20
-    assert 94.0 <= dashboard.gross_exposure_usd / dashboard.nav_usd * 100 <= 95.0
+    assert 89.0 <= dashboard.gross_exposure_usd / dashboard.nav_usd * 100 <= 93.0
     assert 5.0 <= dashboard.cash_usd / dashboard.nav_usd * 100 <= 6.0
 
 
@@ -752,8 +763,11 @@ def test_r2d2_hard_stop_exits_immediately_on_live_quote() -> None:
         "trend_state": "bearish", "volume_state": "distribution", "data_status": "live",
         "as_of": datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc).isoformat(),
     }
+    # atr_percent 1.0 pushes the ATR-derived hard-stop floor to the 1.5% cap
+    # (2x ATR), so the quote needs to breach that -- not the old 0.65%/0.5x
+    # floor -- to fire immediately.
     first_quote = SimpleNamespace(
-        price=99.05, change_percent=-0.95,
+        price=98.0, change_percent=-2.0,
         as_of=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
     )
     first_positions = service.repo.positions(experiment["id"])
@@ -762,7 +776,7 @@ def test_r2d2_hard_stop_exits_immediately_on_live_quote() -> None:
         experiment, cycle_id, first_positions, {("NASDAQ", "TEST"): first_quote}, first_quote.as_of,
     )
     second_quote = SimpleNamespace(
-        price=99.0, change_percent=-1.0,
+        price=97.9, change_percent=-2.1,
         as_of=datetime(2026, 8, 17, 15, 1, tzinfo=timezone.utc),
     )
     second_exits = service._mark_and_exit(
