@@ -154,3 +154,17 @@ def test_institutional_positions_batch_isolates_per_symbol_failures():
 
     assert result["AAPL"]["investors_holding"] == 4863
     assert result["JPM"] is None
+
+
+def test_recent_grades_batch_isolates_per_symbol_failures():
+    http = FakeHttpPerSymbol({
+        "AAPL": [{"symbol": "AAPL", "date": "2026-07-20", "gradingCompany": "Jefferies", "previousGrade": "Hold", "newGrade": "Buy", "action": "upgrade"}],
+        "JPM": RuntimeError("boom"),
+    })
+    fmp = FmpClient("https://financialmodelingprep.com", "test-token", http)
+
+    result = fmp.recent_grades_batch(["AAPL", "JPM"])
+
+    assert len(result["AAPL"]) == 1
+    assert result["AAPL"][0]["grading_company"] == "Jefferies"
+    assert result["JPM"] == []

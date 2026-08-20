@@ -140,6 +140,25 @@ class FmpClient:
             })
         return output
 
+    def recent_grades_batch(
+        self, symbols: list[str], *, since: date | None = None, workers: int = 10,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """recent_grades() for many symbols in parallel -- mirrors
+        consensus_batch()/institutional_positions_batch()'s pattern for
+        the nightly cycle."""
+        clean_symbols = list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
+        if not clean_symbols:
+            return {}
+
+        def fetch(symbol: str) -> tuple[str, list[dict[str, Any]]]:
+            return symbol, self.recent_grades(symbol, since=since)
+
+        output: dict[str, list[dict[str, Any]]] = {}
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, 20))) as executor:
+            for symbol, result in executor.map(fetch, clean_symbols):
+                output[symbol] = result
+        return output
+
     def institutional_positions(self, symbol: str, *, year: int, quarter: int) -> dict[str, Any] | None:
         """Quarterly 13F positioning snapshot for one symbol -- how many
         institutions hold it, how that count and share count changed, and

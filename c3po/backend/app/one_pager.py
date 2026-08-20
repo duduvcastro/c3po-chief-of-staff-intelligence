@@ -47,6 +47,14 @@ SENTIMENT_MIN_ARTICLES_FOR_FULL_WEIGHT = 5
 # new/increased/reduced/closed positions per quarter.
 INSTITUTIONAL_SIGNAL_MIN_POSITIONS_FOR_FULL_WEIGHT = 50
 INSTITUTIONAL_RISK_MAX_SWING = 8.0
+# FMP Ultimate: recent_grades() (backend/app/market_data/fmp.py) shipped in
+# Phase 1 already returns real broker/date/action data, but was never wired
+# into a signal -- caught in a follow-up data-source audit (2026-08-20).
+# Net analyst upgrade/downgrade momentum over the lookback window, same
+# -1..1/confidence-scaled shape as the insider and institutional signals.
+GRADES_LOOKBACK_DAYS = 90
+GRADES_SIGNAL_MIN_ACTIONS_FOR_FULL_WEIGHT = 5
+GRADES_RISK_MAX_SWING = 6.0
 
 # Root-caused 2026-08-20 (TP methodology audit): the US DCF used one fixed
 # 10.5% discount rate for every stock regardless of risk, unlike B3's
@@ -186,6 +194,7 @@ class OnePagerService:
             )
             fmp_consensus, fmp_summary = self._fmp_consensus_data(symbol) if market != "B3" else (None, None)
             institutional_positions = self._fmp_institutional_data(symbol) if market != "B3" else None
+            recent_grades = self._fmp_recent_grades_data(symbol) if market != "B3" else []
             shared_valuation = (
                 self.b3_screener.valuation_for(symbol, build_if_missing=True)
                 if market == "B3" and self.b3_screener
@@ -213,6 +222,7 @@ class OnePagerService:
                 fmp_consensus=fmp_consensus,
                 fmp_summary=fmp_summary,
                 institutional_positions=institutional_positions,
+                recent_grades=recent_grades,
             )
             verification_label = (
                 "RI da companhia + regulador verificados"
@@ -379,6 +389,7 @@ class OnePagerService:
         fmp_consensus: dict[str, float] | None = None,
         fmp_summary: dict[str, Any] | None = None,
         institutional_positions: dict[str, Any] | None = None,
+        recent_grades: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         price = self._positive(quote.get("price"))
         if price is None:
@@ -510,6 +521,8 @@ class OnePagerService:
         risk_score -= insider_signal * INSIDER_RISK_MAX_SWING
         institutional_signal = self._institutional_conviction_signal(institutional_positions)
         risk_score -= institutional_signal * INSTITUTIONAL_RISK_MAX_SWING
+        grades_signal = self._grades_momentum_signal(recent_grades)
+        risk_score -= grades_signal * GRADES_RISK_MAX_SWING
         risk_score = self._clamp(risk_score, 15, 90)
         risk_adjustment = self._clamp((risk_score - 40) / 500, -0.04, 0.10)
         quality_adjustment = self._clamp((roe or 0.12) * 0.20 + (margin or 0.08) * 0.15 + max(growth, -0.05) * 0.20, -0.04, 0.12)
@@ -955,6 +968,26 @@ class OnePagerService:
         return net_ratio * confidence
 
     @staticmethod
+    def _grades_momentum_signal(grades: list[dict[str, Any]] | None) -> float:
+        """-1..1: net analyst upgrade vs downgrade momentum over the
+        lookback window (FMP Ultimate broker-level grades -- gradingCompany,
+        date, action), same role as _insider_net_signal but for sell-side
+        rating changes instead of company insiders. "maintain" actions are
+        ignored (no directional information); scaled down when few actions
+        occurred so a single revision can't swing it to the full extent.
+        0.0 (neutral) when there's no data."""
+        if not grades:
+            return 0.0
+        upgrades = sum(1 for grade in grades if grade.get("action") == "upgrade")
+        downgrades = sum(1 for grade in grades if grade.get("action") == "downgrade")
+        total = upgrades + downgrades
+        if total <= 0:
+            return 0.0
+        net_ratio = (upgrades - downgrades) / total
+        confidence = min(1.0, total / GRADES_SIGNAL_MIN_ACTIONS_FOR_FULL_WEIGHT)
+        return net_ratio * confidence
+
+    @staticmethod
     def _sentiment_confidence_adjustment(sentiment: dict[str, Any] | None) -> float:
         """Bounded +/-SENTIMENT_CONFIDENCE_MAX_SWING points from Finnhub weekly
         news sentiment (US-only source), scaled down on thin news coverage."""
@@ -1139,6 +1172,34 @@ class OnePagerService:
             client = FmpClient(self.settings.fmp_base_url, self.settings.fmp_api_token, self.market_data.http)
             year, quarter = client.latest_reportable_13f_quarter(datetime.now(timezone.utc).date())
             return client.institutional_positions_batch(symbols, year=year, quarter=quarter)
+        except Exception:
+            return {}
+
+    def _fmp_recent_grades_data(self, symbol: str) -> list[dict[str, Any]]:
+        """FMP Ultimate broker-level grades for a single US symbol, over
+        GRADES_LOOKBACK_DAYS. Returns [] on any failure or when the
+        credential isn't configured -- _grades_momentum_signal already
+        treats [] as neutral, so this must never raise."""
+        if not self.settings.fmp_api_token:
+            return []
+        try:
+            client = FmpClient(self.settings.fmp_base_url, self.settings.fmp_api_token, self.market_data.http)
+            since = (datetime.now(timezone.utc) - timedelta(days=GRADES_LOOKBACK_DAYS)).date()
+            return client.recent_grades(symbol, since=since)
+        except Exception:
+            return []
+
+    def _fmp_recent_grades_batch(self, symbols: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """Batch counterpart of _fmp_recent_grades_data, for the US
+        screener's nightly cycle. Returns {} when the credential isn't
+        configured or the batch itself fails; per-symbol failures already
+        degrade to []."""
+        if not self.settings.fmp_api_token or not symbols:
+            return {}
+        try:
+            client = FmpClient(self.settings.fmp_base_url, self.settings.fmp_api_token, self.market_data.http)
+            since = (datetime.now(timezone.utc) - timedelta(days=GRADES_LOOKBACK_DAYS)).date()
+            return client.recent_grades_batch(symbols, since=since)
         except Exception:
             return {}
 

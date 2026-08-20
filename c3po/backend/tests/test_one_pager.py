@@ -365,6 +365,36 @@ def test_fmp_institutional_data_and_batch_skip_the_network_call_without_a_config
     assert service._fmp_institutional_batch([]) == {}
 
 
+def test_grades_momentum_signal_reflects_upgrade_vs_downgrade_balance(tmp_path) -> None:
+    """Root-caused 2026-08-20 (data-source audit): FmpClient.recent_grades()
+    shipped in Phase 1 with real broker/date/action data -- exactly what
+    motivated the whole day's TP-consensus investigation -- but was never
+    wired into any signal. Same -1..1/confidence-scaled shape as the
+    insider and institutional signals; "maintain" actions carry no
+    directional information and are ignored."""
+    service = service_for(tmp_path)
+
+    assert service._grades_momentum_signal(None) == 0.0
+    assert service._grades_momentum_signal([{"action": "maintain"}, {"action": "maintain"}]) == 0.0
+
+    thin_upgrades = service._grades_momentum_signal([{"action": "upgrade"}])
+    full_upgrades = service._grades_momentum_signal([{"action": "upgrade"}] * 5)
+    full_downgrades = service._grades_momentum_signal([{"action": "downgrade"}] * 5)
+
+    assert 0 < thin_upgrades < full_upgrades
+    assert full_upgrades == pytest.approx(1.0)
+    assert full_downgrades == pytest.approx(-1.0)
+
+
+def test_fmp_recent_grades_data_and_batch_skip_the_network_call_without_a_configured_token(tmp_path) -> None:
+    service = service_for(tmp_path)
+    assert service.settings.fmp_api_token == ""
+
+    assert service._fmp_recent_grades_data("JPM") == []
+    assert service._fmp_recent_grades_batch(["JPM", "AAPL"]) == {}
+    assert service._fmp_recent_grades_batch([]) == {}
+
+
 def test_sentiment_confidence_adjustment_is_bounded_and_scaled_by_coverage(tmp_path) -> None:
     service = service_for(tmp_path)
 
