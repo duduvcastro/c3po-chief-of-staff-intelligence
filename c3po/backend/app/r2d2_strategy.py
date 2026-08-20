@@ -30,7 +30,7 @@ from typing import Any
 # Constants (mirrors the module-level constants in r2d2.py as of V16)
 # ---------------------------------------------------------------------------
 
-METHODOLOGY_VERSION = "R2D2-HYBRID-V18-EARLY-GAIN-PROTECTION"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V19-FRESH-QUOTE-BUY-FILL"
 
 MIN_HOLD_MINUTES = 5
 PROFIT_TRIGGER_PERCENT = 0.65
