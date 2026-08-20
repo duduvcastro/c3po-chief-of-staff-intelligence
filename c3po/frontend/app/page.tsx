@@ -3821,15 +3821,22 @@ function MyRealtimePortfolio({
           {snapshot.items.map((item) => (
             <div className="realtime-portfolio-row" key={item.symbol}>
               <div className="realtime-portfolio-company">
-                <InstrumentPreviewTarget
-                  instrument={{ symbol: item.symbol, name: item.name, market: item.market }}
-                  className="realtime-portfolio-ticker-preview"
-                >
-                  <strong>{item.symbol}</strong>
-                </InstrumentPreviewTarget>
-                <span>{item.name}</span>
+                <div className="realtime-portfolio-company-logo"><CompanyLogo logoUrl={item.logo_url} symbol={item.symbol} /></div>
+                <div className="realtime-portfolio-company-text">
+                  <InstrumentPreviewTarget
+                    instrument={{ symbol: item.symbol, name: item.name, market: item.market }}
+                    className="realtime-portfolio-ticker-preview"
+                  >
+                    <strong>{item.symbol}</strong>
+                  </InstrumentPreviewTarget>
+                  <span>{item.name}</span>
+                </div>
               </div>
-              <span className="realtime-portfolio-market">{item.market}</span>
+              {valuationMarketMarks[item.market] ? (
+                <img src={valuationMarketMarks[item.market]} alt={item.market} title={item.market} className="realtime-portfolio-market-logo" />
+              ) : (
+                <span className="realtime-portfolio-market">{item.market}</span>
+              )}
               <strong className="realtime-portfolio-price">{item.status === "stale" ? "N/D" : formatCurrency(item.price, item.currency)}</strong>
               {item.status === "stale" ? (
                 <span className="realtime-portfolio-change">N/D</span>

@@ -604,9 +604,13 @@ button { cursor: pointer; }
 .realtime-portfolio-head { min-height: 34px; color: #858e98; background: #fdfdfc; border-bottom: 1px solid #e8eaec; font-size: 8px; font-weight: 900; text-transform: uppercase; }
 .realtime-portfolio-row { min-height: 67px; border-bottom: 1px solid #eceef0; font-size: 10px; }
 .realtime-portfolio-row:last-child { border-bottom: 0; }
-.realtime-portfolio-company { min-width: 0; }
+.realtime-portfolio-company { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.realtime-portfolio-company-logo { flex: 0 0 auto; width: 28px; height: 28px; display: grid; place-items: center; overflow: hidden; border: 1px solid #e0e3e6; border-radius: 5px; background: #fff; }
+.realtime-portfolio-company-logo img { display: block; width: 20px; height: 20px; object-fit: contain; }
+.realtime-portfolio-company-text { min-width: 0; }
 .realtime-portfolio-company strong { display: block; font-size: 12px; }
 .realtime-portfolio-company span { display: block; margin-top: 4px; overflow: hidden; color: #7d8691; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.realtime-portfolio-market-logo { width: 22px; height: 22px; display: block; object-fit: contain; border-radius: 4px; }
 .realtime-portfolio-ticker-preview { width: fit-content; height: 25px; display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; border-radius: 3px; color: var(--ink); background: transparent; cursor: pointer; text-align: left; }
 .instrument-preview-target { min-width: 0; display: inline-flex; align-items: center; gap: 5px; border-radius: 3px; cursor: pointer; vertical-align: middle; }
 .instrument-preview-target > strong { color: var(--ink) !important; font-weight: 900; }
@@ -2070,7 +2074,7 @@ button { cursor: pointer; }
   .realtime-intraday-preview::before { width: 34px; height: 3px; display: block; margin: 7px auto 0; border-radius: 3px; background: #d6d1c2; content: ""; }
   .realtime-intraday-head { padding-top: 7px; }
   .realtime-intraday-chart svg { height: 142px; }
-  .realtime-portfolio-market { grid-area: market; }
+  .realtime-portfolio-market, .realtime-portfolio-market-logo { grid-area: market; }
   .realtime-portfolio-price { grid-area: price; text-align: right; }
   .realtime-portfolio-change { grid-area: change; justify-self: end; }
   .realtime-portfolio-volume { grid-area: volume; }
