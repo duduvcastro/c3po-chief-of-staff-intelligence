@@ -1486,7 +1486,7 @@ class Database:
                        event.published_at, event.reference_date::text,
                        event.valuation_status, event.reviewed_at, event.source_code,
                        event.collected_at, event.summary, event.official_url,
-                       event.document_url, event.company_name
+                       event.document_url, event.company_name, event.materiality
                 FROM ir_security_map security
                 JOIN ir_events event ON event.company_id = security.company_id
                 WHERE security.market = %s
@@ -1499,7 +1499,7 @@ class Database:
         keys = (
             "symbol", "id", "event_type", "title", "published_at", "reference_date",
             "valuation_status", "reviewed_at", "source_code", "collected_at",
-            "summary", "official_url", "document_url", "company_name",
+            "summary", "official_url", "document_url", "company_name", "materiality",
         )
         return {row[0]: dict(zip(keys, row)) for row in rows}
 

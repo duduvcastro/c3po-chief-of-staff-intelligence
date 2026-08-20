@@ -5,7 +5,7 @@ import pytest
 from app.config import Settings
 from app.database import Database
 from app.market_data.brapi import BrapiClient
-from app.market_data.b3_screener import MIN_MARKET_CAP, B3ScreenerService
+from app.market_data.b3_screener import DISCLOSURE_GOVERNANCE_MAX_SWING, MIN_MARKET_CAP, B3ScreenerService
 from app.market_data.sector_taxonomy import SECTOR_TAXONOMY_VERSION
 from app.market_data.eodhd import EodhdClient
 from app.market_data.eodhd_stream import EodhdStreamQuote
@@ -1735,6 +1735,63 @@ def test_selic_uses_new_copom_decision_while_bcb_series_is_stale() -> None:
     assert announced == 0.14
     assert refreshed == 0.14
     assert B3ScreenerService._tp_upside_cutoff_percent({"selic": announced}) == pytest.approx(20.0)
+
+
+def test_effective_selic_warns_when_the_copom_governor_is_long_past_due(caplog: pytest.LogCaptureFixture) -> None:
+    """Root-caused 2026-08-20 (B3 TP audit): the hardcoded LATEST_COPOM_SELIC
+    governor requires a manual bump after each COPOM meeting; nothing
+    previously surfaced when BCB stayed silent for far longer than a COPOM
+    cycle, so a missed update would go unnoticed indefinitely."""
+    with caplog.at_level("WARNING", logger="app.market_data.b3_screener"):
+        B3ScreenerService._effective_selic(
+            provider_value=None,
+            bcb_value=None,
+            bcb_as_of=None,
+            now=datetime(2026, 10, 15, tzinfo=timezone.utc),
+        )
+    assert "Selic governor" in caplog.text
+
+
+def test_effective_selic_does_not_warn_shortly_after_the_copom_decision(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level("WARNING", logger="app.market_data.b3_screener"):
+        result = B3ScreenerService._effective_selic(
+            provider_value=None,
+            bcb_value=None,
+            bcb_as_of=None,
+            now=datetime(2026, 8, 10, tzinfo=timezone.utc),
+        )
+    assert result == 0.14
+    assert "Selic governor" not in caplog.text
+
+
+def test_disclosure_risk_signal_scales_by_materiality_and_zeroes_when_current() -> None:
+    """Root-caused 2026-08-20 (B3 TP audit): disclosure materiality was
+    computed and persisted per filing but never fed into governance_risk —
+    a high-materiality pending disclosure scored identically to a routine
+    low-materiality one."""
+    assert B3ScreenerService._disclosure_risk_signal("current", "high") == 0.0
+    assert B3ScreenerService._disclosure_risk_signal("unavailable", "high") == 0.0
+    assert B3ScreenerService._disclosure_risk_signal("pending_review", "high") == 1.0
+    assert B3ScreenerService._disclosure_risk_signal("pending_review", "medium") == 0.5
+    assert B3ScreenerService._disclosure_risk_signal("pending_review", "low") == 0.2
+    assert B3ScreenerService._disclosure_risk_signal("pending_review", None) == 0.5
+
+
+def test_matrix_risk_score_rises_with_a_high_materiality_pending_disclosure() -> None:
+    base_row = {
+        "valuation_profile": "general",
+        "beta": 1.0,
+        "volatility_90d": 0.30,
+        "debt_to_equity": 1.0,
+        "earnings_growth": 0.10,
+        "profit_margin": 0.12,
+        "adtv_90d": 20_000_000,
+        "insider_net_signal": 0.0,
+    }
+    quiet = B3ScreenerService._matrix_risk_score({**base_row, "pending_disclosure_risk": 0.0})
+    material = B3ScreenerService._matrix_risk_score({**base_row, "pending_disclosure_risk": 1.0})
+    assert material > quiet
+    assert material - quiet == pytest.approx(DISCLOSURE_GOVERNANCE_MAX_SWING * 0.10)
 
 
 def test_expected_12m_return_does_not_assume_immediate_full_convergence():
