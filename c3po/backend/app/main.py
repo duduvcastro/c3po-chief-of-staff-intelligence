@@ -694,6 +694,7 @@ def build_alert_feed(email: str) -> dict:
         )
     capacity_alerts = server_usage.capacity_alerts()
     items = capacity_alerts + login_alerts + decision_alerts
+    items.sort(key=lambda item: item["occurred_at"], reverse=True)
     read_ids = database.alert_read_ids(email, [item["id"] for item in items])
     for item in items:
         item["is_read"] = item["id"] in read_ids
