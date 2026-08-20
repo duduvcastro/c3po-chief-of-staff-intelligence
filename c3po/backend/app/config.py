@@ -122,6 +122,8 @@ class Settings(BaseSettings):
     )
     r2d2_starting_capital_usd: float = 1_000_000.0
     r2d2_cycle_seconds: int = 60
+    r2d2_risk_monitor_enabled: bool = False
+    r2d2_risk_monitor_interval_seconds: float = 3.0
     r2d2_max_positions: int = 20
     r2d2_max_position_percent: float = 6.0
     r2d2_max_market_percent: float = 48.0

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from threading import Event, Thread
 
 from .config import get_settings
 from .database import Database
@@ -22,6 +23,20 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
+def _risk_monitor_loop(service: R2D2PaperService, stop: Event, interval_seconds: float) -> None:
+    interval = max(2.0, min(5.0, interval_seconds))
+    logger.info("R2D2 dedicated risk monitor enabled at %.1f-second cadence", interval)
+    while not stop.is_set():
+        started = time.monotonic()
+        try:
+            exits = service.run_risk_monitor_cycle()
+            logger.debug("R2D2 risk monitor exits=%d", exits)
+        except Exception:
+            logger.exception("Unhandled R2D2 dedicated risk-monitor error")
+        elapsed = time.monotonic() - started
+        stop.wait(max(0.0, interval - elapsed))
+
+
 def main() -> None:
     settings = get_settings()
     database = Database(settings)
@@ -38,12 +53,25 @@ def main() -> None:
         investor_relations=investor_relations,
     )
     service = R2D2PaperService(settings, database, realtime, screener, one_pagers)
+    risk_service = R2D2PaperService(settings, database, realtime, screener, one_pagers)
     experiment = service.ensure_initialized()
     logger.info(
         "R2D2 continuous paper strategy %s ready from %s; 90-day checkpoint %s; real brokerage execution disabled",
         experiment["code"], experiment["start_date"], experiment["checkpoint_date"],
     )
     last_candidate_scan = 0.0
+    risk_stop = Event()
+    risk_thread: Thread | None = None
+    if settings.r2d2_risk_monitor_enabled:
+        risk_thread = Thread(
+            target=_risk_monitor_loop,
+            args=(risk_service, risk_stop, settings.r2d2_risk_monitor_interval_seconds),
+            name="r2d2-risk-monitor",
+            daemon=True,
+        )
+        risk_thread.start()
+    else:
+        logger.info("R2D2 dedicated risk monitor disabled by feature flag")
     try:
         while True:
             try:
@@ -62,6 +90,9 @@ def main() -> None:
                 logger.exception("Unhandled R2D2 worker error")
             time.sleep(20)
     finally:
+        risk_stop.set()
+        if risk_thread:
+            risk_thread.join(timeout=10)
         stream.stop()
 
 
