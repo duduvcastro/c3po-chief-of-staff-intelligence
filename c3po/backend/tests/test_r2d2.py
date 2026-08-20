@@ -61,7 +61,7 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
     assert experiment["mandate"]["position_sizing"]["risk_budget_percent"] == 0.03
     assert experiment["mandate"]["position_sizing"]["maximum_percent"] == 6.0
     assert experiment["mandate"]["daily_order_target_range"] == [20, 80]
-    assert experiment["mandate"]["max_daily_orders"] == 120
+    assert experiment["mandate"]["max_daily_orders"] == 500
     assert experiment["mandate"]["opportunity_funnel"]["coverage"].startswith("full quoted EODHD catalog")
     assert experiment["mandate"]["opportunity_funnel"]["security_types"] == ["stocks", "ETFs"]
     assert experiment["mandate"]["opportunity_funnel"]["deep_shortlist_per_market"] == (
