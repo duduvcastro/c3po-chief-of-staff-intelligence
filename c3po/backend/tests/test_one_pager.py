@@ -648,6 +648,42 @@ def test_analyze_uses_fmp_consensus_over_eodhd_when_available(tmp_path) -> None:
     assert result["analyst_count"] == 5
 
 
+def test_analyze_skips_ev_ebitda_and_dcf_for_the_financial_profile(tmp_path) -> None:
+    """Root-caused 2026-08-20 (production incident): live-audited via
+    sys.settrace on JPM's real fundamentals, enterprise_tp came out to
+    $1,096.77 against a $357.26 price -- because EV/EBITDA-minus-net-debt
+    isn't a valid framework for banks. JPM's $1.24T "total debt" is
+    overwhelmingly customer deposits and borrowings, the raw material of
+    the banking business, not financial leverage -- no real equity
+    analyst uses EV/EBITDA to value a bank. dcf_tp ($578.02) was the
+    second-largest distortion for the same underlying reason: a bank's
+    reported "free cash flow" is dominated by financing/investing
+    activity (loan originations, deposit changes), not owner earnings.
+    Both are now skipped for the financial profile, using this near-exact
+    reproduction of JPM's real inputs.
+    """
+    service = service_for(tmp_path)
+    fundamentals = {
+        "companyName": "JPM", "sector": "Financial Services", "industry": "Banks-Diversified",
+        "marketCap": 950_000_000_000, "trailingEps": 24.0, "forwardEps": 25.007,
+        "sharesOutstanding": 2_658_186_195, "beta": 0.977, "returnOnEquity": 0.1779,
+        "profitMargins": 0.3492, "operatingMargins": 0.5039,
+        "revenueGrowthAnnual": 0.304, "earningsGrowthAnnual": 0.469,
+        "bookValue": 133.007, "ebitda": 93_160_000_000, "totalDebt": 1_237_871_000_000,
+        "totalCash": 262_254_800_000, "freeCashflow": 86_115_000_000,
+        "targetMeanPrice": 388.33, "numberOfAnalystOpinions": 3,
+    }
+    quote = {"price": 357.26, "currency": "USD", "change_percent": 0.3, "as_of": datetime.now(timezone.utc)}
+
+    result = service._analyze("JPM", "US", quote, fundamentals, risk_free_rate=0.042)
+
+    # Before this fix, Morgan Stanley (72% dcf_tp weight) alone hit $555+
+    # and enterprise-heavy methods blew past $1,000; every method should
+    # now be a plausible multiple of price, not 2-3x it.
+    assert all(value < 2.0 * quote["price"] for value in result["methods"].values())
+    assert result["c3po_tp"] < 1.5 * quote["price"]
+
+
 def test_analyze_pulls_the_final_tp_toward_a_well_covered_consensus(tmp_path) -> None:
     """Root-caused 2026-08-20 (production incident): JPM's blended TP came
     out $625.49 against a real 27-analyst consensus of $374.57 (67% too
