@@ -1609,11 +1609,13 @@ class R2D2PaperService:
             stop = max(_float(position["stop_price_local"]), trailing)
             pnl_pct = (quote.price / average_cost - 1) * 100
             peak_pnl_pct = (high_water / average_cost - 1) * 100
-            hard_stop = average_cost * (
-                1 - self.settings.r2d2_max_position_loss_percent / 100
-            )
-            stop = max(stop, hard_stop)
             atr_percent = max(0.0, _float(technical.get("atr_percent")))
+            effective_max_loss_percent = max(
+                self.settings.r2d2_max_position_loss_percent,
+                min(1.5, atr_percent * 0.5),
+            )
+            hard_stop = average_cost * (1 - effective_max_loss_percent / 100)
+            stop = max(stop, hard_stop)
             soft_loss_threshold = max(
                 self.settings.r2d2_soft_loss_exit_percent,
                 min(0.7, atr_percent * 0.4),

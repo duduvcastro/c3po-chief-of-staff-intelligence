@@ -571,9 +571,15 @@ def exit_decision(
     stop = max(stop_price, trailing)
     pnl_pct = (quote_price / average_cost - 1) * 100
     peak_pnl_pct = (high_water / average_cost - 1) * 100
-    hard_stop = average_cost * (1 - max_position_loss_percent / 100)
-    stop = max(stop, hard_stop)
     atr_percent = max(0.0, _float(technical.get("atr_percent")))
+    # A flat max_position_loss_percent gets run over by normal noise on a
+    # volatile name (root-caused 2026-08-20: SOC's ATR alone was 1.6%, so a
+    # fixed 0.65% stop sat inside 41% of one ATR and fired on ordinary chop,
+    # not a real breakdown). Widen the floor to half an ATR when that's wider
+    # than the base policy, capped so the hard stop never stops being hard.
+    effective_max_loss_percent = max(max_position_loss_percent, min(1.5, atr_percent * 0.5))
+    hard_stop = average_cost * (1 - effective_max_loss_percent / 100)
+    stop = max(stop, hard_stop)
     soft_loss_threshold = max(soft_loss_exit_percent, min(0.7, atr_percent * 0.4))
     if peak_pnl_pct >= 8.0:
         stop = max(stop, average_cost * 1.04, high_water - max(atr * 1.5, high_water * 0.0175))
@@ -616,7 +622,7 @@ def exit_decision(
     defense_reductions = state.defense_reductions
 
     if quote_price <= hard_stop:
-        reason = f"Immediate hard stop at {pnl_pct:+.2f}%; max position-loss policy is {max_position_loss_percent:.2f}%."
+        reason = f"Immediate hard stop at {pnl_pct:+.2f}%; max position-loss policy is {effective_max_loss_percent:.2f}% (base {max_position_loss_percent:.2f}%, ATR-adjusted)."
     elif held_minutes >= FAILED_ENTRY_MINUTES and pnl_pct <= -FAILED_ENTRY_LOSS_PERCENT and failed_entry_votes >= 3:
         reason = f"Failed-entry fast exit at {pnl_pct:+.2f}% after {held_minutes:.1f} minutes: {failed_entry_votes}/5 live timing signals invalidated the setup."
     elif defense["critical"]:
