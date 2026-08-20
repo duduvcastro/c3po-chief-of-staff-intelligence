@@ -709,9 +709,9 @@ button { cursor: pointer; }
 .service-logo-cloudflare svg { width: 31px; height: 23px; }
 .service-logo-cloudflare .service-logo-highlight { fill: #faae40; }
 .service-logo-github { border-color: #1f2328; background: #1f2328; }
-.service-logo-github svg, .service-logo-intermedia svg, .service-logo-summary svg, .service-logo-pdf svg { fill: none; stroke: currentColor; }
-.service-logo-intermedia { background: #1466a3; }
-.service-logo-intermedia b { position: absolute; right: 3px; bottom: 2px; padding: 2px; border-radius: 2px; background: #fff; color: #1466a3; font-size: 6px; }
+.service-logo-github svg, .service-logo-summary svg, .service-logo-pdf svg { fill: none; stroke: currentColor; }
+.service-logo-intermedia { border-color: #d9d9d9; background: #fff; }
+.service-logo-intermedia img { padding: 2px; }
 .service-logo-weather { border-color: #87c9ee; background: #f0faff; }
 .service-logo-weather img { padding: 6px; }
 .service-logo-pluggy { border-color: #242424; background: #151515; }
