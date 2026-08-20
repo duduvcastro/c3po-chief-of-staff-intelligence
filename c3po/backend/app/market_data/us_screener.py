@@ -140,9 +140,17 @@ class USScreeningService:
         or omit it (the Laser Pager caller only knows "US", not the
         specific exchange) to merge both — profile buckets like
         "technology"/"financial" are the same taxonomy on either exchange.
-        Empty until the first background _build() completes (peer medians
-        aren't persisted, unlike _rows/_calibration_factors) — callers
-        already fall back to the hardcoded constants when this is empty."""
+
+        The api and valuation-worker containers are separate processes
+        (see compose.yml) that don't share Python memory, so unlike this
+        in-memory dict alone, this getter also hydrates from a persisted
+        snapshot on first use — otherwise every Laser Pager generated from
+        the api container would see an empty dict forever, since only the
+        worker's _build() ever populates it in-process."""
+        markets = [self._market(market)] if market else ["NASDAQ", "NYSE"]
+        for selected_market in markets:
+            if not self._peer_medians[selected_market]:
+                self._load_peer_medians(selected_market)
         if market:
             return self._peer_medians[self._market(market)]
         merged: dict[str, dict[str, float]] = {}
@@ -150,6 +158,20 @@ class USScreeningService:
             for profile, values in self._peer_medians[exchange].items():
                 merged.setdefault(profile, values)
         return merged
+
+    def _load_peer_medians(self, market: USMarket) -> None:
+        snapshot = self.database.latest_analysis_snapshot("peer_medians", f"{market}_PEER_MEDIANS")
+        if not snapshot:
+            return
+        outputs = snapshot.get("outputs") if isinstance(snapshot.get("outputs"), dict) else {}
+        medians = outputs.get("medians") if isinstance(outputs, dict) else None
+        if not isinstance(medians, dict):
+            return
+        self._peer_medians[market] = {
+            str(profile): {str(key): float(value) for key, value in values.items()}
+            for profile, values in medians.items()
+            if isinstance(values, dict)
+        }
 
     def _build(self, market: USMarket) -> list[dict[str, Any]]:
         if not self.settings.eodhd_api_token:
@@ -655,6 +677,11 @@ class USScreeningService:
             {"rows": rows, "universe_size": self._universe_size[market]}, generated_at,
         )
         self._persist_calibration(market, methodology_id, generated_at, rows)
+        self.database.save_analysis_snapshot(
+            "peer_medians", f"{market}_PEER_MEDIANS", methodology_id,
+            {"methodology_version": METHODOLOGY_VERSION, "market": market},
+            {"medians": self._peer_medians[market]}, generated_at,
+        )
         response = self._candidate_response(market)
         self.database.save_analysis_snapshot(
             "candidate_screen", f"{market}_TOP_10", methodology_id,
