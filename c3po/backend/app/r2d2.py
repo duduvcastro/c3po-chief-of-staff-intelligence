@@ -35,7 +35,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
-METHODOLOGY_VERSION = "R2D2-HYBRID-V18-EARLY-GAIN-PROTECTION"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V19-FRESH-QUOTE-BUY-FILL"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
 MIN_HOLD_MINUTES = 5
 ROTATION_MIN_HOLD_MINUTES = 10
@@ -2475,6 +2475,20 @@ class R2D2PaperService:
              positions: list[dict[str, Any]]) -> dict[str, Any] | None:
         if item.get("market") not in ACTIVE_MARKETS or item.get("quote_status") != "live":
             return None
+        # Root-caused 2026-08-20: item["price"] was captured during
+        # _enrich_technicals, potentially minutes before _buy actually runs
+        # (ranking, rotation and cooldown checks all sit in between) -- the
+        # same stale-quote class of bug already fixed on the exit side via the
+        # Risk Monitor. Re-pull the freshest available tick right before
+        # computing the fill so a slow-to-execute BUY doesn't fill on a price
+        # the market has already moved past.
+        stream = getattr(self.realtime, "stream", None)
+        if stream:
+            fresh_quote = stream.quote(item["symbol"])
+            if fresh_quote is not None:
+                if not self._live_us_quote(fresh_quote, datetime.now(timezone.utc)):
+                    return None
+                item = {**item, "price": fresh_quote.price, "quote_as_of": fresh_quote.as_of}
         dashboard = self.dashboard()
         if dashboard.daily_return_percent <= -self.settings.r2d2_daily_loss_limit_percent:
             return None
