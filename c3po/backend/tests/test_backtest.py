@@ -209,14 +209,24 @@ def _gain_protection_scenario(**overrides):
     return strategy.exit_decision(**kwargs)
 
 
-def test_exit_decision_protects_a_small_gain_with_no_held_minutes_gate():
+def test_exit_decision_protects_a_small_gain_after_two_consecutive_reviews():
     """Root-caused 2026-08-20 against real trades (RGA/HTHT): mirrors the
     failed-entry fast exit's vote-based read on the winning side. held_minutes
     here (2.0) is below MIN_HOLD_MINUTES (5) on purpose -- this rule has no
-    time gate, since a fast reversal can beat any fixed window."""
-    decision, _state = _gain_protection_scenario()
-    assert decision.reason is not None
-    assert "Early gain protection" in decision.reason
+    time gate, since a fast reversal can beat any fixed window.
+
+    2-review persistence added the same day, once the 1R profit floor (V23)
+    raised every OTHER harvest rule's bar: without persistence, this rule
+    (unchanged at 0.30%) became the path of least resistance around the
+    floor. The first read only arms it; it fires on the second.
+    """
+    first_decision, state_after_first = _gain_protection_scenario()
+    assert first_decision.reason is None
+    assert state_after_first.gain_protection_streak == 1
+
+    second_decision, _state = _gain_protection_scenario(state=state_after_first)
+    assert second_decision.reason is not None
+    assert "Early gain protection" in second_decision.reason
 
 
 def test_exit_decision_gain_protection_floor_matches_failed_entry_loss_percent():

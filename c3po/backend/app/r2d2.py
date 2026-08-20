@@ -35,7 +35,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
-METHODOLOGY_VERSION = "R2D2-HYBRID-V24-WIDER-RISK-BAND-TEST-PHASE"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V25-GAIN-PROTECTION-PERSISTENCE"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
 MIN_HOLD_MINUTES = 5
 ROTATION_MIN_HOLD_MINUTES = 10
@@ -1590,6 +1590,7 @@ class R2D2PaperService:
                 defense_reductions=int(strategy.get("defense_reductions") or 0),
                 stop_breach_count=int(strategy.get("stop_breach_count") or 0),
                 profit_harvest_count=int(strategy.get("profit_harvest_count") or 0),
+                gain_protection_streak=int(strategy.get("gain_protection_streak") or 0),
             )
             exit_result, risk_state = r2d2_strategy.exit_decision(
                 technical=technical,
@@ -1613,6 +1614,7 @@ class R2D2PaperService:
             defense_reductions = risk_state.defense_reductions
             stop_breaches = risk_state.stop_breach_count
             profit_harvest_count = risk_state.profit_harvest_count
+            gain_protection_streak = risk_state.gain_protection_streak
 
             # Mirrors r2d2_strategy.exit_decision's internal stop/pnl math so the
             # live cache can persist the same stop price and telemetry it decided against.
@@ -1660,6 +1662,7 @@ class R2D2PaperService:
                 "technical_defense": defense,
                 "defense_streak": defense_streak,
                 "defense_reductions": defense_reductions,
+                "gain_protection_streak": gain_protection_streak,
                 "held_minutes": round(held_minutes, 1),
                 "peak_pnl_percent": round(peak_pnl_pct, 3),
                 "profit_trigger_percent": round(max(PROFIT_TRIGGER_PERCENT, effective_max_loss_percent), 3),
