@@ -71,6 +71,14 @@ LATEST_COPOM_SELIC = 0.14
 LATEST_COPOM_DECISION_AT = datetime(2026, 8, 5, 18, 30, tzinfo=ZoneInfo("America/Sao_Paulo"))
 LATEST_COPOM_EFFECTIVE_DATE = date(2026, 8, 6)
 SELIC_GOVERNOR_STALE_WARNING_DAYS = 50
+# Data-source audit (2026-08-20): Brapi Pro's Tesouro Direto endpoints were
+# never used at all, even though they're included in the plan we already
+# pay for. A genuine, independently-observed market yield (unlike Selic,
+# which is a policy rate) -- used purely as a divergence cross-check, not
+# blended into the actual risk-free rate, since a short policy rate and a
+# long bond yield normally differ by a real term premium and forcing them
+# together would be its own source of error.
+SELIC_MARKET_YIELD_DIVERGENCE_WARNING = 0.05
 
 
 # Issuer-published consensus takes precedence when it is more broadly covered
@@ -929,7 +937,39 @@ class B3ScreenerService:
             bcb_value=bcb_selic,
             bcb_as_of=bcb_as_of,
         )
+        self._check_selic_against_market_yield(defaults["selic"])
         return defaults
+
+    def _check_selic_against_market_yield(self, effective_selic: float) -> None:
+        """Cross-checks the Selic-derived risk-free rate against a real,
+        independently-observed market yield (Brapi Pro Tesouro Direto,
+        longest-duration Tesouro Prefixado bond -- a genuine nominal
+        yield, not a policy rate). Catches the exact failure mode this
+        session spent all day chasing elsewhere: a feed silently going
+        stale or wrong with nothing to flag it. Purely informational --
+        never adjusts the computed rate, and any failure here is
+        swallowed so it can't break the real risk-free calculation."""
+        try:
+            bonds = BrapiClient(self.settings.brapi_base_url, self.settings.brapi_token, self.http).treasury_rates(
+                indexer="prefixado",
+            )
+        except Exception:
+            return
+        if not bonds:
+            return
+        longest = max(bonds, key=lambda bond: bond.get("duration_days") or 0)
+        rate = longest.get("sell_rate") or longest.get("buy_rate")
+        if rate is None:
+            return
+        divergence = abs(rate - effective_selic)
+        if divergence > SELIC_MARKET_YIELD_DIVERGENCE_WARNING:
+            logger.warning(
+                "Selic-derived risk-free rate (%.2f%%) diverges %.2f points from the "
+                "market-observed Tesouro Prefixado yield (%.2f%%, %s, %d days to maturity) "
+                "-- verify the BCB/Brapi Selic feed isn't stale or wrong.",
+                effective_selic * 100, divergence * 100, rate * 100,
+                longest.get("symbol"), longest.get("duration_days"),
+            )
 
     @staticmethod
     def _effective_selic(
