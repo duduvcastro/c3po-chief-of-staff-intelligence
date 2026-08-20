@@ -260,6 +260,7 @@ class USScreeningService:
         peer_medians = self.one_pagers._us_peer_medians(fundamentals)
         self._peer_medians[market] = peer_medians
         fmp_consensus_data = self.one_pagers._fmp_consensus_batch(symbols)
+        fmp_institutional_data = self.one_pagers._fmp_institutional_batch(symbols)
         rows: list[dict[str, Any]] = []
         for cash_volume, quote, metadata in selected:
             symbol = quote.symbol
@@ -291,6 +292,7 @@ class USScreeningService:
                         peer_medians=peer_medians,
                         fmp_consensus=fmp_consensus,
                         fmp_summary=fmp_summary,
+                        institutional_positions=fmp_institutional_data.get(symbol),
                     )
                 )
             except Exception:
@@ -338,6 +340,7 @@ class USScreeningService:
         peer_medians: dict[str, dict[str, float]] | None = None,
         fmp_consensus: dict[str, float] | None = None,
         fmp_summary: dict[str, Any] | None = None,
+        institutional_positions: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         symbol = str(quote["symbol"])
         analysis = self.one_pagers._analyze(
@@ -348,6 +351,7 @@ class USScreeningService:
             peer_medians=peer_medians,
             fmp_consensus=fmp_consensus,
             fmp_summary=fmp_summary,
+            institutional_positions=institutional_positions,
         )
         methods = {str(key): float(value) for key, value in analysis["methods"].items() if positive(value)}
         consensus = positive(analysis.get("consensus_tp"))
