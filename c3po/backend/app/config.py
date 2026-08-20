@@ -125,12 +125,16 @@ class Settings(BaseSettings):
     r2d2_risk_monitor_enabled: bool = False
     r2d2_risk_monitor_interval_seconds: float = 3.0
     r2d2_max_positions: int = 20
-    r2d2_max_position_percent: float = 6.0
+    # Dudu, 2026-08-20: while still in the test phase, widened from 6.0/1.5 so
+    # a normal day's volatility doesn't halt trading (losing trading hours
+    # entirely) before enough real trades accumulate to learn from. Position
+    # sizing still decides the actual allocation within [2%, 5%] per trade.
+    r2d2_max_position_percent: float = 5.0
     r2d2_max_market_percent: float = 48.0
     r2d2_max_cash_percent: float = 25.0
     r2d2_min_cash_buffer_percent: float = 5.0
     r2d2_max_gross_exposure_percent: float = 95.0
-    r2d2_daily_loss_limit_percent: float = 1.5
+    r2d2_daily_loss_limit_percent: float = 2.0
     r2d2_soft_loss_exit_percent: float = 0.25
     r2d2_max_position_loss_percent: float = 0.65
     r2d2_live_quote_max_age_seconds: int = 90
