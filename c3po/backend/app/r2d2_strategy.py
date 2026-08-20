@@ -30,7 +30,7 @@ from typing import Any
 # Constants (mirrors the module-level constants in r2d2.py as of V16)
 # ---------------------------------------------------------------------------
 
-METHODOLOGY_VERSION = "R2D2-HYBRID-V17-SYMMETRIC-PROFIT-RUNWAY"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V18-EARLY-GAIN-PROTECTION"
 
 MIN_HOLD_MINUTES = 5
 PROFIT_TRIGGER_PERCENT = 0.65
@@ -38,13 +38,14 @@ PROFIT_LOCK_FLOOR_PERCENT = 0.35
 PROFIT_PULLBACK_PERCENT = 0.35
 WEEKLY_PROFIT_HARVEST_FRACTION = 0.70
 WEEKLY_CONVICTION_MIN_SCORE = 72.0
-MIN_POSITION_PERCENT = 2.5
+MIN_POSITION_PERCENT = 2.0
 BASE_POSITION_PERCENT = 4.5
 MAX_DYNAMIC_POSITION_PERCENT = 6.0
 SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
 MIN_INTRADAY_EDGE_PERCENT = 0.55
 FAILED_ENTRY_MINUTES = 3
 FAILED_ENTRY_LOSS_PERCENT = 0.30
+GAIN_PROTECTION_MIN_PERCENT = 0.15
 
 # Defaults for settings that live on Settings() in production.
 DEFAULT_MAX_POSITION_LOSS_PERCENT = 0.65  # hard stop
@@ -520,7 +521,11 @@ def target_position_percent(item: dict[str, Any], *, cash_overhang_percent: floa
     )
     maximum = min(MAX_DYNAMIC_POSITION_PERCENT, max_position_percent)
     minimum = min(MIN_POSITION_PERCENT, maximum)
-    deployment_adjustment = min(1.5, max(0.0, cash_overhang_percent) * 0.08)
+    # Capped low on purpose: idle cash should nudge sizing, not decide it. At the
+    # old 1.5 cap, a high-cash day alone pushed every approved candidate to the
+    # 6% ceiling regardless of conviction, flattening the signal this function
+    # exists to express. 0.4 keeps it a tie-breaker.
+    deployment_adjustment = min(0.4, max(0.0, cash_overhang_percent) * 0.08)
     target = BASE_POSITION_PERCENT + conviction_adjustment + risk_adjustment + volatility_adjustment + deployment_adjustment
     return round(max(minimum, min(maximum, target)), 2)
 
@@ -642,6 +647,13 @@ def exit_decision(
         reason = f"Profit harvested at {pnl_pct:+.2f}% after a {bearish_votes}-signal momentum reversal."
     elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 1.0 and bearish_votes >= 2 and technical_score < 55:
         reason = f"Early profit harvested at {pnl_pct:+.2f}% after momentum weakened across {bearish_votes} signals; technical score {technical_score:.0f}/100."
+    elif pnl_pct >= GAIN_PROTECTION_MIN_PERCENT and failed_entry_votes >= 3:
+        # Mirrors the failed-entry fast exit's vote-based read on the winning
+        # side, deliberately with no held_minutes gate: a small unrealized gain
+        # can round-trip into a loss faster than any fixed time window would
+        # react, and every other profit rule above requires >=0.75% before it
+        # offers any protection at all. Below that, a positive position had none.
+        reason = f"Early gain protection at {pnl_pct:+.2f}%: {failed_entry_votes}/5 live timing signals reversed before the position could round-trip into a loss."
     elif held_minutes >= MIN_HOLD_MINUTES and technical_score < 32 and bearish_votes >= 4:
         reason = f"Trend breakdown confirmed by {bearish_votes} signals; technical score {technical_score:.0f}/100."
     elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct < PROFIT_TRIGGER_PERCENT and defense_reductions == 0 and defense["actionable"] and defense["score"] >= 55 and defense_streak >= 2:
