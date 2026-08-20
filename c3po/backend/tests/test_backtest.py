@@ -151,7 +151,7 @@ def _end_of_day_scenario(**overrides):
         technical=technical, quote_price=100.5, average_cost=100.0, high_water=100.5,
         held_minutes=20.0, day_change=0.5, market_change=0.0,
         state=strategy.PositionRiskState(), weekly_conviction_state={"active": False},
-        stop_price=99.0, max_position_loss_percent=0.65, minutes_to_close=10.0,
+        stop_price=99.0, max_position_loss_percent=0.65, minutes_to_close=0.5,
     )
     kwargs.update(overrides)
     return strategy.exit_decision(**kwargs)
@@ -189,7 +189,9 @@ def test_exit_decision_ignores_the_close_when_minutes_to_close_is_none():
 
 
 def test_exit_decision_does_not_fire_the_close_rule_too_early():
-    decision, _state = _end_of_day_scenario(minutes_to_close=45.0)
+    """The window is deliberately just the last minute -- 15 minutes before
+    close is still active trading time, not a reason to force an exit."""
+    decision, _state = _end_of_day_scenario(minutes_to_close=15.0)
     assert decision.reason is None
 
 
