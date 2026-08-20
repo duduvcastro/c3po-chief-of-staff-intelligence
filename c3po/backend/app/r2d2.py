@@ -53,8 +53,6 @@ SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
 MIN_INTRADAY_EDGE_PERCENT = 0.55
 FAILED_ENTRY_MINUTES = 3
 FAILED_ENTRY_LOSS_PERCENT = 0.30
-US_STOCK_SHORTLIST_PER_MARKET = 300
-US_ETF_SHORTLIST_PER_MARKET = 50
 US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
 POSITION_STREAM_PRIORITY = 200
 BASE_ENTRY_POLICY = {
@@ -235,10 +233,7 @@ class R2D2Repository:
             "opportunity_funnel": {
                 "coverage": "full quoted EODHD catalog for NASDAQ, NYSE, NYSE Arca and NYSE American",
                 "security_types": ["stocks", "ETFs"],
-                "deep_shortlist_per_market": {
-                    "stocks": US_STOCK_SHORTLIST_PER_MARKET,
-                    "etfs": US_ETF_SHORTLIST_PER_MARKET,
-                },
+                "deep_shortlist_per_market": "uncapped -- every symbol clearing the price/liquidity bar",
                 "technical_reviews_per_market": {
                     "cash_deployment": settings.r2d2_deployment_technical_review_per_market,
                     "standard": settings.r2d2_standard_technical_review_per_market,
@@ -1768,6 +1763,10 @@ class R2D2PaperService:
                 continue
             eligible.append((row, security_type))
 
+        # Every symbol that clears the price/liquidity bar gets deep evaluation --
+        # no additional volume-ranked cap. The rank_key ordering is kept so that,
+        # if evaluation capacity is ever constrained upstream, the most liquid
+        # names are still reviewed first.
         rank_key = lambda item: item[0].cash_volume * (  # noqa: E731
             1 + max(-2.0, min(6.0, item[0].change_percent)) / 20
         )
@@ -1775,12 +1774,12 @@ class R2D2PaperService:
             (item for item in eligible if item[1] == "Stock"),
             key=rank_key,
             reverse=True,
-        )[:US_STOCK_SHORTLIST_PER_MARKET]
+        )
         etfs = sorted(
             (item for item in eligible if item[1] == "ETF"),
             key=rank_key,
             reverse=True,
-        )[:US_ETF_SHORTLIST_PER_MARKET]
+        )
         shortlist = [*stocks, *etfs]
         self._us_scan_counts[market] = {
             "universe_count": len(catalog_securities),
