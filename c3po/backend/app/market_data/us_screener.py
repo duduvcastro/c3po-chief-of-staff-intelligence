@@ -92,6 +92,7 @@ class USScreeningService:
         self._coverage: dict[USMarket, dict[str, int]] = {"NASDAQ": {}, "NYSE": {}}
         self._calibration_factors: dict[USMarket, dict[str, float]] = {"NASDAQ": {}, "NYSE": {}}
         self._peer_medians: dict[USMarket, dict[str, dict[str, float]]] = {"NASDAQ": {}, "NYSE": {}}
+        self._peer_medians_at: dict[USMarket, datetime | None] = {"NASDAQ": None, "NYSE": None}
 
     @staticmethod
     def _market(value: str) -> USMarket:
@@ -105,15 +106,33 @@ class USScreeningService:
         with self._lock:
             if refresh:
                 self._build(selected_market)
-            elif not self._rows[selected_market]:
+            elif not self._rows[selected_market] or self._rows_are_stale(selected_market):
                 self._hydrate(selected_market)
                 if not self._rows[selected_market]:
                     self._build(selected_market)
             return self._candidate_response(selected_market)
 
+    def _rows_are_stale(self, market: USMarket) -> bool:
+        """Root-caused 2026-08-20: _rows/_basis_at only ever loaded once per
+        api-container process lifetime (_hydrate() only ran when _rows was
+        empty), so a symbol's shared_valuation kept serving the snapshot
+        from whenever this process first hydrated it -- silently ignoring
+        every valuation-worker refresh since, including the day's TP fixes,
+        until the next deploy happened to restart the container. Checking
+        the persisted snapshot's published_at (a cheap timestamp-only
+        query, not the full ~325-row payload) against what's in memory
+        catches that without paying for a full re-hydrate on every call."""
+        if self._basis_at[market] is None:
+            return False
+        try:
+            latest = self.database.latest_analysis_snapshot_published_at("valuation_universe", f"{market}_UNIVERSE")
+        except Exception:
+            return False
+        return latest is not None and latest > self._basis_at[market]
+
     def matrix(self, market: str) -> MatrixPowerResponse:
         selected_market = self._market(market)
-        if not self._rows[selected_market]:
+        if not self._rows[selected_market] or self._rows_are_stale(selected_market):
             self.screen(selected_market)
         with self._matrix_lock:
             return self._matrix_response(selected_market)
@@ -125,7 +144,7 @@ class USScreeningService:
         clean = symbol.strip().upper().removesuffix(".US")
         markets = [self._market(market)] if market else ["NASDAQ", "NYSE"]
         for selected_market in markets:
-            if not self._rows[selected_market]:
+            if not self._rows[selected_market] or self._rows_are_stale(selected_market):
                 self._hydrate(selected_market)
             row = next((item for item in self._rows[selected_market] if item["symbol"] == clean), None)
             if row:
@@ -149,7 +168,7 @@ class USScreeningService:
         worker's _build() ever populates it in-process."""
         markets = [self._market(market)] if market else ["NASDAQ", "NYSE"]
         for selected_market in markets:
-            if not self._peer_medians[selected_market]:
+            if not self._peer_medians[selected_market] or self._peer_medians_are_stale(selected_market):
                 self._load_peer_medians(selected_market)
         if market:
             return self._peer_medians[self._market(market)]
@@ -165,6 +184,7 @@ class USScreeningService:
             return
         outputs = snapshot.get("outputs") if isinstance(snapshot.get("outputs"), dict) else {}
         medians = outputs.get("medians") if isinstance(outputs, dict) else None
+        self._peer_medians_at[market] = snapshot.get("published_at")
         if not isinstance(medians, dict):
             return
         self._peer_medians[market] = {
@@ -172,6 +192,15 @@ class USScreeningService:
             for profile, values in medians.items()
             if isinstance(values, dict)
         }
+
+    def _peer_medians_are_stale(self, market: USMarket) -> bool:
+        if self._peer_medians_at[market] is None:
+            return False
+        try:
+            latest = self.database.latest_analysis_snapshot_published_at("peer_medians", f"{market}_PEER_MEDIANS")
+        except Exception:
+            return False
+        return latest is not None and latest > self._peer_medians_at[market]
 
     def _build(self, market: USMarket) -> list[dict[str, Any]]:
         if not self.settings.eodhd_api_token:

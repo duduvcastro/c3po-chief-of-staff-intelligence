@@ -1889,6 +1889,28 @@ class Database:
         )
         return snapshot_id
 
+    def latest_analysis_snapshot_published_at(self, analysis_type: str, entity_key: str) -> datetime | None:
+        """Timestamp-only counterpart of latest_analysis_snapshot(), for
+        callers that need to check freshness without paying for the full
+        outputs payload (e.g. a ~325-row valuation_universe snapshot) on
+        every check."""
+        if not self.database_url:
+            matches = [
+                item for item in self._analysis_snapshots
+                if item.get("analysis_type") == analysis_type and item.get("entity_key") == entity_key
+            ]
+            return max((item["published_at"] for item in matches), default=None)
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT published_at FROM analysis_snapshots
+                WHERE analysis_type = %s AND entity_key = %s
+                ORDER BY published_at DESC LIMIT 1
+                """,
+                (analysis_type, entity_key),
+            ).fetchone()
+        return row[0] if row else None
+
     def latest_analysis_snapshot(self, analysis_type: str, entity_key: str) -> dict[str, Any] | None:
         if not self.database_url:
             matches = [
