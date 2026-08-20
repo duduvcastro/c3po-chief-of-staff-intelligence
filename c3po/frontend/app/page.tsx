@@ -3505,11 +3505,11 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
       <section className="panel realtime-control">
         <div className="realtime-tabs" role="tablist" aria-label="Hyperspace exchanges">
           {([
-            { key: "B3", label: "B3" },
-            { key: "NASDAQ", label: "NASDAQ" },
-            { key: "NYSE", label: "NYSE" },
-            { key: "PORTFOLIO", label: "My Portfolio" }
-          ] as { key: RealtimeTabKey; label: string }[]).map((market) => (
+            { key: "B3", label: "B3", logo: "/market-marks/b3.svg" },
+            { key: "NASDAQ", label: "NASDAQ", logo: "/market-marks/nasdaq.svg" },
+            { key: "NYSE", label: "NYSE", logo: "/market-marks/nyse.svg" },
+            { key: "PORTFOLIO", label: "My Portfolio", logo: "/market-marks/my-portfolio.svg" }
+          ] as { key: RealtimeTabKey; label: string; logo: string }[]).map((market) => (
             <button
               key={market.key}
               role="tab"
@@ -3517,6 +3517,7 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
               className={activeMarket === market.key ? "realtime-tab realtime-tab-active" : "realtime-tab"}
               onClick={() => selectRealtimeMarket(market.key)}
             >
+              <img src={market.logo} alt="" className="realtime-tab-logo" />
               {market.label}
             </button>
           ))}

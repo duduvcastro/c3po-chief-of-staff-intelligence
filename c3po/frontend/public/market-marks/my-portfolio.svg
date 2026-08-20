@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="My Portfolio">
+  <rect width="64" height="64" rx="10" fill="#211a0c"/>
+  <rect x="25" y="13" width="14" height="9" rx="3" fill="none" stroke="#e7bd45" stroke-width="3.5"/>
+  <rect x="12" y="21" width="40" height="28" rx="5" fill="#e7bd45"/>
+  <rect x="12" y="33" width="40" height="4" fill="#211a0c"/>
+  <rect x="28" y="31" width="8" height="8" rx="1.5" fill="#211a0c"/>
+</svg>
