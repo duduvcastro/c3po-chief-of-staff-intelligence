@@ -98,6 +98,36 @@ def test_exit_decision_hard_stop_fires_below_max_loss():
     assert "hard stop" in decision.reason.lower()
 
 
+def _volatile_hard_stop_scenario(quote_price: float):
+    """Root-caused 2026-08-20: SOC's ATR was 1.6%, so a flat 0.65% hard stop
+    sat inside 41% of one ATR and fired on ordinary chop, not a breakdown.
+    """
+    technical = {"atr": 1.6, "atr_percent": 1.6, "vwap": 100.0, "ema8": 100.0, "ema20": 99.0,
+                 "momentum15": 0.0, "momentum30": 0.0, "macd_histogram": 0.0,
+                 "macd_acceleration": 0.0, "price_structure": "range", "score": 50.0}
+    return strategy.exit_decision(
+        technical=technical, quote_price=quote_price, average_cost=100.0, high_water=100.0,
+        held_minutes=10.0, day_change=-1.0, market_change=0.0,
+        state=strategy.PositionRiskState(), weekly_conviction_state={"active": False},
+        stop_price=95.0, max_position_loss_percent=0.65,
+    )
+
+
+def test_exit_decision_widens_hard_stop_for_a_volatile_name():
+    """-0.68% is inside the ATR-adjusted 0.8% floor (1.6% ATR * 0.5), so a
+    volatile name riding ordinary chop should not be stopped out here."""
+    decision, _state = _volatile_hard_stop_scenario(99.32)
+    assert decision.reason is None
+
+
+def test_exit_decision_still_fires_hard_stop_beyond_the_widened_floor():
+    """A real breakdown must still stop the position out even with the wider,
+    ATR-adjusted floor -- widening isn't the same as disabling the stop."""
+    decision, _state = _volatile_hard_stop_scenario(98.3)
+    assert decision.reason is not None
+    assert "hard stop" in decision.reason.lower()
+
+
 def test_exit_decision_holds_when_nothing_triggers():
     technical = {"atr": 1.0, "atr_percent": 1.0, "vwap": 99.0, "ema8": 99.0, "ema20": 98.0,
                  "momentum15": 0.2, "momentum30": 0.2, "macd_histogram": 0.1,
