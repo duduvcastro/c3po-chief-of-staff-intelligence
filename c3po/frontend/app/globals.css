@@ -381,6 +381,8 @@ button { cursor: pointer; }
 .r2d2-learning-grid { stroke: #e5e9ed; stroke-width: 1; stroke-dasharray: 4 5; }
 .r2d2-learning-tick, .r2d2-learning-axis-label { fill: #8e98a5; font-size: 8px; }
 .r2d2-learning-bar-positive { fill: var(--green); }
+.r2d2-learning-bar-negative { fill: var(--red); }
+.r2d2-learning-bar-label { fill: #fff; font-size: 8px; font-weight: 900; pointer-events: none; }
 .r2d2-learning-ma-line { fill: none; stroke: var(--purple); stroke-width: 2; }
 .r2d2-learning-ma-dot { fill: var(--purple); stroke: #fff; stroke-width: 1.2; }
 .r2d2-learning-ma-badge { fill: var(--purple-soft); stroke: #ddd0ef; stroke-width: 1; }
