@@ -1662,7 +1662,7 @@ class R2D2PaperService:
                 "defense_reductions": defense_reductions,
                 "held_minutes": round(held_minutes, 1),
                 "peak_pnl_percent": round(peak_pnl_pct, 3),
-                "profit_trigger_percent": PROFIT_TRIGGER_PERCENT,
+                "profit_trigger_percent": round(max(PROFIT_TRIGGER_PERCENT, effective_max_loss_percent), 3),
                 "profit_lock_level_percent": round(profit_lock_level, 3),
                 "profit_harvest_count": profit_harvest_count,
                 "profit_harvest_fraction": WEEKLY_PROFIT_HARVEST_FRACTION,

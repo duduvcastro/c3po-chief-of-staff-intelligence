@@ -1005,7 +1005,10 @@ def test_r2d2_locks_unharvested_weekly_profit_after_pullback() -> None:
         reason="test entry", decision=candidate, quote_as_of=opened,
     )
     service.repo.memory["positions"][("NASDAQ", "WIN")]["opened_at"] = opened
-    service.repo.memory["positions"][("NASDAQ", "WIN")]["high_water_price_local"] = 101.2
+    # atr_percent 1.0 caps the ATR-derived stop distance at 1.5% (2x), which
+    # is now also the profit-lock trigger floor (1R) -- peak/pnl raised
+    # accordingly versus the pre-1R-floor version of this test.
+    service.repo.memory["positions"][("NASDAQ", "WIN")]["high_water_price_local"] = 101.7
     service._technical_snapshot = lambda item: {  # type: ignore[method-assign]
         "score": 72.0, "atr": 1.0, "atr_percent": 1.0, "vwap": 100.0,
         "ema8": 100.8, "ema20": 100.3, "macd_histogram": 0.8,
@@ -1014,7 +1017,7 @@ def test_r2d2_locks_unharvested_weekly_profit_after_pullback() -> None:
         "as_of": datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc).isoformat(),
     }
     quote = SimpleNamespace(
-        price=100.6, change_percent=0.6,
+        price=101.1, change_percent=1.1,
         as_of=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
     )
 
@@ -1052,8 +1055,10 @@ def test_r2d2_harvests_seventy_percent_of_a_weekly_winner_at_trigger() -> None:
         "trend_state": "bullish", "volume_state": "accumulation", "data_status": "live",
         "as_of": datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc).isoformat(),
     }
+    # atr_percent 1.0 caps the 1R profit-trigger floor at 1.5% now; raised
+    # from the pre-1R-floor 0.97% so the harvest still fires.
     quote = SimpleNamespace(
-        price=100.97, change_percent=0.97,
+        price=101.55, change_percent=1.55,
         as_of=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
     )
 
@@ -1093,8 +1098,10 @@ def test_r2d2_harvests_tactical_profit_above_cost_aware_trigger() -> None:
         "trend_state": "bullish", "volume_state": "neutral", "data_status": "live",
         "as_of": datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc).isoformat(),
     }
+    # atr_percent 1.0 caps the 1R profit-trigger floor at 1.5% now; raised
+    # from the pre-1R-floor 1.1% so the harvest still fires.
     quote = SimpleNamespace(
-        price=101.1, change_percent=1.1,
+        price=101.6, change_percent=1.6,
         as_of=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
     )
 
@@ -1125,7 +1132,9 @@ def test_r2d2_locks_an_armed_profit_after_pullback() -> None:
     )
     position = service.repo.memory["positions"][("NASDAQ", "LOCK")]
     position["opened_at"] = opened
-    position["high_water_price_local"] = 101.35
+    # atr_percent 1.0 caps the 1R profit-trigger floor at 1.5% now; peak/pnl
+    # raised from the pre-1R-floor 1.35%/0.45% so the lock still fires.
+    position["high_water_price_local"] = 101.6
     service._technical_snapshot = lambda item: {  # type: ignore[method-assign]
         "score": 58.0, "atr": 1.0, "atr_percent": 1.0, "vwap": 100.4,
         "ema8": 100.5, "ema20": 100.3, "macd_histogram": 0.1,
@@ -1134,7 +1143,7 @@ def test_r2d2_locks_an_armed_profit_after_pullback() -> None:
         "as_of": datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc).isoformat(),
     }
     quote = SimpleNamespace(
-        price=100.45, change_percent=0.45,
+        price=101.0, change_percent=1.0,
         as_of=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
     )
 

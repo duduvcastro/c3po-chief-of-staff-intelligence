@@ -597,6 +597,17 @@ def exit_decision(
     hard_stop = average_cost * (1 - effective_max_loss_percent / 100)
     stop = max(stop, hard_stop)
     soft_loss_threshold = max(soft_loss_exit_percent, min(0.7, atr_percent * 0.4))
+    # 1R floor (root-caused 2026-08-20 against real fills: tactical harvests
+    # averaged +$290 and early-gain-protection +$55 against a hard stop
+    # averaging -$477 the same day): every profit-harvest rule below used to
+    # gate on the same flat PROFIT_TRIGGER_PERCENT regardless of how wide this
+    # position's own ATR-derived stop is. On a volatile name the stop can
+    # reach 1.5%, while profit was still realized at 0.65% -- more than 2x
+    # smaller than the loss the position was exposed to. The trigger now
+    # never sits below the stop distance itself (1R), so a name wide enough
+    # to need a 1.5% stop also needs a 1.5%+ gain before any harvest rule
+    # locks it in.
+    profit_trigger_percent = max(PROFIT_TRIGGER_PERCENT, effective_max_loss_percent)
     if peak_pnl_pct >= 8.0:
         stop = max(stop, average_cost * 1.04, high_water - max(atr * 1.5, high_water * 0.0175))
     elif peak_pnl_pct >= 4.0:
@@ -664,17 +675,17 @@ def exit_decision(
         reason = f"Defensive loss exit at {pnl_pct:+.2f}% on a live quote; dynamic defense was {soft_loss_threshold:.2f}% and the multicriteria defense score reached {defense['score']:.0f}/100."
     elif quote_price <= stop and defense["actionable"] and defense["score"] >= 45 and stop_breaches >= 2:
         reason = f"Adaptive intraday stop executed at {stop:.2f} after two live confirmations; defense score {defense['score']:.0f}/100."
-    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
+    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and peak_pnl_pct >= profit_trigger_percent and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
         reason = f"Weekly-conviction profit locked at {pnl_pct:+.2f}% after a pullback from the {peak_pnl_pct:+.2f}% peak before the first harvest; the position was released for same-cycle replacement."
-    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and pnl_pct >= PROFIT_TRIGGER_PERCENT:
+    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and pnl_pct >= profit_trigger_percent:
         sell_fraction = WEEKLY_PROFIT_HARVEST_FRACTION
         profit_harvest_count = 1
         reason = f"Weekly-conviction profit layer harvested at {pnl_pct:+.2f}%: {WEEKLY_PROFIT_HARVEST_FRACTION * 100:.0f}% of the position was realized and the remainder stays under the live profit lock."
-    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count >= 1 and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
+    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count >= 1 and peak_pnl_pct >= profit_trigger_percent and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
         reason = f"Weekly-conviction remainder locked at {pnl_pct:+.2f}% after a pullback from the {peak_pnl_pct:+.2f}% peak; the protected balance was released for replacement."
-    elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and pnl_pct >= PROFIT_TRIGGER_PERCENT:
-        reason = f"Tactical profit harvested at {pnl_pct:+.2f}% after reaching the {PROFIT_TRIGGER_PERCENT:.2f}% execution trigger; capital released for same-cycle replacement."
-    elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and peak_pnl_pct >= PROFIT_TRIGGER_PERCENT and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
+    elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and pnl_pct >= profit_trigger_percent:
+        reason = f"Tactical profit harvested at {pnl_pct:+.2f}% after reaching the {profit_trigger_percent:.2f}% execution trigger (1R); capital released for same-cycle replacement."
+    elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and peak_pnl_pct >= profit_trigger_percent and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
         reason = f"Armed profit locked at {pnl_pct:+.2f}% after a pullback from the {peak_pnl_pct:+.2f}% peak; capital released for same-cycle replacement."
     elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 0.75 and bearish_votes >= 1 and technical_score < 60:
         reason = f"Early tactical profit harvested at {pnl_pct:+.2f}% as live momentum weakened; technical score {technical_score:.0f}/100."
@@ -691,7 +702,7 @@ def exit_decision(
         reason = f"Early gain protection at {pnl_pct:+.2f}%: {failed_entry_votes}/5 live timing signals reversed before the position could round-trip into a loss."
     elif held_minutes >= MIN_HOLD_MINUTES and technical_score < 32 and bearish_votes >= 4:
         reason = f"Trend breakdown confirmed by {bearish_votes} signals; technical score {technical_score:.0f}/100."
-    elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct < PROFIT_TRIGGER_PERCENT and defense_reductions == 0 and defense["actionable"] and defense["score"] >= 55 and defense_streak >= 2:
+    elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct < profit_trigger_percent and defense_reductions == 0 and defense["actionable"] and defense["score"] >= 55 and defense_streak >= 2:
         sell_fraction = 0.5
         defense_reductions = 1
         reason = f"Progressive technical-defense reduction: 50% of the position released at {pnl_pct:+.2f}% after {defense_streak} reviews; {'; '.join(defense['drivers'][:3])}."
