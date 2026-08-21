@@ -84,6 +84,7 @@ type ViewKey =
   | "alerts"
   | "health"
   | "serverusage"
+  | "leah"
   | "helm";
 
 interface AuthSession {
@@ -1250,7 +1251,8 @@ const navItems: { key: ViewKey; label: string; icon: ComponentType<{ size?: numb
   { key: "finance", label: "Midi-Chlorians Finance", icon: MidiChloriansFinanceIcon },
   { key: "alerts", label: "Radar Alerts", icon: RadarAlertsIcon },
   { key: "health", label: "Storm Troops", icon: StormTroopsIcon },
-  { key: "serverusage", label: "TIE Fighter Usage", icon: TieFighterUsageIcon }
+  { key: "serverusage", label: "TIE Fighter Usage", icon: TieFighterUsageIcon },
+  { key: "leah", label: "Leah Cloud", icon: Cloud }
 ];
 
 const viewIcons: Record<ViewKey, ComponentType<{ size?: number }>> = {
@@ -1271,6 +1273,7 @@ const viewIcons: Record<ViewKey, ComponentType<{ size?: number }>> = {
   alerts: RadarAlertsIcon,
   health: StormTroopsIcon,
   serverusage: TieFighterUsageIcon,
+  leah: Cloud,
   helm: DeathStarIcon
 };
 
@@ -1298,6 +1301,7 @@ const viewTitles: Record<ViewKey, { title: string; eyebrow: string }> = {
   alerts: { title: "Radar Alerts", eyebrow: "Protocol intelligence · Exceptions requiring attention" },
   health: { title: "Storm Troops", eyebrow: "Operational readiness · Services, sources and scheduled jobs" },
   serverusage: { title: "TIE Fighter Usage", eyebrow: "AWS telemetry · Lightsail infrastructure" },
+  leah: { title: "Leah Cloud", eyebrow: "Personal cloud · Agenda and tasks" },
   helm: { title: "Death Star", eyebrow: "Access control · Authorized crew and module permissions" }
 };
 
@@ -2387,7 +2391,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
           <div className="topbar-actions">
             <div className="as-of">
               <Clock3 size={15} />
-              <span>{activeView === "home" ? "C3PO protocol online" : activeView === "relations" ? "Regulatory feed live" : activeView === "news" ? "Headlines live" : activeView === "r2d2" ? "Paper portfolio ready" : activeView === "intelligence" ? "Valuation audit live" : activeView === "health" ? "Consolidated checks live" : activeView === "serverusage" ? "AWS telemetry live" : activeView === "weather" ? "Dagobah models live" : `As of ${formatDate(data?.generated_at)}`}</span>
+              <span>{activeView === "home" ? "C3PO protocol online" : activeView === "relations" ? "Regulatory feed live" : activeView === "news" ? "Headlines live" : activeView === "r2d2" ? "Paper portfolio ready" : activeView === "intelligence" ? "Valuation audit live" : activeView === "health" ? "Consolidated checks live" : activeView === "serverusage" ? "AWS telemetry live" : activeView === "leah" ? "Personal iCloud workspace" : activeView === "weather" ? "Dagobah models live" : `As of ${formatDate(data?.generated_at)}`}</span>
             </div>
             <button className="icon-button" onClick={loadData} disabled={loading} aria-label="Refresh data" title="Refresh data">
               <RefreshCw size={18} className={loading ? "spin" : ""} />
@@ -2420,6 +2424,8 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
                     ? "Histórico permanente das alterações de valuation, com gatilho, fonte e metodologia."
                   : activeView === "serverusage"
                     ? "CPU and storage telemetry for the infrastructure running C3PO."
+                    : activeView === "leah"
+                      ? "Sua agenda e suas tarefas em uma área pessoal, separada para cada usuário."
                     : activeView === "health"
                       ? "Cloudflare, APIs, Open Finance, AWS, market data, official sources and automatic routines in one operational view."
                     : activeView === "weather"
@@ -2432,9 +2438,9 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
             <div className={`page-heading-mark page-heading-mark-${activeView}`} role="img" aria-label={`${viewTitles[activeView].title} logo`}>
               <ActiveViewIcon size={98} />
             </div>
-            <div className={`freshness freshness-${activeView === "relations" || activeView === "news" || activeView === "r2d2" || activeView === "intelligence" || activeView === "health" || activeView === "serverusage" || activeView === "weather" ? "current" : data?.provenance.status ?? "unavailable"}`}>
+            <div className={`freshness freshness-${activeView === "leah" ? "unavailable" : activeView === "relations" || activeView === "news" || activeView === "r2d2" || activeView === "intelligence" || activeView === "health" || activeView === "serverusage" || activeView === "weather" ? "current" : data?.provenance.status ?? "unavailable"}`}>
               <ShieldCheck size={16} />
-              <span>{activeView === "command" ? "R2D2 + Master Luke + Storm Troops" : activeView === "relations" ? "CVM / SEC official sources" : activeView === "news" ? "Globo + UOL + Bloomberg + CNBC" : activeView === "r2d2" ? "Paper strategy enabled · real brokerage disabled" : activeView === "intelligence" ? "C3PO valuation audit trail" : activeView === "health" ? "Cloudflare + APIs + Pluggy + AWS + data sources" : activeView === "serverusage" ? "60-second host samples" : activeView === "weather" ? "Open-Meteo multi-model" : data?.provenance.source ?? "Source pending"}</span>
+              <span>{activeView === "command" ? "R2D2 + Master Luke + Storm Troops" : activeView === "relations" ? "CVM / SEC official sources" : activeView === "news" ? "Globo + UOL + Bloomberg + CNBC" : activeView === "r2d2" ? "Paper strategy enabled · real brokerage disabled" : activeView === "intelligence" ? "C3PO valuation audit trail" : activeView === "health" ? "Cloudflare + APIs + Pluggy + AWS + data sources" : activeView === "serverusage" ? "60-second host samples" : activeView === "leah" ? "iCloud connection pending" : activeView === "weather" ? "Open-Meteo multi-model" : data?.provenance.source ?? "Source pending"}</span>
             </div>
           </div>}
 
@@ -2508,6 +2514,7 @@ function ViewRouter({
   if (activeView === "intelligence") return <IQRecordsView />;
   if (activeView === "health") return <HealthView data={systemHealth} />;
   if (activeView === "serverusage") return <ServerUsageView pageLoadAverageMs={pageLoadAverageMs} pageLoadSampleCount={pageLoadSampleCount} />;
+  if (activeView === "leah") return <LeahCloudView session={session} />;
   if (activeView === "alerts") return <AlertsView onRead={onAlertsRead} />;
   if (activeView === "finance") return <FinanceView refreshKey={financeRefreshKey} />;
   if (activeView === "candidates") return <CandidatesView reports={reports} marketProviders={marketProviders} />;
@@ -2515,6 +2522,88 @@ function ViewRouter({
   if (activeView === "onepager") return <OnePagerView canGenerate={canGenerateOnePagers} />;
   if (activeView === "command") return <MillenniumFalconView systemHealth={systemHealth} />;
   return <LoadingState />;
+}
+
+type LeahCloudTab = "agenda" | "tasks";
+
+function LeahCloudView({ session }: { session: AuthSession }) {
+  const [activeTab, setActiveTab] = useState<LeahCloudTab>("agenda");
+  const today = new Intl.DateTimeFormat("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long"
+  }).format(new Date());
+
+  return (
+    <div className="leah-cloud">
+      <section className="leah-account-band" aria-label="Conta pessoal da Leah Cloud">
+        <UserAvatar className="leah-account-avatar" displayName={session.display_name} email={session.email} />
+        <div className="leah-account-copy">
+          <span>ESPAÇO PESSOAL</span>
+          <strong>{session.display_name || session.email || "Usuário C3PO"}</strong>
+          <small>{session.email}</small>
+        </div>
+        <div className="leah-connection-state" role="status">
+          <i aria-hidden="true" />
+          <div><span>ICLOUD</span><strong>Aguardando conexão</strong></div>
+        </div>
+      </section>
+
+      <div className="leah-tabs" role="tablist" aria-label="Áreas da Leah Cloud">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "agenda"}
+          className={activeTab === "agenda" ? "leah-tab leah-tab-active" : "leah-tab"}
+          onClick={() => setActiveTab("agenda")}
+        >
+          <CalendarDays size={17} />
+          <span>Agenda</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "tasks"}
+          className={activeTab === "tasks" ? "leah-tab leah-tab-active" : "leah-tab"}
+          onClick={() => setActiveTab("tasks")}
+        >
+          <BookOpenCheck size={17} />
+          <span>Tarefas</span>
+        </button>
+      </div>
+
+      {activeTab === "agenda" ? (
+        <section className="leah-workspace" role="tabpanel" aria-label="Agenda">
+          <header className="leah-workspace-head">
+            <div><span>HOJE</span><h2>{today}</h2></div>
+            <div className="leah-count"><strong>0</strong><span>eventos</span></div>
+          </header>
+          <div className="leah-empty-state">
+            <span className="leah-empty-icon"><CalendarDays size={26} /></span>
+            <strong>Nenhuma agenda sincronizada</strong>
+            <small>Os calendários deste usuário aparecerão aqui quando o agente pessoal estiver conectado.</small>
+          </div>
+        </section>
+      ) : (
+        <section className="leah-workspace" role="tabpanel" aria-label="Tarefas">
+          <header className="leah-workspace-head">
+            <div><span>PENDÊNCIAS</span><h2>Tarefas</h2></div>
+            <div className="leah-count"><strong>0</strong><span>abertas</span></div>
+          </header>
+          <div className="leah-task-summary" aria-label="Resumo das tarefas">
+            <div><span>Hoje</span><strong>0</strong></div>
+            <div><span>Próximas</span><strong>0</strong></div>
+            <div><span>Concluídas</span><strong>0</strong></div>
+          </div>
+          <div className="leah-empty-state leah-empty-state-tasks">
+            <span className="leah-empty-icon"><BookOpenCheck size={26} /></span>
+            <strong>Nenhuma lista sincronizada</strong>
+            <small>As tarefas deste usuário aparecerão aqui quando o agente pessoal estiver conectado.</small>
+          </div>
+        </section>
+      )}
+    </div>
+  );
 }
 
 function R2D2RisingView() {

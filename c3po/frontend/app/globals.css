@@ -199,6 +199,39 @@ button { cursor: pointer; }
 .page-heading-mark { width: 112px; height: 112px; display: grid; place-items: center; overflow: hidden; color: var(--gold-bright); background: #101115; border: 1px solid #8c6b1b; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.045), 0 8px 22px rgba(23,25,30,.08); }
 .page-heading-mark > img { width: 106px; height: 106px; object-fit: contain; }
 .page-heading-mark > svg { width: 48px; height: 48px; stroke-width: 1.6; filter: drop-shadow(0 0 8px rgba(226,184,61,.22)); }
+
+.leah-cloud { display: grid; gap: 16px; }
+.leah-account-band { min-height: 92px; display: grid; grid-template-columns: 48px minmax(0, 1fr) minmax(210px, auto); align-items: center; gap: 14px; padding: 16px 20px; border: 1px solid #d9dcdf; border-radius: 7px; background: #fff; box-shadow: 0 2px 3px rgba(22,25,30,.04); }
+.leah-account-avatar { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: var(--gold-deep); background: var(--gold-soft); border: 1px solid #d5b75d; font-size: 13px; font-weight: 900; }
+.leah-account-copy { min-width: 0; }
+.leah-account-copy > span, .leah-workspace-head > div > span { display: block; color: #7d682a; font-size: 8px; font-weight: 900; text-transform: uppercase; }
+.leah-account-copy strong { display: block; margin-top: 4px; font-size: 15px; }
+.leah-account-copy small { display: block; margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.leah-connection-state { min-height: 48px; display: flex; align-items: center; gap: 10px; padding-left: 18px; border-left: 1px solid var(--line); }
+.leah-connection-state > i { width: 9px; height: 9px; border-radius: 2px; background: #d89c42; box-shadow: 0 0 0 4px rgba(216,156,66,.12); }
+.leah-connection-state span { display: block; color: #8a919b; font-size: 8px; font-weight: 900; }
+.leah-connection-state strong { display: block; margin-top: 4px; font-size: 10px; }
+.leah-tabs { width: fit-content; display: grid; grid-template-columns: repeat(2, 146px); gap: 3px; padding: 3px; border: 1px solid #d9dcdf; border-radius: 6px; background: #e9ebed; }
+.leah-tab { height: 38px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 4px; color: #67707b; background: transparent; font-size: 11px; font-weight: 800; }
+.leah-tab:hover { color: var(--ink); }
+.leah-tab-active { color: #fff; background: #17191e; box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.leah-tab-active svg { color: var(--gold-bright); }
+.leah-workspace { min-height: 420px; border: 1px solid #d9dcdf; border-radius: 7px; overflow: hidden; background: #fff; box-shadow: 0 2px 3px rgba(22,25,30,.04); }
+.leah-workspace-head { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 15px 20px; border-bottom: 1px solid var(--line); }
+.leah-workspace-head h2 { margin: 5px 0 0; font-size: 18px; }
+.leah-count { min-width: 76px; display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; }
+.leah-count strong { font-size: 22px; }
+.leah-count span { color: var(--muted); font-size: 9px; font-weight: 700; }
+.leah-task-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--line); background: #fafafa; }
+.leah-task-summary > div { min-height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-right: 1px solid var(--line); }
+.leah-task-summary > div:last-child { border-right: 0; }
+.leah-task-summary span { color: var(--muted); font-size: 10px; font-weight: 800; }
+.leah-task-summary strong { font-size: 18px; }
+.leah-empty-state { min-height: 342px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; text-align: center; }
+.leah-empty-state-tasks { min-height: 273px; }
+.leah-empty-icon { width: 52px; height: 52px; display: grid; place-items: center; margin-bottom: 14px; border: 1px solid #dbc880; border-radius: 6px; color: #8b6b18; background: var(--gold-soft); }
+.leah-empty-state strong { font-size: 13px; }
+.leah-empty-state small { max-width: 430px; margin-top: 7px; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .freshness { min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: #fff; font-size: 11px; font-weight: 700; }
 .freshness-fresh { color: var(--gold-deep); border-color: #dfca8b; background: var(--gold-soft); }
 .freshness-stale { color: var(--amber); border-color: #ead2a9; background: var(--amber-soft); }
@@ -2208,4 +2241,19 @@ button { cursor: pointer; }
   .c3po-opening-viewport { position: relative; min-height: 100vh; overflow-y: auto; perspective: none; }
   .c3po-opening-viewport::after { display: none; }
   .c3po-opening-crawl { position: relative; top: auto; left: auto; width: min(760px, calc(100% - 40px)); margin: 88px auto 60px; opacity: 1; transform: none; }
+}
+
+@media (max-width: 720px) {
+  .leah-account-band { grid-template-columns: 42px minmax(0, 1fr); gap: 11px; padding: 14px; }
+  .leah-account-avatar { width: 42px; height: 42px; }
+  .leah-connection-state { grid-column: 1 / -1; min-height: 42px; padding: 11px 0 0; border-top: 1px solid var(--line); border-left: 0; }
+  .leah-tabs { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .leah-workspace { min-height: 360px; }
+  .leah-workspace-head { min-height: 70px; padding: 13px 14px; }
+  .leah-workspace-head h2 { font-size: 15px; }
+  .leah-task-summary > div { min-height: 60px; padding: 0 10px; }
+  .leah-task-summary span { font-size: 8px; }
+  .leah-task-summary strong { font-size: 15px; }
+  .leah-empty-state { min-height: 288px; padding: 24px 18px; }
+  .leah-empty-state-tasks { min-height: 220px; }
 }

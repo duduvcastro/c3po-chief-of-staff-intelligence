@@ -17,6 +17,7 @@ VIEW_PERMISSIONS: dict[str, str] = {
     "alerts": "Radar Alerts",
     "health": "Storm Troops",
     "serverusage": "Server Usage",
+    "leah": "Leah Cloud",
 }
 
 ALL_VIEW_PERMISSIONS = tuple(VIEW_PERMISSIONS)
