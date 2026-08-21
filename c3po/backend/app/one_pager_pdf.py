@@ -224,9 +224,13 @@ class PremiumOnePagerRenderer:
     ) -> None:
         self._rounded_box(pdf, x, y, w, h, fill=colors.HexColor("#FBFCFE"))
         self._section_title(pdf, "Performance 12m + valuation", x + 11, y + h - 20, w - 22, BLUE)
-        pdf.setFillColor(SUB)
-        pdf.setFont("Helvetica-Oblique", 4.6)
-        pdf.drawRightString(x + w - 11, y + h - 16.5, f"perfil: {self._profile_label(data.get('profile'))}")
+        caption = f"perfil: {self._profile_label(data.get('profile'))}"
+        if data.get("low_conviction"):
+            caption += "  ·  baixa convicção (modelos divergem)"
+        pdf.setFillColor(AMBER if data.get("low_conviction") else SUB)
+        caption_font = self._fit_font(caption, "Helvetica-Oblique", 4.6, 3.4, w - 150)
+        pdf.setFont("Helvetica-Oblique", caption_font)
+        pdf.drawRightString(x + w - 11, y + h - 16.5, caption)
         self._performance_chart(pdf, x + 10, y + 112, w - 20, 91, data, history)
 
         pdf.setFillColor(LIGHT)
@@ -523,6 +527,20 @@ class PremiumOnePagerRenderer:
     def _scenario_box(self, pdf: canvas.Canvas, x: float, y: float, w: float, h: float, data: dict[str, Any]) -> None:
         self._rounded_box(pdf, x, y, w, h)
         self._section_title(pdf, "Cenários de preço-alvo", x + 11, y + h - 20, w - 22, GOLD)
+        # Real Street high/low (per-analyst extremes from FMP), shown as a
+        # genuine external comparison alongside our own Bear/Bull -- never
+        # used as a floor/cap on our own scenarios (see one_pager.py's
+        # street_high/street_low: a single outlier analyst shouldn't
+        # override our model).
+        if data.get("street_low") and data.get("street_high"):
+            street_text = (
+                f"Street: {self._money(data['street_low'], data['currency'], decimals=0)} - "
+                f"{self._money(data['street_high'], data['currency'], decimals=0)} (extremos entre analistas)"
+            )
+            pdf.setFillColor(SUB)
+            street_font = self._fit_font(street_text, "Helvetica-Oblique", 4.6, 3.6, w - 22)
+            pdf.setFont("Helvetica-Oblique", street_font)
+            pdf.drawRightString(x + w - 11, y + h - 30, street_text)
         scenario_colors = (
             (RED, RED_LIGHT, colors.HexColor("#F2B8B5")),
             (BLUE, BLUE_LIGHT, colors.HexColor("#A9D3EE")),
