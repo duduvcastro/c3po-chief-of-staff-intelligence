@@ -11,6 +11,7 @@ from .market_data.b3_screener import B3ScreenerService
 from .market_data.service import MarketDataService
 from .market_data.realtime import RealtimeMarketsService
 from .market_data.eodhd_stream import EodhdRealtimeStream
+from .microstructure_capture import AppendOnlyRawStreamCapture
 from .one_pager import OnePagerService
 from .r2d2 import R2D2PaperService
 
@@ -56,7 +57,19 @@ def main() -> None:
     database = Database(settings)
     database.initialize()
     market_data = MarketDataService(settings, database)
-    stream = EodhdRealtimeStream(settings.eodhd_api_token, max_symbols=settings.r2d2_ws_max_symbols)
+    raw_capture = None
+    if settings.r2d2_microstructure_raw_capture_enabled:
+        raw_capture = AppendOnlyRawStreamCapture(
+            settings.r2d2_microstructure_raw_dir,
+            queue_size=settings.r2d2_microstructure_raw_queue_size,
+            rotate_bytes=settings.r2d2_microstructure_raw_rotate_mb * 1024 * 1024,
+            flush_every=settings.r2d2_microstructure_raw_flush_every,
+        )
+    stream = EodhdRealtimeStream(
+        settings.eodhd_api_token,
+        max_symbols=settings.r2d2_ws_max_symbols,
+        raw_capture=raw_capture,
+    )
     stream.start()
     realtime = RealtimeMarketsService(settings, database, market_data.http, stream=stream)
     screener = B3ScreenerService(settings, database, market_data.http)
@@ -111,6 +124,15 @@ def main() -> None:
                     dashboard.last_cycle.status if dashboard.last_cycle else "initialized",
                     dashboard.nav_usd, dashboard.cash_usd, dashboard.open_positions, stream.status,
                 )
+                if scan_entries and raw_capture:
+                    capture_stats = raw_capture.stats()
+                    logger.info(
+                        "R2D2 microstructure raw capture accepted=%d written=%d dropped=%d errors=%d",
+                        capture_stats.accepted,
+                        capture_stats.written,
+                        capture_stats.dropped,
+                        capture_stats.write_errors,
+                    )
             except Exception:
                 logger.exception("Unhandled R2D2 worker error")
             time.sleep(20)

@@ -131,6 +131,8 @@ services:
       C3PO_R2D2_MAX_DAILY_ORDERS: ${C3PO_R2D2_MAX_DAILY_ORDERS:-500}
       TZ: America/Sao_Paulo
     command: ["python", "-m", "app.r2d2_worker"]
+    volumes:
+      - c3po_microstructure_raw:/app/microstructure-raw
     depends_on:
       db:
         condition: service_healthy
@@ -158,6 +160,7 @@ services:
 volumes:
   c3po_postgres:
   c3po_one_pagers:
+  c3po_microstructure_raw:
 
 networks:
   c3po_internal:

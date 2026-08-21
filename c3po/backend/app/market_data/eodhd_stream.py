@@ -10,6 +10,8 @@ from typing import Any
 
 import websockets
 
+from ..microstructure_capture import RawStreamCapture
+
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,13 @@ class EodhdStreamBar:
 class EodhdRealtimeStream:
     """Maintains EODHD US trade and quote streams for one symbol set."""
 
-    def __init__(self, api_token: str, *, max_symbols: int = 50) -> None:
+    def __init__(
+        self,
+        api_token: str,
+        *,
+        max_symbols: int = 50,
+        raw_capture: RawStreamCapture | None = None,
+    ) -> None:
         self.api_token = api_token.strip()
         self.max_symbols = max_symbols
         self._lock = RLock()
@@ -51,10 +59,13 @@ class EodhdRealtimeStream:
         self._feed_errors = {"trade": "", "quote": ""}
         self._stop = Event()
         self._thread: Thread | None = None
+        self._raw_capture = raw_capture
 
     def start(self) -> None:
         if not self.api_token or (self._thread and self._thread.is_alive()):
             return
+        if self._raw_capture:
+            self._raw_capture.start()
         self._stop.clear()
         self._thread = Thread(target=self._thread_main, name="eodhd-realtime", daemon=True)
         self._thread.start()
@@ -63,6 +74,8 @@ class EodhdRealtimeStream:
         self._stop.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=4)
+        if self._raw_capture:
+            self._raw_capture.stop()
 
     def set_group(self, name: str, symbols: list[str], *, priority: int = 50) -> None:
         cleaned = tuple(dict.fromkeys(
@@ -198,6 +211,8 @@ class EodhdRealtimeStream:
     def _record(self, payload: str | bytes) -> None:
         if isinstance(payload, bytes):
             payload = payload.decode("utf-8", errors="replace")
+        if self._raw_capture:
+            self._raw_capture.record("trade", payload, received_at=datetime.now(timezone.utc))
         try:
             item: dict[str, Any] = json.loads(payload)
         except (TypeError, json.JSONDecodeError):
@@ -255,6 +270,8 @@ class EodhdRealtimeStream:
     def _record_quote(self, payload: str | bytes) -> None:
         if isinstance(payload, bytes):
             payload = payload.decode("utf-8", errors="replace")
+        if self._raw_capture:
+            self._raw_capture.record("quote", payload, received_at=datetime.now(timezone.utc))
         try:
             item: dict[str, Any] = json.loads(payload)
         except (TypeError, json.JSONDecodeError):
