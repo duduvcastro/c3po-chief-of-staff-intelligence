@@ -2675,7 +2675,6 @@ function R2D2RisingView() {
   const learningMovingAveragePath = learningMovingAveragePoints
     .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
     .join(" ");
-  const learningMedianY = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (learningPositiveMedian / 100) * LEARNING_PLOT_HEIGHT;
   const showAllocationTooltip = (
     event: ReactPointerEvent<SVGCircleElement>,
     item: (typeof allocationSlices)[number]
@@ -2925,15 +2924,6 @@ function R2D2RisingView() {
                   </g>
                 );
               })}
-              {learningCurve.length > 1 ? (
-                <line
-                  x1={LEARNING_PLOT_LEFT} x2={learningChartWidth}
-                  y1={learningMedianY} y2={learningMedianY}
-                  className="r2d2-learning-median-line"
-                >
-                  <title>{`Mediana positiva: ${learningPositiveMedian.toFixed(1)}%`}</title>
-                </line>
-              ) : null}
               {learningMovingAveragePoints.length > 1 ? (
                 <path d={learningMovingAveragePath} className="r2d2-learning-ma-line" />
               ) : null}
@@ -2944,11 +2934,9 @@ function R2D2RisingView() {
               ))}
               {learningMovingAveragePoints.length ? (
                 <g>
-                  <rect x={learningChartWidth - 440} y={4} width={436} height={18} rx={9} className="r2d2-learning-ma-badge" />
-                  <rect x={learningChartWidth - 428} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-trades" />
-                  <text x={learningChartWidth - 417} y={13} className="r2d2-learning-legend-label">Transações</text>
-                  <line x1={learningChartWidth - 338} x2={learningChartWidth - 324} y1={13} y2={13} className="r2d2-learning-median-legend-line" />
-                  <text x={learningChartWidth - 318} y={13} className="r2d2-learning-legend-label">{`Mediana ${learningPositiveMedian.toFixed(1)}%`}</text>
+                  <rect x={learningChartWidth - 350} y={4} width={346} height={18} rx={9} className="r2d2-learning-ma-badge" />
+                  <rect x={learningChartWidth - 338} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-trades" />
+                  <text x={learningChartWidth - 327} y={13} className="r2d2-learning-legend-label">Transações</text>
                   <rect x={learningChartWidth - 252} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-positive" />
                   <text x={learningChartWidth - 241} y={13} className="r2d2-learning-legend-label">Positivas</text>
                   <rect x={learningChartWidth - 178} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-negative" />
