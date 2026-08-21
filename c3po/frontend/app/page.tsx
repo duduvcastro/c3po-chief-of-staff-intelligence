@@ -105,6 +105,36 @@ interface AuthSession {
   browser: string | null;
 }
 
+interface LeahDevice {
+  id: string;
+  name: string;
+  platform: string;
+  calendar_authorized: boolean;
+  reminders_authorized: boolean;
+  last_seen_at: string | null;
+  created_at: string;
+}
+
+interface LeahItem {
+  id: string;
+  kind: "event" | "task";
+  title: string;
+  notes: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  due_at: string | null;
+  is_all_day: boolean;
+  is_completed: boolean;
+  source: "icloud" | "c3po";
+  updated_at: string | null;
+}
+
+interface LeahCloudResponse {
+  connected: boolean;
+  devices: LeahDevice[];
+  items: LeahItem[];
+}
+
 interface AccessPermission {
   key: ViewKey;
   label: string;
@@ -2541,11 +2571,108 @@ type LeahCloudTab = "agenda" | "tasks";
 
 function LeahCloudView({ session }: { session: AuthSession }) {
   const [activeTab, setActiveTab] = useState<LeahCloudTab>("agenda");
+  const [data, setData] = useState<LeahCloudResponse | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [pairing, setPairing] = useState<{ code: string; expires_at: string } | null>(null);
+  const [title, setTitle] = useState("");
+  const [dateTime, setDateTime] = useState("");
   const today = new Intl.DateTimeFormat("pt-BR", {
     weekday: "long",
     day: "2-digit",
     month: "long"
   }).format(new Date());
+
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/leah`, { cache: "no-store", credentials: "include" });
+      if (!response.ok) throw new Error("Não foi possível carregar a Leah Cloud.");
+      setData(await response.json());
+      setError("");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Falha ao carregar a Leah Cloud.");
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const timer = window.setInterval(() => void load(), 15_000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  const items = data?.items ?? [];
+  const events = items.filter((item) => item.kind === "event").sort((a, b) => (a.starts_at || "").localeCompare(b.starts_at || ""));
+  const tasks = items.filter((item) => item.kind === "task").sort((a, b) => Number(a.is_completed) - Number(b.is_completed) || (a.due_at || "9999").localeCompare(b.due_at || "9999"));
+  const openTasks = tasks.filter((item) => !item.is_completed);
+  const localDay = new Date().toISOString().slice(0, 10);
+  const todayTasks = openTasks.filter((item) => item.due_at?.slice(0, 10) === localDay).length;
+  const upcomingTasks = openTasks.filter((item) => item.due_at && item.due_at.slice(0, 10) > localDay).length;
+
+  async function pairMac() {
+    setBusy(true);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/leah/pairings`, { method: "POST", credentials: "include" });
+      if (!response.ok) throw new Error("Não foi possível criar o código de conexão.");
+      setPairing(await response.json());
+      setError("");
+    } catch (pairError) {
+      setError(pairError instanceof Error ? pairError.message : "Falha ao criar código.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createItem(event: FormEvent) {
+    event.preventDefault();
+    if (!title.trim()) return;
+    setBusy(true);
+    const isEvent = activeTab === "agenda";
+    const startsAt = dateTime ? new Date(dateTime).toISOString() : null;
+    try {
+      const response = await fetch(`${API_URL}/api/v1/leah/items`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: isEvent ? "event" : "task",
+          title: title.trim(),
+          notes: "",
+          starts_at: isEvent ? startsAt : null,
+          ends_at: isEvent && startsAt ? new Date(new Date(startsAt).getTime() + 3_600_000).toISOString() : null,
+          due_at: isEvent ? null : startsAt,
+          is_all_day: false,
+          is_completed: false
+        })
+      });
+      if (!response.ok) throw new Error("Não foi possível criar o item.");
+      setTitle("");
+      setDateTime("");
+      await load();
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Falha ao criar item.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateTask(item: LeahItem) {
+    await fetch(`${API_URL}/api/v1/leah/items/${item.id}`, {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "task", title: item.title, notes: item.notes, due_at: item.due_at, is_completed: !item.is_completed })
+    });
+    await load();
+  }
+
+  async function removeItem(item: LeahItem) {
+    await fetch(`${API_URL}/api/v1/leah/items/${item.id}`, { method: "DELETE", credentials: "include" });
+    await load();
+  }
+
+  const formatItemDate = (value: string | null) => value
+    ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
+    : "Sem data";
 
   return (
     <div className="leah-cloud">
@@ -2556,11 +2683,21 @@ function LeahCloudView({ session }: { session: AuthSession }) {
           <strong>{session.display_name || session.email || "Usuário C3PO"}</strong>
           <small>{session.email}</small>
         </div>
-        <div className="leah-connection-state" role="status">
+        <div className={`leah-connection-state ${data?.connected ? "leah-connected" : ""}`} role="status">
           <i aria-hidden="true" />
-          <div><span>ICLOUD</span><strong>Aguardando conexão</strong></div>
+          <div><span>ICLOUD</span><strong>{data?.connected ? `${data.devices.length} Mac conectado` : "Aguardando conexão"}</strong></div>
+          {!data?.connected && <button type="button" className="leah-connect-button" disabled={busy} onClick={() => void pairMac()}><Plus size={15} /> Conectar este Mac</button>}
         </div>
       </section>
+
+      {pairing && (
+        <section className="leah-pairing" aria-live="polite">
+          <div><span>CÓDIGO TEMPORÁRIO</span><strong>{pairing.code}</strong></div>
+          <p>Abra o aplicativo Leah Cloud neste Mac e informe este código. Ele expira em 10 minutos.</p>
+          <button type="button" aria-label="Fechar código" onClick={() => setPairing(null)}><X size={17} /></button>
+        </section>
+      )}
+      {error && <div className="leah-error" role="alert">{error}</div>}
 
       <div className="leah-tabs" role="tablist" aria-label="Áreas da Leah Cloud">
         <button
@@ -2589,30 +2726,40 @@ function LeahCloudView({ session }: { session: AuthSession }) {
         <section className="leah-workspace" role="tabpanel" aria-label="Agenda">
           <header className="leah-workspace-head">
             <div><span>HOJE</span><h2>{today}</h2></div>
-            <div className="leah-count"><strong>0</strong><span>eventos</span></div>
+            <div className="leah-count"><strong>{events.length}</strong><span>eventos</span></div>
           </header>
-          <div className="leah-empty-state">
+          <form className="leah-create-row" onSubmit={createItem}>
+            <input aria-label="Título do evento" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Novo evento" />
+            <input aria-label="Data e hora" type="datetime-local" value={dateTime} onChange={(event) => setDateTime(event.target.value)} />
+            <button type="submit" disabled={busy || !title.trim()}><Plus size={17} /> Adicionar</button>
+          </form>
+          {events.length === 0 ? <div className="leah-empty-state">
             <span className="leah-empty-icon"><CalendarDays size={26} /></span>
             <strong>Nenhuma agenda sincronizada</strong>
             <small>Os calendários deste usuário aparecerão aqui quando o agente pessoal estiver conectado.</small>
-          </div>
+          </div> : <div className="leah-item-list">{events.map((item) => <article className="leah-item" key={item.id}><span className="leah-item-icon"><CalendarDays size={18} /></span><div><strong>{item.title}</strong><small>{formatItemDate(item.starts_at)} · {item.source === "icloud" ? "iCloud" : "Leah Cloud"}</small></div><button type="button" title="Excluir" onClick={() => void removeItem(item)}><Trash2 size={17} /></button></article>)}</div>}
         </section>
       ) : (
         <section className="leah-workspace" role="tabpanel" aria-label="Tarefas">
           <header className="leah-workspace-head">
             <div><span>PENDÊNCIAS</span><h2>Tarefas</h2></div>
-            <div className="leah-count"><strong>0</strong><span>abertas</span></div>
+            <div className="leah-count"><strong>{openTasks.length}</strong><span>abertas</span></div>
           </header>
           <div className="leah-task-summary" aria-label="Resumo das tarefas">
-            <div><span>Hoje</span><strong>0</strong></div>
-            <div><span>Próximas</span><strong>0</strong></div>
-            <div><span>Concluídas</span><strong>0</strong></div>
+            <div><span>Hoje</span><strong>{todayTasks}</strong></div>
+            <div><span>Próximas</span><strong>{upcomingTasks}</strong></div>
+            <div><span>Concluídas</span><strong>{tasks.length - openTasks.length}</strong></div>
           </div>
-          <div className="leah-empty-state leah-empty-state-tasks">
+          <form className="leah-create-row" onSubmit={createItem}>
+            <input aria-label="Título da tarefa" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Nova tarefa" />
+            <input aria-label="Prazo" type="datetime-local" value={dateTime} onChange={(event) => setDateTime(event.target.value)} />
+            <button type="submit" disabled={busy || !title.trim()}><Plus size={17} /> Adicionar</button>
+          </form>
+          {tasks.length === 0 ? <div className="leah-empty-state leah-empty-state-tasks">
             <span className="leah-empty-icon"><BookOpenCheck size={26} /></span>
             <strong>Nenhuma lista sincronizada</strong>
             <small>As tarefas deste usuário aparecerão aqui quando o agente pessoal estiver conectado.</small>
-          </div>
+          </div> : <div className="leah-item-list">{tasks.map((item) => <article className={`leah-item ${item.is_completed ? "leah-item-complete" : ""}`} key={item.id}><button type="button" className="leah-check" title={item.is_completed ? "Reabrir" : "Concluir"} onClick={() => void updateTask(item)}>{item.is_completed ? <Check size={16} /> : null}</button><div><strong>{item.title}</strong><small>{formatItemDate(item.due_at)} · {item.source === "icloud" ? "Lembretes" : "Leah Cloud"}</small></div><button type="button" title="Excluir" onClick={() => void removeItem(item)}><Trash2 size={17} /></button></article>)}</div>}
         </section>
       )}
     </div>

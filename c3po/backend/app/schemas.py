@@ -12,6 +12,82 @@ class Provenance(BaseModel):
     status: Literal["fresh", "stale", "unavailable"]
 
 
+class LeahDevice(BaseModel):
+    id: str
+    name: str
+    platform: str
+    calendar_authorized: bool = False
+    reminders_authorized: bool = False
+    last_seen_at: datetime | None = None
+    created_at: datetime
+
+
+class LeahItem(BaseModel):
+    id: str | None = None
+    kind: Literal["event", "task"]
+    external_id: str | None = None
+    container_id: str | None = None
+    title: str = Field(min_length=1, max_length=500)
+    notes: str = Field(default="", max_length=10_000)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    due_at: datetime | None = None
+    is_all_day: bool = False
+    is_completed: bool = False
+    source: Literal["icloud", "c3po"] = "c3po"
+    source_device_id: str | None = None
+    source_modified_at: datetime | None = None
+    deleted_at: datetime | None = None
+    version: int = 1
+    updated_at: datetime | None = None
+
+
+class LeahItemWriteRequest(BaseModel):
+    kind: Literal["event", "task"]
+    title: str = Field(min_length=1, max_length=500)
+    notes: str = Field(default="", max_length=10_000)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    due_at: datetime | None = None
+    is_all_day: bool = False
+    is_completed: bool = False
+
+
+class LeahCloudResponse(BaseModel):
+    generated_at: datetime
+    connected: bool
+    devices: list[LeahDevice]
+    items: list[LeahItem]
+
+
+class LeahPairingResponse(BaseModel):
+    code: str
+    expires_at: datetime
+
+
+class LeahAgentPairRequest(BaseModel):
+    code: str = Field(min_length=8, max_length=8)
+    name: str = Field(min_length=1, max_length=120)
+    platform: str = Field(default="macOS", max_length=80)
+
+
+class LeahAgentPairResponse(BaseModel):
+    token: str
+    device: LeahDevice
+
+
+class LeahAgentSyncRequest(BaseModel):
+    cursor: datetime | None = None
+    calendar_authorized: bool = False
+    reminders_authorized: bool = False
+    items: list[LeahItem] = Field(default_factory=list, max_length=10_000)
+
+
+class LeahAgentSyncResponse(BaseModel):
+    cursor: datetime
+    items: list[LeahItem]
+
+
 class WeatherHour(BaseModel):
     time: str
     temperature_c: float | None = None

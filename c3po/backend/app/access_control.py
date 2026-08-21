@@ -43,6 +43,8 @@ def normalize_capabilities(values: list[str] | tuple[str, ...] | None) -> list[s
 
 def required_capability(path: str, method: str) -> str | None:
     normalized_method = method.upper()
+    if path.startswith("/api/v1/leah/"):
+        return "read"
     if normalized_method in {"GET", "HEAD"}:
         return "read"
     if normalized_method == "POST" and path in {"/api/v1/alerts/read", "/api/v1/navigation-seen"}:
@@ -59,6 +61,7 @@ def required_capability(path: str, method: str) -> str | None:
 def required_permissions(path: str) -> tuple[str, ...]:
     mappings: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("/api/v1/server-usage", ("serverusage",)),
+        ("/api/v1/leah", ("leah",)),
         ("/api/v1/weather", ("weather",)),
         ("/api/v1/news", ("news",)),
         ("/api/v1/open-finance", ("finance",)),

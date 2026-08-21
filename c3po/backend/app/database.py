@@ -35,6 +35,9 @@ class Database:
         self._ir_security_map: dict[tuple[str, str], str] = {}
         self._ir_events: dict[tuple[str, str], dict[str, Any]] = {}
         self._ir_valuation_queue: dict[tuple[str, str], dict[str, Any]] = {}
+        self._leah_pairings: dict[str, dict[str, Any]] = {}
+        self._leah_devices: dict[str, dict[str, Any]] = {}
+        self._leah_items: dict[str, dict[str, Any]] = {}
 
     @contextmanager
     def connection(self) -> Iterator[Any]:
@@ -81,6 +84,313 @@ class Database:
             )
             connection.commit()
         return payload["id"]
+
+    def create_leah_pairing(self, payload: dict[str, Any]) -> None:
+        if not self.database_url:
+            self._leah_pairings[payload["code_hash"]] = payload.copy()
+            return
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO leah_pairing_codes
+                    (id, owner_email, code_hash, expires_at, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    payload["id"], payload["owner_email"], payload["code_hash"],
+                    payload["expires_at"], payload["created_at"],
+                ),
+            )
+            connection.commit()
+
+    def consume_leah_pairing(self, code_hash: str, at: datetime) -> dict[str, Any] | None:
+        if not self.database_url:
+            item = self._leah_pairings.get(code_hash)
+            if not item or item.get("used_at") or item["expires_at"] <= at:
+                return None
+            item["used_at"] = at
+            return item.copy()
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                UPDATE leah_pairing_codes
+                SET used_at = %s
+                WHERE code_hash = %s AND used_at IS NULL AND expires_at > %s
+                RETURNING id, owner_email, expires_at, used_at, created_at
+                """,
+                (at, code_hash, at),
+            ).fetchone()
+            connection.commit()
+        if not row:
+            return None
+        return dict(zip(("id", "owner_email", "expires_at", "used_at", "created_at"), row))
+
+    @staticmethod
+    def _leah_device_from_row(row: Any) -> dict[str, Any]:
+        return dict(zip(
+            (
+                "id", "owner_email", "name", "platform", "calendar_authorized",
+                "reminders_authorized", "last_seen_at", "revoked_at", "created_at", "updated_at",
+            ),
+            row,
+        ))
+
+    def create_leah_device(self, payload: dict[str, Any]) -> dict[str, Any]:
+        normalized = {
+            **payload,
+            "calendar_authorized": False,
+            "reminders_authorized": False,
+            "last_seen_at": None,
+            "revoked_at": None,
+            "updated_at": payload["created_at"],
+        }
+        if not self.database_url:
+            self._leah_devices[payload["id"]] = normalized.copy()
+            return normalized.copy()
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                INSERT INTO leah_devices (id, owner_email, name, platform, token_hash, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, owner_email, name, platform, calendar_authorized,
+                          reminders_authorized, last_seen_at, revoked_at, created_at, updated_at
+                """,
+                (
+                    payload["id"], payload["owner_email"], payload["name"], payload["platform"],
+                    payload["token_hash"], payload["created_at"],
+                ),
+            ).fetchone()
+            connection.commit()
+        return self._leah_device_from_row(row)
+
+    def get_leah_device_by_token(self, token_hash: str) -> dict[str, Any] | None:
+        if not self.database_url:
+            for device in self._leah_devices.values():
+                if device.get("token_hash") == token_hash:
+                    return device.copy()
+            return None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT id, owner_email, name, platform, calendar_authorized,
+                       reminders_authorized, last_seen_at, revoked_at, created_at, updated_at
+                FROM leah_devices WHERE token_hash = %s
+                """,
+                (token_hash,),
+            ).fetchone()
+        return self._leah_device_from_row(row) if row else None
+
+    def list_leah_devices(self, owner_email: str) -> list[dict[str, Any]]:
+        if not self.database_url:
+            return [
+                item.copy() for item in self._leah_devices.values()
+                if item["owner_email"] == owner_email and not item.get("revoked_at")
+            ]
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, owner_email, name, platform, calendar_authorized,
+                       reminders_authorized, last_seen_at, revoked_at, created_at, updated_at
+                FROM leah_devices
+                WHERE owner_email = %s AND revoked_at IS NULL
+                ORDER BY created_at DESC
+                """,
+                (owner_email,),
+            ).fetchall()
+        return [self._leah_device_from_row(row) for row in rows]
+
+    def touch_leah_device(
+        self,
+        device_id: str,
+        *,
+        calendar_authorized: bool,
+        reminders_authorized: bool,
+        at: datetime,
+    ) -> None:
+        if not self.database_url:
+            item = self._leah_devices.get(str(device_id))
+            if item:
+                item.update({
+                    "calendar_authorized": calendar_authorized,
+                    "reminders_authorized": reminders_authorized,
+                    "last_seen_at": at,
+                    "updated_at": at,
+                })
+            return
+        with self.connection() as connection:
+            connection.execute(
+                """
+                UPDATE leah_devices
+                SET calendar_authorized = %s, reminders_authorized = %s,
+                    last_seen_at = %s, updated_at = %s
+                WHERE id = %s AND revoked_at IS NULL
+                """,
+                (calendar_authorized, reminders_authorized, at, at, device_id),
+            )
+            connection.commit()
+
+    def revoke_leah_device(self, owner_email: str, device_id: str, at: datetime) -> bool:
+        if not self.database_url:
+            item = self._leah_devices.get(str(device_id))
+            if not item or item["owner_email"] != owner_email:
+                return False
+            item["revoked_at"] = at
+            item["updated_at"] = at
+            return True
+        with self.connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE leah_devices SET revoked_at = %s, updated_at = %s
+                WHERE id = %s AND owner_email = %s AND revoked_at IS NULL
+                """,
+                (at, at, device_id, owner_email),
+            )
+            connection.commit()
+        return cursor.rowcount > 0
+
+    @staticmethod
+    def _leah_item_from_row(row: Any) -> dict[str, Any]:
+        return dict(zip(
+            (
+                "id", "kind", "external_id", "container_id", "title", "notes", "starts_at",
+                "ends_at", "due_at", "is_all_day", "is_completed", "source",
+                "source_device_id", "source_modified_at", "deleted_at", "version", "updated_at",
+            ),
+            row,
+        ))
+
+    def upsert_leah_item(self, payload: dict[str, Any]) -> dict[str, Any]:
+        item_id = str(payload.get("id") or uuid4())
+        now = payload.get("updated_at") or datetime.now().astimezone()
+        normalized = {
+            "id": item_id,
+            "kind": payload["kind"],
+            "external_id": payload.get("external_id"),
+            "container_id": payload.get("container_id"),
+            "title": payload.get("title", "").strip(),
+            "notes": payload.get("notes", ""),
+            "starts_at": payload.get("starts_at"),
+            "ends_at": payload.get("ends_at"),
+            "due_at": payload.get("due_at"),
+            "is_all_day": bool(payload.get("is_all_day")),
+            "is_completed": bool(payload.get("is_completed")),
+            "source": payload.get("source", "c3po"),
+            "source_device_id": payload.get("source_device_id"),
+            "source_modified_at": payload.get("source_modified_at"),
+            "deleted_at": payload.get("deleted_at"),
+            "version": 1,
+            "updated_at": now,
+            "owner_email": payload["owner_email"],
+        }
+        if not self.database_url:
+            existing_id = next((
+                key for key, item in self._leah_items.items()
+                if normalized["external_id"] and item["owner_email"] == normalized["owner_email"]
+                and item["kind"] == normalized["kind"] and item.get("external_id") == normalized["external_id"]
+            ), None)
+            key = existing_id or item_id
+            existing = self._leah_items.get(key, {})
+            normalized["id"] = key
+            normalized["version"] = int(existing.get("version", 0)) + 1
+            self._leah_items[key] = normalized.copy()
+            return {key: value for key, value in normalized.items() if key != "owner_email"}
+        with self.connection() as connection:
+            if payload.get("id"):
+                updated = connection.execute(
+                    """
+                    UPDATE leah_items SET
+                        external_id = COALESCE(%(external_id)s, external_id),
+                        container_id = %(container_id)s, title = %(title)s, notes = %(notes)s,
+                        starts_at = %(starts_at)s, ends_at = %(ends_at)s, due_at = %(due_at)s,
+                        is_all_day = %(is_all_day)s, is_completed = %(is_completed)s,
+                        source = %(source)s, source_device_id = %(source_device_id)s,
+                        source_modified_at = %(source_modified_at)s, deleted_at = %(deleted_at)s,
+                        version = version + 1, updated_at = %(updated_at)s
+                    WHERE id = %(id)s AND owner_email = %(owner_email)s
+                    RETURNING id, kind, external_id, container_id, title, notes, starts_at,
+                              ends_at, due_at, is_all_day, is_completed, source, source_device_id,
+                              source_modified_at, deleted_at, version, updated_at
+                    """,
+                    normalized,
+                ).fetchone()
+                if updated:
+                    connection.commit()
+                    return self._leah_item_from_row(updated)
+            row = connection.execute(
+                """
+                INSERT INTO leah_items
+                    (id, owner_email, kind, external_id, container_id, title, notes, starts_at,
+                     ends_at, due_at, is_all_day, is_completed, source, source_device_id,
+                     source_modified_at, deleted_at, updated_at)
+                VALUES
+                    (%(id)s, %(owner_email)s, %(kind)s, %(external_id)s, %(container_id)s,
+                     %(title)s, %(notes)s, %(starts_at)s, %(ends_at)s, %(due_at)s,
+                     %(is_all_day)s, %(is_completed)s, %(source)s, %(source_device_id)s,
+                     %(source_modified_at)s, %(deleted_at)s, %(updated_at)s)
+                ON CONFLICT (owner_email, kind, external_id) WHERE external_id IS NOT NULL
+                DO UPDATE SET
+                    container_id = EXCLUDED.container_id, title = EXCLUDED.title,
+                    notes = EXCLUDED.notes, starts_at = EXCLUDED.starts_at,
+                    ends_at = EXCLUDED.ends_at, due_at = EXCLUDED.due_at,
+                    is_all_day = EXCLUDED.is_all_day, is_completed = EXCLUDED.is_completed,
+                    source = EXCLUDED.source, source_device_id = EXCLUDED.source_device_id,
+                    source_modified_at = EXCLUDED.source_modified_at,
+                    deleted_at = EXCLUDED.deleted_at, version = leah_items.version + 1,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING id, kind, external_id, container_id, title, notes, starts_at,
+                          ends_at, due_at, is_all_day, is_completed, source, source_device_id,
+                          source_modified_at, deleted_at, version, updated_at
+                """,
+                normalized,
+            ).fetchone()
+            connection.commit()
+        return self._leah_item_from_row(row)
+
+    def list_leah_changes(self, owner_email: str, since: datetime | None = None) -> list[dict[str, Any]]:
+        if not self.database_url:
+            items = [item for item in self._leah_items.values() if item["owner_email"] == owner_email]
+            if since:
+                items = [item for item in items if item["updated_at"] > since]
+            return [
+                {key: value for key, value in item.items() if key != "owner_email"}
+                for item in sorted(items, key=lambda item: item["updated_at"])
+            ]
+        query = """
+            SELECT id, kind, external_id, container_id, title, notes, starts_at,
+                   ends_at, due_at, is_all_day, is_completed, source, source_device_id,
+                   source_modified_at, deleted_at, version, updated_at
+            FROM leah_items WHERE owner_email = %s
+        """
+        params: list[Any] = [owner_email]
+        if since:
+            query += " AND updated_at > %s"
+            params.append(since)
+        query += " ORDER BY updated_at"
+        with self.connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [self._leah_item_from_row(row) for row in rows]
+
+    def get_leah_item(self, owner_email: str, item_id: str) -> dict[str, Any] | None:
+        return next((item for item in self.list_leah_changes(owner_email) if str(item["id"]) == item_id), None)
+
+    def delete_leah_item(self, owner_email: str, item_id: str, at: datetime) -> bool:
+        if not self.database_url:
+            item = self._leah_items.get(item_id)
+            if not item or item["owner_email"] != owner_email:
+                return False
+            item.update({"deleted_at": at, "updated_at": at, "version": int(item["version"]) + 1, "source": "c3po"})
+            return True
+        with self.connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE leah_items
+                SET deleted_at = %s, updated_at = %s, version = version + 1, source = 'c3po'
+                WHERE id = %s AND owner_email = %s
+                """,
+                (at, at, item_id, owner_email),
+            )
+            connection.commit()
+        return cursor.rowcount > 0
 
     def ensure_access_owner(
         self,

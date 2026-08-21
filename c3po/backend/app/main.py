@@ -23,6 +23,7 @@ from .access_control import (
 from .config import get_settings
 from .database import Database
 from .legacy import LegacySummaryReader
+from .leah_cloud import LeahAuthenticationError, LeahCloudService
 from .investor_relations import InvestorRelationsService
 from .ir_valuation import InvestorRelationsValuationProcessor
 from .market_data import LiveMarketsService, MarketDataService, RealtimeMarketsService
@@ -86,6 +87,14 @@ from .schemas import (
     ValuationChangeResponse,
     WeatherResponse,
     NewsResponse,
+    LeahAgentPairRequest,
+    LeahAgentPairResponse,
+    LeahAgentSyncRequest,
+    LeahAgentSyncResponse,
+    LeahCloudResponse,
+    LeahItem,
+    LeahItemWriteRequest,
+    LeahPairingResponse,
 )
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
@@ -139,6 +148,7 @@ one_pagers = OnePagerService(
 us_screener = USScreeningService(settings, database, realtime_markets, one_pagers)
 one_pagers.set_us_screener(us_screener)
 r2d2 = R2D2PaperService(settings, database, realtime_markets, b3_screener, one_pagers)
+leah_cloud = LeahCloudService(settings, database)
 SESSION_COOKIE = "c3po_session"
 
 
@@ -176,7 +186,7 @@ app.add_middleware(
 @app.middleware("http")
 async def require_authenticated_session(request: Request, call_next):
     path = request.url.path
-    public_auth_route = path.startswith("/api/v1/auth/")
+    public_auth_route = path.startswith("/api/v1/auth/") or path.startswith("/api/v1/leah/agent/")
     protected_api = path.startswith("/api/") and not public_auth_route
     if settings.auth_required and protected_api and request.method != "OPTIONS":
         session = auth_service.authenticate(request.cookies.get(SESSION_COOKIE))
@@ -555,6 +565,118 @@ def delete_access_user(email: str, request: Request) -> AccessUserListResponse:
         },
     )
     return access_list_response()
+
+
+def leah_device_response(item: dict) -> dict:
+    return {
+        **item,
+        "id": str(item["id"]),
+    }
+
+
+def leah_item_response(item: dict) -> dict:
+    return {
+        **item,
+        "id": str(item["id"]),
+        "source_device_id": str(item["source_device_id"]) if item.get("source_device_id") else None,
+    }
+
+
+@app.get("/api/v1/leah", response_model=LeahCloudResponse)
+def get_leah_cloud(request: Request) -> LeahCloudResponse:
+    actor = current_access_actor(request)
+    devices = database.list_leah_devices(actor["email"])
+    items = [
+        item for item in database.list_leah_changes(actor["email"])
+        if not item.get("deleted_at")
+    ]
+    return LeahCloudResponse(
+        generated_at=leah_cloud.now(),
+        connected=bool(devices),
+        devices=[leah_device_response(item) for item in devices],
+        items=[leah_item_response(item) for item in items],
+    )
+
+
+@app.post("/api/v1/leah/pairings", response_model=LeahPairingResponse, status_code=201)
+def create_leah_pairing(request: Request) -> LeahPairingResponse:
+    actor = current_access_actor(request)
+    return LeahPairingResponse(**leah_cloud.create_pairing(actor["email"]))
+
+
+@app.delete("/api/v1/leah/devices/{device_id}", status_code=204)
+def revoke_leah_device(device_id: str, request: Request) -> Response:
+    actor = current_access_actor(request)
+    if not database.revoke_leah_device(actor["email"], device_id, leah_cloud.now()):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dispositivo não encontrado")
+    return Response(status_code=204)
+
+
+@app.post("/api/v1/leah/items", response_model=LeahItem, status_code=201)
+def create_leah_item(payload: LeahItemWriteRequest, request: Request) -> LeahItem:
+    actor = current_access_actor(request)
+    item = database.upsert_leah_item(
+        {
+            **payload.model_dump(),
+            "owner_email": actor["email"],
+            "source": "c3po",
+            "updated_at": leah_cloud.now(),
+        }
+    )
+    return LeahItem(**leah_item_response(item))
+
+
+@app.put("/api/v1/leah/items/{item_id}", response_model=LeahItem)
+def update_leah_item(item_id: str, payload: LeahItemWriteRequest, request: Request) -> LeahItem:
+    actor = current_access_actor(request)
+    existing = database.get_leah_item(actor["email"], item_id)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item não encontrado")
+    item = database.upsert_leah_item(
+        {
+            **existing,
+            **payload.model_dump(),
+            "id": item_id,
+            "owner_email": actor["email"],
+            "source": "c3po",
+            "source_device_id": None,
+            "updated_at": leah_cloud.now(),
+        }
+    )
+    return LeahItem(**leah_item_response(item))
+
+
+@app.delete("/api/v1/leah/items/{item_id}", status_code=204)
+def delete_leah_item(item_id: str, request: Request) -> Response:
+    actor = current_access_actor(request)
+    if not database.delete_leah_item(actor["email"], item_id, leah_cloud.now()):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item não encontrado")
+    return Response(status_code=204)
+
+
+@app.post("/api/v1/leah/agent/pair", response_model=LeahAgentPairResponse)
+def pair_leah_agent(payload: LeahAgentPairRequest) -> LeahAgentPairResponse:
+    try:
+        paired = leah_cloud.pair_device(payload.code, payload.name, payload.platform)
+    except LeahAuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    return LeahAgentPairResponse(
+        token=paired["token"],
+        device=leah_device_response(paired["device"]),
+    )
+
+
+@app.post("/api/v1/leah/agent/sync", response_model=LeahAgentSyncResponse)
+def sync_leah_agent(payload: LeahAgentSyncRequest, request: Request) -> LeahAgentSyncResponse:
+    try:
+        device = leah_cloud.authenticate_device(request.headers.get("authorization"))
+    except LeahAuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    result = leah_cloud.sync(device, payload.model_dump())
+    return LeahAgentSyncResponse(
+        cursor=result["cursor"],
+        items=[leah_item_response(item) for item in result["items"]],
+    )
 
 
 @app.get("/api/v1/health")
