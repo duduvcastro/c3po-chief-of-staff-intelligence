@@ -326,11 +326,11 @@ def test_fmp_prefilter_promotes_fresh_quotes_without_dropping_other_candidates()
         {"symbol": "FRESH", "pretrade_rank": 70.0, "fundamental_score": 60.0},
         {"symbol": "STALE", "pretrade_rank": 80.0, "fundamental_score": 70.0},
     ]
-    service._fmp_quote_cache = (now, {
-        "STRONG": {"timestamp": int(now.timestamp()) - 500, "price": 100.0},
-        "FRESH": {"timestamp": int(now.timestamp()), "price": 50.0},
-        "STALE": {"timestamp": int(now.timestamp()) - 500, "price": 80.0},
-    })
+    service._fmp_quote_cache = {
+        "STRONG": (now, {"timestamp": int(now.timestamp()) - 500, "price": 100.0}),
+        "FRESH": (now, {"timestamp": int(now.timestamp()), "price": 50.0}),
+        "STALE": (now, {"timestamp": int(now.timestamp()) - 500, "price": 80.0}),
+    }
 
     ranked, stats = service._fmp_prefilter_ws_candidates(candidates)
 
@@ -351,15 +351,52 @@ def test_fmp_prefilter_falls_back_to_existing_order_without_fresh_quotes() -> No
         {"symbol": "A", "pretrade_rank": 90.0, "fundamental_score": 80.0},
         {"symbol": "B", "pretrade_rank": 80.0, "fundamental_score": 70.0},
     ]
-    service._fmp_quote_cache = (now, {
-        "A": {"timestamp": int(now.timestamp()) - 500, "price": 100.0},
-        "B": {"timestamp": int(now.timestamp()) - 500, "price": 90.0},
-    })
+    service._fmp_quote_cache = {
+        "A": (now, {"timestamp": int(now.timestamp()) - 500, "price": 100.0}),
+        "B": (now, {"timestamp": int(now.timestamp()) - 500, "price": 90.0}),
+    }
 
     ranked, stats = service._fmp_prefilter_ws_candidates(candidates)
 
     assert ranked == candidates
     assert stats["fmp_prefilter_fallback"] is True
+
+
+def test_fmp_prefilter_negative_caches_uncovered_symbols_and_fetches_only_delta(monkeypatch) -> None:
+    service = _service()
+    service.settings.fmp_api_token = "configured"
+    service.one_pagers = SimpleNamespace(  # type: ignore[assignment]
+        market_data=SimpleNamespace(http=object()),
+    )
+    fetched_batches = []
+
+    def fake_batch_quotes(self, symbols, *, chunk_size, diagnostics):
+        fetched_batches.append(list(symbols))
+        diagnostics.update({
+            "successful_symbols": list(symbols), "failed_symbols": [],
+            "failed_chunk_count": 0, "failure_types": [],
+        })
+        return {
+            symbol: {"symbol": symbol, "price": 100.0, "timestamp": int(datetime.now(timezone.utc).timestamp())}
+            for symbol in symbols if symbol != "UNCOVERED"
+        }
+
+    monkeypatch.setattr("app.r2d2.FmpClient.batch_quotes", fake_batch_quotes)
+    first = [
+        {"symbol": "A", "pretrade_rank": 90.0, "fundamental_score": 80.0},
+        {"symbol": "UNCOVERED", "pretrade_rank": 80.0, "fundamental_score": 70.0},
+    ]
+    service._fmp_prefilter_ws_candidates(first)
+    second = [
+        *first,
+        {"symbol": "DELTA", "pretrade_rank": 70.0, "fundamental_score": 60.0},
+    ]
+    _, stats = service._fmp_prefilter_ws_candidates(second)
+
+    assert fetched_batches == [["A", "UNCOVERED"], ["DELTA"]]
+    assert service._fmp_quote_cache["UNCOVERED"][1] is None
+    assert stats["fmp_prefilter_cache_hit_count"] == 2
+    assert stats["fmp_prefilter_fetched_symbol_count"] == 1
 
 
 def test_r2d2_core_identity_survives_rank_changes_between_cycles() -> None:

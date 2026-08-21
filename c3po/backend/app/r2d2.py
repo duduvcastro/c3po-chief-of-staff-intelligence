@@ -884,7 +884,7 @@ class R2D2PaperService:
         self._ws_rotation_symbols: list[str] = []
         self._ws_rotation_cursor = 0
         self._ws_rotation_age = 0
-        self._fmp_quote_cache: tuple[datetime, dict[str, dict[str, Any]]] | None = None
+        self._fmp_quote_cache: dict[str, tuple[datetime, dict[str, Any] | None]] = {}
         self._technical_review_stats: dict[str, Any] = {}
         self._active_policy = dict(BASE_ENTRY_POLICY)
         self._learning_state: dict[str, Any] | None = None
@@ -2097,6 +2097,9 @@ class R2D2PaperService:
             "fmp_prefilter_candidate_count": len(candidates),
             "fmp_prefilter_quote_count": 0,
             "fmp_prefilter_fresh_count": 0,
+            "fmp_prefilter_cache_hit_count": 0,
+            "fmp_prefilter_fetched_symbol_count": 0,
+            "fmp_prefilter_failed_chunk_count": 0,
             "fmp_prefilter_fallback": False,
         }
         if (
@@ -2111,27 +2114,63 @@ class R2D2PaperService:
         now = datetime.now(timezone.utc)
         symbols = [item["symbol"] for item in candidates]
         quotes: dict[str, dict[str, Any]] = {}
-        if self._fmp_quote_cache:
-            cached_at, cached_quotes = self._fmp_quote_cache
-            cache_age = (now - cached_at).total_seconds()
-            if (
-                cache_age <= max(1, self.settings.r2d2_fmp_prefilter_cache_seconds)
-                and all(symbol in cached_quotes for symbol in symbols)
-            ):
-                quotes = cached_quotes
-                stats["fmp_prefilter_cache_hit"] = True
-        if not quotes:
+        cache_ttl = max(1, self.settings.r2d2_fmp_prefilter_cache_seconds)
+        missing: list[str] = []
+        negative_cache_count = 0
+        for symbol in symbols:
+            cached = self._fmp_quote_cache.get(symbol)
+            if not cached or (now - cached[0]).total_seconds() > cache_ttl:
+                missing.append(symbol)
+                continue
+            cached_quote = cached[1]
+            if cached_quote is None:
+                negative_cache_count += 1
+            else:
+                quotes[symbol] = cached_quote
+        stats["fmp_prefilter_cache_hit_count"] = len(symbols) - len(missing)
+        stats["fmp_prefilter_cache_coverage_percent"] = round(
+            (len(symbols) - len(missing)) / len(symbols) * 100, 2,
+        ) if symbols else 0.0
+        stats["fmp_prefilter_negative_cache_count"] = negative_cache_count
+
+        if missing:
             client = FmpClient(
                 self.settings.fmp_base_url,
                 self.settings.fmp_api_token,
                 self.one_pagers.market_data.http,
             )
-            quotes = client.batch_quotes(
-                symbols,
+            diagnostics: dict[str, Any] = {}
+            fetched_quotes = client.batch_quotes(
+                missing,
                 chunk_size=self.settings.r2d2_fmp_prefilter_batch_size,
+                diagnostics=diagnostics,
             )
-            self._fmp_quote_cache = (now, quotes)
-            stats["fmp_prefilter_cache_hit"] = False
+            quotes.update(fetched_quotes)
+            failed_symbols = set(diagnostics.get("failed_symbols") or [])
+            successful_symbols = set(diagnostics.get("successful_symbols") or [])
+            for symbol in successful_symbols:
+                self._fmp_quote_cache[symbol] = (now, fetched_quotes.get(symbol))
+            stats["fmp_prefilter_fetched_symbol_count"] = len(missing)
+            stats["fmp_prefilter_failed_chunk_count"] = int(
+                diagnostics.get("failed_chunk_count") or 0
+            )
+            stats["fmp_prefilter_failed_symbol_count"] = len(failed_symbols)
+            stats["fmp_prefilter_failure_types"] = diagnostics.get("failure_types") or []
+            if failed_symbols:
+                logger.warning(
+                    "FMP prefilter degraded: %s chunks / %s symbols failed (%s)",
+                    stats["fmp_prefilter_failed_chunk_count"],
+                    len(failed_symbols),
+                    ", ".join(stats["fmp_prefilter_failure_types"]) or "unknown error",
+                )
+
+        # Bound memory across changing universes without invalidating current
+        # negative-cache entries during their useful TTL.
+        if len(self._fmp_quote_cache) > 5_000:
+            self._fmp_quote_cache = {
+                symbol: cached for symbol, cached in self._fmp_quote_cache.items()
+                if (now - cached[0]).total_seconds() <= cache_ttl
+            }
 
         max_age = max(1, self.settings.r2d2_fmp_prefilter_max_quote_age_seconds)
         fresh_symbols: set[str] = set()
