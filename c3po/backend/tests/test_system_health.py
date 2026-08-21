@@ -87,7 +87,7 @@ class _ServerUsage:
             refresh_seconds=60,
             servers=[ServerUsageServer(
                 server_id="lightsail",
-                server_name="Chief of Staff Digital",
+                server_name="Chief of Staff Intelligence",
                 region="São Paulo · sa-east-1",
                 cpu_count=2,
                 status="healthy",

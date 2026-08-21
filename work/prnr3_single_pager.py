@@ -433,7 +433,7 @@ def render_html(data):
   </div>
 
   <div class="footer">
-    <span>Chief of Staff Digital | PRNR3 single pager | Uso interno, nao e recomendacao de investimento.</span>
+    <span>Chief of Staff Intelligence | PRNR3 single pager | Uso interno, nao e recomendacao de investimento.</span>
     <span>Fontes: RI Priner, MZiQ, Yahoo Finance</span>
   </div>
 </section>

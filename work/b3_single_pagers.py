@@ -484,7 +484,7 @@ def render_html(data):
   </div>
 
   <div class="footer">
-    <span>Chief of Staff Digital | {ticker} single pager | Uso interno, nao e recomendacao de investimento.</span>
+    <span>Chief of Staff Intelligence | {ticker} single pager | Uso interno, nao e recomendacao de investimento.</span>
     <span>Fontes: {source_links}</span>
   </div>
 </section>

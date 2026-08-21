@@ -1,6 +1,6 @@
 # C3PO | Chief of Staff Intelligence
 
-Private intelligence platform and the legacy Chief of Staff Digital automation
+Private intelligence platform and the legacy Chief of Staff Intelligence automation
 that produces the Morning, Lunch and Night Summaries.
 
 ## Repository layout
@@ -35,4 +35,3 @@ pnpm build
 Never commit `.env`, API tokens, bank data, email exports, reports, generated
 PDFs, database files or SSH keys. See [`docs/GITHUB_FLOW.md`](docs/GITHUB_FLOW.md)
 for the release process.
-

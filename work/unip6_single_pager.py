@@ -489,7 +489,7 @@ def render_html(data):
   </div>
 
   <div class="footer">
-    <span>Chief of Staff Digital | UNIP6 single pager | Uso interno, nao e recomendacao de investimento.</span>
+    <span>Chief of Staff Intelligence | UNIP6 single pager | Uso interno, nao e recomendacao de investimento.</span>
     <span>Fontes: RI Unipar, XP Investimentos, Investing.com, MZiQ, Yahoo Finance, Status Invest, TradingView/FactSet</span>
   </div>
 </section>

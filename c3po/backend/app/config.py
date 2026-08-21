@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     investor_relations_ri_poll_minutes: int = 60
     investor_relations_sec_watchlist: str = "AMZN,MSFT,META,AVGO,TTWO,VOO,MHVYF"
     server_usage_server_id: str = "lightsail-sa-east-1"
-    server_usage_server_name: str = "Chief of Staff Digital"
+    server_usage_server_name: str = "Chief of Staff Intelligence"
     server_usage_region: str = "São Paulo · sa-east-1"
     server_usage_cpu_count: int = 2
     server_usage_proc_stat_path: Path = Path("/proc/stat")
