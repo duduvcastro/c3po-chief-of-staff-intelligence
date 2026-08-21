@@ -6153,6 +6153,7 @@ function ServerUsageView() {
   const [data, setData] = useState<ServerUsageResponse | null>(null);
   const [selectedServerId, setSelectedServerId] = useState("");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [pageLoadMs, setPageLoadMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -6180,6 +6181,22 @@ function ServerUsageView() {
     const timer = window.setInterval(() => load(true), 60_000);
     return () => window.clearInterval(timer);
   }, [load]);
+
+  useEffect(() => {
+    const measurePageLoad = () => {
+      const navigation = window.performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      const duration = navigation?.loadEventEnd && navigation.loadEventEnd > 0
+        ? navigation.loadEventEnd - navigation.startTime
+        : window.performance.now();
+      setPageLoadMs(Math.max(0, Math.round(duration)));
+    };
+    if (document.readyState === "complete") {
+      measurePageLoad();
+      return;
+    }
+    window.addEventListener("load", measurePageLoad, { once: true });
+    return () => window.removeEventListener("load", measurePageLoad);
+  }, []);
 
   const server = data?.servers.find((item) => item.server_id === selectedServerId) ?? data?.servers[0];
   const points = server?.history ?? [];
@@ -6241,6 +6258,7 @@ function ServerUsageView() {
           <div><span><Activity size={15} />CPU Peak</span><strong>{points.length ? `${cpuPeak.toFixed(1).replace(".", ",")}%` : "N/D"}</strong><small>Highest · last 24 hours</small></div>
           <div><span><HardDrive size={15} />Disk used</span><strong>{server.current.disk_percent === null ? "N/D" : `${server.current.disk_percent.toFixed(1).replace(".", ",")}%`}</strong><small>{formatBytes(server.current.disk_used_bytes)} of {formatBytes(server.current.disk_total_bytes)}</small></div>
           <div><span><HardDrive size={15} />Disk free</span><strong>{formatBytes(server.current.disk_free_bytes)}</strong><small>Project filesystem</small></div>
+          <div><span><Gauge size={15} />Load Page Time</span><strong>{pageLoadMs === null ? "N/D" : pageLoadMs < 1_000 ? `${pageLoadMs} ms` : `${(pageLoadMs / 1_000).toFixed(2).replace(".", ",")} s`}</strong><small>Browser navigation</small></div>
         </div>
 
         <div className="server-chart-head">
