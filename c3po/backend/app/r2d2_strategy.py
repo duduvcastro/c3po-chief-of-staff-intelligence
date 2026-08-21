@@ -30,7 +30,7 @@ from typing import Any
 # Constants (mirrors the module-level constants in r2d2.py as of V16)
 # ---------------------------------------------------------------------------
 
-METHODOLOGY_VERSION = "R2D2-HYBRID-V26-TIGHTER-VOLUME-CONFIRMATION"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
 
 RISK_BUDGET_PERCENT = 0.02  # % of NAV risked per trade (Turtle-style; backtested vs. 0.06/0.09)
 # Lowered from 0.03 on 2026-08-20 for the test phase, deliberately in the

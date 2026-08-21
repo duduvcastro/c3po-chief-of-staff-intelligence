@@ -35,7 +35,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
-METHODOLOGY_VERSION = "R2D2-HYBRID-V26-TIGHTER-VOLUME-CONFIRMATION"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
 MIN_HOLD_MINUTES = 5
 ROTATION_MIN_HOLD_MINUTES = 10
@@ -50,6 +50,13 @@ MIN_POSITION_PERCENT = 2.0
 MAX_DYNAMIC_POSITION_PERCENT = 6.0
 SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
 MIN_INTRADAY_EDGE_PERCENT = 0.55
+# Lowered from $20M on 2026-08-20 (Dudu's call: split the difference between
+# the $20M status quo and the $10M tested alternative, deliberately to
+# observe the effect on the live-quote/WebSocket bottleneck rather than
+# guess at it). Also feeds the liquidity-score log10 baseline at every site
+# below -- keep all three literal duplicates in sync with this constant.
+US_STOCK_MIN_CASH_VOLUME = 15_000_000
+US_ETF_MIN_CASH_VOLUME = 10_000_000
 FAILED_ENTRY_MINUTES = 3
 FAILED_ENTRY_LOSS_PERCENT = 0.30
 US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
@@ -1784,7 +1791,7 @@ class R2D2PaperService:
 
         eligible: list[tuple[Any, str]] = []
         for row, security_type in classified:
-            minimum_cash_volume = 10_000_000 if security_type == "ETF" else 20_000_000
+            minimum_cash_volume = US_ETF_MIN_CASH_VOLUME if security_type == "ETF" else US_STOCK_MIN_CASH_VOLUME
             if row.price < 3 or row.cash_volume < minimum_cash_volume:
                 continue
             eligible.append((row, security_type))
@@ -1925,7 +1932,7 @@ class R2D2PaperService:
                 thesis = f"C3PO TP {c3po_tp:.2f}; valuation backfill completed for the current session."
                 basis_source = "same-day C3PO valuation backfill"
             else:
-                minimum_cash_volume = 10_000_000 if security_type == "ETF" else 20_000_000
+                minimum_cash_volume = US_ETF_MIN_CASH_VOLUME if security_type == "ETF" else US_STOCK_MIN_CASH_VOLUME
                 liquidity_score = max(
                     40.0,
                     min(95.0, 48.0 + math.log10(max(row.cash_volume / minimum_cash_volume, 1.0)) * 18.0),
@@ -1943,7 +1950,7 @@ class R2D2PaperService:
                 )
                 basis_source = "full-exchange provisional technical scan"
 
-            minimum_cash_volume = 10_000_000 if security_type == "ETF" else 20_000_000
+            minimum_cash_volume = US_ETF_MIN_CASH_VOLUME if security_type == "ETF" else US_STOCK_MIN_CASH_VOLUME
             liquidity_score = max(
                 0.0,
                 min(100.0, 50.0 + math.log10(max(row.cash_volume / minimum_cash_volume, 1.0)) * 20.0),
