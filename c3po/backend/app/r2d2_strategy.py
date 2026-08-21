@@ -522,7 +522,10 @@ def entry_decision(item: dict[str, Any], policy: dict[str, float] | None = None)
         reasons.append("Intraday/day momentum confirmation is insufficient")
     if item["composite_score"] < policy["min_composite_score"]:
         reasons.append(f"Hybrid score below adaptive {policy['min_composite_score']:.2f}/100 floor")
-    return ("REJECT", reasons) if reasons else ("BUY", [item.get("thesis", ""), "Hybrid fundamental and timing gates passed"])
+    reasons.append(
+        "Neither strict tactical nor cost-aware intraday entry route passed all technical gates"
+    )
+    return "REJECT", reasons
 
 
 def target_position_percent(item: dict[str, Any], *, cash_overhang_percent: float = 0.0,

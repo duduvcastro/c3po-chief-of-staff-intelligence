@@ -2651,17 +2651,20 @@ class R2D2PaperService:
         # it's still within the same freshness window every other live-quote
         # check in this service uses; otherwise the BUY waits for a cycle
         # where a trustworthy price actually exists instead of filling blind.
-        now = now or datetime.now(timezone.utc)
         stream = getattr(self.realtime, "stream", None)
         if stream:
             fresh_quote = stream.quote(item["symbol"])
             if fresh_quote is not None:
                 item = {**item, "price": fresh_quote.price, "quote_as_of": fresh_quote.as_of}
+        # The cycle timestamp can be minutes old by the time ranking and
+        # portfolio checks reach this fill. Freshness must be measured against
+        # the wall clock at execution, not against the beginning of the cycle.
+        fill_now = datetime.now(timezone.utc)
         quote_as_of = item.get("quote_as_of")
         if not isinstance(quote_as_of, datetime):
             return None
         as_of = quote_as_of if quote_as_of.tzinfo else quote_as_of.replace(tzinfo=timezone.utc)
-        if (now - as_of).total_seconds() > self.settings.r2d2_live_quote_max_age_seconds:
+        if (fill_now - as_of).total_seconds() > self.settings.r2d2_live_quote_max_age_seconds:
             return None
         dashboard = self.dashboard()
         if dashboard.daily_return_percent <= -self.settings.r2d2_daily_loss_limit_percent:

@@ -9,6 +9,7 @@ import pytest
 from app.config import Settings
 from app.database import Database
 from app.r2d2 import SAO_PAULO, R2D2PaperService, R2D2Repository, _date_value
+from app import r2d2 as r2d2_module
 from app.market_data.eodhd_stream import EodhdRealtimeStream
 from fastapi.testclient import TestClient
 from app import main as app_main
@@ -485,7 +486,7 @@ def test_r2d2_buy_records_dynamic_position_size_in_trade_audit() -> None:
         "technical_validated": True, "quote_status": "live", "composite_score": 82.0,
         "fundamental_score": 84.0, "thesis": "High-conviction sizing test",
         "technical_indicators": {"atr_percent": 1.8},
-        "quote_as_of": datetime(2026, 8, 17, 14, 0, tzinfo=timezone.utc),
+        "quote_as_of": datetime.now(timezone.utc),
     }
 
     trade = service._buy(experiment, cycle_id, candidate, [], candidate["quote_as_of"])
@@ -526,7 +527,7 @@ def test_r2d2_portfolio_pacing_can_fill_twenty_diversified_slots_under_gross_cap
             # slots at that size land well short of the old 95%
             # gross-exposure ceiling.
             "technical_indicators": {"atr_percent": 0.1},
-            "quote_as_of": datetime(2026, 8, 17, 14, index, tzinfo=timezone.utc),
+            "quote_as_of": datetime.now(timezone.utc),
         }
         trade = service._buy(
             experiment, cycle_id, candidate, service.repo.positions(experiment["id"]),
@@ -606,8 +607,66 @@ def test_r2d2_entry_requires_fundamental_and_intraday_confirmation() -> None:
 
     candidate["technical_validated"] = True
     action, reasons = service._entry_decision(candidate)
-    assert action == "BUY"
-    assert "Hybrid fundamental and timing gates passed" in reasons
+    assert action == "REJECT"
+    assert "Neither strict tactical nor cost-aware intraday entry route" in reasons[-1]
+
+
+def test_r2d2_entry_does_not_fall_back_to_aggregate_scores() -> None:
+    service = _service()
+    candidate = {
+        "market": "NASDAQ", "quote_status": "live", "price": 101.0,
+        "upside": 35.0, "risk_score": 30.0, "confidence": 80.0,
+        "buy_in_distance": 4.0, "technical_score": 80.0,
+        "technical_validated": True, "composite_score": 82.0,
+        "thesis": "Aggregate scores pass but strict timing does not",
+        "technical_indicators": {
+            "data_status": "live", "trend_state": "neutral",
+            "volume_state": "accumulation", "price_structure": "breakout",
+            "relative_volume": 2.0, "vwap": 100.5,
+            "ema8": 100.8, "ema20": 100.4,
+            "momentum15": 0.3, "momentum30": 0.5, "momentum60": 0.8,
+            "macd_histogram": 0.2, "macd_acceleration": 0.1,
+            "rsi14": 78.0, "relative_strength": 0.4,
+        },
+    }
+
+    action, reasons = service._entry_decision(candidate)
+
+    assert action == "REJECT"
+    assert "Neither strict tactical nor cost-aware intraday entry route" in reasons[-1]
+
+
+def test_r2d2_buy_checks_quote_age_against_fill_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _service()
+    experiment = service.ensure_initialized()
+    cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ"])
+    fill_now = datetime(2026, 8, 21, 16, 0, tzinfo=timezone.utc)
+    stale_tick = fill_now - timedelta(seconds=91)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: timezone | None = None) -> datetime:
+            return fill_now
+
+    monkeypatch.setattr(r2d2_module, "datetime", FrozenDateTime)
+    service.realtime = SimpleNamespace(
+        stream=SimpleNamespace(
+            quote=lambda symbol: SimpleNamespace(price=100.0, as_of=stale_tick),
+        ),
+    )
+    candidate = {
+        "market": "NASDAQ", "symbol": "STALE", "name": "Stale Tick Corp",
+        "currency": "USD", "price": 100.0, "stop_price": 99.0,
+        "quote_status": "live", "quote_as_of": stale_tick,
+        "technical_indicators": {"atr_percent": 1.0},
+    }
+
+    trade = service._buy(
+        experiment, cycle_id, candidate, [], fill_now - timedelta(minutes=5),
+    )
+
+    assert trade is None
+    assert service.repo.positions(experiment["id"]) == []
 
 
 def test_r2d2_virtual_ledger_records_buy_sell_costs_and_realized_pnl() -> None:
@@ -1040,7 +1099,7 @@ def test_r2d2_blocks_us_entry_without_a_live_quote() -> None:
         "technical_validated": True, "quote_status": "delayed", "composite_score": 82.0,
         "fundamental_score": 84.0, "thesis": "Delayed quote must not execute",
         "technical_indicators": {"data_status": "delayed", "atr_percent": 1.0},
-        "quote_as_of": datetime(2026, 8, 17, 14, 0, tzinfo=timezone.utc),
+        "quote_as_of": datetime.now(timezone.utc),
     }
 
     assert service._buy(experiment, cycle_id, candidate, []) is None
@@ -1402,7 +1461,16 @@ def test_r2d2_exit_triggers_an_immediate_replacement_scan() -> None:
         "confidence": 80.0, "buy_in_distance": 4.0, "technical_score": 72.0,
         "technical_validated": True, "quote_status": "live", "composite_score": 78.0,
         "fundamental_score": 82.0, "thesis": "Best eligible replacement",
-        "quote_as_of": datetime(2026, 8, 17, 14, 0, tzinfo=timezone.utc),
+        "quote_as_of": datetime.now(timezone.utc),
+        "technical_indicators": {
+            "data_status": "live", "trend_state": "bullish",
+            "volume_state": "accumulation", "price_structure": "breakout",
+            "relative_volume": 1.6, "vwap": 99.5,
+            "ema8": 99.8, "ema20": 99.4,
+            "momentum15": 0.3, "momentum30": 0.5, "momentum60": 0.8,
+            "macd_histogram": 0.2, "macd_acceleration": 0.1,
+            "rsi14": 60.0, "relative_strength": 0.4,
+        },
     }
     service._position_quotes = lambda positions, now: {}  # type: ignore[method-assign]
     service._mark_and_exit = lambda *args, **kwargs: 1  # type: ignore[method-assign]
