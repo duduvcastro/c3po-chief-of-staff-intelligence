@@ -5885,7 +5885,7 @@ def folder_parent_xml(parent):
 
 
 def ensure_operational_folders(password):
-    root = ["Chief of Staff Digital"]
+    root = ["Chief of Staff Intelligence"]
     folder_names = [
         "Quarentena - Spam Provavel",
         "01 Responder",
@@ -6747,7 +6747,7 @@ def render_html(day, events, emails, markets, whatsapp_items, billfish, forecast
     {candidate_b3_intro}
     {candidate_b3_panel}
 
-    <div class="footer"><span>Chief of Staff Digital - oportunidades</span><span>Pagina 4</span></div>
+    <div class="footer"><span>Chief of Staff Intelligence - oportunidades</span><span>Pagina 4</span></div>
   </section>
 """
     us_footer_page = 5 if brokerage_needs_own_space else 4
@@ -7675,7 +7675,7 @@ def render_html(day, events, emails, markets, whatsapp_items, billfish, forecast
 <body>
   <section class="page">
     <header class="hero">
-      <div class="eyebrow">Chief of Staff Digital</div>
+      <div class="eyebrow">Chief of Staff Intelligence</div>
       <div class="hero-grid">
         <div>
           <h1>{html.escape(report_title)}</h1>
@@ -7690,7 +7690,7 @@ def render_html(day, events, emails, markets, whatsapp_items, billfish, forecast
     <div class="section-title">Markets</div>
     {market_sections}
 
-    <div class="footer"><span>Chief of Staff Digital</span><span>Pagina 1</span></div>
+    <div class="footer"><span>Chief of Staff Intelligence</span><span>Pagina 1</span></div>
   </section>
 
   <section class="page compact b3-candidates-page">
@@ -7705,14 +7705,14 @@ def render_html(day, events, emails, markets, whatsapp_items, billfish, forecast
 
     {candidate_b3_inline_block}
 
-    <div class="footer"><span>Chief of Staff Digital - oportunidades</span><span>Pagina 2</span></div>
+    <div class="footer"><span>Chief of Staff Intelligence - oportunidades</span><span>Pagina 2</span></div>
   </section>
 
   <section class="page compact statements-page">
     <div class="section-title">EXTRATOS | ULTIMOS 2 DIAS</div>
     {pluggy_statements_panel}
 
-    <div class="footer"><span>Chief of Staff Digital - Open Finance</span><span>Pagina 3</span></div>
+    <div class="footer"><span>Chief of Staff Intelligence - Open Finance</span><span>Pagina 3</span></div>
   </section>
 
   {candidate_b3_extra_section}
@@ -7720,7 +7720,7 @@ def render_html(day, events, emails, markets, whatsapp_items, billfish, forecast
   <section class="page compact us-candidates">
     {candidate_us_panel}
 
-    <div class="footer"><span>Chief of Staff Digital - oportunidades</span><span>Pagina {us_footer_page}</span></div>
+    <div class="footer"><span>Chief of Staff Intelligence - oportunidades</span><span>Pagina {us_footer_page}</span></div>
   </section>
 
   <section class="page compact reading-forecast-page">
@@ -7730,7 +7730,7 @@ def render_html(day, events, emails, markets, whatsapp_items, billfish, forecast
     <div class="section-title daily-priorities-title">DAILY PRIORITIES</div>
     <div class="priority-grid">{priority_rows}</div>
 
-    <div class="footer"><span>Chief of Staff Digital - modo leitura</span><span>Pagina {forecast_footer_page}</span></div>
+    <div class="footer"><span>Chief of Staff Intelligence - modo leitura</span><span>Pagina {forecast_footer_page}</span></div>
   </section>
 
   <section class="page compact reading-news-page">
@@ -7738,14 +7738,14 @@ def render_html(day, events, emails, markets, whatsapp_items, billfish, forecast
     {news_panel}
     {action_brief_panel}
 
-    <div class="footer"><span>Chief of Staff Digital - modo leitura</span><span>Pagina {news_footer_page}</span></div>
+    <div class="footer"><span>Chief of Staff Intelligence - modo leitura</span><span>Pagina {news_footer_page}</span></div>
   </section>
 
   <section class="page compact reading-agenda-page">
     <div class="section-title agenda-title">Agenda</div>
     {event_rows}
 
-    <div class="footer"><span>Chief of Staff Digital - modo leitura</span><span>Pagina {agenda_footer_page}</span></div>
+    <div class="footer"><span>Chief of Staff Intelligence - modo leitura</span><span>Pagina {agenda_footer_page}</span></div>
   </section>
 
   <section class="page compact reading-world-page">
@@ -7753,7 +7753,7 @@ def render_html(day, events, emails, markets, whatsapp_items, billfish, forecast
     {world_cup_panel}
     {automation_health_panel}
 
-    <div class="footer"><span>Chief of Staff Digital - modo leitura</span><span>Pagina {world_footer_page}</span></div>
+    <div class="footer"><span>Chief of Staff Intelligence - modo leitura</span><span>Pagina {world_footer_page}</span></div>
   </section>
 
 </body>
@@ -10196,7 +10196,7 @@ def make_reportlab_pdf(day, events, emails, markets, whatsapp_items, billfish, t
         topMargin=1.4 * cm,
         bottomMargin=1.3 * cm,
         title=f"{report_title} - {day.strftime('%d/%m/%Y')}",
-        author="Chief of Staff Digital",
+        author="Chief of Staff Intelligence",
     )
 
     styles = getSampleStyleSheet()
@@ -10317,7 +10317,7 @@ def make_reportlab_pdf(day, events, emails, markets, whatsapp_items, billfish, t
             [
                 [
                     [
-                        Paragraph("CHIEF OF STAFF DIGITAL", styles["Kicker"]),
+                        Paragraph("CHIEF OF STAFF INTELLIGENCE", styles["Kicker"]),
                         Paragraph(xml_escape(report_title), styles["TitleCustom"]),
                         Paragraph(f"<font color='#d0d7de'>Eduardo Castro | {day.strftime('%d/%m/%Y')}</font>", styles["Small"]),
                     ],
@@ -10466,7 +10466,7 @@ def make_reportlab_pdf(day, events, emails, markets, whatsapp_items, billfish, t
         canvas.line(1.6 * cm, 1.05 * cm, A4[0] - 1.6 * cm, 1.05 * cm)
         canvas.setFillColor(colors.HexColor("#667085"))
         canvas.setFont("Helvetica", 8)
-        canvas.drawString(1.6 * cm, 0.65 * cm, "Chief of Staff Digital - modo leitura, sem apagar ou responder automaticamente")
+        canvas.drawString(1.6 * cm, 0.65 * cm, "Chief of Staff Intelligence - modo leitura, sem apagar ou responder automaticamente")
         canvas.drawRightString(A4[0] - 1.6 * cm, 0.65 * cm, f"Pagina {canvas.getPageNumber()}")
         canvas.restoreState()
 
@@ -10985,7 +10985,7 @@ def main():
         Anexo: {'PDF' if pdf_ok else 'HTML (PDF nao gerado: ' + pdf_msg + ')'}
 
         Abs.,
-        Chief of Staff Digital
+        Chief of Staff Intelligence
         """
     )
     if args.no_send or args.audit_only:

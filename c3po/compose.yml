@@ -93,7 +93,7 @@ services:
       C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
       C3PO_MIGRATIONS_DIR: /app/db
       C3PO_SERVER_USAGE_SERVER_ID: lightsail-sa-east-1
-      C3PO_SERVER_USAGE_SERVER_NAME: Chief of Staff Digital
+      C3PO_SERVER_USAGE_SERVER_NAME: Chief of Staff Intelligence
       C3PO_SERVER_USAGE_REGION: São Paulo · sa-east-1
       C3PO_SERVER_USAGE_CPU_COUNT: 2
       C3PO_SERVER_USAGE_PROC_STAT_PATH: /host/proc/stat

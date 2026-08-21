@@ -3098,7 +3098,7 @@ function C3POOpeningView({ onEnter }: { onEnter: () => void }) {
           <h1 id="c3po-opening-title">A INTELIGÊNCIA DESPERTA</h1>
           <p>
             Em uma realidade onde mercados, empresas, contas, notícias e decisões mudam a cada instante,
-            nasce o C3PO: um Chief of Staff digital privado, criado para transformar sinais dispersos em
+            nasce o C3PO: um Chief of Staff Intelligence privado, criado para transformar sinais dispersos em
             clareza executiva.
           </p>
           <p>
