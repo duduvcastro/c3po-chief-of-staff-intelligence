@@ -940,3 +940,10 @@ def test_scenarios_fan_out_from_c3po_tp_not_raw_model_extremes(tmp_path) -> None
     assert scenarios["BEAR"] > min(method_values)
     assert scenarios["BULL"] < max(method_values)
     assert scenarios["BEAR"] < scenarios["BASE"] < scenarios["BULL"]
+    # Root-caused 2026-08-20 (Dudu-flagged on the same real JPM PDF): with
+    # 27 analysts averaging $388.33 and c3po_tp pulled down to ~$324 by
+    # low_conviction, a bull premium computed off c3po_tp alone landed at
+    # ~$372 -- BELOW the real consensus. A "bull" case more pessimistic
+    # than the average professional analyst's actual number is incoherent;
+    # bull must clear real consensus by a margin.
+    assert scenarios["BULL"] > analysis["consensus_tp"]

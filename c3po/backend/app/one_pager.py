@@ -112,6 +112,31 @@ LOW_CONVICTION_DISPERSION_RATIO = 2.0
 SUSTAINABLE_GROWTH_FLOOR = -0.02
 SUSTAINABLE_GROWTH_CEILING_MARGIN = 0.02  # Ke - g must stay above this or Gordon-style models are rejected, not clamped
 
+# Root-caused 2026-08-20 (Fable-consulted, Dudu-directed): bear/bull used to
+# be a flat percentage haircut/premium on top of c3po_tp -- not derived from
+# any valuation assumption, which is how a "bull" case ended up below real
+# analyst consensus for JPM. Real sell-side sensitivity analysis stresses the
+# actual model inputs (discount rate, peer multiple, growth) and recomputes
+# the SAME models -- so bear/bull come from the same DCF/RIM/DDM/Comps
+# machinery as the base case, under harder/easier assumptions. Bear spread is
+# wider than bull (re-rating room downward from credit/risk stress exceeds
+# upward re-rating room) and scales with risk_score. All three scenarios use
+# the SAME growth perturbation across DCF/RIM/DDM (an internally consistent
+# bear case can't assume a growth cut in one model and not another) and the
+# SAME per-model reliability weights as the base case (the scenario changes
+# the assumption, not our confidence in the model).
+BEAR_DISCOUNT_SPREAD_MIN = 0.010
+BEAR_DISCOUNT_SPREAD_MAX = 0.020
+BULL_DISCOUNT_SPREAD = -0.0085
+SCENARIO_GROWTH_BEAR_DELTA = -0.025
+SCENARIO_GROWTH_BULL_DELTA = 0.018
+COMPS_MULTIPLE_BEAR_FACTOR = 0.85
+COMPS_MULTIPLE_BULL_FACTOR = 1.15
+# Extra buffer atop SUSTAINABLE_GROWTH_CEILING_MARGIN when clamping growth
+# for a stressed scenario -- clamps g, never k, so Ke - g never collapses
+# into an exploding Gordon term under a lower-Ke bull case.
+SCENARIO_KE_MARGIN_BUFFER = 0.01
+
 # Real analyst consensus enters c3po_tp exactly once, through this explicit
 # final blend (mirrors B3's _consensus_weight in b3_screener.py) -- never
 # diluted inside the internal models above.
@@ -469,6 +494,15 @@ class OnePagerService:
             fmp_consensus, fmp_summary, eodhd_consensus, eodhd_analyst_count,
         )
         consensus = self._bounded_tp(raw_consensus, price)
+        # Real Street high/low (per-analyst extremes, not our own model) --
+        # FMP's price-target-consensus already returns these but they were
+        # discarded, keeping only the blended consensus point. Shown in the
+        # PDF as a genuine external comparison alongside our own Bear/Bull,
+        # never used as a floor/cap on our own numbers (a single outlier
+        # analyst's high/low shouldn't override our model -- see Fable
+        # consult, 2026-08-20).
+        street_high = self._bounded_tp((fmp_consensus or {}).get("high"), price)
+        street_low = self._bounded_tp((fmp_consensus or {}).get("low"), price)
 
         forward_eps = self._positive(fundamentals.get("forwardEps"))
         trailing_eps = self._positive(fundamentals.get("trailingEps"))
@@ -590,34 +624,83 @@ class OnePagerService:
         # fixed weight regardless of fit. A model below MODEL_RELIABILITY_FLOOR
         # is excluded outright rather than diluted -- this is what makes the
         # weights emerge from data quality instead of being hand-picked.
-        candidates: list[tuple[str, float, float]] = []
+        candidates: list[tuple[str, str, float, float]] = []
         if dcf_tp is not None:
             fcf_score = 0.85 if (free_cashflow and free_cashflow > 0) else 0.0
             if beta is None:
                 fcf_score *= 0.8
             if fcf_score > 0:
-                candidates.append((STANDARD_METHOD_NAMES["dcf"], dcf_tp, fcf_score))
+                candidates.append(("dcf", STANDARD_METHOD_NAMES["dcf"], dcf_tp, fcf_score))
         if rim_tp is not None:
             rim_score = 0.9 if (roe is not None and roe > 0) else 0.4
-            candidates.append((STANDARD_METHOD_NAMES["rim"], rim_tp, rim_score))
+            candidates.append(("rim", STANDARD_METHOD_NAMES["rim"], rim_tp, rim_score))
         if ddm_tp is not None:
             ddm_score = 0.9 if profile in ("financial", "utilities", "quality") else 0.6
-            candidates.append((STANDARD_METHOD_NAMES["ddm"], ddm_tp, ddm_score))
+            candidates.append(("ddm", STANDARD_METHOD_NAMES["ddm"], ddm_tp, ddm_score))
         if comps_tp is not None:
             comps_score = 0.85 if peer.get("pe") or peer.get("ev_ebitda") else 0.55
-            candidates.append((STANDARD_METHOD_NAMES["comps"], comps_tp, comps_score))
+            candidates.append(("comps", STANDARD_METHOD_NAMES["comps"], comps_tp, comps_score))
 
-        usable = [(name, value, score) for name, value, score in candidates if score >= MODEL_RELIABILITY_FLOOR]
+        usable = [(key, name, value, score) for key, name, value, score in candidates if score >= MODEL_RELIABILITY_FLOOR]
         if usable:
-            total_score = sum(score for _, _, score in usable)
-            internal_tp = sum(value * score for _, value, score in usable) / total_score
-            methods = OrderedDict((name, value) for name, value, _ in usable)
-            usable_values = [value for _, value, _ in usable]
+            total_score = sum(score for _, _, _, score in usable)
+            internal_tp = sum(value * score for _, _, value, score in usable) / total_score
+            methods = OrderedDict((name, value) for _, name, value, _ in usable)
+            usable_values = [value for _, _, value, _ in usable]
             low_conviction = len(usable_values) >= 2 and max(usable_values) / max(min(usable_values), 0.01) > LOW_CONVICTION_DISPERSION_RATIO
         else:
             internal_tp = price
             methods = OrderedDict({"Preço de Mercado (dados insuficientes)": price})
             low_conviction = True
+            usable = []
+
+        # Bear/Bull: recompute the SAME surviving models under stressed/eased
+        # real assumptions (see _scenario_models), aggregated with the SAME
+        # reliability weights as the base case -- not a percentage haircut on
+        # c3po_tp. A model is kept in ALL THREE scenarios or none, so bear/
+        # base/bull are always comparing the same basket. Spread widens when
+        # the base case is already low_conviction (more internal disagreement
+        # -> wider honest range, not a smoothed-over base).
+        conviction_widen = 1.35 if low_conviction else 1.0
+        bear_spread = self._clamp(0.010 + risk_score / 100 * 0.010, BEAR_DISCOUNT_SPREAD_MIN, BEAR_DISCOUNT_SPREAD_MAX) * conviction_widen
+        bull_spread = BULL_DISCOUNT_SPREAD * conviction_widen
+        bear_growth_delta = SCENARIO_GROWTH_BEAR_DELTA * conviction_widen
+        bull_growth_delta = SCENARIO_GROWTH_BULL_DELTA * conviction_widen
+
+        if usable:
+            bear_models = self._scenario_models(
+                profile=profile, market=market, price=price, normalized_eps=normalized_eps,
+                fair_pe=fair_pe, fair_ev_ebitda=fair_ev_ebitda, ttm_ebitda=ttm_ebitda, shares=shares,
+                total_debt=total_debt, total_cash=total_cash, free_cashflow=free_cashflow, growth=growth,
+                wacc=wacc, cost_of_equity=cost_of_equity, book_value=book_value, roe=roe,
+                dividend_per_share=dividend_per_share, sustainable_growth=sustainable_growth,
+                discount_spread=bear_spread, growth_delta=bear_growth_delta,
+                multiple_factor=COMPS_MULTIPLE_BEAR_FACTOR,
+            )
+            bull_models = self._scenario_models(
+                profile=profile, market=market, price=price, normalized_eps=normalized_eps,
+                fair_pe=fair_pe, fair_ev_ebitda=fair_ev_ebitda, ttm_ebitda=ttm_ebitda, shares=shares,
+                total_debt=total_debt, total_cash=total_cash, free_cashflow=free_cashflow, growth=growth,
+                wacc=wacc, cost_of_equity=cost_of_equity, book_value=book_value, roe=roe,
+                dividend_per_share=dividend_per_share, sustainable_growth=sustainable_growth,
+                discount_spread=bull_spread, growth_delta=bull_growth_delta,
+                multiple_factor=COMPS_MULTIPLE_BULL_FACTOR,
+            )
+            # A model stays in all three scenarios or none -- comparing bear
+            # to bull across different baskets would be incoherent.
+            scenario_usable = [
+                (key, value, score) for key, _, value, score in usable
+                if bear_models.get(key) is not None and bull_models.get(key) is not None
+            ]
+            if scenario_usable:
+                bear_score_total = sum(score for _, _, score in scenario_usable)
+                bear_tp = sum(bear_models[key] * score for key, _, score in scenario_usable) / bear_score_total
+                bull_tp = sum(bull_models[key] * score for key, _, score in scenario_usable) / bear_score_total
+            else:
+                bear_tp = internal_tp
+                bull_tp = internal_tp
+        else:
+            bear_tp = bull_tp = internal_tp
 
         consensus_weight = self._us_consensus_weight(consensus, analyst_count)
         if low_conviction and consensus_weight:
@@ -810,19 +893,14 @@ class OnePagerService:
             ),
         ]
 
-        # Root-caused 2026-08-20 (methodology redesign follow-up, Dudu-flagged):
-        # these used to fan out from the raw min/max of the 5 internal
-        # methods, which were themselves clamped tight around their own
-        # median (0.68x-1.45x) -- so bear/bull looked stable but hid the
-        # real spread. Now that methods are genuinely distinct models (which
-        # can legitimately disagree a lot, e.g. a single-stage DDM
-        # undervaluing a buyback-heavy bank), fanning out from THEIR raw
-        # min/max let an outlier model set the whole bear or bull case.
-        # Anchoring on c3po_tp (the risk/consensus-aware final estimate)
-        # keeps bear/bull a reasoned band around our actual call instead of
-        # inheriting whichever single model happened to be most extreme.
-        bear = max(c3po_tp * (1 - self._clamp(risk_score / 220, 0.08, 0.35)), price * 0.35)
-        bull = c3po_tp * (1 + self._clamp(max(growth, 0) * 0.40 + 0.06, 0.08, 0.28))
+        # bear_tp/bull_tp were computed earlier from _scenario_models (real
+        # stressed/eased assumptions on the same models, same weights as the
+        # base case) -- not a percentage haircut/premium on c3po_tp. Floor
+        # bear at a last-resort circuit breaker; enforce bear < base < bull
+        # since degenerate single-model cases (e.g. RIM behaving oddly when
+        # ROE is near cost of equity) could theoretically invert the order.
+        bear = max(min(bear_tp, c3po_tp - 0.01), price * 0.35)
+        bull = max(bull_tp, c3po_tp + 0.01)
         headline = self._shorten(
             f"{latest_period}: receita {self._percent(revenue_delta, signed=True)}; margem operacional {self._percent(margin_now)}; C3PO TP aponta {upside:+.0f}% de upside",
             112,
@@ -1436,6 +1514,77 @@ class OnePagerService:
         next_dividend = dividend_per_share * (1 + sustainable_growth)
         value = next_dividend / (cost_of_equity - sustainable_growth)
         return OnePagerService._bounded_tp(value, price)
+
+    def _scenario_models(
+        self,
+        *,
+        profile: str,
+        market: str,
+        price: float,
+        normalized_eps: float | None,
+        fair_pe: float,
+        fair_ev_ebitda: float,
+        ttm_ebitda: float | None,
+        shares: float | None,
+        total_debt: float,
+        total_cash: float,
+        free_cashflow: float | None,
+        growth: float,
+        wacc: float,
+        cost_of_equity: float,
+        book_value: float | None,
+        roe: float | None,
+        dividend_per_share: float | None,
+        sustainable_growth: float,
+        discount_spread: float,
+        growth_delta: float,
+        multiple_factor: float,
+    ) -> dict[str, float | None]:
+        """Recompute the same 4 models under a stressed/eased set of real
+        valuation assumptions (discount rate, growth, peer multiple) instead
+        of applying a percentage haircut/premium to the final TP. Same
+        growth delta is applied to DCF, RIM and DDM for internal
+        consistency within one scenario."""
+        ceiling = US_TERMINAL_GROWTH if market == "US" else BR_TERMINAL_GROWTH
+        scenario_growth = self._clamp(growth + growth_delta, -0.08, 0.30)
+        scenario_wacc = self._clamp(wacc + discount_spread, 0.03, 0.35)
+        scenario_ke = self._clamp(cost_of_equity + discount_spread, 0.03, 0.35)
+        # Clamp g, not k: a lower Ke in the bull case must never be allowed
+        # to collapse the Ke-g Gordon denominator.
+        scenario_sustainable_growth = self._clamp(
+            sustainable_growth + growth_delta,
+            SUSTAINABLE_GROWTH_FLOOR,
+            min(ceiling, scenario_ke - SUSTAINABLE_GROWTH_CEILING_MARGIN - SCENARIO_KE_MARGIN_BUFFER),
+        )
+
+        dcf_tp = None
+        if profile != "financial":
+            dcf_tp = self._dcf_value(
+                free_cashflow=free_cashflow, shares=shares, growth=scenario_growth,
+                market=market, price=price, fallback_eps=normalized_eps,
+                discount_rate=scenario_wacc, total_debt=total_debt, total_cash=total_cash,
+            )
+        rim_tp = self._residual_income_tp(
+            book_value=book_value, roe=roe, cost_of_equity=scenario_ke,
+            sustainable_growth=scenario_sustainable_growth, price=price,
+        )
+        ddm_tp = self._ddm_tp(
+            dividend_per_share=dividend_per_share, cost_of_equity=scenario_ke,
+            sustainable_growth=scenario_sustainable_growth, price=price,
+        )
+        scenario_earnings_tp = self._bounded_tp((normalized_eps or 0) * fair_pe * multiple_factor, price)
+        scenario_enterprise_tp = None
+        if profile != "financial" and ttm_ebitda and shares:
+            scenario_enterprise_tp = self._bounded_tp(
+                (ttm_ebitda * fair_ev_ebitda * multiple_factor - total_debt + total_cash) / shares, price,
+            )
+        comps_tp = self._weighted_value(
+            ((scenario_earnings_tp, 0.55), (scenario_enterprise_tp, 0.45))
+            if profile != "financial" else ((scenario_earnings_tp, 1.0),),
+            price,
+        ) if (scenario_earnings_tp or scenario_enterprise_tp) else None
+
+        return {"dcf": dcf_tp, "rim": rim_tp, "ddm": ddm_tp, "comps": comps_tp}
 
     @staticmethod
     def _weighted_value(values: tuple[tuple[float | None, float], ...], fallback: float) -> float:
