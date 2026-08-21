@@ -1275,7 +1275,10 @@ class R2D2PaperService:
                     self.repo.save_decision(experiment["id"], cycle_id, candidate, action, reasons)
                     continue
                 signals += 1
-                trade = self._buy(experiment, cycle_id, candidate, positions, now)
+                trade = self._buy(
+                    experiment, cycle_id, candidate, positions, now,
+                    entry_reasons=reasons,
+                )
                 if trade:
                     trade_count += 1
                     orders_today += 1
@@ -2626,7 +2629,10 @@ class R2D2PaperService:
         }
         self._sell(experiment, cycle_id, exit_item, position, quote, fx, reason)
         refreshed = self.repo.positions(experiment["id"])
-        trade = self._buy(experiment, cycle_id, candidate, refreshed, now)
+        trade = self._buy(
+            experiment, cycle_id, candidate, refreshed, now,
+            entry_reasons=reasons,
+        )
         if not trade:
             self.repo.save_decision(
                 experiment["id"], cycle_id, candidate, "REJECT",
@@ -2636,7 +2642,8 @@ class R2D2PaperService:
         return 2
 
     def _buy(self, experiment: dict[str, Any], cycle_id: str, item: dict[str, Any],
-             positions: list[dict[str, Any]], now: datetime | None = None) -> dict[str, Any] | None:
+             positions: list[dict[str, Any]], now: datetime | None = None,
+             *, entry_reasons: list[str] | None = None) -> dict[str, Any] | None:
         if item.get("market") not in ACTIVE_MARKETS or item.get("quote_status") != "live":
             return None
         # Root-caused 2026-08-20: item["price"] was captured during
@@ -2741,6 +2748,8 @@ class R2D2PaperService:
             "cash_deployment_mode": cash_overhang_percent > 0,
             "sizing_model": "risk-normalized (Turtle-style)",
             "sizing_factors": sizing_factors,
+            "entry_decision_reasons": list(entry_reasons or []),
+            "ranking_thesis": item.get("thesis"),
             "paper_only": True,
         }
         sizing_reason = (
@@ -2748,13 +2757,17 @@ class R2D2PaperService:
             f"(target {target_position_percent:.2f}%; conviction, risk and ATR adjusted"
             f"{' with cash deployment active' if cash_overhang_percent > 0 else ''})."
         )
+        technical_reasons = list(entry_reasons or ["Entry decision approved."])
+        execution_reasons = [*technical_reasons, sizing_reason]
         trade = self.repo.execute_trade(
             experiment, cycle_id=cycle_id, candidate=item, side="BUY", quantity=quantity,
             signal_price=item["price"], fill_price=fill, fx=fx, fees=fees, slippage=slippage,
-            reason=f"Hybrid entry: {item['thesis']} {sizing_reason}",
+            reason=" ".join(execution_reasons),
             decision=decision, quote_as_of=item["quote_as_of"],
         )
-        self.repo.save_decision(experiment["id"], cycle_id, item, "BUY", [trade["reason"]], trade["id"])
+        self.repo.save_decision(
+            experiment["id"], cycle_id, decision, "BUY", execution_reasons, trade["id"],
+        )
         return trade
 
     def _sell(self, experiment: dict[str, Any], cycle_id: str, item: dict[str, Any], position: dict[str, Any],

@@ -504,6 +504,34 @@ def test_r2d2_buy_records_dynamic_position_size_in_trade_audit() -> None:
     assert 19_900 <= trade["gross_value_usd"] <= 20_000
 
 
+def test_r2d2_buy_preserves_technical_entry_reason_separately_from_ranking_thesis() -> None:
+    service = _service()
+    experiment = service.ensure_initialized()
+    cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ"])
+    candidate = {
+        "market": "NASDAQ", "symbol": "AUDIT", "name": "Audit Corp", "currency": "USD",
+        "price": 100.0, "stop_price": 95.0, "upside": 45.0, "risk_score": 22.0,
+        "confidence": 82.0, "buy_in_distance": 2.0, "technical_score": 78.0,
+        "technical_validated": True, "quote_status": "live", "composite_score": 82.0,
+        "fundamental_score": 84.0,
+        "thesis": "C3PO TP 150.00; valuation backfill completed for the current session.",
+        "technical_indicators": {"atr_percent": 1.8},
+        "quote_as_of": datetime.now(timezone.utc),
+    }
+    technical_reason = "Tactical quality-momentum route passed with live volume confirmation."
+
+    trade = service._buy(
+        experiment, cycle_id, candidate, [], candidate["quote_as_of"],
+        entry_reasons=[technical_reason],
+    )
+
+    assert trade is not None
+    assert trade["reason"].startswith(technical_reason)
+    assert "valuation backfill" not in trade["reason"]
+    assert trade["decision_snapshot"]["entry_decision_reasons"] == [technical_reason]
+    assert "valuation backfill" in trade["decision_snapshot"]["ranking_thesis"]
+
+
 def test_r2d2_portfolio_pacing_can_fill_twenty_diversified_slots_under_gross_cap() -> None:
     service = _service()
     # This unit test exercises the portfolio gross cap with two markets. The
