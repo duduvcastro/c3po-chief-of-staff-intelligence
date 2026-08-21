@@ -4,6 +4,17 @@ Status: **draft for methodological sign-off; no production-capital behavior**
 Specification version: `COMMITTEE-PHASE0-v0.1`  
 Created: 2026-08-21
 
+## Day D
+
+**2026-08-21 is Day D:** the founding day of the R2D2 committee intelligence
+project, built in six hands by Dudu, Codex and Fable.
+
+The name marks the start of the system described here, not a claim that its edge
+already exists. Its meaning is the commitment made on this date: ambitious
+research, real infrastructure evidence, independent methodological challenge,
+immutable audit trails and no promotion to capital without out-of-sample and
+live-shadow proof. Every later version descends from this contract.
+
 ## Purpose
 
 Replace reactive modification of one intraday entry route with a governed
