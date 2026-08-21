@@ -37,6 +37,20 @@ def _risk_monitor_loop(service: R2D2PaperService, stop: Event, interval_seconds:
         stop.wait(max(0.0, interval - elapsed))
 
 
+def _fast_risk_watcher_loop(service: R2D2PaperService, stop: Event, interval_seconds: float) -> None:
+    interval = max(0.5, min(2.0, interval_seconds))
+    logger.info("R2D2 fast risk watcher enabled at %.1f-second cadence", interval)
+    while not stop.is_set():
+        started = time.monotonic()
+        try:
+            exits = service.run_fast_risk_watcher_cycle()
+            logger.debug("R2D2 fast risk watcher exits=%d", exits)
+        except Exception:
+            logger.exception("Unhandled R2D2 fast risk-watcher error")
+        elapsed = time.monotonic() - started
+        stop.wait(max(0.0, interval - elapsed))
+
+
 def main() -> None:
     settings = get_settings()
     database = Database(settings)
@@ -62,6 +76,7 @@ def main() -> None:
     last_candidate_scan = 0.0
     risk_stop = Event()
     risk_thread: Thread | None = None
+    fast_risk_thread: Thread | None = None
     if settings.r2d2_risk_monitor_enabled:
         risk_thread = Thread(
             target=_risk_monitor_loop,
@@ -72,6 +87,16 @@ def main() -> None:
         risk_thread.start()
     else:
         logger.info("R2D2 dedicated risk monitor disabled by feature flag")
+    if settings.r2d2_fast_risk_watcher_enabled:
+        fast_risk_thread = Thread(
+            target=_fast_risk_watcher_loop,
+            args=(risk_service, risk_stop, settings.r2d2_fast_risk_watcher_interval_seconds),
+            name="r2d2-fast-risk-watcher",
+            daemon=True,
+        )
+        fast_risk_thread.start()
+    else:
+        logger.info("R2D2 fast risk watcher disabled by feature flag")
     try:
         while True:
             try:
@@ -93,6 +118,8 @@ def main() -> None:
         risk_stop.set()
         if risk_thread:
             risk_thread.join(timeout=10)
+        if fast_risk_thread:
+            fast_risk_thread.join(timeout=10)
         stream.stop()
 
 
