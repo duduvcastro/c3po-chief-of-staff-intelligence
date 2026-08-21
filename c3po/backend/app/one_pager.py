@@ -949,6 +949,8 @@ class OnePagerService:
             "thesis": thesis,
             "risks": risks,
             "scenarios": (("BEAR", bear), ("BASE", c3po_tp), ("BULL", bull)),
+            "street_high": street_high,
+            "street_low": street_low,
             "as_of": quote.get("as_of"),
             "source": (
                 f"Brapi Pro + EODHD All-In-One | {C3PO_VALUATION_POLICY.label}"
