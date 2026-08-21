@@ -904,3 +904,39 @@ def test_analyze_flags_low_conviction_and_leans_harder_on_consensus_when_models_
     method_values = list(analysis["methods"].values())
     assert max(method_values) / min(method_values) > LOW_CONVICTION_DISPERSION_RATIO
     assert analysis["low_conviction"] is True
+
+
+def test_scenarios_fan_out_from_c3po_tp_not_raw_model_extremes(tmp_path) -> None:
+    """Root-caused 2026-08-20 (methodology redesign follow-up, Dudu-flagged
+    after seeing an implausibly wide bear/bull spread on a real PDF): bear/
+    bull used to fan out from min(methods)/max(methods). The old 5-row
+    average clamped every row within 0.68x-1.45x of their own median, so
+    that raw spread looked deceptively tame. Now that methods are genuinely
+    distinct, unclamped models (which can legitimately disagree a lot --
+    e.g. a single-stage DDM undervaluing a buyback-heavy bank), fanning out
+    from their raw extremes let one outlier model set the whole bear or
+    bull case. Anchoring on c3po_tp keeps bear/bull a reasoned band around
+    the actual final call.
+    """
+    service = service_for(tmp_path)
+    fundamentals = {
+        "companyName": "JPM", "sector": "Financial Services", "industry": "Banks-Diversified",
+        "marketCap": 950_000_000_000, "trailingEps": 24.0, "forwardEps": 25.007,
+        "sharesOutstanding": 2_658_186_195, "beta": 0.977, "returnOnEquity": 0.1779,
+        "profitMargins": 0.3492, "operatingMargins": 0.5039,
+        "revenueGrowthAnnual": 0.304, "earningsGrowthAnnual": 0.469,
+        "bookValue": 133.007, "ebitda": 93_160_000_000, "totalDebt": 1_237_871_000_000,
+        "totalCash": 262_254_800_000, "freeCashflow": 86_115_000_000,
+        "targetMeanPrice": 388.33, "numberOfAnalystOpinions": 27, "dividendYield": 0.021,
+    }
+    quote = {"price": 357.26, "currency": "USD", "change_percent": 0.3, "as_of": datetime.now(timezone.utc)}
+
+    analysis = service._analyze("JPM", "US", quote, fundamentals, risk_free_rate=0.042)
+
+    method_values = list(analysis["methods"].values())
+    scenarios = dict(analysis["scenarios"])
+    # The raw models disagree sharply (this fixture is low_conviction), but
+    # bear/bull must not simply equal the raw min/max of that disagreement.
+    assert scenarios["BEAR"] > min(method_values)
+    assert scenarios["BULL"] < max(method_values)
+    assert scenarios["BEAR"] < scenarios["BASE"] < scenarios["BULL"]

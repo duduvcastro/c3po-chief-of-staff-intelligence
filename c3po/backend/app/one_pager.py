@@ -810,8 +810,19 @@ class OnePagerService:
             ),
         ]
 
-        bear = max(min(method_values) * (1 - self._clamp(risk_score / 350, 0.06, 0.22)), price * 0.35)
-        bull = max(method_values) * (1 + self._clamp(max(growth, 0) * 0.40 + 0.05, 0.06, 0.18))
+        # Root-caused 2026-08-20 (methodology redesign follow-up, Dudu-flagged):
+        # these used to fan out from the raw min/max of the 5 internal
+        # methods, which were themselves clamped tight around their own
+        # median (0.68x-1.45x) -- so bear/bull looked stable but hid the
+        # real spread. Now that methods are genuinely distinct models (which
+        # can legitimately disagree a lot, e.g. a single-stage DDM
+        # undervaluing a buyback-heavy bank), fanning out from THEIR raw
+        # min/max let an outlier model set the whole bear or bull case.
+        # Anchoring on c3po_tp (the risk/consensus-aware final estimate)
+        # keeps bear/bull a reasoned band around our actual call instead of
+        # inheriting whichever single model happened to be most extreme.
+        bear = max(c3po_tp * (1 - self._clamp(risk_score / 220, 0.08, 0.35)), price * 0.35)
+        bull = c3po_tp * (1 + self._clamp(max(growth, 0) * 0.40 + 0.06, 0.08, 0.28))
         headline = self._shorten(
             f"{latest_period}: receita {self._percent(revenue_delta, signed=True)}; margem operacional {self._percent(margin_now)}; C3PO TP aponta {upside:+.0f}% de upside",
             112,
