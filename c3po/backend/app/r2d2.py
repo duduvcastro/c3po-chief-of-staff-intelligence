@@ -160,6 +160,8 @@ class R2D2Repository:
             }
         if not hasattr(database, "_r2d2_risk_evaluation_lock"):
             database._r2d2_risk_evaluation_lock = Lock()  # type: ignore[attr-defined]
+        if not hasattr(database, "_r2d2_fast_risk_alerts"):
+            database._r2d2_fast_risk_alerts = set()  # type: ignore[attr-defined]
 
     @property
     def memory(self) -> dict[str, Any]:
@@ -362,42 +364,197 @@ class R2D2Repository:
             rows = connection.execute(
                 """SELECT market, symbol, name, currency, quantity, average_cost_local,
                           average_cost_usd, last_price_local, fx_to_usd, high_water_price_local,
-                          stop_price_local, opened_at, updated_at, strategy_snapshot
+                          stop_price_local, opened_at, updated_at, strategy_snapshot,
+                          hard_stop_price_local, chandelier_atr_local, chandelier_atr_as_of,
+                          chandelier_stop_price_local, chandelier_confirmation_count,
+                          chandelier_last_confirmation_tick_at
                    FROM r2d2_positions WHERE experiment_id = %s ORDER BY market, symbol""",
                 (experiment_id,),
             ).fetchall()
         keys = ("market", "symbol", "name", "currency", "quantity", "average_cost_local",
                 "average_cost_usd", "last_price_local", "fx_to_usd", "high_water_price_local",
-                "stop_price_local", "opened_at", "updated_at", "strategy_snapshot")
+                "stop_price_local", "opened_at", "updated_at", "strategy_snapshot",
+                "hard_stop_price_local", "chandelier_atr_local", "chandelier_atr_as_of",
+                "chandelier_stop_price_local", "chandelier_confirmation_count",
+                "chandelier_last_confirmation_tick_at")
         return [dict(zip(keys, row)) for row in rows]
 
     def update_mark(self, experiment_id: str, market: str, symbol: str, price: float, fx: float,
                     high_water: float, stop: float, updated_at: datetime,
-                    strategy_snapshot: dict[str, Any] | None = None) -> None:
+                    strategy_snapshot: dict[str, Any] | None = None, *,
+                    write_high_water: bool = True) -> None:
         if not self.database.database_url:
             item = self.memory["positions"].get((market, symbol))
             if item:
-                item.update(last_price_local=price, fx_to_usd=fx, high_water_price_local=high_water,
+                item.update(last_price_local=price, fx_to_usd=fx,
                             stop_price_local=stop, updated_at=updated_at)
+                if write_high_water:
+                    item["high_water_price_local"] = max(
+                        _float(item.get("high_water_price_local")), high_water,
+                    )
                 if strategy_snapshot is not None:
                     item["strategy_snapshot"] = strategy_snapshot
             return
         with self.database.connection() as connection:
             connection.execute(
                 """UPDATE r2d2_positions SET last_price_local=%s, fx_to_usd=%s,
-                          high_water_price_local=%s, stop_price_local=%s, updated_at=%s,
+                          high_water_price_local=CASE WHEN %s THEN
+                              GREATEST(high_water_price_local, %s) ELSE high_water_price_local END,
+                          stop_price_local=%s, updated_at=%s,
                           strategy_snapshot=COALESCE(%s::jsonb, strategy_snapshot)
                    WHERE experiment_id=%s AND market=%s AND symbol=%s""",
-                (price, fx, high_water, stop, updated_at,
+                (price, fx, write_high_water, high_water, stop, updated_at,
                  json.dumps(strategy_snapshot) if strategy_snapshot is not None else None,
                  experiment_id, market, symbol),
+            )
+            connection.commit()
+
+    def update_chandelier_anchor(self, experiment_id: str, market: str, symbol: str,
+                                 *, atr: float, hard_stop: float, as_of: datetime) -> None:
+        """Refresh ATR without taking high-water ownership from the fast watcher."""
+        if atr <= 0:
+            return
+        if not self.database.database_url:
+            item = self.memory["positions"].get((market, symbol))
+            if not item:
+                return
+            item["chandelier_atr_local"] = atr
+            item["chandelier_atr_as_of"] = as_of
+            if not _float(item.get("hard_stop_price_local")):
+                item["hard_stop_price_local"] = hard_stop
+            candidate = _float(item["high_water_price_local"]) - atr * 2.5
+            item["chandelier_stop_price_local"] = max(
+                _float(item.get("chandelier_stop_price_local")), candidate,
+            )
+            return
+        with self.database.connection() as connection:
+            connection.execute(
+                """UPDATE r2d2_positions
+                   SET chandelier_atr_local=%s, chandelier_atr_as_of=%s,
+                       hard_stop_price_local=COALESCE(hard_stop_price_local, %s),
+                       chandelier_stop_price_local=GREATEST(
+                           COALESCE(chandelier_stop_price_local, 0),
+                           high_water_price_local - (%s * 2.5)
+                       )
+                   WHERE experiment_id=%s AND market=%s AND symbol=%s""",
+                (atr, as_of, hard_stop, atr, experiment_id, market, symbol),
+            )
+            connection.commit()
+
+    def observe_fast_risk_tick(self, experiment_id: str, market: str, symbol: str,
+                               *, price: float, tick_as_of: datetime) -> dict[str, Any] | None:
+        """Atomically advance monotonic high-water and distinct-tick confirmation state."""
+        if not self.database.database_url:
+            item = self.memory["positions"].get((market, symbol))
+            if not item:
+                return None
+            item["high_water_price_local"] = max(_float(item["high_water_price_local"]), price)
+            atr = _float(item.get("chandelier_atr_local"))
+            if atr > 0:
+                item["chandelier_stop_price_local"] = max(
+                    _float(item.get("chandelier_stop_price_local")),
+                    _float(item["high_water_price_local"]) - atr * 2.5,
+                )
+            stop = _float(item.get("chandelier_stop_price_local"))
+            last_confirmation = item.get("chandelier_last_confirmation_tick_at")
+            distinct = not isinstance(last_confirmation, datetime) or tick_as_of > last_confirmation
+            if stop > 0 and price <= stop and distinct:
+                item["chandelier_confirmation_count"] = int(item.get("chandelier_confirmation_count") or 0) + 1
+                item["chandelier_last_confirmation_tick_at"] = tick_as_of
+            elif stop > 0 and price > stop:
+                item["chandelier_confirmation_count"] = 0
+                item["chandelier_last_confirmation_tick_at"] = None
+            return dict(item)
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """UPDATE r2d2_positions
+                   SET high_water_price_local=GREATEST(high_water_price_local, %s),
+                       chandelier_stop_price_local=CASE
+                           WHEN chandelier_atr_local IS NULL THEN chandelier_stop_price_local
+                           ELSE GREATEST(
+                               COALESCE(chandelier_stop_price_local, 0),
+                               GREATEST(high_water_price_local, %s) - chandelier_atr_local * 2.5
+                           )
+                       END,
+                       chandelier_confirmation_count=CASE
+                           WHEN chandelier_atr_local IS NOT NULL
+                            AND %s <= GREATEST(
+                                COALESCE(chandelier_stop_price_local, 0),
+                                GREATEST(high_water_price_local, %s) - chandelier_atr_local * 2.5
+                            )
+                            AND (chandelier_last_confirmation_tick_at IS NULL
+                                 OR %s > chandelier_last_confirmation_tick_at)
+                           THEN chandelier_confirmation_count + 1
+                           WHEN chandelier_atr_local IS NOT NULL
+                            AND %s > GREATEST(
+                                COALESCE(chandelier_stop_price_local, 0),
+                                GREATEST(high_water_price_local, %s) - chandelier_atr_local * 2.5
+                            )
+                           THEN 0
+                           ELSE chandelier_confirmation_count
+                       END,
+                       chandelier_last_confirmation_tick_at=CASE
+                           WHEN chandelier_atr_local IS NOT NULL
+                            AND %s <= GREATEST(
+                                COALESCE(chandelier_stop_price_local, 0),
+                                GREATEST(high_water_price_local, %s) - chandelier_atr_local * 2.5
+                            )
+                            AND (chandelier_last_confirmation_tick_at IS NULL
+                                 OR %s > chandelier_last_confirmation_tick_at)
+                           THEN %s
+                           WHEN chandelier_atr_local IS NOT NULL
+                            AND %s > GREATEST(
+                                COALESCE(chandelier_stop_price_local, 0),
+                                GREATEST(high_water_price_local, %s) - chandelier_atr_local * 2.5
+                            )
+                           THEN NULL
+                           ELSE chandelier_last_confirmation_tick_at
+                       END
+                   WHERE experiment_id=%s AND market=%s AND symbol=%s
+                   RETURNING high_water_price_local, hard_stop_price_local,
+                             chandelier_atr_local, chandelier_atr_as_of,
+                             chandelier_stop_price_local, chandelier_confirmation_count,
+                             chandelier_last_confirmation_tick_at""",
+                (
+                    price, price, price, price, tick_as_of, price, price,
+                    price, price, tick_as_of, tick_as_of, price, price,
+                    experiment_id, market, symbol,
+                ),
+            ).fetchone()
+            connection.commit()
+        if not row:
+            return None
+        keys = (
+            "high_water_price_local", "hard_stop_price_local", "chandelier_atr_local",
+            "chandelier_atr_as_of", "chandelier_stop_price_local",
+            "chandelier_confirmation_count", "chandelier_last_confirmation_tick_at",
+        )
+        return dict(zip(keys, row))
+
+    def advance_fast_high_water(self, experiment_id: str, market: str, symbol: str,
+                                *, price: float) -> None:
+        """Advance high-water without touching Chandelier confirmation state."""
+        if not self.database.database_url:
+            item = self.memory["positions"].get((market, symbol))
+            if item:
+                item["high_water_price_local"] = max(
+                    _float(item["high_water_price_local"]), price,
+                )
+            return
+        with self.database.connection() as connection:
+            connection.execute(
+                """UPDATE r2d2_positions
+                   SET high_water_price_local=GREATEST(high_water_price_local, %s)
+                   WHERE experiment_id=%s AND market=%s AND symbol=%s""",
+                (price, experiment_id, market, symbol),
             )
             connection.commit()
 
     def execute_trade(self, experiment: dict[str, Any], *, cycle_id: str, candidate: dict[str, Any],
                       side: str, quantity: float, signal_price: float, fill_price: float, fx: float,
                       fees: float, slippage: float, reason: str, decision: dict[str, Any],
-                      quote_as_of: datetime) -> dict[str, Any]:
+                      quote_as_of: datetime,
+                      fast_exit_audit: dict[str, Any] | None = None) -> dict[str, Any]:
         trade_id = str(uuid4())
         now = datetime.now(timezone.utc)
         gross = quantity * fill_price * fx
@@ -420,6 +577,11 @@ class R2D2Repository:
                     "average_cost_local": avg_usd / fx, "average_cost_usd": avg_usd,
                     "last_price_local": fill_price, "fx_to_usd": fx,
                     "high_water_price_local": fill_price, "stop_price_local": candidate["stop_price"],
+                    "hard_stop_price_local": candidate["stop_price"],
+                    "chandelier_atr_local": None, "chandelier_atr_as_of": None,
+                    "chandelier_stop_price_local": None,
+                    "chandelier_confirmation_count": 0,
+                    "chandelier_last_confirmation_tick_at": None,
                     "opened_at": current.get("opened_at", now) if current else now, "updated_at": now,
                     "strategy_snapshot": decision,
                 }
@@ -457,17 +619,21 @@ class R2D2Repository:
                         """INSERT INTO r2d2_positions
                            (experiment_id, market, symbol, name, currency, quantity, average_cost_local,
                             average_cost_usd, last_price_local, fx_to_usd, high_water_price_local,
-                            stop_price_local, opened_at, updated_at, strategy_snapshot)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                            stop_price_local, opened_at, updated_at, strategy_snapshot,
+                            hard_stop_price_local)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
                            ON CONFLICT (experiment_id, market, symbol) DO UPDATE SET
                              quantity=EXCLUDED.quantity, average_cost_local=EXCLUDED.average_cost_local,
                              average_cost_usd=EXCLUDED.average_cost_usd, last_price_local=EXCLUDED.last_price_local,
                              fx_to_usd=EXCLUDED.fx_to_usd, high_water_price_local=GREATEST(r2d2_positions.high_water_price_local, EXCLUDED.high_water_price_local),
-                             stop_price_local=EXCLUDED.stop_price_local, updated_at=EXCLUDED.updated_at,
+                             stop_price_local=EXCLUDED.stop_price_local,
+                             hard_stop_price_local=EXCLUDED.hard_stop_price_local,
+                             updated_at=EXCLUDED.updated_at,
                              strategy_snapshot=EXCLUDED.strategy_snapshot""",
                         (experiment["id"], candidate["market"], candidate["symbol"], candidate["name"],
                          candidate["currency"], new_qty, avg_usd / fx, avg_usd, fill_price, fx, fill_price,
-                         candidate["stop_price"], current[2] if current else now, now, json.dumps(decision, default=str)),
+                         candidate["stop_price"], current[2] if current else now, now,
+                         json.dumps(decision, default=str), candidate["stop_price"]),
                     )
                     cash -= gross + fees
                 else:
@@ -496,11 +662,14 @@ class R2D2Repository:
                     """INSERT INTO r2d2_trades
                        (id, experiment_id, cycle_id, market, symbol, name, side, quantity,
                         signal_price_local, fill_price_local, fx_to_usd, gross_value_usd, fees_usd,
-                        slippage_usd, realized_pnl_usd, reason, decision_snapshot, executed_at, quote_as_of)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)""",
+                        slippage_usd, realized_pnl_usd, reason, decision_snapshot, executed_at, quote_as_of,
+                        fast_exit_rule, fast_exit_level_local, fast_exit_atr_local, fast_exit_tick_as_of)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s)""",
                     (trade_id, experiment["id"], cycle_id, candidate["market"], candidate["symbol"],
                      candidate["name"], side, quantity, signal_price, fill_price, fx, gross, fees,
-                     slippage, realized, reason, json.dumps(decision, default=str), now, quote_as_of),
+                     slippage, realized, reason, json.dumps(decision, default=str), now, quote_as_of,
+                     (fast_exit_audit or {}).get("rule"), (fast_exit_audit or {}).get("level"),
+                     (fast_exit_audit or {}).get("atr"), (fast_exit_audit or {}).get("tick_as_of")),
                 )
                 connection.commit()
             experiment["cash_balance"] = cash
@@ -515,6 +684,10 @@ class R2D2Repository:
             ),
             "reason": reason, "decision_snapshot": decision, "executed_at": now,
             "quote_as_of": quote_as_of, "currency": candidate["currency"],
+            "fast_exit_rule": (fast_exit_audit or {}).get("rule"),
+            "fast_exit_level_local": (fast_exit_audit or {}).get("level"),
+            "fast_exit_atr_local": (fast_exit_audit or {}).get("atr"),
+            "fast_exit_tick_as_of": (fast_exit_audit or {}).get("tick_as_of"),
         }
         if not self.database.database_url:
             self.memory["trades"].append(trade)
@@ -893,6 +1066,7 @@ class R2D2PaperService:
         self._technical_review_stats: dict[str, Any] = {}
         self._active_policy = dict(BASE_ENTRY_POLICY)
         self._learning_state: dict[str, Any] | None = None
+        self._fast_risk_seen_ticks: dict[tuple[str, str], datetime] = {}
 
     def ensure_initialized(self) -> dict[str, Any]:
         experiment = self.repo.ensure_experiment(self.settings)
@@ -1366,6 +1540,144 @@ class R2D2PaperService:
             )
         return exits
 
+    def run_fast_risk_watcher_cycle(self, now: datetime | None = None) -> int:
+        """Check fresh in-memory ticks for unconditional and confirmed price stops."""
+        now = now or datetime.now(timezone.utc)
+        experiment = self.ensure_initialized()
+        positions = self.repo.positions(experiment["id"])
+        if not positions or not self.risk_markets(now):
+            return 0
+        stream = getattr(self.realtime, "stream", None)
+        if not stream:
+            return 0
+        stream.set_group(
+            "r2d2-positions",
+            [position["symbol"] for position in positions if position["market"] in ACTIVE_MARKETS],
+            priority=POSITION_STREAM_PRIORITY,
+        )
+        exits = 0
+        with self.repo.risk_evaluation_lock(experiment["id"]) as acquired:
+            if not acquired:
+                return 0
+            for position in self.repo.positions(experiment["id"]):
+                if position["market"] not in ACTIVE_MARKETS:
+                    continue
+                quote = stream.quote(position["symbol"])
+                if not quote:
+                    continue
+                tick_as_of = quote.as_of
+                if tick_as_of.tzinfo is None:
+                    tick_as_of = tick_as_of.replace(tzinfo=timezone.utc)
+                else:
+                    tick_as_of = tick_as_of.astimezone(timezone.utc)
+                tick_age = max(0.0, (now - tick_as_of).total_seconds())
+                alert_key = (position["market"], position["symbol"])
+                alert_store: set[tuple[str, str, str]] = self.repo.database._r2d2_fast_risk_alerts  # type: ignore[attr-defined]
+                if tick_age > self.settings.r2d2_fast_risk_tick_max_age_seconds:
+                    stale_key = (*alert_key, "tick")
+                    if stale_key not in alert_store:
+                        logger.warning(
+                            "R2D2 fast watcher skipping stale tick market=%s symbol=%s age=%.1fs",
+                            *alert_key, tick_age,
+                        )
+                        alert_store.add(stale_key)
+                    continue
+                alert_store.discard((*alert_key, "tick"))
+                if self._fast_risk_seen_ticks.get(alert_key) == tick_as_of:
+                    continue
+                strategy = dict(position.get("strategy_snapshot") or {})
+                cached_technical = dict(
+                    strategy.get("live_technical") or strategy.get("technical_indicators") or {},
+                )
+                if self._quote_is_anomalous(position, quote.price, cached_technical, strategy):
+                    logger.warning(
+                        "R2D2 fast watcher rejected anomalous tick market=%s symbol=%s price=%.6f tick=%s",
+                        *alert_key, quote.price, tick_as_of.isoformat(),
+                    )
+                    continue
+                hard_stop = _float(position.get("hard_stop_price_local"))
+                if hard_stop <= 0:
+                    self.repo.advance_fast_high_water(
+                        experiment["id"], position["market"], position["symbol"], price=quote.price,
+                    )
+                    missing_key = (*alert_key, "hard-stop")
+                    if missing_key not in alert_store:
+                        logger.warning(
+                            "R2D2 fast watcher awaiting hard-stop anchor market=%s symbol=%s",
+                            *alert_key,
+                        )
+                        alert_store.add(missing_key)
+                    continue
+                alert_store.discard((*alert_key, "hard-stop"))
+                atr = _float(position.get("chandelier_atr_local"))
+                atr_as_of = position.get("chandelier_atr_as_of")
+                atr_age = (
+                    max(0.0, (now - atr_as_of.astimezone(timezone.utc)).total_seconds())
+                    if isinstance(atr_as_of, datetime) else float("inf")
+                )
+                rule: str | None = None
+                level = hard_stop
+                if quote.price <= hard_stop:
+                    rule = "hard_stop"
+                elif atr <= 0 or atr_age > self.settings.r2d2_fast_risk_atr_max_age_seconds:
+                    self.repo.advance_fast_high_water(
+                        experiment["id"], position["market"], position["symbol"], price=quote.price,
+                    )
+                    stale_key = (*alert_key, "atr")
+                    if stale_key not in alert_store:
+                        logger.warning(
+                            "R2D2 fast watcher degraded to hard-stop only market=%s symbol=%s atr_age=%s",
+                            *alert_key, f"{atr_age:.1f}s" if atr_age != float("inf") else "missing",
+                        )
+                        alert_store.add(stale_key)
+                    continue
+                else:
+                    alert_store.discard((*alert_key, "atr"))
+                    state = self.repo.observe_fast_risk_tick(
+                        experiment["id"], position["market"], position["symbol"],
+                        price=quote.price, tick_as_of=tick_as_of,
+                    )
+                    if not state:
+                        continue
+                    level = _float(state.get("chandelier_stop_price_local"))
+                    if (
+                        level > 0 and quote.price <= level
+                        and int(state.get("chandelier_confirmation_count") or 0) >= 2
+                    ):
+                        rule = "chandelier_2tick"
+                if not rule:
+                    self._fast_risk_seen_ticks[alert_key] = tick_as_of
+                    continue
+                cycle_id = self.repo.start_cycle(
+                    experiment["id"], [position["market"]], "running",
+                )
+                pnl_pct = (quote.price / _float(position["average_cost_local"]) - 1) * 100
+                reason = (
+                    f"Fast risk watcher {rule} exit at {pnl_pct:+.2f}% on fresh tick "
+                    f"{tick_as_of.isoformat()}; level {level:.4f}."
+                )
+                candidate = {
+                    "market": position["market"], "symbol": position["symbol"],
+                    "name": position["name"], "currency": position["currency"],
+                    "stop_price": level, "fundamental_score": 0,
+                    "technical_score": 0, "risk_score": 0, "composite_score": 0,
+                }
+                self._sell(
+                    experiment, cycle_id, candidate, position, quote,
+                    _float(position.get("fx_to_usd"), 1.0), reason,
+                    fast_exit_audit={
+                        "rule": rule, "level": level, "atr": atr or None,
+                        "tick_as_of": tick_as_of,
+                    },
+                )
+                self.repo.finish_cycle(
+                    cycle_id, "succeeded", 0, 0, 1,
+                    metadata={"fast_risk_watcher": {"rule": rule, "symbol": position["symbol"]}},
+                )
+                self._fast_risk_seen_ticks[alert_key] = tick_as_of
+                exits += 1
+        return exits
+
     def _position_quotes(self, positions: list[dict[str, Any]], now: datetime) -> dict[tuple[str, str], Any]:
         output: dict[tuple[str, str], Any] = {}
         for market in {row["market"] for row in positions}:
@@ -1440,6 +1752,7 @@ class R2D2PaperService:
                     experiment["id"], position["market"], position["symbol"], quote.price,
                     conversion, max(_float(position["high_water_price_local"]), quote.price),
                     _float(position["stop_price_local"]), now, strategy,
+                    write_high_water=not self.settings.r2d2_fast_risk_watcher_enabled,
                 )
                 if self._b3_session_open(now):
                     candidate = {
@@ -1480,6 +1793,7 @@ class R2D2PaperService:
                         _float(position["last_price_local"]), conversion,
                         _float(position["high_water_price_local"]),
                         _float(position["stop_price_local"]), now, strategy,
+                        write_high_water=not self.settings.r2d2_fast_risk_watcher_enabled,
                     )
                     continue
                 # Grace period exceeded. Root-caused 2026-08-18: an earlier version of
@@ -1509,6 +1823,7 @@ class R2D2PaperService:
                         _float(position["last_price_local"]), conversion,
                         _float(position["high_water_price_local"]),
                         _float(position["stop_price_local"]), now, strategy,
+                        write_high_water=not self.settings.r2d2_fast_risk_watcher_enabled,
                     )
                     continue
                 # The quote's own timestamp is recent enough to trust: fall back to
@@ -1522,6 +1837,7 @@ class R2D2PaperService:
                         experiment["id"], position["market"], position["symbol"],
                         _float(position["last_price_local"]), conversion, high_water,
                         _float(position["stop_price_local"]), now, strategy,
+                        write_high_water=not self.settings.r2d2_fast_risk_watcher_enabled,
                     )
                     continue
                 pnl_pct = (quote.price / average_cost - 1) * 100
@@ -1529,6 +1845,7 @@ class R2D2PaperService:
                 self.repo.update_mark(
                     experiment["id"], position["market"], position["symbol"], quote.price,
                     conversion, high_water, _float(position["stop_price_local"]), now, strategy,
+                    write_high_water=not self.settings.r2d2_fast_risk_watcher_enabled,
                 )
                 candidate = {
                     "market": position["market"], "symbol": position["symbol"], "name": position["name"],
@@ -1573,6 +1890,7 @@ class R2D2PaperService:
                     _float(position["last_price_local"]), conversion,
                     _float(position["high_water_price_local"]), _float(position["stop_price_local"]),
                     now, strategy,
+                    write_high_water=not self.settings.r2d2_fast_risk_watcher_enabled,
                 )
                 continue
             strategy.pop("pending_anomaly_price", None)
@@ -1661,6 +1979,10 @@ class R2D2PaperService:
             )
             hard_stop = average_cost * (1 - effective_max_loss_percent / 100)
             stop = max(stop, hard_stop)
+            self.repo.update_chandelier_anchor(
+                experiment["id"], position["market"], position["symbol"],
+                atr=atr, hard_stop=hard_stop, as_of=now,
+            )
             soft_loss_threshold = max(
                 self.settings.r2d2_soft_loss_exit_percent,
                 min(0.7, atr_percent * 0.4),
@@ -1718,6 +2040,7 @@ class R2D2PaperService:
             self.repo.update_mark(
                 experiment["id"], position["market"], position["symbol"], quote.price,
                 conversion, high_water, stop, now, strategy,
+                write_high_water=not self.settings.r2d2_fast_risk_watcher_enabled,
             )
             if reason:
                 candidate = {"market": position["market"], "symbol": position["symbol"], "name": position["name"],
@@ -1735,6 +2058,7 @@ class R2D2PaperService:
                     self.repo.update_mark(
                         experiment["id"], position["market"], position["symbol"], quote.price,
                         conversion, high_water, stop, now, strategy,
+                        write_high_water=not self.settings.r2d2_fast_risk_watcher_enabled,
                     )
                 exits += 1
         return exits
@@ -2790,7 +3114,8 @@ class R2D2PaperService:
         return trade
 
     def _sell(self, experiment: dict[str, Any], cycle_id: str, item: dict[str, Any], position: dict[str, Any],
-              quote: Any, fx: float, reason: str, *, quantity_fraction: float = 1.0) -> dict[str, Any]:
+              quote: Any, fx: float, reason: str, *, quantity_fraction: float = 1.0,
+              fast_exit_audit: dict[str, Any] | None = None) -> dict[str, Any]:
         slip_rate = 0.0015 if item["market"] == "B3" else 0.0010
         fee_rate = 0.0006 if item["market"] == "B3" else 0.0004
         fill = quote.price * (1 - slip_rate)
@@ -2806,6 +3131,7 @@ class R2D2PaperService:
             experiment, cycle_id=cycle_id, candidate=item, side="SELL", quantity=quantity,
             signal_price=quote.price, fill_price=fill, fx=fx, fees=fees, slippage=slippage,
             reason=reason, decision={**item, "paper_only": True}, quote_as_of=quote.as_of,
+            fast_exit_audit=fast_exit_audit,
         )
         self.repo.save_decision(experiment["id"], cycle_id, item, "SELL", [reason], trade["id"])
         return trade
