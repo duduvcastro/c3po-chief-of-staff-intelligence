@@ -392,8 +392,6 @@ button { cursor: pointer; }
 .r2d2-learning-legend-trades { fill: var(--blue); }
 .r2d2-learning-legend-label { fill: #66717e; font-size: 9px; font-weight: 800; dominant-baseline: middle; }
 .r2d2-learning-ma-label { fill: var(--purple); font-size: 9.5px; font-weight: 800; dominant-baseline: middle; }
-.r2d2-learning-median-line { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 4 3; }
-.r2d2-learning-median-legend-line { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 4 3; }
 .r2d2-learning-trades-count { fill: var(--blue); font-size: 7.5px; font-weight: 700; }
 .r2d2-learning-median-card { display: grid; grid-template-rows: repeat(2, 1fr); margin: 22px 18px 22px 0; overflow: hidden; background: #fbfcfd; border: 1px solid var(--line); border-radius: 6px; }
 .r2d2-learning-median-card > div { display: flex; min-height: 78px; flex-direction: column; justify-content: center; padding: 14px 16px; }
