@@ -80,11 +80,12 @@ button { cursor: pointer; }
 .nav-item:hover { color: #fff; background: rgba(226,184,61,.07); }
 .nav-item-active { color: #fff; background: #292416; box-shadow: inset 3px 0 0 var(--gold-bright); }
 .nav-item-active svg { color: var(--gold-bright); }
-.c3po-protocol-icon, .millennium-falcon-icon, .tatooine-news-icon, .rebellion-news-icon, .master-luke-icon, .laser-pager-icon, .last-jedi-icon, .ben-kenobi-records-icon, .radar-alerts-icon, .dagobah-weather-icon, .dark-side-icon, .hyperspace-icon, .storm-troops-icon, .death-star-icon, .tie-fighter-usage-icon, .midi-chlorians-finance-icon, .r2d2-rising-icon { display: block; flex: 0 0 auto; object-fit: contain; }
+.c3po-protocol-icon, .millennium-falcon-icon, .tatooine-news-icon, .rebellion-news-icon, .master-luke-icon, .laser-pager-icon, .last-jedi-icon, .ben-kenobi-records-icon, .radar-alerts-icon, .dagobah-weather-icon, .dark-side-icon, .hyperspace-icon, .storm-troops-icon, .death-star-icon, .tie-fighter-usage-icon, .midi-chlorians-finance-icon, .r2d2-rising-icon, .leah-cloud-icon { display: block; flex: 0 0 auto; object-fit: contain; }
 .tatooine-news-icon, .rebellion-news-icon, .master-luke-icon, .laser-pager-icon, .last-jedi-icon, .ben-kenobi-records-icon, .radar-alerts-icon, .dagobah-weather-icon, .dark-side-icon, .hyperspace-icon, .storm-troops-icon, .death-star-icon, .tie-fighter-usage-icon, .midi-chlorians-finance-icon, .r2d2-rising-icon { filter: drop-shadow(0 0 5px rgba(226,184,61,.2)); }
 .nav-item-active .tatooine-news-icon, .nav-item-active .rebellion-news-icon, .nav-item-active .master-luke-icon, .nav-item-active .laser-pager-icon, .nav-item-active .last-jedi-icon, .nav-item-active .ben-kenobi-records-icon, .nav-item-active .radar-alerts-icon, .nav-item-active .dagobah-weather-icon, .nav-item-active .dark-side-icon, .nav-item-active .hyperspace-icon, .nav-item-active .storm-troops-icon, .nav-item-active .death-star-icon, .nav-item-active .tie-fighter-usage-icon, .nav-item-active .midi-chlorians-finance-icon, .nav-item-active .r2d2-rising-icon { filter: drop-shadow(0 0 6px rgba(239,198,80,.42)); }
 .ben-kenobi-records-icon { border-radius: 50%; object-fit: contain; }
 .r2d2-rising-icon { object-fit: contain; }
+.leah-cloud-icon { border-radius: 50%; }
 .sidebar-foot { margin-top: auto; display: grid; gap: 14px; }
 .profile-row strong { display: block; font-size: 11px; }
 .profile-row span { display: block; margin-top: 3px; color: #929cab; font-size: 10px; }

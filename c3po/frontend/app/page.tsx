@@ -1236,6 +1236,19 @@ function R2D2RisingIcon({ size = 24 }: { size?: number }) {
   );
 }
 
+function LeahCloudIcon({ size = 24 }: { size?: number }) {
+  return (
+    <img
+      alt=""
+      aria-hidden="true"
+      className="leah-cloud-icon"
+      height={size}
+      src="/nina-castro-mark.svg?v=1"
+      width={size}
+    />
+  );
+}
+
 const navItems: { key: ViewKey; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { key: "command", label: "Falcon CAPCOM", icon: MillenniumFalconIcon },
   { key: "markets", label: "Master Luke", icon: MasterLukeIcon },
@@ -1252,7 +1265,7 @@ const navItems: { key: ViewKey; label: string; icon: ComponentType<{ size?: numb
   { key: "alerts", label: "Radar Alerts", icon: RadarAlertsIcon },
   { key: "health", label: "Storm Troops", icon: StormTroopsIcon },
   { key: "serverusage", label: "TIE Fighter Usage", icon: TieFighterUsageIcon },
-  { key: "leah", label: "Leah Cloud", icon: Cloud }
+  { key: "leah", label: "Leah Cloud", icon: LeahCloudIcon }
 ];
 
 const viewIcons: Record<ViewKey, ComponentType<{ size?: number }>> = {
@@ -1273,7 +1286,7 @@ const viewIcons: Record<ViewKey, ComponentType<{ size?: number }>> = {
   alerts: RadarAlertsIcon,
   health: StormTroopsIcon,
   serverusage: TieFighterUsageIcon,
-  leah: Cloud,
+  leah: LeahCloudIcon,
   helm: DeathStarIcon
 };
 
