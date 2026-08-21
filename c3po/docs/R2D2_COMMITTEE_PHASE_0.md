@@ -18,6 +18,37 @@ four separate layers:
 No layer may silently perform another layer's job. Every decision shown in the
 dashboard must identify the contribution of each layer.
 
+## Joint construction governance
+
+This project is built jointly by Dudu, Codex and Fable; it is not an isolated
+implementation handed over only after completion.
+
+- **Codex** owns repository and production-infrastructure inspection, proposes
+  designs grounded in the system's real constraints, implements approved work,
+  and reports verification evidence and operational trade-offs.
+- **Fable** independently audits statistical validity, methodology, assumptions,
+  leakage/overfitting risk and promotion criteria.
+- **Dudu** connects both reviews, supplies business intent and observations, and
+  makes the final product/risk decision.
+
+Non-trivial design decisions return to this three-way review before they are
+implemented or promoted. This includes, at minimum:
+
+- setup rule or parameter changes;
+- labels, reward definitions, priors, decay and posterior families;
+- feature construction and trade-aggressor classification;
+- dataset retention, provenance or anti-lookahead policy;
+- replay-to-shadow and shadow-to-capital promotion criteria;
+- capital allocation, correlation penalties and circuit breakers;
+- changes that affect live data coverage, execution or production risk.
+
+Routine implementation details that preserve an already approved contract do
+not require a new approval round, but remain visible in the pull request. Any
+unexpected evidence, ambiguity or material deviation stops that workstream and
+returns it to the joint review. This is a safety mechanism, not an administrative
+gate: the ORB/VWAP result demonstrated why independent challenge must happen
+before promotion rather than after production exposure.
+
 ## Immutable setup lifecycle
 
 Each material rule change creates a new setup version and an empty live
@@ -212,4 +243,3 @@ microstructure, cross-sectional strength, liquidity, event and regime features.
 - Cost, clock, feature and dataset schemas are versioned.
 - Replay and live-shadow provenance cannot be mixed silently.
 - Promotion and circuit-breaker thresholds are registered before results are viewed.
-
