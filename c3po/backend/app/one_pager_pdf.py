@@ -224,6 +224,9 @@ class PremiumOnePagerRenderer:
     ) -> None:
         self._rounded_box(pdf, x, y, w, h, fill=colors.HexColor("#FBFCFE"))
         self._section_title(pdf, "Performance 12m + valuation", x + 11, y + h - 20, w - 22, BLUE)
+        pdf.setFillColor(SUB)
+        pdf.setFont("Helvetica-Oblique", 4.6)
+        pdf.drawRightString(x + w - 11, y + h - 16.5, f"perfil: {self._profile_label(data.get('profile'))}")
         self._performance_chart(pdf, x + 10, y + 112, w - 20, 91, data, history)
 
         pdf.setFillColor(LIGHT)
@@ -237,6 +240,7 @@ class PremiumOnePagerRenderer:
         method_values = [value for _, value in methods]
         highest = max(method_values)
         lowest = min(method_values)
+        name_col_width = 128
         yy = y + 83
         for index, (name, value) in enumerate(methods):
             if index % 2:
@@ -244,7 +248,8 @@ class PremiumOnePagerRenderer:
                 pdf.rect(x + 9, yy - 3.2, w - 18, 9.7, fill=1, stroke=0)
             value_color = GREEN if value == highest else RED if value == lowest else INK
             pdf.setFillColor(INK)
-            pdf.setFont("Helvetica-Bold", 5.3)
+            name_font = self._fit_font(name, "Helvetica-Bold", 5.3, 4.0, name_col_width)
+            pdf.setFont("Helvetica-Bold", name_font)
             pdf.drawString(x + 12, yy, name)
             pdf.setFillColor(value_color)
             pdf.setFont("Helvetica-Bold", 5.4)
@@ -374,6 +379,20 @@ class PremiumOnePagerRenderer:
         pdf.setFillColor(SUB)
         pdf.setFont("Helvetica", 4.4)
         pdf.drawRightString(x + w - 7, y + h - 21, f"{first_date:%d/%m/%y} - {last_date:%d/%m/%y}")
+
+    _PROFILE_LABELS = {
+        "financial": "Financeiro (bancos/seguradoras)",
+        "utilities": "Utilities",
+        "real_estate": "Real Estate",
+        "technology": "Tecnologia",
+        "cyclical": "Cíclico (energia/materiais)",
+        "quality": "Qualidade (saúde/consumo)",
+        "general": "Geral",
+    }
+
+    @classmethod
+    def _profile_label(cls, profile: Any) -> str:
+        return cls._PROFILE_LABELS.get(str(profile), "Geral")
 
     @staticmethod
     def _coverage_label(data: dict[str, Any]) -> str:

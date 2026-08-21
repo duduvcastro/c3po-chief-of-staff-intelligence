@@ -178,11 +178,11 @@ def test_analysis_and_pdf_are_deterministic_and_persisted(tmp_path) -> None:
     service = service_for(tmp_path)
     analysis = sample_analysis(service)
     assert list(analysis["methods"]) == [
-        "Goldman Sachs",
-        "Morgan Stanley",
-        "Bridgewater",
-        "JPMorgan",
-        "BlackRock",
+        "Múltiplos de Lucro + EV/EBITDA",
+        "Fluxo de Caixa Descontado",
+        "Blend Ajustado ao Risco",
+        "Momentum de Lucro",
+        "Qualidade & Fluxo de Caixa",
     ]
     assert analysis["analyst_count"] == 48
     assert analysis["analyst_buy"] == 30

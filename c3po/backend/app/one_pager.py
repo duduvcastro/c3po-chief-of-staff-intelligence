@@ -68,9 +68,15 @@ US_EQUITY_RISK_PREMIUM = 0.055
 US_DISCOUNT_RATE_MIN = 0.06
 US_DISCOUNT_RATE_MAX = 0.16
 
-# Root-caused 2026-08-20 (production incident): the 5 "methods" (Goldman
-# Sachs/Morgan Stanley/etc -- fictional internal labels, not real data from
-# those firms) each only bake real analyst consensus in at a modest,
+# Root-caused 2026-08-20 (PDF audit, Dudu): the 5 "methods" used to be
+# labeled Goldman Sachs/Morgan Stanley/etc -- fictional attribution to real
+# banks, not data those firms ever produced. Renamed to STANDARD_METHOD_NAMES
+# / FINANCIAL_METHOD_NAMES below: real methodology labels, switched per
+# `profile` so a bank's row names never reference DCF or EV/EBITDA (both are
+# already None for `profile == "financial"`, see enterprise_tp/dcf_tp below).
+#
+# Separately, the 5 "methods" each only bake real analyst consensus in at a
+# modest,
 # diluted 10-25% weight alongside fundamentals-derived components. When
 # those fundamentals-derived components move together (as they did for
 # JPM: consensus $374.57, our blended TP $625.49 -- 67% too high), nothing
@@ -82,6 +88,25 @@ US_DISCOUNT_RATE_MAX = 0.16
 US_CONSENSUS_WEIGHT_MIN = 0.20
 US_CONSENSUS_WEIGHT_MAX = 0.35
 US_CONSENSUS_ANALYST_BREADTH_ANALYSTS = 10
+
+# Method row labels, in the same order as raw_methods below. Two sets because
+# enterprise_tp (EV/EBITDA) and dcf_tp (FCF-DCF) are None for banks/insurers
+# (profile == "financial") -- a bank's row names must not claim to use a
+# methodology that wasn't actually computed for it.
+STANDARD_METHOD_NAMES = (
+    "Múltiplos de Lucro + EV/EBITDA",
+    "Fluxo de Caixa Descontado",
+    "Blend Ajustado ao Risco",
+    "Momentum de Lucro",
+    "Qualidade & Fluxo de Caixa",
+)
+FINANCIAL_METHOD_NAMES = (
+    "Múltiplos de Lucro (P/L)",
+    "Lucro Ajustado a Consenso",
+    "Blend de Risco (P/L + P/B)",
+    "Momentum de Lucro Bancário",
+    "Valor Patrimonial & Qualidade",
+)
 
 # Root-caused 2026-08-20 (TP methodology audit): fair_pe/fair_ev_ebitda used a
 # fixed constant per valuation profile with no peer comparison at all, unlike
@@ -527,21 +552,22 @@ class OnePagerService:
         risk_adjustment = self._clamp((risk_score - 40) / 500, -0.04, 0.10)
         quality_adjustment = self._clamp((roe or 0.12) * 0.20 + (margin or 0.08) * 0.15 + max(growth, -0.05) * 0.20, -0.04, 0.12)
 
+        method_names = FINANCIAL_METHOD_NAMES if profile == "financial" else STANDARD_METHOD_NAMES
         raw_methods = OrderedDict(
             (
                 (
-                    "Goldman Sachs",
+                    method_names[0],
                     self._weighted_value(
                         ((earnings_tp, 0.42), (enterprise_tp, 0.33), (book_tp, 0.10), (consensus_anchor, 0.15)),
                         fundamental_anchor,
                     ),
                 ),
                 (
-                    "Morgan Stanley",
+                    method_names[1],
                     self._weighted_value(((dcf_tp, 0.72), (earnings_tp, 0.18), (consensus_anchor, 0.10)), fundamental_anchor),
                 ),
                 (
-                    "Bridgewater",
+                    method_names[2],
                     self._weighted_value(
                         ((dcf_tp, 0.28), (enterprise_tp, 0.22), (earnings_tp, 0.20), (book_tp, 0.10), (consensus_anchor, 0.20)),
                         fundamental_anchor,
@@ -549,12 +575,12 @@ class OnePagerService:
                     * (1 - risk_adjustment),
                 ),
                 (
-                    "JPMorgan",
+                    method_names[3],
                     self._weighted_value(((earnings_tp, 0.65), (enterprise_tp, 0.15), (consensus_anchor, 0.20)), fundamental_anchor)
                     * self._clamp(1 + surprise * 0.12 + eps_revision * 0.20, 0.90, 1.12),
                 ),
                 (
-                    "BlackRock",
+                    method_names[4],
                     self._weighted_value(((dcf_tp, 0.30), (earnings_tp, 0.25), (enterprise_tp, 0.20), (consensus_anchor, 0.25)), fundamental_anchor)
                     * self._clamp(1 + quality_adjustment - risk_adjustment * 0.45, 0.90, 1.14),
                 ),
@@ -622,7 +648,7 @@ class OnePagerService:
             if shared_tp and shared_buy_in:
                 c3po_tp = shared_tp
                 buy_in = shared_buy_in
-                methods = self._shared_framework_methods(shared_valuation, shared_tp)
+                methods = self._shared_framework_methods(shared_valuation, shared_tp, profile)
                 method_values = list(methods.values())
                 consensus = self._bounded_tp(shared_valuation.get("public_consensus_tp"), price) or consensus
                 analyst_count = int(shared_valuation.get("analyst_count") or analyst_count or 0) or None
@@ -1289,7 +1315,7 @@ class OnePagerService:
         return sum(value * weight for value, weight in usable) / total_weight
 
     @classmethod
-    def _shared_framework_methods(cls, row: dict[str, Any], shared_tp: float) -> OrderedDict[str, float]:
+    def _shared_framework_methods(cls, row: dict[str, Any], shared_tp: float, profile: str = "general") -> OrderedDict[str, float]:
         components = row.get("methods") if isinstance(row.get("methods"), dict) else {}
         internal_tp = cls._positive(row.get("internal_tp")) or shared_tp
         earnings = cls._positive(components.get("earnings") or components.get("cycle_earnings"))
@@ -1300,18 +1326,19 @@ class OnePagerService:
         public_consensus = cls._positive(row.get("public_consensus_tp"))
         risk_score = cls._clamp(float(row.get("risk_score") or 50), 0, 100)
         quality_score = cls._clamp(float(row.get("operating_quality") or 50), 0, 100)
+        method_names = FINANCIAL_METHOD_NAMES if profile == "financial" else STANDARD_METHOD_NAMES
         raw = OrderedDict(
             (
-                ("Goldman Sachs", cls._weighted_value(((enterprise, 0.45), (earnings, 0.35), (book, 0.20)), internal_tp)),
-                ("Morgan Stanley", cls._weighted_value(((dcf, 0.75), (enterprise, 0.25)), internal_tp)),
+                (method_names[0], cls._weighted_value(((enterprise, 0.45), (earnings, 0.35), (book, 0.20)), internal_tp)),
+                (method_names[1], cls._weighted_value(((dcf, 0.75), (enterprise, 0.25)), internal_tp)),
                 (
-                    "Bridgewater",
+                    method_names[2],
                     cls._weighted_value(((dcf, 0.30), (earnings, 0.25), (book, 0.15), (public_consensus, 0.30)), internal_tp)
                     * cls._clamp(1 - (risk_score - 50) / 500, 0.88, 1.08),
                 ),
-                ("JPMorgan", cls._weighted_value(((earnings, 0.70), (enterprise, 0.15), (public_consensus, 0.15)), internal_tp)),
+                (method_names[3], cls._weighted_value(((earnings, 0.70), (enterprise, 0.15), (public_consensus, 0.15)), internal_tp)),
                 (
-                    "BlackRock",
+                    method_names[4],
                     cls._weighted_value(((dcf, 0.25), (earnings, 0.20), (enterprise, 0.20), (dividend, 0.10), (public_consensus, 0.25)), internal_tp)
                     * cls._clamp(1 + (quality_score - 50) / 700, 0.92, 1.08),
                 ),
