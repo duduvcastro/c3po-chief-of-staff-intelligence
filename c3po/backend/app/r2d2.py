@@ -62,6 +62,11 @@ FAILED_ENTRY_MINUTES = 3
 FAILED_ENTRY_LOSS_PERCENT = 0.30
 US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
 POSITION_STREAM_PRIORITY = 200
+# US session policy is centralized here so candidate screening, position
+# protection and close-time decisions cannot silently drift apart again.
+US_SCREENING_START_ET = time(9, 40)
+US_SCREENING_CUTOFF_ET = time(15, 50)
+US_REGULAR_CLOSE_ET = time(16, 0)
 BASE_ENTRY_POLICY = {
     "entry_upside_floor": 20.0,
     "max_risk_score": 48.0,
@@ -1296,7 +1301,7 @@ class R2D2PaperService:
         """Markets eligible for candidate screening and new entries."""
         markets: list[str] = []
         us = now.astimezone(NEW_YORK)
-        if us.weekday() < 5 and time(9, 40) <= us.time() <= time(15, 50):
+        if us.weekday() < 5 and US_SCREENING_START_ET <= us.time() <= US_SCREENING_CUTOFF_ET:
             markets.extend(("NASDAQ", "NYSE"))
         return markets
 
@@ -1311,20 +1316,20 @@ class R2D2PaperService:
         """
         markets: list[str] = []
         us = now.astimezone(NEW_YORK)
-        if us.weekday() < 5 and time(9, 40) <= us.time() < time(16, 0):
+        if us.weekday() < 5 and US_SCREENING_START_ET <= us.time() < US_REGULAR_CLOSE_ET:
             markets.extend(("NASDAQ", "NYSE"))
         return markets
 
     @staticmethod
-    def _minutes_to_us_close(market: str, now: datetime) -> float | None:
-        """Minutes remaining until the official 16:00 ET regular close."""
+    def _seconds_to_us_close(market: str, now: datetime) -> float | None:
+        """Seconds remaining until the official 16:00 ET regular close."""
         if market not in ACTIVE_MARKETS:
             return None
         us = now.astimezone(NEW_YORK)
         if us.weekday() >= 5:
             return None
-        close = datetime.combine(us.date(), time(16, 0), tzinfo=NEW_YORK)
-        remaining = (close - us).total_seconds() / 60
+        close = datetime.combine(us.date(), US_REGULAR_CLOSE_ET, tzinfo=NEW_YORK)
+        remaining = (close - us).total_seconds()
         return remaining if 0 <= remaining else None
 
     @staticmethod
@@ -1949,7 +1954,7 @@ class R2D2PaperService:
                 stop_price=_float(position["stop_price_local"]),
                 max_position_loss_percent=self.settings.r2d2_max_position_loss_percent,
                 soft_loss_exit_percent=self.settings.r2d2_soft_loss_exit_percent,
-                minutes_to_close=self._minutes_to_us_close(position["market"], now),
+                seconds_to_close=self._seconds_to_us_close(position["market"], now),
             )
             reason = exit_result.reason
             sell_fraction = exit_result.sell_fraction
