@@ -947,3 +947,25 @@ def test_scenarios_fan_out_from_c3po_tp_not_raw_model_extremes(tmp_path) -> None
     # than the average professional analyst's actual number is incoherent;
     # bull must clear real consensus by a margin.
     assert scenarios["BULL"] > analysis["consensus_tp"]
+
+
+def test_bull_does_not_collapse_toward_base_when_base_is_pulled_hard_to_consensus(tmp_path) -> None:
+    """Root-caused 2026-08-20 (self-verification requested by Dudu after the
+    consensus-anchoring fix above): bear_tp/bull_tp were pure internal-model
+    recomputes with no consensus shrinkage, while c3po_tp (base) gets
+    Bayesian shrinkage toward consensus of up to 50% when low_conviction. A
+    real MSFT-shaped fixture (high internal dispersion, well-covered by 48
+    analysts averaging $610 against a $500 price) landed BASE=$445.68 and
+    BULL=$445.69 -- one cent apart, because base got pulled hard toward
+    consensus while bull, with no such pull, couldn't keep up and the
+    `max(bull_tp, c3po_tp)` floor collapsed it onto base. Bear/bull must
+    receive the SAME consensus_weight shrinkage as base (toward the real
+    Street high/low when available, else the same consensus point) so all
+    three scenarios stay internally consistent.
+    """
+    service = service_for(tmp_path)
+    analysis = sample_analysis(service)
+
+    scenarios = dict(analysis["scenarios"])
+    assert analysis["low_conviction"] is True
+    assert scenarios["BULL"] - scenarios["BASE"] > 0.02 * scenarios["BASE"]

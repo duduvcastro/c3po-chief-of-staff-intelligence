@@ -710,6 +710,23 @@ class OnePagerService:
             if consensus_weight and consensus
             else internal_tp
         )
+        # Root-caused 2026-08-20 (self-verification after Dudu asked me to
+        # double-check): bear_tp/bull_tp were pure internal-model recomputes
+        # with no consensus shrinkage, while c3po_tp (base) gets Bayesian
+        # shrinkage toward consensus up to 50% when low_conviction. When
+        # internal disagreement is high, base can leapfrog past our own
+        # "bull" case entirely -- MSFT landed BULL=$445.69 vs BASE=$445.68,
+        # a cent apart, because base got pulled up toward consensus ($610)
+        # far more than the internally-recomputed bull ever could. Applying
+        # the SAME consensus_weight to bear/bull keeps all three scenarios
+        # internally consistent -- shrunk toward the real Street range
+        # (high/low) when available, or the same single consensus point
+        # base uses otherwise.
+        if consensus_weight and consensus:
+            bear_anchor = street_low or consensus
+            bull_anchor = street_high or consensus
+            bear_tp = bear_tp * (1 - consensus_weight) + bear_anchor * consensus_weight
+            bull_tp = bull_tp * (1 - consensus_weight) + bull_anchor * consensus_weight
         foreign_policy = fundamentals.get("foreignListingPolicy")
         foreign_buy_in_override = None
         if isinstance(foreign_policy, dict):
