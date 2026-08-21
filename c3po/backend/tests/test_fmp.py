@@ -34,6 +34,44 @@ def test_price_target_consensus_returns_none_on_empty_or_failed_response():
     assert FmpClient("https://x", "t", FakeHttp(RuntimeError("boom"))).price_target_consensus("JPM") is None
 
 
+def test_batch_quotes_chunks_requests_and_normalizes_live_fields():
+    class BatchHttp:
+        def __init__(self):
+            self.calls = []
+
+        def get_json(self, url, *, params=None, headers=None):
+            self.calls.append((url, params))
+            return [{
+                "symbol": symbol, "price": 100 + index, "volume": 1_000 + index,
+                "avgVolume": 2_000 + index, "changePercentage": 0.5, "timestamp": 1_787_000_000,
+            } for index, symbol in enumerate(params["symbols"].split(","))]
+
+    http = BatchHttp()
+    result = FmpClient("https://financialmodelingprep.com", "token", http).batch_quotes(
+        ["AAPL", "MSFT", "JPM"], chunk_size=2, workers=1,
+    )
+
+    assert set(result) == {"AAPL", "MSFT", "JPM"}
+    assert result["AAPL"]["price"] == 100.0
+    assert result["MSFT"]["average_volume"] == 2001.0
+    assert len(http.calls) == 2
+    assert all(call[0].endswith("/stable/batch-quote") for call in http.calls)
+
+
+def test_batch_quotes_isolates_failed_chunks():
+    class PartialHttp:
+        def get_json(self, url, *, params=None, headers=None):
+            if "JPM" in params["symbols"]:
+                raise RuntimeError("temporary FMP failure")
+            return [{"symbol": "AAPL", "price": 200, "timestamp": 1_787_000_000}]
+
+    result = FmpClient("https://x", "t", PartialHttp()).batch_quotes(
+        ["AAPL", "JPM"], chunk_size=1, workers=1,
+    )
+
+    assert set(result) == {"AAPL"}
+
+
 def test_price_target_summary_parses_recency_scoped_counts():
     http = FakeHttp([
         {

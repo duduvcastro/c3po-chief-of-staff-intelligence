@@ -314,6 +314,54 @@ def test_r2d2_rotation_never_displaces_stable_top_ranked_core() -> None:
         assert stats["rotating_count"] == 2
 
 
+def test_fmp_prefilter_promotes_fresh_quotes_without_dropping_other_candidates() -> None:
+    service = _service()
+    service.settings.fmp_api_token = "configured"
+    now = datetime.now(timezone.utc)
+    service.one_pagers = SimpleNamespace(  # type: ignore[assignment]
+        market_data=SimpleNamespace(http=object()),
+    )
+    candidates = [
+        {"symbol": "STRONG", "pretrade_rank": 100.0, "fundamental_score": 90.0},
+        {"symbol": "FRESH", "pretrade_rank": 70.0, "fundamental_score": 60.0},
+        {"symbol": "STALE", "pretrade_rank": 80.0, "fundamental_score": 70.0},
+    ]
+    service._fmp_quote_cache = (now, {
+        "STRONG": {"timestamp": int(now.timestamp()) - 500, "price": 100.0},
+        "FRESH": {"timestamp": int(now.timestamp()), "price": 50.0},
+        "STALE": {"timestamp": int(now.timestamp()) - 500, "price": 80.0},
+    })
+
+    ranked, stats = service._fmp_prefilter_ws_candidates(candidates)
+
+    assert [item["symbol"] for item in ranked] == ["FRESH", "STRONG", "STALE"]
+    assert len(ranked) == len(candidates)
+    assert stats["fmp_prefilter_fresh_count"] == 1
+    assert stats["fmp_prefilter_fallback"] is False
+
+
+def test_fmp_prefilter_falls_back_to_existing_order_without_fresh_quotes() -> None:
+    service = _service()
+    service.settings.fmp_api_token = "configured"
+    now = datetime.now(timezone.utc)
+    service.one_pagers = SimpleNamespace(  # type: ignore[assignment]
+        market_data=SimpleNamespace(http=object()),
+    )
+    candidates = [
+        {"symbol": "A", "pretrade_rank": 90.0, "fundamental_score": 80.0},
+        {"symbol": "B", "pretrade_rank": 80.0, "fundamental_score": 70.0},
+    ]
+    service._fmp_quote_cache = (now, {
+        "A": {"timestamp": int(now.timestamp()) - 500, "price": 100.0},
+        "B": {"timestamp": int(now.timestamp()) - 500, "price": 90.0},
+    })
+
+    ranked, stats = service._fmp_prefilter_ws_candidates(candidates)
+
+    assert ranked == candidates
+    assert stats["fmp_prefilter_fallback"] is True
+
+
 def test_r2d2_core_identity_survives_rank_changes_between_cycles() -> None:
     service = _service()
     service.settings.r2d2_ws_rotation_grace_cycles = 1

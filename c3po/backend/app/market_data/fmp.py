@@ -49,6 +49,52 @@ class FmpClient:
             "low": number(row.get("targetLow")),
         }
 
+    def batch_quotes(
+        self, symbols: list[str], *, chunk_size: int = 100, workers: int = 6,
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch lightweight real-time quotes for a large candidate set.
+
+        FMP Ultimate exposes ``stable/batch-quote`` so R2D2 can preflight many
+        candidates without consuming scarce EODHD WebSocket subscriptions.
+        Per-chunk failures are isolated; callers can safely fall back to their
+        existing ranking when FMP is unavailable.
+        """
+        clean_symbols = list(dict.fromkeys(
+            symbol.strip().upper() for symbol in symbols if symbol.strip()
+        ))
+        if not clean_symbols:
+            return {}
+        size = max(1, min(chunk_size, 250))
+        chunks = [clean_symbols[index:index + size] for index in range(0, len(clean_symbols), size)]
+
+        def fetch(chunk: list[str]) -> list[dict[str, Any]]:
+            try:
+                payload = self.http.get_json(
+                    f"{self.base_url}/stable/batch-quote",
+                    params={"symbols": ",".join(chunk), "apikey": self.token},
+                )
+            except Exception:
+                return []
+            return [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
+
+        output: dict[str, dict[str, Any]] = {}
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, len(chunks), 10))) as executor:
+            for rows in executor.map(fetch, chunks):
+                for row in rows:
+                    symbol = str(row.get("symbol") or "").strip().upper()
+                    price = number(row.get("price"))
+                    if not symbol or price is None or price <= 0:
+                        continue
+                    output[symbol] = {
+                        "symbol": symbol,
+                        "price": price,
+                        "volume": number(row.get("volume")),
+                        "average_volume": number(row.get("avgVolume")),
+                        "change_percent": number(row.get("changePercentage")),
+                        "timestamp": int(number(row.get("timestamp")) or 0),
+                    }
+        return output
+
     def price_target_summary(self, symbol: str) -> dict[str, Any] | None:
         """Recency-scoped average target + analyst count per window (last
         month/quarter/year/all-time) -- what actually fixes the freshness
