@@ -65,11 +65,16 @@ def test_batch_quotes_isolates_failed_chunks():
                 raise RuntimeError("temporary FMP failure")
             return [{"symbol": "AAPL", "price": 200, "timestamp": 1_787_000_000}]
 
+    diagnostics = {}
     result = FmpClient("https://x", "t", PartialHttp()).batch_quotes(
-        ["AAPL", "JPM"], chunk_size=1, workers=1,
+        ["AAPL", "JPM"], chunk_size=1, workers=1, diagnostics=diagnostics,
     )
 
     assert set(result) == {"AAPL"}
+    assert diagnostics["failed_chunk_count"] == 1
+    assert diagnostics["failed_symbols"] == ["JPM"]
+    assert diagnostics["successful_symbols"] == ["AAPL"]
+    assert diagnostics["failure_types"] == ["RuntimeError"]
 
 
 def test_price_target_summary_parses_recency_scoped_counts():

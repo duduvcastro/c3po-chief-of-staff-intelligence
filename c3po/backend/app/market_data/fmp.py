@@ -51,6 +51,7 @@ class FmpClient:
 
     def batch_quotes(
         self, symbols: list[str], *, chunk_size: int = 100, workers: int = 6,
+        diagnostics: dict[str, Any] | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Fetch lightweight real-time quotes for a large candidate set.
 
@@ -67,19 +68,32 @@ class FmpClient:
         size = max(1, min(chunk_size, 250))
         chunks = [clean_symbols[index:index + size] for index in range(0, len(clean_symbols), size)]
 
-        def fetch(chunk: list[str]) -> list[dict[str, Any]]:
+        def fetch(chunk: list[str]) -> tuple[list[str], list[dict[str, Any]], str | None]:
             try:
                 payload = self.http.get_json(
                     f"{self.base_url}/stable/batch-quote",
                     params={"symbols": ",".join(chunk), "apikey": self.token},
                 )
-            except Exception:
-                return []
-            return [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
+            except Exception as exc:
+                # Never expose exception text here: HTTP client errors can
+                # contain the request URL, including the FMP API key.
+                return chunk, [], type(exc).__name__
+            rows = [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
+            return chunk, rows, None
 
         output: dict[str, dict[str, Any]] = {}
+        successful_symbols: set[str] = set()
+        failed_symbols: set[str] = set()
+        failure_types: set[str] = set()
+        failed_chunk_count = 0
         with ThreadPoolExecutor(max_workers=max(1, min(workers, len(chunks), 10))) as executor:
-            for rows in executor.map(fetch, chunks):
+            for chunk, rows, failure_type in executor.map(fetch, chunks):
+                if failure_type:
+                    failed_chunk_count += 1
+                    failed_symbols.update(chunk)
+                    failure_types.add(failure_type)
+                    continue
+                successful_symbols.update(chunk)
                 for row in rows:
                     symbol = str(row.get("symbol") or "").strip().upper()
                     price = number(row.get("price"))
@@ -93,6 +107,14 @@ class FmpClient:
                         "change_percent": number(row.get("changePercentage")),
                         "timestamp": int(number(row.get("timestamp")) or 0),
                     }
+        if diagnostics is not None:
+            diagnostics.update({
+                "request_count": len(chunks),
+                "failed_chunk_count": failed_chunk_count,
+                "successful_symbols": sorted(successful_symbols),
+                "failed_symbols": sorted(failed_symbols),
+                "failure_types": sorted(failure_types),
+            })
         return output
 
     def price_target_summary(self, symbol: str) -> dict[str, Any] | None:
