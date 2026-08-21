@@ -394,6 +394,21 @@ class PremiumOnePagerRenderer:
     def _profile_label(cls, profile: Any) -> str:
         return cls._PROFILE_LABELS.get(str(profile), "Geral")
 
+    _CONSENSUS_SOURCE_LABELS = {
+        "fmp_last_month": "FMP · últimos 30d",
+        "fmp_last_quarter": "FMP · últimos 90d",
+        "fmp_all_time": "FMP · histórico completo",
+        "eodhd": "EODHD",
+    }
+
+    @classmethod
+    def _consensus_provenance_label(cls, data: dict[str, Any]) -> str:
+        if not data.get("consensus_tp"):
+            return "cobertura pública indisponível"
+        source = cls._CONSENSUS_SOURCE_LABELS.get(str(data.get("consensus_source")), "fonte pública")
+        count = data.get("analyst_count")
+        return f"{source} · {int(count)} analistas" if count else source
+
     @staticmethod
     def _coverage_label(data: dict[str, Any]) -> str:
         total = int(data["analyst_count"]) if data.get("analyst_count") else None
@@ -461,10 +476,10 @@ class PremiumOnePagerRenderer:
         slot = w / 3
         pdf.line(x + slot, y + 8, x + slot, y + h - 8)
         pdf.line(x + 2 * slot, y + 8, x + 2 * slot, y + h - 8)
-        analyst_text = f"{data['analyst_count']} analistas" if data.get("analyst_count") else "cobertura pública"
+        consensus_text = self._consensus_provenance_label(data)
         summaries = (
             ("NOSSO TP", self._money(data["c3po_tp"], data["currency"]), f"{data['upside_percent']:+.1f}% upside", BLUE),
-            ("CONSENSO", self._money(data.get("consensus_tp"), data["currency"]), analyst_text, INK),
+            ("CONSENSO", self._money(data.get("consensus_tp"), data["currency"]), consensus_text, INK),
             ("BUY-IN", self._money(data["buy_in"], data["currency"]), "entrada disciplinada", AMBER),
         )
         for index, (label, value, sub, color) in enumerate(summaries):
@@ -476,7 +491,8 @@ class PremiumOnePagerRenderer:
             pdf.setFont("Helvetica-Bold", 8.6)
             pdf.drawCentredString(center, y + 13, value)
             pdf.setFillColor(SUB)
-            pdf.setFont("Helvetica", 4.6)
+            sub_font = self._fit_font(sub, "Helvetica", 4.6, 3.6, slot - 6)
+            pdf.setFont("Helvetica", sub_font)
             pdf.drawCentredString(center, y + 4, sub)
 
     def _bullet_box(
