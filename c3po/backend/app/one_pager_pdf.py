@@ -224,9 +224,13 @@ class PremiumOnePagerRenderer:
     ) -> None:
         self._rounded_box(pdf, x, y, w, h, fill=colors.HexColor("#FBFCFE"))
         self._section_title(pdf, "Performance 12m + valuation", x + 11, y + h - 20, w - 22, BLUE)
-        pdf.setFillColor(SUB)
-        pdf.setFont("Helvetica-Oblique", 4.6)
-        pdf.drawRightString(x + w - 11, y + h - 16.5, f"perfil: {self._profile_label(data.get('profile'))}")
+        caption = f"perfil: {self._profile_label(data.get('profile'))}"
+        if data.get("low_conviction"):
+            caption += "  ·  baixa convicção (modelos divergem)"
+        pdf.setFillColor(AMBER if data.get("low_conviction") else SUB)
+        caption_font = self._fit_font(caption, "Helvetica-Oblique", 4.6, 3.4, w - 150)
+        pdf.setFont("Helvetica-Oblique", caption_font)
+        pdf.drawRightString(x + w - 11, y + h - 16.5, caption)
         self._performance_chart(pdf, x + 10, y + 112, w - 20, 91, data, history)
 
         pdf.setFillColor(LIGHT)
