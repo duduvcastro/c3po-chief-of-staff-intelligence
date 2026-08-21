@@ -25,6 +25,27 @@ class RawStreamCapture(Protocol):
     def stop(self) -> None: ...
 
 
+class CompositeRawStreamCapture:
+    """Fan out one exact provider payload to independent passive consumers."""
+
+    def __init__(self, captures: list[RawStreamCapture]) -> None:
+        self.captures = list(captures)
+
+    def start(self) -> None:
+        for capture in self.captures:
+            capture.start()
+
+    def record(self, feed: str, payload: str, *, received_at: datetime) -> bool:
+        accepted = True
+        for capture in self.captures:
+            accepted = capture.record(feed, payload, received_at=received_at) and accepted
+        return accepted
+
+    def stop(self) -> None:
+        for capture in reversed(self.captures):
+            capture.stop()
+
+
 @dataclass(frozen=True)
 class CaptureStats:
     accepted: int

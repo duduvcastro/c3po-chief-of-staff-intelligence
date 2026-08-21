@@ -187,6 +187,10 @@ class Settings(BaseSettings):
     r2d2_microstructure_raw_queue_size: int = 100_000
     r2d2_microstructure_raw_rotate_mb: int = 256
     r2d2_microstructure_raw_flush_every: int = 1_000
+    r2d2_microstructure_processor_enabled: bool = False
+    r2d2_microstructure_bbo_max_age_seconds: float = 2.0
+    r2d2_microstructure_allowed_lateness_seconds: float = 2.0
+    r2d2_microstructure_aggregate_queue_size: int = 100_000
     r2d2_fmp_prefilter_enabled: bool = True
     r2d2_fmp_prefilter_cache_seconds: int = 15
     r2d2_fmp_prefilter_max_quote_age_seconds: int = 120
