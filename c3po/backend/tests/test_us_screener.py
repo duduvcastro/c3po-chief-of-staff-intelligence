@@ -13,6 +13,8 @@ class DummyRealtime:
 
 
 class DummyOnePagers:
+    analysis_override = None
+
     def _us_risk_free_rate(self):
         return 0.042
 
@@ -33,7 +35,7 @@ class DummyOnePagers:
         insider_activity=None, news_sentiment=None, risk_free_rate=None, peer_medians=None,
         fmp_consensus=None, fmp_summary=None, institutional_positions=None, recent_grades=None,
     ):
-        return {
+        result = {
             "c3po_tp": 145.0,
             "consensus_tp": 150.0,
             "analyst_count": 12,
@@ -48,9 +50,19 @@ class DummyOnePagers:
                 "JPMorgan": 149.0,
                 "BlackRock": 152.0,
             },
+            "method_scores": {
+                "Goldman Sachs": 0.8,
+                "Morgan Stanley": 0.8,
+                "Bridgewater": 0.8,
+                "JPMorgan": 0.8,
+                "BlackRock": 0.8,
+            },
+            "single_model_reliability": None,
             "thesis": ["Durable growth and cash generation support the valuation."],
             "risks": ["Execution and multiple compression remain the principal risks."],
         }
+        result.update(self.analysis_override or {})
+        return result
 
 
 def service() -> USScreeningService:
@@ -94,6 +106,52 @@ def test_stock_analysis_uses_canonical_five_method_output() -> None:
     assert result["our_tp"] == 145.0
     assert result["signal_quality"] == "validated"
     assert result["valuation_method_count"] == 6
+    assert result["method_scores"]["Goldman Sachs"] == 0.8
+
+
+def test_stock_validation_uses_profile_specific_dispersion() -> None:
+    screener = service()
+    screener.one_pagers.analysis_override = {"confidence": 61.0, "dispersion": 44.0}
+
+    result = screener._analyze_stock(
+        "NASDAQ",
+        {"symbol": "TEST", "name": "Test Corp", "price": 100.0, "change_percent": 1.2,
+         "volume": 3_000_000, "as_of": datetime.now(timezone.utc)},
+        {"companyName": "Test Corp", "sector": "Technology", "industry": "Software",
+         "marketCap": 5_000_000_000, "returnOnEquity": 0.24, "profitMargins": 0.18},
+        rising_history(),
+        300_000_000,
+    )
+
+    assert result["valuation_profile"] == "growth"
+    assert result["signal_quality"] == "validated"
+
+
+def test_single_model_requires_reliability_and_external_consensus() -> None:
+    screener = service()
+    screener.one_pagers.analysis_override = {
+        "c3po_tp": 103.0,
+        "consensus_tp": 110.0,
+        "analyst_count": 5,
+        "confidence": 70.0,
+        "dispersion": 0.0,
+        "methods": {"Múltiplos Comparáveis (Peers)": 100.0},
+        "method_scores": {"Múltiplos Comparáveis (Peers)": 0.85},
+        "single_model_reliability": 0.85,
+    }
+    quote = {"symbol": "TEST", "name": "Test Corp", "price": 100.0, "change_percent": 1.2,
+             "volume": 3_000_000, "as_of": datetime.now(timezone.utc)}
+    fundamentals = {"companyName": "Test Corp", "sector": "Technology", "industry": "Software",
+                    "marketCap": 5_000_000_000, "returnOnEquity": 0.24, "profitMargins": 0.18}
+
+    validated = screener._analyze_stock("NASDAQ", quote, fundamentals, rising_history(), 300_000_000)
+    screener.one_pagers.analysis_override["single_model_reliability"] = None
+    provisional = screener._analyze_stock("NASDAQ", quote, fundamentals, rising_history(), 300_000_000)
+
+    assert validated["signal_quality"] == "validated"
+    assert validated["single_model_reliability"] == 0.85
+    assert provisional["signal_quality"] == "provisional"
+    assert "single-model reliability below 0.75" in provisional["tp_validation_reasons"]
 
 
 def test_etf_analysis_uses_fund_evidence_instead_of_corporate_dcf() -> None:

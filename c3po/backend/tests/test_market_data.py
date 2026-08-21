@@ -621,6 +621,7 @@ def test_target_price_validation_rejects_model_consensus_divergence() -> None:
 
     validated = B3ScreenerService._validate_target_price(
         row=row,
+        profile="general",
         methods=methods,
         internal_tp=30.0,
         consensus_tp=30.0,
@@ -630,6 +631,7 @@ def test_target_price_validation_rejects_model_consensus_divergence() -> None:
     )
     divergent = B3ScreenerService._validate_target_price(
         row=row,
+        profile="general",
         methods=methods,
         internal_tp=60.0,
         consensus_tp=25.0,

@@ -36,8 +36,18 @@ MIN_ADTV_90D = 5_000_000
 MIN_HISTORY_DAYS = 40
 TP_UPSIDE_PREMIUM = 0.06
 MAX_ENTRY_DISTANCE = 15.0
-MIN_VALUATION_CONFIDENCE = 70.0
+MIN_VALUATION_CONFIDENCE = 60.0
 MAX_METHOD_DISPERSION = 45.0
+PROFILE_MAX_METHOD_DISPERSION = {
+    "cyclical": 54.0,
+    "financial": 57.0,
+    "general": 53.0,
+    "growth": 45.0,
+    "quality": 45.0,
+    "quality_compounder": 45.0,
+    "real_estate": 57.0,
+    "utilities": 45.0,
+}
 MIN_TP_VALIDATION_SCORE = 65.0
 MIN_TP_SOURCE_AGREEMENT = 55.0
 MIN_TP_SOURCE_COMPARISONS = 3
@@ -623,7 +633,7 @@ class B3ScreenerService:
                 "tp_upside": f"C3PO TP upside >= Selic + 6 p.p. = {tp_upside_cutoff:.1f}%",
                 "entry": "Weighted median of five framework buy-ins, capped by the shared return hurdle; price distance <= 15%",
                 "risk": f"Risk <= min(40, eligible-universe median) = {risk_cutoff:.1f}/100",
-            "confidence": f"Validated TP only: score >= {MIN_TP_VALIDATION_SCORE:.0f}/100, confidence >= {MIN_VALUATION_CONFIDENCE:.0f}, dispersion <= {MAX_METHOD_DISPERSION:.0f}%, two sources, quarterly fundamentals <= {MAX_FUNDAMENTALS_AGE_DAYS} days and internal/consensus gap <= {MAX_TP_CONSENSUS_GAP:.0f}%",
+            "confidence": f"Validated TP only: score >= {MIN_TP_VALIDATION_SCORE:.0f}/100, confidence >= {MIN_VALUATION_CONFIDENCE:.0f}, profile-calibrated dispersion, two sources, quarterly fundamentals <= {MAX_FUNDAMENTALS_AGE_DAYS} days and internal/consensus gap <= {MAX_TP_CONSENSUS_GAP:.0f}%",
             },
         )
 
@@ -1990,6 +2000,7 @@ class B3ScreenerService:
         our_tp = internal_tp * (1 - consensus_weight) + (consensus_for_blend or 0.0) * consensus_weight
         tp_validation = self._validate_target_price(
             row=row,
+            profile=profile,
             methods=normalized_methods,
             internal_tp=internal_tp,
             consensus_tp=consensus_for_blend,
@@ -2121,6 +2132,7 @@ class B3ScreenerService:
     def _validate_target_price(
         *,
         row: dict[str, Any],
+        profile: str,
         methods: dict[str, float],
         internal_tp: float,
         consensus_tp: float | None,
@@ -2170,7 +2182,8 @@ class B3ScreenerService:
             reasons.append("Fewer than three independent internal methods")
         if valuation_confidence < MIN_VALUATION_CONFIDENCE:
             reasons.append("Valuation confidence below minimum")
-        if method_dispersion > MAX_METHOD_DISPERSION:
+        max_dispersion = PROFILE_MAX_METHOD_DISPERSION.get(profile, MAX_METHOD_DISPERSION)
+        if method_dispersion > max_dispersion:
             reasons.append("Valuation methods do not converge")
         if source_count < 2 or source_comparisons < MIN_TP_SOURCE_COMPARISONS:
             reasons.append("Insufficient independent source evidence")
@@ -2775,6 +2788,7 @@ class B3ScreenerService:
             "maximum_risk": "strictly below both 40/100 and the eligible-universe median risk score",
             "minimum_valuation_confidence": MIN_VALUATION_CONFIDENCE,
             "maximum_method_dispersion_percent": MAX_METHOD_DISPERSION,
+            "maximum_method_dispersion_percent_by_profile": PROFILE_MAX_METHOD_DISPERSION,
             "minimum_tp_validation_score": MIN_TP_VALIDATION_SCORE,
             "maximum_internal_consensus_gap_percent": MAX_TP_CONSENSUS_GAP,
             "minimum_tp_source_agreement_percent": MIN_TP_SOURCE_AGREEMENT,
