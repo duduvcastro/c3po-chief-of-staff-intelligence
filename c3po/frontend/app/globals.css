@@ -212,6 +212,17 @@ button { cursor: pointer; }
 .leah-connection-state > i { width: 9px; height: 9px; border-radius: 2px; background: #d89c42; box-shadow: 0 0 0 4px rgba(216,156,66,.12); }
 .leah-connection-state span { display: block; color: #8a919b; font-size: 8px; font-weight: 900; }
 .leah-connection-state strong { display: block; margin-top: 4px; font-size: 10px; }
+.leah-connection-state.leah-connected > i { background: #18845a; box-shadow: 0 0 0 4px rgba(24,132,90,.12); }
+.leah-connect-button, .leah-create-row button { min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid #25282e; border-radius: 5px; color: #fff; background: #17191e; font-size: 9px; font-weight: 800; }
+.leah-connect-button { margin-left: 14px; white-space: nowrap; }
+.leah-connect-button:disabled, .leah-create-row button:disabled { opacity: .45; }
+.leah-pairing { min-height: 74px; display: grid; grid-template-columns: auto minmax(0, 1fr) 34px; align-items: center; gap: 20px; padding: 12px 16px; border: 1px solid #d5b75d; border-radius: 7px; background: #fff9e7; }
+.leah-pairing span { display: block; color: #7d682a; font-size: 8px; font-weight: 900; }
+.leah-pairing strong { display: block; margin-top: 4px; font-size: 22px; letter-spacing: 3px; }
+.leah-pairing p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.leah-pairing button, .leah-item > button { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 4px; color: #6d737c; background: transparent; }
+.leah-pairing button:hover, .leah-item > button:hover { color: var(--ink); background: #eceeef; }
+.leah-error { padding: 10px 14px; border-left: 3px solid #bf3029; color: #8f2621; background: #fff1f0; font-size: 10px; font-weight: 700; }
 .leah-tabs { width: fit-content; display: grid; grid-template-columns: repeat(2, 146px); gap: 3px; padding: 3px; border: 1px solid #d9dcdf; border-radius: 6px; background: #e9ebed; }
 .leah-tab { height: 38px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 4px; color: #67707b; background: transparent; font-size: 11px; font-weight: 800; }
 .leah-tab:hover { color: var(--ink); }
@@ -228,6 +239,19 @@ button { cursor: pointer; }
 .leah-task-summary > div:last-child { border-right: 0; }
 .leah-task-summary span { color: var(--muted); font-size: 10px; font-weight: 800; }
 .leah-task-summary strong { font-size: 18px; }
+.leah-create-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(170px, 240px) auto; gap: 9px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: #fff; }
+.leah-create-row input { min-width: 0; height: 36px; padding: 0 11px; border: 1px solid #d5d9dd; border-radius: 5px; color: var(--ink); background: #fff; font: inherit; font-size: 10px; }
+.leah-create-row input:focus { outline: 2px solid rgba(184,137,24,.18); border-color: #b88918; }
+.leah-item-list { display: grid; }
+.leah-item { min-height: 68px; display: grid; grid-template-columns: 38px minmax(0, 1fr) 34px; align-items: center; gap: 12px; padding: 9px 20px; border-bottom: 1px solid var(--line); }
+.leah-item:last-child { border-bottom: 0; }
+.leah-item-icon { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid #dec66f; border-radius: 5px; color: #856619; background: #fff9e7; }
+.leah-item > div { min-width: 0; }
+.leah-item strong { display: block; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.leah-item small { display: block; margin-top: 5px; color: var(--muted); font-size: 9px; }
+.leah-check { border: 1px solid #c9ced3 !important; }
+.leah-item-complete strong { color: #8c939b; text-decoration: line-through; }
+.leah-item-complete .leah-check { color: #fff !important; border-color: #18845a !important; background: #18845a !important; }
 .leah-empty-state { min-height: 342px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; text-align: center; }
 .leah-empty-state-tasks { min-height: 273px; }
 .leah-empty-icon { width: 52px; height: 52px; display: grid; place-items: center; margin-bottom: 14px; border: 1px solid #dbc880; border-radius: 6px; color: #8b6b18; background: var(--gold-soft); }
@@ -2257,4 +2281,10 @@ button { cursor: pointer; }
   .leah-task-summary strong { font-size: 15px; }
   .leah-empty-state { min-height: 288px; padding: 24px 18px; }
   .leah-empty-state-tasks { min-height: 220px; }
+  .leah-connect-button { margin-left: auto; }
+  .leah-pairing { grid-template-columns: 1fr 34px; gap: 8px; }
+  .leah-pairing p { grid-column: 1 / -1; grid-row: 2; }
+  .leah-create-row { grid-template-columns: 1fr; padding: 10px 14px; }
+  .leah-create-row button { min-height: 36px; }
+  .leah-item { padding: 9px 14px; }
 }
