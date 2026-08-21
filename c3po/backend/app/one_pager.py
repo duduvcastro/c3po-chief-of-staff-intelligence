@@ -653,6 +653,15 @@ class OnePagerService:
             methods = OrderedDict({"Preço de Mercado (dados insuficientes)": price})
             low_conviction = True
             usable = []
+        # Root-caused 2026-08-20 (Codex-flagged, screener recalibration):
+        # each surviving model's reliability score is computed here but was
+        # discarded before reaching the screener -- for a company with only
+        # one surviving model, dispersion is always exactly zero by
+        # definition, so it can't be used as evidence of convergence.
+        # Codex's `validated` gate needs the model's own reliability score
+        # (plus consensus agreement) as a separate signal for that case.
+        method_scores = OrderedDict((name, score) for _, name, _, score in usable)
+        single_model_reliability = usable[0][3] if len(usable) == 1 else None
 
         # Bear/Bull: recompute the SAME surviving models under stressed/eased
         # real assumptions (see _scenario_models), aggregated with the SAME
@@ -744,6 +753,11 @@ class OnePagerService:
                     )
                 c3po_tp = statistics.mean(methods.values())
                 foreign_buy_in_override = foreign_buy_in
+                # method_scores/single_model_reliability describe OUR
+                # per-model confidence -- meaningless once methods is
+                # replaced wholesale by the manually-curated foreign bridge.
+                method_scores = OrderedDict()
+                single_model_reliability = None
         method_values = list(methods.values())
         dispersion = self._dispersion(method_values)
         completeness_fields = (
@@ -785,6 +799,8 @@ class OnePagerService:
                 confidence = self._clamp(float(shared_valuation.get("valuation_confidence") or confidence), 0, 100)
                 dispersion = max(0.0, float(shared_valuation.get("method_dispersion_percent") or self._dispersion(method_values)))
                 low_conviction = dispersion > 25.0
+                method_scores = OrderedDict()
+                single_model_reliability = None
         upside = (c3po_tp / price - 1) * 100
         consensus_upside = (consensus / price - 1) * 100 if consensus else None
         rating = "COMPRA" if upside >= 25 else "ACUMULAR" if upside >= 10 else "NEUTRO" if upside >= -10 else "REDUZIR"
@@ -952,6 +968,8 @@ class OnePagerService:
             "risk_score": risk_score,
             "dispersion": dispersion,
             "low_conviction": low_conviction,
+            "method_scores": method_scores,
+            "single_model_reliability": single_model_reliability,
             "methods": methods,
             "multiples": OrderedDict(
                 (

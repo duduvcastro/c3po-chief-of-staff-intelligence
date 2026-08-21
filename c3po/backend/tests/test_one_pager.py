@@ -870,6 +870,13 @@ def test_analyze_excludes_models_whose_own_inputs_do_not_support_them(tmp_path) 
     analysis = service._analyze("NODATA", "US", quote, fundamentals)
 
     assert list(analysis["methods"]) == ["Múltiplos Comparáveis (Peers)"]
+    # Root-caused 2026-08-20 (Codex-flagged, screener recalibration): with
+    # exactly one surviving model, dispersion is always zero by definition
+    # -- it can't be used as evidence of convergence, so the screener's
+    # single-model validation rule needs the model's own reliability score
+    # instead, which used to be computed here and then discarded.
+    assert analysis["single_model_reliability"] == analysis["method_scores"]["Múltiplos Comparáveis (Peers)"]
+    assert analysis["single_model_reliability"] is not None
 
 
 def test_analyze_flags_low_conviction_and_leans_harder_on_consensus_when_models_disagree(tmp_path) -> None:
