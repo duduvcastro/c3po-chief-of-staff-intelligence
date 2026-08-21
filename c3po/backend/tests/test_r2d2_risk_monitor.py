@@ -332,3 +332,42 @@ def test_full_cycle_write_cannot_regress_fast_watcher_high_water() -> None:
     )
 
     assert service.repo.positions(experiment["id"])[0]["high_water_price_local"] == 105.0
+
+
+def test_fast_watcher_liquidates_position_that_turns_positive_inside_t30_window() -> None:
+    service, stream = _fast_service()
+    experiment, _ = _open_position(service, "LASTSECOND")
+    window_start = datetime(2026, 8, 20, 19, 59, 31, tzinfo=timezone.utc)  # 15:59:31 ET
+    service.repo.update_chandelier_anchor(
+        experiment["id"], "NASDAQ", "LASTSECOND", atr=1.0,
+        hard_stop=99.35, as_of=window_start,
+    )
+    stream.current["LASTSECOND"] = SimpleNamespace(
+        price=99.99, as_of=window_start, status="live",
+    )
+    assert service.run_fast_risk_watcher_cycle(window_start) == 0
+
+    final_second = datetime(2026, 8, 20, 19, 59, 59, 500_000, tzinfo=timezone.utc)
+    stream.current["LASTSECOND"] = SimpleNamespace(
+        price=100.01, as_of=final_second, status="live",
+    )
+    assert service.run_fast_risk_watcher_cycle(final_second) == 1
+
+    trade = service.repo.trades(experiment["id"])[0]
+    assert trade["fast_exit_rule"] == "end_of_day_positive"
+    assert trade["fast_exit_level_local"] == 100.0
+    assert trade["fast_exit_tick_as_of"] == final_second
+
+
+def test_fast_watcher_does_not_liquidate_losing_position_at_t30() -> None:
+    service, stream = _fast_service()
+    experiment, _ = _open_position(service, "OVERNIGHT")
+    now = datetime(2026, 8, 20, 19, 59, 59, tzinfo=timezone.utc)
+    service.repo.update_chandelier_anchor(
+        experiment["id"], "NASDAQ", "OVERNIGHT", atr=1.0,
+        hard_stop=99.35, as_of=now,
+    )
+    stream.current["OVERNIGHT"] = SimpleNamespace(price=99.80, as_of=now, status="live")
+
+    assert service.run_fast_risk_watcher_cycle(now) == 0
+    assert service.repo.positions(experiment["id"])[0]["symbol"] == "OVERNIGHT"

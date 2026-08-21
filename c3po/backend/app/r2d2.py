@@ -1619,6 +1619,16 @@ class R2D2PaperService:
                 level = hard_stop
                 if quote.price <= hard_stop:
                     rule = "hard_stop"
+                elif (
+                    (seconds_to_close := self._seconds_to_us_close(position["market"], now)) is not None
+                    and 0 <= seconds_to_close <= r2d2_strategy.END_OF_DAY_PROFIT_EXIT_LEAD_SECONDS
+                    and quote.price > _float(position["average_cost_local"])
+                ):
+                    # Re-evaluated on every distinct fresh tick throughout T-30s.
+                    # A position that was negative at 15:59:30 but turns positive
+                    # even on the final tick is therefore still liquidated.
+                    rule = "end_of_day_positive"
+                    level = _float(position["average_cost_local"])
                 elif atr <= 0 or atr_age > self.settings.r2d2_fast_risk_atr_max_age_seconds:
                     self.repo.advance_fast_high_water(
                         experiment["id"], position["market"], position["symbol"], price=quote.price,
