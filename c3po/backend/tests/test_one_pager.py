@@ -804,13 +804,10 @@ def test_analyze_skips_ev_ebitda_and_dcf_for_the_financial_profile(tmp_path) -> 
 def test_analyze_pulls_the_final_tp_toward_a_well_covered_consensus(tmp_path) -> None:
     """Root-caused 2026-08-20 (production incident): JPM's blended TP came
     out $625.49 against a real 27-analyst consensus of $374.57 (67% too
-    high) -- because consensus only entered each of the 5 internal
-    "methods" (Goldman Sachs/Morgan Stanley/etc, fictional labels for our
-    own model, not real bank data) diluted at 10-25% weight, with nothing
-    pulling the final number back toward the one real, externally-sourced
-    signal we have. Mirrors B3's _consensus_weight: real analyst consensus
-    now gets an explicit final blend (20-35%, scaled by analyst coverage),
-    applied once after the internal model instead of diluted inside it.
+    high). Real analyst consensus now gets an explicit final blend (20-35%,
+    scaled by analyst coverage) after the internal model. It must not also
+    enter the five internal methods, otherwise the same external evidence is
+    counted twice in c3po_tp and the downstream R2D2 pre-trade rank.
     """
     service = service_for(tmp_path)
     fundamentals = {
@@ -833,4 +830,36 @@ def test_analyze_pulls_the_final_tp_toward_a_well_covered_consensus(tmp_path) ->
         risk_free_rate=0.042,
     )
 
+    assert with_consensus["methods"] == pytest.approx(without_consensus["methods"])
+    assert statistics.mean(with_consensus["methods"].values()) == pytest.approx(
+        statistics.mean(without_consensus["methods"].values())
+    )
+    expected_weight = service._us_consensus_weight(374.57, 27)
+    expected_tp = (
+        statistics.mean(with_consensus["methods"].values()) * (1 - expected_weight)
+        + 374.57 * expected_weight
+    )
+    assert with_consensus["c3po_tp"] == pytest.approx(expected_tp)
     assert abs(with_consensus["c3po_tp"] - 374.57) < abs(without_consensus["c3po_tp"] - 374.57)
+
+
+def test_consensus_does_not_leak_into_internal_methods_without_fundamentals(tmp_path) -> None:
+    service = service_for(tmp_path)
+    quote = {"price": 100.0, "currency": "USD", "change_percent": 0.0, "as_of": datetime.now(timezone.utc)}
+    fundamentals = {
+        "companyName": "Sparse Coverage Inc",
+        "sector": "Financial Services",
+        "industry": "Banks-Diversified",
+    }
+
+    without_consensus = service._analyze("SPARSE", "US", quote, fundamentals)
+    with_consensus = service._analyze(
+        "SPARSE",
+        "US",
+        quote,
+        {**fundamentals, "targetMeanPrice": 140.0, "numberOfAnalystOpinions": 10},
+    )
+
+    assert with_consensus["methods"] == pytest.approx(without_consensus["methods"])
+    internal_tp = statistics.mean(with_consensus["methods"].values())
+    assert with_consensus["c3po_tp"] == pytest.approx(internal_tp * 0.65 + 140.0 * 0.35)

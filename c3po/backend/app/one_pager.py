@@ -75,16 +75,11 @@ US_DISCOUNT_RATE_MAX = 0.16
 # `profile` so a bank's row names never reference DCF or EV/EBITDA (both are
 # already None for `profile == "financial"`, see enterprise_tp/dcf_tp below).
 #
-# Separately, the 5 "methods" each only bake real analyst consensus in at a
-# modest,
-# diluted 10-25% weight alongside fundamentals-derived components. When
-# those fundamentals-derived components move together (as they did for
-# JPM: consensus $374.57, our blended TP $625.49 -- 67% too high), nothing
-# pulls the final number back toward the one real, externally-sourced
-# anchor we have. B3 avoids this with an explicit, separate final blend
-# against public_consensus_tp (b3_screener.py's _consensus_weight, 20-35%
-# scaled by analyst coverage) -- applied once, after the internal model,
-# not diluted inside it. Mirrored here as US_CONSENSUS_WEIGHT_MIN/MAX.
+# Real analyst consensus is deliberately excluded from the five internal
+# methods. It enters c3po_tp exactly once, through the explicit final blend
+# below (20-35%, scaled by analyst coverage). Keeping the external signal out
+# of raw_methods makes internal_tp independent from consensus and avoids
+# double-counting the same market evidence in the R2D2 pre-trade rank.
 US_CONSENSUS_WEIGHT_MIN = 0.20
 US_CONSENSUS_WEIGHT_MAX = 0.35
 US_CONSENSUS_ANALYST_BREADTH_ANALYSTS = 10
@@ -102,7 +97,7 @@ STANDARD_METHOD_NAMES = (
 )
 FINANCIAL_METHOD_NAMES = (
     "Múltiplos de Lucro (P/L)",
-    "Lucro Ajustado a Consenso",
+    "Lucro Projetado (P/L)",
     "Blend de Risco (P/L + P/B)",
     "Momentum de Lucro Bancário",
     "Valor Patrimonial & Qualidade",
@@ -525,9 +520,8 @@ class OnePagerService:
 
         fundamental_anchor = self._weighted_value(
             ((earnings_tp, 0.40), (enterprise_tp, 0.30), (dcf_tp, 0.20), (book_tp, 0.10)),
-            consensus or price,
+            price,
         )
-        consensus_anchor = consensus or fundamental_anchor
         surprise = self._ratio((earnings_history[0] if earnings_history else {}).get("surprisePercent")) or 0.0
         next_trend = self._forward_trend(earnings_trend)
         eps_revision = self._eps_revision(next_trend)
@@ -558,30 +552,30 @@ class OnePagerService:
                 (
                     method_names[0],
                     self._weighted_value(
-                        ((earnings_tp, 0.42), (enterprise_tp, 0.33), (book_tp, 0.10), (consensus_anchor, 0.15)),
+                        ((earnings_tp, 0.42), (enterprise_tp, 0.33), (book_tp, 0.10)),
                         fundamental_anchor,
                     ),
                 ),
                 (
                     method_names[1],
-                    self._weighted_value(((dcf_tp, 0.72), (earnings_tp, 0.18), (consensus_anchor, 0.10)), fundamental_anchor),
+                    self._weighted_value(((dcf_tp, 0.72), (earnings_tp, 0.18)), fundamental_anchor),
                 ),
                 (
                     method_names[2],
                     self._weighted_value(
-                        ((dcf_tp, 0.28), (enterprise_tp, 0.22), (earnings_tp, 0.20), (book_tp, 0.10), (consensus_anchor, 0.20)),
+                        ((dcf_tp, 0.28), (enterprise_tp, 0.22), (earnings_tp, 0.20), (book_tp, 0.10)),
                         fundamental_anchor,
                     )
                     * (1 - risk_adjustment),
                 ),
                 (
                     method_names[3],
-                    self._weighted_value(((earnings_tp, 0.65), (enterprise_tp, 0.15), (consensus_anchor, 0.20)), fundamental_anchor)
+                    self._weighted_value(((earnings_tp, 0.65), (enterprise_tp, 0.15)), fundamental_anchor)
                     * self._clamp(1 + surprise * 0.12 + eps_revision * 0.20, 0.90, 1.12),
                 ),
                 (
                     method_names[4],
-                    self._weighted_value(((dcf_tp, 0.30), (earnings_tp, 0.25), (enterprise_tp, 0.20), (consensus_anchor, 0.25)), fundamental_anchor)
+                    self._weighted_value(((dcf_tp, 0.30), (earnings_tp, 0.25), (enterprise_tp, 0.20)), fundamental_anchor)
                     * self._clamp(1 + quality_adjustment - risk_adjustment * 0.45, 0.90, 1.14),
                 ),
             )
