@@ -243,3 +243,13 @@ microstructure, cross-sectional strength, liquidity, event and regime features.
 - Cost, clock, feature and dataset schemas are versioned.
 - Replay and live-shadow provenance cannot be mixed silently.
 - Promotion and circuit-breaker thresholds are registered before results are viewed.
+
+## Phase 0A microstructure contract
+
+The EODHD provider exposes trade price/volume and BBO on separate streams. The
+system therefore estimates aggressor side; it does not claim an official
+exchange aggressor flag. Schema v1 uses only a prior BBO no more than two seconds
+old, then tick rule, inherited tick and unknown in that order. One- and
+five-second aggregates always retain classification coverage, confidence and
+BBO age. Raw append-only events remain the source of truth and permit complete
+reprocessing when the classifier changes.

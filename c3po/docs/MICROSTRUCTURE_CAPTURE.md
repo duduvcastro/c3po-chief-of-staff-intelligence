@@ -27,7 +27,14 @@ C3PO_R2D2_MICROSTRUCTURE_RAW_DIR=/app/microstructure-raw
 C3PO_R2D2_MICROSTRUCTURE_RAW_QUEUE_SIZE=100000
 C3PO_R2D2_MICROSTRUCTURE_RAW_ROTATE_MB=256
 C3PO_R2D2_MICROSTRUCTURE_RAW_FLUSH_EVERY=1000
+C3PO_R2D2_MICROSTRUCTURE_PROCESSOR_ENABLED=false
+C3PO_R2D2_MICROSTRUCTURE_BBO_MAX_AGE_SECONDS=2
+C3PO_R2D2_MICROSTRUCTURE_ALLOWED_LATENESS_SECONDS=2
+C3PO_R2D2_MICROSTRUCTURE_AGGREGATE_QUEUE_SIZE=100000
 ```
+
+The processor cannot be enabled without raw capture. Startup fails explicitly
+in that configuration so derived data can never replace its source evidence.
 
 Enabling capture requires a controlled worker restart. The initial production
 rollout should verify disk growth, `accepted/written/dropped/write_errors`, feed
@@ -49,11 +56,48 @@ Phase 0A increment must:
 Object-storage credentials and bucket policy are deliberately not introduced in
 this first PR. Silent local deletion is forbidden.
 
-## Follow-up processor
+## Trade/BBO processor
 
-The second increment joins each trade to the nearest non-stale prior BBO and
-falls back to tick rule when no suitable BBO exists. It will emit one/five-second
-aggregates containing buy/sell/unknown volume, CVD, trade intensity, size
-percentiles, spread and data-quality coverage. Feature snapshots, including
-non-operated candidates, will then feed live shadow and the future ranker.
+The second increment joins each trade to the latest **prior** BBO no more than
+two seconds old. The provider sends trades and BBOs on separate sockets; the
+result is an inference, not an exchange-provided aggressor flag.
 
+Classification order is frozen for schema version 1:
+
+1. above/below a fresh BBO midpoint (`bbo_midpoint`);
+2. higher/lower than the prior trade (`tick_rule`);
+3. unchanged trade inherits the last known direction (`inherited_tick`);
+4. otherwise `unknown`.
+
+A BBO with `bbo.as_of > trade.as_of` is never used. BBO classification records
+age and confidence; aggregates expose unknown share and classification coverage
+so downstream research can reject poor samples.
+
+The passive processor emits append-only one- and five-second NDJSON under
+`aggregates/session_date=.../interval=...`. Fields include:
+
+- OHLC and trade/quote counts;
+- buy, sell and unknown volume/trade counts;
+- interval and cumulative volume delta;
+- BBO/tick/inherited classification counts and mean confidence;
+- trade-size sum, square sum, mean and maximum;
+- trade interarrival statistics;
+- BBO age and latest spread;
+- provider-to-receiver lag, late/malformed/drop telemetry;
+- first/last event timestamps and schema/provider identity.
+
+Each aggregate includes a `processor_run_id`. Cumulative delta restarts when the
+worker restarts and must only be interpreted within that run unless rebuilt from
+the authoritative raw stream.
+
+The processor uses its own bounded queue. Overflow or malformed events are
+counted and logged; it never blocks the WebSocket loop. Two seconds of allowed
+lateness absorb modest cross-feed reordering before a bucket is finalized. Raw
+events remain authoritative if this classifier is revised later.
+
+## Next increment
+
+Feature snapshots, including non-operated candidates, will consume these
+aggregates for live shadow and the future ranker. Trade-size percentiles must be
+normalized by symbol and time of day; a fixed universal "large block" threshold
+is deliberately not part of schema version 1.
