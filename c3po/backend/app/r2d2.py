@@ -1119,6 +1119,7 @@ class R2D2PaperService:
 
     @staticmethod
     def open_markets(now: datetime) -> list[str]:
+        """Markets eligible for candidate screening and new entries."""
         markets: list[str] = []
         us = now.astimezone(NEW_YORK)
         if us.weekday() < 5 and time(9, 40) <= us.time() <= time(15, 50):
@@ -1126,16 +1127,29 @@ class R2D2PaperService:
         return markets
 
     @staticmethod
-    def _minutes_to_us_close(market: str, now: datetime) -> float | None:
-        """Minutes remaining until this cycle stops scanning NASDAQ/NYSE
-        (open_markets' 15:50 ET cutoff), or None outside that session/market.
+    def risk_markets(now: datetime) -> list[str]:
+        """Markets whose positions still require regular-session protection.
+
+        Candidate screening deliberately stops at 15:50 ET. Open positions
+        remain exposed through the official close, so the dedicated monitor
+        must keep running for those final ten minutes without reopening the
+        entry pipeline.
         """
+        markets: list[str] = []
+        us = now.astimezone(NEW_YORK)
+        if us.weekday() < 5 and time(9, 40) <= us.time() < time(16, 0):
+            markets.extend(("NASDAQ", "NYSE"))
+        return markets
+
+    @staticmethod
+    def _minutes_to_us_close(market: str, now: datetime) -> float | None:
+        """Minutes remaining until the official 16:00 ET regular close."""
         if market not in ACTIVE_MARKETS:
             return None
         us = now.astimezone(NEW_YORK)
         if us.weekday() >= 5:
             return None
-        close = datetime.combine(us.date(), time(15, 50), tzinfo=NEW_YORK)
+        close = datetime.combine(us.date(), time(16, 0), tzinfo=NEW_YORK)
         remaining = (close - us).total_seconds() / 60
         return remaining if 0 <= remaining else None
 
@@ -1304,7 +1318,7 @@ class R2D2PaperService:
         if not positions:
             return 0
 
-        markets = self.open_markets(now)
+        markets = self.risk_markets(now)
         legacy_b3_exit_window = (
             self._b3_session_open(now)
             and any(position["market"] == "B3" for position in positions)
