@@ -2568,6 +2568,27 @@ function ViewRouter({
 }
 
 type LeahCloudTab = "agenda" | "tasks";
+type LeahCalendarMode = "day" | "month" | "year";
+
+const leahDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const leahStartOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const leahDateTimeInput = (value: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
+function leahMonthCells(cursor: Date) {
+  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const start = new Date(first);
+  start.setDate(first.getDate() - first.getDay());
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return date;
+  });
+}
 
 function LeahCloudView({ session }: { session: AuthSession }) {
   const [activeTab, setActiveTab] = useState<LeahCloudTab>("agenda");
@@ -2577,11 +2598,15 @@ function LeahCloudView({ session }: { session: AuthSession }) {
   const [pairing, setPairing] = useState<{ code: string; expires_at: string } | null>(null);
   const [title, setTitle] = useState("");
   const [dateTime, setDateTime] = useState("");
-  const today = new Intl.DateTimeFormat("pt-BR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long"
-  }).format(new Date());
+  const [calendarMode, setCalendarMode] = useState<LeahCalendarMode>("month");
+  const [calendarCursor, setCalendarCursor] = useState(() => leahStartOfDay(new Date()));
+  const [editorItem, setEditorItem] = useState<LeahItem | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorTitle, setEditorTitle] = useState("");
+  const [editorNotes, setEditorNotes] = useState("");
+  const [editorStartsAt, setEditorStartsAt] = useState("");
+  const [editorEndsAt, setEditorEndsAt] = useState("");
+  const [editorAllDay, setEditorAllDay] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -2607,6 +2632,17 @@ function LeahCloudView({ session }: { session: AuthSession }) {
   const localDay = new Date().toISOString().slice(0, 10);
   const todayTasks = openTasks.filter((item) => item.due_at?.slice(0, 10) === localDay).length;
   const upcomingTasks = openTasks.filter((item) => item.due_at && item.due_at.slice(0, 10) > localDay).length;
+  const eventsByDay = useMemo(() => {
+    const grouped = new Map<string, LeahItem[]>();
+    events.forEach((item) => {
+      if (!item.starts_at) return;
+      const key = leahDateKey(new Date(item.starts_at));
+      grouped.set(key, [...(grouped.get(key) ?? []), item]);
+    });
+    return grouped;
+  }, [events]);
+  const cursorEvents = eventsByDay.get(leahDateKey(calendarCursor)) ?? [];
+  const monthCells = useMemo(() => leahMonthCells(calendarCursor), [calendarCursor]);
 
   async function pairMac() {
     setBusy(true);
@@ -2654,6 +2690,62 @@ function LeahCloudView({ session }: { session: AuthSession }) {
       setBusy(false);
     }
   }
+
+  function openEventEditor(date: Date, item: LeahItem | null = null) {
+    const start = item?.starts_at ? new Date(item.starts_at) : new Date(date.getFullYear(), date.getMonth(), date.getDate(), 9, 0);
+    const end = item?.ends_at ? new Date(item.ends_at) : new Date(start.getTime() + 3_600_000);
+    setEditorItem(item);
+    setEditorTitle(item?.title ?? "");
+    setEditorNotes(item?.notes ?? "");
+    setEditorStartsAt(leahDateTimeInput(start.toISOString()));
+    setEditorEndsAt(leahDateTimeInput(end.toISOString()));
+    setEditorAllDay(item?.is_all_day ?? false);
+    setEditorOpen(true);
+  }
+
+  async function saveEvent(event: FormEvent) {
+    event.preventDefault();
+    if (!editorTitle.trim() || !editorStartsAt || !editorEndsAt) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/leah/items${editorItem ? `/${editorItem.id}` : ""}`, {
+        method: editorItem ? "PUT" : "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "event",
+          title: editorTitle.trim(),
+          notes: editorNotes,
+          starts_at: new Date(editorStartsAt).toISOString(),
+          ends_at: new Date(editorEndsAt).toISOString(),
+          due_at: null,
+          is_all_day: editorAllDay,
+          is_completed: false
+        })
+      });
+      if (!response.ok) throw new Error("Não foi possível salvar o evento.");
+      setEditorOpen(false);
+      await load();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Falha ao salvar evento.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function navigateCalendar(direction: -1 | 1) {
+    const next = new Date(calendarCursor);
+    if (calendarMode === "day") next.setDate(next.getDate() + direction);
+    if (calendarMode === "month") next.setMonth(next.getMonth() + direction, 1);
+    if (calendarMode === "year") next.setFullYear(next.getFullYear() + direction, 0, 1);
+    setCalendarCursor(next);
+  }
+
+  const calendarTitle = calendarMode === "day"
+    ? new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(calendarCursor)
+    : calendarMode === "month"
+      ? new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(calendarCursor)
+      : String(calendarCursor.getFullYear());
 
   async function updateTask(item: LeahItem) {
     await fetch(`${API_URL}/api/v1/leah/items/${item.id}`, {
@@ -2723,21 +2815,40 @@ function LeahCloudView({ session }: { session: AuthSession }) {
       </div>
 
       {activeTab === "agenda" ? (
-        <section className="leah-workspace" role="tabpanel" aria-label="Agenda">
-          <header className="leah-workspace-head">
-            <div><span>HOJE</span><h2>{today}</h2></div>
-            <div className="leah-count"><strong>{events.length}</strong><span>eventos</span></div>
+        <section className="leah-workspace leah-calendar-workspace" role="tabpanel" aria-label="Agenda">
+          <header className="leah-calendar-toolbar">
+            <button type="button" className="leah-calendar-add" title="Novo evento" onClick={() => openEventEditor(calendarCursor)}><Plus size={19} /></button>
+            <div className="leah-calendar-modes" role="group" aria-label="Visualização do calendário">
+              {(["day", "month", "year"] as LeahCalendarMode[]).map((mode) => <button type="button" key={mode} className={calendarMode === mode ? "active" : ""} onClick={() => setCalendarMode(mode)}>{mode === "day" ? "Dia" : mode === "month" ? "Mês" : "Ano"}</button>)}
+            </div>
+            <div className="leah-calendar-nav">
+              <button type="button" title="Anterior" onClick={() => navigateCalendar(-1)}><ChevronLeft size={18} /></button>
+              <button type="button" onClick={() => setCalendarCursor(leahStartOfDay(new Date()))}>Hoje</button>
+              <button type="button" title="Próximo" onClick={() => navigateCalendar(1)}><ChevronRight size={18} /></button>
+            </div>
           </header>
-          <form className="leah-create-row" onSubmit={createItem}>
-            <input aria-label="Título do evento" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Novo evento" />
-            <input aria-label="Data e hora" type="datetime-local" value={dateTime} onChange={(event) => setDateTime(event.target.value)} />
-            <button type="submit" disabled={busy || !title.trim()}><Plus size={17} /> Adicionar</button>
-          </form>
-          {events.length === 0 ? <div className="leah-empty-state">
-            <span className="leah-empty-icon"><CalendarDays size={26} /></span>
-            <strong>Nenhuma agenda sincronizada</strong>
-            <small>Os calendários deste usuário aparecerão aqui quando o agente pessoal estiver conectado.</small>
-          </div> : <div className="leah-item-list">{events.map((item) => <article className="leah-item" key={item.id}><span className="leah-item-icon"><CalendarDays size={18} /></span><div><strong>{item.title}</strong><small>{formatItemDate(item.starts_at)} · {item.source === "icloud" ? "iCloud" : "Leah Cloud"}</small></div><button type="button" title="Excluir" onClick={() => void removeItem(item)}><Trash2 size={17} /></button></article>)}</div>}
+          <div className="leah-calendar-title"><h2>{calendarTitle}</h2><span>{events.length} eventos sincronizados</span></div>
+          {calendarMode === "month" && <div className="leah-month-view">
+            <div className="leah-weekdays">{["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."].map((day) => <span key={day}>{day}</span>)}</div>
+            <div className="leah-month-grid">{monthCells.map((date) => {
+              const key = leahDateKey(date);
+              const dayEvents = eventsByDay.get(key) ?? [];
+              const outside = date.getMonth() !== calendarCursor.getMonth();
+              const isToday = key === leahDateKey(new Date());
+              return <div key={key} className={`leah-calendar-day ${outside ? "outside" : ""} ${isToday ? "today" : ""}`} onClick={() => { setCalendarCursor(date); openEventEditor(date); }}>
+                <button type="button" className="leah-day-number" onClick={(event) => { event.stopPropagation(); setCalendarCursor(date); setCalendarMode("day"); }}>{date.getDate()}</button>
+                <div className="leah-day-events">{dayEvents.slice(0, 4).map((item) => <button type="button" key={item.id} onClick={(event) => { event.stopPropagation(); openEventEditor(date, item); }}><i /><span>{item.title}</span><time>{item.is_all_day ? "" : new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(item.starts_at!))}</time></button>)}{dayEvents.length > 4 && <small>e mais {dayEvents.length - 4}</small>}</div>
+              </div>;
+            })}</div>
+          </div>}
+          {calendarMode === "day" && <div className="leah-day-view">
+            <aside><strong>{calendarCursor.getDate()}</strong><span>{new Intl.DateTimeFormat("pt-BR", { weekday: "short" }).format(calendarCursor)}</span></aside>
+            <div>{cursorEvents.length ? cursorEvents.map((item) => <button type="button" className="leah-day-event" key={item.id} onClick={() => openEventEditor(calendarCursor, item)}><time>{item.starts_at ? new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(item.starts_at)) : ""}</time><i /><span><strong>{item.title}</strong><small>{item.notes || (item.source === "icloud" ? "iCloud" : "Leah Cloud")}</small></span></button>) : <button type="button" className="leah-day-empty" onClick={() => openEventEditor(calendarCursor)}><Plus size={18} /> Adicionar evento neste dia</button>}</div>
+          </div>}
+          {calendarMode === "year" && <div className="leah-year-view">{Array.from({ length: 12 }, (_, month) => {
+            const monthDate = new Date(calendarCursor.getFullYear(), month, 1);
+            return <button type="button" key={month} onClick={() => { setCalendarCursor(monthDate); setCalendarMode("month"); }}><strong>{new Intl.DateTimeFormat("pt-BR", { month: "long" }).format(monthDate)}</strong><div>{["D", "S", "T", "Q", "Q", "S", "S"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}{leahMonthCells(monthDate).map((date) => <i key={leahDateKey(date)} className={`${date.getMonth() === month ? "" : "outside"} ${(eventsByDay.get(leahDateKey(date))?.length ?? 0) > 0 ? "has-event" : ""}`}>{date.getDate()}</i>)}</div></button>;
+          })}</div>}
         </section>
       ) : (
         <section className="leah-workspace" role="tabpanel" aria-label="Tarefas">
@@ -2762,6 +2873,16 @@ function LeahCloudView({ session }: { session: AuthSession }) {
           </div> : <div className="leah-item-list">{tasks.map((item) => <article className={`leah-item ${item.is_completed ? "leah-item-complete" : ""}`} key={item.id}><button type="button" className="leah-check" title={item.is_completed ? "Reabrir" : "Concluir"} onClick={() => void updateTask(item)}>{item.is_completed ? <Check size={16} /> : null}</button><div><strong>{item.title}</strong><small>{formatItemDate(item.due_at)} · {item.source === "icloud" ? "Lembretes" : "Leah Cloud"}</small></div><button type="button" title="Excluir" onClick={() => void removeItem(item)}><Trash2 size={17} /></button></article>)}</div>}
         </section>
       )}
+      {editorOpen && createPortal(<div className="leah-event-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditorOpen(false); }}>
+        <form className="leah-event-editor" role="dialog" aria-modal="true" aria-label={editorItem ? "Editar evento" : "Novo evento"} onSubmit={saveEvent}>
+          <header><div><span>{editorItem ? "EDITAR EVENTO" : "NOVO EVENTO"}</span><h2>{editorItem ? editorItem.title : "Adicionar à agenda"}</h2></div><button type="button" title="Fechar" onClick={() => setEditorOpen(false)}><X size={19} /></button></header>
+          <label><span>Título</span><input autoFocus value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} placeholder="Nome do evento" /></label>
+          <label className="leah-event-all-day"><input type="checkbox" checked={editorAllDay} onChange={(event) => setEditorAllDay(event.target.checked)} /><span>Dia inteiro</span></label>
+          <div className="leah-event-dates"><label><span>Início</span><input type="datetime-local" value={editorStartsAt} onChange={(event) => setEditorStartsAt(event.target.value)} /></label><label><span>Término</span><input type="datetime-local" value={editorEndsAt} onChange={(event) => setEditorEndsAt(event.target.value)} /></label></div>
+          <label><span>Observações</span><textarea value={editorNotes} onChange={(event) => setEditorNotes(event.target.value)} rows={4} /></label>
+          <footer>{editorItem ? <button type="button" className="leah-event-delete" onClick={() => { void removeItem(editorItem); setEditorOpen(false); }}><Trash2 size={16} /> Excluir</button> : <span />}<div><button type="button" onClick={() => setEditorOpen(false)}>Cancelar</button><button type="submit" className="leah-event-save" disabled={busy || !editorTitle.trim()}>Salvar</button></div></footer>
+        </form>
+      </div>, document.body)}
     </div>
   );
 }
