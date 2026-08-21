@@ -1235,7 +1235,7 @@ def test_r2d2_harvests_seventy_percent_of_a_weekly_winner_at_trigger() -> None:
     # atr_percent 1.0 caps the 1R profit-trigger floor at 1.5% now; raised
     # from the pre-1R-floor 0.97% so the harvest still fires.
     quote = SimpleNamespace(
-        price=101.55, change_percent=1.55,
+        price=101.70, change_percent=1.70,
         as_of=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
     )
 
@@ -1278,7 +1278,7 @@ def test_r2d2_harvests_tactical_profit_above_cost_aware_trigger() -> None:
     # atr_percent 1.0 caps the 1R profit-trigger floor at 1.5% now; raised
     # from the pre-1R-floor 1.1% so the harvest still fires.
     quote = SimpleNamespace(
-        price=101.6, change_percent=1.6,
+        price=101.75, change_percent=1.75,
         as_of=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
     )
 
@@ -1311,7 +1311,7 @@ def test_r2d2_locks_an_armed_profit_after_pullback() -> None:
     position["opened_at"] = opened
     # atr_percent 1.0 caps the 1R profit-trigger floor at 1.5% now; peak/pnl
     # raised from the pre-1R-floor 1.35%/0.45% so the lock still fires.
-    position["high_water_price_local"] = 101.6
+    position["high_water_price_local"] = 101.8
     service._technical_snapshot = lambda item: {  # type: ignore[method-assign]
         "score": 58.0, "atr": 1.0, "atr_percent": 1.0, "vwap": 100.4,
         "ema8": 100.5, "ema20": 100.3, "macd_histogram": 0.1,
@@ -1320,7 +1320,7 @@ def test_r2d2_locks_an_armed_profit_after_pullback() -> None:
         "as_of": datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc).isoformat(),
     }
     quote = SimpleNamespace(
-        price=101.0, change_percent=1.0,
+        price=101.1, change_percent=1.1,
         as_of=datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc),
     )
 
