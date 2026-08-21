@@ -2071,10 +2071,59 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [viewRevision, setViewRevision] = useState(0);
+  const [pageLoadStats, setPageLoadStats] = useState({ totalMs: 0, count: 0 });
+  const pageLoadTrackerRef = useRef<{
+    startedAt: number;
+    inFlight: number;
+    quietTimer: number | null;
+  } | null>(null);
   const [financeRefreshKey, setFinanceRefreshKey] = useState(0);
   const [activeAlertCount, setActiveAlertCount] = useState(0);
   const [navigationIndicators, setNavigationIndicators] = useState<NavigationIndicatorsData | null>(null);
   const ActiveViewIcon = viewIcons[activeView];
+
+  const completePageLoadMeasurement = useCallback((tracker: NonNullable<typeof pageLoadTrackerRef.current>) => {
+    if (pageLoadTrackerRef.current !== tracker) return;
+    const durationMs = Math.max(0, window.performance.now() - tracker.startedAt);
+    pageLoadTrackerRef.current = null;
+    setPageLoadStats((current) => ({
+      totalMs: current.totalMs + durationMs,
+      count: current.count + 1
+    }));
+  }, []);
+
+  const schedulePageLoadCompletion = useCallback((tracker: NonNullable<typeof pageLoadTrackerRef.current>) => {
+    if (pageLoadTrackerRef.current !== tracker || tracker.inFlight > 0) return;
+    if (tracker.quietTimer !== null) window.clearTimeout(tracker.quietTimer);
+    tracker.quietTimer = window.setTimeout(() => completePageLoadMeasurement(tracker), 250);
+  }, [completePageLoadMeasurement]);
+
+  useEffect(() => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (async (...args: Parameters<typeof window.fetch>) => {
+      const tracker = pageLoadTrackerRef.current;
+      if (tracker) {
+        if (tracker.quietTimer !== null) window.clearTimeout(tracker.quietTimer);
+        tracker.quietTimer = null;
+        tracker.inFlight += 1;
+      }
+      try {
+        return await originalFetch(...args);
+      } finally {
+        if (tracker && pageLoadTrackerRef.current === tracker) {
+          tracker.inFlight = Math.max(0, tracker.inFlight - 1);
+          schedulePageLoadCompletion(tracker);
+        }
+      }
+    }) as typeof window.fetch;
+
+    return () => {
+      window.fetch = originalFetch;
+      const tracker = pageLoadTrackerRef.current;
+      if (tracker?.quietTimer !== null && tracker?.quietTimer !== undefined) window.clearTimeout(tracker.quietTimer);
+      pageLoadTrackerRef.current = null;
+    };
+  }, [schedulePageLoadCompletion]);
 
   useEffect(() => {
     if (session.is_admin || !session.idle_timeout_seconds) return;
@@ -2245,6 +2294,16 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
 
   const selectView = (view: ViewKey, realtimeTab?: RealtimeTabKey, viewQuery?: string) => {
     if (view !== "home" && !visibleNavItems.some((item) => item.key === view)) return;
+    const previousTracker = pageLoadTrackerRef.current;
+    if (previousTracker?.quietTimer !== null && previousTracker?.quietTimer !== undefined) {
+      window.clearTimeout(previousTracker.quietTimer);
+    }
+    pageLoadTrackerRef.current = null;
+    if (view !== "home") {
+      const tracker = { startedAt: window.performance.now(), inFlight: 0, quietTimer: null as number | null };
+      pageLoadTrackerRef.current = tracker;
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => schedulePageLoadCompletion(tracker)));
+    }
     if (view === "finance") setFinanceRefreshKey((value) => value + 1);
     setActiveView(view);
     setViewRevision((value) => value + 1);
@@ -2395,6 +2454,8 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
               onNavigate={selectView}
               onAlertsRead={setActiveAlertCount}
               session={session}
+              pageLoadAverageMs={pageLoadStats.count ? pageLoadStats.totalMs / pageLoadStats.count : null}
+              pageLoadSampleCount={pageLoadStats.count}
             />
           )}
         </section>
@@ -2416,7 +2477,9 @@ function ViewRouter({
   financeRefreshKey,
   onNavigate,
   onAlertsRead,
-  session
+  session,
+  pageLoadAverageMs,
+  pageLoadSampleCount
 }: {
   activeView: ViewKey;
   data: CommandCenterData | null;
@@ -2428,6 +2491,8 @@ function ViewRouter({
   onNavigate: (view: ViewKey, realtimeTab?: RealtimeTabKey, query?: string) => void;
   onAlertsRead: (count: number) => void;
   session: AuthSession;
+  pageLoadAverageMs: number | null;
+  pageLoadSampleCount: number;
 }) {
   const canGenerateOnePagers = session.is_admin || session.capabilities.includes("onepager_generate");
   const canDeleteData = session.is_admin || session.capabilities.includes("delete");
@@ -2442,7 +2507,7 @@ function ViewRouter({
   if (activeView === "weather") return <WeatherView />;
   if (activeView === "intelligence") return <IQRecordsView />;
   if (activeView === "health") return <HealthView data={systemHealth} />;
-  if (activeView === "serverusage") return <ServerUsageView />;
+  if (activeView === "serverusage") return <ServerUsageView pageLoadAverageMs={pageLoadAverageMs} pageLoadSampleCount={pageLoadSampleCount} />;
   if (activeView === "alerts") return <AlertsView onRead={onAlertsRead} />;
   if (activeView === "finance") return <FinanceView refreshKey={financeRefreshKey} />;
   if (activeView === "candidates") return <CandidatesView reports={reports} marketProviders={marketProviders} />;
@@ -6149,11 +6214,10 @@ function formatServerTime(value: string) {
   }).format(new Date(value));
 }
 
-function ServerUsageView() {
+function ServerUsageView({ pageLoadAverageMs, pageLoadSampleCount }: { pageLoadAverageMs: number | null; pageLoadSampleCount: number }) {
   const [data, setData] = useState<ServerUsageResponse | null>(null);
   const [selectedServerId, setSelectedServerId] = useState("");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [pageLoadMs, setPageLoadMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -6181,22 +6245,6 @@ function ServerUsageView() {
     const timer = window.setInterval(() => load(true), 60_000);
     return () => window.clearInterval(timer);
   }, [load]);
-
-  useEffect(() => {
-    const measurePageLoad = () => {
-      const navigation = window.performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-      const duration = navigation?.loadEventEnd && navigation.loadEventEnd > 0
-        ? navigation.loadEventEnd - navigation.startTime
-        : window.performance.now();
-      setPageLoadMs(Math.max(0, Math.round(duration)));
-    };
-    if (document.readyState === "complete") {
-      measurePageLoad();
-      return;
-    }
-    window.addEventListener("load", measurePageLoad, { once: true });
-    return () => window.removeEventListener("load", measurePageLoad);
-  }, []);
 
   const server = data?.servers.find((item) => item.server_id === selectedServerId) ?? data?.servers[0];
   const points = server?.history ?? [];
@@ -6258,7 +6306,7 @@ function ServerUsageView() {
           <div><span><Activity size={15} />CPU Peak</span><strong>{points.length ? `${cpuPeak.toFixed(1).replace(".", ",")}%` : "N/D"}</strong><small>Highest · last 24 hours</small></div>
           <div><span><HardDrive size={15} />Disk used</span><strong>{server.current.disk_percent === null ? "N/D" : `${server.current.disk_percent.toFixed(1).replace(".", ",")}%`}</strong><small>{formatBytes(server.current.disk_used_bytes)} of {formatBytes(server.current.disk_total_bytes)}</small></div>
           <div><span><HardDrive size={15} />Disk free</span><strong>{formatBytes(server.current.disk_free_bytes)}</strong><small>Project filesystem</small></div>
-          <div><span><Gauge size={15} />Load Page Time</span><strong>{pageLoadMs === null ? "N/D" : pageLoadMs < 1_000 ? `${pageLoadMs} ms` : `${(pageLoadMs / 1_000).toFixed(2).replace(".", ",")} s`}</strong><small>Browser navigation</small></div>
+          <div><span><Gauge size={15} />Load Page Time</span><strong>{pageLoadAverageMs === null ? "N/D" : pageLoadAverageMs < 1_000 ? `${Math.round(pageLoadAverageMs)} ms` : `${(pageLoadAverageMs / 1_000).toFixed(2).replace(".", ",")} s`}</strong><small>{pageLoadSampleCount ? `Average of ${pageLoadSampleCount} internal page${pageLoadSampleCount === 1 ? "" : "s"}` : "Opening presentation excluded"}</small></div>
         </div>
 
         <div className="server-chart-head">
