@@ -151,26 +151,23 @@ def _end_of_day_scenario(**overrides):
         technical=technical, quote_price=100.5, average_cost=100.0, high_water=100.5,
         held_minutes=20.0, day_change=0.5, market_change=0.0,
         state=strategy.PositionRiskState(), weekly_conviction_state={"active": False},
-        stop_price=99.0, max_position_loss_percent=0.65, minutes_to_close=0.5,
+        stop_price=99.0, max_position_loss_percent=0.65, seconds_to_close=30.0,
     )
     kwargs.update(overrides)
     return strategy.exit_decision(**kwargs)
 
 
-def test_exit_decision_realizes_a_tactical_gain_near_the_close():
-    """2026-08-20: a non-weekly-conviction position was never meant to be
-    held overnight -- realize a small gain near close instead of carrying
-    gap risk into tomorrow for no reason."""
+def test_exit_decision_realizes_a_gain_at_t_minus_30_seconds():
     decision, _state = _end_of_day_scenario()
     assert decision.reason is not None
-    assert "End-of-day tactical exit" in decision.reason
+    assert "End-of-day profit liquidation" in decision.reason
 
 
-def test_exit_decision_leaves_weekly_conviction_positions_alone_near_the_close():
-    """Weekly-conviction positions are explicitly meant to cross sessions --
-    the end-of-day rule must not override that mechanism."""
+def test_exit_decision_liquidates_profitable_weekly_conviction_at_t_minus_30_seconds():
+    """The close policy explicitly overrides weekly conviction for gains."""
     decision, _state = _end_of_day_scenario(weekly_conviction_state={"active": True})
-    assert decision.reason is None
+    assert decision.reason is not None
+    assert "including weekly-conviction holdings" in decision.reason
 
 
 def test_exit_decision_does_not_force_a_loss_at_the_close():
@@ -181,17 +178,16 @@ def test_exit_decision_does_not_force_a_loss_at_the_close():
     assert decision.reason is None
 
 
-def test_exit_decision_ignores_the_close_when_minutes_to_close_is_none():
-    """B3 positions (and any caller that doesn't pass minutes_to_close) must
+def test_exit_decision_ignores_the_close_when_seconds_to_close_is_none():
+    """B3 positions (and any caller that doesn't pass seconds_to_close) must
     not be affected by this NASDAQ/NYSE-specific rule."""
-    decision, _state = _end_of_day_scenario(minutes_to_close=None)
+    decision, _state = _end_of_day_scenario(seconds_to_close=None)
     assert decision.reason is None
 
 
 def test_exit_decision_does_not_fire_the_close_rule_too_early():
-    """The window is deliberately just the last minute -- 15 minutes before
-    close is still active trading time, not a reason to force an exit."""
-    decision, _state = _end_of_day_scenario(minutes_to_close=15.0)
+    """Thirty-one seconds before close is still outside the exact window."""
+    decision, _state = _end_of_day_scenario(seconds_to_close=31.0)
     assert decision.reason is None
 
 

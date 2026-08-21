@@ -949,24 +949,24 @@ def test_r2d2_anomalous_quote_requires_a_second_consistent_tick() -> None:
     ) is False
 
 
-def test_r2d2_minutes_to_us_close_counts_down_to_the_official_1600_et_close() -> None:
+def test_r2d2_seconds_to_us_close_counts_down_to_the_official_1600_et_close() -> None:
     # 16:00 ET is 20:00 UTC in August (EDT), independently of screening's
     # deliberate 15:50 ET cutoff.
     five_before = datetime(2026, 8, 17, 19, 55, tzinfo=timezone.utc)
-    assert R2D2PaperService._minutes_to_us_close("NASDAQ", five_before) == pytest.approx(5.0)
+    assert R2D2PaperService._seconds_to_us_close("NASDAQ", five_before) == pytest.approx(300.0)
 
     mid_session = datetime(2026, 8, 17, 15, 0, tzinfo=timezone.utc)
-    assert R2D2PaperService._minutes_to_us_close("NASDAQ", mid_session) == pytest.approx(300.0)
+    assert R2D2PaperService._seconds_to_us_close("NASDAQ", mid_session) == pytest.approx(18_000.0)
 
 
-def test_r2d2_minutes_to_us_close_is_none_after_the_cutoff_or_off_market() -> None:
+def test_r2d2_seconds_to_us_close_is_none_after_the_close_or_off_market() -> None:
     after_close = datetime(2026, 8, 17, 20, 1, tzinfo=timezone.utc)
-    assert R2D2PaperService._minutes_to_us_close("NASDAQ", after_close) is None
+    assert R2D2PaperService._seconds_to_us_close("NASDAQ", after_close) is None
 
     weekend = datetime(2026, 8, 15, 15, 0, tzinfo=timezone.utc)  # Saturday
-    assert R2D2PaperService._minutes_to_us_close("NASDAQ", weekend) is None
+    assert R2D2PaperService._seconds_to_us_close("NASDAQ", weekend) is None
 
-    assert R2D2PaperService._minutes_to_us_close(
+    assert R2D2PaperService._seconds_to_us_close(
         "B3", datetime(2026, 8, 17, 19, 45, tzinfo=timezone.utc),
     ) is None
 
