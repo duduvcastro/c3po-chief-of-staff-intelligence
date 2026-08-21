@@ -16,6 +16,7 @@ from .database import Database
 from .market_data.b3_screener import B3ScreenerService
 from .market_data.brapi import BrapiClient
 from .market_data.eodhd import EodhdClient
+from .market_data.fmp import FmpClient
 from .market_data.models import canonical_us_security_type
 from .market_data.realtime import RealtimeMarketsService
 from .market_data.us_screener import USScreeningService, clamp, normalized_percent
@@ -883,6 +884,7 @@ class R2D2PaperService:
         self._ws_rotation_symbols: list[str] = []
         self._ws_rotation_cursor = 0
         self._ws_rotation_age = 0
+        self._fmp_quote_cache: tuple[datetime, dict[str, dict[str, Any]]] | None = None
         self._technical_review_stats: dict[str, Any] = {}
         self._active_policy = dict(BASE_ENTRY_POLICY)
         self._learning_state: dict[str, Any] | None = None
@@ -2013,10 +2015,12 @@ class R2D2PaperService:
                 (item for item in selected if item["market"] != "B3"),
                 key=lambda item: item.get("pretrade_rank", item["fundamental_score"]), reverse=True,
             )
+            ws_bound, fmp_stats = self._fmp_prefilter_ws_candidates(ws_bound)
             ws_selected, rotation_stats = self._rotating_ws_batch(
                 ws_bound,
                 max(0, max_ws_symbols),
             )
+            rotation_stats = {**rotation_stats, **fmp_stats}
             selected_ids = {id(item) for item in ws_selected}
             overflow = [item for item in ws_bound if id(item) not in selected_ids]
             for item in overflow:
@@ -2076,6 +2080,86 @@ class R2D2PaperService:
             "live_usable_percent": round(live_usable / len(us_selected) * 100, 2) if us_selected else 0.0,
             **rotation_stats,
         }
+
+    def _fmp_prefilter_ws_candidates(
+        self,
+        candidates: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Use FMP batch quotes to promote live candidates before EODHD slots.
+
+        This changes subscription order only. It neither replaces the EODHD
+        tick used for technical validation nor changes any entry/exit/risk
+        threshold. Missing or failed FMP data falls back to the existing
+        pretrade ranking so the secondary provider can never stop R2D2.
+        """
+        stats: dict[str, Any] = {
+            "fmp_prefilter_enabled": bool(self.settings.r2d2_fmp_prefilter_enabled),
+            "fmp_prefilter_candidate_count": len(candidates),
+            "fmp_prefilter_quote_count": 0,
+            "fmp_prefilter_fresh_count": 0,
+            "fmp_prefilter_fallback": False,
+        }
+        if (
+            not candidates
+            or not self.settings.r2d2_fmp_prefilter_enabled
+            or not self.settings.fmp_api_token
+            or self.one_pagers is None
+        ):
+            stats["fmp_prefilter_fallback"] = True
+            return candidates, stats
+
+        now = datetime.now(timezone.utc)
+        symbols = [item["symbol"] for item in candidates]
+        quotes: dict[str, dict[str, Any]] = {}
+        if self._fmp_quote_cache:
+            cached_at, cached_quotes = self._fmp_quote_cache
+            cache_age = (now - cached_at).total_seconds()
+            if (
+                cache_age <= max(1, self.settings.r2d2_fmp_prefilter_cache_seconds)
+                and all(symbol in cached_quotes for symbol in symbols)
+            ):
+                quotes = cached_quotes
+                stats["fmp_prefilter_cache_hit"] = True
+        if not quotes:
+            client = FmpClient(
+                self.settings.fmp_base_url,
+                self.settings.fmp_api_token,
+                self.one_pagers.market_data.http,
+            )
+            quotes = client.batch_quotes(
+                symbols,
+                chunk_size=self.settings.r2d2_fmp_prefilter_batch_size,
+            )
+            self._fmp_quote_cache = (now, quotes)
+            stats["fmp_prefilter_cache_hit"] = False
+
+        max_age = max(1, self.settings.r2d2_fmp_prefilter_max_quote_age_seconds)
+        fresh_symbols: set[str] = set()
+        for symbol, quote in quotes.items():
+            timestamp = int(_float(quote.get("timestamp")))
+            if timestamp <= 0:
+                continue
+            quote_at = datetime.fromtimestamp(timestamp, timezone.utc)
+            if -5 <= (now - quote_at).total_seconds() <= max_age:
+                fresh_symbols.add(symbol)
+        stats["fmp_prefilter_quote_count"] = len(quotes)
+        stats["fmp_prefilter_fresh_count"] = len(fresh_symbols)
+        if not fresh_symbols:
+            stats["fmp_prefilter_fallback"] = True
+            return candidates, stats
+
+        # FMP freshness is a promotion tier, not a new eligibility gate.
+        # Existing pretrade_rank remains the complete ordering inside each
+        # tier, and unconfirmed names stay in the deterministic rotation tail.
+        ranked = sorted(
+            candidates,
+            key=lambda item: (
+                item["symbol"] in fresh_symbols,
+                item.get("pretrade_rank", item["fundamental_score"]),
+            ),
+            reverse=True,
+        )
+        return ranked, stats
 
     def _rotating_ws_batch(
         self,

@@ -156,6 +156,10 @@ class Settings(BaseSettings):
     r2d2_ws_max_symbols: int = 50
     r2d2_ws_rotation_grace_cycles: int = 3
     r2d2_ws_rotation_core_percent: float = 50.0
+    r2d2_fmp_prefilter_enabled: bool = True
+    r2d2_fmp_prefilter_cache_seconds: int = 15
+    r2d2_fmp_prefilter_max_quote_age_seconds: int = 120
+    r2d2_fmp_prefilter_batch_size: int = 100
     r2d2_deployment_technical_review_per_market: int = 32
     r2d2_standard_technical_review_per_market: int = 24
 
