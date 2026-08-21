@@ -49,6 +49,8 @@ WEEKLY_CONVICTION_MIN_SCORE = 72.0
 MIN_POSITION_PERCENT = 2.0
 MAX_DYNAMIC_POSITION_PERCENT = 6.0
 SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
+US_EXIT_SLIPPAGE_RATE = 0.0010
+US_EXIT_FEE_RATE = 0.0004
 MIN_INTRADAY_EDGE_PERCENT = 0.55
 # Raised from 1.05 on 2026-08-20 per an independent methodology review: 1.05
 # is barely above "normal" volume and does almost nothing to confirm a
@@ -91,6 +93,41 @@ ENTRY_POLICY_BOUNDS: dict[str, tuple[float, float]] = {
 }
 
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
+
+
+def estimated_net_exit_pnl_percent(
+    quote_price: float,
+    average_cost: float,
+    *,
+    slippage_rate: float = US_EXIT_SLIPPAGE_RATE,
+    fee_rate: float = US_EXIT_FEE_RATE,
+) -> float:
+    """Return realizable P&L after the still-unpaid exit leg.
+
+    ``average_cost`` already includes entry fill slippage and entry fees in
+    the paper ledger. Subtracting the full round-trip cost here would count
+    that entry friction twice. This mirrors ``R2D2PaperService._sell``:
+    expected fill first, then the fee on those sale proceeds.
+    """
+    if quote_price <= 0 or average_cost <= 0:
+        return 0.0
+    expected_fill = quote_price * (1 - max(0.0, slippage_rate))
+    net_proceeds = expected_fill * (1 - max(0.0, fee_rate))
+    return (net_proceeds / average_cost - 1) * 100
+
+
+def hard_stop_quote_price(
+    average_cost: float,
+    max_net_loss_percent: float,
+    *,
+    slippage_rate: float = US_EXIT_SLIPPAGE_RATE,
+    fee_rate: float = US_EXIT_FEE_RATE,
+) -> float:
+    """Quote threshold whose simulated sale realizes the configured net loss."""
+    net_exit_factor = (1 - max(0.0, slippage_rate)) * (1 - max(0.0, fee_rate))
+    if average_cost <= 0 or net_exit_factor <= 0:
+        return 0.0
+    return average_cost * (1 - max_net_loss_percent / 100) / net_exit_factor
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -583,6 +620,8 @@ def exit_decision(
     profit_lock_floor_percent: float = PROFIT_LOCK_FLOOR_PERCENT,
     profit_pullback_percent: float = PROFIT_PULLBACK_PERCENT,
     seconds_to_close: float | None = None,
+    exit_slippage_rate: float = US_EXIT_SLIPPAGE_RATE,
+    exit_fee_rate: float = US_EXIT_FEE_RATE,
 ) -> tuple[ExitDecision, PositionRiskState]:
     """Faithful port of the elif cascade in ``_mark_and_exit``.
 
@@ -600,8 +639,20 @@ def exit_decision(
     trailing_distance = atr * 2.5
     trailing = high_water - trailing_distance
     stop = max(stop_price, trailing)
-    pnl_pct = (quote_price / average_cost - 1) * 100
-    peak_pnl_pct = (high_water / average_cost - 1) * 100
+    # mark_pnl_pct is a price-structure mark. It is NOT realizable P&L because
+    # the exit fill slippage and sale fee have not happened yet. Profit rules
+    # must use estimated_net_exit_pnl_pct so a friction-covered breakeven is
+    # never described or treated as profit (CSTM, 2026-08-21).
+    mark_pnl_pct = (quote_price / average_cost - 1) * 100
+    estimated_net_exit_pnl_pct = estimated_net_exit_pnl_percent(
+        quote_price, average_cost,
+        slippage_rate=exit_slippage_rate, fee_rate=exit_fee_rate,
+    )
+    mark_peak_pnl_pct = (high_water / average_cost - 1) * 100
+    estimated_net_peak_pnl_pct = estimated_net_exit_pnl_percent(
+        high_water, average_cost,
+        slippage_rate=exit_slippage_rate, fee_rate=exit_fee_rate,
+    )
     atr_percent = max(0.0, _float(technical.get("atr_percent")))
     # A flat max_position_loss_percent gets run over by normal noise on a
     # volatile name (root-caused 2026-08-20: SOC's ATR alone was 1.6%, so a
@@ -612,7 +663,10 @@ def exit_decision(
     # the floor rather than half an ATR, still capped so the hard stop never
     # stops being meaningfully hard.
     effective_max_loss_percent = max(max_position_loss_percent, min(1.5, atr_percent * 2.0))
-    hard_stop = average_cost * (1 - effective_max_loss_percent / 100)
+    hard_stop = hard_stop_quote_price(
+        average_cost, effective_max_loss_percent,
+        slippage_rate=exit_slippage_rate, fee_rate=exit_fee_rate,
+    )
     stop = max(stop, hard_stop)
     soft_loss_threshold = max(soft_loss_exit_percent, min(0.7, atr_percent * 0.4))
     # 1R floor (root-caused 2026-08-20 against real fills: tactical harvests
@@ -626,11 +680,11 @@ def exit_decision(
     # to need a 1.5% stop also needs a 1.5%+ gain before any harvest rule
     # locks it in.
     profit_trigger_percent = max(PROFIT_TRIGGER_PERCENT, effective_max_loss_percent)
-    if peak_pnl_pct >= 8.0:
+    if estimated_net_peak_pnl_pct >= 8.0:
         stop = max(stop, average_cost * 1.04, high_water - max(atr * 1.5, high_water * 0.0175))
-    elif peak_pnl_pct >= 4.0:
+    elif estimated_net_peak_pnl_pct >= 4.0:
         stop = max(stop, average_cost * 1.015, high_water - max(atr * 2.0, high_water * 0.0225))
-    elif peak_pnl_pct >= 1.0:
+    elif estimated_net_peak_pnl_pct >= 1.0:
         stop = max(stop, average_cost * 1.003)
 
     bearish_votes = sum((
@@ -666,11 +720,20 @@ def exit_decision(
     # reviews before it fires, instead of on the first occurrence.
     gain_protection_streak = (
         state.gain_protection_streak + 1
-        if pnl_pct >= GAIN_PROTECTION_MIN_PERCENT and failed_entry_votes >= 3
+        if estimated_net_exit_pnl_pct >= GAIN_PROTECTION_MIN_PERCENT and failed_entry_votes >= 3
         else max(0, state.gain_protection_streak - 1)
     )
     technical_score = _float(technical.get("score"))
-    profit_lock_level = max(profit_lock_floor_percent, peak_pnl_pct - profit_pullback_percent)
+    profit_lock_level = max(
+        profit_lock_floor_percent,
+        estimated_net_peak_pnl_pct - profit_pullback_percent,
+    )
+    pnl_audit = (
+        f"mark {mark_pnl_pct:+.2f}%, estimated net {estimated_net_exit_pnl_pct:+.2f}%"
+    )
+    peak_audit = (
+        f"mark peak {mark_peak_pnl_pct:+.2f}%, estimated net peak {estimated_net_peak_pnl_pct:+.2f}%"
+    )
 
     reason: str | None = None
     sell_fraction = 1.0
@@ -678,12 +741,12 @@ def exit_decision(
     profit_harvest_count = state.profit_harvest_count
     defense_reductions = state.defense_reductions
 
-    if quote_price <= hard_stop:
-        reason = f"Immediate hard stop at {pnl_pct:+.2f}%; max position-loss policy is {effective_max_loss_percent:.2f}% (base {max_position_loss_percent:.2f}%, ATR-adjusted)."
+    if estimated_net_exit_pnl_pct <= -effective_max_loss_percent:
+        reason = f"Immediate hard stop at {pnl_audit}; max realized position-loss policy is {effective_max_loss_percent:.2f}% (base {max_position_loss_percent:.2f}%, ATR-adjusted)."
     elif (
         seconds_to_close is not None
         and 0 <= seconds_to_close <= END_OF_DAY_PROFIT_EXIT_LEAD_SECONDS
-        and pnl_pct > 0
+        and estimated_net_exit_pnl_pct > 0
     ):
         # Exactly T-30s through the official close, every profitable position
         # is realized. Weekly conviction is intentionally not exempt: this is
@@ -691,41 +754,41 @@ def exit_decision(
         # Losing positions continue through the regular exit cascade and are
         # carried overnight only if no stop/defense rule fires by 16:00 ET.
         reason = (
-            f"End-of-day profit liquidation at {pnl_pct:+.2f}% with "
+            f"End-of-day profit liquidation at {pnl_audit} with "
             f"{seconds_to_close:.0f} seconds to the official close: all positive positions, "
             "including weekly-conviction holdings, are realized before overnight risk."
         )
-    elif held_minutes >= FAILED_ENTRY_MINUTES and pnl_pct <= -FAILED_ENTRY_LOSS_PERCENT and failed_entry_votes >= 3:
-        reason = f"Failed-entry fast exit at {pnl_pct:+.2f}% after {held_minutes:.1f} minutes: {failed_entry_votes}/5 live timing signals invalidated the setup."
+    elif held_minutes >= FAILED_ENTRY_MINUTES and estimated_net_exit_pnl_pct <= -FAILED_ENTRY_LOSS_PERCENT and failed_entry_votes >= 3:
+        reason = f"Failed-entry fast exit at {pnl_audit} after {held_minutes:.1f} minutes: {failed_entry_votes}/5 live timing signals invalidated the setup."
     elif defense["critical"]:
-        reason = f"Critical technical-defense exit at {pnl_pct:+.2f}%: {'; '.join(defense['drivers'][:4])}. Defense score {defense['score']:.0f}/100."
+        reason = f"Critical technical-defense exit at {pnl_audit}: {'; '.join(defense['drivers'][:4])}. Defense score {defense['score']:.0f}/100."
     elif held_minutes >= MIN_HOLD_MINUTES and defense["actionable"] and defense["score"] >= 72 and defense_streak >= 2:
-        reason = f"Confirmed technical-defense exit at {pnl_pct:+.2f}% after {defense_streak} reviews: {'; '.join(defense['drivers'][:4])}. Defense score {defense['score']:.0f}/100."
+        reason = f"Confirmed technical-defense exit at {pnl_audit} after {defense_streak} reviews: {'; '.join(defense['drivers'][:4])}. Defense score {defense['score']:.0f}/100."
     elif held_minutes >= MIN_HOLD_MINUTES and defense_reductions >= 1 and defense["actionable"] and defense["score"] >= 58 and defense_streak >= 3:
-        reason = f"Technical deterioration persisted after risk reduction at {pnl_pct:+.2f}%: {'; '.join(defense['drivers'][:4])}. Remaining position exited."
-    elif pnl_pct <= -soft_loss_threshold and defense["actionable"] and defense["score"] >= 45 and defense_streak >= 2:
-        reason = f"Defensive loss exit at {pnl_pct:+.2f}% on a live quote; dynamic defense was {soft_loss_threshold:.2f}% and the multicriteria defense score reached {defense['score']:.0f}/100."
+        reason = f"Technical deterioration persisted after risk reduction at {pnl_audit}: {'; '.join(defense['drivers'][:4])}. Remaining position exited."
+    elif estimated_net_exit_pnl_pct <= -soft_loss_threshold and defense["actionable"] and defense["score"] >= 45 and defense_streak >= 2:
+        reason = f"Defensive loss exit at {pnl_audit} on a live quote; dynamic net defense was {soft_loss_threshold:.2f}% and the multicriteria defense score reached {defense['score']:.0f}/100."
     elif quote_price <= stop and defense["actionable"] and defense["score"] >= 45 and stop_breaches >= 2:
-        reason = f"Adaptive intraday stop executed at {stop:.2f} after two live confirmations; defense score {defense['score']:.0f}/100."
-    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and peak_pnl_pct >= profit_trigger_percent and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
-        reason = f"Weekly-conviction profit locked at {pnl_pct:+.2f}% after a pullback from the {peak_pnl_pct:+.2f}% peak before the first harvest; the position was released for same-cycle replacement."
-    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and pnl_pct >= profit_trigger_percent:
+        reason = f"Adaptive intraday stop executed at {stop:.2f} after two live confirmations ({pnl_audit}); defense score {defense['score']:.0f}/100."
+    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and estimated_net_peak_pnl_pct >= profit_trigger_percent and profit_lock_floor_percent <= estimated_net_exit_pnl_pct <= profit_lock_level:
+        reason = f"Weekly-conviction profit locked at {pnl_audit} after a pullback from the {peak_audit} before the first harvest; the position was released for same-cycle replacement."
+    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count == 0 and estimated_net_exit_pnl_pct >= profit_trigger_percent:
         sell_fraction = WEEKLY_PROFIT_HARVEST_FRACTION
         profit_harvest_count = 1
-        reason = f"Weekly-conviction profit layer harvested at {pnl_pct:+.2f}%: {WEEKLY_PROFIT_HARVEST_FRACTION * 100:.0f}% of the position was realized and the remainder stays under the live profit lock."
-    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count >= 1 and peak_pnl_pct >= profit_trigger_percent and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
-        reason = f"Weekly-conviction remainder locked at {pnl_pct:+.2f}% after a pullback from the {peak_pnl_pct:+.2f}% peak; the protected balance was released for replacement."
-    elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and pnl_pct >= profit_trigger_percent:
-        reason = f"Tactical profit harvested at {pnl_pct:+.2f}% after reaching the {profit_trigger_percent:.2f}% execution trigger (1R); capital released for same-cycle replacement."
-    elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and peak_pnl_pct >= profit_trigger_percent and profit_lock_floor_percent <= pnl_pct <= profit_lock_level:
-        reason = f"Armed profit locked at {pnl_pct:+.2f}% after a pullback from the {peak_pnl_pct:+.2f}% peak; capital released for same-cycle replacement."
-    elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 0.75 and bearish_votes >= 1 and technical_score < 60:
-        reason = f"Early tactical profit harvested at {pnl_pct:+.2f}% as live momentum weakened; technical score {technical_score:.0f}/100."
-    elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 2.5 and bearish_votes >= 3:
-        reason = f"Profit harvested at {pnl_pct:+.2f}% after a {bearish_votes}-signal momentum reversal."
-    elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct >= 1.0 and bearish_votes >= 2 and technical_score < 55:
-        reason = f"Early profit harvested at {pnl_pct:+.2f}% after momentum weakened across {bearish_votes} signals; technical score {technical_score:.0f}/100."
-    elif pnl_pct >= GAIN_PROTECTION_MIN_PERCENT and failed_entry_votes >= 3 and gain_protection_streak >= 2:
+        reason = f"Weekly-conviction profit layer harvested at {pnl_audit}: {WEEKLY_PROFIT_HARVEST_FRACTION * 100:.0f}% of the position was realized and the remainder stays under the live profit lock."
+    elif held_minutes >= MIN_HOLD_MINUTES and weekly_conviction_state["active"] and profit_harvest_count >= 1 and estimated_net_peak_pnl_pct >= profit_trigger_percent and profit_lock_floor_percent <= estimated_net_exit_pnl_pct <= profit_lock_level:
+        reason = f"Weekly-conviction remainder locked at {pnl_audit} after a pullback from the {peak_audit}; the protected balance was released for replacement."
+    elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and estimated_net_exit_pnl_pct >= profit_trigger_percent:
+        reason = f"Tactical profit harvested at {pnl_audit} after reaching the {profit_trigger_percent:.2f}% net execution trigger (1R); capital released for same-cycle replacement."
+    elif held_minutes >= MIN_HOLD_MINUTES and not weekly_conviction_state["active"] and estimated_net_peak_pnl_pct >= profit_trigger_percent and profit_lock_floor_percent <= estimated_net_exit_pnl_pct <= profit_lock_level:
+        reason = f"Armed profit locked at {pnl_audit} after a pullback from the {peak_audit}; capital released for same-cycle replacement."
+    elif held_minutes >= MIN_HOLD_MINUTES and estimated_net_exit_pnl_pct >= 0.75 and bearish_votes >= 1 and technical_score < 60:
+        reason = f"Early tactical profit harvested at {pnl_audit} as live momentum weakened; technical score {technical_score:.0f}/100."
+    elif held_minutes >= MIN_HOLD_MINUTES and estimated_net_exit_pnl_pct >= 2.5 and bearish_votes >= 3:
+        reason = f"Profit harvested at {pnl_audit} after a {bearish_votes}-signal momentum reversal."
+    elif held_minutes >= MIN_HOLD_MINUTES and estimated_net_exit_pnl_pct >= 1.0 and bearish_votes >= 2 and technical_score < 55:
+        reason = f"Early profit harvested at {pnl_audit} after momentum weakened across {bearish_votes} signals; technical score {technical_score:.0f}/100."
+    elif estimated_net_exit_pnl_pct >= GAIN_PROTECTION_MIN_PERCENT and failed_entry_votes >= 3 and gain_protection_streak >= 2:
         # Mirrors the failed-entry fast exit's vote-based read on the winning
         # side, deliberately with no held_minutes gate: a small unrealized gain
         # can round-trip into a loss faster than any fixed time window would
@@ -733,15 +796,15 @@ def exit_decision(
         # offers any protection at all. Below that, a positive position had none.
         # 2-review persistence added 2026-08-20 alongside the 1R profit floor,
         # so this fast rule can't become the path of least resistance around it.
-        reason = f"Early gain protection at {pnl_pct:+.2f}% after {gain_protection_streak} reviews: {failed_entry_votes}/5 live timing signals reversed before the position could round-trip into a loss."
+        reason = f"Early gain protection at {pnl_audit} after {gain_protection_streak} reviews: {failed_entry_votes}/5 live timing signals reversed before the position could round-trip into a loss."
     elif held_minutes >= MIN_HOLD_MINUTES and technical_score < 32 and bearish_votes >= 4:
-        reason = f"Trend breakdown confirmed by {bearish_votes} signals; technical score {technical_score:.0f}/100."
-    elif held_minutes >= MIN_HOLD_MINUTES and pnl_pct < profit_trigger_percent and defense_reductions == 0 and defense["actionable"] and defense["score"] >= 55 and defense_streak >= 2:
+        reason = f"Trend breakdown confirmed at {pnl_audit} by {bearish_votes} signals; technical score {technical_score:.0f}/100."
+    elif held_minutes >= MIN_HOLD_MINUTES and estimated_net_exit_pnl_pct < profit_trigger_percent and defense_reductions == 0 and defense["actionable"] and defense["score"] >= 55 and defense_streak >= 2:
         sell_fraction = 0.5
         defense_reductions = 1
-        reason = f"Progressive technical-defense reduction: 50% of the position released at {pnl_pct:+.2f}% after {defense_streak} reviews; {'; '.join(defense['drivers'][:3])}."
-    elif held_minutes >= 180 and pnl_pct < 0.5 and technical_score < 45:
-        reason = f"Stagnation exit after {held_minutes / 60:.1f}h; return {pnl_pct:+.2f}% and technical score {technical_score:.0f}/100."
+        reason = f"Progressive technical-defense reduction: 50% of the position released at {pnl_audit} after {defense_streak} reviews; {'; '.join(defense['drivers'][:3])}."
+    elif held_minutes >= 180 and estimated_net_exit_pnl_pct < 0.5 and technical_score < 45:
+        reason = f"Stagnation exit after {held_minutes / 60:.1f}h; {pnl_audit} and technical score {technical_score:.0f}/100."
     elif quote_price <= stop:
         decision_state = "stop armed"
     elif defense["severity"] == "reduce":
@@ -750,9 +813,9 @@ def exit_decision(
         decision_state = "technical defense watch"
     elif weekly_conviction_state["active"]:
         decision_state = "weekly conviction hold"
-    elif peak_pnl_pct >= 4.0:
+    elif estimated_net_peak_pnl_pct >= 4.0:
         decision_state = "profit protected"
-    elif peak_pnl_pct >= 1.0:
+    elif estimated_net_peak_pnl_pct >= 1.0:
         decision_state = "profit armed"
     elif technical_score < 45:
         decision_state = "trend under review"

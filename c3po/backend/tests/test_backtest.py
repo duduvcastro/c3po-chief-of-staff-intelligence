@@ -96,6 +96,14 @@ def test_exit_decision_hard_stop_fires_below_max_loss():
     )
     assert decision.reason is not None
     assert "hard stop" in decision.reason.lower()
+    assert "mark " in decision.reason
+    assert "estimated net " in decision.reason
+
+
+def test_hard_stop_quote_is_recalibrated_to_the_realized_net_loss_limit():
+    threshold = strategy.hard_stop_quote_price(100.0, 0.65)
+    assert threshold > 99.35  # Exit friction must be reserved before the mark reaches -0.65%.
+    assert strategy.estimated_net_exit_pnl_percent(threshold, 100.0) == pytest.approx(-0.65)
 
 
 def _volatile_hard_stop_scenario(quote_price: float):
@@ -196,7 +204,7 @@ def _gain_protection_scenario(**overrides):
                  "momentum15": -0.1, "momentum30": -0.1, "macd_histogram": -0.1,
                  "macd_acceleration": -0.05, "price_structure": "range", "score": 50.0}
     kwargs = dict(
-        technical=technical, quote_price=100.35, average_cost=100.0, high_water=100.35,
+        technical=technical, quote_price=100.50, average_cost=100.0, high_water=100.50,
         held_minutes=2.0, day_change=0.35, market_change=0.0,
         state=strategy.PositionRiskState(), weekly_conviction_state={"active": False},
         stop_price=99.0, max_position_loss_percent=0.65,
@@ -243,7 +251,7 @@ def _armed_profit_lock_scenario(**overrides):
                  "momentum15": 0.0, "momentum30": 0.0, "macd_histogram": 0.1,
                  "macd_acceleration": 0.0, "price_structure": "range", "score": 58.0}
     kwargs = dict(
-        technical=technical, quote_price=101.0, average_cost=100.0, high_water=101.6,
+        technical=technical, quote_price=101.1, average_cost=100.0, high_water=101.8,
         held_minutes=10.0, day_change=1.0, market_change=0.0,
         state=strategy.PositionRiskState(), weekly_conviction_state={"active": False},
         stop_price=95.0, max_position_loss_percent=0.65,
@@ -274,6 +282,28 @@ def test_exit_decision_profit_pullback_tolerance_is_now_configurable():
     the position stays open instead of exiting.
     """
     decision, _state = _armed_profit_lock_scenario(profit_pullback_percent=1.00)
+    assert decision.reason is None
+
+
+def test_cstm_mark_gain_is_not_a_net_profit_at_the_close():
+    """CSTM looked +0.14% at the mark but realized essentially flat after exit costs."""
+    quantity = 1082.99
+    entry_fill = 27.192165
+    entry_fee = 11.779537
+    average_cost = ((quantity * entry_fill) + entry_fee) / quantity
+    quote_price = 27.24
+
+    mark_pnl = (quote_price / average_cost - 1.0) * 100.0
+    net_pnl = strategy.estimated_net_exit_pnl_percent(quote_price, average_cost)
+    assert mark_pnl == pytest.approx(0.135856, abs=1e-5)
+    assert net_pnl == pytest.approx(-0.004290, abs=1e-5)
+
+    decision, _state = _end_of_day_scenario(
+        quote_price=quote_price,
+        average_cost=average_cost,
+        high_water=quote_price,
+        seconds_to_close=20.0,
+    )
     assert decision.reason is None
 
 

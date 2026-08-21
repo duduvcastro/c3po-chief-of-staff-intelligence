@@ -349,7 +349,7 @@ def test_fast_watcher_liquidates_position_that_turns_positive_inside_t30_window(
 
     final_second = datetime(2026, 8, 20, 19, 59, 59, 500_000, tzinfo=timezone.utc)
     stream.current["LASTSECOND"] = SimpleNamespace(
-        price=100.01, as_of=final_second, status="live",
+        price=100.15, as_of=final_second, status="live",
     )
     assert service.run_fast_risk_watcher_cycle(final_second) == 1
 

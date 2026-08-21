@@ -420,8 +420,9 @@ class R2D2Repository:
                 return
             item["chandelier_atr_local"] = atr
             item["chandelier_atr_as_of"] = as_of
-            if not _float(item.get("hard_stop_price_local")):
-                item["hard_stop_price_local"] = hard_stop
+            item["hard_stop_price_local"] = max(
+                _float(item.get("hard_stop_price_local")), hard_stop,
+            )
             candidate = _float(item["high_water_price_local"]) - atr * 2.5
             item["chandelier_stop_price_local"] = max(
                 _float(item.get("chandelier_stop_price_local")), candidate,
@@ -431,7 +432,7 @@ class R2D2Repository:
             connection.execute(
                 """UPDATE r2d2_positions
                    SET chandelier_atr_local=%s, chandelier_atr_as_of=%s,
-                       hard_stop_price_local=COALESCE(hard_stop_price_local, %s),
+                       hard_stop_price_local=GREATEST(COALESCE(hard_stop_price_local, 0), %s),
                        chandelier_stop_price_local=GREATEST(
                            COALESCE(chandelier_stop_price_local, 0),
                            high_water_price_local - (%s * 2.5)
@@ -1617,18 +1618,26 @@ class R2D2PaperService:
                 )
                 rule: str | None = None
                 level = hard_stop
+                average_cost = _float(position["average_cost_local"])
+                exit_slippage_rate = 0.0015 if position["market"] == "B3" else 0.0010
+                exit_fee_rate = 0.0006 if position["market"] == "B3" else 0.0004
+                mark_pnl_pct = (quote.price / average_cost - 1) * 100
+                estimated_net_exit_pnl_pct = r2d2_strategy.estimated_net_exit_pnl_percent(
+                    quote.price, average_cost,
+                    slippage_rate=exit_slippage_rate, fee_rate=exit_fee_rate,
+                )
                 if quote.price <= hard_stop:
                     rule = "hard_stop"
                 elif (
                     (seconds_to_close := self._seconds_to_us_close(position["market"], now)) is not None
                     and 0 <= seconds_to_close <= r2d2_strategy.END_OF_DAY_PROFIT_EXIT_LEAD_SECONDS
-                    and quote.price > _float(position["average_cost_local"])
+                    and estimated_net_exit_pnl_pct > 0
                 ):
                     # Re-evaluated on every distinct fresh tick throughout T-30s.
                     # A position that was negative at 15:59:30 but turns positive
                     # even on the final tick is therefore still liquidated.
                     rule = "end_of_day_positive"
-                    level = _float(position["average_cost_local"])
+                    level = average_cost
                 elif atr <= 0 or atr_age > self.settings.r2d2_fast_risk_atr_max_age_seconds:
                     self.repo.advance_fast_high_water(
                         experiment["id"], position["market"], position["symbol"], price=quote.price,
@@ -1661,9 +1670,9 @@ class R2D2PaperService:
                 cycle_id = self.repo.start_cycle(
                     experiment["id"], [position["market"]], "running",
                 )
-                pnl_pct = (quote.price / _float(position["average_cost_local"]) - 1) * 100
                 reason = (
-                    f"Fast risk watcher {rule} exit at {pnl_pct:+.2f}% on fresh tick "
+                    f"Fast risk watcher {rule} exit at mark {mark_pnl_pct:+.2f}%, "
+                    f"estimated net {estimated_net_exit_pnl_pct:+.2f}% on fresh tick "
                     f"{tick_as_of.isoformat()}; level {level:.4f}."
                 )
                 candidate = {
@@ -1840,7 +1849,12 @@ class R2D2PaperService:
                 # the hard stop only -- not the full technical cascade, which needs
                 # fresh indicators this feed can't currently supply.
                 average_cost = _float(position["average_cost_local"])
-                hard_stop = average_cost * (1 - self.settings.r2d2_max_position_loss_percent / 100)
+                exit_slippage_rate = 0.0015 if position["market"] == "B3" else 0.0010
+                exit_fee_rate = 0.0006 if position["market"] == "B3" else 0.0004
+                hard_stop = r2d2_strategy.hard_stop_quote_price(
+                    average_cost, self.settings.r2d2_max_position_loss_percent,
+                    slippage_rate=exit_slippage_rate, fee_rate=exit_fee_rate,
+                )
                 high_water = max(_float(position["high_water_price_local"]), quote.price)
                 if quote.price > hard_stop:
                     self.repo.update_mark(
@@ -1850,7 +1864,11 @@ class R2D2PaperService:
                         write_high_water=not self.settings.r2d2_fast_risk_watcher_enabled,
                     )
                     continue
-                pnl_pct = (quote.price / average_cost - 1) * 100
+                mark_pnl_pct = (quote.price / average_cost - 1) * 100
+                estimated_net_exit_pnl_pct = r2d2_strategy.estimated_net_exit_pnl_percent(
+                    quote.price, average_cost,
+                    slippage_rate=exit_slippage_rate, fee_rate=exit_fee_rate,
+                )
                 strategy["decision_state"] = "exit"
                 self.repo.update_mark(
                     experiment["id"], position["market"], position["symbol"], quote.price,
@@ -1864,7 +1882,8 @@ class R2D2PaperService:
                 }
                 self._sell(
                     experiment, cycle_id, candidate, position, quote, conversion,
-                    f"Protective hard-stop exit on a delayed quote at {pnl_pct:+.2f}%: no live "
+                    f"Protective hard-stop exit on a delayed quote at mark {mark_pnl_pct:+.2f}%, "
+                    f"estimated net {estimated_net_exit_pnl_pct:+.2f}%: no live "
                     f"quote for {awaiting_minutes:.1f} minutes (grace period "
                     f"{self.settings.r2d2_delayed_quote_protection_grace_minutes:.1f} min); the quote's "
                     f"own timestamp was {quote_age_minutes:.1f} minutes old (within the "
@@ -1951,6 +1970,8 @@ class R2D2PaperService:
                 profit_harvest_count=int(strategy.get("profit_harvest_count") or 0),
                 gain_protection_streak=int(strategy.get("gain_protection_streak") or 0),
             )
+            exit_slippage_rate = 0.0015 if position["market"] == "B3" else 0.0010
+            exit_fee_rate = 0.0006 if position["market"] == "B3" else 0.0004
             exit_result, risk_state = r2d2_strategy.exit_decision(
                 technical=technical,
                 quote_price=quote.price,
@@ -1965,6 +1986,8 @@ class R2D2PaperService:
                 max_position_loss_percent=self.settings.r2d2_max_position_loss_percent,
                 soft_loss_exit_percent=self.settings.r2d2_soft_loss_exit_percent,
                 seconds_to_close=self._seconds_to_us_close(position["market"], now),
+                exit_slippage_rate=exit_slippage_rate,
+                exit_fee_rate=exit_fee_rate,
             )
             reason = exit_result.reason
             sell_fraction = exit_result.sell_fraction
@@ -1980,14 +2003,25 @@ class R2D2PaperService:
             trailing_distance = atr * 2.5
             trailing = high_water - trailing_distance
             stop = max(_float(position["stop_price_local"]), trailing)
-            pnl_pct = (quote.price / average_cost - 1) * 100
-            peak_pnl_pct = (high_water / average_cost - 1) * 100
+            mark_pnl_pct = (quote.price / average_cost - 1) * 100
+            estimated_net_exit_pnl_pct = r2d2_strategy.estimated_net_exit_pnl_percent(
+                quote.price, average_cost,
+                slippage_rate=exit_slippage_rate, fee_rate=exit_fee_rate,
+            )
+            mark_peak_pnl_pct = (high_water / average_cost - 1) * 100
+            estimated_net_peak_pnl_pct = r2d2_strategy.estimated_net_exit_pnl_percent(
+                high_water, average_cost,
+                slippage_rate=exit_slippage_rate, fee_rate=exit_fee_rate,
+            )
             atr_percent = max(0.0, _float(technical.get("atr_percent")))
             effective_max_loss_percent = max(
                 self.settings.r2d2_max_position_loss_percent,
                 min(1.5, atr_percent * 2.0),
             )
-            hard_stop = average_cost * (1 - effective_max_loss_percent / 100)
+            hard_stop = r2d2_strategy.hard_stop_quote_price(
+                average_cost, effective_max_loss_percent,
+                slippage_rate=exit_slippage_rate, fee_rate=exit_fee_rate,
+            )
             stop = max(stop, hard_stop)
             self.repo.update_chandelier_anchor(
                 experiment["id"], position["market"], position["symbol"],
@@ -1997,24 +2031,24 @@ class R2D2PaperService:
                 self.settings.r2d2_soft_loss_exit_percent,
                 min(0.7, atr_percent * 0.4),
             )
-            if peak_pnl_pct >= 8.0:
+            if estimated_net_peak_pnl_pct >= 8.0:
                 stop = max(
                     stop,
                     average_cost * 1.04,
                     high_water - max(atr * 1.5, high_water * 0.0175),
                 )
-            elif peak_pnl_pct >= 4.0:
+            elif estimated_net_peak_pnl_pct >= 4.0:
                 stop = max(
                     stop,
                     average_cost * 1.015,
                     high_water - max(atr * 2.0, high_water * 0.0225),
                 )
-            elif peak_pnl_pct >= 1.0:
+            elif estimated_net_peak_pnl_pct >= 1.0:
                 # A modest winner must not become a loser while its trend remains healthy.
                 stop = max(stop, average_cost * 1.003)
             profit_lock_level = max(
                 PROFIT_LOCK_FLOOR_PERCENT,
-                peak_pnl_pct - PROFIT_PULLBACK_PERCENT,
+                estimated_net_peak_pnl_pct - PROFIT_PULLBACK_PERCENT,
             )
             strategy.update({
                 "live_technical": technical,
@@ -2027,7 +2061,10 @@ class R2D2PaperService:
                 "defense_reductions": defense_reductions,
                 "gain_protection_streak": gain_protection_streak,
                 "held_minutes": round(held_minutes, 1),
-                "peak_pnl_percent": round(peak_pnl_pct, 3),
+                "mark_pnl_percent": round(mark_pnl_pct, 3),
+                "estimated_net_exit_pnl_percent": round(estimated_net_exit_pnl_pct, 3),
+                "mark_peak_pnl_percent": round(mark_peak_pnl_pct, 3),
+                "peak_pnl_percent": round(estimated_net_peak_pnl_pct, 3),
                 "profit_trigger_percent": round(max(PROFIT_TRIGGER_PERCENT, effective_max_loss_percent), 3),
                 "profit_lock_level_percent": round(profit_lock_level, 3),
                 "profit_harvest_count": profit_harvest_count,
@@ -3068,13 +3105,6 @@ class R2D2PaperService:
         slippage_rate = 0.0015 if item["market"] == "B3" else 0.0010
         fee_rate = 0.0006 if item["market"] == "B3" else 0.0004
         fill = item["price"] * (1 + slippage_rate)
-        item = {
-            **item,
-            "stop_price": max(
-                _float(item.get("stop_price")),
-                fill * (1 - self.settings.r2d2_max_position_loss_percent / 100),
-            ),
-        }
         precision = 1 if item["market"] == "B3" else 100
         quantity = math.floor((allocation / (fill * fx)) * precision) / precision
         if quantity <= 0:
@@ -3082,6 +3112,25 @@ class R2D2PaperService:
         gross = quantity * fill * fx
         fees = gross * fee_rate
         slippage = quantity * (fill - item["price"]) * fx
+        average_cost_local = (gross + fees) / (quantity * fx)
+        atr_percent = max(
+            0.0,
+            _float((item.get("technical_indicators") or {}).get("atr_percent")),
+        )
+        effective_max_loss_percent = max(
+            self.settings.r2d2_max_position_loss_percent,
+            min(1.5, atr_percent * 2.0),
+        )
+        item = {
+            **item,
+            "stop_price": max(
+                _float(item.get("stop_price")),
+                r2d2_strategy.hard_stop_quote_price(
+                    average_cost_local, effective_max_loss_percent,
+                    slippage_rate=slippage_rate, fee_rate=fee_rate,
+                ),
+            ),
+        }
         actual_position_percent = allocation / nav * 100 if nav else 0.0
         sizing_factors = {
             "composite_score": round(_float(item.get("composite_score")), 2),
