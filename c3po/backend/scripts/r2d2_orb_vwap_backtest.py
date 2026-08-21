@@ -38,8 +38,11 @@ SESSION_OPEN = time(13, 30)  # 09:30 New York during EDT
 OR_END = time(13, 45)
 ENTRY_CUTOFF = time(15, 30)  # first two hours
 SESSION_CLOSE = time(20, 0)
-FEE_BPS = 5.0
-SLIPPAGE_BPS = 5.0
+FEE_BPS = 4.0
+SLIPPAGE_BPS = 10.0
+ROUND_TRIP_COST_PERCENT = 2 * (FEE_BPS + SLIPPAGE_BPS) / 100
+EDGE_BUFFER_PERCENT = 0.10
+TARGET_R = 1.5
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ class EntrySignal:
     stop: float
     timestamp: datetime
     route: str
+    modeled_edge_percent: float
 
 
 @dataclass(frozen=True)
@@ -144,7 +148,10 @@ def candidate_f_signal(
     stop = max(or_low, session_vwap)
     if stop <= 0 or stop >= price:
         return None
-    return EntrySignal(price, stop, at, "F_ORB_VWAP")
+    modeled_edge = TARGET_R * (price - stop) / price * 100
+    if modeled_edge < ROUND_TRIP_COST_PERCENT + EDGE_BUFFER_PERCENT:
+        return None
+    return EntrySignal(price, stop, at, "F_ORB_VWAP", modeled_edge)
 
 
 def candidate_g_signal(session_bars: list[dict[str, Any]], index: int) -> EntrySignal | None:
@@ -168,12 +175,15 @@ def candidate_g_signal(session_bars: list[dict[str, Any]], index: int) -> EntryS
     stop = min(_float(previous["low"]), session_vwap * 0.997)
     if stop <= 0 or stop >= price:
         return None
-    return EntrySignal(price, stop, at, "G_VWAP_PULLBACK")
+    modeled_edge = TARGET_R * (price - stop) / price * 100
+    if modeled_edge < ROUND_TRIP_COST_PERCENT + EDGE_BUFFER_PERCENT:
+        return None
+    return EntrySignal(price, stop, at, "G_VWAP_PULLBACK", modeled_edge)
 
 
 def _simulate_signal(
     symbol: str, session: date, bars: list[dict[str, Any]], signal: EntrySignal,
-    *, target_r: float = 1.5,
+    *, target_r: float = TARGET_R,
 ) -> Outcome:
     slip = SLIPPAGE_BPS / 10_000
     fee = FEE_BPS / 10_000
@@ -331,6 +341,8 @@ def main() -> None:
             "sessions": [session.isoformat() for session in sessions], "coverage": coverage,
             "one_minute_bars": sum(len(rows) for rows in bars_by_symbol.values()),
             "fees_bps_each_side": FEE_BPS, "slippage_bps_each_side": SLIPPAGE_BPS,
+            "round_trip_cost_percent": ROUND_TRIP_COST_PERCENT,
+            "minimum_modeled_edge_percent": ROUND_TRIP_COST_PERCENT + EDGE_BUFFER_PERCENT,
         },
         "baseline_current_routes": _baseline_summary(baseline),
         "candidate_f": _summary(f_outcomes),

@@ -18,12 +18,12 @@ def bar(at, open_, high, low, close, volume=1_000):
 
 def opening_bars():
     start = datetime(2026, 8, 20, 13, 30, tzinfo=timezone.utc)
-    return [bar(start + timedelta(minutes=i), 100, 100.10, 99.90, 100, 1_000) for i in range(15)]
+    return [bar(start + timedelta(minutes=i), 100, 100.10, 99.50, 100, 1_000) for i in range(15)]
 
 
 def test_candidate_f_accepts_first_unextended_breakout_above_vwap():
     bars = opening_bars()
-    bars.append(bar(datetime(2026, 8, 20, 13, 45, tzinfo=timezone.utc), 100, 100.15, 99.98, 100.12, 2_000))
+    bars.append(bar(datetime(2026, 8, 20, 13, 45, tzinfo=timezone.utc), 100, 100.35, 99.98, 100.30, 2_000))
     signal = module.candidate_f_signal(bars, 15)
     assert signal is not None
     assert signal.route == "F_ORB_VWAP"
@@ -32,7 +32,7 @@ def test_candidate_f_accepts_first_unextended_breakout_above_vwap():
 
 def test_candidate_f_rejects_breakout_extended_beyond_half_or_range():
     bars = opening_bars()
-    bars.append(bar(datetime(2026, 8, 20, 13, 45, tzinfo=timezone.utc), 100, 100.40, 99.98, 100.30, 2_000))
+    bars.append(bar(datetime(2026, 8, 20, 13, 45, tzinfo=timezone.utc), 100, 100.55, 99.98, 100.45, 2_000))
     assert module.candidate_f_signal(bars, 15) is None
 
 
