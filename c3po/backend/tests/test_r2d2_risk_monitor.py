@@ -119,6 +119,53 @@ def test_risk_monitor_cycle_never_enters_the_screening_pipeline() -> None:
     assert cycle["trade_count"] == 0
 
 
+def test_risk_monitor_continues_after_screening_cutoff_until_regular_close() -> None:
+    service = _service()
+    _open_position(service, "FINAL10")
+    calls: list[str] = []
+    service._position_quotes = lambda positions, now: calls.append("quotes") or {}  # type: ignore[method-assign]
+    service._mark_and_exit = lambda *args, **kwargs: calls.append("risk") or 0  # type: ignore[method-assign]
+    service._us_candidates = lambda *args, **kwargs: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("final-ten-minute risk protection must not screen candidates")
+    )
+    final_ten_minutes = datetime(2026, 8, 20, 19, 55, tzinfo=timezone.utc)  # 15:55 ET
+
+    assert service.open_markets(final_ten_minutes) == []
+    assert service.risk_markets(final_ten_minutes) == ["NASDAQ", "NYSE"]
+    service.run_risk_monitor_cycle(final_ten_minutes)
+
+    assert calls == ["quotes", "risk"]
+    cycle = service.repo.memory["cycles"][-1]
+    assert cycle["markets"] == ["NASDAQ", "NYSE"]
+    assert cycle["metadata"]["risk_monitor"]["positions"] == 1
+
+
+def test_screening_remains_closed_during_final_ten_minutes() -> None:
+    service = _service()
+    service._us_candidates = lambda *args, **kwargs: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("screening must remain closed after 15:50 ET")
+    )
+    final_ten_minutes = datetime(2026, 8, 20, 19, 55, tzinfo=timezone.utc)  # 15:55 ET
+
+    dashboard = service.run_cycle(final_ten_minutes)
+
+    assert dashboard.last_cycle is not None
+    assert dashboard.last_cycle.status == "market_closed"
+
+
+def test_risk_monitor_stops_at_regular_session_close() -> None:
+    service = _service()
+    _open_position(service, "AFTER")
+    cycles_before = len(service.repo.memory["cycles"])
+
+    exits = service.run_risk_monitor_cycle(
+        datetime(2026, 8, 20, 20, 0, tzinfo=timezone.utc),  # 16:00 ET
+    )
+
+    assert exits == 0
+    assert len(service.repo.memory["cycles"]) == cycles_before
+
+
 def test_failed_risk_cycle_keeps_monitor_telemetry() -> None:
     service = _service()
     _open_position(service, "FAIL")
