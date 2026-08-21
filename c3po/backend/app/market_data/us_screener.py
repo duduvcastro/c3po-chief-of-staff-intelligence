@@ -28,22 +28,8 @@ MIN_ETF_ASSETS = 750_000_000.0
 MIN_STOCK_CASH_VOLUME = 20_000_000.0
 MIN_ETF_CASH_VOLUME = 10_000_000.0
 MIN_HISTORY_DAYS = 40
-MIN_CONFIDENCE = 60.0
+MIN_CONFIDENCE = 70.0
 MAX_DISPERSION = 45.0
-PROFILE_MAX_DISPERSION = {
-    "cyclical": 54.0,
-    "financial": 57.0,
-    "general": 53.0,
-    "growth": 45.0,
-    "real_estate": 57.0,
-    "utilities": 45.0,
-}
-SINGLE_MODEL_MIN_RELIABILITY = 0.75
-SINGLE_MODEL_MIN_CONFIDENCE = 65.0
-SINGLE_MODEL_MIN_ANALYSTS = 3
-SINGLE_MODEL_MAX_CONSENSUS_GAP = 45.0
-MIN_VALIDATION_SCORE = 65.0
-ETF_MIN_CONFIDENCE = 70.0
 PROVISIONAL_CONFIDENCE = 55.0
 PROVISIONAL_DISPERSION = 60.0
 MATRIX_REFRESH_SECONDS = 60
@@ -375,7 +361,6 @@ class USScreeningService:
         consensus = positive(analysis.get("consensus_tp"))
         internal_tp = statistics.mean(methods.values())
         profile = str(analysis.get("profile") or "general")
-        validation_profile = self._profile(fundamentals)
         market_factors = self._calibration_factors.get(market, {})
         calibration_factor = clamp(
             market_factors.get(profile, market_factors.get("global", 1.0)),
@@ -387,50 +372,21 @@ class USScreeningService:
         agreement = clamp(100 - (gap or 45) * 1.35, 25, 100)
         confidence = float(analysis["confidence"])
         dispersion = float(analysis["dispersion"])
-        method_scores = {
-            str(key): float(value)
-            for key, value in (analysis.get("method_scores") or {}).items()
-            if number(value) is not None
-        }
-        single_model_reliability = number(analysis.get("single_model_reliability"))
         analyst_count = int(analysis.get("analyst_count") or 0) or None
         data_sources = 2 if consensus and analyst_count and analyst_count >= 2 else 1
+        validation_score = clamp(
+            confidence * 0.45 + agreement * 0.30 + min(len(methods), 5) / 5 * 15 + min(analyst_count or 0, 10) / 10 * 10,
+            0,
+            100,
+        )
         reasons: list[str] = []
-        if len(methods) == 1:
-            analyst_breadth = clamp((analyst_count or 0) / 10 * 100, 0, 100)
-            consensus_agreement = clamp(100 - (gap if gap is not None else 100) * 2, 0, 100)
-            validation_score = clamp(
-                confidence * 0.50 + consensus_agreement * 0.35 + analyst_breadth * 0.15,
-                0,
-                100,
-            )
-            if single_model_reliability is None or single_model_reliability < SINGLE_MODEL_MIN_RELIABILITY:
-                reasons.append("single-model reliability below 0.75")
-            if consensus is None or (analyst_count or 0) < SINGLE_MODEL_MIN_ANALYSTS:
-                reasons.append("single-model validation requires consensus from at least 3 analysts")
-            if gap is None or gap > SINGLE_MODEL_MAX_CONSENSUS_GAP:
-                reasons.append("single model is too far from public consensus")
-            if confidence < SINGLE_MODEL_MIN_CONFIDENCE:
-                reasons.append("single-model confidence below 65")
-        else:
-            validation_score = clamp(
-                confidence * 0.45
-                + agreement * 0.30
-                + min(len(methods), 5) / 5 * 15
-                + min(analyst_count or 0, 10) / 10 * 10,
-                0,
-                100,
-            )
-            max_dispersion = PROFILE_MAX_DISPERSION.get(validation_profile, MAX_DISPERSION)
-            if confidence < MIN_CONFIDENCE:
-                reasons.append("confidence below 60")
-            if dispersion > max_dispersion:
-                reasons.append(f"method dispersion above {max_dispersion:.0f}% for {validation_profile}")
-            if data_sources < 2:
-                reasons.append("public consensus unavailable")
-        if validation_score < MIN_VALIDATION_SCORE:
-            reasons.append("composite TP validation score below minimum")
-        validated = not reasons
+        if confidence < MIN_CONFIDENCE:
+            reasons.append("confidence below 70")
+        if dispersion > MAX_DISPERSION:
+            reasons.append("method dispersion above 45%")
+        if data_sources < 2:
+            reasons.append("public consensus unavailable")
+        validated = not reasons and validation_score >= 65
         return self._common_row(
             market,
             quote,
@@ -444,8 +400,6 @@ class USScreeningService:
             analyst_count=analyst_count,
             buy_in=float(analysis["buy_in"]),
             methods=methods,
-            method_scores=method_scores,
-            single_model_reliability=single_model_reliability,
             risk=float(analysis["risk_score"]),
             confidence=confidence,
             dispersion=dispersion,
@@ -505,7 +459,7 @@ class USScreeningService:
         agreement = clamp(100 - dispersion * 2.2, 30, 100)
         validation_score = clamp(confidence * 0.55 + agreement * 0.35 + 10, 0, 100)
         reasons: list[str] = []
-        if confidence < ETF_MIN_CONFIDENCE:
+        if confidence < MIN_CONFIDENCE:
             reasons.append("ETF evidence confidence below 70")
         if dispersion > MAX_DISPERSION:
             reasons.append("ETF method dispersion above 45%")
@@ -564,8 +518,6 @@ class USScreeningService:
         validated: bool,
         thesis: str,
         risk_text: str,
-        method_scores: dict[str, float] | None = None,
-        single_model_reliability: float | None = None,
         quality_score: int = 70,
     ) -> dict[str, Any]:
         price = float(quote["price"])
@@ -607,8 +559,6 @@ class USScreeningService:
             "price_vs_buy_in_percent": entry_distance,
             "buy_in_models": {name: target / (1 + 0.12 + risk / 100 * 0.10) for name, target in methods.items()},
             "methods": methods,
-            "method_scores": method_scores or {},
-            "single_model_reliability": single_model_reliability,
             "public_consensus_tp": consensus,
             "analyst_count": analyst_count,
             "pe": positive(fundamentals.get("trailingPE")),
@@ -672,10 +622,7 @@ class USScreeningService:
                 "tp_upside": f"C3PO TP upside >= Selic + 6 p.p. = {tp_cutoff:.1f}%",
                 "entry": "Price within -10% to +15% of disciplined buy-in",
                 "risk": f"Risk below min(40, eligible-universe median) = {risk_cutoff:.1f}/100",
-                "confidence": (
-                    "Validated stocks require confidence >= 60, profile-calibrated dispersion and independent "
-                    "market evidence; single-model cases require reliability >= 0.75 and stronger consensus support"
-                ),
+                "confidence": "Validated valuation only: confidence >= 70, dispersion <= 45% and independent market evidence",
             },
         )
 

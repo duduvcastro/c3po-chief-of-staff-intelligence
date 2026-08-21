@@ -175,22 +175,14 @@ def test_pending_official_result_is_non_blocking_context(tmp_path) -> None:
 
 
 def test_analysis_and_pdf_are_deterministic_and_persisted(tmp_path) -> None:
-    """Root-caused 2026-08-20 (methodology redesign, Fable-consulted, Dudu-
-    directed): "Nosso TP" used to be the mean of 5 rows that were all linear
-    combinations of the same 4 numbers -- provably equivalent to one set of
-    averaged weights, just obscured behind 5 labels. Replaced with
-    genuinely distinct valuation models (DCF, RIM, DDM, Comps), included
-    only when their own inputs support them for THIS company -- so the
-    method list length now varies. The MSFT sample fixture has no dividend
-    data, so DDM is excluded (nothing to discount); DCF, RIM (book value +
-    ROE) and Comps are all supported.
-    """
     service = service_for(tmp_path)
     analysis = sample_analysis(service)
     assert list(analysis["methods"]) == [
-        "Fluxo de Caixa Descontado (DCF)",
-        "Valor Patrimonial Residual (RIM)",
-        "Múltiplos Comparáveis (Peers)",
+        "Múltiplos de Lucro + EV/EBITDA",
+        "Fluxo de Caixa Descontado",
+        "Blend Ajustado ao Risco",
+        "Momentum de Lucro",
+        "Qualidade & Fluxo de Caixa",
     ]
     assert analysis["analyst_count"] == 48
     assert analysis["analyst_buy"] == 30
@@ -209,7 +201,7 @@ def test_analysis_and_pdf_are_deterministic_and_persisted(tmp_path) -> None:
 
     assert report.symbol == "MSFT"
     assert report.methodology_version == METHODOLOGY_VERSION
-    assert report.method_count == 3
+    assert report.method_count == 5
     assert report.c3po_tp > 0
     assert report.buy_in < report.c3po_tp
     assert (tmp_path / report.filename).read_bytes().startswith(b"%PDF")
@@ -530,37 +522,14 @@ def test_analyze_lowers_risk_on_institutional_accumulation(tmp_path) -> None:
     assert baseline["risk_score"] - accumulating["risk_score"] <= 8.0
 
 
-def test_cost_of_equity_uses_capm_for_us_and_country_risk_premium_for_b3(tmp_path) -> None:
-    """Root-caused 2026-08-20 (TP methodology audit, then Fable-consulted
-    redesign): the US DCF used one fixed 10.5% discount rate for every
-    stock regardless of risk; a real CAPM-style cost of equity fixed that
-    for US. The redesign found the SAME bug still present for B3: a flat
-    18% DCF rate with no real local risk-free rate or country risk premium.
-    _cost_of_equity now uses risk_free + beta*ERP for both markets, with
-    B3's ERP layering a country risk premium on top of the US base --
-    B3 cost of equity must come out higher than an identical US beta at the
-    same nominal risk-free level, not just be a different flat constant.
-    """
-    service = service_for(tmp_path)
-
-    low_beta_us = service._cost_of_equity("US", 0.8, 0.04)
-    high_beta_us = service._cost_of_equity("US", 1.6, 0.04)
-    higher_rate_us = service._cost_of_equity("US", 0.8, 0.06)
-    assert high_beta_us > low_beta_us
-    assert higher_rate_us > low_beta_us
-
-    same_beta_br = service._cost_of_equity("B3", 0.8, None)
-    assert same_beta_br > low_beta_us
-
-
-def test_dcf_value_discounts_at_the_given_rate_and_bridges_net_debt(tmp_path) -> None:
-    """_dcf_value no longer computes its own beta-derived discount rate --
-    the caller supplies a real WACC (blending cost of equity AND cost of
-    debt by capital structure, see _wacc) so the function stays a pure,
-    directly-testable discounting step. A higher discount rate must lower
-    the TP, and net cash (debt < cash) must raise it relative to net debt,
-    since this now bridges enterprise value to equity value explicitly
-    instead of silently treating FCF as already equity-level.
+def test_dcf_value_uses_capm_discount_rate_for_us_and_flat_rate_elsewhere(tmp_path) -> None:
+    """Root-caused 2026-08-20 (TP methodology audit): the US DCF used one
+    fixed 10.5% discount rate for every stock regardless of risk, unlike
+    B3's per-security beta/Selic-derived WACC. Now a real CAPM-style rate
+    for US: risk_free + beta * equity_risk_premium -- a higher-beta
+    (riskier) stock gets a lower DCF TP than a lower-beta one with
+    identical cash flows, and a higher risk-free rate also lowers it. B3
+    keeps its own flat rate, untouched by beta/risk_free_rate.
     """
     service = service_for(tmp_path)
     common = dict(
@@ -568,13 +537,37 @@ def test_dcf_value_discounts_at_the_given_rate_and_bridges_net_debt(tmp_path) ->
         growth=0.08, market="US", price=100.0, fallback_eps=5.0,
     )
 
-    lower_rate_tp = service._dcf_value(**common, discount_rate=0.08)
-    higher_rate_tp = service._dcf_value(**common, discount_rate=0.12)
-    assert higher_rate_tp < lower_rate_tp
+    low_beta_tp = service._dcf_value(**common, beta=0.8, risk_free_rate=0.04)
+    high_beta_tp = service._dcf_value(**common, beta=1.6, risk_free_rate=0.04)
+    higher_rate_tp = service._dcf_value(**common, beta=0.8, risk_free_rate=0.06)
 
-    net_cash_tp = service._dcf_value(**common, discount_rate=0.08, total_debt=1_000_000_000.0, total_cash=5_000_000_000.0)
-    net_debt_tp = service._dcf_value(**common, discount_rate=0.08, total_debt=5_000_000_000.0, total_cash=1_000_000_000.0)
-    assert net_cash_tp > net_debt_tp
+    assert high_beta_tp < low_beta_tp
+    assert higher_rate_tp < low_beta_tp
+
+    b3_common = {**common, "market": "B3"}
+    b3_tp_a = service._dcf_value(**b3_common, beta=0.8, risk_free_rate=0.04)
+    b3_tp_b = service._dcf_value(**b3_common, beta=1.6, risk_free_rate=0.09)
+    assert b3_tp_a == b3_tp_b
+
+
+def test_dcf_value_falls_back_to_a_fixed_rate_without_a_threaded_risk_free_rate(tmp_path) -> None:
+    """_analyze/_dcf_value must stay network-free and deterministic by
+    default (risk_free_rate is fetched once by the caller, not inside the
+    pure valuation function) -- omitting it should use the documented
+    fallback constant, not raise or silently use 0.
+    """
+    from app.one_pager import US_RISK_FREE_FALLBACK_RATE
+
+    service = service_for(tmp_path)
+    common = dict(
+        free_cashflow=10_000_000_000.0, shares=1_000_000_000.0,
+        growth=0.08, market="US", price=100.0, fallback_eps=5.0, beta=1.0,
+    )
+
+    without_rate = service._dcf_value(**common)
+    with_fallback_rate_explicit = service._dcf_value(**common, risk_free_rate=US_RISK_FREE_FALLBACK_RATE)
+
+    assert without_rate == with_fallback_rate_explicit
 
 
 def test_us_risk_free_rate_caches_and_falls_back_when_the_feed_is_unavailable(tmp_path) -> None:
@@ -850,129 +843,23 @@ def test_analyze_pulls_the_final_tp_toward_a_well_covered_consensus(tmp_path) ->
     assert abs(with_consensus["c3po_tp"] - 374.57) < abs(without_consensus["c3po_tp"] - 374.57)
 
 
-def test_analyze_excludes_models_whose_own_inputs_do_not_support_them(tmp_path) -> None:
-    """Root-caused 2026-08-20 (Fable-consulted methodology redesign): the
-    old 5-row average always produced 5 numbers regardless of data quality,
-    just diluting bad inputs into the mean instead of excluding them. A
-    company with no book value/ROE and no dividend must not get RIM or DDM
-    rows at all -- Comps (peer multiples) is the one model with a usable
-    fallback for nearly any company, so it should be the sole survivor.
-    """
+def test_consensus_does_not_leak_into_internal_methods_without_fundamentals(tmp_path) -> None:
     service = service_for(tmp_path)
-    fundamentals = {
-        "companyName": "No Balance Sheet Data Co",
-        "sector": "Technology",
-        "trailingEps": 3.0,
-        "forwardEps": 3.4,
-    }
-    quote = {"price": 60.0, "currency": "USD", "change_percent": 0.0, "as_of": datetime.now(timezone.utc)}
-
-    analysis = service._analyze("NODATA", "US", quote, fundamentals)
-
-    assert list(analysis["methods"]) == ["Múltiplos Comparáveis (Peers)"]
-    # Root-caused 2026-08-20 (Codex-flagged, screener recalibration): with
-    # exactly one surviving model, dispersion is always zero by definition
-    # -- it can't be used as evidence of convergence, so the screener's
-    # single-model validation rule needs the model's own reliability score
-    # instead, which used to be computed here and then discarded.
-    assert analysis["single_model_reliability"] == analysis["method_scores"]["Múltiplos Comparáveis (Peers)"]
-    assert analysis["single_model_reliability"] is not None
-
-
-def test_analyze_flags_low_conviction_and_leans_harder_on_consensus_when_models_disagree(tmp_path) -> None:
-    """Root-caused 2026-08-20 (Fable-consulted methodology redesign): when
-    the surviving models disagree sharply (max/min > LOW_CONVICTION_
-    DISPERSION_RATIO), the old code silently averaged them anyway. Now
-    `low_conviction` is surfaced on the analysis (for the PDF and the R2D2
-    pre-trade rank to consume, per Fable's recommendation) and the final
-    consensus blend widens (up to 1.4x, capped at 50%) instead of
-    presenting a smoothed-over number with hidden internal disagreement.
-    """
-    from app.one_pager import LOW_CONVICTION_DISPERSION_RATIO
-
-    service = service_for(tmp_path)
-    # High ROE relative to a low forward P/E anchor: RIM and Comps land far
-    # apart, comfortably past the low-conviction dispersion threshold.
-    fundamentals = {
-        "companyName": "Disagreement Co",
-        "sector": "Technology",
-        "trailingEps": 2.0,
-        "forwardEps": 2.2,
-        "bookValue": 40.0,
-        "returnOnEquity": 0.30,
-        "beta": 1.0,
-        "targetMeanPrice": 90.0,
-        "numberOfAnalystOpinions": 20,
-    }
     quote = {"price": 100.0, "currency": "USD", "change_percent": 0.0, "as_of": datetime.now(timezone.utc)}
-
-    analysis = service._analyze("DISAGREE", "US", quote, fundamentals, risk_free_rate=0.042)
-
-    method_values = list(analysis["methods"].values())
-    assert max(method_values) / min(method_values) > LOW_CONVICTION_DISPERSION_RATIO
-    assert analysis["low_conviction"] is True
-
-
-def test_scenarios_fan_out_from_c3po_tp_not_raw_model_extremes(tmp_path) -> None:
-    """Root-caused 2026-08-20 (methodology redesign follow-up, Dudu-flagged
-    after seeing an implausibly wide bear/bull spread on a real PDF): bear/
-    bull used to fan out from min(methods)/max(methods). The old 5-row
-    average clamped every row within 0.68x-1.45x of their own median, so
-    that raw spread looked deceptively tame. Now that methods are genuinely
-    distinct, unclamped models (which can legitimately disagree a lot --
-    e.g. a single-stage DDM undervaluing a buyback-heavy bank), fanning out
-    from their raw extremes let one outlier model set the whole bear or
-    bull case. Anchoring on c3po_tp keeps bear/bull a reasoned band around
-    the actual final call.
-    """
-    service = service_for(tmp_path)
     fundamentals = {
-        "companyName": "JPM", "sector": "Financial Services", "industry": "Banks-Diversified",
-        "marketCap": 950_000_000_000, "trailingEps": 24.0, "forwardEps": 25.007,
-        "sharesOutstanding": 2_658_186_195, "beta": 0.977, "returnOnEquity": 0.1779,
-        "profitMargins": 0.3492, "operatingMargins": 0.5039,
-        "revenueGrowthAnnual": 0.304, "earningsGrowthAnnual": 0.469,
-        "bookValue": 133.007, "ebitda": 93_160_000_000, "totalDebt": 1_237_871_000_000,
-        "totalCash": 262_254_800_000, "freeCashflow": 86_115_000_000,
-        "targetMeanPrice": 388.33, "numberOfAnalystOpinions": 27, "dividendYield": 0.021,
+        "companyName": "Sparse Coverage Inc",
+        "sector": "Financial Services",
+        "industry": "Banks-Diversified",
     }
-    quote = {"price": 357.26, "currency": "USD", "change_percent": 0.3, "as_of": datetime.now(timezone.utc)}
 
-    analysis = service._analyze("JPM", "US", quote, fundamentals, risk_free_rate=0.042)
+    without_consensus = service._analyze("SPARSE", "US", quote, fundamentals)
+    with_consensus = service._analyze(
+        "SPARSE",
+        "US",
+        quote,
+        {**fundamentals, "targetMeanPrice": 140.0, "numberOfAnalystOpinions": 10},
+    )
 
-    method_values = list(analysis["methods"].values())
-    scenarios = dict(analysis["scenarios"])
-    # The raw models disagree sharply (this fixture is low_conviction), but
-    # bear/bull must not simply equal the raw min/max of that disagreement.
-    assert scenarios["BEAR"] > min(method_values)
-    assert scenarios["BULL"] < max(method_values)
-    assert scenarios["BEAR"] < scenarios["BASE"] < scenarios["BULL"]
-    # Root-caused 2026-08-20 (Dudu-flagged on the same real JPM PDF): with
-    # 27 analysts averaging $388.33 and c3po_tp pulled down to ~$324 by
-    # low_conviction, a bull premium computed off c3po_tp alone landed at
-    # ~$372 -- BELOW the real consensus. A "bull" case more pessimistic
-    # than the average professional analyst's actual number is incoherent;
-    # bull must clear real consensus by a margin.
-    assert scenarios["BULL"] > analysis["consensus_tp"]
-
-
-def test_bull_does_not_collapse_toward_base_when_base_is_pulled_hard_to_consensus(tmp_path) -> None:
-    """Root-caused 2026-08-20 (self-verification requested by Dudu after the
-    consensus-anchoring fix above): bear_tp/bull_tp were pure internal-model
-    recomputes with no consensus shrinkage, while c3po_tp (base) gets
-    Bayesian shrinkage toward consensus of up to 50% when low_conviction. A
-    real MSFT-shaped fixture (high internal dispersion, well-covered by 48
-    analysts averaging $610 against a $500 price) landed BASE=$445.68 and
-    BULL=$445.69 -- one cent apart, because base got pulled hard toward
-    consensus while bull, with no such pull, couldn't keep up and the
-    `max(bull_tp, c3po_tp)` floor collapsed it onto base. Bear/bull must
-    receive the SAME consensus_weight shrinkage as base (toward the real
-    Street high/low when available, else the same consensus point) so all
-    three scenarios stay internally consistent.
-    """
-    service = service_for(tmp_path)
-    analysis = sample_analysis(service)
-
-    scenarios = dict(analysis["scenarios"])
-    assert analysis["low_conviction"] is True
-    assert scenarios["BULL"] - scenarios["BASE"] > 0.02 * scenarios["BASE"]
+    assert with_consensus["methods"] == pytest.approx(without_consensus["methods"])
+    internal_tp = statistics.mean(with_consensus["methods"].values())
+    assert with_consensus["c3po_tp"] == pytest.approx(internal_tp * 0.65 + 140.0 * 0.35)
