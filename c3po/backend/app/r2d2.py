@@ -1931,16 +1931,6 @@ class R2D2PaperService:
                 fundamental_score = USScreeningService._power_score(
                     upside, risk, cached[2], confidence, distance,
                 )
-                # Root-caused 2026-08-20 (Fable-consulted methodology
-                # redesign): one_pager._analyze now flags low_conviction
-                # when its surviving valuation models disagree sharply
-                # (dispersion ratio > LOW_CONVICTION_DISPERSION_RATIO)
-                # instead of silently averaging over the disagreement. A
-                # candidate's fundamental_score should not carry full
-                # weight into pretrade_rank when its own TP is internally
-                # unreliable.
-                if analysis.get("low_conviction"):
-                    fundamental_score *= 0.75
                 thesis = f"C3PO TP {c3po_tp:.2f}; valuation backfill completed for the current session."
                 basis_source = "same-day C3PO valuation backfill"
             else:
