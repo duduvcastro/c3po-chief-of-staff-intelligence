@@ -49,9 +49,5 @@ CREATE TABLE IF NOT EXISTS leah_items (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_leah_items_external
-    ON leah_items (owner_email, kind, external_id)
-    WHERE external_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_leah_items_owner_updated
     ON leah_items (owner_email, updated_at DESC);
