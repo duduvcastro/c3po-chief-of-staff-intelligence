@@ -3854,7 +3854,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
                       <div><strong>{position.symbol}</strong><span className={isPositive ? "ticker-price-up" : "ticker-price-down"}>{position.currency === "BRL" ? "R$ " : "$ "}{price}</span></div>
                       <p className={isPositive ? "ticker-change-up" : "ticker-change-down"}>
                         {isPositive ? "+" : ""}{position.unrealized_return_percent.toFixed(2)}%
-                        <small>($ {isPositive ? "+" : ""}{usd(position.unrealized_pnl_usd).replace("US$ ", "")})</small>
+                        <small>($ {usd(Math.abs(position.unrealized_pnl_usd)).replace("US$ ", "")})</small>
                       </p>
                     </div>
                   );
