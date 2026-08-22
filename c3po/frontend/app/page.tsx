@@ -1866,10 +1866,10 @@ function TotpSecurityPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) 
 
   return (
     <section className="profile-panel-section profile-totp">
-      <div className="profile-panel-section-title"><LockKeyhole size={15} /><span>Código automático no Safari</span></div>
+      <div className="profile-panel-section-title"><LockKeyhole size={15} /><span>Código automático no navegador</span></div>
       {!enabled && !setup && (
         <div className="profile-totp-status">
-          <div><span>APP SENHAS</span><strong>Não configurado</strong></div>
+          <div><span>SAFARI E CHROME</span><strong>Não configurado</strong></div>
           <button type="button" onClick={() => void beginSetup()} disabled={busy}>Ativar</button>
         </div>
       )}
@@ -1877,8 +1877,8 @@ function TotpSecurityPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) 
         <div className="profile-totp-setup">
           <img src={setup.qr_code_data_url} alt="QR Code para configurar o código no app Senhas" />
           <div>
-            <strong>Escaneie com a câmera do iPhone</strong>
-            <p>Ou abra Senhas no Mac, selecione o C3PO e use a chave abaixo.</p>
+            <strong>Escaneie com seu gerenciador de senhas</strong>
+            <p>Use o app Senhas da Apple ou outro autenticador compatível com o Safari ou Chrome. No Mac, você também pode cadastrar a chave abaixo.</p>
             <code>{setup.secret}</code>
             <div className="profile-totp-code">
               <input aria-label="Código de confirmação" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" />
@@ -1889,7 +1889,7 @@ function TotpSecurityPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) 
       )}
       {enabled && (
         <div className="profile-totp-enabled">
-          <div><i /><span><strong>Ativo</strong><small>O Safari pode preencher o código salvo no app Senhas.</small></span></div>
+          <div><i /><span><strong>Ativo</strong><small>Safari ou Chrome podem preencher o código usando um gerenciador compatível.</small></span></div>
           <div className="profile-totp-code">
             <input aria-label="Código para desativar" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="Código atual" />
             <button type="button" onClick={() => void submitCode("disable")} disabled={busy || code.length !== 6}>Desativar</button>
@@ -7351,7 +7351,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
       setChallengeId(payload.challenge_id);
       setVerificationMethod(payload.verification_method);
       setMessage(payload.verification_method === "totp"
-        ? "Use o código de seis dígitos salvo no app Senhas."
+        ? "Use o código de seis dígitos salvo no seu gerenciador de senhas."
         : `Código enviado. Ele vale por ${Math.round(payload.expires_in_seconds / 60)} minutos.`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Não foi possível enviar o código.");
@@ -7406,7 +7406,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           <span>Secure command access</span>
           <h1 id="login-title">{challengeId ? "Digite o código" : "Acesse seu command center"}</h1>
           <p>{challengeId
-            ? verificationMethod === "totp" ? "Use o código automático configurado no app Senhas." : `Enviamos um código de seis dígitos para ${email}.`
+            ? verificationMethod === "totp" ? "Use o código automático configurado no seu gerenciador de senhas." : `Enviamos um código de seis dígitos para ${email}.`
             : "Use seu e-mail autorizado. Nenhuma senha é necessária."}</p>
         </div>
 
@@ -7418,7 +7418,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           </form>
         ) : (
           <form onSubmit={(event) => { event.preventDefault(); verifyCode(); }} className="login-form">
-            <label htmlFor="login-code">{verificationMethod === "totp" ? "Código do app Senhas" : "Código de acesso"}</label>
+            <label htmlFor="login-code">{verificationMethod === "totp" ? "Código do autenticador" : "Código de acesso"}</label>
             <div className="login-input login-code-input"><LockKeyhole size={18} /><input id="login-code" name="one-time-code" type="text" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" pattern="\d{6}" required autoFocus /></div>
             {message && <p className="login-message">{message}</p>}
             <button className="login-primary" type="submit" disabled={loading || code.length !== 6}>{loading ? "Validando..." : "Entrar no C3PO"}</button>
