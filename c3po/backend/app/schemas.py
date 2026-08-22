@@ -862,12 +862,24 @@ class ServerUsageServer(BaseModel):
     history: list[ServerUsagePoint]
 
 
+class ApiEndpointPerformance(BaseModel):
+    method: str
+    route: str
+    request_count: int = Field(ge=1)
+    average_ms: float = Field(ge=0)
+    p95_ms: float = Field(ge=0)
+    max_ms: float = Field(ge=0)
+    error_percent: float = Field(ge=0, le=100)
+
+
 class ServerUsageResponse(BaseModel):
     generated_at: datetime
     window_hours: int
     moving_average_minutes: int
     refresh_seconds: int
     servers: list[ServerUsageServer]
+    api_endpoints: list[ApiEndpointPerformance] = Field(default_factory=list)
+    api_window_minutes: int = 15
     methodology: dict[str, str]
 
 

@@ -1469,13 +1469,28 @@ button { cursor: pointer; }
 .server-status-offline { color: var(--red); background: var(--red-soft); }
 .server-status-offline i { background: #d85e57; }
 .server-refresh { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 5px; color: #59636f; background: #fff; }
-.server-usage-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+.server-usage-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
 .server-usage-metrics > div { min-width: 0; min-height: 106px; display: flex; flex-direction: column; justify-content: center; padding: 14px 18px; border-right: 1px solid var(--line); }
 .server-usage-metrics > div:last-child { border-right: 0; }
 .server-usage-metrics span { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
 .server-usage-metrics span svg { color: var(--gold); }
 .server-usage-metrics strong { display: block; margin-top: 8px; font-size: 25px; line-height: 1; }
 .server-usage-metrics small { margin-top: 7px; overflow: hidden; color: #8c949e; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.server-api-performance { border-bottom: 1px solid var(--line); background: #fff; }
+.server-api-performance > header { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 20px; border-bottom: 1px solid var(--line); }
+.server-api-performance > header span { display: block; color: var(--gold-deep); font-size: 9px; font-weight: 900; }
+.server-api-performance > header strong { display: block; margin-top: 4px; font-size: 15px; }
+.server-api-performance > header small { color: var(--muted); font-size: 9px; }
+.server-api-table { width: 100%; }
+.server-api-row { min-height: 38px; display: grid; grid-template-columns: minmax(260px, 1fr) 90px 100px 100px 80px; align-items: center; gap: 12px; padding: 0 20px; border-bottom: 1px solid #eceef0; font-size: 10px; }
+.server-api-row:last-child { border-bottom: 0; }
+.server-api-row > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.server-api-row > strong em { display: inline-block; min-width: 34px; margin-right: 8px; color: var(--gold-deep); font-size: 8px; font-style: normal; }
+.server-api-row > span { color: var(--muted); text-align: right; }
+.server-api-row > span.error { color: var(--red); font-weight: 800; }
+.server-api-row-head { min-height: 30px; color: var(--muted); background: #f7f8f8; font-size: 8px; font-weight: 900; text-transform: uppercase; }
+.server-api-row-head span:first-child { text-align: left; }
+.server-api-empty { padding: 22px 20px; color: var(--muted); font-size: 10px; }
 .server-chart-head { min-height: 66px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 20px; }
 .server-chart-head > div:first-child span { display: block; color: var(--gold-deep); font-size: 9px; font-weight: 900; }
 .server-chart-head > div:first-child strong { display: block; margin-top: 5px; font-size: 16px; }
@@ -1883,11 +1898,10 @@ button { cursor: pointer; }
   .ir-watch-form label:nth-child(4) { grid-column: 1 / span 2; }
   .ir-watch-form button { grid-column: 3; }
   .server-usage-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .server-usage-metrics > div:nth-child(2) { border-right: 0; }
-  .server-usage-metrics > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
-  .server-usage-metrics > div:nth-child(4) { border-right: 0; }
-  .server-usage-metrics > div:nth-child(3), .server-usage-metrics > div:nth-child(4) { border-bottom: 1px solid var(--line); }
-  .server-usage-metrics > div:last-child { grid-column: 1 / -1; }
+  .server-usage-metrics > div:nth-child(even) { border-right: 0; }
+  .server-usage-metrics > div:nth-child(-n+6) { border-bottom: 1px solid var(--line); }
+  .server-api-table { overflow-x: auto; }
+  .server-api-row { min-width: 690px; }
   .weather-location-head { align-items: stretch; flex-direction: column; gap: 0; padding: 14px 18px 0; }
   .weather-location-identity { min-height: 64px; }
   .weather-location-current { width: calc(100% + 36px); flex-basis: auto; min-height: 78px; margin-left: -18px; border-top: 1px solid var(--line); border-left: 0; }
