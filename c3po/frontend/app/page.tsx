@@ -2779,7 +2779,7 @@ function LeahCloudView({ session }: { session: AuthSession }) {
           <i aria-hidden="true" />
           <div><span>ICLOUD</span><strong>{data?.connected ? `${data.devices.length} Mac conectado` : "Aguardando conexão"}</strong></div>
           <div className="leah-connection-actions">
-            <a className="leah-agent-download" href="/downloads/leah-cloud-agent-macos.zip" download>
+            <a className="leah-agent-download" href="/downloads/leah-cloud-agent-macos.pkg" download>
               <Download size={15} /> Baixar agente para Mac
             </a>
             {!data?.connected && <button type="button" className="leah-connect-button" disabled={busy} onClick={() => void pairMac()}><Plus size={15} /> Conectar este Mac</button>}
