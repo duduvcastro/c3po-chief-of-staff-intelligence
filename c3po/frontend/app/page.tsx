@@ -2199,11 +2199,12 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     });
   }, [session.is_admin, session.permissions]);
   const [activeView, setActiveView] = useState<ViewKey>(() => {
-    if (typeof window === "undefined") return "home";
+    if (typeof window === "undefined") return "command";
     const requested = new URLSearchParams(window.location.search).get("view");
     if (requested === "home") return "home";
     if (visibleNavItems.some((item) => item.key === requested)) return requested as ViewKey;
-    return "home";
+    if (visibleNavItems.some((item) => item.key === "command")) return "command";
+    return visibleNavItems[0]?.key ?? "home";
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -7436,7 +7437,6 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
 function C3POGate() {
   const [authState, setAuthState] = useState<"checking" | "anonymous" | "authenticated">("checking");
   const [session, setSession] = useState<AuthSession | null>(null);
-  const [showLoginOpening, setShowLoginOpening] = useState(false);
   const [previewOpening, setPreviewOpening] = useState(false);
 
   useEffect(() => {
@@ -7445,14 +7445,13 @@ function C3POGate() {
     }
   }, []);
 
-  const refreshSession = useCallback((playOpening = false) => {
+  const refreshSession = useCallback(() => {
     setAuthState("checking");
     return fetch(`${API_URL}/api/v1/auth/session`, { cache: "no-store", credentials: "include" })
       .then((response) => response.json())
       .then((payload: AuthSession) => {
         setSession(payload.authenticated ? payload : null);
         setAuthState(payload.authenticated ? "authenticated" : "anonymous");
-        setShowLoginOpening(Boolean(payload.authenticated && playOpening));
       })
       .catch(() => {
         setSession(null);
@@ -7468,14 +7467,13 @@ function C3POGate() {
     await fetch(`${API_URL}/api/v1/auth/logout`, { method: "POST", credentials: "include" }).catch(() => undefined);
     setSession(null);
     setAuthState("anonymous");
-    setShowLoginOpening(false);
   };
 
-  const enterCommandCenter = () => {
+  const completeLogin = () => {
     const params = new URLSearchParams(window.location.search);
     params.set("view", "command");
     window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
-    setShowLoginOpening(false);
+    void refreshSession();
   };
 
   if (previewOpening) return <C3POOpeningView onEnter={() => setPreviewOpening(false)} />;
@@ -7483,9 +7481,8 @@ function C3POGate() {
   if (authState === "checking") {
     return <main className="login-shell"><div className="login-loading"><div className="login-mark" /><span>Estabelecendo canal seguro...</span></div></main>;
   }
-  if (authState === "anonymous") return <LoginScreen onAuthenticated={() => { void refreshSession(true); }} />;
+  if (authState === "anonymous") return <LoginScreen onAuthenticated={completeLogin} />;
   if (!session) return <main className="login-shell"><div className="login-loading"><div className="login-mark" /><span>Validando autorização...</span></div></main>;
-  if (showLoginOpening) return <C3POOpeningView onEnter={enterCommandCenter} />;
   return <AppShell session={session} onLogout={logout} onSessionExpired={() => { setSession(null); setAuthState("anonymous"); }} />;
 }
 
