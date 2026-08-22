@@ -238,11 +238,14 @@ interface R2D2DashboardData {
   operating_days_elapsed: number;
   starting_capital_usd: number;
   nav_usd: number;
+  accounting_nav_usd: number;
+  cumulative_pnl_usd: number;
   cash_usd: number;
   gross_exposure_usd: number;
   total_return_percent: number;
   daily_pnl_usd: number;
   daily_return_percent: number;
+  daily_pnl_date: string | null;
   open_positions: number;
   stats: {
     closed_days: number;
@@ -3853,16 +3856,21 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
       : "Conditions require attention";
   const healthTone = !health ? "warning" : health.quality >= 100 ? "good" : health.quality >= 80 ? "warning" : "critical";
   const dailyConsumption = health?.api_usage?.[0] ?? null;
+  const dailyPnlDate = r2d2?.daily_pnl_date
+    ? new Date(`${r2d2.daily_pnl_date}T12:00:00`).toLocaleDateString("pt-BR", {
+        day: "2-digit", month: "2-digit", year: "numeric"
+      })
+    : null;
 
   return (
     <div className="falcon-view falcon-capcom-view">
       <section className="falcon-capcom-metrics" aria-label="R2D2 mission telemetry">
         <div className="falcon-capcom-identity">
           <MillenniumFalconIcon size={42} />
-          <div><span>R2D2 live telemetry</span><strong>{r2d2?.experiment_code ?? "Connecting"}</strong><small>2-second mission refresh</small></div>
+          <div><span>R2D2 live telemetry</span><strong title={r2d2?.methodology_version}>{r2d2?.methodology_version ?? "Connecting"}</strong><small>2-second mission refresh</small></div>
         </div>
-        <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.nav_usd) : "—"} detail={`${r2d2?.open_positions ?? 0} open positions`} tone="gold" />
-        <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}% today` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
+        <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.accounting_nav_usd) : "—"} detail={`${r2d2?.open_positions ?? 0} open positions`} tone="gold" />
+        <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${dailyPnlDate ?? "No session"} · ${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}%` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
         <FalconMetric label="Positive Transactions" value={`${todayPositiveTransactions}`} secondaryValue={`${todayPositiveShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="green" />
         <FalconMetric label="Negative Transactions" value={`${todayNegativeTransactions}`} secondaryValue={`${todayNegativeShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="red" />
       </section>
