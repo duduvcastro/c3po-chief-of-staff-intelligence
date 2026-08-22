@@ -494,6 +494,34 @@ def test_owner_session_also_expires_after_thirty_minutes_of_inactivity(monkeypat
     assert service.authenticate(token) is None
 
 
+def test_human_activity_renews_owner_idle_window(monkeypatch) -> None:
+    settings = Settings(
+        auth_required=True,
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+        auth_cookie_secure=False,
+        auth_owner_session_hours=24,
+        auth_member_idle_minutes=30,
+    )
+    database = Database(settings)
+    service = AuthService(settings, database)
+    clock = {"now": datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)}
+    monkeypatch.setattr(service, "now", lambda: clock["now"])
+    monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
+    monkeypatch.setattr(service, "send_code_email", lambda _code, _email: None)
+
+    challenge_id, _, _, delivery = service.request_code(settings.auth_email, "127.0.0.1")
+    assert delivery is not None
+    service.send_code_email(*delivery)
+    token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
+    clock["now"] += timedelta(minutes=20)
+    assert service.authenticate(token, touch_activity=True) is not None
+    clock["now"] += timedelta(minutes=29)
+    assert service.authenticate(token) is not None
+    clock["now"] += timedelta(minutes=2)
+    assert service.authenticate(token) is None
+
+
 def test_unknown_and_suspended_emails_never_receive_code(monkeypatch) -> None:
     settings = Settings(
         auth_required=True,
