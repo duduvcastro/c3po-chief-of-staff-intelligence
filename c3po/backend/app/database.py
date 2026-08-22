@@ -287,6 +287,7 @@ class Database:
                 key for key, item in self._leah_items.items()
                 if normalized["external_id"] and item["owner_email"] == normalized["owner_email"]
                 and item["kind"] == normalized["kind"] and item.get("external_id") == normalized["external_id"]
+                and (normalized["kind"] != "event" or item.get("starts_at") == normalized["starts_at"])
             ), None)
             key = existing_id or item_id
             existing = self._leah_items.get(key, {})
@@ -316,8 +317,18 @@ class Database:
                 if updated:
                     connection.commit()
                     return self._leah_item_from_row(updated)
-            row = connection.execute(
+            if normalized["kind"] == "event":
+                conflict_target = """
+                ON CONFLICT (owner_email, external_id, starts_at)
+                    WHERE external_id IS NOT NULL AND kind = 'event'
                 """
+            else:
+                conflict_target = """
+                ON CONFLICT (owner_email, external_id)
+                    WHERE external_id IS NOT NULL AND kind = 'task'
+                """
+            row = connection.execute(
+                f"""
                 INSERT INTO leah_items
                     (id, owner_email, kind, external_id, container_id, title, notes, starts_at,
                      ends_at, due_at, is_all_day, is_completed, source, source_device_id,
@@ -327,7 +338,7 @@ class Database:
                      %(title)s, %(notes)s, %(starts_at)s, %(ends_at)s, %(due_at)s,
                      %(is_all_day)s, %(is_completed)s, %(source)s, %(source_device_id)s,
                      %(source_modified_at)s, %(deleted_at)s, %(updated_at)s)
-                ON CONFLICT (owner_email, kind, external_id) WHERE external_id IS NOT NULL
+                {conflict_target}
                 DO UPDATE SET
                     container_id = EXCLUDED.container_id, title = EXCLUDED.title,
                     notes = EXCLUDED.notes, starts_at = EXCLUDED.starts_at,

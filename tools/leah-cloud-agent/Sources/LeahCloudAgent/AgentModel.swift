@@ -2,6 +2,7 @@ import Foundation
 
 @MainActor
 final class AgentModel: ObservableObject {
+    private static let syncSchemaVersion = 2
     @Published var server = UserDefaults.standard.string(forKey: "server") ?? "https://c3po.eduardocastro.com.br"
     @Published var pairingCode = ""
     @Published var status = "Aguardando pareamento"
@@ -66,7 +67,10 @@ final class AgentModel: ObservableObject {
         do {
             guard let url = URL(string: server) else { throw LeahAgentError.invalidServer }
             let cursor = UserDefaults.standard.object(forKey: "serverCursor") as? Date
-            let localCursor = UserDefaults.standard.object(forKey: "localCursor") as? Date
+            let storedSchemaVersion = UserDefaults.standard.integer(forKey: "syncSchemaVersion")
+            let localCursor = storedSchemaVersion == Self.syncSchemaVersion
+                ? UserDefaults.standard.object(forKey: "localCursor") as? Date
+                : nil
             var localItems = await eventKit.localItems(modifiedAfter: localCursor)
             let response = try await APIClient(serverURL: url).sync(
                 SyncRequest(
@@ -93,6 +97,7 @@ final class AgentModel: ObservableObject {
             let now = Date()
             UserDefaults.standard.set(response.cursor, forKey: "serverCursor")
             UserDefaults.standard.set(now, forKey: "localCursor")
+            UserDefaults.standard.set(Self.syncSchemaVersion, forKey: "syncSchemaVersion")
             lastSync = now
             status = "Sincronização ativa"
         } catch {
@@ -106,6 +111,7 @@ final class AgentModel: ObservableObject {
         KeychainStore.delete()
         UserDefaults.standard.removeObject(forKey: "serverCursor")
         UserDefaults.standard.removeObject(forKey: "localCursor")
+        UserDefaults.standard.removeObject(forKey: "syncSchemaVersion")
         status = "Desconectado deste Mac"
         objectWillChange.send()
     }

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -82,6 +82,30 @@ def test_web_item_round_trip_reaches_agent_and_agent_adds_external_id() -> None:
     )
     stored = database.get_leah_item("eduardo@example.com", created["id"])
     assert stored and stored["external_id"] == "eventkit-42"
+
+
+def test_recurring_event_occurrences_with_same_external_id_are_preserved() -> None:
+    database = Database(Settings())
+    owner = "eduardo@example.com"
+    first_start = datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc)
+    second_start = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
+
+    for start in (first_start, second_start):
+        database.upsert_leah_item(
+            {
+                "owner_email": owner,
+                "kind": "event",
+                "external_id": "eventkit-recurring-series",
+                "title": "Pilates",
+                "starts_at": start,
+                "ends_at": start + timedelta(hours=1),
+                "source": "icloud",
+            }
+        )
+
+    occurrences = database.list_leah_changes(owner)
+    assert len(occurrences) == 2
+    assert {item["starts_at"] for item in occurrences} == {first_start, second_start}
 
 
 def test_leah_api_exposes_pairing_and_personal_items() -> None:
