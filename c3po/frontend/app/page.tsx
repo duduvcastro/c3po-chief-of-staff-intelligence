@@ -1949,11 +1949,13 @@ function CompanyLogo({ logoUrl, symbol, market }: { logoUrl?: string | null; sym
 function ProfilePanel({
   session,
   items,
-  onClose
+  onClose,
+  onLogout
 }: {
   session: AuthSession;
   items: typeof navItems;
   onClose: () => void;
+  onLogout: () => void;
 }) {
   const roleLabel = session.is_admin ? "Proprietário · Administrador" : "Usuário autorizado";
   const sessionPolicy = session.is_admin
@@ -2017,6 +2019,13 @@ function ProfilePanel({
         </section>
 
         <TotpSecurityPanel initiallyEnabled={session.totp_enabled} />
+
+        <div className="profile-panel-actions">
+          <button type="button" onClick={() => { onClose(); onLogout(); }}>
+            <LogOut size={16} />
+            <span>Sair do C3PO</span>
+          </button>
+        </div>
 
         <footer className="profile-panel-foot">
           O navegador informa a categoria do dispositivo, sistema e versão. O modelo exato do equipamento pode ser ocultado pelo próprio sistema por privacidade.
@@ -2664,7 +2673,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
           )}
         </section>
       </main>
-      {profileOpen && <ProfilePanel session={session} items={visibleNavItems} onClose={() => setProfileOpen(false)} />}
+      {profileOpen && <ProfilePanel session={session} items={visibleNavItems} onClose={() => setProfileOpen(false)} onLogout={onLogout} />}
       {menuOpen && <button className="mobile-overlay" onClick={() => setMenuOpen(false)} aria-label="Close navigation overlay" />}
     </div>
     </InstrumentPreviewProvider>
@@ -7478,14 +7487,6 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     }
   };
 
-  const resetLogin = () => {
-    setChallengeId("");
-    setCode("");
-    setMessage("");
-    setError("");
-    setRequestedDelivery("auto");
-  };
-
   return (
     <main className="login-shell">
       <section className="login-panel" aria-labelledby="login-title">
@@ -7515,7 +7516,6 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
             {message && <p className="login-message">{message}</p>}
             <button className="login-primary" type="submit" disabled={loading || code.length !== 6}>{loading ? "Validando..." : "Entrar no C3PO"}</button>
             {requestedDelivery !== "email" && <button className="login-secondary" type="button" disabled={loading} onClick={() => void requestCode("email")}>Receber código por e-mail</button>}
-            <button className="login-secondary" type="button" onClick={resetLogin}>Usar outro e-mail</button>
           </form>
         )}
         {error && <div className="login-error"><AlertTriangle size={16} /><span>{error}</span></div>}
