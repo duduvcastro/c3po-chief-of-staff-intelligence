@@ -7513,7 +7513,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           <form onSubmit={(event) => { event.preventDefault(); void requestCode(); }} className="login-form">
             <label htmlFor="login-email">E-mail</label>
             <div className="login-input"><Mail size={18} /><input id="login-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></div>
-            <button className="login-primary" type="submit" disabled={loading}>{loading ? "Enviando..." : "Enviar código"}</button>
+            <button className="login-primary" type="submit" disabled={loading}>{loading ? "Signing in..." : "Sign In"}</button>
           </form>
         ) : (
           <form onSubmit={(event) => { event.preventDefault(); verifyCode(); }} className="login-form">
