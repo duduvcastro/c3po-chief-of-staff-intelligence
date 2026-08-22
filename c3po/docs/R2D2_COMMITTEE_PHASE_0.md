@@ -52,20 +52,33 @@ calculation explained in
 | Input | Owner value |
 |---|---:|
 | Reference capital | USD 1,000,000 |
+| Trading capital during first 12 months | 100% virtual; USD 0 real exposure |
 | Baseline new Capex | USD 3,000; expandable by approved investment memo |
 | Maximum recurring monthly data/infrastructure spend | USD 1,000 |
-| Minimum 12-month net dollar contribution | USD 1,000,000 |
+| Net-return target | 0.5% geometric mean across every preregistered exchange session, compounded on virtual NAV |
+| Implied 252-session virtual return | Approximately 251.44% |
+| Closed-trade quality gate | Net positive trades must strictly outnumber net negative trades |
 | Maximum acceptable peak-to-trough drawdown | 8% |
-| Preliminary gross dollar edge | USD 4,027.78/session at 252 sessions |
-| Resulting `theta_econ` in R/session | Pending fixed dollar-risk budget |
+| First-session target-path edge | USD 5,000 at USD 1,000,000 NAV |
+| Resulting `theta_econ` in R/session | NAV-dependent; pending fixed dollar-risk budget and full path |
 
 ### Written 12-month success definition
 
-Trading success requires at least USD 1,000,000 net project profit after
-transaction and forward project costs, maximum peak-to-trough drawdown of 8%,
-complete reproducibility and no unresolved material data/execution/ledger audit
-failure. A correctly powered `not validated` verdict is a valid research result
-but does not satisfy the owner's economic trading-success target.
+Trading success requires a geometric mean net return of at least 0.5% across
+every preregistered exchange session in the complete 12-month virtual
+experiment, after simulated execution costs, with maximum peak-to-trough
+drawdown of 8%, complete reproducibility and no unresolved material
+data/execution/ledger audit failure. No-trade sessions count as zero and cannot
+be excluded. This is a horizon-level target, never a mandatory daily quota.
+Capex and Opex are real product investments reported separately from virtual
+trading NAV. A correctly powered `not validated` verdict is a valid research
+result but does not satisfy the owner's economic trading-success target.
+
+The win-count gate uses realized net P&L after simulated entry and exit costs.
+Flat trades are reported separately. A win rate above 50% does not replace the
+requirements for positive expectancy, adequate payoff, the geometric return
+target or the drawdown limit. Any later reduction of the 0.5% target must be a
+prospective, versioned owner decision and cannot re-score historical results.
 
 ## Research question and ledgers
 
@@ -265,6 +278,11 @@ Stage 0 performs feasibility only, using burned data and owner-supplied
 `theta_econ`. Stage 2 performs final calibration with the frozen harness and
 observed dependence.
 
+The first analytic screen is recorded in
+[`day_d/STAGE_0_RISK_POWER_FEASIBILITY.md`](day_d/STAGE_0_RISK_POWER_FEASIBILITY.md).
+It compares fixed-risk scenarios but deliberately selects none; its draft
+sigma, Bonferroni split and independent-arm assumption are not final evidence.
+
 Required properties:
 
 - observations are daily consolidated net R, including carry marks;
@@ -301,7 +319,8 @@ Stage 2 prerequisites to durable retention.
 - [x] T-30s/carry and three-ledger identities made explicit.
 - [x] Carry-induced statistical dependence recorded.
 - [x] Dudu supplies NPV inputs and written 12-month success definition.
-- [ ] Fixed dollar-risk budget converts the economic floor into R/session.
+- [x] Preliminary fixed-risk/power scenario grid is reproducible.
+- [ ] Six-hands review freezes fixed dollar risk and converts the economic floor into R/session.
 - [ ] Six-hands review freezes universe rules.
 - [ ] Six-hands review freezes S3/S5 formulas and lifecycle rules.
 - [ ] Cost and fill contract is numerical and versioned.
