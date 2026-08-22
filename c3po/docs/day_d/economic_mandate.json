@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "recorded_at": "2026-08-22",
   "owner": "Dudu",
   "currency": "USD",
@@ -21,12 +21,24 @@
     "historical_results_keep_the_mandate_active_when_generated": true,
     "retroactive_goalpost_change_forbidden": true
   },
+  "risk_policy": {
+    "basis": "fraction_of_current_virtual_nav_at_trade_entry",
+    "risk_fraction_per_trade": 0.0015,
+    "initial_risk_usd_at_reference_nav": 1500,
+    "dollar_cap_during_paper_usd": null,
+    "risk_budget_frozen_for_trade_lifetime": true,
+    "maximum_simultaneous_positions": 5,
+    "maximum_aggregate_initial_stop_risk_fraction": 0.0075,
+    "maximum_aggregate_initial_stop_risk_usd_at_reference_nav": 7500,
+    "recalibration_required_before_real_capital": true
+  },
   "maximum_drawdown_fraction": 0.08,
   "maximum_drawdown_usd_at_reference_capital": 80000,
   "drawdown_measurement": {
     "basis": "peak_to_trough_from_any_prior_qualified_mark",
     "calendar_reset": false,
-    "scope": "consolidated_experimental_book"
+    "scope": "consolidated_experimental_book",
+    "mark_frequency": "daily"
   },
   "budget": {
     "maximum_recurring_usd_per_month": 1000,
@@ -44,6 +56,27 @@
       "failure_or_cancellation_gate"
     ]
   },
+  "thresholds": {
+    "theta_meta": {
+      "geometric_net_return_fraction_per_session": 0.005,
+      "r_per_session": 3.3333333333333335,
+      "status": "product_target_only",
+      "kill_authority": false,
+      "forced_trading_forbidden": true
+    },
+    "theta_kill": {
+      "r_per_session": 0.15,
+      "status": "binding_at_preregistered_checkpoints_under_optimistic_costs",
+      "operating_cost_component_r_per_session_at_initial_nav": 0.03968253968253968,
+      "opportunity_cost_component_budget_r_per_session": 0.11031746031746031,
+      "opportunity_cost_benchmark": "US_3_MONTH_TREASURY_BILL",
+      "benchmark_rate_fraction_annual": null,
+      "benchmark_rate_status": "freeze_snapshot_on_final_preregistration_hash_date",
+      "planning_equivalent_benchmark_rate_fraction_annual": 0.0417,
+      "benchmark_revision_policy": "prospective_versioned_amendment_only",
+      "rounded_total_remains_frozen": true
+    }
+  },
   "planning_translation": {
     "planning_sessions": 252,
     "implied_target_net_return_fraction_over_planning_sessions": 2.51437064469923,
@@ -52,13 +85,11 @@
     "maximum_planned_year_one_forward_cost_usd": 15000,
     "target_project_economic_surplus_after_forward_costs_usd": 2499370.64469923,
     "required_compounded_net_return_fraction_per_session": 0.005,
-    "target_path_usd_first_session": 5000,
-    "target_path_usd_last_session": 17484.43106815538,
+    "target_log_return_per_session": 0.004987541511039074,
+    "theta_meta_r_per_session": 3.3333333333333335,
+    "theta_kill_r_per_session": 0.15,
     "equivalent_simple_average_virtual_profit_usd_per_session": 9977.661288489008,
-    "implied_return_to_drawdown_ratio": 31.42963305874037,
-    "theta_econ_usd_per_session_status": "nav_dependent_not_a_fixed_daily_dollar_quota",
-    "theta_econ_r_per_session": null,
-    "theta_econ_r_requires_fixed_dollar_risk_and_nav_path": true
+    "implied_return_to_drawdown_ratio": 31.42963305874037
   },
   "success_12_months": {
     "economic": "The virtual portfolio delivers a geometric mean net return of at least 0.5% across every preregistered exchange session in the full 12-month horizon, after simulated execution costs; no-trade sessions count as zero and this is not a mandatory daily quota.",
@@ -66,17 +97,41 @@
     "product_costs": "Real forward data, infrastructure and approved Capex are deducted in the separate project-economics view, not from the virtual trading NAV.",
     "closed_trade_quality_gate": {
       "pnl_basis": "realized_net_after_entry_and_exit_slippage_and_fees",
-      "positive_definition": "realized_net_pnl_usd > 0",
-      "negative_definition": "realized_net_pnl_usd < 0",
-      "flat_definition": "realized_net_pnl_usd = 0",
-      "positive_count_must_strictly_exceed_negative_count": true,
-      "minimum_exclusive_non_flat_win_rate_fraction": 0.5,
-      "flat_trades_excluded_from_win_rate_denominator": true,
-      "evaluation_scope": "preregistered_checkpoints_and_full_12_month_horizon",
+      "exact_ledger_metric": {
+        "epsilon_applied": false,
+        "positive_definition": "realized_net_pnl_usd > 0",
+        "negative_definition": "realized_net_pnl_usd < 0",
+        "flat_definition": "realized_net_pnl_usd = 0",
+        "reported_at_checkpoints_and_final": true
+      },
+      "robust_classification": {
+        "epsilon_trade_formula": "max(exit_half_spread_usd_per_share * quantity, 0.01 * quantity)",
+        "epsilon_represents": "simulated_fill_measurement_uncertainty",
+        "round_trip_cost_reused_as_epsilon": false,
+        "win_definition": "realized_net_pnl_usd > epsilon_trade_usd",
+        "loss_definition": "realized_net_pnl_usd < -epsilon_trade_usd",
+        "tie_definition": "abs(realized_net_pnl_usd) <= epsilon_trade_usd",
+        "ties_excluded_from_win_rate_denominator": true
+      },
+      "binding_test": {
+        "metric": "session_block_bootstrap_lower_confidence_bound_of_robust_win_rate",
+        "minimum_exclusive_fraction": 0.5,
+        "binding_at": "final_12_month_verdict_only",
+        "checkpoint_status": "diagnostic_only"
+      },
       "necessary_but_not_sufficient": true,
-      "positive_expectancy_and_payoff_still_required": true
+      "positive_expectancy_still_required": true
     },
-    "risk": "Peak-to-trough drawdown never exceeds 8% of the prior consolidated qualified-mark peak.",
+    "diagnostic_trade_metrics": {
+      "payoff_ratio_desired_range": [
+        1.3,
+        1.5
+      ],
+      "profit_factor_desired_minimum": 1.5,
+      "binding_gate": false,
+      "confidence_intervals_reported_at_c1_c2_and_final": true
+    },
+    "risk": "Peak-to-trough drawdown never exceeds 8% of the prior consolidated qualified daily-mark peak.",
     "evidence": "Any capital use obeys the frozen promotion gates; results remain fully attributable and reproducible.",
     "operational": "No unresolved material data, execution, ledger or audit-integrity failure invalidates the result.",
     "negative_research_result": "A correctly powered not-validated verdict is a valid research outcome but does not satisfy the economic trading-success target."
