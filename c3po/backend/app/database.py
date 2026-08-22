@@ -23,6 +23,7 @@ class Database:
         self._alert_reads: dict[tuple[str, str], datetime] = {}
         self._navigation_feed_views: dict[tuple[str, str], datetime] = {}
         self._access_users: dict[str, dict[str, Any]] = {}
+        self._totp_credentials: dict[str, dict[str, Any]] = {}
         self._data_sources: dict[str, dict[str, Any]] = {}
         self._ingestion_runs: dict[str, dict[str, Any]] = {}
         self._observations: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -842,9 +843,10 @@ class Database:
                 """
                 INSERT INTO auth_login_codes
                     (id, email, code_hash, expires_at, attempts, max_attempts,
-                     requested_ip, created_at)
+                     requested_ip, created_at, verification_method)
                 VALUES (%(id)s, %(email)s, %(code_hash)s, %(expires_at)s,
-                        %(attempts)s, %(max_attempts)s, %(requested_ip)s, %(created_at)s)
+                        %(attempts)s, %(max_attempts)s, %(requested_ip)s, %(created_at)s,
+                        %(verification_method)s)
                 """,
                 payload,
             )
@@ -858,15 +860,117 @@ class Database:
             row = connection.execute(
                 """
                 SELECT id::text, email, code_hash, expires_at, attempts,
-                       max_attempts, used_at, requested_ip, created_at
+                       max_attempts, used_at, requested_ip, created_at, verification_method
                 FROM auth_login_codes WHERE id = %s
                 """,
                 (challenge_id,),
             ).fetchone()
         if not row:
             return None
-        keys = ("id", "email", "code_hash", "expires_at", "attempts", "max_attempts", "used_at", "requested_ip", "created_at")
+        keys = ("id", "email", "code_hash", "expires_at", "attempts", "max_attempts", "used_at", "requested_ip", "created_at", "verification_method")
         return dict(zip(keys, row))
+
+    def upsert_totp_setup(self, email: str, encrypted_secret: str, expires_at: datetime, at: datetime) -> None:
+        normalized_email = email.strip().lower()
+        payload = {
+            "email": normalized_email,
+            "encrypted_secret": encrypted_secret,
+            "confirmed_at": None,
+            "setup_expires_at": expires_at,
+            "last_used_step": None,
+            "created_at": at,
+            "updated_at": at,
+        }
+        if not self.database_url:
+            self._totp_credentials[normalized_email] = payload
+            return
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO auth_totp_credentials
+                    (email, encrypted_secret, setup_expires_at, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE
+                SET encrypted_secret = EXCLUDED.encrypted_secret,
+                    confirmed_at = NULL,
+                    setup_expires_at = EXCLUDED.setup_expires_at,
+                    last_used_step = NULL,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                (normalized_email, encrypted_secret, expires_at, at, at),
+            )
+            connection.commit()
+
+    def get_totp_credential(self, email: str) -> dict[str, Any] | None:
+        normalized_email = email.strip().lower()
+        if not self.database_url:
+            item = self._totp_credentials.get(normalized_email)
+            return item.copy() if item else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT email, encrypted_secret, confirmed_at, setup_expires_at,
+                       last_used_step, created_at, updated_at
+                FROM auth_totp_credentials WHERE email = %s
+                """,
+                (normalized_email,),
+            ).fetchone()
+        if not row:
+            return None
+        return dict(zip(
+            ("email", "encrypted_secret", "confirmed_at", "setup_expires_at", "last_used_step", "created_at", "updated_at"),
+            row,
+        ))
+
+    def confirm_totp(self, email: str, step: int, at: datetime) -> bool:
+        normalized_email = email.strip().lower()
+        if not self.database_url:
+            item = self._totp_credentials.get(normalized_email)
+            if not item or item["setup_expires_at"] <= at or item.get("confirmed_at"):
+                return False
+            item.update({"confirmed_at": at, "last_used_step": step, "updated_at": at})
+            return True
+        with self.connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE auth_totp_credentials
+                SET confirmed_at = %s, last_used_step = %s, updated_at = %s
+                WHERE email = %s AND confirmed_at IS NULL AND setup_expires_at > %s
+                """,
+                (at, step, at, normalized_email, at),
+            )
+            connection.commit()
+        return cursor.rowcount == 1
+
+    def claim_totp_step(self, email: str, step: int, at: datetime) -> bool:
+        normalized_email = email.strip().lower()
+        if not self.database_url:
+            item = self._totp_credentials.get(normalized_email)
+            if not item or not item.get("confirmed_at") or (item.get("last_used_step") or -1) >= step:
+                return False
+            item.update({"last_used_step": step, "updated_at": at})
+            return True
+        with self.connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE auth_totp_credentials
+                SET last_used_step = %s, updated_at = %s
+                WHERE email = %s AND confirmed_at IS NOT NULL
+                  AND (last_used_step IS NULL OR last_used_step < %s)
+                """,
+                (step, at, normalized_email, step),
+            )
+            connection.commit()
+        return cursor.rowcount == 1
+
+    def delete_totp_credential(self, email: str) -> bool:
+        normalized_email = email.strip().lower()
+        if not self.database_url:
+            return self._totp_credentials.pop(normalized_email, None) is not None
+        with self.connection() as connection:
+            cursor = connection.execute("DELETE FROM auth_totp_credentials WHERE email = %s", (normalized_email,))
+            connection.commit()
+        return cursor.rowcount == 1
 
     def record_login_attempt(self, challenge_id: str, *, used_at: datetime | None = None) -> None:
         if not self.database_url:

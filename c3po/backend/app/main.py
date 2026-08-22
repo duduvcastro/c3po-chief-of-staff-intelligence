@@ -56,6 +56,9 @@ from .schemas import (
     LoginCodeRequest,
     LoginCodeResponse,
     LoginVerifyRequest,
+    TotpCodeRequest,
+    TotpSetupResponse,
+    TotpStatusResponse,
     LiveMarketIndexResponse,
     LiveMarketsResponse,
     InvestorRelationsResponse,
@@ -273,6 +276,7 @@ def authenticated_session_response(request: Request, session: dict) -> AuthSessi
         permissions=session.get("permissions", []),
         capabilities=session.get("capabilities", ["read"]),
         idle_timeout_seconds=None if session.get("role") == "owner" else settings.auth_member_idle_minutes * 60,
+        totp_enabled=auth_service.totp_enabled(session["email"]),
         **client,
     )
 
@@ -350,7 +354,11 @@ def access_list_response() -> AccessUserListResponse:
 @app.post("/api/v1/auth/request-code", response_model=LoginCodeResponse)
 def request_login_code(payload: LoginCodeRequest, request: Request) -> LoginCodeResponse:
     try:
-        challenge_id, expires_in = auth_service.request_code(payload.email, request_ip(request))
+        challenge_id, expires_in, verification_method = auth_service.request_code(
+            payload.email,
+            request_ip(request),
+            payload.delivery_method,
+        )
     except RateLimitError as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except EmailDeliveryError as exc:
@@ -358,8 +366,52 @@ def request_login_code(payload: LoginCodeRequest, request: Request) -> LoginCode
     return LoginCodeResponse(
         challenge_id=challenge_id,
         expires_in_seconds=expires_in,
-        message="Se o e-mail estiver autorizado, o código chegará em instantes.",
+        message=(
+            "Use o código exibido no app Senhas."
+            if verification_method == "totp"
+            else "Se o e-mail estiver autorizado, o código chegará em instantes."
+        ),
+        verification_method=verification_method,
     )
+
+
+@app.get("/api/v1/auth/totp", response_model=TotpStatusResponse)
+def totp_status(request: Request) -> TotpStatusResponse:
+    actor = current_access_actor(request)
+    return TotpStatusResponse(enabled=auth_service.totp_enabled(actor["email"]))
+
+
+@app.post("/api/v1/auth/totp/setup", response_model=TotpSetupResponse)
+def setup_totp(request: Request) -> TotpSetupResponse:
+    actor = current_access_actor(request)
+    try:
+        setup = auth_service.begin_totp_setup(actor["email"])
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    database.record_audit_event(actor["email"], "auth.totp_setup_started", "access_user", actor["email"], {})
+    return TotpSetupResponse(**setup)
+
+
+@app.post("/api/v1/auth/totp/confirm", response_model=TotpStatusResponse)
+def confirm_totp(payload: TotpCodeRequest, request: Request) -> TotpStatusResponse:
+    actor = current_access_actor(request)
+    try:
+        auth_service.confirm_totp_setup(actor["email"], payload.code)
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    database.record_audit_event(actor["email"], "auth.totp_enabled", "access_user", actor["email"], {})
+    return TotpStatusResponse(enabled=True)
+
+
+@app.post("/api/v1/auth/totp/disable", response_model=TotpStatusResponse)
+def disable_totp(payload: TotpCodeRequest, request: Request) -> TotpStatusResponse:
+    actor = current_access_actor(request)
+    try:
+        auth_service.disable_totp(actor["email"], payload.code)
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    database.record_audit_event(actor["email"], "auth.totp_disabled", "access_user", actor["email"], {})
+    return TotpStatusResponse(enabled=False)
 
 
 @app.post("/api/v1/auth/verify-code", response_model=AuthSessionResponse)

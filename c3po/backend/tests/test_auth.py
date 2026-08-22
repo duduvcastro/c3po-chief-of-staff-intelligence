@@ -54,8 +54,9 @@ def test_one_time_code_creates_session_and_cannot_be_reused(monkeypatch) -> None
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda code, _email: sent_codes.append(code))
 
-    challenge_id, expires_in = service.request_code(settings.auth_email, "127.0.0.1")
+    challenge_id, expires_in, method = service.request_code(settings.auth_email, "127.0.0.1")
     assert expires_in == 600
+    assert method == "email"
     assert sent_codes == ["123456"]
 
     token, expires_at, email = service.verify_code(challenge_id, "123456", "127.0.0.1")
@@ -78,9 +79,75 @@ def test_invalid_code_is_rejected(monkeypatch) -> None:
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda _code, _email: None)
 
-    challenge_id, _ = service.request_code(settings.auth_email, "127.0.0.1")
+    challenge_id, _, _ = service.request_code(settings.auth_email, "127.0.0.1")
     with pytest.raises(AuthenticationError):
         service.verify_code(challenge_id, "654321", "127.0.0.1")
+
+
+def test_totp_setup_login_replay_protection_and_email_recovery(monkeypatch) -> None:
+    settings = Settings(
+        auth_required=True,
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+        auth_cookie_secure=False,
+    )
+    database = Database(settings)
+    database.ensure_access_owner(settings.auth_email, ["command"])
+    service = AuthService(settings, database)
+    clock = {"now": datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)}
+    monkeypatch.setattr(service, "now", lambda: clock["now"])
+    sent_codes: list[str] = []
+    monkeypatch.setattr(service, "send_code_email", lambda code, _email: sent_codes.append(code))
+
+    setup = service.begin_totp_setup(settings.auth_email)
+    assert setup["otpauth_uri"].startswith("otpauth://totp/C3PO%3A")
+    assert setup["qr_code_data_url"].startswith("data:image/svg+xml;base64,")
+    setup_step = int(clock["now"].timestamp()) // 30
+    service.confirm_totp_setup(settings.auth_email, service.totp_code(str(setup["secret"]), setup_step))
+    assert service.totp_enabled(settings.auth_email)
+
+    clock["now"] += timedelta(seconds=30)
+    challenge_id, _, method = service.request_code(settings.auth_email, "127.0.0.1")
+    assert method == "totp"
+    assert sent_codes == []
+    login_step = int(clock["now"].timestamp()) // 30
+    login_code = service.totp_code(str(setup["secret"]), login_step)
+    token, _, _ = service.verify_code(challenge_id, login_code, "127.0.0.1")
+    assert service.authenticate(token) is not None
+
+    replay_challenge, _, replay_method = service.request_code(settings.auth_email, "127.0.0.2")
+    assert replay_method == "totp"
+    with pytest.raises(AuthenticationError):
+        service.verify_code(replay_challenge, login_code, "127.0.0.2")
+
+    email_challenge, _, email_method = service.request_code(
+        settings.auth_email,
+        "127.0.0.3",
+        delivery_method="email",
+    )
+    assert email_method == "email"
+    assert len(sent_codes) == 1
+    recovered_token, _, _ = service.verify_code(email_challenge, sent_codes[0], "127.0.0.3")
+    assert service.authenticate(recovered_token) is not None
+
+
+def test_totp_setup_rejects_invalid_code_and_expires(monkeypatch) -> None:
+    settings = Settings(
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+    )
+    database = Database(settings)
+    database.ensure_access_owner(settings.auth_email, ["command"])
+    service = AuthService(settings, database)
+    clock = {"now": datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)}
+    monkeypatch.setattr(service, "now", lambda: clock["now"])
+
+    service.begin_totp_setup(settings.auth_email)
+    with pytest.raises(AuthenticationError):
+        service.confirm_totp_setup(settings.auth_email, "000000")
+    clock["now"] += timedelta(minutes=11)
+    with pytest.raises(AuthenticationError, match="expirou"):
+        service.confirm_totp_setup(settings.auth_email, "000000")
 
 
 def test_allowlisted_member_receives_code_and_permissions_follow_session(monkeypatch) -> None:
@@ -107,7 +174,7 @@ def test_allowlisted_member_receives_code_and_permissions_follow_session(monkeyp
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda code, email: sent.append((code, email)))
 
-    challenge_id, _ = service.request_code("MEMBER@example.com", "127.0.0.1")
+    challenge_id, _, _ = service.request_code("MEMBER@example.com", "127.0.0.1")
     assert sent == [("123456", "member@example.com")]
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
     session = service.authenticate(token)
@@ -144,7 +211,7 @@ def test_member_session_expires_after_sixty_minutes_without_human_activity(monke
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda _code, _email: None)
 
-    challenge_id, _ = service.request_code("member@example.com", "127.0.0.1")
+    challenge_id, _, _ = service.request_code("member@example.com", "127.0.0.1")
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
     clock["now"] += timedelta(minutes=59)
     assert service.authenticate(token) is not None
@@ -179,7 +246,7 @@ def test_human_activity_renews_member_idle_window(monkeypatch) -> None:
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda _code, _email: None)
 
-    challenge_id, _ = service.request_code("active@example.com", "127.0.0.1")
+    challenge_id, _, _ = service.request_code("active@example.com", "127.0.0.1")
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
     clock["now"] += timedelta(minutes=50)
     assert service.authenticate(token, touch_activity=True) is not None
@@ -206,7 +273,7 @@ def test_owner_session_ignores_idle_timeout_and_expires_daily(monkeypatch) -> No
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda _code, _email: None)
 
-    challenge_id, _ = service.request_code(settings.auth_email, "127.0.0.1")
+    challenge_id, _, _ = service.request_code(settings.auth_email, "127.0.0.1")
     token, expires_at, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
     assert expires_at == clock["now"] + timedelta(hours=24)
     clock["now"] += timedelta(hours=23)
