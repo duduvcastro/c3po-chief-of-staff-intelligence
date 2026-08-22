@@ -949,6 +949,8 @@ button { cursor: pointer; }
 .falcon-portfolio-ticker-item > div { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
 .falcon-portfolio-ticker-item strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .falcon-portfolio-ticker-item > div span { font-size: 17px; font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.falcon-portfolio-ticker-item .ticker-price-up { color: #25c86a; }
+.falcon-portfolio-ticker-item .ticker-price-down { color: #ff5b61; }
 .falcon-portfolio-ticker-item p { display: flex; align-items: baseline; gap: 6px; margin: 8px 0 0; font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
 .falcon-portfolio-ticker-item p > span { font-size: 21px; line-height: .6; }
 .falcon-portfolio-ticker-item p small { font-size: 12px; font-weight: 750; }
