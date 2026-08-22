@@ -44,6 +44,10 @@ def test_contract_authorizes_stage_zero_only() -> None:
         "target_is_mandatory_each_session": False,
         "target_session_population": "all_preregistered_exchange_sessions",
         "no_trade_session_return_fraction": 0,
+        "closed_trade_net_win_rate_minimum_exclusive": 0.5,
+        "closed_trade_positive_count_must_exceed_negative_count": True,
+        "closed_trade_pnl_basis": "realized_net_after_all_simulated_costs",
+        "target_revision_is_prospective_and_versioned_only": True,
         "maximum_drawdown_fraction": 0.08,
         "capex_and_opex_are_real_product_investments": True,
     }

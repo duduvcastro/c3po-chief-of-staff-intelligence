@@ -57,6 +57,7 @@ calculation explained in
 | Maximum recurring monthly data/infrastructure spend | USD 1,000 |
 | Net-return target | 0.5% geometric mean across every preregistered exchange session, compounded on virtual NAV |
 | Implied 252-session virtual return | Approximately 251.44% |
+| Closed-trade quality gate | Net positive trades must strictly outnumber net negative trades |
 | Maximum acceptable peak-to-trough drawdown | 8% |
 | First-session target-path edge | USD 5,000 at USD 1,000,000 NAV |
 | Resulting `theta_econ` in R/session | NAV-dependent; pending fixed dollar-risk budget and full path |
@@ -72,6 +73,12 @@ be excluded. This is a horizon-level target, never a mandatory daily quota.
 Capex and Opex are real product investments reported separately from virtual
 trading NAV. A correctly powered `not validated` verdict is a valid research
 result but does not satisfy the owner's economic trading-success target.
+
+The win-count gate uses realized net P&L after simulated entry and exit costs.
+Flat trades are reported separately. A win rate above 50% does not replace the
+requirements for positive expectancy, adequate payoff, the geometric return
+target or the drawdown limit. Any later reduction of the 0.5% target must be a
+prospective, versioned owner decision and cannot re-score historical results.
 
 ## Research question and ledgers
 

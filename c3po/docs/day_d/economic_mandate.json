@@ -14,6 +14,13 @@
   "no_trade_session_return_fraction": 0,
   "sessions_cannot_be_excluded_for_no_trade_or_negative_return": true,
   "target_net_of_simulated_execution_costs": true,
+  "target_revision_policy": {
+    "revision_allowed": true,
+    "prospective_only": true,
+    "versioned_owner_approval_required": true,
+    "historical_results_keep_the_mandate_active_when_generated": true,
+    "retroactive_goalpost_change_forbidden": true
+  },
   "maximum_drawdown_fraction": 0.08,
   "maximum_drawdown_usd_at_reference_capital": 80000,
   "drawdown_measurement": {
@@ -57,6 +64,18 @@
     "economic": "The virtual portfolio delivers a geometric mean net return of at least 0.5% across every preregistered exchange session in the full 12-month horizon, after simulated execution costs; no-trade sessions count as zero and this is not a mandatory daily quota.",
     "capital": "No real trading capital is exposed during the 12-month research horizon; Capex and Opex are real product investments tracked separately.",
     "product_costs": "Real forward data, infrastructure and approved Capex are deducted in the separate project-economics view, not from the virtual trading NAV.",
+    "closed_trade_quality_gate": {
+      "pnl_basis": "realized_net_after_entry_and_exit_slippage_and_fees",
+      "positive_definition": "realized_net_pnl_usd > 0",
+      "negative_definition": "realized_net_pnl_usd < 0",
+      "flat_definition": "realized_net_pnl_usd = 0",
+      "positive_count_must_strictly_exceed_negative_count": true,
+      "minimum_exclusive_non_flat_win_rate_fraction": 0.5,
+      "flat_trades_excluded_from_win_rate_denominator": true,
+      "evaluation_scope": "preregistered_checkpoints_and_full_12_month_horizon",
+      "necessary_but_not_sufficient": true,
+      "positive_expectancy_and_payoff_still_required": true
+    },
     "risk": "Peak-to-trough drawdown never exceeds 8% of the prior consolidated qualified-mark peak.",
     "evidence": "Any capital use obeys the frozen promotion gates; results remain fully attributable and reproducible.",
     "operational": "No unresolved material data, execution, ledger or audit-integrity failure invalidates the result.",

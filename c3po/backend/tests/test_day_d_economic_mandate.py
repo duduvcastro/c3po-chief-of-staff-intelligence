@@ -84,6 +84,29 @@ def test_additional_capex_requires_an_incremental_case() -> None:
     }
 
 
+def test_closed_trade_quality_gate_is_net_and_cannot_replace_expectancy() -> None:
+    gate = _mandate()["success_12_months"]["closed_trade_quality_gate"]
+
+    assert gate["pnl_basis"] == (
+        "realized_net_after_entry_and_exit_slippage_and_fees"
+    )
+    assert gate["positive_count_must_strictly_exceed_negative_count"] is True
+    assert gate["minimum_exclusive_non_flat_win_rate_fraction"] == 0.5
+    assert gate["flat_trades_excluded_from_win_rate_denominator"] is True
+    assert gate["necessary_but_not_sufficient"] is True
+    assert gate["positive_expectancy_and_payoff_still_required"] is True
+
+
+def test_target_can_only_be_revised_prospectively() -> None:
+    policy = _mandate()["target_revision_policy"]
+
+    assert policy["revision_allowed"] is True
+    assert policy["prospective_only"] is True
+    assert policy["versioned_owner_approval_required"] is True
+    assert policy["historical_results_keep_the_mandate_active_when_generated"] is True
+    assert policy["retroactive_goalpost_change_forbidden"] is True
+
+
 def test_r_normalized_threshold_remains_blocked_until_risk_is_frozen() -> None:
     planning = _mandate()["planning_translation"]
 

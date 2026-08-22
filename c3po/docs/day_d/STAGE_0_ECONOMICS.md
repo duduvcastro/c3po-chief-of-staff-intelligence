@@ -15,6 +15,10 @@ Source: [`economic_mandate.json`](economic_mandate.json)
 - The target is not a mandatory daily quota. The system must never manufacture
   trades, weaken gates or increase risk merely to reach 0.5% on a particular
   day.
+- At preregistered checkpoints and at the end of 12 months, profitable closed
+  trades must strictly outnumber losing closed trades. A trade is positive or
+  negative only by realized net P&L after simulated slippage and fees; exact
+  zeroes are reported separately.
 - Maximum drawdown: 8% peak-to-trough, without calendar reset.
 - Recurring data/infrastructure budget: at most USD 1,000 per month.
 - Baseline new Capex: USD 3,000.
@@ -26,6 +30,11 @@ subscription that continues during the experiment does count toward the USD
 1,000 monthly forward-cost ceiling. Capex and Opex are real investments in the
 product. They are tracked in the project-economics ledger, while the trading
 portfolio remains virtual.
+
+The 0.5% target may be lowered later if evidence shows that it is not credible,
+but only through a prospective, versioned owner decision. Historical results
+remain judged against the mandate active when they were generated; the target
+cannot be changed retroactively to turn a miss into a success.
 
 ## Preliminary translation
 
@@ -46,6 +55,11 @@ Using 252 sessions only as a planning assumption:
 The first-session, last-session and simple-average figures only describe the
 mathematical path that earns exactly 0.5% every session. They are not daily
 quotas and do not authorize forced trading.
+
+More positive trades than negative trades is necessary but not sufficient. A
+system can win often and still lose money when its average loss is too large.
+The net geometric return, expectancy, payoff profile and 8% drawdown limit
+therefore remain independent requirements.
 
 The final session count comes from the exchange calendar starting on the first
 unburned session after the hashed pre-registration. Actual spend replaces the
