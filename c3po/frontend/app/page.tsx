@@ -3122,6 +3122,7 @@ function R2D2RisingView() {
   }).format(value).replace("$", "US$ ");
   const signedMoney = (value: number) => `${value >= 0 ? "+" : "-"}${money(Math.abs(value))}`;
   const signedPercent = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+  const signedPositionPercent = (returnPercent: number, pnlUsd: number) => `${pnlUsd >= 0 ? "+" : "-"}${Math.abs(returnPercent).toFixed(2)}%`;
   const cashPercent = data.nav_usd > 0 ? data.cash_usd / data.nav_usd * 100 : 100;
   const saoPauloDateKey = (value: string | Date) => new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -3160,7 +3161,7 @@ function R2D2RisingView() {
         name: position.name,
         market: position.market,
         rationale: `Motor state: ${position.decision_state || "monitoring"}. Technical score ${position.technical_score.toFixed(1)}; trend ${position.trend_state}; flow ${position.volume_state}.`,
-        detail: `Position ${signedPercent(position.unrealized_return_percent)} · stop ${position.currency} ${position.stop_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · quote ${position.quote_status}.`,
+        detail: `Position ${signedPositionPercent(position.unrealized_return_percent, position.unrealized_pnl_usd)} · stop ${position.currency} ${position.stop_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · quote ${position.quote_status}.`,
         tone: "monitor"
       }))
   ].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
@@ -3374,7 +3375,7 @@ function R2D2RisingView() {
             <span>{position.allocation_percent.toFixed(1)}%</span>
             <strong className="r2d2-position-value">{moneyExact(position.market_value_usd)}</strong>
             <div className="r2d2-live-pnl">
-              <strong className={position.unrealized_pnl_usd >= 0 ? "positive" : "negative"}>{signedPercent(position.unrealized_return_percent)}</strong>
+              <strong className={position.unrealized_pnl_usd >= 0 ? "positive" : "negative"}>{signedPositionPercent(position.unrealized_return_percent, position.unrealized_pnl_usd)}</strong>
               <span className={position.unrealized_pnl_usd >= 0 ? "positive" : "negative"}>
                 {`${position.unrealized_pnl_usd >= 0 ? "+" : "-"}${moneyExact(Math.abs(position.unrealized_pnl_usd))}`}
               </span>
@@ -3844,7 +3845,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
             {[0, 1].map((copy) => (
               <div className="falcon-portfolio-ticker-set" aria-hidden={copy === 1} key={copy}>
                 {r2d2.positions.map((position) => {
-                  const isPositive = position.unrealized_return_percent >= 0;
+                  const isPositive = position.unrealized_pnl_usd >= 0;
                   const price = new Intl.NumberFormat(position.currency === "BRL" ? "pt-BR" : "en-US", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
@@ -3853,7 +3854,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
                     <div className="falcon-portfolio-ticker-item" key={`${copy}-${position.market}-${position.symbol}`}>
                       <div><strong>{position.symbol}</strong><span className={isPositive ? "ticker-price-up" : "ticker-price-down"}>{position.currency === "BRL" ? "R$ " : "$ "}{price}</span></div>
                       <p className={isPositive ? "ticker-change-up" : "ticker-change-down"}>
-                        {isPositive ? "+" : ""}{position.unrealized_return_percent.toFixed(2)}%
+                        {isPositive ? "+" : "-"}{Math.abs(position.unrealized_return_percent).toFixed(2)}%
                         <small>($ {usd(Math.abs(position.unrealized_pnl_usd)).replace("US$ ", "")})</small>
                       </p>
                     </div>
