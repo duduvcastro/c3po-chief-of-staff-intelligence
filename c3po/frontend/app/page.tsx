@@ -7428,7 +7428,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [verificationMethod, setVerificationMethod] = useState<"email" | "totp">("email");
+  const [requestedDelivery, setRequestedDelivery] = useState<"auto" | "email">("auto");
 
   const requestCode = async (deliveryMethod: "auto" | "email" = "auto") => {
     setLoading(true);
@@ -7443,10 +7443,8 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "Não foi possível enviar o código.");
       setChallengeId(payload.challenge_id);
-      setVerificationMethod(payload.verification_method);
-      setMessage(payload.verification_method === "totp"
-        ? "Use o código de seis dígitos salvo no app Senhas."
-        : `Código enviado. Ele vale por ${Math.round(payload.expires_in_seconds / 60)} minutos.`);
+      setRequestedDelivery(deliveryMethod);
+      setMessage(`O código vale por ${Math.round(payload.expires_in_seconds / 60)} minutos.`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Não foi possível enviar o código.");
     } finally {
@@ -7485,7 +7483,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     setCode("");
     setMessage("");
     setError("");
-    setVerificationMethod("email");
+    setRequestedDelivery("auto");
   };
 
   return (
@@ -7500,7 +7498,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           <span>Secure command access</span>
           <h1 id="login-title">{challengeId ? "Digite o código" : "Acesse seu command center"}</h1>
           <p>{challengeId
-            ? verificationMethod === "totp" ? "Use o código automático configurado no app Senhas." : `Enviamos um código de seis dígitos para ${email}.`
+            ? "Use seu código de seis dígitos. Ele pode estar no autenticador ou no e-mail autorizado."
             : "Use seu e-mail autorizado. Nenhuma senha é necessária."}</p>
         </div>
 
@@ -7512,11 +7510,11 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           </form>
         ) : (
           <form onSubmit={(event) => { event.preventDefault(); verifyCode(); }} className="login-form">
-            <label htmlFor="login-code">{verificationMethod === "totp" ? "Código do app Senhas" : "Código de acesso"}</label>
+            <label htmlFor="login-code">Código de acesso</label>
             <div className="login-input login-code-input"><LockKeyhole size={18} /><input id="login-code" name="one-time-code" type="text" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" pattern="\d{6}" required autoFocus /></div>
             {message && <p className="login-message">{message}</p>}
             <button className="login-primary" type="submit" disabled={loading || code.length !== 6}>{loading ? "Validando..." : "Entrar no C3PO"}</button>
-            {verificationMethod === "totp" && <button className="login-secondary" type="button" disabled={loading} onClick={() => void requestCode("email")}>Receber código por e-mail</button>}
+            {requestedDelivery !== "email" && <button className="login-secondary" type="button" disabled={loading} onClick={() => void requestCode("email")}>Receber código por e-mail</button>}
             <button className="login-secondary" type="button" onClick={resetLogin}>Usar outro e-mail</button>
           </form>
         )}

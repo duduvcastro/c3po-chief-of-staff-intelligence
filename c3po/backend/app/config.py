@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     auth_email: str = "eu@eduardocastro.com.br"
     auth_secret: str = "development-only-change-me"
     auth_code_minutes: int = 10
+    auth_request_limit_per_email: int = 5
+    auth_request_limit_per_ip: int = 10
+    auth_verify_failure_limit_per_ip: int = 15
+    auth_rate_limit_minutes: int = 15
     auth_session_hours: int = 24
     auth_owner_session_hours: int = 24
     auth_member_idle_minutes: int = 60

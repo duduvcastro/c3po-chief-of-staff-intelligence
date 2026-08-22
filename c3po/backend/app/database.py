@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import threading
 from datetime import date, datetime
 from contextlib import contextmanager
 from pathlib import Path
@@ -18,6 +19,7 @@ class Database:
         self.migrations_dir = settings.migrations_dir
         self.fallback_path = Path(__file__).resolve().parents[2] / "data" / "feedback.jsonl"
         self._login_codes: dict[str, dict[str, Any]] = {}
+        self._auth_lock = threading.RLock()
         self._sessions: dict[str, dict[str, Any]] = {}
         self._audit_events: list[dict[str, Any]] = []
         self._alert_reads: dict[tuple[str, str], datetime] = {}
@@ -820,25 +822,45 @@ class Database:
             ).fetchone()
         return row[0], int(row[1] or 0)
 
-    def recent_login_code_count(self, email: str, requested_ip: str, since: datetime) -> int:
+    def recent_login_code_counts(self, email: str, requested_ip: str, since: datetime) -> tuple[int, int]:
         if not self.database_url:
-            return sum(
-                1 for item in self._login_codes.values()
-                if (item["email"] == email or item["requested_ip"] == requested_ip)
-                and item["created_at"] >= since
-            )
+            with self._auth_lock:
+                email_count = sum(
+                    1 for item in self._login_codes.values()
+                    if item["email"] == email and item["created_at"] >= since
+                )
+                ip_count = sum(
+                    1 for item in self._login_codes.values()
+                    if item["requested_ip"] == requested_ip and item["created_at"] >= since
+                )
+                return email_count, ip_count
         with self.connection() as connection:
             row = connection.execute(
-                "SELECT count(*) FROM auth_login_codes WHERE (email = %s OR requested_ip = %s) AND created_at >= %s",
+                """
+                SELECT count(*) FILTER (WHERE email = %s),
+                       count(*) FILTER (WHERE requested_ip = %s)
+                FROM auth_login_codes WHERE created_at >= %s
+                """,
                 (email, requested_ip, since),
             ).fetchone()
-        return int(row[0])
+        return int(row[0]), int(row[1])
 
     def create_login_code(self, payload: dict[str, Any]) -> None:
         if not self.database_url:
-            self._login_codes[payload["id"]] = payload.copy()
+            with self._auth_lock:
+                for item in self._login_codes.values():
+                    if item["email"] == payload["email"] and not item.get("used_at"):
+                        item["used_at"] = payload["created_at"]
+                self._login_codes[payload["id"]] = payload.copy()
             return
         with self.connection() as connection:
+            connection.execute(
+                """
+                UPDATE auth_login_codes SET used_at = %s
+                WHERE email = %s AND used_at IS NULL
+                """,
+                (payload["created_at"], payload["email"]),
+            )
             connection.execute(
                 """
                 INSERT INTO auth_login_codes
@@ -851,6 +873,108 @@ class Database:
                 payload,
             )
             connection.commit()
+
+    def claim_login_attempt(
+        self,
+        challenge_id: str,
+        *,
+        code_valid: bool,
+        requested_ip: str,
+        at: datetime,
+        since: datetime,
+        ip_failure_limit: int,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Atomically consume one challenge attempt and enforce the IP failure budget."""
+        if not self.database_url:
+            with self._auth_lock:
+                failures = sum(
+                    1 for event in self._audit_events
+                    if event["action"] == "auth.otp_failed"
+                    and event["detail"].get("requested_ip") == requested_ip
+                    and event["occurred_at"] >= since
+                )
+                if failures >= ip_failure_limit:
+                    return "rate_limited", None
+                item = self._login_codes.get(challenge_id)
+                active = bool(
+                    item and not item.get("used_at") and item["expires_at"] > at
+                    and item["attempts"] < item["max_attempts"]
+                )
+                if not active:
+                    self.record_audit_event(
+                        item["email"] if item else "anonymous",
+                        "auth.otp_failed", "auth_challenge", challenge_id,
+                        {"requested_ip": requested_ip, "reason": "inactive_challenge"},
+                    )
+                    return "invalid", item.copy() if item else None
+                item["attempts"] += 1
+                if code_valid:
+                    item["used_at"] = at
+                    return "accepted", item.copy()
+                self.record_audit_event(
+                    item["email"], "auth.otp_failed", "auth_challenge", challenge_id,
+                    {"requested_ip": requested_ip, "reason": "invalid_code", "attempts": item["attempts"]},
+                )
+                return "invalid", item.copy()
+
+        with self.connection() as connection:
+            connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"auth-verify:{requested_ip}",))
+            failures = connection.execute(
+                """
+                SELECT count(*) FROM audit_events
+                WHERE action = 'auth.otp_failed' AND occurred_at >= %s
+                  AND detail->>'requested_ip' = %s
+                """,
+                (since, requested_ip),
+            ).fetchone()[0]
+            if int(failures) >= ip_failure_limit:
+                connection.commit()
+                return "rate_limited", None
+            row = connection.execute(
+                """
+                SELECT id::text, email, code_hash, expires_at, attempts, max_attempts,
+                       used_at, requested_ip, created_at, verification_method
+                FROM auth_login_codes WHERE id = %s FOR UPDATE
+                """,
+                (challenge_id,),
+            ).fetchone()
+            keys = ("id", "email", "code_hash", "expires_at", "attempts", "max_attempts", "used_at", "requested_ip", "created_at", "verification_method")
+            challenge = dict(zip(keys, row)) if row else None
+            active = bool(
+                challenge and not challenge["used_at"] and challenge["expires_at"] > at
+                and challenge["attempts"] < challenge["max_attempts"]
+            )
+            accepted = bool(active and code_valid)
+            if active:
+                row = connection.execute(
+                    """
+                    UPDATE auth_login_codes
+                    SET attempts = attempts + 1,
+                        used_at = CASE WHEN %s THEN %s ELSE used_at END
+                    WHERE id = %s AND used_at IS NULL AND expires_at > %s
+                      AND attempts < max_attempts
+                    RETURNING id::text, email, code_hash, expires_at, attempts, max_attempts,
+                              used_at, requested_ip, created_at, verification_method
+                    """,
+                    (accepted, at, challenge_id, at),
+                ).fetchone()
+                challenge = dict(zip(keys, row)) if row else challenge
+                accepted = bool(row and accepted)
+            if not accepted:
+                actor = challenge["email"] if challenge else "anonymous"
+                reason = "invalid_code" if active else "inactive_challenge"
+                connection.execute(
+                    """
+                    INSERT INTO audit_events (id, actor, action, subject_type, subject_id, detail)
+                    VALUES (%s, %s, 'auth.otp_failed', 'auth_challenge', %s, %s::jsonb)
+                    """,
+                    (
+                        str(uuid4()), actor, challenge_id,
+                        json.dumps({"requested_ip": requested_ip, "reason": reason}),
+                    ),
+                )
+            connection.commit()
+        return ("accepted" if accepted else "invalid"), challenge
 
     def get_login_code(self, challenge_id: str) -> dict[str, Any] | None:
         if not self.database_url:
@@ -971,25 +1095,6 @@ class Database:
             cursor = connection.execute("DELETE FROM auth_totp_credentials WHERE email = %s", (normalized_email,))
             connection.commit()
         return cursor.rowcount == 1
-
-    def record_login_attempt(self, challenge_id: str, *, used_at: datetime | None = None) -> None:
-        if not self.database_url:
-            item = self._login_codes.get(challenge_id)
-            if item:
-                item["attempts"] += 1
-                if used_at:
-                    item["used_at"] = used_at
-            return
-        with self.connection() as connection:
-            connection.execute(
-                """
-                UPDATE auth_login_codes
-                SET attempts = attempts + 1, used_at = COALESCE(%s, used_at)
-                WHERE id = %s
-                """,
-                (used_at, challenge_id),
-            )
-            connection.commit()
 
     def create_session(self, payload: dict[str, Any]) -> None:
         if not self.database_url:
