@@ -2739,6 +2739,19 @@ type LeahCalendarMode = "day" | "month" | "year";
 
 const leahDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const leahStartOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const leahBrazilNationalHolidays: Record<string, string> = {
+  "01-01": "Confraternização Universal",
+  "04-21": "Tiradentes",
+  "05-01": "Dia Mundial do Trabalho",
+  "09-07": "Independência do Brasil",
+  "10-12": "Nossa Senhora Aparecida",
+  "11-02": "Finados",
+  "11-15": "Proclamação da República",
+  "11-20": "Dia Nacional de Zumbi e da Consciência Negra",
+  "12-25": "Natal"
+};
+const leahHolidayName = (date: Date) => leahBrazilNationalHolidays[leahDateKey(date).slice(5)] ?? null;
+const leahIsWeekend = (date: Date) => date.getDay() === 0 || date.getDay() === 6;
 const leahDateTimeInput = (value: string | null) => {
   if (!value) return "";
   const date = new Date(value);
@@ -3007,7 +3020,13 @@ function LeahCloudView({ session }: { session: AuthSession }) {
               const dayEvents = eventsByDay.get(key) ?? [];
               const outside = date.getMonth() !== calendarCursor.getMonth();
               const isToday = key === leahDateKey(new Date());
-              return <div key={key} className={`leah-calendar-day ${outside ? "outside" : ""} ${isToday ? "today" : ""}`} onClick={() => { setCalendarCursor(date); openEventEditor(date); }}>
+              const holidayName = leahHolidayName(date);
+              return <div
+                key={key}
+                className={`leah-calendar-day ${outside ? "outside" : ""} ${leahIsWeekend(date) ? "weekend" : ""} ${holidayName ? "holiday" : ""} ${isToday ? "today" : ""}`}
+                title={holidayName ?? undefined}
+                onClick={() => { setCalendarCursor(date); openEventEditor(date); }}
+              >
                 <button type="button" className="leah-day-number" onClick={(event) => { event.stopPropagation(); setCalendarCursor(date); setCalendarMode("day"); }}>{date.getDate()}</button>
                 <div className="leah-day-events">{dayEvents.slice(0, 4).map((item) => <button type="button" key={item.id} onClick={(event) => { event.stopPropagation(); openEventEditor(date, item); }}><i /><span>{item.title}</span><time>{item.is_all_day ? "" : new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(item.starts_at!))}</time></button>)}{dayEvents.length > 4 && <small>e mais {dayEvents.length - 4}</small>}</div>
               </div>;
@@ -3019,7 +3038,14 @@ function LeahCloudView({ session }: { session: AuthSession }) {
           </div>}
           {calendarMode === "year" && <div className="leah-year-view">{Array.from({ length: 12 }, (_, month) => {
             const monthDate = new Date(calendarCursor.getFullYear(), month, 1);
-            return <button type="button" key={month} onClick={() => { setCalendarCursor(monthDate); setCalendarMode("month"); }}><strong>{new Intl.DateTimeFormat("pt-BR", { month: "long" }).format(monthDate)}</strong><div>{["D", "S", "T", "Q", "Q", "S", "S"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}{leahMonthCells(monthDate).map((date) => <i key={leahDateKey(date)} className={`${date.getMonth() === month ? "" : "outside"} ${(eventsByDay.get(leahDateKey(date))?.length ?? 0) > 0 ? "has-event" : ""}`}>{date.getDate()}</i>)}</div></button>;
+            return <button type="button" key={month} onClick={() => { setCalendarCursor(monthDate); setCalendarMode("month"); }}><strong>{new Intl.DateTimeFormat("pt-BR", { month: "long" }).format(monthDate)}</strong><div>{["D", "S", "T", "Q", "Q", "S", "S"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}{leahMonthCells(monthDate).map((date) => {
+              const holidayName = leahHolidayName(date);
+              return <i
+                key={leahDateKey(date)}
+                className={`${date.getMonth() === month ? "" : "outside"} ${leahIsWeekend(date) ? "weekend" : ""} ${holidayName ? "holiday" : ""} ${(eventsByDay.get(leahDateKey(date))?.length ?? 0) > 0 ? "has-event" : ""}`}
+                title={holidayName ?? undefined}
+              >{date.getDate()}</i>;
+            })}</div></button>;
           })}</div>}
         </section>
       ) : (
