@@ -5,6 +5,9 @@ Date: 2026-08-22
 Owners: Dudu, Codex and Fable  
 Machine-readable companion: [`day_d/stage0_contract.json`](day_d/stage0_contract.json)
 
+Signal and universe freeze:
+[`day_d/replay_signal_spec_v1.json`](day_d/replay_signal_spec_v1.json)
+
 ## Mandate
 
 Day D builds an intelligence that accumulates evidence every session and changes
@@ -20,7 +23,8 @@ primary estimand for kill and promotion.
 
 This document authorizes specification and research work in Stage 0. It does
 not authorize a production strategy change, capital promotion, raw-capture
-rollout, provider purchase or parameter freeze.
+rollout or provider purchase. A parameter becomes frozen only through its own
+six-hands-reviewed Stage 0 contract.
 
 ## Construction governance
 
@@ -117,7 +121,8 @@ Generation 1 contains only:
 - `S5-v1`: bar-based VWAP mean reversion without CVD.
 
 Both setups receive equal experimental weight. Thompson Sampling is disabled.
-Risk in dollars per trade is fixed, simultaneous exposure is capped at five
+At entry, risk is 0.15% of current virtual NAV; that resulting dollar budget is
+then fixed for the trade's lifetime. Simultaneous exposure is capped at five
 positions and duplicate economic exposure to the same symbol is blocked.
 Weekly conviction does not alter entry, sizing or exit in this experimental
 book.
@@ -125,7 +130,8 @@ book.
 The deterministic daily universe is 60 US common stocks plus QQQ, constructed
 using only information available by D-1. The exact security filters, twenty-
 session median dollar-volume calculation and deterministic tie/substitution
-rules are frozen in Stage 0.
+rules are frozen in
+[`day_d/replay_signal_spec_v1.json`](day_d/replay_signal_spec_v1.json).
 
 Changing a material setup rule creates a new setup version with a new evidence
 history. S5-v2 may use qualified tick-derived CVD in the future; it does not
@@ -151,6 +157,13 @@ Unlimited carry introduces serial dependence between daily marks. The final
 pre-registration therefore may not rely on an unadjusted iid t-test. Stage 0
 must specify a dependence-aware primary procedure or simulation-calibrated
 critical values; weekly block bootstrap remains a required sensitivity.
+
+At the final pre-registration hash, the observed annual US three-month Treasury
+bill rate is converted to R/session as `(annual_rate_decimal / 252) / 0.0015`.
+The binding floor is reconciled once as
+`max(0.15R, operating_cost_R_per_session + benchmark_rate_R_per_session)`.
+The source, rate, timestamp, converted component and final result are all part
+of the hash.
 
 ## Data and validation gates
 

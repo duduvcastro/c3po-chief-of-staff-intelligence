@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import time, timedelta, datetime
 from pathlib import Path
 
@@ -44,10 +45,21 @@ def test_contract_authorizes_stage_zero_only() -> None:
         "r_per_session": 0.005 / 0.0015,
         "kill_authority": False,
     }
-    assert owner_inputs["theta_kill"]["status"] == "frozen"
+    assert owner_inputs["theta_kill"]["status"] == (
+        "formula_frozen_pending_benchmark_snapshot_at_hash"
+    )
     assert owner_inputs["theta_kill"]["r_per_session"] == 0.15
     assert owner_inputs["theta_kill"]["benchmark"] == (
         "US_3_MONTH_TREASURY_BILL"
+    )
+    assert owner_inputs["theta_kill"]["benchmark_rate_to_r_per_session_formula"] == (
+        "(annual_rate_decimal / 252) / 0.0015"
+    )
+    assert owner_inputs["theta_kill"]["final_reconciliation_formula"] == (
+        "max(0.15, operating_cost_component_r_per_session_at_initial_nav + benchmark_rate_r_per_session)"
+    )
+    assert owner_inputs["theta_kill"]["o1_reconciliation_rule_status"] == (
+        "closed_and_frozen"
     )
     assert owner_inputs["success_definition_12_months"] == {
         "status": "recorded",
@@ -160,6 +172,19 @@ def test_inference_separates_product_target_from_kill_threshold() -> None:
     assert inference["theta_kill"]["r_per_session"] == 0.15
     assert inference["theta_kill"]["binding_at"] == ["C1", "C2"]
     assert inference["theta_kill"]["cost_assumption"] == "optimistic"
+    assert inference["theta_kill"]["benchmark_rate_to_r_per_session_formula"] == (
+        "(annual_rate_decimal / 252) / 0.0015"
+    )
+    assert inference["theta_kill"]["final_reconciliation_formula"] == (
+        "max(0.15, operating_cost_r_per_session + benchmark_rate_r_per_session)"
+    )
+    assert set(inference["theta_kill"]["hash_must_record"]) == {
+        "benchmark_source",
+        "annual_rate_decimal",
+        "observed_at",
+        "benchmark_rate_r_per_session",
+        "theta_kill_final_r_per_session",
+    }
 
     joint = inference["joint_h0_kill_rule"]
     assert joint["blades"] == ["futility", "damage", "placebo"]
@@ -169,6 +194,24 @@ def test_inference_separates_product_target_from_kill_threshold() -> None:
     assert joint["class_kill_probability_minimum"] == 0.80
     assert joint["stage2_path_simulation_required"] is True
     assert joint["analytic_independence_approximation_is_binding"] is False
+
+
+def test_theta_kill_reconciliation_reproduces_the_approved_budget() -> None:
+    theta = _contract()["stage0"]["owner_inputs"]["theta_kill"]
+
+    benchmark_rate_r = (0.0417 / 252) / 0.0015
+    assert math.isclose(
+        benchmark_rate_r,
+        theta["opportunity_cost_component_budget_r_per_session"],
+        rel_tol=0,
+        abs_tol=1e-15,
+    )
+    reconciled = max(
+        theta["r_per_session"],
+        theta["operating_cost_component_r_per_session_at_initial_nav"]
+        + benchmark_rate_r,
+    )
+    assert math.isclose(reconciled, 0.15, rel_tol=0, abs_tol=1e-15)
 
 
 def test_win_rate_is_robust_and_binding_only_at_final_verdict() -> None:
@@ -199,7 +242,19 @@ def test_stage_zero_cannot_claim_completion_with_open_freeze_items() -> None:
         "selected_risk_fraction_per_trade": 0.0015,
         "joint_h0_kill_calibration_status": "pending_stage2_path_simulation",
     }
-    assert len(stage0["freeze_required_before_replay_eligible"]) >= 14
+    assert stage0["signal_and_universe_freeze"]["status"] == (
+        "frozen_on_merge_after_six_hands_review"
+    )
+    assert stage0["signal_and_universe_freeze"]["contract"] == (
+        "day_d/replay_signal_spec_v1.json"
+    )
+    assert len(stage0["signal_and_universe_freeze"]["resolved_items"]) == 10
+    assert stage0["freeze_required_before_replay_eligible"] == [
+        "fresh quote and eligible fill definitions",
+        "corporate action, halt and delisting accounting",
+        "session dependence-aware primary test",
+        "T0 T1 T4 T5 numeric acceptance thresholds",
+    ]
     assert "fixed dollar risk" not in " ".join(
         stage0["freeze_required_before_replay_eligible"]
     ).lower()

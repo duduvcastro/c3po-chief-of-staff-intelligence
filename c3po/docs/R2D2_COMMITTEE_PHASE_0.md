@@ -1,12 +1,15 @@
 # Day D Stage 0 workbook
 
-Status: **active design work; joint freeze pending; no production behavior**
+Status: **signal and universe freeze ready; harness freeze pending; no production behavior**
 
-Workbook version: `DAY-D-STAGE0-v0.2`
+Workbook version: `DAY-D-STAGE0-v0.3`
 
 Governing blueprint: [`DAY_D_BLUEPRINT_V1_2.md`](DAY_D_BLUEPRINT_V1_2.md)
 
 Machine contract: [`day_d/stage0_contract.json`](day_d/stage0_contract.json)
+
+Signal and universe contract:
+[`day_d/replay_signal_spec_v1.json`](day_d/replay_signal_spec_v1.json)
 
 Founding date: 2026-08-22 (`Day D`)
 
@@ -96,7 +99,7 @@ and overnight R are diagnostic decompositions. Their lifetime identity is:
 
 `R_consolidated(position) = R_intraday(position) + R_overnight(position)`
 
-### Proposed accounting equations -- joint freeze
+### Accounting equations -- later harness/ledger freeze
 
 For position `p`:
 
@@ -179,13 +182,17 @@ The execution contract must include deterministic treatment for:
 - a T-30s signal whose network/worker latency crosses the official close; and
 - an unresolved carry at C1/C2.
 
-## Deterministic universe proposal -- joint freeze
+## Deterministic universe -- frozen on merge
 
-Each session selects 60 US common stocks using only D-1 information. QQQ is a
+The canonical rules are frozen in
+[`day_d/replay_signal_spec_v1.json`](day_d/replay_signal_spec_v1.json) and
+explained in
+[`day_d/REPLAY_SIGNAL_SPEC_V1.md`](day_d/REPLAY_SIGNAL_SPEC_V1.md). Each
+session selects 60 unique US issuers using only D-1 information. QQQ is a
 benchmark and market gate; it is not one of the 60 and is not traded by the
 Generation 1 experimental book.
 
-Proposed v1 rule:
+Version 1 rule:
 
 1. Exchanges: Nasdaq and NYSE regular listings.
 2. Security type: operating-company common stock; exclude ETF, ETN, fund,
@@ -196,16 +203,25 @@ Proposed v1 rule:
    regular-session volume.
 6. Rank by the median of those twenty session dollar volumes, descending.
 7. Tie-break by normalized ticker, ascending.
-8. If a selected symbol is not tradeable on D, walk deterministically down the
-   D-1 ranking; never recompute with D information.
-9. Corporate actions use only the mapping known by D-1.
+8. Deduplicate share classes by issuer, keeping the class with the highest
+   median dollar volume.
+9. By 09:25 ET, replacement is allowed only for an effective delisting, merger,
+   cancellation or retired point-in-time symbol mapping. Walk down the frozen
+   D-1 ranking. Missing bars/quotes, provider outage, halt, low volume or price
+   movement never triggers replacement, and the rank is never recomputed with
+   D information.
+10. Corporate actions use only the mapping known by D-1.
 
 Changing these rules creates a new universe version and dataset version.
 
-## Setup proposals -- joint freeze
+## Setup contracts -- frozen on merge
 
-The rules below are recommendations for the six-hands review. Until frozen,
-neither setup is `replay_eligible`.
+The machine-readable source is
+[`day_d/replay_signal_spec_v1.json`](day_d/replay_signal_spec_v1.json), with a
+human review surface in
+[`day_d/REPLAY_SIGNAL_SPEC_V1.md`](day_d/REPLAY_SIGNAL_SPEC_V1.md). Freezing
+these rules does not yet make either setup `replay_eligible`; the numerical
+fill, cost, ledger and synthetic-truth contracts remain open.
 
 ### Shared bar definitions
 
@@ -219,7 +235,9 @@ neither setup is `replay_eligible`.
   regular-session close.
 - Any future tick-derived VWAP, CVD or volume-at-price variant is a new setup or
   feature version and cannot silently replace these bar definitions.
-- Shared executable-risk floor: **pending the frozen cost model and NPV**.
+- Shared executable-risk floor:
+  `max(0.5 * entry ATR, point-model full spread, 2 * minimum tick)`.
+- Reject when the post-floor stop distance exceeds 2.0 entry ATR.
 
 ### S3-v1: ORB plus VWAP continuation
 
@@ -236,12 +254,10 @@ neither setup is `replay_eligible`.
    that distance is below the shared executable-risk floor, move the stop down
    only enough to meet the floor; if that violates the setup's maximum risk,
    reject the signal.
-8. Proposed scale-out: sell 50% at 1.5R. The remainder exits at the first of 2R,
-   the frozen Chandelier rule or another portfolio-risk override.
+8. Sell 50% at 1.5R. The remainder exits at the first of 2R, the monotonic
+   2.5-ATR Chandelier activated after the partial, or another portfolio-risk
+   override.
 9. New entries expire at 11:45 ET.
-
-Items 7-8 remain open until risk floor, maximum risk and Chandelier precedence
-are frozen together.
 
 ### S5-v1: bar-based VWAP mean reversion
 
@@ -254,8 +270,8 @@ are frozen together.
    the next three completed bars.
 5. Stop is one minimum price increment below the excursion low, subject to the
    shared executable-risk floor and maximum risk.
-6. Proposed target is the VWAP value frozen at entry; a dynamic moving target is
-   deliberately excluded from v1 to keep the contract auditable.
+6. Target is the completed-bar VWAP observed at entry fill and frozen for the
+   trade's lifetime; a dynamic moving target is excluded from v1.
 7. Exit if the target is not reached within 45 minutes.
 8. New entries expire at 14:30 ET.
 
@@ -330,8 +346,8 @@ Stage 2 prerequisites to durable retention.
 - [x] NAV-relative 0.15% risk and 0.75% aggregate initial risk are frozen.
 - [x] `theta_meta` and `theta_kill` are separated and reproducible.
 - [x] Exact and robust trade-outcome metrics are frozen.
-- [ ] Six-hands review freezes universe rules.
-- [ ] Six-hands review freezes S3/S5 formulas and lifecycle rules.
+- [ ] Six-hands review merges the prepared universe freeze.
+- [ ] Six-hands review merges the prepared S3/S5 formula and lifecycle freeze.
 - [ ] Cost and fill contract is numerical and versioned.
 - [ ] T0/T1/T4/T5 numerical gates are frozen before measurement.
 - [ ] Preliminary `theta/N/alpha` feasibility report is attached.
