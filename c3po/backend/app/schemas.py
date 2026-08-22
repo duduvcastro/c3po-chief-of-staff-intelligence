@@ -686,11 +686,14 @@ class R2D2DashboardResponse(BaseModel):
     operating_days_elapsed: int
     starting_capital_usd: float
     nav_usd: float
+    accounting_nav_usd: float
+    cumulative_pnl_usd: float
     cash_usd: float
     gross_exposure_usd: float
     total_return_percent: float
     daily_pnl_usd: float
     daily_return_percent: float
+    daily_pnl_date: str | None
     open_positions: int
     stats: R2D2SummaryStats
     track_record: list[R2D2TrackPoint]

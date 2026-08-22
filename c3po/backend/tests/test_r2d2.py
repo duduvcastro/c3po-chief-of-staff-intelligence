@@ -39,6 +39,7 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
     dashboard = service.dashboard()
 
     assert dashboard.experiment_code == "R2D2-90D-001"
+    assert dashboard.methodology_version == r2d2_module.METHODOLOGY_VERSION
     assert dashboard.start_date == "2026-08-17"
     assert dashboard.checkpoint_date == "2026-11-14"
     assert dashboard.checkpoint_days == 90
@@ -76,6 +77,69 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
     assert experiment["mandate"]["performance_target_percent"] == 0.5
     assert "weekly_conviction" in experiment["mandate"]["horizon_policy"]
     assert dashboard.learning.version == 1
+
+
+def test_r2d2_dashboard_separates_cumulative_nav_from_calendar_day_pnl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service()
+    service.ensure_initialized()
+    service.repo.memory["snapshots"][date(2026, 8, 20)] = {
+        "session_date": date(2026, 8, 20),
+        "nav_usd": 990_000,
+        "cash_usd": 990_000,
+        "daily_pnl_usd": -10_000,
+        "daily_return_percent": -1.0,
+        "gross_exposure_usd": 0,
+        "open_positions": 0,
+        "is_final": True,
+    }
+    service.repo.memory["snapshots"][date(2026, 8, 21)] = {
+        "session_date": date(2026, 8, 21),
+        "nav_usd": 994_000,
+        "cash_usd": 994_000,
+        "daily_pnl_usd": 4_000,
+        "daily_return_percent": 0.404,
+        "gross_exposure_usd": 0,
+        "open_positions": 0,
+        "is_final": True,
+    }
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: timezone | None = None) -> datetime:
+            value = datetime(2026, 8, 22, 15, 0, tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value
+
+    monkeypatch.setattr(r2d2_module, "datetime", FrozenDateTime)
+
+    weekend_dashboard = service.dashboard()
+
+    assert weekend_dashboard.accounting_nav_usd == 994_000
+    assert weekend_dashboard.cumulative_pnl_usd == -6_000
+    assert weekend_dashboard.total_return_percent == -0.6
+    assert weekend_dashboard.daily_pnl_usd == 4_000
+    assert weekend_dashboard.daily_return_percent == 0.404
+    assert weekend_dashboard.daily_pnl_date == "2026-08-21"
+
+    service.repo.memory["snapshots"][date(2026, 8, 22)] = {
+        "session_date": date(2026, 8, 22),
+        "nav_usd": 993_500,
+        "cash_usd": 993_500,
+        "daily_pnl_usd": -500,
+        "daily_return_percent": -0.0503,
+        "gross_exposure_usd": 0,
+        "open_positions": 0,
+        "is_final": False,
+    }
+
+    today_dashboard = service.dashboard()
+
+    assert today_dashboard.accounting_nav_usd == 993_500
+    assert today_dashboard.cumulative_pnl_usd == -6_500
+    assert today_dashboard.daily_pnl_usd == -500
+    assert today_dashboard.daily_return_percent == -0.0503
+    assert today_dashboard.daily_pnl_date == "2026-08-22"
 
 
 def test_r2d2_scans_full_us_catalog_and_promotes_stocks_and_etfs() -> None:

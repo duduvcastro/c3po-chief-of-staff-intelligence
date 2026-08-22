@@ -1201,6 +1201,14 @@ class R2D2PaperService:
         current = next((row for row in reversed(snapshots) if row["session_date"] <= local_date), None)
         daily_pnl = _float(current.get("daily_pnl_usd")) if current else 0.0
         daily_return = _float(current.get("daily_return_percent")) if current else 0.0
+        daily_pnl_date = current["session_date"].isoformat() if current else None
+        cumulative_pnl = sum(
+            _float(row.get("daily_pnl_usd"))
+            for row in snapshots
+            if row["session_date"] <= local_date
+        )
+        starting_capital = _float(experiment["starting_capital"])
+        accounting_nav = starting_capital + cumulative_pnl
         closed = [row for row in snapshots if row.get("is_final")]
         positives = sum(_float(row["daily_return_percent"]) > 0 for row in closed)
         negatives = sum(_float(row["daily_return_percent"]) < 0 for row in closed)
@@ -1270,10 +1278,13 @@ class R2D2PaperService:
             checkpoint_reached=today >= experiment["checkpoint_date"],
             checkpoint_days=(experiment["checkpoint_date"] - experiment["start_date"]).days + 1,
             operating_days_elapsed=max(0, (today - experiment["start_date"]).days + 1),
-            starting_capital_usd=_float(experiment["starting_capital"]), nav_usd=round(nav, 2), cash_usd=round(cash, 2),
+            starting_capital_usd=starting_capital, nav_usd=round(nav, 2),
+            accounting_nav_usd=round(accounting_nav, 2), cumulative_pnl_usd=round(cumulative_pnl, 2),
+            cash_usd=round(cash, 2),
             gross_exposure_usd=round(exposure, 2),
-            total_return_percent=round((nav / _float(experiment["starting_capital"]) - 1) * 100, 4),
+            total_return_percent=round((accounting_nav / starting_capital - 1) * 100, 4),
             daily_pnl_usd=round(daily_pnl, 2), daily_return_percent=round(daily_return, 4),
+            daily_pnl_date=daily_pnl_date,
             open_positions=len(positions), stats=stats,
             track_record=[R2D2TrackPoint(
                 session_date=row["session_date"].isoformat(), nav_usd=_float(row["nav_usd"]),
