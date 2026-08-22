@@ -41,6 +41,7 @@ import {
   Mail,
   Menu,
   Minus,
+  PanelsTopLeft,
   Plus,
   RefreshCw,
   Search,
@@ -367,7 +368,26 @@ interface ServerUsageResponse {
   moving_average_minutes: number;
   refresh_seconds: number;
   servers: ServerUsageServer[];
+  api_endpoints: {
+    method: string;
+    route: string;
+    request_count: number;
+    average_ms: number;
+    p95_ms: number;
+    max_ms: number;
+    error_percent: number;
+  }[];
+  api_window_minutes: number;
   methodology: Record<string, string>;
+}
+
+interface PageLoadPerformanceStats {
+  totalMs: number;
+  apiWaitMs: number;
+  backendMs: number;
+  renderMs: number;
+  requestCount: number;
+  count: number;
 }
 
 interface WeatherHour {
@@ -2211,11 +2231,21 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [viewRevision, setViewRevision] = useState(0);
-  const [pageLoadStats, setPageLoadStats] = useState({ totalMs: 0, count: 0 });
+  const [pageLoadStats, setPageLoadStats] = useState<PageLoadPerformanceStats>({
+    totalMs: 0,
+    apiWaitMs: 0,
+    backendMs: 0,
+    renderMs: 0,
+    requestCount: 0,
+    count: 0
+  });
   const pageLoadTrackerRef = useRef<{
     startedAt: number;
     inFlight: number;
     quietTimer: number | null;
+    apiIntervals: { startedAt: number; endedAt: number }[];
+    backendTotalMs: number;
+    requestCount: number;
   } | null>(null);
   const [financeRefreshKey, setFinanceRefreshKey] = useState(0);
   const [activeAlertCount, setActiveAlertCount] = useState(0);
@@ -2225,9 +2255,27 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
   const completePageLoadMeasurement = useCallback((tracker: NonNullable<typeof pageLoadTrackerRef.current>) => {
     if (pageLoadTrackerRef.current !== tracker) return;
     const durationMs = Math.max(0, window.performance.now() - tracker.startedAt);
+    const intervals = [...tracker.apiIntervals].sort((left, right) => left.startedAt - right.startedAt);
+    let apiWaitMs = 0;
+    let intervalStart = intervals[0]?.startedAt ?? 0;
+    let intervalEnd = intervals[0]?.endedAt ?? 0;
+    intervals.slice(1).forEach((interval) => {
+      if (interval.startedAt <= intervalEnd) intervalEnd = Math.max(intervalEnd, interval.endedAt);
+      else {
+        apiWaitMs += intervalEnd - intervalStart;
+        intervalStart = interval.startedAt;
+        intervalEnd = interval.endedAt;
+      }
+    });
+    if (intervals.length) apiWaitMs += intervalEnd - intervalStart;
+    const renderMs = Math.max(0, durationMs - apiWaitMs);
     pageLoadTrackerRef.current = null;
     setPageLoadStats((current) => ({
       totalMs: current.totalMs + durationMs,
+      apiWaitMs: current.apiWaitMs + apiWaitMs,
+      backendMs: current.backendMs + (tracker.requestCount ? tracker.backendTotalMs / tracker.requestCount : 0),
+      renderMs: current.renderMs + renderMs,
+      requestCount: current.requestCount + tracker.requestCount,
       count: current.count + 1
     }));
   }, []);
@@ -2242,15 +2290,23 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     const originalFetch = window.fetch.bind(window);
     window.fetch = (async (...args: Parameters<typeof window.fetch>) => {
       const tracker = pageLoadTrackerRef.current;
+      const requestStartedAt = window.performance.now();
+      let response: Response | undefined;
       if (tracker) {
         if (tracker.quietTimer !== null) window.clearTimeout(tracker.quietTimer);
         tracker.quietTimer = null;
         tracker.inFlight += 1;
       }
       try {
-        return await originalFetch(...args);
+        response = await originalFetch(...args);
+        return response;
       } finally {
         if (tracker && pageLoadTrackerRef.current === tracker) {
+          const requestEndedAt = window.performance.now();
+          tracker.apiIntervals.push({ startedAt: requestStartedAt, endedAt: requestEndedAt });
+          tracker.requestCount += 1;
+          const backendMs = Number.parseFloat(response?.headers.get("X-Response-Time-Ms") ?? "");
+          if (Number.isFinite(backendMs)) tracker.backendTotalMs += backendMs;
           tracker.inFlight = Math.max(0, tracker.inFlight - 1);
           schedulePageLoadCompletion(tracker);
         }
@@ -2440,7 +2496,14 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     }
     pageLoadTrackerRef.current = null;
     if (view !== "home") {
-      const tracker = { startedAt: window.performance.now(), inFlight: 0, quietTimer: null as number | null };
+      const tracker = {
+        startedAt: window.performance.now(),
+        inFlight: 0,
+        quietTimer: null as number | null,
+        apiIntervals: [] as { startedAt: number; endedAt: number }[],
+        backendTotalMs: 0,
+        requestCount: 0
+      };
       pageLoadTrackerRef.current = tracker;
       window.requestAnimationFrame(() => window.requestAnimationFrame(() => schedulePageLoadCompletion(tracker)));
     }
@@ -2596,8 +2659,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
               onNavigate={selectView}
               onAlertsRead={setActiveAlertCount}
               session={session}
-              pageLoadAverageMs={pageLoadStats.count ? pageLoadStats.totalMs / pageLoadStats.count : null}
-              pageLoadSampleCount={pageLoadStats.count}
+              pageLoadStats={pageLoadStats}
             />
           )}
         </section>
@@ -2620,8 +2682,7 @@ function ViewRouter({
   onNavigate,
   onAlertsRead,
   session,
-  pageLoadAverageMs,
-  pageLoadSampleCount
+  pageLoadStats
 }: {
   activeView: ViewKey;
   data: CommandCenterData | null;
@@ -2633,8 +2694,7 @@ function ViewRouter({
   onNavigate: (view: ViewKey, realtimeTab?: RealtimeTabKey, query?: string) => void;
   onAlertsRead: (count: number) => void;
   session: AuthSession;
-  pageLoadAverageMs: number | null;
-  pageLoadSampleCount: number;
+  pageLoadStats: PageLoadPerformanceStats;
 }) {
   const canGenerateOnePagers = session.is_admin || session.capabilities.includes("onepager_generate");
   const canDeleteData = session.is_admin || session.capabilities.includes("delete");
@@ -2649,7 +2709,7 @@ function ViewRouter({
   if (activeView === "weather") return <WeatherView />;
   if (activeView === "intelligence") return <IQRecordsView />;
   if (activeView === "health") return <HealthView data={systemHealth} />;
-  if (activeView === "serverusage") return <ServerUsageView pageLoadAverageMs={pageLoadAverageMs} pageLoadSampleCount={pageLoadSampleCount} />;
+  if (activeView === "serverusage") return <ServerUsageView pageLoadStats={pageLoadStats} />;
   if (activeView === "leah") return <LeahCloudView session={session} />;
   if (activeView === "alerts") return <AlertsView onRead={onAlertsRead} />;
   if (activeView === "finance") return <FinanceView refreshKey={financeRefreshKey} />;
@@ -6677,7 +6737,12 @@ function formatServerTime(value: string) {
   }).format(new Date(value));
 }
 
-function ServerUsageView({ pageLoadAverageMs, pageLoadSampleCount }: { pageLoadAverageMs: number | null; pageLoadSampleCount: number }) {
+function formatPerformanceDuration(value: number | null) {
+  if (value === null) return "N/D";
+  return value < 1_000 ? `${Math.round(value)} ms` : `${(value / 1_000).toFixed(2).replace(".", ",")} s`;
+}
+
+function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformanceStats }) {
   const [data, setData] = useState<ServerUsageResponse | null>(null);
   const [selectedServerId, setSelectedServerId] = useState("");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -6710,6 +6775,11 @@ function ServerUsageView({ pageLoadAverageMs, pageLoadSampleCount }: { pageLoadA
   }, [load]);
 
   const server = data?.servers.find((item) => item.server_id === selectedServerId) ?? data?.servers[0];
+  const pageLoadAverageMs = pageLoadStats.count ? pageLoadStats.totalMs / pageLoadStats.count : null;
+  const apiWaitAverageMs = pageLoadStats.count ? pageLoadStats.apiWaitMs / pageLoadStats.count : null;
+  const backendAverageMs = pageLoadStats.count ? pageLoadStats.backendMs / pageLoadStats.count : null;
+  const renderAverageMs = pageLoadStats.count ? pageLoadStats.renderMs / pageLoadStats.count : null;
+  const requestsPerPage = pageLoadStats.count ? pageLoadStats.requestCount / pageLoadStats.count : null;
   const points = server?.history ?? [];
   const cpuPeak = points.reduce(
     (peak, point) => point.cpu_percent === null ? peak : Math.max(peak, point.cpu_percent),
@@ -6769,8 +6839,31 @@ function ServerUsageView({ pageLoadAverageMs, pageLoadSampleCount }: { pageLoadA
           <div><span><Activity size={15} />CPU Peak</span><strong>{points.length ? `${cpuPeak.toFixed(1).replace(".", ",")}%` : "N/D"}</strong><small>Highest · last 24 hours</small></div>
           <div><span><HardDrive size={15} />Disk used</span><strong>{server.current.disk_percent === null ? "N/D" : `${server.current.disk_percent.toFixed(1).replace(".", ",")}%`}</strong><small>{formatBytes(server.current.disk_used_bytes)} of {formatBytes(server.current.disk_total_bytes)}</small></div>
           <div><span><HardDrive size={15} />Disk free</span><strong>{formatBytes(server.current.disk_free_bytes)}</strong><small>Project filesystem</small></div>
-          <div><span><Gauge size={15} />Load Page Time</span><strong>{pageLoadAverageMs === null ? "N/D" : pageLoadAverageMs < 1_000 ? `${Math.round(pageLoadAverageMs)} ms` : `${(pageLoadAverageMs / 1_000).toFixed(2).replace(".", ",")} s`}</strong><small>{pageLoadSampleCount ? `Average of ${pageLoadSampleCount} internal page${pageLoadSampleCount === 1 ? "" : "s"}` : "Opening presentation excluded"}</small></div>
+          <div><span><Gauge size={15} />Load Page Time</span><strong>{formatPerformanceDuration(pageLoadAverageMs)}</strong><small>{pageLoadStats.count ? `Average of ${pageLoadStats.count} internal page${pageLoadStats.count === 1 ? "" : "s"}` : "Opening presentation excluded"}</small></div>
+          <div><span><Activity size={15} />API wait</span><strong>{formatPerformanceDuration(apiWaitAverageMs)}</strong><small>{requestsPerPage === null ? "No page samples" : `${requestsPerPage.toFixed(1).replace(".", ",")} requests per page`}</small></div>
+          <div><span><Server size={15} />Backend work</span><strong>{formatPerformanceDuration(backendAverageMs)}</strong><small>Average processing time per response</small></div>
+          <div><span><PanelsTopLeft size={15} />Render & UI</span><strong>{formatPerformanceDuration(renderAverageMs)}</strong><small>Total minus active API wait</small></div>
         </div>
+
+        <section className="server-api-performance">
+          <header>
+            <div><span>API PERFORMANCE</span><strong>Slowest endpoints</strong></div>
+            <small>Rolling {data?.api_window_minutes ?? 15} min · ordered by p95</small>
+          </header>
+          <div className="server-api-table">
+            <div className="server-api-row server-api-row-head"><span>Endpoint</span><span>Requests</span><span>Average</span><span>P95</span><span>Errors</span></div>
+            {(data?.api_endpoints ?? []).slice(0, 8).map((endpoint) => (
+              <div className="server-api-row" key={`${endpoint.method}-${endpoint.route}`}>
+                <strong><em>{endpoint.method}</em>{endpoint.route}</strong>
+                <span>{endpoint.request_count.toLocaleString("pt-BR")}</span>
+                <span>{formatPerformanceDuration(endpoint.average_ms)}</span>
+                <span>{formatPerformanceDuration(endpoint.p95_ms)}</span>
+                <span className={endpoint.error_percent > 0 ? "error" : ""}>{endpoint.error_percent.toFixed(1).replace(".", ",")}%</span>
+              </div>
+            ))}
+            {!data?.api_endpoints.length && <div className="server-api-empty">Collecting the first API samples.</div>}
+          </div>
+        </section>
 
         <div className="server-chart-head">
           <div><span>INFRASTRUCTURE LOAD</span><strong>Last 24 hours</strong></div>

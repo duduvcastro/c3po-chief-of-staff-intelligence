@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 import hashlib
 import re
+from time import perf_counter
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -10,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from .auth import AuthService, AuthenticationError, EmailDeliveryError, RateLimitError
+from .api_performance import api_performance
 from .access_control import (
     ALL_CAPABILITIES,
     ALL_VIEW_PERMISSIONS,
@@ -183,6 +185,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
+    expose_headers=["Server-Timing", "X-Response-Time-Ms"],
 )
 
 PUBLIC_AUTH_PATHS = {
@@ -192,6 +195,19 @@ PUBLIC_AUTH_PATHS = {
     "/api/v1/auth/activity",
     "/api/v1/auth/logout",
 }
+
+
+@app.middleware("http")
+async def measure_api_performance(request: Request, call_next):
+    started_at = perf_counter()
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        duration_ms = (perf_counter() - started_at) * 1_000
+        route = getattr(request.scope.get("route"), "path", request.url.path)
+        api_performance.record(request.method, route, duration_ms, response.status_code)
+        response.headers["Server-Timing"] = f"app;dur={duration_ms:.2f}"
+        response.headers["X-Response-Time-Ms"] = f"{duration_ms:.2f}"
+    return response
 
 
 @app.middleware("http")

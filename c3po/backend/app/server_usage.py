@@ -8,6 +8,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
+from .api_performance import api_performance
 from .config import Settings
 from .database import Database
 from .schemas import ServerUsageCurrent, ServerUsagePoint, ServerUsageResponse, ServerUsageServer
@@ -120,11 +121,14 @@ class ServerUsageService:
             moving_average_minutes=5,
             refresh_seconds=60,
             servers=servers,
+            api_endpoints=api_performance.snapshot(),
+            api_window_minutes=api_performance.retention_minutes,
             methodology={
                 "cpu": "Host aggregate CPU from Linux /proc/stat; initial 24h backfill from sysstat",
                 "disk": "Host filesystem usage from statvfs; history starts with the C3PO collector",
                 "smoothing": "Time-based rolling arithmetic mean over the preceding five minutes",
                 "retention": f"{self.settings.server_usage_retention_days} days in PostgreSQL",
+                "api": "In-process endpoint latency over a rolling 15-minute window",
             },
         )
 

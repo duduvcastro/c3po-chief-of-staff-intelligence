@@ -4,6 +4,7 @@ import pytest
 
 from app.config import Settings
 from app.database import Database
+from app.api_performance import ApiPerformanceRegistry, api_performance
 from app.server_usage import ServerUsageCollector, ServerUsageService
 
 
@@ -67,3 +68,33 @@ def test_snapshot_uses_a_time_based_five_minute_moving_average() -> None:
     assert server.current.cpu_moving_average_5m == pytest.approx(30.0)
     assert server.current.disk_percent == pytest.approx(44.0)
     assert server.status == "healthy"
+
+
+def test_api_performance_registry_reports_slowest_routes_by_p95() -> None:
+    registry = ApiPerformanceRegistry()
+    registry.record("GET", "/api/v1/fast", 10, 200)
+    registry.record("GET", "/api/v1/slow", 80, 200)
+    registry.record("GET", "/api/v1/slow", 120, 500)
+
+    rows = registry.snapshot()
+
+    assert rows[0] == {
+        "method": "GET",
+        "route": "/api/v1/slow",
+        "request_count": 2,
+        "average_ms": 100.0,
+        "p95_ms": 120,
+        "max_ms": 120,
+        "error_percent": 50.0,
+    }
+
+
+def test_server_usage_snapshot_includes_api_performance() -> None:
+    settings = Settings(database_url="")
+    database = Database(settings)
+    api_performance.record("GET", "/api/v1/test-performance", 42, 200)
+
+    response = ServerUsageService(settings, database).snapshot(hours=1)
+
+    matching = [item for item in response.api_endpoints if item.route == "/api/v1/test-performance"]
+    assert matching[0].average_ms == 42
