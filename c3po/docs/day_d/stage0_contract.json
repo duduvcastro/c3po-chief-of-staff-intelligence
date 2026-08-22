@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "blueprint_version": "DAY-D-v1.2",
   "contract_status": "stage0_authorized",
   "economic_and_risk_contract_status": "frozen",
@@ -10,6 +10,22 @@
     "dudu": "owner_decisions_recorded",
     "fable": "signed_final_2026_08_22",
     "codex": "approved_stage0_contract_implementation"
+  },
+  "signal_and_universe_contract": {
+    "status": "frozen_on_merge_after_six_hands_review",
+    "path": "day_d/replay_signal_spec_v1.json",
+    "spec_version": "DAY-D-SIGNAL-UNIVERSE-v1",
+    "scope": [
+      "point_in_time_universe",
+      "shared_bar_features",
+      "shared_risk_and_sizing",
+      "S3-v1",
+      "S5-v1",
+      "anti_lookahead_invariants"
+    ],
+    "production_behavior_change_authorized": false,
+    "capital_use_authorized": false,
+    "harness_implementation_in_scope": false
   },
   "research_question": {
     "primary": "Do S3-v1 and S5-v1, long-only, with intraday entries and conditional T-30s carry, have positive net economic edge?",
@@ -109,7 +125,16 @@
       ],
       "cost_assumption": "optimistic",
       "opportunity_cost_benchmark": "US_3_MONTH_TREASURY_BILL",
-      "benchmark_rate_freeze_event": "final_preregistration_hash"
+      "benchmark_rate_freeze_event": "final_preregistration_hash",
+      "benchmark_rate_to_r_per_session_formula": "(annual_rate_decimal / 252) / 0.0015",
+      "final_reconciliation_formula": "max(0.15, operating_cost_r_per_session + benchmark_rate_r_per_session)",
+      "hash_must_record": [
+        "benchmark_source",
+        "annual_rate_decimal",
+        "observed_at",
+        "benchmark_rate_r_per_session",
+        "theta_kill_final_r_per_session"
+      ]
     },
     "joint_h0_kill_rule": {
       "blades": [
@@ -163,12 +188,22 @@
         "kill_authority": false
       },
       "theta_kill": {
-        "status": "frozen",
+        "status": "formula_frozen_pending_benchmark_snapshot_at_hash",
         "r_per_session": 0.15,
         "operating_cost_component_r_per_session_at_initial_nav": 0.03968253968253968,
         "opportunity_cost_component_budget_r_per_session": 0.11031746031746031,
         "benchmark": "US_3_MONTH_TREASURY_BILL",
-        "benchmark_rate_status": "pending_snapshot_at_final_preregistration_hash"
+        "benchmark_rate_status": "pending_snapshot_at_final_preregistration_hash",
+        "benchmark_rate_to_r_per_session_formula": "(annual_rate_decimal / 252) / 0.0015",
+        "final_reconciliation_formula": "max(0.15, operating_cost_component_r_per_session_at_initial_nav + benchmark_rate_r_per_session)",
+        "o1_reconciliation_rule_status": "closed_and_frozen",
+        "hash_must_record": [
+          "benchmark_source",
+          "annual_rate_decimal",
+          "observed_at",
+          "benchmark_rate_r_per_session",
+          "theta_kill_final_r_per_session"
+        ]
       },
       "success_definition_12_months": {
         "status": "recorded",
@@ -194,17 +229,23 @@
       "selected_risk_fraction_per_trade": 0.0015,
       "joint_h0_kill_calibration_status": "pending_stage2_path_simulation"
     },
+    "signal_and_universe_freeze": {
+      "status": "frozen_on_merge_after_six_hands_review",
+      "contract": "day_d/replay_signal_spec_v1.json",
+      "resolved_items": [
+        "S3 RVOL formula and history sufficiency",
+        "S3 ATR and VWAP formulas",
+        "S3 executable-risk floor",
+        "S3 partial-exit fraction and target precedence",
+        "S3 opening-gap behavior",
+        "S5 ATR and RVOL formulas",
+        "S5 completed-bar reclaim rule",
+        "S5 VWAP target movement policy",
+        "S5 executable-risk floor",
+        "universe security filters and deterministic replacement"
+      ]
+    },
     "freeze_required_before_replay_eligible": [
-      "S3 RVOL formula and history sufficiency",
-      "S3 ATR and VWAP formulas",
-      "S3 executable-risk floor",
-      "S3 partial-exit fraction and target precedence",
-      "S3 opening-gap behavior",
-      "S5 ATR and RVOL formulas",
-      "S5 completed-bar reclaim rule",
-      "S5 VWAP target movement policy",
-      "S5 executable-risk floor",
-      "universe security filters and deterministic replacement",
       "fresh quote and eligible fill definitions",
       "corporate action, halt and delisting accounting",
       "session dependence-aware primary test",
