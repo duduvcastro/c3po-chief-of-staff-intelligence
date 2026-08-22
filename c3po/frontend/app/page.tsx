@@ -1949,11 +1949,13 @@ function CompanyLogo({ logoUrl, symbol, market }: { logoUrl?: string | null; sym
 function ProfilePanel({
   session,
   items,
-  onClose
+  onClose,
+  onLogout
 }: {
   session: AuthSession;
   items: typeof navItems;
   onClose: () => void;
+  onLogout: () => void;
 }) {
   const roleLabel = session.is_admin ? "Proprietário · Administrador" : "Usuário autorizado";
   const sessionPolicy = session.is_admin
@@ -2017,6 +2019,13 @@ function ProfilePanel({
         </section>
 
         <TotpSecurityPanel initiallyEnabled={session.totp_enabled} />
+
+        <div className="profile-panel-actions">
+          <button type="button" onClick={() => { onClose(); onLogout(); }}>
+            <LogOut size={16} />
+            <span>Sair do C3PO</span>
+          </button>
+        </div>
 
         <footer className="profile-panel-foot">
           O navegador informa a categoria do dispositivo, sistema e versão. O modelo exato do equipamento pode ser ocultado pelo próprio sistema por privacidade.
@@ -2664,7 +2673,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
           )}
         </section>
       </main>
-      {profileOpen && <ProfilePanel session={session} items={visibleNavItems} onClose={() => setProfileOpen(false)} />}
+      {profileOpen && <ProfilePanel session={session} items={visibleNavItems} onClose={() => setProfileOpen(false)} onLogout={onLogout} />}
       {menuOpen && <button className="mobile-overlay" onClick={() => setMenuOpen(false)} aria-label="Close navigation overlay" />}
     </div>
     </InstrumentPreviewProvider>
