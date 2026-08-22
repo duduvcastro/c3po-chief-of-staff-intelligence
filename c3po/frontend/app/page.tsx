@@ -3838,6 +3838,34 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
 
       {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => { setError(""); void loadR2D2(); void loadIndices(); }}>Retry</button></div>}
 
+      {r2d2?.positions.length ? (
+        <section className={`falcon-portfolio-ticker${r2d2.positions.length === 1 ? " falcon-portfolio-ticker-static" : ""}`} aria-label="Open portfolio positions">
+          <div className="falcon-portfolio-ticker-track">
+            {[0, 1].map((copy) => (
+              <div className="falcon-portfolio-ticker-set" aria-hidden={copy === 1} key={copy}>
+                {r2d2.positions.map((position) => {
+                  const isPositive = position.unrealized_return_percent >= 0;
+                  const price = new Intl.NumberFormat(position.currency === "BRL" ? "pt-BR" : "en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                  }).format(position.last_price_local);
+                  return (
+                    <div className="falcon-portfolio-ticker-item" key={`${copy}-${position.market}-${position.symbol}`}>
+                      <div><strong>{position.symbol}</strong><span>{price}</span></div>
+                      <p className={isPositive ? "ticker-change-up" : "ticker-change-down"}>
+                        <span aria-hidden="true">{isPositive ? "⌃" : "⌄"}</span>
+                        {isPositive ? "+" : ""}{position.unrealized_return_percent.toFixed(2)}%
+                        <small>({isPositive ? "+" : ""}{usd(position.unrealized_pnl_usd).replace("US$ ", "")})</small>
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="panel live-market-panel live-market-panel-cards live-market-panel-index falcon-capcom-index">
         <div className="live-market-group-head">
           <div><span>Index</span><strong>{indices.length} instruments</strong></div>
