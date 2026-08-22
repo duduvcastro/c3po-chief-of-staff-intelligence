@@ -7487,14 +7487,6 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     }
   };
 
-  const resetLogin = () => {
-    setChallengeId("");
-    setCode("");
-    setMessage("");
-    setError("");
-    setRequestedDelivery("auto");
-  };
-
   return (
     <main className="login-shell">
       <section className="login-panel" aria-labelledby="login-title">
@@ -7524,7 +7516,6 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
             {message && <p className="login-message">{message}</p>}
             <button className="login-primary" type="submit" disabled={loading || code.length !== 6}>{loading ? "Validando..." : "Entrar no C3PO"}</button>
             {requestedDelivery !== "email" && <button className="login-secondary" type="button" disabled={loading} onClick={() => void requestCode("email")}>Receber código por e-mail</button>}
-            <button className="login-secondary" type="button" onClick={resetLogin}>Usar outro e-mail</button>
           </form>
         )}
         {error && <div className="login-error"><AlertTriangle size={16} /><span>{error}</span></div>}
