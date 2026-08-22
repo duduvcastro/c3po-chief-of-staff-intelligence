@@ -236,9 +236,12 @@ button { cursor: pointer; }
 .leah-connection-state span { display: block; color: #8a919b; font-size: 8px; font-weight: 900; }
 .leah-connection-state strong { display: block; margin-top: 4px; font-size: 10px; }
 .leah-connection-state.leah-connected > i { background: #18845a; box-shadow: 0 0 0 4px rgba(24,132,90,.12); }
+.leah-connection-actions { display: flex; align-items: center; gap: 8px; margin-left: 14px; }
 .leah-connect-button, .leah-create-row button { min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 12px; border: 1px solid #25282e; border-radius: 5px; color: #fff; background: #17191e; font-size: 9px; font-weight: 800; }
-.leah-connect-button { margin-left: 14px; white-space: nowrap; }
+.leah-connect-button { white-space: nowrap; }
 .leah-connect-button:disabled, .leah-create-row button:disabled { opacity: .45; }
+.leah-agent-download { min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; border: 1px solid #c5c9ce; border-radius: 5px; color: #30343a; background: #fff; font-size: 9px; font-weight: 800; text-decoration: none; white-space: nowrap; }
+.leah-agent-download:hover { border-color: #8f969f; background: #f5f6f7; }
 .leah-pairing { min-height: 74px; display: grid; grid-template-columns: auto minmax(0, 1fr) 34px; align-items: center; gap: 20px; padding: 12px 16px; border: 1px solid #d5b75d; border-radius: 7px; background: #fff9e7; }
 .leah-pairing span { display: block; color: #7d682a; font-size: 8px; font-weight: 900; }
 .leah-pairing strong { display: block; margin-top: 4px; font-size: 22px; letter-spacing: 3px; }
@@ -2388,7 +2391,7 @@ button { cursor: pointer; }
   .leah-task-summary strong { font-size: 15px; }
   .leah-empty-state { min-height: 288px; padding: 24px 18px; }
   .leah-empty-state-tasks { min-height: 220px; }
-  .leah-connect-button { margin-left: auto; }
+  .leah-connection-actions { flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
   .leah-pairing { grid-template-columns: 1fr 34px; gap: 8px; }
   .leah-pairing p { grid-column: 1 / -1; grid-row: 2; }
   .leah-create-row { grid-template-columns: 1fr; padding: 10px 14px; }
