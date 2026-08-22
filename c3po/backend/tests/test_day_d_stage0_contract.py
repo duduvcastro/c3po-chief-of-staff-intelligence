@@ -23,19 +23,32 @@ def test_contract_authorizes_stage_zero_only() -> None:
 
     assert contract["blueprint_version"] == "DAY-D-v1.2"
     assert contract["contract_status"] == "stage0_authorized"
+    assert contract["economic_and_risk_contract_status"] == "frozen"
     assert contract["authorized_stage"] == 0
     assert contract["production_behavior_change_authorized"] is False
     assert contract["capital_use_authorized"] is False
+    assert contract["signatures"]["fable"] == "signed_final_2026_08_22"
     assert contract["stage0"]["complete"] is False
     owner_inputs = contract["stage0"]["owner_inputs"]
     assert owner_inputs["economic_mandate"] == "day_d/economic_mandate.json"
-    assert owner_inputs["theta_econ_from_npv"]["status"] == (
-        "nav_dependent_fraction_recorded"
+    assert owner_inputs["risk_per_trade"] == {
+        "status": "frozen",
+        "basis": "fraction_of_current_virtual_nav_at_trade_entry",
+        "fraction": 0.0015,
+        "initial_reference_usd": 1500,
+        "paper_dollar_cap_usd": None,
+    }
+    assert owner_inputs["theta_meta"] == {
+        "status": "frozen_product_target",
+        "required_geometric_net_return_fraction_per_session": 0.005,
+        "r_per_session": 0.005 / 0.0015,
+        "kill_authority": False,
+    }
+    assert owner_inputs["theta_kill"]["status"] == "frozen"
+    assert owner_inputs["theta_kill"]["r_per_session"] == 0.15
+    assert owner_inputs["theta_kill"]["benchmark"] == (
+        "US_3_MONTH_TREASURY_BILL"
     )
-    assert owner_inputs["theta_econ_from_npv"]["r_per_session"] is None
-    assert owner_inputs["theta_econ_from_npv"][
-        "requires_fixed_dollar_risk_and_nav_path"
-    ] is True
     assert owner_inputs["success_definition_12_months"] == {
         "status": "recorded",
         "trading_capital_mode": "virtual_only",
@@ -44,8 +57,8 @@ def test_contract_authorizes_stage_zero_only() -> None:
         "target_is_mandatory_each_session": False,
         "target_session_population": "all_preregistered_exchange_sessions",
         "no_trade_session_return_fraction": 0,
-        "closed_trade_net_win_rate_minimum_exclusive": 0.5,
-        "closed_trade_positive_count_must_exceed_negative_count": True,
+        "robust_win_rate_lower_bound_minimum_exclusive": 0.5,
+        "robust_win_rate_binding_at": "final_12_month_verdict_only",
         "closed_trade_pnl_basis": "realized_net_after_all_simulated_costs",
         "target_revision_is_prospective_and_versioned_only": True,
         "maximum_drawdown_fraction": 0.08,
@@ -96,8 +109,16 @@ def test_generation_one_cannot_silently_reenable_legacy_arms() -> None:
     assert book["equal_weight"] is True
     assert book["thompson_sampling_enabled"] is False
     assert book["s5_v1_uses_cvd"] is False
-    assert book["fixed_dollar_risk_per_trade"] is True
+    assert book["risk_per_trade_basis"] == (
+        "fraction_of_current_virtual_nav_at_trade_entry"
+    )
+    assert book["risk_fraction_per_trade"] == 0.0015
+    assert book["initial_risk_usd_at_reference_nav"] == 1_500
+    assert book["dollar_cap_during_paper_usd"] is None
+    assert book["risk_budget_frozen_for_trade_lifetime"] is True
     assert book["max_simultaneous_positions"] == 5
+    assert book["maximum_aggregate_initial_stop_risk_fraction"] == 0.0075
+    assert book["risk_recalibration_required_before_real_capital"] is True
     assert book["duplicate_symbol_exposure_allowed"] is False
     assert book["weekly_conviction_affects_experiment"] is False
 
@@ -128,6 +149,45 @@ def test_inference_does_not_treat_retention_as_evidence() -> None:
     assert inference["weekly_block_bootstrap_required"] is True
 
 
+def test_inference_separates_product_target_from_kill_threshold() -> None:
+    inference = _contract()["inference"]
+
+    assert inference["theta_meta"] == {
+        "r_per_session": 0.005 / 0.0015,
+        "status": "product_target_only",
+        "kill_authority": False,
+    }
+    assert inference["theta_kill"]["r_per_session"] == 0.15
+    assert inference["theta_kill"]["binding_at"] == ["C1", "C2"]
+    assert inference["theta_kill"]["cost_assumption"] == "optimistic"
+
+    joint = inference["joint_h0_kill_rule"]
+    assert joint["blades"] == ["futility", "damage", "placebo"]
+    assert joint["arm_survival_requires_all_blades_pass"] is True
+    assert joint["placebo_p_value_maximum"] == 0.05
+    assert joint["placebo_delta_r_minimum"] == 0.10
+    assert joint["class_kill_probability_minimum"] == 0.80
+    assert joint["stage2_path_simulation_required"] is True
+    assert joint["analytic_independence_approximation_is_binding"] is False
+
+
+def test_win_rate_is_robust_and_binding_only_at_final_verdict() -> None:
+    inference = _contract()["inference"]
+    outcomes = inference["closed_trade_outcomes"]
+
+    assert outcomes["exact_ledger_sign_has_epsilon"] is False
+    assert outcomes["robust_epsilon_formula"] == (
+        "max(exit_half_spread_usd_per_share * quantity, 0.01 * quantity)"
+    )
+    assert outcomes["robust_ties_excluded_from_win_rate"] is True
+    assert outcomes["round_trip_cost_is_epsilon"] is False
+    assert outcomes["robust_win_rate_lower_bound_minimum_exclusive"] == 0.5
+    assert outcomes["win_rate_bootstrap_unit"] == "session_block"
+    assert outcomes["win_rate_binding_at"] == "final_12_month_verdict_only"
+    assert outcomes["win_rate_checkpoint_status"] == "diagnostic_only"
+    assert inference["payoff_and_profit_factor_are_binding"] is False
+
+
 def test_stage_zero_cannot_claim_completion_with_open_freeze_items() -> None:
     stage0 = _contract()["stage0"]
 
@@ -135,10 +195,14 @@ def test_stage_zero_cannot_claim_completion_with_open_freeze_items() -> None:
         "status": "analytic_screen_only",
         "report": "day_d/STAGE_0_RISK_POWER_FEASIBILITY.md",
         "reproducer": "app.day_d_feasibility",
-        "fixed_dollar_risk_frozen": False,
-        "selected_scenario": None,
+        "fixed_nav_fraction_risk_frozen": True,
+        "selected_risk_fraction_per_trade": 0.0015,
+        "joint_h0_kill_calibration_status": "pending_stage2_path_simulation",
     }
-    assert len(stage0["freeze_required_before_replay_eligible"]) >= 15
+    assert len(stage0["freeze_required_before_replay_eligible"]) >= 14
+    assert "fixed dollar risk" not in " ".join(
+        stage0["freeze_required_before_replay_eligible"]
+    ).lower()
     assert {
         "enable_production_setup",
         "change_live_entry_or_exit_logic",

@@ -168,9 +168,10 @@ critical values; weekly block bootstrap remains a required sensitivity.
 
 ## Stage order
 
-1. **Stage 0, paper:** NPV and `theta_econ`; Dudu's written 12-month success
-   definition; preliminary power feasibility; frozen S3/S5, universe, clock,
-   fills, costs, ledgers and numeric data gates; draft pre-registration.
+1. **Stage 0, paper:** NPV, `theta_meta` and `theta_kill`; Dudu's written
+   12-month success definition; preliminary power feasibility; frozen S3/S5,
+   universe, clock, fills, costs, ledgers and numeric data gates; draft
+   pre-registration.
 2. **Stage 1, phenomenon:** disk guard, five measured capture sessions,
    independent Polygon reference and historical veto experiments.
 3. **Stage 2, skeleton:** production-quality spool, replay engine, synthetic

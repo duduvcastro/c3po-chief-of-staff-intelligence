@@ -1,14 +1,15 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "blueprint_version": "DAY-D-v1.2",
   "contract_status": "stage0_authorized",
+  "economic_and_risk_contract_status": "frozen",
   "authorized_stage": 0,
   "production_behavior_change_authorized": false,
   "capital_use_authorized": false,
   "signatures": {
     "dudu": "owner_decisions_recorded",
-    "fable": "approved",
-    "codex": "approved_stage0"
+    "fable": "signed_final_2026_08_22",
+    "codex": "approved_stage0_contract_implementation"
   },
   "research_question": {
     "primary": "Do S3-v1 and S5-v1, long-only, with intraday entries and conditional T-30s carry, have positive net economic edge?",
@@ -63,8 +64,14 @@
     ],
     "equal_weight": true,
     "thompson_sampling_enabled": false,
-    "fixed_dollar_risk_per_trade": true,
+    "risk_per_trade_basis": "fraction_of_current_virtual_nav_at_trade_entry",
+    "risk_fraction_per_trade": 0.0015,
+    "initial_risk_usd_at_reference_nav": 1500,
+    "dollar_cap_during_paper_usd": null,
+    "risk_budget_frozen_for_trade_lifetime": true,
     "max_simultaneous_positions": 5,
+    "maximum_aggregate_initial_stop_risk_fraction": 0.0075,
+    "risk_recalibration_required_before_real_capital": true,
     "duplicate_symbol_exposure_allowed": false,
     "weekly_conviction_affects_experiment": false,
     "s5_v1_uses_cvd": false
@@ -89,6 +96,50 @@
     "decisions_outside_checkpoints_allowed": false,
     "retained_is_approval": false,
     "positive_evidence_requires_lower_bound": true,
+    "theta_meta": {
+      "r_per_session": 3.3333333333333335,
+      "status": "product_target_only",
+      "kill_authority": false
+    },
+    "theta_kill": {
+      "r_per_session": 0.15,
+      "binding_at": [
+        "C1",
+        "C2"
+      ],
+      "cost_assumption": "optimistic",
+      "opportunity_cost_benchmark": "US_3_MONTH_TREASURY_BILL",
+      "benchmark_rate_freeze_event": "final_preregistration_hash"
+    },
+    "joint_h0_kill_rule": {
+      "blades": [
+        "futility",
+        "damage",
+        "placebo"
+      ],
+      "arm_survival_requires_all_blades_pass": true,
+      "placebo_p_value_maximum": 0.05,
+      "placebo_delta_r_minimum": 0.1,
+      "class_kill_probability_minimum": 0.8,
+      "stage2_path_simulation_required": true,
+      "analytic_independence_approximation_is_binding": false
+    },
+    "closed_trade_outcomes": {
+      "exact_ledger_sign_has_epsilon": false,
+      "robust_epsilon_formula": "max(exit_half_spread_usd_per_share * quantity, 0.01 * quantity)",
+      "robust_ties_excluded_from_win_rate": true,
+      "round_trip_cost_is_epsilon": false,
+      "robust_win_rate_lower_bound_minimum_exclusive": 0.5,
+      "win_rate_bootstrap_unit": "session_block",
+      "win_rate_binding_at": "final_12_month_verdict_only",
+      "win_rate_checkpoint_status": "diagnostic_only"
+    },
+    "payoff_ratio_desired_range": [
+      1.3,
+      1.5
+    ],
+    "profit_factor_desired_minimum": 1.5,
+    "payoff_and_profit_factor_are_binding": false,
     "joint_multiplicity_calibration_required": true,
     "serial_dependence_must_be_modeled": true,
     "unadjusted_iid_t_test_is_sufficient": false,
@@ -98,12 +149,26 @@
     "complete": false,
     "owner_inputs": {
       "economic_mandate": "day_d/economic_mandate.json",
-      "theta_econ_from_npv": {
-        "status": "nav_dependent_fraction_recorded",
+      "risk_per_trade": {
+        "status": "frozen",
+        "basis": "fraction_of_current_virtual_nav_at_trade_entry",
+        "fraction": 0.0015,
+        "initial_reference_usd": 1500,
+        "paper_dollar_cap_usd": null
+      },
+      "theta_meta": {
+        "status": "frozen_product_target",
         "required_geometric_net_return_fraction_per_session": 0.005,
-        "reference_nav_first_session_target_usd": 5000,
-        "r_per_session": null,
-        "requires_fixed_dollar_risk_and_nav_path": true
+        "r_per_session": 3.3333333333333335,
+        "kill_authority": false
+      },
+      "theta_kill": {
+        "status": "frozen",
+        "r_per_session": 0.15,
+        "operating_cost_component_r_per_session_at_initial_nav": 0.03968253968253968,
+        "opportunity_cost_component_budget_r_per_session": 0.11031746031746031,
+        "benchmark": "US_3_MONTH_TREASURY_BILL",
+        "benchmark_rate_status": "pending_snapshot_at_final_preregistration_hash"
       },
       "success_definition_12_months": {
         "status": "recorded",
@@ -113,8 +178,8 @@
         "target_is_mandatory_each_session": false,
         "target_session_population": "all_preregistered_exchange_sessions",
         "no_trade_session_return_fraction": 0,
-        "closed_trade_net_win_rate_minimum_exclusive": 0.5,
-        "closed_trade_positive_count_must_exceed_negative_count": true,
+        "robust_win_rate_lower_bound_minimum_exclusive": 0.5,
+        "robust_win_rate_binding_at": "final_12_month_verdict_only",
         "closed_trade_pnl_basis": "realized_net_after_all_simulated_costs",
         "target_revision_is_prospective_and_versioned_only": true,
         "maximum_drawdown_fraction": 0.08,
@@ -125,8 +190,9 @@
       "status": "analytic_screen_only",
       "report": "day_d/STAGE_0_RISK_POWER_FEASIBILITY.md",
       "reproducer": "app.day_d_feasibility",
-      "fixed_dollar_risk_frozen": false,
-      "selected_scenario": null
+      "fixed_nav_fraction_risk_frozen": true,
+      "selected_risk_fraction_per_trade": 0.0015,
+      "joint_h0_kill_calibration_status": "pending_stage2_path_simulation"
     },
     "freeze_required_before_replay_eligible": [
       "S3 RVOL formula and history sufficiency",
@@ -142,8 +208,7 @@
       "fresh quote and eligible fill definitions",
       "corporate action, halt and delisting accounting",
       "session dependence-aware primary test",
-      "T0 T1 T4 T5 numeric acceptance thresholds",
-      "theta N alpha feasibility"
+      "T0 T1 T4 T5 numeric acceptance thresholds"
     ],
     "later_stage_actions_forbidden": [
       "enable_production_setup",

@@ -57,10 +57,12 @@ calculation explained in
 | Maximum recurring monthly data/infrastructure spend | USD 1,000 |
 | Net-return target | 0.5% geometric mean across every preregistered exchange session, compounded on virtual NAV |
 | Implied 252-session virtual return | Approximately 251.44% |
-| Closed-trade quality gate | Net positive trades must strictly outnumber net negative trades |
+| Risk per trade | 0.15% of current virtual NAV at entry; no paper dollar cap |
+| Maximum simultaneous positions | 5; aggregate initial stop risk at most 0.75% NAV |
+| Closed-trade quality gate | Robust win-rate lower bound strictly above 50% at final verdict |
 | Maximum acceptable peak-to-trough drawdown | 8% |
-| First-session target-path edge | USD 5,000 at USD 1,000,000 NAV |
-| Resulting `theta_econ` in R/session | NAV-dependent; pending fixed dollar-risk budget and full path |
+| `theta_meta` | 3.333333R/session; product target with no kill authority |
+| `theta_kill` | 0.15R/session; binding economic floor at C1/C2 |
 
 ### Written 12-month success definition
 
@@ -74,11 +76,13 @@ Capex and Opex are real product investments reported separately from virtual
 trading NAV. A correctly powered `not validated` verdict is a valid research
 result but does not satisfy the owner's economic trading-success target.
 
-The win-count gate uses realized net P&L after simulated entry and exit costs.
-Flat trades are reported separately. A win rate above 50% does not replace the
-requirements for positive expectancy, adequate payoff, the geometric return
-target or the drawdown limit. Any later reduction of the 0.5% target must be a
-prospective, versioned owner decision and cannot re-score historical results.
+The exact ledger preserves positive, negative and flat realized net P&L after
+simulated entry and exit costs. A separate robust classification applies
+`epsilon_trade = max(exit half-spread * quantity, USD 0.01 * quantity)` and
+excludes robust ties from win rate. Its session-block-bootstrap lower bound
+must exceed 50% only at the final verdict; C1/C2 are diagnostic. Payoff and
+profit factor are diagnostic, not additional gates. Any later reduction of the
+0.5% target must be prospective and versioned and cannot re-score history.
 
 ## Research question and ledgers
 
@@ -97,8 +101,9 @@ and overnight R are diagnostic decompositions. Their lifetime identity is:
 For position `p`:
 
 - `q_p`: signed quantity (positive for this long-only experiment).
-- `B_p`: fixed initial dollar-risk budget; the denominator for all R components
-  of this position for its entire life.
+- `B_p`: 0.15% of current virtual NAV when the trade enters, expressed as a
+  dollar amount and then frozen as the denominator for every R component of
+  that position for its entire life.
 - `C_entry_p`: entry cash outflow including entry fee and simulated entry
   slippage.
 - `M_p,d`: split-adjusted official close value, `q_p * close_p,d`.
@@ -271,27 +276,30 @@ paper comparison:
 
 ## Inference workstream
 
-The draft values `theta=0.5R/session`, `N=120` and `sigma=2.6` already failed
-their own class-kill power requirement and are not defaults.
+The old draft values `theta=0.5R/session`, `N=120` and `sigma=2.6` are retired.
+The frozen contract separates `theta_meta=3.333333R/session`, which has no kill
+authority, from the binding economic floor `theta_kill=0.15R/session`.
 
 Stage 0 performs feasibility only, using burned data and owner-supplied
-`theta_econ`. Stage 2 performs final calibration with the frozen harness and
-observed dependence.
+thresholds. Stage 2 performs final N/alpha calibration with the frozen harness
+and observed dependence.
 
 The first analytic screen is recorded in
 [`day_d/STAGE_0_RISK_POWER_FEASIBILITY.md`](day_d/STAGE_0_RISK_POWER_FEASIBILITY.md).
-It compares fixed-risk scenarios but deliberately selects none; its draft
-sigma, Bonferroni split and independent-arm assumption are not final evidence.
+It records the selected 0.15%-of-NAV risk contract. Its draft sigma,
+provisional alpha and independent-arm illustration are not final evidence.
 
 Required properties:
 
 - observations are daily consolidated net R, including carry marks;
 - C1 and C2 remain fixed at sessions 60 and 120 unless feasibility explicitly
   proves that horizon incompatible with the stated economic objective;
-- multiplicity covers both checkpoints, both arms and the class verdict;
+- final joint calibration covers both checkpoints, both arms and the class verdict;
 - `retained` is not positive evidence;
-- approval requires a pre-selected lower-bound rule plus economic threshold and
-  a paired-placebo win;
+- an arm survives only if futility, damage and placebo all pass;
+- placebo requires `p <= 0.05` and `delta >= 0.10R`;
+- Stage 2 must show zero-edge class kill of at least 80%;
+- robust win-rate lower bound above 50% binds only at the final verdict;
 - carry-induced serial dependence is modeled in joint simulation;
 - an iid parametric p-value is not authoritative;
 - weekly moving-block bootstrap is mandatory sensitivity; and
@@ -319,8 +327,9 @@ Stage 2 prerequisites to durable retention.
 - [x] T-30s/carry and three-ledger identities made explicit.
 - [x] Carry-induced statistical dependence recorded.
 - [x] Dudu supplies NPV inputs and written 12-month success definition.
-- [x] Preliminary fixed-risk/power scenario grid is reproducible.
-- [ ] Six-hands review freezes fixed dollar risk and converts the economic floor into R/session.
+- [x] NAV-relative 0.15% risk and 0.75% aggregate initial risk are frozen.
+- [x] `theta_meta` and `theta_kill` are separated and reproducible.
+- [x] Exact and robust trade-outcome metrics are frozen.
 - [ ] Six-hands review freezes universe rules.
 - [ ] Six-hands review freezes S3/S5 formulas and lifecycle rules.
 - [ ] Cost and fill contract is numerical and versioned.
