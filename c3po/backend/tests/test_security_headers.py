@@ -11,6 +11,7 @@ def test_proxy_configs_enforce_https_and_security_headers() -> None:
     for config in (caddy, nginx):
         assert "Strict-Transport-Security" in config
         assert "Content-Security-Policy" in config
+        assert "script-src 'self' 'unsafe-inline'" in config
         assert "frame-ancestors 'none'" in config
     assert "CF-Visitor" in caddy
     assert "redir @cloudflare_http https://{host}{uri} 308" in caddy
