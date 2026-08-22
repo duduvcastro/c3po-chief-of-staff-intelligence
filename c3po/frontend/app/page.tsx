@@ -3851,7 +3851,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
                   }).format(position.last_price_local);
                   return (
                     <div className="falcon-portfolio-ticker-item" key={`${copy}-${position.market}-${position.symbol}`}>
-                      <div><strong>{position.symbol}</strong><span>{price}</span></div>
+                      <div><strong>{position.symbol}</strong><span className={isPositive ? "ticker-price-up" : "ticker-price-down"}>{position.currency === "BRL" ? "R$ " : "$ "}{price}</span></div>
                       <p className={isPositive ? "ticker-change-up" : "ticker-change-down"}>
                         <span aria-hidden="true">{isPositive ? "⌃" : "⌄"}</span>
                         {isPositive ? "+" : ""}{position.unrealized_return_percent.toFixed(2)}%
