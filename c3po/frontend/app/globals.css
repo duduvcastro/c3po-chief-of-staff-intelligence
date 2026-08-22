@@ -941,6 +941,22 @@ button { cursor: pointer; }
 .falcon-capcom-identity strong { margin-top: 6px; overflow: hidden; color: #fff; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
 .falcon-capcom-identity small { margin-top: 6px; color: #8c929b; font-size: 8px; }
 .falcon-capcom-metrics .falcon-flight-metric { min-height: 112px; }
+.falcon-portfolio-ticker { min-width: 0; overflow: hidden; color: #f5f5f3; background: #202020; border: 1px solid #3a3a3a; border-radius: var(--radius); }
+.falcon-portfolio-ticker-track { display: flex; width: max-content; animation: falcon-portfolio-scroll 36s linear infinite; will-change: transform; }
+.falcon-portfolio-ticker:hover .falcon-portfolio-ticker-track { animation-play-state: paused; }
+.falcon-portfolio-ticker-set { display: flex; flex: 0 0 auto; }
+.falcon-portfolio-ticker-item { width: 260px; min-height: 78px; display: flex; flex-direction: column; justify-content: center; padding: 11px 20px; border-right: 1px solid #3b3b3b; }
+.falcon-portfolio-ticker-item > div { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
+.falcon-portfolio-ticker-item strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.falcon-portfolio-ticker-item > div span { font-size: 17px; font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.falcon-portfolio-ticker-item p { display: flex; align-items: baseline; gap: 6px; margin: 8px 0 0; font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.falcon-portfolio-ticker-item p > span { font-size: 21px; line-height: .6; }
+.falcon-portfolio-ticker-item p small { font-size: 12px; font-weight: 750; }
+.falcon-portfolio-ticker-item .ticker-change-up { color: #25c86a; }
+.falcon-portfolio-ticker-item .ticker-change-down { color: #ff5b61; }
+.falcon-portfolio-ticker-static .falcon-portfolio-ticker-track { animation: none; }
+.falcon-portfolio-ticker-static .falcon-portfolio-ticker-set[aria-hidden="true"] { display: none; }
+@keyframes falcon-portfolio-scroll { to { transform: translateX(-50%); } }
 .falcon-capcom-index { margin: 0; }
 .falcon-capcom-index .live-market-group-head { padding-right: 18px; padding-left: 18px; }
 .falcon-capcom-readiness { margin: 0; }
@@ -2371,6 +2387,9 @@ button { cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .falcon-portfolio-ticker { overflow-x: auto; }
+  .falcon-portfolio-ticker-track { animation: none; }
+  .falcon-portfolio-ticker-set[aria-hidden="true"] { display: none; }
   .c3po-opening-stars i, .c3po-opening-distance, .c3po-opening-logo, .c3po-opening-crawl { animation: none; }
   .c3po-opening-distance, .c3po-opening-logo { display: none; }
   .c3po-opening-viewport { position: relative; min-height: 100vh; overflow-y: auto; perspective: none; }
