@@ -1437,9 +1437,7 @@ function formatCurrency(value: number, currency: string) {
 }
 
 function formatPositionPercentMagnitude(returnPercent: number) {
-  const magnitude = Math.abs(returnPercent);
-  const digits = magnitude > 0 && magnitude < 0.001 ? 6 : magnitude > 0 && magnitude < 0.01 ? 4 : 2;
-  return magnitude.toFixed(digits);
+  return Math.abs(returnPercent).toFixed(3);
 }
 
 function formatResearchPrice(value: number, market: ResearchMarket) {
