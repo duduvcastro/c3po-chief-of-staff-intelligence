@@ -1006,12 +1006,14 @@ class NavigationSeenResponse(BaseModel):
 
 class LoginCodeRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
+    delivery_method: Literal["auto", "email"] = "auto"
 
 
 class LoginCodeResponse(BaseModel):
     challenge_id: str
     expires_in_seconds: int
     message: str
+    verification_method: Literal["email", "totp"] = "email"
 
 
 class LoginVerifyRequest(BaseModel):
@@ -1037,6 +1039,22 @@ class AuthSessionResponse(BaseModel):
     device_type: str | None = None
     operating_system: str | None = None
     browser: str | None = None
+    totp_enabled: bool = False
+
+
+class TotpSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+    qr_code_data_url: str
+    expires_in_seconds: int
+
+
+class TotpCodeRequest(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class TotpStatusResponse(BaseModel):
+    enabled: bool
 
 
 class AccessPermission(BaseModel):

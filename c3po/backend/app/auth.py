@@ -7,9 +7,15 @@ import secrets
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from io import BytesIO
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+
+import qrcode
+import qrcode.image.svg
+from cryptography.fernet import Fernet, InvalidToken
 
 from .access_control import ALL_VIEW_PERMISSIONS
 from .config import Settings
@@ -40,6 +46,76 @@ class AuthService:
     def code_hash(self, challenge_id: str, code: str) -> str:
         message = f"{challenge_id}:{code}".encode("utf-8")
         return hmac.new(self.settings.auth_secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+    def _totp_cipher(self) -> Fernet:
+        key = hashlib.sha256(f"c3po:totp:{self.settings.auth_secret}".encode("utf-8")).digest()
+        return Fernet(base64.urlsafe_b64encode(key))
+
+    def encrypt_totp_secret(self, secret: str) -> str:
+        return self._totp_cipher().encrypt(secret.encode("ascii")).decode("ascii")
+
+    def decrypt_totp_secret(self, encrypted_secret: str) -> str:
+        try:
+            return self._totp_cipher().decrypt(encrypted_secret.encode("ascii")).decode("ascii")
+        except (InvalidToken, ValueError) as exc:
+            raise AuthenticationError("A configuração do autenticador não pôde ser lida.") from exc
+
+    @staticmethod
+    def totp_code(secret: str, step: int) -> str:
+        padding = "=" * ((8 - len(secret) % 8) % 8)
+        key = base64.b32decode(secret + padding, casefold=True)
+        digest = hmac.new(key, step.to_bytes(8, "big"), hashlib.sha1).digest()
+        offset = digest[-1] & 0x0F
+        value = int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF
+        return f"{value % 1_000_000:06d}"
+
+    def matching_totp_step(self, secret: str, code: str, now: datetime) -> int | None:
+        current_step = int(now.timestamp()) // 30
+        for step in (current_step, current_step - 1, current_step + 1):
+            if hmac.compare_digest(self.totp_code(secret, step), code):
+                return step
+        return None
+
+    def totp_enabled(self, email: str) -> bool:
+        credential = self.database.get_totp_credential(email)
+        return bool(credential and credential.get("confirmed_at"))
+
+    def begin_totp_setup(self, email: str) -> dict[str, str | int]:
+        normalized_email = email.strip().lower()
+        if self.totp_enabled(normalized_email):
+            raise AuthenticationError("O autenticador já está ativo para este usuário.")
+        now = self.now()
+        secret = base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+        expires_at = now + timedelta(minutes=10)
+        self.database.upsert_totp_setup(normalized_email, self.encrypt_totp_secret(secret), expires_at, now)
+        label = quote(f"C3PO:{normalized_email}", safe="")
+        issuer = quote("C3PO", safe="")
+        uri = f"otpauth://totp/{label}?secret={secret}&issuer={issuer}&algorithm=SHA1&digits=6&period=30"
+        image = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=2)
+        output = BytesIO()
+        image.save(output)
+        qr_data_url = "data:image/svg+xml;base64," + base64.b64encode(output.getvalue()).decode("ascii")
+        return {"secret": secret, "otpauth_uri": uri, "qr_code_data_url": qr_data_url, "expires_in_seconds": 600}
+
+    def confirm_totp_setup(self, email: str, code: str) -> None:
+        now = self.now()
+        credential = self.database.get_totp_credential(email)
+        if not credential or credential.get("confirmed_at") or credential["setup_expires_at"] <= now:
+            raise AuthenticationError("A configuração expirou. Gere um novo QR Code.")
+        secret = self.decrypt_totp_secret(credential["encrypted_secret"])
+        step = self.matching_totp_step(secret, code, now)
+        if step is None or not self.database.confirm_totp(email, step, now):
+            raise AuthenticationError("Código inválido. Confira o app Senhas e tente novamente.")
+
+    def disable_totp(self, email: str, code: str) -> None:
+        now = self.now()
+        credential = self.database.get_totp_credential(email)
+        if not credential or not credential.get("confirmed_at"):
+            raise AuthenticationError("O autenticador não está ativo.")
+        secret = self.decrypt_totp_secret(credential["encrypted_secret"])
+        if self.matching_totp_step(secret, code, now) is None:
+            raise AuthenticationError("Código inválido.")
+        self.database.delete_totp_credential(email)
 
     @staticmethod
     def session_hash(token: str) -> str:
@@ -133,7 +209,7 @@ class AuthService:
             "browser": f"{browser_name} {browser_version}".strip(),
         }
 
-    def request_code(self, email: str, requested_ip: str) -> tuple[str, int]:
+    def request_code(self, email: str, requested_ip: str, delivery_method: str = "auto") -> tuple[str, int, str]:
         normalized_email = email.strip().lower()
         if not self.database.database_url and normalized_email == self.settings.auth_email.strip().lower():
             self.database.ensure_access_owner(normalized_email, list(ALL_VIEW_PERMISSIONS))
@@ -145,6 +221,7 @@ class AuthService:
 
         challenge_id = str(uuid4())
         code = f"{secrets.randbelow(1_000_000):06d}"
+        verification_method = "totp" if delivery_method == "auto" and self.totp_enabled(normalized_email) else "email"
         expires_at = now + timedelta(minutes=self.settings.auth_code_minutes)
         self.database.create_login_code(
             {
@@ -156,12 +233,13 @@ class AuthService:
                 "max_attempts": 5,
                 "requested_ip": requested_ip,
                 "created_at": now,
+                "verification_method": verification_method,
             }
         )
 
-        if access_user and access_user["is_active"]:
+        if verification_method == "email" and access_user and access_user["is_active"]:
             self.send_code_email(code, normalized_email)
-        return challenge_id, self.settings.auth_code_minutes * 60
+        return challenge_id, self.settings.auth_code_minutes * 60, verification_method
 
     def verify_code(self, challenge_id: str, code: str, requested_ip: str) -> tuple[str, datetime, str]:
         now = self.now()
@@ -173,10 +251,16 @@ class AuthService:
         if challenge["attempts"] >= challenge["max_attempts"]:
             raise AuthenticationError("Limite de tentativas atingido. Solicite outro código.")
 
-        expected = self.code_hash(challenge_id, code)
-        valid = hmac.compare_digest(expected, challenge["code_hash"])
-        self.database.record_login_attempt(challenge_id, used_at=now if valid else None)
         access_user = self.database.get_access_user(challenge["email"])
+        if challenge.get("verification_method") == "totp":
+            credential = self.database.get_totp_credential(challenge["email"])
+            secret = self.decrypt_totp_secret(credential["encrypted_secret"]) if credential and credential.get("confirmed_at") else ""
+            step = self.matching_totp_step(secret, code, now) if secret else None
+            valid = step is not None and self.database.claim_totp_step(challenge["email"], step, now)
+        else:
+            expected = self.code_hash(challenge_id, code)
+            valid = hmac.compare_digest(expected, challenge["code_hash"])
+        self.database.record_login_attempt(challenge_id, used_at=now if valid else None)
         if not valid or not access_user or not access_user["is_active"]:
             raise AuthenticationError("Código inválido ou expirado.")
 

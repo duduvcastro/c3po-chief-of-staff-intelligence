@@ -103,6 +103,7 @@ interface AuthSession {
   device_type: string | null;
   operating_system: string | null;
   browser: string | null;
+  totp_enabled: boolean;
 }
 
 interface LeahDevice {
@@ -1811,6 +1812,95 @@ function UserAvatar({
   );
 }
 
+interface TotpSetupData {
+  secret: string;
+  otpauth_uri: string;
+  qr_code_data_url: string;
+  expires_in_seconds: number;
+}
+
+function TotpSecurityPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
+  const [enabled, setEnabled] = useState(initiallyEnabled);
+  const [setup, setSetup] = useState<TotpSetupData | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const beginSetup = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/auth/totp/setup`, { method: "POST", credentials: "include" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? "Não foi possível iniciar a configuração.");
+      setSetup(payload);
+      setCode("");
+    } catch (setupError) {
+      setError(setupError instanceof Error ? setupError.message : "Não foi possível iniciar a configuração.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitCode = async (action: "confirm" | "disable") => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/auth/totp/${action}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? "Código inválido.");
+      setEnabled(payload.enabled);
+      setSetup(null);
+      setCode("");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Código inválido.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="profile-panel-section profile-totp">
+      <div className="profile-panel-section-title"><LockKeyhole size={15} /><span>Código automático no Safari</span></div>
+      {!enabled && !setup && (
+        <div className="profile-totp-status">
+          <div><span>APP SENHAS</span><strong>Não configurado</strong></div>
+          <button type="button" onClick={() => void beginSetup()} disabled={busy}>Ativar</button>
+        </div>
+      )}
+      {setup && (
+        <div className="profile-totp-setup">
+          <img src={setup.qr_code_data_url} alt="QR Code para configurar o código no app Senhas" />
+          <div>
+            <strong>Escaneie com a câmera do iPhone</strong>
+            <p>Ou abra Senhas no Mac, selecione o C3PO e use a chave abaixo.</p>
+            <code>{setup.secret}</code>
+            <div className="profile-totp-code">
+              <input aria-label="Código de confirmação" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" />
+              <button type="button" onClick={() => void submitCode("confirm")} disabled={busy || code.length !== 6}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {enabled && (
+        <div className="profile-totp-enabled">
+          <div><i /><span><strong>Ativo</strong><small>O Safari pode preencher o código salvo no app Senhas.</small></span></div>
+          <div className="profile-totp-code">
+            <input aria-label="Código para desativar" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="Código atual" />
+            <button type="button" onClick={() => void submitCode("disable")} disabled={busy || code.length !== 6}>Desativar</button>
+          </div>
+        </div>
+      )}
+      {error && <p className="profile-totp-error">{error}</p>}
+    </section>
+  );
+}
+
 function normalizeCompanyLogoUrl(value?: string | null) {
   const clean = value?.trim();
   if (!clean) return "";
@@ -1905,6 +1995,8 @@ function ProfilePanel({
             ))}
           </div>
         </section>
+
+        <TotpSecurityPanel initiallyEnabled={session.totp_enabled} />
 
         <footer className="profile-panel-foot">
           O navegador informa a categoria do dispositivo, sistema e versão. O modelo exato do equipamento pode ser ocultado pelo próprio sistema por privacidade.
@@ -7242,8 +7334,9 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [verificationMethod, setVerificationMethod] = useState<"email" | "totp">("email");
 
-  const requestCode = async () => {
+  const requestCode = async (deliveryMethod: "auto" | "email" = "auto") => {
     setLoading(true);
     setError("");
     try {
@@ -7251,12 +7344,15 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email, delivery_method: deliveryMethod })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "Não foi possível enviar o código.");
       setChallengeId(payload.challenge_id);
-      setMessage(`Código enviado. Ele vale por ${Math.round(payload.expires_in_seconds / 60)} minutos.`);
+      setVerificationMethod(payload.verification_method);
+      setMessage(payload.verification_method === "totp"
+        ? "Use o código de seis dígitos salvo no app Senhas."
+        : `Código enviado. Ele vale por ${Math.round(payload.expires_in_seconds / 60)} minutos.`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Não foi possível enviar o código.");
     } finally {
@@ -7295,6 +7391,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     setCode("");
     setMessage("");
     setError("");
+    setVerificationMethod("email");
   };
 
   return (
@@ -7308,21 +7405,24 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
         <div className="login-heading">
           <span>Secure command access</span>
           <h1 id="login-title">{challengeId ? "Digite o código" : "Acesse seu command center"}</h1>
-          <p>{challengeId ? `Enviamos um código de seis dígitos para ${email}.` : "Use seu e-mail autorizado. Nenhuma senha é necessária."}</p>
+          <p>{challengeId
+            ? verificationMethod === "totp" ? "Use o código automático configurado no app Senhas." : `Enviamos um código de seis dígitos para ${email}.`
+            : "Use seu e-mail autorizado. Nenhuma senha é necessária."}</p>
         </div>
 
         {!challengeId ? (
-          <form onSubmit={(event) => { event.preventDefault(); requestCode(); }} className="login-form">
+          <form onSubmit={(event) => { event.preventDefault(); void requestCode(); }} className="login-form">
             <label htmlFor="login-email">E-mail</label>
             <div className="login-input"><Mail size={18} /><input id="login-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></div>
             <button className="login-primary" type="submit" disabled={loading}>{loading ? "Enviando..." : "Enviar código"}</button>
           </form>
         ) : (
           <form onSubmit={(event) => { event.preventDefault(); verifyCode(); }} className="login-form">
-            <label htmlFor="login-code">Código de acesso</label>
-            <div className="login-input login-code-input"><LockKeyhole size={18} /><input id="login-code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" pattern="\d{6}" required autoFocus /></div>
+            <label htmlFor="login-code">{verificationMethod === "totp" ? "Código do app Senhas" : "Código de acesso"}</label>
+            <div className="login-input login-code-input"><LockKeyhole size={18} /><input id="login-code" name="one-time-code" type="text" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" pattern="\d{6}" required autoFocus /></div>
             {message && <p className="login-message">{message}</p>}
             <button className="login-primary" type="submit" disabled={loading || code.length !== 6}>{loading ? "Validando..." : "Entrar no C3PO"}</button>
+            {verificationMethod === "totp" && <button className="login-secondary" type="button" disabled={loading} onClick={() => void requestCode("email")}>Receber código por e-mail</button>}
             <button className="login-secondary" type="button" onClick={resetLogin}>Usar outro e-mail</button>
           </form>
         )}
