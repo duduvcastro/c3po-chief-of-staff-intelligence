@@ -185,11 +185,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+PUBLIC_AUTH_PATHS = {
+    "/api/v1/auth/request-code",
+    "/api/v1/auth/verify-code",
+    "/api/v1/auth/session",
+    "/api/v1/auth/activity",
+    "/api/v1/auth/logout",
+}
+
 
 @app.middleware("http")
 async def require_authenticated_session(request: Request, call_next):
     path = request.url.path
-    public_auth_route = path.startswith("/api/v1/auth/") or path.startswith("/api/v1/leah/agent/")
+    public_auth_route = path in PUBLIC_AUTH_PATHS or path.startswith("/api/v1/leah/agent/")
     protected_api = path.startswith("/api/") and not public_auth_route
     if settings.auth_required and protected_api and request.method != "OPTIONS":
         session = auth_service.authenticate(request.cookies.get(SESSION_COOKIE))

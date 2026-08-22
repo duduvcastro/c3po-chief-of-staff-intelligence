@@ -150,6 +150,46 @@ def test_totp_setup_rejects_invalid_code_and_expires(monkeypatch) -> None:
         service.confirm_totp_setup(settings.auth_email, "000000")
 
 
+def test_totp_setup_route_requires_and_receives_authenticated_session() -> None:
+    email = "totp-route@example.com"
+    app_main.database.upsert_access_user(
+        {
+            "email": email,
+            "display_name": "TOTP Route",
+            "role": "member",
+            "is_active": True,
+            "permissions": ["command"],
+            "created_by": app_main.settings.auth_email,
+        }
+    )
+    token = "totp-route-session-token"
+    now = datetime.now(timezone.utc)
+    app_main.database.create_session(
+        {
+            "id": str(uuid4()),
+            "email": email,
+            "token_hash": app_main.auth_service.session_hash(token),
+            "expires_at": now + timedelta(hours=1),
+            "created_at": now,
+            "last_seen_at": now,
+            "created_ip": "127.0.0.1",
+        }
+    )
+    previous_required = app_main.settings.auth_required
+    app_main.settings.auth_required = True
+    try:
+        with TestClient(app_main.app) as client:
+            denied = client.post("/api/v1/auth/totp/setup")
+            client.cookies.set(app_main.SESSION_COOKIE, token)
+            allowed = client.post("/api/v1/auth/totp/setup")
+
+        assert denied.status_code == 401
+        assert allowed.status_code == 200
+        assert allowed.json()["qr_code_data_url"].startswith("data:image/svg+xml;base64,")
+    finally:
+        app_main.settings.auth_required = previous_required
+
+
 def test_allowlisted_member_receives_code_and_permissions_follow_session(monkeypatch) -> None:
     settings = Settings(
         auth_required=True,
