@@ -318,10 +318,9 @@ class AuthService:
             self.database.revoke_session(self.session_hash(token), self.now())
 
     def send_code_email(self, code: str, recipient_email: str) -> None:
-        subject = "Seu código de acesso ao C3PO"
+        subject = f"{code} é seu código de acesso ao C3PO"
         body = (
-            "C3PO | CHIEF OF STAFF INTELLIGENCE\n\n"
-            f"Código de acesso: {code}\n\n"
+            f"{code} é seu código de verificação para c3po.eduardocastro.com.br.\n\n"
             "Use este código para concluir seu login no C3PO. "
             f"Ele expira em {self.settings.auth_code_minutes} minutos e funciona uma única vez.\n\n"
             "Se você não solicitou este acesso, ignore esta mensagem."

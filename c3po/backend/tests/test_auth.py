@@ -29,9 +29,8 @@ def test_login_code_email_uses_parser_friendly_plain_text(monkeypatch) -> None:
 
     assert sent == [
         (
-            "Seu código de acesso ao C3PO",
-            "C3PO | CHIEF OF STAFF INTELLIGENCE\n\n"
-            "Código de acesso: 123456\n\n"
+            "123456 é seu código de acesso ao C3PO",
+            "123456 é seu código de verificação para c3po.eduardocastro.com.br.\n\n"
             "Use este código para concluir seu login no C3PO. "
             "Ele expira em 10 minutos e funciona uma única vez.\n\n"
             "Se você não solicitou este acesso, ignore esta mensagem.",
