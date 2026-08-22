@@ -303,7 +303,7 @@ def authenticated_session_response(request: Request, session: dict) -> AuthSessi
         is_admin=session.get("role") == "owner",
         permissions=session.get("permissions", []),
         capabilities=session.get("capabilities", ["read"]),
-        idle_timeout_seconds=None if session.get("role") == "owner" else settings.auth_member_idle_minutes * 60,
+        idle_timeout_seconds=settings.auth_member_idle_minutes * 60,
         totp_enabled=auth_service.totp_enabled(session["email"]),
         **client,
     )
