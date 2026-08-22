@@ -97,8 +97,18 @@
   "stage0": {
     "complete": false,
     "owner_inputs": {
-      "theta_econ_from_npv": null,
-      "success_definition_12_months": null
+      "economic_mandate": "day_d/economic_mandate.json",
+      "theta_econ_from_npv": {
+        "status": "provisional_usd_only",
+        "required_gross_usd_per_session": 4027.777777777778,
+        "r_per_session": null,
+        "requires_fixed_dollar_risk": true
+      },
+      "success_definition_12_months": {
+        "status": "recorded",
+        "target_net_return_fraction": 1.0,
+        "maximum_drawdown_fraction": 0.08
+      }
     },
     "freeze_required_before_replay_eligible": [
       "S3 RVOL formula and history sufficiency",

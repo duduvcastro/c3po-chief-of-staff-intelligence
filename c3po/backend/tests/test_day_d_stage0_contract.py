@@ -27,9 +27,15 @@ def test_contract_authorizes_stage_zero_only() -> None:
     assert contract["production_behavior_change_authorized"] is False
     assert contract["capital_use_authorized"] is False
     assert contract["stage0"]["complete"] is False
-    assert contract["stage0"]["owner_inputs"] == {
-        "theta_econ_from_npv": None,
-        "success_definition_12_months": None,
+    owner_inputs = contract["stage0"]["owner_inputs"]
+    assert owner_inputs["economic_mandate"] == "day_d/economic_mandate.json"
+    assert owner_inputs["theta_econ_from_npv"]["status"] == "provisional_usd_only"
+    assert owner_inputs["theta_econ_from_npv"]["r_per_session"] is None
+    assert owner_inputs["theta_econ_from_npv"]["requires_fixed_dollar_risk"] is True
+    assert owner_inputs["success_definition_12_months"] == {
+        "status": "recorded",
+        "target_net_return_fraction": 1.0,
+        "maximum_drawdown_fraction": 0.08,
     }
 
 

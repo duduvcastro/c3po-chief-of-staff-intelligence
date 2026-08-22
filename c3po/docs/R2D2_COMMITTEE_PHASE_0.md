@@ -42,27 +42,30 @@ document does not itself activate production behavior.
 
 ## Owner inputs
 
-These are the only Stage 0 inputs that cannot be inferred from code or data.
-They remain deliberately blank rather than being replaced by invented values.
+The owner inputs were recorded on 2026-08-22. Their canonical machine-readable
+record is [`day_d/economic_mandate.json`](day_d/economic_mandate.json), with the
+calculation explained in
+[`day_d/STAGE_0_ECONOMICS.md`](day_d/STAGE_0_ECONOMICS.md).
 
 ### NPV and economic threshold
 
 | Input | Owner value |
 |---|---:|
-| Capital expected to be available after 12 months | `PENDING_DUDU` |
-| Maximum one-time research/infrastructure spend | `PENDING_DUDU` |
-| Maximum recurring monthly data/infrastructure spend | `PENDING_DUDU` |
-| Minimum annual net dollar contribution worth pursuing | `PENDING_DUDU` |
-| Maximum acceptable economic drawdown | `PENDING_DUDU` |
-| Resulting minimum economic edge, `theta_econ` | `DERIVED_AFTER_INPUTS` |
+| Reference capital | USD 1,000,000 |
+| Baseline new Capex | USD 3,000; expandable by approved investment memo |
+| Maximum recurring monthly data/infrastructure spend | USD 1,000 |
+| Minimum 12-month net dollar contribution | USD 1,000,000 |
+| Maximum acceptable peak-to-trough drawdown | 8% |
+| Preliminary gross dollar edge | USD 4,027.78/session at 252 sessions |
+| Resulting `theta_econ` in R/session | Pending fixed dollar-risk budget |
 
 ### Written 12-month success definition
 
-`PENDING_DUDU`
-
-It must be measurable and include at least economic contribution, maximum
-drawdown, evidence quality, operational reliability and the decision to take if
-the class is not validated.
+Trading success requires at least USD 1,000,000 net project profit after
+transaction and forward project costs, maximum peak-to-trough drawdown of 8%,
+complete reproducibility and no unresolved material data/execution/ledger audit
+failure. A correctly powered `not validated` verdict is a valid research result
+but does not satisfy the owner's economic trading-success target.
 
 ## Research question and ledgers
 
@@ -297,7 +300,8 @@ Stage 2 prerequisites to durable retention.
 - [x] Generation 1 reduced to S3-v1 and S5-v1; S5-v1 has no CVD.
 - [x] T-30s/carry and three-ledger identities made explicit.
 - [x] Carry-induced statistical dependence recorded.
-- [ ] Dudu supplies NPV inputs and written 12-month success definition.
+- [x] Dudu supplies NPV inputs and written 12-month success definition.
+- [ ] Fixed dollar-risk budget converts the economic floor into R/session.
 - [ ] Six-hands review freezes universe rules.
 - [ ] Six-hands review freezes S3/S5 formulas and lifecycle rules.
 - [ ] Cost and fill contract is numerical and versioned.
