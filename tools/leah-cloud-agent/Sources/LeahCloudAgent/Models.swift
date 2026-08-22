@@ -47,16 +47,39 @@ struct LeahItem: Codable, Identifiable {
     }
 }
 
+struct EventOccurrence: Codable, Hashable {
+    let externalId: String
+    let startsAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case externalId = "external_id"
+        case startsAt = "starts_at"
+    }
+}
+
+struct LocalItemBatch {
+    let items: [LeahItem]
+    let eventOccurrences: [EventOccurrence]
+    let windowStart: Date
+    let windowEnd: Date
+}
+
 struct SyncRequest: Codable {
     let cursor: Date?
     let calendarAuthorized: Bool
     let remindersAuthorized: Bool
     let items: [LeahItem]
+    let calendarSnapshot: [EventOccurrence]?
+    let calendarSnapshotStart: Date?
+    let calendarSnapshotEnd: Date?
 
     enum CodingKeys: String, CodingKey {
         case cursor, items
         case calendarAuthorized = "calendar_authorized"
         case remindersAuthorized = "reminders_authorized"
+        case calendarSnapshot = "calendar_snapshot"
+        case calendarSnapshotStart = "calendar_snapshot_start"
+        case calendarSnapshotEnd = "calendar_snapshot_end"
     }
 }
 

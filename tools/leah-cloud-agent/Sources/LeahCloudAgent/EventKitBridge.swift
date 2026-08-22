@@ -18,13 +18,18 @@ final class EventKitBridge {
         _ = try await store.requestFullAccessToReminders()
     }
 
-    func localItems(modifiedAfter: Date?) async -> [LeahItem] {
+    func localItems(modifiedAfter: Date?) async -> LocalItemBatch {
         var result: [LeahItem] = []
+        var eventOccurrences: [EventOccurrence] = []
+        let start = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+        let end = Calendar.current.date(byAdding: .day, value: 365, to: Date())!
         if calendarAuthorized {
-            let start = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
-            let end = Calendar.current.date(byAdding: .day, value: 365, to: Date())!
             let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
-            result += store.events(matching: predicate)
+            let events = store.events(matching: predicate)
+            eventOccurrences = events.map {
+                EventOccurrence(externalId: $0.calendarItemIdentifier, startsAt: $0.startDate)
+            }
+            result += events
                 .filter { modifiedAfter == nil || ($0.lastModifiedDate ?? .distantPast) > modifiedAfter! }
                 .map { event in
                     LeahItem(
@@ -72,7 +77,12 @@ final class EventKitBridge {
                     )
                 }
         }
-        return result
+        return LocalItemBatch(
+            items: result,
+            eventOccurrences: eventOccurrences,
+            windowStart: start,
+            windowEnd: end
+        )
     }
 
     func apply(_ items: [LeahItem]) throws -> [LeahItem] {

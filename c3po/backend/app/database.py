@@ -384,6 +384,58 @@ class Database:
     def get_leah_item(self, owner_email: str, item_id: str) -> dict[str, Any] | None:
         return next((item for item in self.list_leah_changes(owner_email) if str(item["id"]) == item_id), None)
 
+    def reconcile_leah_event_snapshot(
+        self,
+        owner_email: str,
+        source_device_id: str,
+        occurrences: list[dict[str, Any]],
+        window_start: datetime,
+        window_end: datetime,
+        at: datetime,
+    ) -> int:
+        visible = {(item["external_id"], item["starts_at"]) for item in occurrences}
+        if not self.database_url:
+            reconciled = 0
+            for item in self._leah_items.values():
+                identity = (item.get("external_id"), item.get("starts_at"))
+                if (
+                    item["owner_email"] == owner_email
+                    and item["kind"] == "event"
+                    and item.get("source") == "icloud"
+                    and item.get("source_device_id") == source_device_id
+                    and item.get("deleted_at") is None
+                    and item.get("starts_at") is not None
+                    and window_start <= item["starts_at"] < window_end
+                    and identity not in visible
+                ):
+                    item.update({"deleted_at": at, "updated_at": at, "version": int(item["version"]) + 1})
+                    reconciled += 1
+            return reconciled
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, external_id, starts_at
+                FROM leah_items
+                WHERE owner_email = %s AND kind = 'event' AND source = 'icloud'
+                  AND source_device_id = %s AND deleted_at IS NULL
+                  AND starts_at >= %s AND starts_at < %s
+                """,
+                (owner_email, source_device_id, window_start, window_end),
+            ).fetchall()
+            stale_ids = [row[0] for row in rows if (row[1], row[2]) not in visible]
+            if stale_ids:
+                with connection.cursor() as cursor:
+                    cursor.executemany(
+                        """
+                        UPDATE leah_items
+                        SET deleted_at = %s, updated_at = %s, version = version + 1
+                        WHERE id = %s
+                        """,
+                        [(at, at, item_id) for item_id in stale_ids],
+                    )
+                connection.commit()
+        return len(stale_ids)
+
     def delete_leah_item(self, owner_email: str, item_id: str, at: datetime) -> bool:
         if not self.database_url:
             item = self._leah_items.get(item_id)

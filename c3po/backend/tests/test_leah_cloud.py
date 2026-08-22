@@ -108,6 +108,44 @@ def test_recurring_event_occurrences_with_same_external_id_are_preserved() -> No
     assert {item["starts_at"] for item in occurrences} == {first_start, second_start}
 
 
+def test_complete_calendar_snapshot_marks_missing_occurrence_deleted() -> None:
+    settings = Settings(auth_secret="a-secure-test-secret-with-more-than-32-characters")
+    database = Database(settings)
+    service = LeahCloudService(settings, database)
+    pairing = service.create_pairing("eduardo@example.com")
+    device = service.pair_device(pairing["code"], "Mac Eduardo", "macOS")["device"]
+    older_start = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
+    first_start = datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)
+    second_start = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+    items = [
+        {
+            "kind": "event",
+            "external_id": "recurring-test",
+            "title": "Teste",
+            "starts_at": start,
+            "ends_at": start + timedelta(hours=1),
+        }
+        for start in (older_start, first_start, second_start)
+    ]
+
+    service.sync(device, {"calendar_authorized": True, "items": items})
+    service.sync(
+        device,
+        {
+            "calendar_authorized": True,
+            "items": [],
+            "calendar_snapshot": [{"external_id": "recurring-test", "starts_at": second_start}],
+            "calendar_snapshot_start": first_start - timedelta(days=1),
+            "calendar_snapshot_end": second_start + timedelta(days=1),
+        },
+    )
+
+    stored = database.list_leah_changes("eduardo@example.com")
+    assert next(item for item in stored if item["starts_at"] == first_start)["deleted_at"] is not None
+    assert next(item for item in stored if item["starts_at"] == second_start)["deleted_at"] is None
+    assert next(item for item in stored if item["starts_at"] == older_start)["deleted_at"] is None
+
+
 def test_leah_api_exposes_pairing_and_personal_items() -> None:
     with TestClient(app_main.app) as client:
         pairing = client.post("/api/v1/leah/pairings")
