@@ -250,8 +250,6 @@ def test_stage_zero_cannot_claim_completion_with_open_freeze_items() -> None:
     )
     assert len(stage0["signal_and_universe_freeze"]["resolved_items"]) == 10
     assert stage0["freeze_required_before_replay_eligible"] == [
-        "fresh quote and eligible fill definitions",
-        "corporate action, halt and delisting accounting",
         "session dependence-aware primary test",
         "T0 T1 T4 T5 numeric acceptance thresholds",
     ]
