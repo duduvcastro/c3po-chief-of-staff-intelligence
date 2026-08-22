@@ -151,6 +151,29 @@ def test_new_ir_event_is_queued_once_for_every_mapped_security(tmp_path):
     assert refreshed["valuation_status"] == "incorporated"
 
 
+def test_recollecting_undated_ri_event_keeps_first_seen_chronology(tmp_path):
+    _, database = service(tmp_path)
+    first_seen = datetime(2026, 8, 18, 12, tzinfo=timezone.utc)
+    event = {
+        "source_code": "ri", "external_id": "stable-document", "company_id": None,
+        "market": "B3", "symbol": "TEST3", "company_name": "Companhia Teste",
+        "event_type": "Issuer Update", "form": "RI", "title": "Documento sem data",
+        "summary": "Official issuer page", "published_at": first_seen,
+        "published_time_precision": "collected", "reference_date": None,
+        "official_url": "https://ri.example.com", "document_url": "https://ri.example.com/document.pdf",
+        "materiality": "medium", "valuation_relevant": False,
+        "valuation_status": "informational", "raw_metadata": {}, "collected_at": first_seen,
+    }
+    database.save_ir_events([event])
+
+    recollected_at = first_seen + timedelta(days=4)
+    database.save_ir_events([{**event, "published_at": recollected_at, "collected_at": recollected_at}])
+
+    refreshed = database.list_ir_events(monitored_only=False)[0]
+    assert refreshed["published_at"] == first_seen
+    assert refreshed["collected_at"] == first_seen
+
+
 def test_ir_event_is_incorporated_only_after_every_security_is_applied(tmp_path):
     _, database = service(tmp_path)
     for symbol in ("TEST3", "TEST4"):

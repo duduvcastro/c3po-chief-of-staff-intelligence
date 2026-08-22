@@ -6529,9 +6529,11 @@ function InvestorRelationsView({ canManage }: { canManage: boolean }) {
   const [watchMarket, setWatchMarket] = useState<"B3" | "US">("B3");
   const [watchName, setWatchName] = useState("");
   const [watchUrl, setWatchUrl] = useState("");
+  const [feedPage, setFeedPage] = useState(1);
+  const pageSize = 30;
 
   const feedUrl = useMemo(() => {
-    const params = new URLSearchParams({ limit: "150" });
+    const params = new URLSearchParams({ limit: "300" });
     params.set("scope", scope);
     if (market !== "all") params.set("market", market);
     if (source !== "all") params.set("source", source);
@@ -6539,6 +6541,14 @@ function InvestorRelationsView({ canManage }: { canManage: boolean }) {
     if (search.trim()) params.set("q", search.trim());
     return `${API_URL}/api/v1/investor-relations?${params.toString()}`;
   }, [eventType, market, scope, search, source]);
+
+  useEffect(() => setFeedPage(1), [eventType, market, scope, search, source]);
+
+  const visibleFeedItems = useMemo(
+    () => (feed?.items ?? []).slice((feedPage - 1) * pageSize, feedPage * pageSize),
+    [feed, feedPage],
+  );
+  const feedPageCount = Math.max(1, Math.ceil((feed?.items.length ?? 0) / pageSize));
 
   const loadFeed = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -6697,12 +6707,12 @@ function InvestorRelationsView({ canManage }: { canManage: boolean }) {
       </section>
 
       <section className="panel ir-feed-panel">
-        <PanelHeader title="Official disclosure feed" icon={TatooineNewsIcon} action={feed ? `${feed.items.length} visible` : "Loading"} />
+        <PanelHeader title="Official disclosure feed" icon={TatooineNewsIcon} action={feed ? `${feed.items.length} records` : "Loading"} />
         <div className="ir-feed-head">
           <span>Source</span><span>Company</span><span>Disclosure</span><span>Published</span><span>CVM First</span><span>Document</span>
         </div>
         <div className="ir-feed-body">
-          {loading && !feed ? <div className="ir-feed-loading" /> : feed?.items.map((item) => (
+          {loading && !feed ? <div className="ir-feed-loading" /> : visibleFeedItems.map((item) => (
             <article className="ir-event-row" key={item.id}>
               <div><span className={`ir-source-badge ir-source-${item.source}`}>{item.source.toUpperCase()}</span><small>{item.market}</small></div>
               <div className="ir-company-cell">{item.symbol ? <InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.company_name, market: item.market }}><strong>{item.symbol}</strong></InstrumentPreviewTarget> : <strong>{item.regulator_id ?? "Issuer"}</strong>}<span>{item.company_name}</span></div>
@@ -6719,6 +6729,16 @@ function InvestorRelationsView({ canManage }: { canManage: boolean }) {
           ))}
           {!loading && feed && !feed.items.length && <EmptyLine label="No official disclosures match these filters" />}
         </div>
+        {feedPageCount > 1 && (
+          <footer className="iq-records-pagination" aria-label="Paginação dos comunicados oficiais">
+            <div><strong>{(feedPage - 1) * pageSize + 1}–{Math.min(feedPage * pageSize, feed?.items.length ?? 0)}</strong><span>de {feed?.items.length ?? 0} registros</span></div>
+            <div className="iq-pagination-controls">
+              <button type="button" onClick={() => setFeedPage((page) => Math.max(1, page - 1))} disabled={feedPage === 1} aria-label="Página anterior" title="Página anterior"><ChevronLeft size={16} /></button>
+              <span>Página <strong>{feedPage}</strong> de {feedPageCount}</span>
+              <button type="button" onClick={() => setFeedPage((page) => Math.min(feedPageCount, page + 1))} disabled={feedPage === feedPageCount} aria-label="Próxima página" title="Próxima página"><ChevronRight size={16} /></button>
+            </div>
+          </footer>
+        )}
       </section>
 
       <section className="panel ir-watch-panel">
@@ -6742,7 +6762,7 @@ function formatIrEventDate(event: InvestorRelationsEvent) {
     return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric", timeZone: "America/Sao_Paulo" }).format(date);
   }
   const formatted = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(date);
-  return event.published_time_precision === "collected" ? `${formatted} collected` : formatted;
+  return event.published_time_precision === "collected" ? `First seen ${formatted}` : formatted;
 }
 
 const SERVER_CHART = { width: 1000, height: 330, left: 56, right: 22, top: 22, bottom: 42 };

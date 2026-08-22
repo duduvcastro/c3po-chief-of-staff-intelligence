@@ -1728,6 +1728,12 @@ class Database:
                 existing = self._ir_events.get(key, {})
                 event_id = existing.get("id", event.get("id", str(uuid4())))
                 first_collected_at = existing.get("collected_at") or event.get("collected_at") or datetime.now().astimezone()
+                published_at = event["published_at"]
+                if (
+                    event.get("published_time_precision") == "collected"
+                    and existing.get("published_time_precision") == "collected"
+                ):
+                    published_at = existing.get("published_at") or first_collected_at
                 valuation_status = (
                     existing.get("valuation_status")
                     if existing.get("reviewed_at") or existing.get("valuation_status") == "incorporated"
@@ -1737,6 +1743,7 @@ class Database:
                     **existing,
                     **event,
                     "id": event_id,
+                    "published_at": published_at,
                     "collected_at": first_collected_at,
                     "valuation_status": valuation_status,
                 }
@@ -1798,7 +1805,12 @@ class Database:
                         form = EXCLUDED.form,
                         title = EXCLUDED.title,
                         summary = EXCLUDED.summary,
-                        published_at = EXCLUDED.published_at,
+                        published_at = CASE
+                            WHEN EXCLUDED.published_time_precision = 'collected'
+                             AND ir_events.published_time_precision = 'collected'
+                            THEN LEAST(ir_events.published_at, ir_events.collected_at, EXCLUDED.collected_at)
+                            ELSE EXCLUDED.published_at
+                        END,
                         published_time_precision = EXCLUDED.published_time_precision,
                         reference_date = EXCLUDED.reference_date,
                         official_url = EXCLUDED.official_url,

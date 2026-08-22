@@ -1016,7 +1016,9 @@ class InvestorRelationsService:
             quarter = self._safe_int(document.get("file_quarter"))
             key = (doc_year, quarter) if doc_year and quarter else None
             published_at = quarter_publication_dates.get(key) if key else None
-            published_at = published_at or self._mziq_publication_datetime(document.get("file_published_date")) or collected_at
+            published_at = published_at or self._mziq_publication_datetime(document.get("file_published_date"))
+            published_time_precision = "date" if published_at else "collected"
+            published_at = published_at or collected_at
             reference_date = self._quarter_end(doc_year, quarter) if doc_year and quarter else safe_date(str(document.get("file_date") or ""))
             event_type, materiality, relevant = self._classify_ri(title)
             events.append({
@@ -1032,7 +1034,7 @@ class InvestorRelationsService:
                 "title": title,
                 "summary": "Documento publicado no canal oficial de Relações com Investidores da companhia.",
                 "published_at": published_at,
-                "published_time_precision": "date",
+                "published_time_precision": published_time_precision,
                 "reference_date": reference_date,
                 "official_url": str(company["ri_url"]),
                 "document_url": document_url,
