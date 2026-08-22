@@ -1436,6 +1436,12 @@ function formatCurrency(value: number, currency: string) {
   }).format(value);
 }
 
+function formatPositionPercentMagnitude(returnPercent: number) {
+  const magnitude = Math.abs(returnPercent);
+  const digits = magnitude > 0 && magnitude < 0.001 ? 6 : magnitude > 0 && magnitude < 0.01 ? 4 : 2;
+  return magnitude.toFixed(digits);
+}
+
 function formatResearchPrice(value: number, market: ResearchMarket) {
   return formatCurrency(value, market === "B3" ? "BRL" : "USD");
 }
@@ -3122,7 +3128,7 @@ function R2D2RisingView() {
   }).format(value).replace("$", "US$ ");
   const signedMoney = (value: number) => `${value >= 0 ? "+" : "-"}${money(Math.abs(value))}`;
   const signedPercent = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
-  const signedPositionPercent = (returnPercent: number, pnlUsd: number) => `${pnlUsd >= 0 ? "+" : "-"}${Math.abs(returnPercent).toFixed(2)}%`;
+  const signedPositionPercent = (returnPercent: number, pnlUsd: number) => `${pnlUsd >= 0 ? "+" : "-"}${formatPositionPercentMagnitude(returnPercent)}%`;
   const cashPercent = data.nav_usd > 0 ? data.cash_usd / data.nav_usd * 100 : 100;
   const saoPauloDateKey = (value: string | Date) => new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -3854,7 +3860,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
                     <div className="falcon-portfolio-ticker-item" key={`${copy}-${position.market}-${position.symbol}`}>
                       <div><strong>{position.symbol}</strong><span className={isPositive ? "ticker-price-up" : "ticker-price-down"}>{position.currency === "BRL" ? "R$ " : "$ "}{price}</span></div>
                       <p className={isPositive ? "ticker-change-up" : "ticker-change-down"}>
-                        {isPositive ? "+" : "-"}{Math.abs(position.unrealized_return_percent).toFixed(2)}%
+                        {isPositive ? "+" : "-"}{formatPositionPercentMagnitude(position.unrealized_return_percent)}%
                         <small>($ {usd(Math.abs(position.unrealized_pnl_usd)).replace("US$ ", "")})</small>
                       </p>
                     </div>

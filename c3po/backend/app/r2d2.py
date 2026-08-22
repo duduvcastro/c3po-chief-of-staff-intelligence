@@ -1234,7 +1234,7 @@ class R2D2PaperService:
                 currency=row["currency"],
                 quantity=_float(row["quantity"]), average_cost_local=_float(row["average_cost_local"]),
                 last_price_local=display_price, market_value_usd=round(market_value, 2),
-                unrealized_pnl_usd=round(pnl, 2), unrealized_return_percent=round(pnl / cost * 100, 2) if cost else 0,
+                unrealized_pnl_usd=round(pnl, 2), unrealized_return_percent=round(pnl / cost * 100, 6) if cost else 0,
                 allocation_percent=round(market_value / nav * 100, 2) if nav else 0,
                 stop_price_local=_float(row["stop_price_local"]),
                 technical_score=_float(technical.get("score")),
