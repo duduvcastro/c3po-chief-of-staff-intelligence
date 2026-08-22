@@ -273,6 +273,12 @@ button { cursor: pointer; }
 .leah-calendar-day { min-width: 0; min-height: 94px; padding: 6px; overflow: hidden; background: #fff; cursor: cell; }
 .leah-calendar-day:hover { background: #fffbea; }
 .leah-calendar-day.outside { background: #f4f5f5; }
+.leah-calendar-day.weekend { background: #eef7ff; }
+.leah-calendar-day.weekend:hover { background: #e2f1ff; }
+.leah-calendar-day.holiday { background: #eaf8ed; }
+.leah-calendar-day.holiday:hover { background: #ddf2e2; }
+.leah-calendar-day.outside.weekend { background: #edf3f7; }
+.leah-calendar-day.outside.holiday { background: #eaf3eb; }
 .leah-day-number { width: 25px; height: 25px; display: grid; place-items: center; margin-left: auto; border: 0; border-radius: 50%; color: #555d66; background: transparent; font-size: 10px; font-weight: 800; }
 .leah-calendar-day.outside .leah-day-number { color: #a7adb2; }
 .leah-calendar-day.today .leah-day-number { color: #fff; background: #bd302b; }
@@ -304,6 +310,8 @@ button { cursor: pointer; }
 .leah-year-view span { color: #8d949b; font-size: 7px; font-style: normal; font-weight: 800; }
 .leah-year-view i { height: 18px; display: grid; place-items: center; position: relative; border-radius: 50%; font-size: 7px; font-style: normal; }
 .leah-year-view i.outside { color: transparent; }
+.leah-year-view i.weekend:not(.outside) { background: #e5f3ff; }
+.leah-year-view i.holiday:not(.outside) { background: #dff3e4; }
 .leah-year-view i.has-event:not(.outside)::after { content: ""; width: 3px; height: 3px; position: absolute; bottom: 0; border-radius: 50%; background: #d33a34; }
 .leah-event-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: rgba(11,14,18,.55); backdrop-filter: blur(3px); }
 .leah-event-editor { width: min(520px, 100%); overflow: hidden; border: 1px solid #c9cdd1; border-radius: 7px; background: #fff; box-shadow: 0 24px 70px rgba(0,0,0,.25); }
