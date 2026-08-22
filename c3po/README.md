@@ -29,6 +29,18 @@ coverage. Provider health is visible in Automation Health. Quotes are
 normalized and stored as idempotent observations with provider, market time,
 collection time, quality score and ingestion-run audit data.
 
+## Day D research program
+
+The signed Day D v1.2 blueprint and its Stage 0 workbook are the governing
+documents for the next R2D2 research generation:
+
+- [`docs/DAY_D_BLUEPRINT_V1_2.md`](docs/DAY_D_BLUEPRINT_V1_2.md)
+- [`docs/R2D2_COMMITTEE_PHASE_0.md`](docs/R2D2_COMMITTEE_PHASE_0.md)
+- [`docs/day_d/stage0_contract.json`](docs/day_d/stage0_contract.json)
+
+Stage 0 is specification and burned-data research only. It does not authorize
+changes to production trading behavior or capital use.
+
 ## Market data credentials
 
 Set credentials in the root `.env`; never commit tokens:

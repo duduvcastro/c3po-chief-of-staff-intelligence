@@ -1,7 +1,12 @@
-# R2D2 microstructure raw capture (Phase 0A)
+# R2D2 microstructure raw capture foundation
 
-The first Phase 0A delivery preserves EODHD trade and quote payloads before the
+The capture foundation preserves EODHD trade and quote payloads before the
 existing five-minute aggregation discards event order and trade size.
+
+Under the signed Day D v1.2 blueprint, Stage 0 may inspect and specify this
+component but may not enable it in production. A controlled rollout belongs to
+Stage 1 and requires the disk guard plus pre-written numeric T0 acceptance
+criteria first.
 
 ## Safety properties
 
@@ -29,9 +34,9 @@ C3PO_R2D2_MICROSTRUCTURE_RAW_ROTATE_MB=256
 C3PO_R2D2_MICROSTRUCTURE_RAW_FLUSH_EVERY=1000
 ```
 
-Enabling capture requires a controlled worker restart. The initial production
-rollout should verify disk growth, `accepted/written/dropped/write_errors`, feed
-continuity and CPU before enabling long retention.
+Enabling capture requires a separately approved controlled worker restart. The
+Stage 1 rollout must verify disk growth, `accepted/written/dropped/write_errors`,
+feed continuity, CPU, RSS, iowait and queue lag before enabling long retention.
 
 ## Storage lifecycle
 
@@ -56,4 +61,3 @@ falls back to tick rule when no suitable BBO exists. It will emit one/five-secon
 aggregates containing buy/sell/unknown volume, CVD, trade intensity, size
 percentiles, spread and data-quality coverage. Feature snapshots, including
 non-operated candidates, will then feed live shadow and the future ranker.
-

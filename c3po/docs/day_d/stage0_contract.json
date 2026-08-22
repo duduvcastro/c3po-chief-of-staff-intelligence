@@ -1,0 +1,129 @@
+{
+  "schema_version": "1.0.0",
+  "blueprint_version": "DAY-D-v1.2",
+  "contract_status": "stage0_authorized",
+  "authorized_stage": 0,
+  "production_behavior_change_authorized": false,
+  "capital_use_authorized": false,
+  "signatures": {
+    "dudu": "owner_decisions_recorded",
+    "fable": "approved",
+    "codex": "approved_stage0"
+  },
+  "research_question": {
+    "primary": "Do S3-v1 and S5-v1, long-only, with intraday entries and conditional T-30s carry, have positive net economic edge?",
+    "primary_estimand": "consolidated_net_r_per_session",
+    "diagnostic_estimands": [
+      "intraday_net_r_per_session",
+      "overnight_net_r_per_session",
+      "flat_at_close_counterfactual_net_r_per_session"
+    ]
+  },
+  "clock": {
+    "timezone": "America/New_York",
+    "calendar_source": "exchange_calendar",
+    "regular_open": "09:30:00",
+    "new_entry_cutoff": "15:50:00",
+    "regular_close": "16:00:00",
+    "risk_monitor_start": "09:30:00",
+    "risk_monitor_end": "16:00:00",
+    "t30_seconds_before_official_close": 30,
+    "early_close_hardcoding_forbidden": true
+  },
+  "close_policy": {
+    "poll_interval_seconds": 1,
+    "event_driven_claim": false,
+    "decision_price": "fresh_executable_bid",
+    "positive_test": "estimated_net_exit_pnl_pct > 0",
+    "estimated_net_includes_entry_basis": true,
+    "estimated_net_includes_exit_slippage_and_fee": true,
+    "weekly_conviction_exemption": false,
+    "fill_must_precede_official_close": true,
+    "unfilled_event": "late_unfilled_exit",
+    "negative_positions_remain_risk_monitored": true,
+    "carry_max_sessions": null,
+    "premarket_mode": "information_only",
+    "regular_open_revalidation_required": true
+  },
+  "ledger": {
+    "identity": "R_consolidated = R_intraday + R_overnight",
+    "entry_session_transfer_mark": "official_close",
+    "transfer_mark_has_fictitious_fee": false,
+    "entry_cost_component": "intraday",
+    "real_exit_cost_component_for_carry": "overnight",
+    "daily_marking": true,
+    "no_new_trade_with_open_carry_is_zero": false,
+    "corporate_actions_required": true,
+    "flat_at_close_is_independent_policy_complete_replay": true
+  },
+  "experimental_book": {
+    "active_setup_versions": [
+      "S3-v1",
+      "S5-v1"
+    ],
+    "equal_weight": true,
+    "thompson_sampling_enabled": false,
+    "fixed_dollar_risk_per_trade": true,
+    "max_simultaneous_positions": 5,
+    "duplicate_symbol_exposure_allowed": false,
+    "weekly_conviction_affects_experiment": false,
+    "s5_v1_uses_cvd": false
+  },
+  "universe": {
+    "common_stock_count": 60,
+    "benchmark_symbols": [
+      "QQQ"
+    ],
+    "ranking": "median_dollar_volume",
+    "lookback_completed_sessions": 20,
+    "information_cutoff": "D-1",
+    "point_in_time_required": true,
+    "deterministic_ties_and_substitutions_required": true
+  },
+  "inference": {
+    "session_checkpoints": [
+      60,
+      120
+    ],
+    "burn_in_sessions": 30,
+    "decisions_outside_checkpoints_allowed": false,
+    "retained_is_approval": false,
+    "positive_evidence_requires_lower_bound": true,
+    "joint_multiplicity_calibration_required": true,
+    "serial_dependence_must_be_modeled": true,
+    "unadjusted_iid_t_test_is_sufficient": false,
+    "weekly_block_bootstrap_required": true
+  },
+  "stage0": {
+    "complete": false,
+    "owner_inputs": {
+      "theta_econ_from_npv": null,
+      "success_definition_12_months": null
+    },
+    "freeze_required_before_replay_eligible": [
+      "S3 RVOL formula and history sufficiency",
+      "S3 ATR and VWAP formulas",
+      "S3 executable-risk floor",
+      "S3 partial-exit fraction and target precedence",
+      "S3 opening-gap behavior",
+      "S5 ATR and RVOL formulas",
+      "S5 completed-bar reclaim rule",
+      "S5 VWAP target movement policy",
+      "S5 executable-risk floor",
+      "universe security filters and deterministic replacement",
+      "fresh quote and eligible fill definitions",
+      "corporate action, halt and delisting accounting",
+      "session dependence-aware primary test",
+      "T0 T1 T4 T5 numeric acceptance thresholds",
+      "theta N alpha feasibility"
+    ],
+    "later_stage_actions_forbidden": [
+      "enable_production_setup",
+      "change_live_entry_or_exit_logic",
+      "enable_raw_capture",
+      "purchase_polygon",
+      "promote_capital",
+      "claim_final_preregistration"
+    ]
+  }
+}
