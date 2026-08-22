@@ -11,7 +11,8 @@ from .market_data.b3_screener import B3ScreenerService
 from .market_data.service import MarketDataService
 from .market_data.realtime import RealtimeMarketsService
 from .market_data.eodhd_stream import EodhdRealtimeStream
-from .microstructure_capture import AppendOnlyRawStreamCapture
+from .microstructure_capture import AppendOnlyRawStreamCapture, CompositeRawStreamCapture
+from .microstructure_processor import MicrostructureProcessor
 from .one_pager import OnePagerService
 from .r2d2 import R2D2PaperService
 
@@ -58,6 +59,8 @@ def main() -> None:
     database.initialize()
     market_data = MarketDataService(settings, database)
     raw_capture = None
+    processor = None
+    captures = []
     if settings.r2d2_microstructure_raw_capture_enabled:
         raw_capture = AppendOnlyRawStreamCapture(
             settings.r2d2_microstructure_raw_dir,
@@ -65,10 +68,26 @@ def main() -> None:
             rotate_bytes=settings.r2d2_microstructure_raw_rotate_mb * 1024 * 1024,
             flush_every=settings.r2d2_microstructure_raw_flush_every,
         )
+        captures.append(raw_capture)
+    if settings.r2d2_microstructure_processor_enabled:
+        if not raw_capture:
+            raise RuntimeError(
+                "Microstructure processor requires raw capture so derived data never replaces source evidence"
+            )
+        processor = MicrostructureProcessor(
+            settings.r2d2_microstructure_raw_dir / "aggregates",
+            bbo_max_age_seconds=settings.r2d2_microstructure_bbo_max_age_seconds,
+            allowed_lateness_seconds=settings.r2d2_microstructure_allowed_lateness_seconds,
+            queue_size=settings.r2d2_microstructure_aggregate_queue_size,
+            rotate_bytes=settings.r2d2_microstructure_raw_rotate_mb * 1024 * 1024,
+            flush_every=settings.r2d2_microstructure_raw_flush_every,
+        )
+        captures.append(processor)
+    capture_pipeline = CompositeRawStreamCapture(captures) if captures else None
     stream = EodhdRealtimeStream(
         settings.eodhd_api_token,
         max_symbols=settings.r2d2_ws_max_symbols,
-        raw_capture=raw_capture,
+        raw_capture=capture_pipeline,
     )
     stream.start()
     realtime = RealtimeMarketsService(settings, database, market_data.http, stream=stream)
@@ -132,6 +151,20 @@ def main() -> None:
                         capture_stats.written,
                         capture_stats.dropped,
                         capture_stats.write_errors,
+                    )
+                if scan_entries and processor:
+                    processor_stats = processor.stats()
+                    logger.info(
+                        "R2D2 microstructure processor accepted=%d processed=%d malformed=%d "
+                        "ignored=%d late=%d dropped=%d aggregates=%d errors=%d",
+                        processor_stats.accepted,
+                        processor_stats.processed,
+                        processor_stats.malformed,
+                        processor_stats.ignored,
+                        processor_stats.late,
+                        processor_stats.dropped,
+                        processor_stats.aggregates_written,
+                        processor_stats.write_errors,
                     )
             except Exception:
                 logger.exception("Unhandled R2D2 worker error")

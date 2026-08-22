@@ -4,6 +4,17 @@ Status: **draft for methodological sign-off; no production-capital behavior**
 Specification version: `COMMITTEE-PHASE0-v0.1`  
 Created: 2026-08-21
 
+## Day D
+
+**2026-08-21 is Day D:** the founding day of the R2D2 committee intelligence
+project, built in six hands by Dudu, Codex and Fable.
+
+The name marks the start of the system described here, not a claim that its edge
+already exists. Its meaning is the commitment made on this date: ambitious
+research, real infrastructure evidence, independent methodological challenge,
+immutable audit trails and no promotion to capital without out-of-sample and
+live-shadow proof. Every later version descends from this contract.
+
 ## Purpose
 
 Replace reactive modification of one intraday entry route with a governed
@@ -243,3 +254,13 @@ microstructure, cross-sectional strength, liquidity, event and regime features.
 - Cost, clock, feature and dataset schemas are versioned.
 - Replay and live-shadow provenance cannot be mixed silently.
 - Promotion and circuit-breaker thresholds are registered before results are viewed.
+
+## Phase 0A microstructure contract
+
+The EODHD provider exposes trade price/volume and BBO on separate streams. The
+system therefore estimates aggressor side; it does not claim an official
+exchange aggressor flag. Schema v1 uses only a prior BBO no more than two seconds
+old, then tick rule, inherited tick and unknown in that order. One- and
+five-second aggregates always retain classification coverage, confidence and
+BBO age. Raw append-only events remain the source of truth and permit complete
+reprocessing when the classifier changes.
