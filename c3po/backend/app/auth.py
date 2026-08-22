@@ -209,14 +209,20 @@ class AuthService:
             "browser": f"{browser_name} {browser_version}".strip(),
         }
 
-    def request_code(self, email: str, requested_ip: str, delivery_method: str = "auto") -> tuple[str, int, str]:
+    def request_code(
+        self, email: str, requested_ip: str, delivery_method: str = "auto",
+    ) -> tuple[str, int, str, tuple[str, str] | None]:
         normalized_email = email.strip().lower()
         if not self.database.database_url and normalized_email == self.settings.auth_email.strip().lower():
             self.database.ensure_access_owner(normalized_email, list(ALL_VIEW_PERMISSIONS))
         access_user = self.database.get_access_user(normalized_email)
         now = self.now()
-        since = now - timedelta(minutes=15)
-        if self.database.recent_login_code_count(normalized_email, requested_ip, since) >= 5:
+        since = now - timedelta(minutes=self.settings.auth_rate_limit_minutes)
+        email_count, ip_count = self.database.recent_login_code_counts(normalized_email, requested_ip, since)
+        if (
+            email_count >= self.settings.auth_request_limit_per_email
+            or ip_count >= self.settings.auth_request_limit_per_ip
+        ):
             raise RateLimitError("Aguarde alguns minutos antes de solicitar outro código.")
 
         challenge_id = str(uuid4())
@@ -237,20 +243,18 @@ class AuthService:
             }
         )
 
-        if verification_method == "email" and access_user and access_user["is_active"]:
-            self.send_code_email(code, normalized_email)
-        return challenge_id, self.settings.auth_code_minutes * 60, verification_method
+        self.database.record_audit_event(
+            normalized_email, "auth.otp_requested", "auth_challenge", challenge_id,
+            {"requested_ip": requested_ip, "delivery_requested": delivery_method},
+        )
+        delivery = (code, normalized_email) if verification_method == "email" and access_user and access_user["is_active"] else None
+        return challenge_id, self.settings.auth_code_minutes * 60, verification_method, delivery
 
     def verify_code(self, challenge_id: str, code: str, requested_ip: str) -> tuple[str, datetime, str]:
         now = self.now()
         challenge = self.database.get_login_code(challenge_id)
         if not challenge:
             raise AuthenticationError("Código inválido ou expirado.")
-        if challenge.get("used_at") or challenge["expires_at"] <= now:
-            raise AuthenticationError("Código inválido ou expirado.")
-        if challenge["attempts"] >= challenge["max_attempts"]:
-            raise AuthenticationError("Limite de tentativas atingido. Solicite outro código.")
-
         access_user = self.database.get_access_user(challenge["email"])
         if challenge.get("verification_method") == "totp":
             credential = self.database.get_totp_credential(challenge["email"])
@@ -260,8 +264,17 @@ class AuthService:
         else:
             expected = self.code_hash(challenge_id, code)
             valid = hmac.compare_digest(expected, challenge["code_hash"])
-        self.database.record_login_attempt(challenge_id, used_at=now if valid else None)
-        if not valid or not access_user or not access_user["is_active"]:
+        outcome, claimed = self.database.claim_login_attempt(
+            challenge_id,
+            code_valid=bool(valid and access_user and access_user["is_active"]),
+            requested_ip=requested_ip,
+            at=now,
+            since=now - timedelta(minutes=self.settings.auth_rate_limit_minutes),
+            ip_failure_limit=self.settings.auth_verify_failure_limit_per_ip,
+        )
+        if outcome == "rate_limited":
+            raise RateLimitError("Muitas tentativas de acesso. Aguarde alguns minutos.")
+        if outcome != "accepted" or not claimed:
             raise AuthenticationError("Código inválido ou expirado.")
 
         token = secrets.token_urlsafe(48)

@@ -1025,7 +1025,6 @@ class LoginCodeResponse(BaseModel):
     challenge_id: str
     expires_in_seconds: int
     message: str
-    verification_method: Literal["email", "totp"] = "email"
 
 
 class LoginVerifyRequest(BaseModel):

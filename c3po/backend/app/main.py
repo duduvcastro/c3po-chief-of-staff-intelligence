@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 import hashlib
+import ipaddress
 import re
 from time import perf_counter
 from uuid import uuid4
@@ -254,9 +255,12 @@ async def require_authenticated_session(request: Request, call_next):
 
 
 def request_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",", 1)[0].strip()
+    cloudflare_ip = request.headers.get("cf-connecting-ip", "").strip()
+    if cloudflare_ip:
+        try:
+            return str(ipaddress.ip_address(cloudflare_ip))
+        except ValueError:
+            pass
     return request.client.host if request.client else ""
 
 
@@ -375,27 +379,40 @@ def access_list_response() -> AccessUserListResponse:
     )
 
 
-@app.post("/api/v1/auth/request-code", response_model=LoginCodeResponse)
-def request_login_code(payload: LoginCodeRequest, request: Request) -> LoginCodeResponse:
+def deliver_login_code(code: str, email: str, challenge_id: str, requested_ip: str) -> None:
     try:
-        challenge_id, expires_in, verification_method = auth_service.request_code(
+        auth_service.send_code_email(code, email)
+    except EmailDeliveryError:
+        database.record_audit_event(
+            email,
+            "auth.otp_delivery_failed",
+            "auth_challenge",
+            challenge_id,
+            {"requested_ip": requested_ip},
+        )
+
+
+@app.post("/api/v1/auth/request-code", response_model=LoginCodeResponse)
+def request_login_code(
+    payload: LoginCodeRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> LoginCodeResponse:
+    client_ip = request_ip(request)
+    try:
+        challenge_id, expires_in, _verification_method, delivery = auth_service.request_code(
             payload.email,
-            request_ip(request),
+            client_ip,
             payload.delivery_method,
         )
     except RateLimitError as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
-    except EmailDeliveryError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    if delivery:
+        background_tasks.add_task(deliver_login_code, *delivery, challenge_id, client_ip)
     return LoginCodeResponse(
         challenge_id=challenge_id,
         expires_in_seconds=expires_in,
-        message=(
-            "Use o código exibido no app Senhas."
-            if verification_method == "totp"
-            else "Se o e-mail estiver autorizado, o código chegará em instantes."
-        ),
-        verification_method=verification_method,
+        message="Use seu código de acesso. Se o e-mail estiver autorizado, as opções configuradas estarão disponíveis.",
     )
 
 
@@ -447,6 +464,8 @@ def verify_login_code(
 ) -> AuthSessionResponse:
     try:
         token, expires_at, email = auth_service.verify_code(payload.challenge_id, payload.code, request_ip(request))
+    except RateLimitError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except AuthenticationError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     max_age = max(1, int((expires_at - auth_service.now()).total_seconds()))
@@ -458,7 +477,7 @@ def verify_login_code(
         path="/",
         secure=settings.auth_cookie_secure,
         httponly=True,
-        samesite="lax",
+        samesite="strict",
     )
     access_user = database.get_access_user(email)
     login_at = auth_service.now()
@@ -539,7 +558,7 @@ def record_auth_activity(request: Request) -> AuthSessionResponse:
 @app.post("/api/v1/auth/logout", response_model=AuthSessionResponse)
 def logout(request: Request, response: Response) -> AuthSessionResponse:
     auth_service.logout(request.cookies.get(SESSION_COOKIE))
-    response.delete_cookie(SESSION_COOKIE, path="/", secure=settings.auth_cookie_secure, httponly=True, samesite="lax")
+    response.delete_cookie(SESSION_COOKIE, path="/", secure=settings.auth_cookie_secure, httponly=True, samesite="strict")
     return AuthSessionResponse(authenticated=False)
 
 

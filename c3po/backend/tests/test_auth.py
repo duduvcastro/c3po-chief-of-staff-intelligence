@@ -1,4 +1,5 @@
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -6,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main as app_main
-from app.auth import AuthService, AuthenticationError
+from app.auth import AuthService, AuthenticationError, RateLimitError
 from app.config import Settings
 from app.database import Database
 
@@ -54,7 +55,9 @@ def test_one_time_code_creates_session_and_cannot_be_reused(monkeypatch) -> None
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda code, _email: sent_codes.append(code))
 
-    challenge_id, expires_in, method = service.request_code(settings.auth_email, "127.0.0.1")
+    challenge_id, expires_in, method, delivery = service.request_code(settings.auth_email, "127.0.0.1")
+    assert delivery == ("123456", settings.auth_email)
+    service.send_code_email(*delivery)
     assert expires_in == 600
     assert method == "email"
     assert sent_codes == ["123456"]
@@ -79,9 +82,140 @@ def test_invalid_code_is_rejected(monkeypatch) -> None:
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda _code, _email: None)
 
-    challenge_id, _, _ = service.request_code(settings.auth_email, "127.0.0.1")
+    challenge_id, _, _, _ = service.request_code(settings.auth_email, "127.0.0.1")
     with pytest.raises(AuthenticationError):
         service.verify_code(challenge_id, "654321", "127.0.0.1")
+
+
+def test_new_login_request_invalidates_previous_pending_challenge(monkeypatch) -> None:
+    settings = Settings(
+        auth_required=True,
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+    )
+    database = Database(settings)
+    service = AuthService(settings, database)
+    codes = iter((111111, 222222))
+    monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: next(codes))
+
+    first, _, _, _ = service.request_code(settings.auth_email, "127.0.0.1")
+    second, _, _, _ = service.request_code(settings.auth_email, "127.0.0.1")
+
+    with pytest.raises(AuthenticationError):
+        service.verify_code(first, "111111", "127.0.0.1")
+    assert service.verify_code(second, "222222", "127.0.0.1")[2] == settings.auth_email
+
+
+def test_login_request_rate_limit_is_enforced_independently_by_ip() -> None:
+    settings = Settings(
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+        auth_request_limit_per_email=5,
+        auth_request_limit_per_ip=2,
+    )
+    service = AuthService(settings, Database(settings))
+
+    service.request_code("first@example.com", "203.0.113.10")
+    service.request_code("second@example.com", "203.0.113.10")
+    with pytest.raises(RateLimitError):
+        service.request_code("third@example.com", "203.0.113.10")
+
+
+def test_parallel_valid_verification_can_create_only_one_session(monkeypatch) -> None:
+    settings = Settings(
+        auth_required=True,
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+    )
+    database = Database(settings)
+    service = AuthService(settings, database)
+    monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
+    challenge_id, _, _, _ = service.request_code(settings.auth_email, "127.0.0.1")
+
+    def verify() -> bool:
+        try:
+            service.verify_code(challenge_id, "123456", "203.0.113.20")
+            return True
+        except AuthenticationError:
+            return False
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        outcomes = list(executor.map(lambda _: verify(), range(8)))
+
+    assert outcomes.count(True) == 1
+    assert database.get_login_code(challenge_id)["attempts"] == 1
+
+
+def test_login_requests_and_failures_are_audited(monkeypatch) -> None:
+    settings = Settings(
+        auth_required=True,
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+    )
+    database = Database(settings)
+    service = AuthService(settings, database)
+    monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
+
+    challenge_id, _, _, _ = service.request_code(settings.auth_email, "203.0.113.30")
+    with pytest.raises(AuthenticationError):
+        service.verify_code(challenge_id, "654321", "203.0.113.30")
+
+    requested = database.list_audit_events(action="auth.otp_requested")
+    failed = database.list_audit_events(action="auth.otp_failed")
+    assert requested[0]["detail"]["requested_ip"] == "203.0.113.30"
+    assert failed[0]["detail"]["requested_ip"] == "203.0.113.30"
+
+
+def test_login_verification_failure_limit_is_enforced_by_ip(monkeypatch) -> None:
+    settings = Settings(
+        auth_required=True,
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+        auth_verify_failure_limit_per_ip=2,
+    )
+    database = Database(settings)
+    service = AuthService(settings, database)
+    monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
+    challenge_id, _, _, _ = service.request_code(settings.auth_email, "203.0.113.31")
+
+    for _ in range(2):
+        with pytest.raises(AuthenticationError):
+            service.verify_code(challenge_id, "654321", "203.0.113.31")
+    with pytest.raises(RateLimitError):
+        service.verify_code(challenge_id, "654321", "203.0.113.31")
+
+
+def test_request_code_response_does_not_disclose_verification_method(monkeypatch) -> None:
+    calls = iter((
+        (str(uuid4()), 600, "totp", None),
+        (str(uuid4()), 600, "email", None),
+    ))
+    monkeypatch.setattr(app_main.auth_service, "request_code", lambda *_args, **_kwargs: next(calls))
+
+    with TestClient(app_main.app) as client:
+        totp = client.post("/api/v1/auth/request-code", json={"email": "one@example.com"})
+        email = client.post("/api/v1/auth/request-code", json={"email": "two@example.com"})
+
+    assert totp.status_code == email.status_code == 200
+    assert set(totp.json()) == set(email.json()) == {"challenge_id", "expires_in_seconds", "message"}
+    assert totp.json()["message"] == email.json()["message"]
+
+
+def test_request_ip_uses_valid_cloudflare_ip_and_ignores_forwarded_header() -> None:
+    with TestClient(app_main.app) as client:
+        request = client.build_request(
+            "POST",
+            "/api/v1/auth/request-code",
+            headers={
+                "CF-Connecting-IP": "203.0.113.41",
+                "X-Forwarded-For": "198.51.100.99",
+            },
+            json={"email": "unknown@example.com"},
+        )
+        response = client.send(request)
+
+    assert response.status_code == 200
+    events = app_main.database.list_audit_events(action="auth.otp_requested")
+    assert events[0]["detail"]["requested_ip"] == "203.0.113.41"
 
 
 def test_totp_setup_login_replay_protection_and_email_recovery(monkeypatch) -> None:
@@ -107,25 +241,28 @@ def test_totp_setup_login_replay_protection_and_email_recovery(monkeypatch) -> N
     assert service.totp_enabled(settings.auth_email)
 
     clock["now"] += timedelta(seconds=30)
-    challenge_id, _, method = service.request_code(settings.auth_email, "127.0.0.1")
+    challenge_id, _, method, delivery = service.request_code(settings.auth_email, "127.0.0.1")
     assert method == "totp"
+    assert delivery is None
     assert sent_codes == []
     login_step = int(clock["now"].timestamp()) // 30
     login_code = service.totp_code(str(setup["secret"]), login_step)
     token, _, _ = service.verify_code(challenge_id, login_code, "127.0.0.1")
     assert service.authenticate(token) is not None
 
-    replay_challenge, _, replay_method = service.request_code(settings.auth_email, "127.0.0.2")
+    replay_challenge, _, replay_method, _ = service.request_code(settings.auth_email, "127.0.0.2")
     assert replay_method == "totp"
     with pytest.raises(AuthenticationError):
         service.verify_code(replay_challenge, login_code, "127.0.0.2")
 
-    email_challenge, _, email_method = service.request_code(
+    email_challenge, _, email_method, email_delivery = service.request_code(
         settings.auth_email,
         "127.0.0.3",
         delivery_method="email",
     )
     assert email_method == "email"
+    assert email_delivery is not None
+    service.send_code_email(*email_delivery)
     assert len(sent_codes) == 1
     recovered_token, _, _ = service.verify_code(email_challenge, sent_codes[0], "127.0.0.3")
     assert service.authenticate(recovered_token) is not None
@@ -214,7 +351,9 @@ def test_allowlisted_member_receives_code_and_permissions_follow_session(monkeyp
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda code, email: sent.append((code, email)))
 
-    challenge_id, _, _ = service.request_code("MEMBER@example.com", "127.0.0.1")
+    challenge_id, _, _, delivery = service.request_code("MEMBER@example.com", "127.0.0.1")
+    assert delivery is not None
+    service.send_code_email(*delivery)
     assert sent == [("123456", "member@example.com")]
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
     session = service.authenticate(token)
@@ -251,7 +390,9 @@ def test_member_session_expires_after_sixty_minutes_without_human_activity(monke
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda _code, _email: None)
 
-    challenge_id, _, _ = service.request_code("member@example.com", "127.0.0.1")
+    challenge_id, _, _, delivery = service.request_code("member@example.com", "127.0.0.1")
+    assert delivery is not None
+    service.send_code_email(*delivery)
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
     clock["now"] += timedelta(minutes=59)
     assert service.authenticate(token) is not None
@@ -286,7 +427,9 @@ def test_human_activity_renews_member_idle_window(monkeypatch) -> None:
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda _code, _email: None)
 
-    challenge_id, _, _ = service.request_code("active@example.com", "127.0.0.1")
+    challenge_id, _, _, delivery = service.request_code("active@example.com", "127.0.0.1")
+    assert delivery is not None
+    service.send_code_email(*delivery)
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
     clock["now"] += timedelta(minutes=50)
     assert service.authenticate(token, touch_activity=True) is not None
@@ -313,7 +456,9 @@ def test_owner_session_ignores_idle_timeout_and_expires_daily(monkeypatch) -> No
     monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
     monkeypatch.setattr(service, "send_code_email", lambda _code, _email: None)
 
-    challenge_id, _, _ = service.request_code(settings.auth_email, "127.0.0.1")
+    challenge_id, _, _, delivery = service.request_code(settings.auth_email, "127.0.0.1")
+    assert delivery is not None
+    service.send_code_email(*delivery)
     token, expires_at, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
     assert expires_at == clock["now"] + timedelta(hours=24)
     clock["now"] += timedelta(hours=23)
