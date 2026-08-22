@@ -29,11 +29,16 @@ def test_four_thousand_dollar_risk_scenario_is_internally_consistent() -> None:
 
     assert scenario.fixed_risk_fraction_of_capital == pytest.approx(0.004)
     assert scenario.full_book_initial_stop_risk_fraction == pytest.approx(0.02)
-    assert scenario.theta_econ_r_per_session == pytest.approx(1.0069444444)
+    assert scenario.theta_econ_r_per_session_at_reference_nav == pytest.approx(
+        1.25
+    )
+    assert scenario.theta_econ_r_per_session_at_target_last_session_nav == pytest.approx(
+        4.3711077670
+    )
     assert scenario.full_r_losses_to_maximum_drawdown == pytest.approx(20)
-    assert scenario.sessions_for_80pct_power_at_theta == 70
+    assert scenario.sessions_for_80pct_power_at_reference_nav_theta == 46
     assert scenario.independent_two_arm_h0_kill_probability_c2 == pytest.approx(
-        0.9365150889
+        0.9959328360
     )
 
 
@@ -42,7 +47,10 @@ def test_more_risk_lowers_theta_but_consumes_drawdown_capacity() -> None:
     lower = risk_scenario(1_000, assumptions)
     higher = risk_scenario(5_000, assumptions)
 
-    assert higher.theta_econ_r_per_session < lower.theta_econ_r_per_session
+    assert (
+        higher.theta_econ_r_per_session_at_reference_nav
+        < lower.theta_econ_r_per_session_at_reference_nav
+    )
     assert (
         higher.full_r_losses_to_maximum_drawdown
         < lower.full_r_losses_to_maximum_drawdown
@@ -52,8 +60,8 @@ def test_more_risk_lowers_theta_but_consumes_drawdown_capacity() -> None:
         > lower.full_book_initial_stop_risk_fraction
     )
     assert (
-        higher.sessions_for_80pct_power_at_theta
-        > lower.sessions_for_80pct_power_at_theta
+        higher.sessions_for_80pct_power_at_reference_nav_theta
+        > lower.sessions_for_80pct_power_at_reference_nav_theta
     )
 
 
@@ -67,7 +75,42 @@ def test_report_is_explicitly_preliminary_and_has_no_selected_scenario() -> None
         4_000,
     ]
     assert "selected_scenario" not in report
-    assert len(report["limitations"]) == 5
+    assert len(report["limitations"]) == 6
+
+
+def test_compounded_target_is_nav_dependent_and_not_a_fixed_dollar_quota() -> None:
+    assumptions = FeasibilityAssumptions()
+
+    assert assumptions.target_path_usd_first_session == pytest.approx(5_000)
+    assert assumptions.target_ending_virtual_nav_usd == pytest.approx(
+        3_514_370.64469923
+    )
+    assert assumptions.target_virtual_trading_profit_usd == pytest.approx(
+        2_514_370.64469923
+    )
+    assert (
+        assumptions.target_project_economic_surplus_after_forward_costs_usd
+        == pytest.approx(2_499_370.64469923)
+    )
+    assert assumptions.target_path_usd_last_session == pytest.approx(
+        17_484.4310681554
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("reference_capital_usd", 0),
+        ("target_geometric_net_return_fraction_per_session", 0),
+        ("planning_sessions", 0),
+        ("maximum_planned_forward_product_cost_usd", -1),
+    ],
+)
+def test_invalid_compounding_assumptions_are_rejected(
+    field: str, value: float
+) -> None:
+    with pytest.raises(ValueError):
+        FeasibilityAssumptions(**{field: value})
 
 
 @pytest.mark.parametrize("invalid", [0, -1, -100])

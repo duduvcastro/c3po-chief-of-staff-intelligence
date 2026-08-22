@@ -11,7 +11,9 @@ from typing import Iterable
 class FeasibilityAssumptions:
     reference_capital_usd: float = 1_000_000.0
     maximum_drawdown_fraction: float = 0.08
-    required_gross_usd_per_session: float = 4_027.777777777778
+    target_geometric_net_return_fraction_per_session: float = 0.005
+    planning_sessions: int = 252
+    maximum_planned_forward_product_cost_usd: float = 15_000.0
     session_sigma_r: float = 2.6
     family_alpha: float = 0.05
     multiplicity_cells: int = 6
@@ -21,9 +23,61 @@ class FeasibilityAssumptions:
     arm_count: int = 2
     maximum_positions: int = 5
 
+    def __post_init__(self) -> None:
+        if self.reference_capital_usd <= 0:
+            raise ValueError("reference_capital_usd must be positive")
+        if not 0 < self.target_geometric_net_return_fraction_per_session < 1:
+            raise ValueError(
+                "target_geometric_net_return_fraction_per_session must be "
+                "between zero and one"
+            )
+        if self.planning_sessions <= 0:
+            raise ValueError("planning_sessions must be positive")
+        if self.maximum_planned_forward_product_cost_usd < 0:
+            raise ValueError(
+                "maximum_planned_forward_product_cost_usd cannot be negative"
+            )
+
     @property
     def per_decision_alpha(self) -> float:
         return self.family_alpha / self.multiplicity_cells
+
+    @property
+    def target_ending_virtual_nav_usd(self) -> float:
+        return self.reference_capital_usd * (
+            1 + self.target_geometric_net_return_fraction_per_session
+        ) ** self.planning_sessions
+
+    @property
+    def target_virtual_trading_profit_usd(self) -> float:
+        return self.target_ending_virtual_nav_usd - self.reference_capital_usd
+
+    @property
+    def target_project_economic_surplus_after_forward_costs_usd(self) -> float:
+        return (
+            self.target_virtual_trading_profit_usd
+            - self.maximum_planned_forward_product_cost_usd
+        )
+
+    @property
+    def target_opening_virtual_nav_last_session_usd(self) -> float:
+        return self.reference_capital_usd * (
+            1 + self.target_geometric_net_return_fraction_per_session
+        ) ** (self.planning_sessions - 1)
+
+    @property
+    def target_path_usd_first_session(self) -> float:
+        return (
+            self.reference_capital_usd
+            * self.target_geometric_net_return_fraction_per_session
+        )
+
+    @property
+    def target_path_usd_last_session(self) -> float:
+        return (
+            self.target_opening_virtual_nav_last_session_usd
+            * self.target_geometric_net_return_fraction_per_session
+        )
 
 
 @dataclass(frozen=True)
@@ -31,9 +85,10 @@ class RiskScenario:
     fixed_risk_usd: float
     fixed_risk_fraction_of_capital: float
     full_book_initial_stop_risk_fraction: float
-    theta_econ_r_per_session: float
+    theta_econ_r_per_session_at_reference_nav: float
+    theta_econ_r_per_session_at_target_last_session_nav: float
     full_r_losses_to_maximum_drawdown: float
-    sessions_for_80pct_power_at_theta: int
+    sessions_for_80pct_power_at_reference_nav_theta: int
     per_arm_h0_kill_probability_c1: float
     per_arm_h0_kill_probability_c2: float
     independent_two_arm_h0_kill_probability_c2: float
@@ -103,7 +158,10 @@ def risk_scenario(
 ) -> RiskScenario:
     if fixed_risk_usd <= 0:
         raise ValueError("fixed_risk_usd must be positive")
-    theta_r = assumptions.required_gross_usd_per_session / fixed_risk_usd
+    theta_r = assumptions.target_path_usd_first_session / fixed_risk_usd
+    last_session_theta_r = (
+        assumptions.target_path_usd_last_session / fixed_risk_usd
+    )
     kill_c1 = h0_kill_probability(
         theta_r, assumptions.first_checkpoint_sessions, assumptions
     )
@@ -120,13 +178,16 @@ def risk_scenario(
             * assumptions.maximum_positions
             / assumptions.reference_capital_usd
         ),
-        theta_econ_r_per_session=theta_r,
+        theta_econ_r_per_session_at_reference_nav=theta_r,
+        theta_econ_r_per_session_at_target_last_session_nav=last_session_theta_r,
         full_r_losses_to_maximum_drawdown=(
             assumptions.reference_capital_usd
             * assumptions.maximum_drawdown_fraction
             / fixed_risk_usd
         ),
-        sessions_for_80pct_power_at_theta=sessions_for_power(theta_r, assumptions),
+        sessions_for_80pct_power_at_reference_nav_theta=sessions_for_power(
+            theta_r, assumptions
+        ),
         per_arm_h0_kill_probability_c1=kill_c1,
         per_arm_h0_kill_probability_c2=kill_c2,
         independent_two_arm_h0_kill_probability_c2=kill_c2
@@ -145,7 +206,16 @@ def feasibility_report(
     return {
         "status": "preliminary_not_for_production",
         "assumptions": asdict(active)
-        | {"per_decision_alpha": active.per_decision_alpha},
+        | {
+            "per_decision_alpha": active.per_decision_alpha,
+            "target_ending_virtual_nav_usd": active.target_ending_virtual_nav_usd,
+            "target_virtual_trading_profit_usd": active.target_virtual_trading_profit_usd,
+            "target_project_economic_surplus_after_forward_costs_usd": (
+                active.target_project_economic_surplus_after_forward_costs_usd
+            ),
+            "target_path_usd_first_session": active.target_path_usd_first_session,
+            "target_path_usd_last_session": active.target_path_usd_last_session,
+        },
         "minimum_detectable_mean_r": {
             "c1": minimum_detectable_mean_r(
                 active.first_checkpoint_sessions, active
@@ -161,6 +231,8 @@ def feasibility_report(
             "Two-arm class-kill probability assumes independent arm statistics.",
             "Carry serial dependence is not modeled in this analytic screen.",
             "Statistical detectability does not establish economic attainability.",
+            "The NAV-relative target makes required R/session non-stationary "
+            "under fixed dollar risk.",
         ],
     }
 

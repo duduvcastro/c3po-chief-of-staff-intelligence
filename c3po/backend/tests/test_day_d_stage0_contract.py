@@ -29,13 +29,23 @@ def test_contract_authorizes_stage_zero_only() -> None:
     assert contract["stage0"]["complete"] is False
     owner_inputs = contract["stage0"]["owner_inputs"]
     assert owner_inputs["economic_mandate"] == "day_d/economic_mandate.json"
-    assert owner_inputs["theta_econ_from_npv"]["status"] == "provisional_usd_only"
+    assert owner_inputs["theta_econ_from_npv"]["status"] == (
+        "nav_dependent_fraction_recorded"
+    )
     assert owner_inputs["theta_econ_from_npv"]["r_per_session"] is None
-    assert owner_inputs["theta_econ_from_npv"]["requires_fixed_dollar_risk"] is True
+    assert owner_inputs["theta_econ_from_npv"][
+        "requires_fixed_dollar_risk_and_nav_path"
+    ] is True
     assert owner_inputs["success_definition_12_months"] == {
         "status": "recorded",
-        "target_net_return_fraction": 1.0,
+        "trading_capital_mode": "virtual_only",
+        "real_trading_capital_during_horizon_usd": 0,
+        "target_geometric_net_return_fraction_per_session": 0.005,
+        "target_is_mandatory_each_session": False,
+        "target_session_population": "all_preregistered_exchange_sessions",
+        "no_trade_session_return_fraction": 0,
         "maximum_drawdown_fraction": 0.08,
+        "capex_and_opex_are_real_product_investments": True,
     }
 
 

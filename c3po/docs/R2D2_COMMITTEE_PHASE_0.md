@@ -52,20 +52,26 @@ calculation explained in
 | Input | Owner value |
 |---|---:|
 | Reference capital | USD 1,000,000 |
+| Trading capital during first 12 months | 100% virtual; USD 0 real exposure |
 | Baseline new Capex | USD 3,000; expandable by approved investment memo |
 | Maximum recurring monthly data/infrastructure spend | USD 1,000 |
-| Minimum 12-month net dollar contribution | USD 1,000,000 |
+| Net-return target | 0.5% geometric mean across every preregistered exchange session, compounded on virtual NAV |
+| Implied 252-session virtual return | Approximately 251.44% |
 | Maximum acceptable peak-to-trough drawdown | 8% |
-| Preliminary gross dollar edge | USD 4,027.78/session at 252 sessions |
-| Resulting `theta_econ` in R/session | Pending fixed dollar-risk budget |
+| First-session target-path edge | USD 5,000 at USD 1,000,000 NAV |
+| Resulting `theta_econ` in R/session | NAV-dependent; pending fixed dollar-risk budget and full path |
 
 ### Written 12-month success definition
 
-Trading success requires at least USD 1,000,000 net project profit after
-transaction and forward project costs, maximum peak-to-trough drawdown of 8%,
-complete reproducibility and no unresolved material data/execution/ledger audit
-failure. A correctly powered `not validated` verdict is a valid research result
-but does not satisfy the owner's economic trading-success target.
+Trading success requires a geometric mean net return of at least 0.5% across
+every preregistered exchange session in the complete 12-month virtual
+experiment, after simulated execution costs, with maximum peak-to-trough
+drawdown of 8%, complete reproducibility and no unresolved material
+data/execution/ledger audit failure. No-trade sessions count as zero and cannot
+be excluded. This is a horizon-level target, never a mandatory daily quota.
+Capex and Opex are real product investments reported separately from virtual
+trading NAV. A correctly powered `not validated` verdict is a valid research
+result but does not satisfy the owner's economic trading-success target.
 
 ## Research question and ledgers
 

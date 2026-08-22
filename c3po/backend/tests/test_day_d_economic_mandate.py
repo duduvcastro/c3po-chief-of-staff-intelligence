@@ -17,11 +17,28 @@ def test_owner_economic_targets_are_internally_consistent() -> None:
     mandate = _mandate()
 
     capital = mandate["reference_capital_usd"]
-    target_return = mandate["target_net_return_fraction"]
+    daily_target = mandate["target_geometric_net_return_fraction_per_session"]
+    sessions = mandate["planning_translation"]["planning_sessions"]
     drawdown = mandate["maximum_drawdown_fraction"]
 
-    assert mandate["target_net_profit_usd"] == capital * target_return
-    assert mandate["target_ending_economic_value_usd"] == capital + mandate["target_net_profit_usd"]
+    expected_ending_nav = capital * (1 + daily_target) ** sessions
+    assert mandate["trading_capital_mode"] == "virtual_only"
+    assert mandate["real_trading_capital_during_horizon_usd"] == 0
+    assert mandate["real_product_investment_enabled"] is True
+    assert mandate["target_is_mandatory_each_session"] is False
+    assert mandate["no_trade_session_return_fraction"] == 0
+    assert (
+        mandate["sessions_cannot_be_excluded_for_no_trade_or_negative_return"]
+        is True
+    )
+    assert math.isclose(
+        mandate["planning_translation"]["target_ending_virtual_nav_usd"],
+        expected_ending_nav,
+    )
+    assert math.isclose(
+        mandate["planning_translation"]["target_virtual_trading_profit_usd"],
+        expected_ending_nav - capital,
+    )
     assert mandate["maximum_drawdown_usd_at_reference_capital"] == capital * drawdown
     assert mandate["drawdown_measurement"]["calendar_reset"] is False
 
@@ -33,18 +50,21 @@ def test_year_one_planning_translation_includes_forward_costs() -> None:
 
     recurring = budget["maximum_recurring_usd_per_month"] * 12
     forward_cost = recurring + budget["baseline_new_capex_usd"]
-    gross_target = mandate["target_net_profit_usd"] + forward_cost
+    virtual_profit = planning["target_virtual_trading_profit_usd"]
 
     assert budget["maximum_recurring_usd_per_year"] == recurring
     assert planning["maximum_planned_year_one_forward_cost_usd"] == forward_cost
-    assert planning["required_gross_trading_profit_usd"] == gross_target
     assert math.isclose(
-        planning["required_simple_average_gross_usd_per_session"],
-        gross_target / planning["planning_sessions"],
+        planning["target_project_economic_surplus_after_forward_costs_usd"],
+        virtual_profit - forward_cost,
     )
     assert math.isclose(
         planning["required_compounded_net_return_fraction_per_session"],
-        (1 + mandate["target_net_return_fraction"]) ** (1 / planning["planning_sessions"]) - 1,
+        mandate["target_geometric_net_return_fraction_per_session"],
+    )
+    assert math.isclose(
+        planning["equivalent_simple_average_virtual_profit_usd_per_session"],
+        virtual_profit / planning["planning_sessions"],
     )
 
 
@@ -68,7 +88,7 @@ def test_r_normalized_threshold_remains_blocked_until_risk_is_frozen() -> None:
     planning = _mandate()["planning_translation"]
 
     assert planning["theta_econ_usd_per_session_status"] == (
-        "provisional_until_exact_calendar_and_cost_inventory"
+        "nav_dependent_not_a_fixed_daily_dollar_quota"
     )
     assert planning["theta_econ_r_per_session"] is None
-    assert planning["theta_econ_r_requires_fixed_dollar_risk"] is True
+    assert planning["theta_econ_r_requires_fixed_dollar_risk_and_nav_path"] is True
