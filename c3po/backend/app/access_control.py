@@ -43,6 +43,8 @@ def normalize_capabilities(values: list[str] | tuple[str, ...] | None) -> list[s
 
 def required_capability(path: str, method: str) -> str | None:
     normalized_method = method.upper()
+    if path.startswith("/api/v1/auth/totp"):
+        return "read"
     if path.startswith("/api/v1/leah/"):
         return "read"
     if normalized_method in {"GET", "HEAD"}:
