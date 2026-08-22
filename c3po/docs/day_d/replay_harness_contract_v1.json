@@ -1,0 +1,345 @@
+{
+  "schema_version": "1.0.0",
+  "contract_version": "DAY-D-REPLAY-HARNESS-CONTRACT-v1",
+  "harness_version": "DAY-D-HARNESS-v1",
+  "status": "frozen_on_merge_after_six_hands_review",
+  "production_behavior_change_authorized": false,
+  "capital_use_authorized": false,
+  "official_market_replay_executed_by_this_change": false,
+  "signal_contract": {
+    "path": "day_d/replay_signal_spec_v1.json",
+    "spec_version": "DAY-D-SIGNAL-UNIVERSE-v1"
+  },
+  "versions": {
+    "fill_version": "DAY-D-FILL-v1",
+    "cost_model_version": "DAY-D-COST-v1",
+    "ledger_version": "DAY-D-LEDGER-v1",
+    "calendar_version": "DAY-D-CALENDAR-v1",
+    "synthetic_truth_version": "DAY-D-SYNTHETIC-TRUTH-v1"
+  },
+  "official_run_prerequisites": {
+    "all_required": true,
+    "requirements": [
+      "signal_contract_hash_matches_run_manifest",
+      "harness_contract_hash_matches_run_manifest",
+      "point_in_time_universe_manifest_present",
+      "point_in_time_fee_schedule_present",
+      "causal_cost_table_present",
+      "T1_trade_coverage_passed",
+      "T4_BBO_quality_passed",
+      "T5_bar_and_official_close_passed",
+      "synthetic_truth_gate_passed_in_same_commit",
+      "final_preregistration_artifact_hash_matches_run_manifest",
+      "dataset_manifest_and_checksums_present",
+      "deterministic_run_seed_persisted"
+    ],
+    "missing_requirement_behavior": "raise_and_emit_no_official_result"
+  },
+  "anti_lookahead": {
+    "all_market_inputs_require_event_at": true,
+    "all_market_inputs_require_available_at": true,
+    "event_at_and_available_at_must_be_lte_decision_at": true,
+    "completed_bar_available_at": "bar_end_or_later",
+    "signal_bar_fill_forbidden": true,
+    "universe_information_cutoff": "D-1_official_close_except_preopen_admin_substitution_known_by_09:25",
+    "cost_cell_information_cutoff": "strictly_before_session_D",
+    "fee_schedule_must_be_effective_at_event": true,
+    "future_corporate_action_adjustment_forbidden": true,
+    "provider_correction_cannot_rewrite_prior_decision": true,
+    "cross_sectional_values_use_frozen_observable_D1_universe": true,
+    "prior_rvol_curve_requires_symbol_session_and_available_at": true,
+    "current_or_future_rvol_curve_forbidden": true,
+    "official_close_requires_symbol_session_event_at_available_at_and_source": true
+  },
+  "latency": {
+    "official_reporting_entrypoint": "run_fragility_matrix_only",
+    "isolated_official_scenario_output_forbidden": true,
+    "point_model": {
+      "base_milliseconds": 500,
+      "jitter_distribution": "deterministic_uniform_integer",
+      "jitter_min_milliseconds": -250,
+      "jitter_max_milliseconds": 250,
+      "seed_material": "run_seed|session_date|symbol|setup_version|side|order_sequence"
+    },
+    "fragility_grid_milliseconds": [
+      0,
+      250,
+      1000,
+      2000
+    ],
+    "fragility_edge_measure": "ending_NAV_minus_initial_NAV_including_open_book_official_marks",
+    "fragility_failure": "sign_of_total_net_economic_edge_differs_between_0ms_and_1000ms",
+    "every_report_includes_all_grid_results": true
+  },
+  "official_result_matrix": {
+    "book_policies": [
+      "operational",
+      "flat_at_close"
+    ],
+    "latency_scenarios": [
+      "point",
+      "0ms",
+      "250ms",
+      "1000ms",
+      "2000ms"
+    ],
+    "cost_scenarios": [
+      "optimistic",
+      "point",
+      "pessimistic"
+    ],
+    "required_result_count": 30,
+    "operational_and_counterfactual_books_share_identical_signals": true,
+    "counterfactual_differs_only_by_official_close_liquidation_policy": true,
+    "cost_monotonicity_checked_for_both_books": true
+  },
+  "qualified_bbo": {
+    "maximum_age_milliseconds": "required_T4_bucket_table_input_no_default",
+    "bid_and_ask_must_be_positive": true,
+    "bid_and_ask_size_must_be_positive": true,
+    "crossed_quote_rule": "reject_quote",
+    "locked_quote_rule": "eligible_when_both_sizes_are_positive",
+    "future_quote_forbidden": true,
+    "latest_available_quote_only": true
+  },
+  "entry_fill": {
+    "style": "marketable_buy",
+    "order_arrival": "activation_available_at_plus_latency",
+    "fresh_bbo_reference": "midpoint",
+    "fresh_bbo_economic_fill": "max(observed_ask, midpoint + scenario_half_spread)",
+    "stale_or_missing_bbo_fallback": "max(last_non_crossed_ask_if_any, first_trade_at_or_after_arrival + scenario_half_spread)",
+    "no_quote_and_no_post_arrival_trade_rule": "unfilled",
+    "partial_fills_modeled": false,
+    "displayed_depth_claimed": false,
+    "participation_cap_is_depth_proxy": true,
+    "entry_expiry_is_binding": true,
+    "fill_at_or_after_entry_expiry_forbidden": true
+  },
+  "ordinary_sell_fill": {
+    "styles": [
+      "target",
+      "timeout",
+      "T30",
+      "portfolio_override"
+    ],
+    "order_arrival": "exit_decision_available_at_plus_latency",
+    "fresh_bbo_reference": "midpoint",
+    "fresh_bbo_economic_fill": "min(observed_bid, midpoint - scenario_half_spread)",
+    "stale_or_missing_bbo_fallback": "min(last_non_crossed_bid_if_any, first_trade_at_or_after_arrival - scenario_half_spread)",
+    "no_quote_and_no_post_arrival_trade_rule": "unfilled"
+  },
+  "stop_fill": {
+    "applies_to": [
+      "initial_stop",
+      "hard_stop",
+      "chandelier"
+    ],
+    "confirmation_print_count_minimum": 2,
+    "confirmation_prints_must_have_distinct_ids": true,
+    "minimum_event_time_separation_milliseconds": 100,
+    "maximum_confirmation_window_milliseconds": 1000,
+    "minimum_combined_notional_usd": 5000,
+    "long_stop_print_condition": "trade_price_lte_stop_level",
+    "recovery_print_above_stop_resets_confirmation": true,
+    "market_trigger_at": "event_at_of_print_that_completes_all_confirmation_requirements",
+    "decision_at": "available_at_of_print_that_completes_all_confirmation_requirements",
+    "order_arrival": "decision_at_plus_latency",
+    "economic_fill": "min(stop_level - scenario_full_spread, first_trade_at_or_after_arrival - scenario_full_spread)",
+    "no_post_arrival_trade_before_close_rule": "unfilled_and_position_remains_open",
+    "hard_stop_and_structural_stop_use_same_confirmation": true
+  },
+  "official_close_counterfactual_fill": {
+    "applies_only_to": "independent_flat_at_close_book",
+    "price": "T5_validated_official_close",
+    "spread_charge": "none",
+    "fees_apply": true,
+    "operational_T30_book_does_not_use_this_fill": true
+  },
+  "halt_and_reopening": {
+    "fills_during_halt": false,
+    "entry_order_expires_normally_during_halt": true,
+    "open_exit_order_waits_for_reopening": true,
+    "stop_crossed_at_reopening_fill": "first_eligible_reopening_trade_minus_applicable_spread_cost",
+    "never_fill_at_pre_halt_stop_level_when_reopening_is_worse": true,
+    "halt_intervals_must_be_point_in_time_inputs": true
+  },
+  "participation": {
+    "maximum_order_fraction": 0.01,
+    "volume_window": "five_completed_one_minute_bars_immediately_before_order_decision",
+    "breach_behavior": "trade_does_not_exist_and_rejection_is_logged",
+    "missing_volume_behavior": "reject"
+  },
+  "cost_model": {
+    "liquidity_quintile_basis": "frozen_D1_universe_median_dollar_volume_20d",
+    "liquidity_quintile_one_is_most_liquid": true,
+    "time_buckets_et": {
+      "OPEN_15": "regular_open_to_regular_open_plus_15_minutes",
+      "OPEN_60": "regular_open_plus_15_to_regular_open_plus_60_minutes",
+      "MIDDAY": "regular_open_plus_60_minutes_to_official_close_minus_30_minutes",
+      "CLOSE_30": "official_close_minus_30_to_official_close_minus_5_minutes",
+      "CLOSE_5": "official_close_minus_5_minutes_to_official_close"
+    },
+    "early_close_bucket_rule": "derive_close_buckets_from_calendar_official_close_not_hardcoded_16_00",
+    "cell_input": "observed_half_spread_usd_per_share",
+    "minimum_cell_observations": 100,
+    "sparse_cell_fallback": "same_liquidity_quintile_all_prior_session_observations",
+    "sparse_quintile_fallback": "invalid_cost_table",
+    "causal_training_sessions": "strictly_before_session_D",
+    "cell_available_at_required": true,
+    "cell_available_after_regular_open_forbidden": true,
+    "scenario_half_spread": {
+      "optimistic": "p25",
+      "point": "p50",
+      "pessimistic": "2 * p50"
+    },
+    "spread_units": "USD_per_share",
+    "entry_marketable_spread_charge": "one_half_spread",
+    "ordinary_sell_spread_charge": "one_half_spread",
+    "stop_sell_spread_charge": "one_full_spread",
+    "fee_schedule": {
+      "source_required": true,
+      "effective_at_required": true,
+      "captured_at_required": true,
+      "content_hash_required": true,
+      "broker_commission": "per_share_with_optional_minimum",
+      "sell_regulatory_fees": [
+        "SEC_SECTION_31",
+        "FINRA_TAF"
+      ],
+      "official_run_default_values_forbidden": true
+    },
+    "sensitivity_multipliers": [
+      0.5,
+      1.0,
+      1.5,
+      2.0
+    ],
+    "kill_uses": "optimistic",
+    "future_promotion_uses": "pessimistic",
+    "breakeven_win_rate_formula": "(1 + c_loss) / (1 + target_R + c_loss - c_win)"
+  },
+  "ledger": {
+    "versions_must_match_within_analysis": true,
+    "identity": "R_consolidated = R_intraday + R_overnight",
+    "risk_denominator": "entry_risk_budget_usd_frozen_for_trade_lifetime",
+    "entry_fee_and_slippage_component": "intraday",
+    "entry_session_official_close_is_transfer_mark": true,
+    "fictitious_fee_at_transfer_mark": false,
+    "actual_exit_fee_and_slippage_for_carry_component": "overnight",
+    "daily_carry_marking_required": true,
+    "session_without_trade_but_with_carry_mark_is_not_zero": true,
+    "raw_r_persisted_without_clip": true,
+    "mfe_and_mae_persisted_without_clip": true,
+    "flat_at_close_is_independent_policy_complete_book": true,
+    "corporate_actions": {
+      "split": "adjust_quantity_basis_levels_and_marks_without_creating_pnl",
+      "cash_dividend": "credit_cash_on_point_in_time_payable_event_and_attribute_to_active_ledger_component",
+      "symbol_change": "preserve_position_identity_and_apply_mapping_only_when_available",
+      "cash_merger": "close_at_contractual_cash_consideration_when_effective",
+      "stock_merger": "transform_quantity_and_basis_by_point_in_time_terms",
+      "delisting_without_consideration": "mark_to_zero_when_final_recovery_is_zero",
+      "unknown_or_ambiguous_action": "invalidate_session_and_emit_no_official_result"
+    }
+  },
+  "entry_audit": {
+    "one_record_per_generated_setup_signal": true,
+    "required_fields": [
+      "session_date",
+      "symbol",
+      "setup_version",
+      "universe_rank",
+      "signal_event_at",
+      "signal_available_at",
+      "decision_at",
+      "feature_as_of",
+      "gate_values",
+      "gate_result",
+      "entry_accepted",
+      "outcome_reason",
+      "entry_expiry_at",
+      "structural_stop",
+      "post_floor_stop",
+      "entry_atr",
+      "entry_vwap",
+      "entry_rvol",
+      "risk_budget_usd",
+      "quantity",
+      "trial_fill",
+      "final_fill"
+    ],
+    "preparation_and_portfolio_rejections_are_persisted": true,
+    "accepted_fill_is_linked_to_the_same_record": true
+  },
+  "close_policy": {
+    "screening_entry_cutoff": "15:50:00_ET",
+    "early_close_screening_entry_cutoff": "official_exchange_close_minus_10_minutes",
+    "risk_monitor_end": "official_exchange_close",
+    "T30_start": "official_exchange_close_minus_30_seconds",
+    "polling_interval_seconds": 1,
+    "T30_positive_test": "estimated_net_exit_pnl_pct_gt_0",
+    "weekly_conviction_exemption": false,
+    "fill_must_be_before_official_close": true,
+    "late_fill_event": "late_unfilled_exit",
+    "negative_position_rule": "continue_risk_monitoring_until_close_then_carry_if_no_exit_rule_fires",
+    "early_close_uses_exchange_calendar": true
+  },
+  "synthetic_truth_gate": {
+    "mandatory_before_any_official_result": true,
+    "fixed_seed": 20260822,
+    "worlds": [
+      {
+        "name": "negative",
+        "planted_net_r_per_trade": -0.5,
+        "maximum_recovered_mean_net_r": -0.4
+      },
+      {
+        "name": "zero",
+        "planted_net_r_per_trade": 0.0,
+        "maximum_absolute_recovered_mean_net_r": 0.05
+      },
+      {
+        "name": "positive",
+        "planted_net_r_per_trade": 0.5,
+        "minimum_recovered_mean_net_r": 0.4
+      }
+    ],
+    "required_setup_versions": [
+      "S3-v1",
+      "S5-v1"
+    ],
+    "required_additional_properties": [
+      "future_data_mutation_does_not_change_prior_decision",
+      "same_bar_fill_is_rejected",
+      "zero_latency_result_is_not_worse_than_point_result_after_costs",
+      "optimistic_net_result_gte_point_gte_pessimistic",
+      "R_is_invariant_to_virtual_NAV_scale",
+      "raw_tail_R_is_not_clipped"
+    ],
+    "failure_behavior": "CI_failure_and_no_official_result_artifact",
+    "world_execution_path": "S3-v1_and_S5-v1_each_run_signal_fill_sizing_flat_close_and_unclipped_ledger_through_DayDReplayHarness"
+  },
+  "run_manifest_required_fields": [
+    "run_id",
+    "run_mode",
+    "created_at",
+    "git_commit",
+    "dataset_manifest_hash",
+    "signal_contract_hash",
+    "harness_contract_hash",
+    "preregistration_hash",
+    "setup_versions",
+    "feature_version",
+    "universe_version",
+    "fill_version",
+    "cost_model_version",
+    "fee_schedule_version",
+    "risk_policy_version",
+    "calendar_version",
+    "harness_version",
+    "latency_scenario",
+    "cost_scenario",
+    "run_seed",
+    "data_gate_results",
+    "synthetic_truth_gate_result"
+  ]
+}

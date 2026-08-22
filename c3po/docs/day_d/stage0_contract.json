@@ -27,6 +27,24 @@
     "capital_use_authorized": false,
     "harness_implementation_in_scope": false
   },
+  "replay_harness_contract": {
+    "status": "frozen_on_merge_after_six_hands_review",
+    "path": "day_d/replay_harness_contract_v1.json",
+    "implementation_package": "app.day_d_replay",
+    "contract_version": "DAY-D-REPLAY-HARNESS-CONTRACT-v1",
+    "scope": [
+      "anti_lookahead",
+      "execution_and_halts",
+      "causal_costs",
+      "point_in_time_universe",
+      "ledger_and_corporate_actions",
+      "synthetic_truth_ci_gate",
+      "official_fragility_matrix"
+    ],
+    "production_behavior_change_authorized": false,
+    "capital_use_authorized": false,
+    "official_market_replay_executed": false
+  },
   "research_question": {
     "primary": "Do S3-v1 and S5-v1, long-only, with intraday entries and conditional T-30s carry, have positive net economic edge?",
     "primary_estimand": "consolidated_net_r_per_session",
@@ -246,8 +264,6 @@
       ]
     },
     "freeze_required_before_replay_eligible": [
-      "fresh quote and eligible fill definitions",
-      "corporate action, halt and delisting accounting",
       "session dependence-aware primary test",
       "T0 T1 T4 T5 numeric acceptance thresholds"
     ],
