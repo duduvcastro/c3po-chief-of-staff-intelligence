@@ -222,16 +222,14 @@ class AuthService:
 
     def send_code_email(self, code: str, recipient_email: str) -> None:
         subject = "Seu código de acesso ao C3PO"
-        body = f"""
-        <div style="font-family:Arial,sans-serif;color:#17191e;max-width:520px;padding:24px">
-          <div style="font-size:13px;color:#8a6a17;font-weight:700">C3PO | CHIEF OF STAFF INTELLIGENCE</div>
-          <h1 style="font-size:24px;margin:18px 0 8px">Código de acesso</h1>
-          <p style="font-size:14px;line-height:1.5;color:#5c6570">Use o código abaixo para concluir seu login. Ele expira em {self.settings.auth_code_minutes} minutos.</p>
-          <div style="font-size:34px;font-weight:800;letter-spacing:8px;background:#f7f2e4;border:1px solid #dbc47f;border-radius:6px;padding:18px 22px;text-align:center;margin:22px 0">{html.escape(code)}</div>
-          <p style="font-size:12px;line-height:1.5;color:#7b838d">Se você não solicitou este acesso, ignore esta mensagem. O código funciona uma única vez.</p>
-        </div>
-        """
-        self._send_html_email(subject, body, recipient_email)
+        body = (
+            "C3PO | CHIEF OF STAFF INTELLIGENCE\n\n"
+            f"Código de acesso: {code}\n\n"
+            "Use este código para concluir seu login no C3PO. "
+            f"Ele expira em {self.settings.auth_code_minutes} minutos e funciona uma única vez.\n\n"
+            "Se você não solicitou este acesso, ignore esta mensagem."
+        )
+        self._send_text_email(subject, body, recipient_email)
 
     def send_login_notification(
         self,
@@ -272,6 +270,12 @@ class AuthService:
         self._send_html_email(subject, body, self.settings.auth_email)
 
     def _send_html_email(self, subject: str, body: str, recipient_email: str) -> None:
+        self._send_email(subject, body, recipient_email, body_type="HTML")
+
+    def _send_text_email(self, subject: str, body: str, recipient_email: str) -> None:
+        self._send_email(subject, body, recipient_email, body_type="Text")
+
+    def _send_email(self, subject: str, body: str, recipient_email: str, *, body_type: str) -> None:
         server = self.settings.notification_exchange_server or self.settings.exchange_server
         user = self.settings.notification_exchange_user or self.settings.exchange_user
         password = self.settings.notification_exchange_app_password or self.settings.exchange_app_password
@@ -283,7 +287,7 @@ class AuthService:
           <m:SavedItemFolderId><t:DistinguishedFolderId Id="sentitems" /></m:SavedItemFolderId>
           <m:Items><t:Message>
             <t:Subject>{html.escape(subject)}</t:Subject>
-            <t:Body BodyType="HTML">{html.escape(body)}</t:Body>
+            <t:Body BodyType="{body_type}">{html.escape(body)}</t:Body>
             <t:ToRecipients><t:Mailbox><t:EmailAddress>{html.escape(recipient_email)}</t:EmailAddress></t:Mailbox></t:ToRecipients>
           </t:Message></m:Items>
         </m:CreateItem>
