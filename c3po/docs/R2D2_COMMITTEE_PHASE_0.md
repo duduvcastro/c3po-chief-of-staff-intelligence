@@ -265,6 +265,11 @@ Stage 0 performs feasibility only, using burned data and owner-supplied
 `theta_econ`. Stage 2 performs final calibration with the frozen harness and
 observed dependence.
 
+The first analytic screen is recorded in
+[`day_d/STAGE_0_RISK_POWER_FEASIBILITY.md`](day_d/STAGE_0_RISK_POWER_FEASIBILITY.md).
+It compares fixed-risk scenarios but deliberately selects none; its draft
+sigma, Bonferroni split and independent-arm assumption are not final evidence.
+
 Required properties:
 
 - observations are daily consolidated net R, including carry marks;
@@ -301,7 +306,8 @@ Stage 2 prerequisites to durable retention.
 - [x] T-30s/carry and three-ledger identities made explicit.
 - [x] Carry-induced statistical dependence recorded.
 - [x] Dudu supplies NPV inputs and written 12-month success definition.
-- [ ] Fixed dollar-risk budget converts the economic floor into R/session.
+- [x] Preliminary fixed-risk/power scenario grid is reproducible.
+- [ ] Six-hands review freezes fixed dollar risk and converts the economic floor into R/session.
 - [ ] Six-hands review freezes universe rules.
 - [ ] Six-hands review freezes S3/S5 formulas and lifecycle rules.
 - [ ] Cost and fill contract is numerical and versioned.

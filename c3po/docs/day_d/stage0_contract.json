@@ -110,6 +110,13 @@
         "maximum_drawdown_fraction": 0.08
       }
     },
+    "preliminary_feasibility": {
+      "status": "analytic_screen_only",
+      "report": "day_d/STAGE_0_RISK_POWER_FEASIBILITY.md",
+      "reproducer": "app.day_d_feasibility",
+      "fixed_dollar_risk_frozen": false,
+      "selected_scenario": null
+    },
     "freeze_required_before_replay_eligible": [
       "S3 RVOL formula and history sufficiency",
       "S3 ATR and VWAP formulas",

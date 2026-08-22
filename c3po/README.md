@@ -38,6 +38,7 @@ documents for the next R2D2 research generation:
 - [`docs/R2D2_COMMITTEE_PHASE_0.md`](docs/R2D2_COMMITTEE_PHASE_0.md)
 - [`docs/day_d/stage0_contract.json`](docs/day_d/stage0_contract.json)
 - [`docs/day_d/STAGE_0_ECONOMICS.md`](docs/day_d/STAGE_0_ECONOMICS.md)
+- [`docs/day_d/STAGE_0_RISK_POWER_FEASIBILITY.md`](docs/day_d/STAGE_0_RISK_POWER_FEASIBILITY.md)
 
 Stage 0 is specification and burned-data research only. It does not authorize
 changes to production trading behavior or capital use.

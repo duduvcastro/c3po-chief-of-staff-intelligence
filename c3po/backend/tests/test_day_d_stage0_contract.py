@@ -117,6 +117,13 @@ def test_inference_does_not_treat_retention_as_evidence() -> None:
 def test_stage_zero_cannot_claim_completion_with_open_freeze_items() -> None:
     stage0 = _contract()["stage0"]
 
+    assert stage0["preliminary_feasibility"] == {
+        "status": "analytic_screen_only",
+        "report": "day_d/STAGE_0_RISK_POWER_FEASIBILITY.md",
+        "reproducer": "app.day_d_feasibility",
+        "fixed_dollar_risk_frozen": False,
+        "selected_scenario": None,
+    }
     assert len(stage0["freeze_required_before_replay_eligible"]) >= 15
     assert {
         "enable_production_setup",
