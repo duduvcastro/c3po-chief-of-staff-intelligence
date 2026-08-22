@@ -945,7 +945,7 @@ button { cursor: pointer; }
 .falcon-portfolio-ticker-track { display: flex; width: max-content; animation: falcon-portfolio-scroll 36s linear infinite; will-change: transform; }
 .falcon-portfolio-ticker:hover .falcon-portfolio-ticker-track { animation-play-state: paused; }
 .falcon-portfolio-ticker-set { display: flex; flex: 0 0 auto; }
-.falcon-portfolio-ticker-item { width: 260px; min-height: 78px; display: flex; flex-direction: column; justify-content: center; padding: 11px 20px; border-right: 1px solid #3b3b3b; }
+.falcon-portfolio-ticker-item { width: 260px; min-height: 70px; display: flex; flex-direction: column; justify-content: center; padding: 8px 20px; border-right: 1px solid #3b3b3b; }
 .falcon-portfolio-ticker-item > div { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
 .falcon-portfolio-ticker-item strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .falcon-portfolio-ticker-item > div span { font-size: 17px; font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
