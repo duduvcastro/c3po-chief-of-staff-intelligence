@@ -11,6 +11,35 @@ from app.config import Settings
 from app.database import Database
 
 
+def test_login_code_email_uses_parser_friendly_plain_text(monkeypatch) -> None:
+    settings = Settings(
+        auth_code_minutes=10,
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+    )
+    service = AuthService(settings, Database(settings))
+    sent: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        service,
+        "_send_text_email",
+        lambda subject, body, recipient: sent.append((subject, body, recipient)),
+    )
+
+    service.send_code_email("123456", "member@example.com")
+
+    assert sent == [
+        (
+            "Seu código de acesso ao C3PO",
+            "C3PO | CHIEF OF STAFF INTELLIGENCE\n\n"
+            "Código de acesso: 123456\n\n"
+            "Use este código para concluir seu login no C3PO. "
+            "Ele expira em 10 minutos e funciona uma única vez.\n\n"
+            "Se você não solicitou este acesso, ignore esta mensagem.",
+            "member@example.com",
+        )
+    ]
+    assert "<" not in sent[0][1]
+
+
 def test_one_time_code_creates_session_and_cannot_be_reused(monkeypatch) -> None:
     settings = Settings(
         auth_required=True,
