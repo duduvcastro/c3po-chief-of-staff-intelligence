@@ -2,7 +2,8 @@ import Foundation
 
 @MainActor
 final class AgentModel: ObservableObject {
-    private static let syncSchemaVersion = 2
+    private static let syncSchemaVersion = 3
+    private static let eventSnapshotVersion = 1
     @Published var server = UserDefaults.standard.string(forKey: "server") ?? "https://c3po.eduardocastro.com.br"
     @Published var pairingCode = ""
     @Published var status = "Aguardando pareamento"
@@ -71,13 +72,54 @@ final class AgentModel: ObservableObject {
             let localCursor = storedSchemaVersion == Self.syncSchemaVersion
                 ? UserDefaults.standard.object(forKey: "localCursor") as? Date
                 : nil
-            var localItems = await eventKit.localItems(modifiedAfter: localCursor)
+            let batch = await eventKit.localItems(modifiedAfter: localCursor)
+            var localItems = batch.items
+            let storedEventSnapshotVersion = UserDefaults.standard.integer(forKey: "eventSnapshotVersion")
+            let previousOccurrences = storedEventSnapshotVersion == Self.eventSnapshotVersion
+                ? loadEventSnapshot()
+                : []
+            let currentOccurrences = Set(batch.eventOccurrences)
+            let comparablePreviousOccurrences = previousOccurrences.filter {
+                $0.startsAt >= batch.windowStart && $0.startsAt < batch.windowEnd
+            }
+            let removedOccurrences = calendarAuthorized
+                ? Set(comparablePreviousOccurrences).subtracting(currentOccurrences)
+                : []
+            localItems += removedOccurrences.map { occurrence in
+                LeahItem(
+                    id: nil,
+                    kind: "event",
+                    externalId: occurrence.externalId,
+                    containerId: nil,
+                    title: "Evento removido",
+                    notes: "",
+                    startsAt: occurrence.startsAt,
+                    endsAt: occurrence.startsAt,
+                    dueAt: nil,
+                    isAllDay: false,
+                    isCompleted: false,
+                    source: "icloud",
+                    sourceModifiedAt: Date(),
+                    deletedAt: Date()
+                )
+            }
+            let needsFullCalendarSnapshot = storedSchemaVersion != Self.syncSchemaVersion
+                || storedEventSnapshotVersion != Self.eventSnapshotVersion
             let response = try await APIClient(serverURL: url).sync(
                 SyncRequest(
                     cursor: cursor,
                     calendarAuthorized: calendarAuthorized,
                     remindersAuthorized: remindersAuthorized,
-                    items: localItems
+                    items: localItems,
+                    calendarSnapshot: calendarAuthorized && needsFullCalendarSnapshot
+                        ? batch.eventOccurrences
+                        : nil,
+                    calendarSnapshotStart: calendarAuthorized && needsFullCalendarSnapshot
+                        ? batch.windowStart
+                        : nil,
+                    calendarSnapshotEnd: calendarAuthorized && needsFullCalendarSnapshot
+                        ? batch.windowEnd
+                        : nil
                 ),
                 token: token
             )
@@ -85,11 +127,14 @@ final class AgentModel: ObservableObject {
             if !acknowledgements.isEmpty {
                 _ = try await APIClient(serverURL: url).sync(
                     SyncRequest(
-                        cursor: response.cursor,
-                        calendarAuthorized: calendarAuthorized,
-                        remindersAuthorized: remindersAuthorized,
-                        items: acknowledgements
-                    ),
+                    cursor: response.cursor,
+                    calendarAuthorized: calendarAuthorized,
+                    remindersAuthorized: remindersAuthorized,
+                    items: acknowledgements,
+                    calendarSnapshot: nil,
+                    calendarSnapshotStart: nil,
+                    calendarSnapshotEnd: nil
+                ),
                     token: token
                 )
             }
@@ -98,6 +143,7 @@ final class AgentModel: ObservableObject {
             UserDefaults.standard.set(response.cursor, forKey: "serverCursor")
             UserDefaults.standard.set(now, forKey: "localCursor")
             UserDefaults.standard.set(Self.syncSchemaVersion, forKey: "syncSchemaVersion")
+            saveEventSnapshot(batch.eventOccurrences)
             lastSync = now
             status = "Sincronização ativa"
         } catch {
@@ -112,6 +158,8 @@ final class AgentModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "serverCursor")
         UserDefaults.standard.removeObject(forKey: "localCursor")
         UserDefaults.standard.removeObject(forKey: "syncSchemaVersion")
+        UserDefaults.standard.removeObject(forKey: "eventSnapshot")
+        UserDefaults.standard.removeObject(forKey: "eventSnapshotVersion")
         status = "Desconectado deste Mac"
         objectWillChange.send()
     }
@@ -124,5 +172,16 @@ final class AgentModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(15))
             }
         }
+    }
+
+    private func loadEventSnapshot() -> [EventOccurrence] {
+        guard let data = UserDefaults.standard.data(forKey: "eventSnapshot") else { return [] }
+        return (try? PropertyListDecoder().decode([EventOccurrence].self, from: data)) ?? []
+    }
+
+    private func saveEventSnapshot(_ occurrences: [EventOccurrence]) {
+        guard let data = try? PropertyListEncoder().encode(occurrences) else { return }
+        UserDefaults.standard.set(data, forKey: "eventSnapshot")
+        UserDefaults.standard.set(Self.eventSnapshotVersion, forKey: "eventSnapshotVersion")
     }
 }

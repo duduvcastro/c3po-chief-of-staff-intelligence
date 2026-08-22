@@ -95,6 +95,23 @@ class LeahCloudService:
                     "updated_at": now,
                 }
             )
+        calendar_snapshot = payload.get("calendar_snapshot")
+        snapshot_start = payload.get("calendar_snapshot_start")
+        snapshot_end = payload.get("calendar_snapshot_end")
+        if (
+            calendar_snapshot is not None
+            and snapshot_start is not None
+            and snapshot_end is not None
+            and payload.get("calendar_authorized")
+        ):
+            self.database.reconcile_leah_event_snapshot(
+                device["owner_email"],
+                device["id"],
+                calendar_snapshot,
+                snapshot_start,
+                snapshot_end,
+                now,
+            )
         since = payload.get("cursor")
         changes = self.database.list_leah_changes(device["owner_email"], since=since)
         return {"cursor": now, "items": changes}

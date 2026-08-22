@@ -76,11 +76,19 @@ class LeahAgentPairResponse(BaseModel):
     device: LeahDevice
 
 
+class LeahEventOccurrence(BaseModel):
+    external_id: str = Field(min_length=1, max_length=2_000)
+    starts_at: datetime
+
+
 class LeahAgentSyncRequest(BaseModel):
     cursor: datetime | None = None
     calendar_authorized: bool = False
     reminders_authorized: bool = False
     items: list[LeahItem] = Field(default_factory=list, max_length=10_000)
+    calendar_snapshot: list[LeahEventOccurrence] | None = Field(default=None, max_length=10_000)
+    calendar_snapshot_start: datetime | None = None
+    calendar_snapshot_end: datetime | None = None
 
 
 class LeahAgentSyncResponse(BaseModel):
