@@ -286,6 +286,34 @@ def test_totp_setup_rejects_invalid_code_and_expires(monkeypatch) -> None:
         service.confirm_totp_setup(settings.auth_email, "000000")
 
 
+def test_totp_reconfiguration_keeps_old_secret_until_new_code_is_confirmed(monkeypatch) -> None:
+    settings = Settings(
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+    )
+    database = Database(settings)
+    database.ensure_access_owner(settings.auth_email, ["command"])
+    service = AuthService(settings, database)
+    now = datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(service, "now", lambda: now)
+
+    original = service.begin_totp_setup(settings.auth_email)
+    step = int(now.timestamp()) // 30
+    service.confirm_totp_setup(settings.auth_email, service.totp_code(str(original["secret"]), step))
+
+    replacement = service.begin_totp_setup(settings.auth_email, replace=True)
+    credential = database.get_totp_credential(settings.auth_email)
+    assert credential is not None
+    assert service.decrypt_totp_secret(credential["encrypted_secret"]) == original["secret"]
+    assert service.totp_enabled(settings.auth_email)
+
+    service.confirm_totp_setup(settings.auth_email, service.totp_code(str(replacement["secret"]), step))
+    credential = database.get_totp_credential(settings.auth_email)
+    assert credential is not None
+    assert service.decrypt_totp_secret(credential["encrypted_secret"]) == replacement["secret"]
+    assert credential["pending_encrypted_secret"] is None
+
+
 def test_totp_setup_route_requires_and_receives_authenticated_session() -> None:
     email = "totp-route@example.com"
     app_main.database.upsert_access_user(

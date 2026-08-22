@@ -80,14 +80,20 @@ class AuthService:
         credential = self.database.get_totp_credential(email)
         return bool(credential and credential.get("confirmed_at"))
 
-    def begin_totp_setup(self, email: str) -> dict[str, str | int]:
+    def begin_totp_setup(self, email: str, *, replace: bool = False) -> dict[str, str | int]:
         normalized_email = email.strip().lower()
-        if self.totp_enabled(normalized_email):
+        enabled = self.totp_enabled(normalized_email)
+        if enabled and not replace:
             raise AuthenticationError("O autenticador já está ativo para este usuário.")
         now = self.now()
         secret = base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
         expires_at = now + timedelta(minutes=10)
-        self.database.upsert_totp_setup(normalized_email, self.encrypt_totp_secret(secret), expires_at, now)
+        encrypted_secret = self.encrypt_totp_secret(secret)
+        if enabled:
+            if not self.database.stage_totp_reconfiguration(normalized_email, encrypted_secret, expires_at, now):
+                raise AuthenticationError("Não foi possível iniciar a troca do autenticador.")
+        else:
+            self.database.upsert_totp_setup(normalized_email, encrypted_secret, expires_at, now)
         label = quote(f"C3PO:{normalized_email}", safe="")
         issuer = quote("C3PO", safe="")
         uri = f"otpauth://totp/{label}?secret={secret}&issuer={issuer}&algorithm=SHA1&digits=6&period=30"
@@ -100,11 +106,21 @@ class AuthService:
     def confirm_totp_setup(self, email: str, code: str) -> None:
         now = self.now()
         credential = self.database.get_totp_credential(email)
-        if not credential or credential.get("confirmed_at") or credential["setup_expires_at"] <= now:
+        if not credential:
             raise AuthenticationError("A configuração expirou. Gere um novo QR Code.")
-        secret = self.decrypt_totp_secret(credential["encrypted_secret"])
+        replacing = bool(credential.get("confirmed_at"))
+        encrypted_secret = credential.get("pending_encrypted_secret") if replacing else credential["encrypted_secret"]
+        expires_at = credential.get("pending_setup_expires_at") if replacing else credential["setup_expires_at"]
+        if not encrypted_secret or not expires_at or expires_at <= now:
+            raise AuthenticationError("A configuração expirou. Gere um novo QR Code.")
+        secret = self.decrypt_totp_secret(encrypted_secret)
         step = self.matching_totp_step(secret, code, now)
-        if step is None or not self.database.confirm_totp(email, step, now):
+        confirmed = (
+            self.database.confirm_totp_reconfiguration(email, step, now)
+            if replacing and step is not None
+            else self.database.confirm_totp(email, step, now) if step is not None else False
+        )
+        if not confirmed:
             raise AuthenticationError("Código inválido. Confira o app Senhas e tente novamente.")
 
     def disable_totp(self, email: str, code: str) -> None:

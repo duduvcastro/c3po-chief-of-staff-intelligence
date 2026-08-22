@@ -1846,11 +1846,11 @@ function TotpSecurityPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const beginSetup = async () => {
+  const beginSetup = async (replace = false) => {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`${API_URL}/api/v1/auth/totp/setup`, { method: "POST", credentials: "include" });
+      const response = await fetch(`${API_URL}/api/v1/auth/totp/${replace ? "reconfigure" : "setup"}`, { method: "POST", credentials: "include" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "Não foi possível iniciar a configuração.");
       setSetup(payload);
@@ -1907,9 +1907,10 @@ function TotpSecurityPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) 
           </div>
         </div>
       )}
-      {enabled && (
+      {enabled && !setup && (
         <div className="profile-totp-enabled">
           <div><i /><span><strong>Ativo</strong><small>O Safari pode preencher o código salvo no app Senhas.</small></span></div>
+          <button type="button" onClick={() => void beginSetup(true)} disabled={busy}>Configurar novo autenticador</button>
           <div className="profile-totp-code">
             <input aria-label="Código para desativar" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="Código atual" />
             <button type="button" onClick={() => void submitCode("disable")} disabled={busy || code.length !== 6}>Desativar</button>

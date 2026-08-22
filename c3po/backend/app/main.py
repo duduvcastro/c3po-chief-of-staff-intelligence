@@ -433,6 +433,17 @@ def setup_totp(request: Request) -> TotpSetupResponse:
     return TotpSetupResponse(**setup)
 
 
+@app.post("/api/v1/auth/totp/reconfigure", response_model=TotpSetupResponse)
+def reconfigure_totp(request: Request) -> TotpSetupResponse:
+    actor = current_access_actor(request)
+    try:
+        setup = auth_service.begin_totp_setup(actor["email"], replace=True)
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    database.record_audit_event(actor["email"], "auth.totp_reconfiguration_started", "access_user", actor["email"], {})
+    return TotpSetupResponse(**setup)
+
+
 @app.post("/api/v1/auth/totp/confirm", response_model=TotpStatusResponse)
 def confirm_totp(payload: TotpCodeRequest, request: Request) -> TotpStatusResponse:
     actor = current_access_actor(request)

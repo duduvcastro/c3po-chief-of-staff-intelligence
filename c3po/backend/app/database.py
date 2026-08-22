@@ -1004,6 +1004,8 @@ class Database:
             "last_used_step": None,
             "created_at": at,
             "updated_at": at,
+            "pending_encrypted_secret": None,
+            "pending_setup_expires_at": None,
         }
         if not self.database_url:
             self._totp_credentials[normalized_email] = payload
@@ -1034,7 +1036,8 @@ class Database:
             row = connection.execute(
                 """
                 SELECT email, encrypted_secret, confirmed_at, setup_expires_at,
-                       last_used_step, created_at, updated_at
+                       last_used_step, created_at, updated_at,
+                       pending_encrypted_secret, pending_setup_expires_at
                 FROM auth_totp_credentials WHERE email = %s
                 """,
                 (normalized_email,),
@@ -1042,9 +1045,78 @@ class Database:
         if not row:
             return None
         return dict(zip(
-            ("email", "encrypted_secret", "confirmed_at", "setup_expires_at", "last_used_step", "created_at", "updated_at"),
+            ("email", "encrypted_secret", "confirmed_at", "setup_expires_at", "last_used_step", "created_at", "updated_at", "pending_encrypted_secret", "pending_setup_expires_at"),
             row,
         ))
+
+    def stage_totp_reconfiguration(self, email: str, encrypted_secret: str, expires_at: datetime, at: datetime) -> bool:
+        normalized_email = email.strip().lower()
+        if not self.database_url:
+            item = self._totp_credentials.get(normalized_email)
+            if not item or not item.get("confirmed_at"):
+                return False
+            item.update({
+                "pending_encrypted_secret": encrypted_secret,
+                "pending_setup_expires_at": expires_at,
+                "updated_at": at,
+            })
+            return True
+        with self.connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE auth_totp_credentials
+                SET pending_encrypted_secret = %s,
+                    pending_setup_expires_at = %s,
+                    updated_at = %s
+                WHERE email = %s AND confirmed_at IS NOT NULL
+                """,
+                (encrypted_secret, expires_at, at, normalized_email),
+            )
+            connection.commit()
+        return cursor.rowcount == 1
+
+    def confirm_totp_reconfiguration(self, email: str, step: int, at: datetime) -> bool:
+        normalized_email = email.strip().lower()
+        if not self.database_url:
+            item = self._totp_credentials.get(normalized_email)
+            if (
+                not item
+                or not item.get("confirmed_at")
+                or not item.get("pending_encrypted_secret")
+                or not item.get("pending_setup_expires_at")
+                or item["pending_setup_expires_at"] <= at
+            ):
+                return False
+            item.update({
+                "encrypted_secret": item["pending_encrypted_secret"],
+                "setup_expires_at": item["pending_setup_expires_at"],
+                "confirmed_at": at,
+                "last_used_step": step,
+                "pending_encrypted_secret": None,
+                "pending_setup_expires_at": None,
+                "updated_at": at,
+            })
+            return True
+        with self.connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE auth_totp_credentials
+                SET encrypted_secret = pending_encrypted_secret,
+                    setup_expires_at = pending_setup_expires_at,
+                    confirmed_at = %s,
+                    last_used_step = %s,
+                    pending_encrypted_secret = NULL,
+                    pending_setup_expires_at = NULL,
+                    updated_at = %s
+                WHERE email = %s
+                  AND confirmed_at IS NOT NULL
+                  AND pending_encrypted_secret IS NOT NULL
+                  AND pending_setup_expires_at > %s
+                """,
+                (at, step, at, normalized_email, at),
+            )
+            connection.commit()
+        return cursor.rowcount == 1
 
     def confirm_totp(self, email: str, step: int, at: datetime) -> bool:
         normalized_email = email.strip().lower()
