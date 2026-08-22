@@ -6530,6 +6530,7 @@ function InvestorRelationsView({ canManage }: { canManage: boolean }) {
   const [watchName, setWatchName] = useState("");
   const [watchUrl, setWatchUrl] = useState("");
   const [feedPage, setFeedPage] = useState(1);
+  const [expandedFeedEventId, setExpandedFeedEventId] = useState<string | null>(null);
   const pageSize = 30;
 
   const feedUrl = useMemo(() => {
@@ -6713,7 +6714,7 @@ function InvestorRelationsView({ canManage }: { canManage: boolean }) {
         </div>
         <div className="ir-feed-body">
           {loading && !feed ? <div className="ir-feed-loading" /> : visibleFeedItems.map((item) => (
-            <article className="ir-event-row" key={item.id}>
+            <article className={`ir-event-row${expandedFeedEventId === item.id ? " ir-event-row-expanded" : ""}`} key={item.id}>
               <div><span className={`ir-source-badge ir-source-${item.source}`}>{item.source.toUpperCase()}</span><small>{item.market}</small></div>
               <div className="ir-company-cell">{item.symbol ? <InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.company_name, market: item.market }}><strong>{item.symbol}</strong></InstrumentPreviewTarget> : <strong>{item.regulator_id ?? "Issuer"}</strong>}<span>{item.company_name}</span></div>
               <div className="ir-disclosure-cell"><strong>{item.title}</strong><span>{item.event_type}{item.form ? ` · ${item.form}` : ""}</span><small className={`ir-materiality ir-materiality-${item.materiality}`}>{item.materiality} materiality</small></div>
@@ -6723,8 +6724,19 @@ function InvestorRelationsView({ canManage }: { canManage: boolean }) {
                 {canManage && item.valuation_status === "pending_review" && <button onClick={() => reviewEvent(item.id)} disabled={syncing}>Mark reviewed</button>}
               </div>
               <div className="ir-document-cell">
-                <a href={item.document_url ?? item.official_url} target="_blank" rel="noreferrer" title="Open official filing"><ExternalLink size={15} /></a>
+                {item.document_url ? (
+                  <a href={item.document_url} target="_blank" rel="noreferrer" title="Open official filing" aria-label={`Open document for ${item.symbol ?? item.company_name}`}><ExternalLink size={15} /></a>
+                ) : (
+                  <button type="button" onClick={() => setExpandedFeedEventId((current) => current === item.id ? null : item.id)} title="Show collected information" aria-label={`Show collected information for ${item.symbol ?? item.company_name}`} aria-expanded={expandedFeedEventId === item.id}><FileChartColumn size={15} /></button>
+                )}
               </div>
+              {expandedFeedEventId === item.id && (
+                <div className="ir-event-detail">
+                  <strong>Collected information</strong>
+                  <p>{item.summary || "No additional summary was returned by the provider."}</p>
+                  <span>Source: {item.source.toUpperCase()} · collected {formatDate(item.collected_at)}</span>
+                </div>
+              )}
             </article>
           ))}
           {!loading && feed && !feed.items.length && <EmptyLine label="No official disclosures match these filters" />}
