@@ -2336,7 +2336,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
   }, [schedulePageLoadCompletion]);
 
   useEffect(() => {
-    if (session.is_admin || !session.idle_timeout_seconds) return;
+    if (!session.idle_timeout_seconds) return;
 
     const idleTimeoutMs = session.idle_timeout_seconds * 1000;
     const heartbeatIntervalMs = 5 * 60 * 1000;
@@ -2380,7 +2380,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
       activityEvents.forEach((eventName) => window.removeEventListener(eventName, registerActivity));
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [onSessionExpired, session.idle_timeout_seconds, session.is_admin]);
+  }, [onSessionExpired, session.idle_timeout_seconds]);
 
   useEffect(() => {
     if (!profileOpen) return;
