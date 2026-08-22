@@ -390,14 +390,14 @@ def test_allowlisted_member_receives_code_and_permissions_follow_session(monkeyp
     assert session["capabilities"] == ["read"]
 
 
-def test_member_session_expires_after_sixty_minutes_without_human_activity(monkeypatch) -> None:
+def test_member_session_expires_after_thirty_minutes_without_human_activity(monkeypatch) -> None:
     settings = Settings(
         auth_required=True,
         auth_email="eu@eduardocastro.com.br",
         auth_secret="a-secure-test-secret-with-more-than-32-characters",
         auth_cookie_secure=False,
         auth_session_hours=24,
-        auth_member_idle_minutes=60,
+        auth_member_idle_minutes=30,
     )
     database = Database(settings)
     database.ensure_access_owner(settings.auth_email, ["command"])
@@ -421,7 +421,7 @@ def test_member_session_expires_after_sixty_minutes_without_human_activity(monke
     assert delivery is not None
     service.send_code_email(*delivery)
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
-    clock["now"] += timedelta(minutes=59)
+    clock["now"] += timedelta(minutes=29)
     assert service.authenticate(token) is not None
     clock["now"] += timedelta(minutes=2)
     assert service.authenticate(token) is None
@@ -434,7 +434,7 @@ def test_human_activity_renews_member_idle_window(monkeypatch) -> None:
         auth_secret="a-secure-test-secret-with-more-than-32-characters",
         auth_cookie_secure=False,
         auth_session_hours=24,
-        auth_member_idle_minutes=60,
+        auth_member_idle_minutes=30,
     )
     database = Database(settings)
     database.ensure_access_owner(settings.auth_email, ["command"])
@@ -458,15 +458,15 @@ def test_human_activity_renews_member_idle_window(monkeypatch) -> None:
     assert delivery is not None
     service.send_code_email(*delivery)
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
-    clock["now"] += timedelta(minutes=50)
+    clock["now"] += timedelta(minutes=20)
     assert service.authenticate(token, touch_activity=True) is not None
-    clock["now"] += timedelta(minutes=59)
+    clock["now"] += timedelta(minutes=29)
     assert service.authenticate(token) is not None
     clock["now"] += timedelta(minutes=2)
     assert service.authenticate(token) is None
 
 
-def test_owner_session_ignores_idle_timeout_and_expires_daily(monkeypatch) -> None:
+def test_owner_session_also_expires_after_thirty_minutes_of_inactivity(monkeypatch) -> None:
     settings = Settings(
         auth_required=True,
         auth_email="eu@eduardocastro.com.br",
@@ -474,7 +474,7 @@ def test_owner_session_ignores_idle_timeout_and_expires_daily(monkeypatch) -> No
         auth_cookie_secure=False,
         auth_session_hours=2,
         auth_owner_session_hours=24,
-        auth_member_idle_minutes=60,
+        auth_member_idle_minutes=30,
     )
     database = Database(settings)
     service = AuthService(settings, database)
@@ -488,9 +488,9 @@ def test_owner_session_ignores_idle_timeout_and_expires_daily(monkeypatch) -> No
     service.send_code_email(*delivery)
     token, expires_at, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
     assert expires_at == clock["now"] + timedelta(hours=24)
-    clock["now"] += timedelta(hours=23)
+    clock["now"] += timedelta(minutes=29)
     assert service.authenticate(token) is not None
-    clock["now"] += timedelta(hours=2)
+    clock["now"] += timedelta(minutes=2)
     assert service.authenticate(token) is None
 
 

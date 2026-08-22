@@ -1190,16 +1190,13 @@ class Database:
         now: datetime,
         *,
         idle_cutoff: datetime,
-        idle_exempt_email: str,
         touch_activity: bool = False,
     ) -> dict[str, Any] | None:
-        normalized_exempt_email = idle_exempt_email.strip().lower()
         if not self.database_url:
             item = self._sessions.get(token_hash)
             if not item or item["expires_at"] <= now or item.get("revoked_at"):
                 return None
-            is_idle_exempt = item["email"].strip().lower() == normalized_exempt_email
-            if not is_idle_exempt and item["last_seen_at"] <= idle_cutoff:
+            if item["last_seen_at"] <= idle_cutoff:
                 item["revoked_at"] = now
                 return None
             if touch_activity:
@@ -1213,10 +1210,10 @@ class Database:
                 WHERE token_hash = %s
                   AND expires_at > %s
                   AND revoked_at IS NULL
-                  AND (lower(email) = %s OR last_seen_at > %s)
+                  AND last_seen_at > %s
                 RETURNING id::text, email, expires_at, created_at, last_seen_at, created_ip
                 """,
-                (touch_activity, now, token_hash, now, normalized_exempt_email, idle_cutoff),
+                (touch_activity, now, token_hash, now, idle_cutoff),
             ).fetchone()
             connection.commit()
         if not row:

@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     auth_rate_limit_minutes: int = 15
     auth_session_hours: int = 24
     auth_owner_session_hours: int = 24
-    auth_member_idle_minutes: int = 60
+    auth_member_idle_minutes: int = 30
     auth_cookie_secure: bool = True
     public_url: str = "https://c3po.eduardocastro.com.br"
     system_health_external_timeout_seconds: float = 6.0

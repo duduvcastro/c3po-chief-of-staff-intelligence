@@ -319,7 +319,6 @@ class AuthService:
             self.session_hash(token),
             now,
             idle_cutoff=now - timedelta(minutes=self.settings.auth_member_idle_minutes),
-            idle_exempt_email=self.settings.auth_email,
             touch_activity=touch_activity,
         )
         if not session:
