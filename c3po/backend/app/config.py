@@ -77,6 +77,18 @@ class Settings(BaseSettings):
     fmp_api_token: str = Field(default="", validation_alias=AliasChoices("C3PO_FMP_API_TOKEN", "FMP_API_TOKEN"))
     fmp_base_url: str = "https://financialmodelingprep.com"
     fmp_plan: str = "unconfigured"
+    massive_api_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("C3PO_MASSIVE_API_TOKEN", "MASSIVE_API_TOKEN"),
+    )
+    massive_base_url: str = "https://api.massive.com"
+    massive_plan: str = "unconfigured"
+    massive_flat_files_access_key: str = ""
+    massive_flat_files_secret_key: str = ""
+    massive_flat_files_endpoint: str = "https://files.massive.com"
+    massive_flat_files_bucket: str = "flatfiles"
+    day_d_dataset_root: Path = Path("/app/day-d-data")
+    day_d_dataset_min_free_disk_gb: float = 20.0
     openai_admin_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("C3PO_OPENAI_ADMIN_API_KEY", "OPENAI_ADMIN_KEY"),

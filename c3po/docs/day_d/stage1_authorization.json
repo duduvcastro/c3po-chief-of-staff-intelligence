@@ -1,0 +1,45 @@
+{
+  "schema_version": "DAY-D-STAGE1-AUTHORIZATION-v1",
+  "authorized_at": "2026-08-22",
+  "authorized_by": "Dudu",
+  "provider": {
+    "current_name": "Massive",
+    "former_name": "Polygon.io",
+    "plan": "Stocks Advanced",
+    "billing": "monthly",
+    "subscription_status": "active"
+  },
+  "scope": {
+    "purchase_authorized": true,
+    "integration_foundation_authorized": true,
+    "credential_installation_authorized_after_reviewed_merge": true,
+    "plan_only_data_inspection_authorized": true,
+    "bulk_download_authorized": false,
+    "raw_capture_authorized": false,
+    "official_replay_authorized": false,
+    "production_trading_change_authorized": false,
+    "capital_use_authorized": false
+  },
+  "supersedes_stage0_prohibition_for": [
+    "purchase_polygon"
+  ],
+  "does_not_supersede_stage0_prohibition_for": [
+    "enable_raw_capture",
+    "run_official_replay",
+    "change_production_trading_behavior",
+    "use_real_trading_capital"
+  ],
+  "required_before_first_download": [
+    "six_hands_review_of_stage1_foundation",
+    "numeric_T0_disk_and_host_capacity_thresholds_frozen",
+    "read_only_plan_reports_remote_object_sizes",
+    "local_disk_guard_passes",
+    "retention_and_backup_destination_approved"
+  ],
+  "secrets_policy": {
+    "api_and_flat_file_credentials_are_separate": true,
+    "credentials_in_git_forbidden": true,
+    "credentials_in_chat_forbidden": true,
+    "server_environment_only": true
+  }
+}
