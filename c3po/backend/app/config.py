@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     massive_flat_files_bucket: str = "flatfiles"
     day_d_dataset_root: Path = Path("/app/day-d-data")
     day_d_dataset_min_free_disk_gb: float = 20.0
+    day_d_b2_key_id: str = ""
+    day_d_b2_application_key: str = ""
+    day_d_b2_bucket: str = ""
+    day_d_b2_endpoint: str = "https://s3.us-east-005.backblazeb2.com"
+    day_d_b2_region: str = "us-east-005"
     openai_admin_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("C3PO_OPENAI_ADMIN_API_KEY", "OPENAI_ADMIN_KEY"),

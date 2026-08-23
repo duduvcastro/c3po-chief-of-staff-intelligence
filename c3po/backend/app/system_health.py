@@ -26,6 +26,7 @@ class SystemHealthService:
         *,
         cache_seconds: int = 60,
         external_get: Callable[..., Any] | None = None,
+        backblaze_client: Any | None = None,
     ) -> None:
         self.settings = settings
         self.database = database
@@ -35,6 +36,7 @@ class SystemHealthService:
         self.server_usage = server_usage
         self.cache_seconds = cache_seconds
         self.external_get = external_get or httpx.get
+        self.backblaze_client = backblaze_client
         self._cached_at: datetime | None = None
         self._cached_response: SystemHealthResponse | None = None
 
@@ -375,8 +377,49 @@ class SystemHealthService:
             self._cloudflare_health(now),
             self._github_health(now),
             self._intermedia_health(now),
+            self._backblaze_health(now),
             self._open_meteo_health(now),
         ]
+
+    def _backblaze_health(self, now: datetime) -> IntegrationHealth:
+        if not all((
+            self.settings.day_d_b2_key_id,
+            self.settings.day_d_b2_application_key,
+            self.settings.day_d_b2_bucket,
+        )):
+            return IntegrationHealth(
+                name="Backblaze B2",
+                status="offline",
+                detail="Day D cold-storage credentials are not configured",
+                last_update=self._format_time(now),
+            )
+        try:
+            client = self.backblaze_client or self._build_backblaze_client()
+            client.head_bucket(Bucket=self.settings.day_d_b2_bucket)
+            return IntegrationHealth(
+                name="Backblaze B2",
+                status="healthy",
+                detail=(
+                    f"Day D cold storage · private bucket access confirmed · "
+                    f"{self.settings.day_d_b2_region}"
+                ),
+                last_update=self._format_time(now),
+            )
+        except Exception as exc:
+            return self._offline_item("Backblaze B2", exc, now)
+
+    def _build_backblaze_client(self) -> Any:
+        import boto3
+        from botocore.config import Config
+
+        return boto3.client(
+            "s3",
+            endpoint_url=self.settings.day_d_b2_endpoint,
+            aws_access_key_id=self.settings.day_d_b2_key_id,
+            aws_secret_access_key=self.settings.day_d_b2_application_key,
+            region_name=self.settings.day_d_b2_region,
+            config=Config(signature_version="s3v4"),
+        )
 
     def _cloudflare_health(self, now: datetime) -> IntegrationHealth:
         url = f"{self.settings.public_url.rstrip('/')}/robots.txt"
@@ -648,7 +691,7 @@ class SystemHealthService:
     def _safe_error(exc: Exception) -> str:
         message = str(exc).replace("\n", " ").strip()
         message = re.sub(
-            r"(?i)(api_key|apikey|api_token|token)=([^&\s]+)",
+            r"(?i)(api_key|apikey|api_token|token|application_key|applicationkey|secret_key|secretkey)=([^&\s]+)",
             r"\1=[redacted]",
             message,
         )

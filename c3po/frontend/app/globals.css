@@ -917,6 +917,8 @@ button { cursor: pointer; }
 .service-logo-finnhub img { padding: 4px; }
 .service-logo-fmp { border-color: #d9e3f5; background: #fff; }
 .service-logo-fmp img { padding: 5px; }
+.service-logo-backblaze { border-color: #d8292f; background: #fff; color: #d8292f; }
+.service-logo-backblaze b { font-size: 12px; }
 .service-logo-cvm { border-color: #2c6a55; background: #fff; }
 .service-logo-cvm img { padding: 5px 3px; }
 .service-logo-sec { border-color: #b79a55; background: #f8f3e5; }
