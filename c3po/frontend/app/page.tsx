@@ -79,6 +79,7 @@ type ViewKey =
   | "r2d2"
   | "candidates"
   | "matrix"
+  | "chewie"
   | "onepager"
   | "intelligence"
   | "finance"
@@ -608,6 +609,29 @@ interface MatrixPowerResponse {
   generated_at: string;
   items: MatrixPowerItem[];
   methodology: Record<string, string>;
+}
+
+interface ChewieFundamentalsItem {
+  market: ResearchMarket;
+  symbol: string;
+  name: string;
+  sector: string;
+  logo_url: string | null;
+  market_cap: number | null;
+  fundamentals_as_of: string | null;
+  multiples: { pe: number | null; forward_pe: number | null; ev_ebitda: number | null; peg: number | null; price_to_book: number | null };
+  profitability: { roe_percent: number | null; roa_percent: number | null; profit_margin_percent: number | null; operating_margin_percent: number | null; ebitda_margin_percent: number | null };
+  leverage: { debt_to_equity: number | null; net_debt_to_ebitda: number | null; total_cash: number | null; total_debt: number | null };
+  growth: { revenue_growth_percent: number | null; earnings_growth_percent: number | null };
+}
+
+interface ChewieFundamentalsResponse {
+  market: ResearchMarket;
+  source: string;
+  universe_size: number;
+  covered_count: number;
+  generated_at: string;
+  items: ChewieFundamentalsItem[];
 }
 
 type ResearchMarket = "B3" | "NASDAQ" | "NYSE";
@@ -1212,6 +1236,19 @@ function DarkSideIcon({ size = 24 }: { size?: number }) {
   );
 }
 
+function ChewieFundamentalsIcon({ size = 24 }: { size?: number }) {
+  return (
+    <img
+      alt=""
+      aria-hidden="true"
+      className="chewie-fundamentals-icon"
+      height={size}
+      src="/chewie-fundamentals-mark.svg"
+      width={size}
+    />
+  );
+}
+
 function HyperspaceIcon({ size = 24 }: { size?: number }) {
   return (
     <img
@@ -1313,6 +1350,7 @@ const navItems: { key: ViewKey; label: string; icon: ComponentType<{ size?: numb
   { key: "r2d2", label: "R2D2 Rising", icon: R2D2RisingIcon },
   { key: "candidates", label: "Last Jedi", icon: LastJediIcon },
   { key: "matrix", label: "Dark Side", icon: DarkSideIcon },
+  { key: "chewie", label: "Chewie Fundamentals", icon: ChewieFundamentalsIcon },
   { key: "onepager", label: "Laser Pager", icon: LaserPagerIcon },
   { key: "intelligence", label: "Ben Kenobi Records", icon: BenKenobiRecordsIcon },
   { key: "finance", label: "Midi-Chlorians Finance", icon: MidiChloriansFinanceIcon },
@@ -1334,6 +1372,7 @@ const viewIcons: Record<ViewKey, ComponentType<{ size?: number }>> = {
   r2d2: R2D2RisingIcon,
   candidates: LastJediIcon,
   matrix: DarkSideIcon,
+  chewie: ChewieFundamentalsIcon,
   onepager: LaserPagerIcon,
   intelligence: BenKenobiRecordsIcon,
   finance: MidiChloriansFinanceIcon,
@@ -1362,6 +1401,7 @@ const viewTitles: Record<ViewKey, { title: string; eyebrow: string }> = {
   r2d2: { title: "R2D2 Rising", eyebrow: "Paper trading laboratory · Governed strategy validation" },
   candidates: { title: "Last Jedi", eyebrow: "Protocol intelligence · Versioned opportunity set" },
   matrix: { title: "Dark Side", eyebrow: "Protocol intelligence · Live risk-return field" },
+  chewie: { title: "Chewie Fundamentals", eyebrow: "Protocol intelligence · Company fundamentals across markets" },
   onepager: { title: "Laser Pager", eyebrow: "Protocol intelligence · On-demand equity research" },
   intelligence: { title: "Ben Kenobi Records", eyebrow: "Valuation intelligence · Permanent audit trail" },
   finance: { title: "Midi-Chlorians Finance", eyebrow: "Protocol intelligence · Banking and investments" },
@@ -2557,7 +2597,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
         <nav className="primary-nav" aria-label="Primary navigation">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
-            const iconSize = item.key === "command" || item.key === "realtime" || item.key === "weather" || item.key === "relations" || item.key === "matrix" || item.key === "alerts" || item.key === "health" || item.key === "helm" ? 22 : 18;
+            const iconSize = item.key === "command" || item.key === "realtime" || item.key === "weather" || item.key === "relations" || item.key === "matrix" || item.key === "chewie" || item.key === "alerts" || item.key === "health" || item.key === "helm" ? 22 : 18;
             const hasNew = item.key === "alerts"
               ? activeAlertCount > 0
               : (item.key === "relations" || item.key === "intelligence")
@@ -2732,6 +2772,7 @@ function ViewRouter({
   if (activeView === "finance") return <FinanceView refreshKey={financeRefreshKey} />;
   if (activeView === "candidates") return <CandidatesView reports={reports} marketProviders={marketProviders} />;
   if (activeView === "matrix") return <MatrixPowerView />;
+  if (activeView === "chewie") return <ChewieFundamentalsView />;
   if (activeView === "onepager") return <OnePagerView canGenerate={canGenerateOnePagers} />;
   if (activeView === "command") return <MillenniumFalconView systemHealth={systemHealth} />;
   return <LoadingState />;
@@ -5199,6 +5240,143 @@ function MatrixPowerView() {
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+type ChewieGroup = "multiples" | "profitability" | "leverage" | "growth";
+
+const chewieGroups: { key: ChewieGroup; label: string }[] = [
+  { key: "multiples", label: "Multiples" },
+  { key: "profitability", label: "Profitability" },
+  { key: "leverage", label: "Leverage & liquidity" },
+  { key: "growth", label: "Growth" },
+];
+
+function ChewieFundamentalsView() {
+  const [activeMarket, setActiveMarket] = useState<ResearchMarket>("B3");
+  const [activeGroup, setActiveGroup] = useState<ChewieGroup>("multiples");
+  const [data, setData] = useState<ChewieFundamentalsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const requestRef = useRef(0);
+
+  const load = useCallback(async (refresh = false) => {
+    const requestId = ++requestRef.current;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/chewie-fundamentals/${activeMarket.toLowerCase()}?refresh=${refresh ? "true" : "false"}`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      if (requestId === requestRef.current) setData(payload);
+    } catch (requestError) {
+      if (requestId === requestRef.current) {
+        setError(requestError instanceof Error ? requestError.message : "Chewie Fundamentals unavailable");
+      }
+    } finally {
+      if (requestId === requestRef.current) setLoading(false);
+    }
+  }, [activeMarket]);
+
+  useEffect(() => {
+    setData(null);
+    load(false);
+  }, [load]);
+
+  return (
+    <div className="content-stack">
+      <section className="panel candidate-ranking-panel">
+        <div className="research-market-tabs" role="tablist" aria-label="Chewie Fundamentals markets">
+          {(["B3", "NASDAQ", "NYSE"] as ResearchMarket[]).map((market) => (
+            <button key={market} role="tab" aria-selected={activeMarket === market} className={activeMarket === market ? "active" : ""} onClick={() => setActiveMarket(market)}>
+              <img src={valuationMarketMarks[market]} alt="" className="research-market-tab-logo" />
+              {market}
+            </button>
+          ))}
+        </div>
+        <PanelHeader title={`${activeMarket} Chewie Fundamentals`} icon={ChewieFundamentalsIcon} />
+        <div className="chewie-summary-bar">
+          <div><span>Universe</span><strong>{data?.universe_size ?? "—"}</strong><small>{activeMarket} tracked stocks</small></div>
+          <div><span>Covered</span><strong>{data?.covered_count ?? "—"}</strong><small>top by market cap</small></div>
+          <div><span>Source</span><strong>{data?.source ?? "EODHD Fundamentals"}</strong><small>{data ? formatDate(data.generated_at) : "loading"}</small></div>
+          <button className="screen-refresh" onClick={() => load(true)} disabled={loading} title="Recarregar os fundamentos">
+            <RefreshCw size={16} className={loading ? "spin" : ""} />
+            <span>{loading ? "Updating" : "Refresh"}</span>
+          </button>
+        </div>
+        <div className="chewie-group-tabs" role="tablist" aria-label="Fundamentals category">
+          {chewieGroups.map((group) => (
+            <button key={group.key} role="tab" aria-selected={activeGroup === group.key} className={activeGroup === group.key ? "active" : ""} onClick={() => setActiveGroup(group.key)}>
+              {group.label}
+            </button>
+          ))}
+        </div>
+        {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => load(true)}>Retry</button></div>}
+        {loading && !data ? <CandidateTableLoading /> : data && data.items.length === 0 ? (
+          <div className="candidate-empty-state">No fundamentals coverage for {activeMarket} yet.</div>
+        ) : data && (
+          <div className="chewie-table-wrap">
+            <table className="chewie-table">
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  {activeGroup === "multiples" && <><th>P/E</th><th>Fwd P/E</th><th>EV/EBITDA</th><th>PEG</th><th>P/B</th></>}
+                  {activeGroup === "profitability" && <><th>ROE</th><th>ROA</th><th>Profit margin</th><th>Op. margin</th><th>EBITDA margin</th></>}
+                  {activeGroup === "leverage" && <><th>Debt/Equity</th><th>Net debt/EBITDA</th><th>Total cash</th><th>Total debt</th></>}
+                  {activeGroup === "growth" && <><th>Revenue growth</th><th>Earnings growth</th></>}
+                  <th>Market cap</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((item) => (
+                  <tr key={item.symbol}>
+                    <td>
+                      <div className="chewie-company">
+                        <div className="chewie-logo">
+                          {item.logo_url ? <img src={item.logo_url} alt="" /> : <span>{item.symbol.slice(0, 2)}</span>}
+                        </div>
+                        <div>
+                          <strong>{item.symbol}</strong>
+                          <span>{item.name} · {item.sector}</span>
+                        </div>
+                      </div>
+                    </td>
+                    {activeGroup === "multiples" && <>
+                      <td>{formatMultiple(item.multiples.pe)}</td>
+                      <td>{formatMultiple(item.multiples.forward_pe)}</td>
+                      <td>{formatMultiple(item.multiples.ev_ebitda)}</td>
+                      <td>{formatMultiple(item.multiples.peg)}</td>
+                      <td>{formatMultiple(item.multiples.price_to_book)}</td>
+                    </>}
+                    {activeGroup === "profitability" && <>
+                      <td>{formatPercent(item.profitability.roe_percent)}</td>
+                      <td>{formatPercent(item.profitability.roa_percent)}</td>
+                      <td>{formatPercent(item.profitability.profit_margin_percent)}</td>
+                      <td>{formatPercent(item.profitability.operating_margin_percent)}</td>
+                      <td>{formatPercent(item.profitability.ebitda_margin_percent)}</td>
+                    </>}
+                    {activeGroup === "leverage" && <>
+                      <td>{formatMultiple(item.leverage.debt_to_equity)}</td>
+                      <td>{formatMultiple(item.leverage.net_debt_to_ebitda)}</td>
+                      <td>{formatCompact(item.leverage.total_cash)}</td>
+                      <td>{formatCompact(item.leverage.total_debt)}</td>
+                    </>}
+                    {activeGroup === "growth" && <>
+                      <td>{formatPercent(item.growth.revenue_growth_percent)}</td>
+                      <td>{formatPercent(item.growth.earnings_growth_percent)}</td>
+                    </>}
+                    <td>{formatCompact(item.market_cap)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

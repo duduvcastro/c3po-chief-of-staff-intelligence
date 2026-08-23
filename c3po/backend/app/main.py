@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from .auth import AuthService, AuthenticationError, EmailDeliveryError, RateLimitError
 from .api_performance import api_performance
+from .chewie_fundamentals import ChewieFundamentalsService
 from .access_control import (
     ALL_CAPABILITIES,
     ALL_VIEW_PERMISSIONS,
@@ -53,6 +54,7 @@ from .schemas import (
     AlertReadResponse,
     AuthSessionResponse,
     B3CandidateResponse,
+    ChewieFundamentalsResponse,
     CommandCenterResponse,
     FeedbackRequest,
     FeedbackResponse,
@@ -153,6 +155,7 @@ one_pagers = OnePagerService(
 )
 us_screener = USScreeningService(settings, database, realtime_markets, one_pagers)
 one_pagers.set_us_screener(us_screener)
+chewie_fundamentals = ChewieFundamentalsService(settings, database, market_data.http)
 r2d2 = R2D2PaperService(settings, database, realtime_markets, b3_screener, one_pagers)
 leah_cloud = LeahCloudService(settings, database)
 SESSION_COOKIE = "c3po_session"
@@ -1367,6 +1370,18 @@ def matrix_power_nyse() -> MatrixPowerResponse:
         return us_screener.matrix("NYSE")
     except (MarketDataRequestError, RuntimeError) as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/chewie-fundamentals/{market}", response_model=ChewieFundamentalsResponse)
+def chewie_fundamentals_view(market: str, refresh: bool = Query(default=False)) -> ChewieFundamentalsResponse:
+    normalized = market.strip().upper()
+    if normalized not in {"B3", "NASDAQ", "NYSE"}:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown market")
+    try:
+        payload = chewie_fundamentals.rows(normalized, refresh=refresh)  # type: ignore[arg-type]
+    except (MarketDataRequestError, RuntimeError) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return ChewieFundamentalsResponse(**payload)
 
 
 @app.get("/api/v1/r2d2", response_model=R2D2DashboardResponse)

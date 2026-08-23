@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Chewie Fundamentals mark</title>
+  <defs>
+    <linearGradient id="fur" x1="50" y1="20" x2="206" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8a6a3f"/>
+      <stop offset=".45" stop-color="#5f4527"/>
+      <stop offset="1" stop-color="#3a2a18"/>
+    </linearGradient>
+    <linearGradient id="furLight" x1="70" y1="30" x2="190" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c8a05c"/>
+      <stop offset="1" stop-color="#8a6a3f"/>
+    </linearGradient>
+    <linearGradient id="strap" x1="150" y1="120" x2="230" y2="235" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5a4632"/>
+      <stop offset="1" stop-color="#2c2116"/>
+    </linearGradient>
+    <radialGradient id="eye" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#e9c98b"/>
+      <stop offset=".55" stop-color="#5b4322"/>
+      <stop offset="1" stop-color="#160f08"/>
+    </radialGradient>
+  </defs>
+  <path d="M128 18c-52 0-83 33-88 88-3 32-1 60 6 84 6 21 18 35 34 41l6-18c-10-14-15-31-13-52 14 10 32 15 61 15s47-5 61-15c2 21-3 38-13 52l6 18c16-6 28-20 34-41 7-24 9-52 6-84-5-55-36-88-88-88Z" fill="url(#fur)" stroke="#241a10" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M75 70c8-22 26-36 53-36s45 14 53 36c-10 18-15 40-13 62-14-8-26-11-40-11s-26 3-40 11c2-22-3-44-13-62Z" fill="url(#furLight)" opacity=".85"/>
+  <path d="M92 108c8-9 18-14 28-15l10 20 10-20c10 1 20 6 28 15" fill="none" stroke="#2c2116" stroke-width="5" stroke-linecap="round" opacity=".55"/>
+  <ellipse cx="98" cy="112" rx="12" ry="9" fill="url(#eye)"/>
+  <ellipse cx="158" cy="112" rx="12" ry="9" fill="url(#eye)"/>
+  <path d="M128 118c-6 0-11 4-11 10 0 5 5 8 11 8s11-3 11-8c0-6-5-10-11-10Z" fill="#100b06"/>
+  <path d="M92 152c8 18 22 28 36 28s28-10 36-28c-11 9-24 13-36 13s-25-4-36-13Z" fill="#100b06" stroke="#3a2a18" stroke-width="3"/>
+  <path d="M104 168h4l4 10 4-12 4 12 4-12 4 12 4-10h4" fill="none" stroke="#e9e0c8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M158 150c22 4 40 16 52 34-6 22-8 40-6 58l-30 8c-10-30-16-64-16-100Z" fill="url(#strap)" stroke="#1c150d" stroke-width="3"/>
+  <rect x="150" y="188" width="20" height="14" rx="2" fill="#8b8f94" stroke="#3a3d40" stroke-width="2"/>
+  <rect x="176" y="208" width="20" height="14" rx="2" fill="#8b8f94" stroke="#3a3d40" stroke-width="2"/>
+</svg>
