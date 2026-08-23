@@ -133,9 +133,57 @@ class PremiumOnePagerRenderer:
             fill=colors.HexColor("#FFFAFA"),
         )
         self._scenario_box(pdf, right_x, 91, right_w, 160, data)
+        self._v2_shadow_band(pdf, data)
         self._footer(pdf, data, generated_at)
         pdf.showPage()
         pdf.save()
+
+    def _v2_shadow_band(self, pdf: canvas.Canvas, data: dict[str, Any]) -> None:
+        """One clearly-labeled strip for the Valuation V2 shadow figure.
+        Informational only: every headline number on this page remains the
+        production V1 engine's; this strip exists so divergence between the
+        engines is visible on paper before any consumer switches."""
+        shadow = data.get("v2_shadow")
+        if not isinstance(shadow, dict) or shadow.get("v2_tp") is None:
+            return
+        band_y, band_h = 75.5, 14.5
+        pdf.setFillColor(GOLD_LIGHT)
+        pdf.setStrokeColor(colors.HexColor("#E6D399"))
+        pdf.setLineWidth(0.6)
+        pdf.roundRect(MARGIN, band_y, PAGE_W - 2 * MARGIN, band_h, 3, fill=1, stroke=1)
+        pdf.setFillColor(colors.HexColor("#8A6D1F"))
+        pdf.setFont("Helvetica-Bold", 6.0)
+        pdf.drawString(MARGIN + 8, band_y + 4.6, "VALUATION V2 · SHADOW")
+        parts: list[str] = [
+            f"TP {self._money(shadow.get('v2_tp'), data['currency'])}",
+        ]
+        upside = shadow.get("v2_upside_percent")
+        if upside is not None:
+            parts.append(f"upside {float(upside):+.1f}%".replace(".", ","))
+        divergence = shadow.get("divergence_vs_consensus")
+        if divergence is not None:
+            parts.append(f"vs consenso ±{float(divergence) * 100:.1f}%".replace(".", ","))
+        model_count = shadow.get("model_count")
+        if model_count:
+            parts.append(f"{int(model_count)} modelos de âncora externa")
+        attribution = shadow.get("attribution_model")
+        if attribution:
+            labels = {
+                "peer_comps": "peers", "own_history": "hist. própria",
+                "earnings_power": "earnings power", "consensus_dcf": "DCF-consenso",
+                "rim": "RIM", "ddm": "DDM",
+            }
+            parts.append(f"dominante: {labels.get(str(attribution), str(attribution))}")
+        parts.append("LOW CONVICTION" if shadow.get("low_conviction") else "convicção ok")
+        pdf.setFillColor(INK)
+        pdf.setFont("Helvetica", 5.8)
+        pdf.drawString(MARGIN + 92, band_y + 4.6, "  ·  ".join(parts)[:160])
+        pdf.setFillColor(SUB)
+        pdf.setFont("Helvetica-Oblique", 4.8)
+        pdf.drawRightString(
+            PAGE_W - MARGIN - 8, band_y + 4.6,
+            "não substitui o TP oficial acima; motor V2 em observação",
+        )
 
     def _header(self, pdf: canvas.Canvas, data: dict[str, Any]) -> None:
         pdf.setFillColor(INK)

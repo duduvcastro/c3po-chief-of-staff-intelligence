@@ -863,3 +863,46 @@ def test_consensus_does_not_leak_into_internal_methods_without_fundamentals(tmp_
     assert with_consensus["methods"] == pytest.approx(without_consensus["methods"])
     internal_tp = statistics.mean(with_consensus["methods"].values())
     assert with_consensus["c3po_tp"] == pytest.approx(internal_tp * 0.65 + 140.0 * 0.35)
+
+
+def test_v2_shadow_band_renders_without_replacing_the_official_tp(tmp_path) -> None:
+    service = service_for(tmp_path)
+    analysis = sample_analysis(service)
+    analysis["v2_shadow"] = {
+        "v2_tp": 512.34,
+        "v2_upside_percent": 8.7,
+        "divergence_vs_consensus": 0.121,
+        "model_count": 4,
+        "attribution_model": "peer_comps",
+        "low_conviction": False,
+    }
+    start = datetime(2025, 8, 5, tzinfo=timezone.utc)
+    history = [
+        {
+            "date": (start + timedelta(days=round(index * 365 / 260))).date().isoformat(),
+            "close": 400 + index * 0.3,
+        }
+        for index in range(261)
+    ]
+
+    report = service._write_report(analysis, history)
+
+    assert (tmp_path / report.filename).read_bytes().startswith(b"%PDF")
+    # The official TP is still the V1 engine's -- the shadow is informational.
+    assert report.c3po_tp == pytest.approx(analysis["c3po_tp"], rel=1e-3)
+
+
+def test_valuation_v2_shadow_lookup_reads_the_persisted_snapshot(tmp_path) -> None:
+    service = service_for(tmp_path)
+    methodology_id = service.database.ensure_methodology_version("v2_shadow_test", 1, {}, "test")
+    service.database.save_analysis_snapshot(
+        "valuation_v2_shadow",
+        "NASDAQ_V2_SHADOW",
+        methodology_id,
+        {},
+        {"results": {"MSFT": {"v2_tp": 501.0, "low_conviction": False}}},
+        datetime.now(timezone.utc),
+    )
+
+    assert service._valuation_v2_shadow("msft") == {"v2_tp": 501.0, "low_conviction": False}
+    assert service._valuation_v2_shadow("UNKNOWN") is None
