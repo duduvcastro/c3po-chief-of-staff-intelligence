@@ -423,6 +423,7 @@ class ChewieMultiples(BaseModel):
     ev_ebitda: float | None = None
     peg: float | None = None
     price_to_book: float | None = None
+    dividend_yield_percent: float | None = None
 
 
 class ChewieProfitability(BaseModel):
@@ -453,6 +454,8 @@ class ChewieFundamentalsItem(BaseModel):
     logo_url: str | None = None
     market_cap: float | None = None
     fundamentals_as_of: str | None = None
+    sources: list[str] = Field(default_factory=list)
+    from_universe: bool = True
     multiples: ChewieMultiples
     profitability: ChewieProfitability
     leverage: ChewieLeverage
@@ -465,6 +468,12 @@ class ChewieFundamentalsResponse(BaseModel):
     universe_size: int
     covered_count: int
     generated_at: datetime
+    items: list[ChewieFundamentalsItem]
+
+
+class ChewieSearchResponse(BaseModel):
+    market: Literal["B3", "NASDAQ", "NYSE"]
+    query: str
     items: list[ChewieFundamentalsItem]
 
 

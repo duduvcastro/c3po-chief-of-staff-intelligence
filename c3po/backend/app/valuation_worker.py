@@ -3,6 +3,7 @@ import time
 from datetime import datetime, time as wall_time, timedelta
 from zoneinfo import ZoneInfo
 
+from .chewie_fundamentals import ChewieFundamentalsService
 from .config import get_settings
 from .database import Database
 from .investor_relations import InvestorRelationsService
@@ -75,6 +76,7 @@ def main() -> None:
     )
     us_screener = USScreeningService(settings, database, realtime, one_pagers)
     one_pagers.set_us_screener(us_screener)
+    chewie = ChewieFundamentalsService(settings, database, market_data.http)
 
     while True:
         now = datetime.now(SAO_PAULO)
@@ -110,9 +112,30 @@ def main() -> None:
                 time.sleep(15 * 60)
                 continue
 
-        sleep_seconds = max(30, int((next_midnight(datetime.now(SAO_PAULO)) - datetime.now(SAO_PAULO)).total_seconds()))
-        logger.info("Next full valuation cycle at %s", next_midnight(datetime.now(SAO_PAULO)).isoformat())
-        time.sleep(sleep_seconds)
+        # The Chewie fundamentals snapshot refreshes once per day at 01:00
+        # Sao Paulo, and ONLY inside the 01:00-08:00 pre-market window, so its
+        # provider calls never compete with market-time API usage. A worker
+        # that comes up mid-day waits for the next 01:00 slot.
+        now = datetime.now(SAO_PAULO)
+        chewie_due_at = start_of_today(now) + timedelta(hours=1)
+        chewie_window_end = start_of_today(now) + timedelta(hours=8)
+        chewie_last = chewie.last_refreshed_at()
+        chewie_pending = chewie_last is None or chewie_last.astimezone(SAO_PAULO) < chewie_due_at
+        if chewie_pending and chewie_due_at <= now < chewie_window_end:
+            try:
+                chewie_counts = chewie.refresh_all()
+                logger.info("Chewie fundamentals daily snapshot complete: %s", chewie_counts)
+            except Exception:
+                logger.exception("Chewie fundamentals snapshot failed; keeping the previous snapshot")
+            chewie_pending = False
+
+        now = datetime.now(SAO_PAULO)
+        wake_targets = [next_midnight(now)]
+        if chewie_pending and now < chewie_due_at:
+            wake_targets.append(chewie_due_at)
+        wake_at = min(wake_targets)
+        logger.info("Next valuation-worker wake-up at %s", wake_at.isoformat())
+        time.sleep(max(30, int((wake_at - now).total_seconds())))
 
 
 if __name__ == "__main__":
