@@ -125,6 +125,18 @@ def _external_get(url: str, **_kwargs):
     return _ExternalResponse(cloudflare="robots.txt" in url, usage="/api/user/" in url)
 
 
+class _BackblazeClient:
+    def __init__(self, *, error: Exception | None = None) -> None:
+        self.error = error
+        self.requested_bucket = None
+
+    def head_bucket(self, *, Bucket: str):
+        self.requested_bucket = Bucket
+        if self.error:
+            raise self.error
+        return {"ResponseMetadata": {"HTTPStatusCode": 200}}
+
+
 def _service(*, disk_percent: float = 62.0, eodhd_base_url: str = "https://eodhd.com") -> SystemHealthService:
     now = datetime.now(timezone.utc)
     settings = Settings(
@@ -137,6 +149,9 @@ def _service(*, disk_percent: float = 62.0, eodhd_base_url: str = "https://eodhd
         finnhub_api_token="configured",
         fmp_api_token="configured",
         massive_api_token="configured",
+        day_d_b2_key_id="configured-key-id",
+        day_d_b2_application_key="configured-application-key",
+        day_d_b2_bucket="c3po-day-d-cold-test",
         server_usage_disk_warning_percent=70,
         server_usage_cpu_peak_warning_percent=85,
     )
@@ -149,6 +164,7 @@ def _service(*, disk_percent: float = 62.0, eodhd_base_url: str = "https://eodhd
         _ServerUsage(now, disk_percent),
         cache_seconds=0,
         external_get=_external_get,
+        backblaze_client=_BackblazeClient(),
     )
 
 
@@ -160,7 +176,7 @@ def test_consolidated_health_covers_every_operational_area() -> None:
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler",
     }
     assert "WhatsApp capture" not in {item.name for group in response.groups for item in group.items}
 
@@ -184,8 +200,8 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     assert usage.status == "attention"
     assert response.status == "attention"
     assert response.quality == 96
-    assert response.healthy_count == 22
-    assert response.total_count == 23
+    assert response.healthy_count == 23
+    assert response.total_count == 24
 
 
 def test_finnhub_is_monitored_in_market_quotes() -> None:
@@ -239,6 +255,40 @@ def test_massive_is_offline_without_a_configured_credential() -> None:
     massive = next(item for item in quotes.items if item.name == "Massive")
     assert massive.status == "offline"
     assert "not configured" in massive.detail
+
+
+def test_backblaze_is_monitored_as_a_contracted_service() -> None:
+    service = _service()
+
+    response = service.snapshot(force=True)
+
+    external = next(group for group in response.groups if group.key == "external_services")
+    backblaze = next(item for item in external.items if item.name == "Backblaze B2")
+    assert backblaze.status == "healthy"
+    assert "private bucket access confirmed" in backblaze.detail
+    assert service.backblaze_client.requested_bucket == "c3po-day-d-cold-test"
+
+
+def test_backblaze_is_offline_without_credentials() -> None:
+    service = _service()
+    service.settings.day_d_b2_application_key = ""
+
+    response = service.snapshot(force=True)
+
+    backblaze = next(item for group in response.groups for item in group.items if item.name == "Backblaze B2")
+    assert backblaze.status == "offline"
+    assert "not configured" in backblaze.detail
+
+
+def test_backblaze_reports_bucket_access_failure_without_leaking_credentials() -> None:
+    service = _service()
+    service.backblaze_client = _BackblazeClient(error=RuntimeError("applicationKey=super-secret failed"))
+
+    response = service.snapshot(force=True)
+
+    backblaze = next(item for group in response.groups for item in group.items if item.name == "Backblaze B2")
+    assert backblaze.status == "offline"
+    assert "super-secret" not in backblaze.detail
 
 
 def test_health_error_redacts_market_data_credentials() -> None:
