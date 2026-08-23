@@ -141,6 +141,7 @@ def _packet(symbol: str) -> dict:
                 "eps": 7.0 + (year - 2019) * 0.1,
                 "market_cap": 100_000_000,
                 "enterprise_value": 110_000_000,
+                "roe": 0.15,
             }
             for year in range(2019, 2026)
         ],

@@ -107,6 +107,7 @@ def _packet(**overrides) -> dict:
                 "eps": 8.0 + (year - 2016) * 0.1,
                 "market_cap": 190e9,
                 "enterprise_value": 220e9,
+                "roe": 0.18,
             }
             for year in range(2016, 2026)
         ],

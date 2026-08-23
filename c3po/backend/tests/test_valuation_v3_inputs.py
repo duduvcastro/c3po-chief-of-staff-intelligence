@@ -15,6 +15,10 @@ AS_OF = date(2026, 8, 23)
 def test_fmp_forward_quality_requires_roe_and_two_positive_forward_revenues():
     packet = {
         "ratios_annual": [
+            {"fiscal_year_end": "2025-12-31", "roe": 9.99},
+        ],
+        "key_metrics_annual": [
+            {"fiscal_year_end": "2027-12-31", "roe": 9.0},
             {"fiscal_year_end": "2025-12-31", "roe": 0.18},
             {"fiscal_year_end": "2024-12-31", "roe": 0.15},
         ],
@@ -29,6 +33,10 @@ def test_fmp_forward_quality_requires_roe_and_two_positive_forward_revenues():
     assert result is not None
     assert result["roe"] == 0.18
     assert abs(result["revenue_growth"] - 0.15) < 1e-12
+    assert fmp_forward_quality(
+        {**packet, "key_metrics_annual": []},
+        as_of=AS_OF,
+    ) is None
     assert fmp_forward_quality(
         {**packet, "analyst_estimates_annual": packet["analyst_estimates_annual"][:1]},
         as_of=AS_OF,
@@ -57,7 +65,7 @@ def test_chewie_quality_never_borrows_a_missing_field_from_fmp():
 def test_quality_index_resolves_b3_dot_sa_and_preserves_separate_bases():
     packets = {
         "PETR4": {
-            "ratios_annual": [{"fiscal_year_end": "2025-12-31", "roe": 0.25}],
+            "key_metrics_annual": [{"fiscal_year_end": "2025-12-31", "roe": 0.25}],
             "analyst_estimates_annual": [
                 {"fiscal_year_end": "2026-12-31", "revenue_avg": 500.0},
                 {"fiscal_year_end": "2027-12-31", "revenue_avg": 525.0},
@@ -83,7 +91,7 @@ def test_quality_index_resolves_b3_dot_sa_and_preserves_separate_bases():
 
 def test_quality_index_is_deterministic_when_provider_aliases_coexist():
     packet = {
-        "ratios_annual": [{"fiscal_year_end": "2025-12-31", "roe": 0.20}],
+        "key_metrics_annual": [{"fiscal_year_end": "2025-12-31", "roe": 0.20}],
         "analyst_estimates_annual": [
             {"fiscal_year_end": "2026-12-31", "revenue_avg": 100.0},
             {"fiscal_year_end": "2027-12-31", "revenue_avg": 110.0},

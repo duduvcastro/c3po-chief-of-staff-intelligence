@@ -77,12 +77,13 @@ def _full_fmp_stub() -> dict[str, object]:
         "stable/ratios": [
             {"date": _past_fy(offset), "priceToEarningsRatio": 25.0 + offset,
              "priceToBookRatio": 40.0, "enterpriseValueMultiple": 20.0 - offset,
-             "returnOnEquity": 1.4, "netProfitMargin": 0.25, "debtToEquityRatio": 1.5,
+             "netProfitMargin": 0.25, "debtToEquityRatio": 1.5,
              "dividendYield": 0.005}
             for offset in range(1, 8)
         ],
         "key-metrics": [
             {"date": _past_fy(offset), "marketCap": 3e12, "returnOnInvestedCapital": 0.45,
+             "returnOnEquity": 1.4,
              "revenuePerShare": 25.0, "freeCashFlowPerShare": 6.5, "netIncomePerShare": 6.1}
             for offset in range(1, 8)
         ],
@@ -104,6 +105,7 @@ def test_fmp_client_parses_the_four_v2_endpoint_families():
     assert len(packet["ratios_annual"]) == 7
     assert packet["ratios_annual"][0]["pe"] == 26.0
     assert packet["key_metrics_annual"][0]["roic"] == 0.45
+    assert packet["key_metrics_annual"][0]["roe"] == 1.4
     assert {status["status"] for status in packet["provider_status"].values()} == {"ok"}
 
 
@@ -142,6 +144,8 @@ def test_refresh_daily_persists_packets_with_anchor_coverage_accounting():
         "covered": 1,
         "all_anchors": 1,
         "provider_error_symbols": 0,
+        "roe_available": 1,
+        "fmp_forward_quality": 1,
     }
     packet = service.packets("NASDAQ")["AAPL"]
     coverage = packet["coverage"]
@@ -161,6 +165,8 @@ def test_refresh_daily_persists_packets_with_anchor_coverage_accounting():
         "endpoint_responses": 4,
         "peers_ok": 1,
         "estimates_ok": 1,
+        "roe_available": 1,
+        "fmp_forward_quality": 1,
         "history_ok": 1,
         "all_anchors": 1,
     }
@@ -240,6 +246,8 @@ def test_refresh_is_a_noop_without_fmp_credentials():
         "covered": 0,
         "all_anchors": 0,
         "provider_error_symbols": 0,
+        "roe_available": 0,
+        "fmp_forward_quality": 0,
     }
     assert http.calls == []
     assert service.packets("NASDAQ") == {}
@@ -307,6 +315,7 @@ def test_numeric_zeroes_are_not_replaced_by_legacy_fallback_fields():
         }],
         "key-metrics": [{
             "date": _past_fy(1),
+            "returnOnEquity": 0,
             "returnOnInvestedCapital": 0,
             "roic": 77,
         }],
@@ -319,3 +328,4 @@ def test_numeric_zeroes_are_not_replaced_by_legacy_fallback_fields():
     assert ratios[0]["pe"] == 0
     assert ratios[0]["debt_to_equity"] == 0
     assert metrics[0]["roic"] == 0
+    assert metrics[0]["roe"] == 0

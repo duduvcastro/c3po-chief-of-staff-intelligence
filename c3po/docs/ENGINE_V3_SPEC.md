@@ -49,7 +49,8 @@ ciclo; receita forward nao e proxy adequada de qualidade para utilities/REITs.
 Para cada empresa-alvo `i` e metrica `m`, a base de qualidade segue uma ladder
 fechada, sem misturar fontes na mesma regressao:
 
-1. **`fmp_forward`**: ROE anual mais recente em `ratios_annual` e receitas FY1
+1. **`fmp_forward`**: ROE anual mais recente em `key_metrics_annual`
+   (campo bruto FMP `returnOnEquity`) e receitas FY1
    e FY2 positivas em `analyst_estimates_annual`, tanto para o alvo quanto para
    pelo menos quatro peers;
 2. **`chewie_trailing`**: ROE e crescimento anual de receita do mesmo snapshot
