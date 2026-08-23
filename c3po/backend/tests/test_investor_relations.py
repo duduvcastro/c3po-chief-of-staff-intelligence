@@ -2,6 +2,9 @@ import io
 import zipfile
 from datetime import date, datetime, timedelta, timezone
 
+import httpx
+import pytest
+
 from app.config import Settings
 from app.cvm_fundamentals import extract_itr_official_fundamentals
 from app.database import Database
@@ -116,6 +119,77 @@ def test_regulator_evidence_is_valid_without_a_registered_issuer_page(tmp_path, 
 
     assert result["verification_status"] == "regulator_only"
     assert result["ri_url"] == "https://dados.cvm.gov.br/"
+
+
+def test_cvm_ipe_404_is_an_audited_partial_source_not_a_full_sync_failure(tmp_path, monkeypatch):
+    ir, database = service(tmp_path)
+
+    class MissingIpeClient:
+        def get(self, url, **kwargs):
+            return httpx.Response(404, request=httpx.Request("GET", url))
+
+    ir.client = MissingIpeClient()
+    monkeypatch.setattr(ir, "_cvm_structured_package", lambda kind, year, cutoff: (
+        ([{
+            "DENOM_CIA": "PETROLEO BRASILEIRO S.A. PETROBRAS",
+            "CD_CVM": "9512",
+            "CNPJ_CIA": "33.000.167/0001-01",
+        }] if kind == "itr" else []),
+        b"",
+        f"https://dados.cvm.gov.br/{kind}-{year}.zip",
+    ))
+    monkeypatch.setattr(ir, "_register_brapi_b3_universe", lambda: None)
+    monkeypatch.setattr(ir, "_register_cvm_ri_channels", lambda year, companies: 0)
+    monkeypatch.setattr(ir, "_enrich_cvm_security_bridges", lambda rows, companies: None)
+    monkeypatch.setattr(ir, "_cvm_insider_transactions", lambda year, cutoff: [])
+    monkeypatch.setattr("app.investor_relations.extract_itr_official_fundamentals", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.investor_relations.save_official_fundamentals", lambda *args, **kwargs: None)
+
+    records_read, records_written = ir.sync_cvm()
+
+    assert records_read == 1
+    assert records_written == 0
+    run = next(iter(database._ingestion_runs.values()))
+    assert run["status"] == "succeeded"
+    assert "package unavailable (HTTP 404)" in run["error_summary"]
+
+
+def test_cvm_ipe_rows_keep_the_existing_cutoff_behavior(tmp_path):
+    ir, _ = service(tmp_path)
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr(
+            "ipe_cia_aberta_2026.csv",
+            (
+                "Data_Entrega;Nome_Companhia\n"
+                "2026-02-23;Evento antigo\n"
+                "2026-02-24;Evento no corte\n"
+            ).encode("latin-1"),
+        )
+
+    class AvailableIpeClient:
+        def get(self, url, **kwargs):
+            return httpx.Response(200, content=payload.getvalue(), request=httpx.Request("GET", url))
+
+    ir.client = AvailableIpeClient()
+
+    rows, available = ir._cvm_ipe_rows(2026, date(2026, 2, 24))
+
+    assert available is True
+    assert [row["Nome_Companhia"] for row in rows] == ["Evento no corte"]
+
+
+def test_cvm_ipe_non_404_http_error_remains_fail_closed(tmp_path):
+    ir, _ = service(tmp_path)
+
+    class BrokenIpeClient:
+        def get(self, url, **kwargs):
+            return httpx.Response(503, request=httpx.Request("GET", url))
+
+    ir.client = BrokenIpeClient()
+
+    with pytest.raises(httpx.HTTPStatusError):
+        ir._cvm_ipe_rows(2026, date(2026, 2, 24))
 
 
 def test_new_ir_event_is_queued_once_for_every_mapped_security(tmp_path):

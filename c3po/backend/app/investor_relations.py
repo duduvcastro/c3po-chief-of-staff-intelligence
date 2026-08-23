@@ -254,15 +254,8 @@ class InvestorRelationsService:
         run_id = self.database.begin_ingestion_run("cvm", "CVM Dados Abertos", "regulatory_disclosure", {"operation": "ipe"})
         try:
             year = datetime.now(SAO_PAULO).year
-            url = f"{self.settings.cvm_data_base_url.rstrip('/')}/CIA_ABERTA/DOC/IPE/DADOS/ipe_cia_aberta_{year}.zip"
-            response = self.client.get(url)
-            response.raise_for_status()
-            with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-                filename = next(name for name in archive.namelist() if name.lower().endswith(".csv"))
-                text = archive.read(filename).decode("latin-1")
-            rows = list(csv.DictReader(io.StringIO(text), delimiter=";"))
             cutoff = datetime.now(SAO_PAULO).date() - timedelta(days=180)
-            rows = [row for row in rows if (safe_date(row.get("Data_Entrega")) or date.min) >= cutoff]
+            rows, ipe_available = self._cvm_ipe_rows(year, cutoff)
             itr_rows, itr_payload, itr_url = self._cvm_structured_package("itr", year, cutoff)
             dfp_rows, _, _ = self._cvm_structured_package("dfp", year - 1, cutoff)
             self._register_brapi_b3_universe()
@@ -319,7 +312,11 @@ class InvestorRelationsService:
             events.extend(insider_events)
             written = self.database.save_ir_events(events)
             records_read = len(rows) + len(itr_rows) + len(dfp_rows) + ri_channels_read + len(insider_rows)
-            self.database.finish_ingestion_run(run_id, "succeeded", records_read, written)
+            warning = None if ipe_available else (
+                f"CVM IPE {year} package unavailable (HTTP 404); "
+                "continued with current structured CVM sources."
+            )
+            self.database.finish_ingestion_run(run_id, "succeeded", records_read, written, warning)
             return records_read, written
         except Exception as exc:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
@@ -1236,6 +1233,26 @@ class InvestorRelationsService:
     def _cvm_structured_rows(self, document_type: str, year: int, cutoff: date) -> list[dict[str, str]]:
         rows, _, _ = self._cvm_structured_package(document_type, year, cutoff)
         return rows
+
+    def _cvm_ipe_rows(
+        self,
+        year: int,
+        cutoff: date,
+    ) -> tuple[list[dict[str, str]], bool]:
+        url = f"{self.settings.cvm_data_base_url.rstrip('/')}/CIA_ABERTA/DOC/IPE/DADOS/ipe_cia_aberta_{year}.zip"
+        response = self.client.get(url)
+        if response.status_code == 404:
+            return [], False
+        response.raise_for_status()
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            filename = next(name for name in archive.namelist() if name.lower().endswith(".csv"))
+            text = archive.read(filename).decode("latin-1")
+        rows = list(csv.DictReader(io.StringIO(text), delimiter=";"))
+        return [
+            row
+            for row in rows
+            if (safe_date(row.get("Data_Entrega")) or date.min) >= cutoff
+        ], True
 
     def _cvm_structured_package(
         self,
