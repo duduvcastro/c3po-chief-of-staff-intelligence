@@ -24,6 +24,11 @@ Each line contains provider/feed metadata, receive time, provider event time and
 the exact decoded WebSocket payload in `payload_raw`. The wrapper schema is
 versioned independently from future feature schemas.
 
+"Raw before aggregate" describes enqueue order in the WebSocket callback: the
+raw-capture queue receives the event before the aggregate queue. The two queues
+have independent writer threads, so this is not a promise that the raw bytes
+reach durable storage before the corresponding aggregate bytes.
+
 ## Configuration
 
 ```ini
@@ -87,6 +92,20 @@ method, buy/sell/unknown volume, CVD, trade intensity, trade-size moments,
 spread mean/min/max, BBO-age mean/max/p50/p95, receive lag and OHLC. Late,
 queue-dropped and policy-discarded events are counted in processing-time
 buckets. A future BBO is never used, and raw NDJSON remains authoritative.
+
+Operational interpretation has four important boundaries:
+
+- a one-sided live quote is retained in raw evidence but classified as
+  `malformed` by the aggregate processor; a non-zero malformed counter can
+  therefore describe provider feed shape rather than source corruption;
+- trades carrying `dp=true` remain in raw evidence but are deliberately
+  excluded from the trade aggregates and CVD;
+- if a delayed trade arrives after the in-memory quote state has advanced to a
+  BBO newer than the trade's event time, that future BBO is rejected and the
+  trade falls back to `tick_rule_no_bbo`; this can raise the `no_bbo` share in
+  a fast market even while the quote feed is healthy;
+- aggregate counters and classifications are derived evidence. The raw stream
+  remains the source for later reprocessing if any of these policies changes.
 
 ## One-second T0 telemetry
 
