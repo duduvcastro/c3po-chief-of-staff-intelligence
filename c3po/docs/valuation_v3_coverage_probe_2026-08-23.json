@@ -1,0 +1,87 @@
+{
+  "schema_version": "VALUATION-V3-COVERAGE-PROBE-v1",
+  "generated_at": "2026-08-23T23:03:10Z",
+  "mode": "production_read_only",
+  "ab_report_sha256": "551398a49ffb0ecfbae96196e87c305f8a332b2de8ddbe150ad4f6fa9aa3c8f0",
+  "frozen_v2_data_snapshots": {
+    "B3": "597a521b-85f1-476c-ab89-a1b2281f7d06",
+    "NASDAQ": "453f3e3c-26a0-4356-930d-7897cf63e273",
+    "NYSE": "9aeefef0-99f0-48b5-b3b0-1a0806c12b34"
+  },
+  "chewie_snapshots": {
+    "B3": {
+      "frozen_id": "e86f90da-8dc3-4291-8645-25d5c30c246e",
+      "current_id": "e86f90da-8dc3-4291-8645-25d5c30c246e",
+      "published_at": "2026-08-23T06:33:25.317650Z",
+      "items": 600,
+      "universe_size": 1471
+    },
+    "NASDAQ": {
+      "frozen_id": "b969e458-5184-426e-8ffb-4c1c1ac469f4",
+      "current_id": "b969e458-5184-426e-8ffb-4c1c1ac469f4",
+      "published_at": "2026-08-23T06:35:07.041436Z",
+      "items": 1186,
+      "universe_size": 3859
+    },
+    "NYSE": {
+      "frozen_id": "bc45ee83-be9c-4cb3-8ec0-73468eb29811",
+      "current_id": "bc45ee83-be9c-4cb3-8ec0-73468eb29811",
+      "published_at": "2026-08-23T06:36:15.194761Z",
+      "items": 714,
+      "universe_size": 2324
+    }
+  },
+  "roe_probe": {
+    "annual_ratio_rows": 6552,
+    "rows_with_roe_key": 6552,
+    "rows_with_non_null_roe": 0,
+    "packets_with_non_null_roe": 0,
+    "direct_provider_samples": {
+      "AAPL": {
+        "ratios_return_on_equity_present": false,
+        "key_metrics_return_on_equity": 1.5191298333175105
+      },
+      "PETR4.SA": {
+        "ratios_return_on_equity_present": false,
+        "key_metrics_return_on_equity": 0.26497581958802197
+      }
+    },
+    "conclusion": "H2_confirmed_returnOnEquity_is_in_stable_key_metrics_not_stable_ratios"
+  },
+  "peer_coverage": {
+    "B3": {
+      "targets": 100,
+      "peer_references": 865,
+      "peer_references_with_v2_packet": 284,
+      "peer_reference_coverage_percent": 32.83,
+      "unique_peers": 278,
+      "unique_peers_with_v2_packet": 74,
+      "targets_with_at_least_four_v2_peer_packets": 40,
+      "fmp_forward_eligible_targets": 0,
+      "chewie_trailing_eligible_targets": 15
+    },
+    "US": {
+      "targets": 593,
+      "peer_references": 5831,
+      "peer_references_with_v2_packet": 2989,
+      "peer_reference_coverage_percent": 51.26,
+      "unique_peers": 1626,
+      "unique_peers_with_v2_packet": 531,
+      "targets_with_at_least_four_v2_peer_packets": 403,
+      "fmp_forward_eligible_targets": 0,
+      "chewie_trailing_eligible_targets": 59
+    },
+    "conclusion": "H1_confirmed_direct_peer_graph_is_not_closed_by_tracked_v2_packets"
+  },
+  "hypotheses": {
+    "H1": "confirmed",
+    "H2": "confirmed",
+    "H3": "pending_current_chewie_snapshots_are_identical_to_frozen_snapshots"
+  },
+  "governance": {
+    "engine_v3_formula_change_authorized": false,
+    "engine_v3_shadow_authorized": false,
+    "consumer_change_authorized": false,
+    "next_boundary": "V2.1b_data_coverage_only"
+  }
+}
