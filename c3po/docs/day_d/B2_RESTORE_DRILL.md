@@ -26,3 +26,29 @@ implicit assumption that an upload is recoverable.
 
 No automated process may raise the billing cap or delete local source data.
 Both actions require an explicit operator decision and preserved evidence.
+
+## Auditable operator commands
+
+The offload command is read-only unless `--offload` is present. It verifies the
+local source against its immutable Massive manifest, uploads both objects,
+checks remote byte length and SHA-256 metadata, then uploads an immutable lot
+report. It never removes local data.
+
+```bash
+python -m app.day_d_replay.b2_offload \
+  --manifest /app/day-d-data/provider=massive/manifests/session_date=YYYY-MM-DD/manifest-TIMESTAMP.json \
+  --lot-id qualification-lot-001 \
+  --offload
+```
+
+After the operator temporarily raises the paid-download cap, the restore command
+downloads the small immutable lot report to a fresh path and writes checksum
+evidence. It still does not authorize or perform local deletion. The operator
+must return the cap to US$0/day and record that fact before any separate local
+cleanup is approved.
+
+```bash
+python -m app.day_d_replay.b2_offload \
+  --restore-report /app/day-d-data/provider=backblaze/offload/lot_id=qualification-lot-001/offload-TIMESTAMP.json \
+  --restore
+```
