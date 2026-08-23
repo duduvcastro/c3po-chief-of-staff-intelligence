@@ -18,6 +18,7 @@ VIEW_PERMISSIONS: dict[str, str] = {
     "health": "Storm Troops",
     "serverusage": "Server Usage",
     "leah": "Leah Cloud",
+    "chewie": "Chewie Fundamentals",
 }
 
 ALL_VIEW_PERMISSIONS = tuple(VIEW_PERMISSIONS)
@@ -83,6 +84,7 @@ def required_permissions(path: str) -> tuple[str, ...]:
         ("/api/v1/market-data/sync", ("markets", "realtime", "candidates", "matrix", "onepager")),
         ("/api/v1/candidates", ("candidates",)),
         ("/api/v1/matrix-power", ("matrix",)),
+        ("/api/v1/chewie-fundamentals", ("chewie",)),
     )
     for prefix, permissions in mappings:
         if path.startswith(prefix):

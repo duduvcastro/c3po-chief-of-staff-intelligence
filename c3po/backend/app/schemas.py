@@ -417,6 +417,57 @@ class MatrixPowerResponse(BaseModel):
     methodology: dict[str, str]
 
 
+class ChewieMultiples(BaseModel):
+    pe: float | None = None
+    forward_pe: float | None = None
+    ev_ebitda: float | None = None
+    peg: float | None = None
+    price_to_book: float | None = None
+
+
+class ChewieProfitability(BaseModel):
+    roe_percent: float | None = None
+    roa_percent: float | None = None
+    profit_margin_percent: float | None = None
+    operating_margin_percent: float | None = None
+    ebitda_margin_percent: float | None = None
+
+
+class ChewieLeverage(BaseModel):
+    debt_to_equity: float | None = None
+    net_debt_to_ebitda: float | None = None
+    total_cash: float | None = None
+    total_debt: float | None = None
+
+
+class ChewieGrowth(BaseModel):
+    revenue_growth_percent: float | None = None
+    earnings_growth_percent: float | None = None
+
+
+class ChewieFundamentalsItem(BaseModel):
+    market: Literal["B3", "NASDAQ", "NYSE"]
+    symbol: str
+    name: str
+    sector: str
+    logo_url: str | None = None
+    market_cap: float | None = None
+    fundamentals_as_of: str | None = None
+    multiples: ChewieMultiples
+    profitability: ChewieProfitability
+    leverage: ChewieLeverage
+    growth: ChewieGrowth
+
+
+class ChewieFundamentalsResponse(BaseModel):
+    market: Literal["B3", "NASDAQ", "NYSE"]
+    source: str
+    universe_size: int
+    covered_count: int
+    generated_at: datetime
+    items: list[ChewieFundamentalsItem]
+
+
 class LiveMarketItem(BaseModel):
     group: Literal["Future Index", "Index", "Currencies", "Crypto", "Portfolio"]
     symbol: str
