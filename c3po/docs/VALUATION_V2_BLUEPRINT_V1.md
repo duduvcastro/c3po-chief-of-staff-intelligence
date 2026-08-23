@@ -1,6 +1,6 @@
 # Valuation V2 — Blueprint V1
 
-**Status:** shadow em produção (nenhum consumidor de decisão) · **Motor:** engine v2 · **Assinaturas:** Fable (design/auditoria) + Codex (auditoria cruzada/operação) · **Dono:** Dudu · **Congelado em:** 2026-08-23
+**Status:** engine v2 em shadow; engine v3 reprovado antes do shadow (nenhum consumidor de decisão) · **Motor ativo:** engine v2 · **Assinaturas:** Fable (design/auditoria) + Codex (auditoria cruzada/operação) · **Dono:** Dudu · **Congelado em:** 2026-08-23
 
 Motivação (dono): "nossos valuations ficam muito distantes dos consensos de mercado, pra cima e pra baixo; não confio no modelo atual, e ele impacta o R2D2 no fim do dia."
 
@@ -68,12 +68,37 @@ Top-20 divergências: todas para cima, 16/20 puxadas por Momentum de Lucro + Qua
 4. **Feed de Treasury US** no shadow (substituir o fallback 4,2%).
 5. **Recalibração do peso de consenso (P5)** com a série do shadow.
 
-## 6. Governança e estado
+## 6. A/B congelado do engine v3 (23/08/2026)
+
+O A/B imutável reproduziu o engine v2 byte a byte nos três mercados antes de
+executar qualquer fórmula v3. O relatório aceito tem
+`report_sha256=551398a49ffb0ecfbae96196e87c305f8a332b2de8ddbe150ad4f6fa9aa3c8f0`.
+
+| Mercado | Interno V2 p50/p90 | Interno V3 p50/p90 | Viés assinado V2→V3 | Low conviction V2→V3 |
+|---|---|---|---|---|
+| B3 | 22,32/56,98% | 22,55/52,27% | −15,18% → −16,83% | 79 → 72 |
+| NASDAQ | 33,65/73,28% | 33,98/72,76% | −23,91% → −23,73% | 241 → 241 |
+| NYSE | 24,60/58,48% | 24,51/58,73% | −17,84% → −18,37% | 209 → 210 |
+
+**Veredito co-assinado:** REPROVADO para shadow e para qualquer consumidor.
+As duas predições pré-registradas falharam: o condicionamento por Selic não
+levou o viés B3 para ±10 p.p.; o ajuste de qualidade não reduziu a mediana do
+NASDAQ. As fórmulas e as bandas P4 permanecem congeladas.
+
+O probe read-only posterior mostrou que o segundo resultado não foi um teste
+adequado da fórmula: somente 104 de 2.079 pernas de múltiplos receberam ajuste
+de qualidade, e nenhuma usou `fmp_forward`. A evidência completa está em
+`valuation_v3_coverage_probe_2026-08-23.json`; a fronteira de dados proposta
+está em `VALUATION_V2_1B_PEER_COVERAGE_SPEC.md`.
+
+## 7. Governança e estado
 
 - **Bloqueados:** troca do TP oficial em QUALQUER consumidor; recalibração silenciosa; afrouxamento de bandas.
 - **Ativo:** shadow 1×/dia (janela 01:00–08:00, após V2.1) + faixa informacional no One Pager (lookup por mercado, nunca falha o PDF, rótulo "não substitui o TP oficial").
 - **Watchlist permanente:** HPQ, CPB, MPC, CF, CMCSA (baseline) + top-5 internos por mercado da medição de 23/08.
 - **Critério de avanço para V2.4:** régua interna ≤ 15%/30% por mercado E perfil no shadow acumulado → troca por consumidor (PDF primeiro), a seis mãos, com diff de distribuição por consumidor.
 - **Trilha de PRs:** #195 (dados) · #196 (motor+shadow, auditoria cruzada 866ec45) · #197 (faixa PDF, 8752a5e) · #198 (redação de URLs em logs). Snapshots: `valuation_v2_data`, `valuation_v2_shadow` (métodologia versionada; `ENGINE_VERSION` no resultado).
+
+- **Trilha v3 isolada:** #201 (spec) · #202 (motor sem consumidor) · #203 (manifest + A/B imutável). O A/B reprovou; o v3 não entrou no shadow.
 
 *Histórico: a metodologia real de #128/#129 (DCF/RIM/DDM/Comps com scores de confiabilidade) foi revertida por big-bang em 21/08; o V2 recuperou RIM/DDM/low_conviction dela dentro do playbook de consumidores. Este blueprint é V1; qualquer alteração de princípio ou banda exige nova versão deste arquivo, a seis mãos.*
