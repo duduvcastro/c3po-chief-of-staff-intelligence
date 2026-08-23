@@ -1529,6 +1529,12 @@ function formatCompact(value: number | null) {
   return new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
+function formatCompactMoney(value: number | null, market: ResearchMarket) {
+  if (value === null) return "N/D";
+  const prefix = market === "B3" ? "R$" : "US$";
+  return `${prefix} ${new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 }).format(value)}`;
+}
+
 function formatBytes(value: number | null) {
   if (value === null) return "N/D";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -5392,7 +5398,7 @@ function ChewieFundamentalsView() {
                 <div className="chewie-search-metrics">
                   <span>P/L <strong>{formatMultiple(item.multiples.pe)}</strong></span>
                   <span>ROE <strong>{formatPercent(item.profitability.roe_percent)}</strong></span>
-                  <span>MC <strong>{formatCompact(item.market_cap)}</strong></span>
+                  <span>MC <strong>{formatCompactMoney(item.market_cap, activeMarket)}</strong></span>
                 </div>
                 <a className="chewie-pdf-button" href={pdfUrl(item)} target="_blank" rel="noreferrer" title={`Gerar PDF de fundamentos de ${item.symbol}`}>
                   <FileChartColumn size={15} />
@@ -5457,14 +5463,14 @@ function ChewieFundamentalsView() {
                     {activeGroup === "leverage" && <>
                       <td>{formatMultiple(item.leverage.debt_to_equity)}</td>
                       <td>{formatMultiple(item.leverage.net_debt_to_ebitda)}</td>
-                      <td>{formatCompact(item.leverage.total_cash)}</td>
-                      <td>{formatCompact(item.leverage.total_debt)}</td>
+                      <td>{formatCompactMoney(item.leverage.total_cash, activeMarket)}</td>
+                      <td>{formatCompactMoney(item.leverage.total_debt, activeMarket)}</td>
                     </>}
                     {activeGroup === "growth" && <>
                       <td>{formatPercent(item.growth.revenue_growth_percent)}</td>
                       <td>{formatPercent(item.growth.earnings_growth_percent)}</td>
                     </>}
-                    <td>{formatCompact(item.market_cap)}</td>
+                    <td>{formatCompactMoney(item.market_cap, activeMarket)}</td>
                   </tr>
                 ))}
               </tbody>

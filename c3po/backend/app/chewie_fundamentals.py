@@ -24,7 +24,6 @@ SEARCH_LIMIT = 12
 ADHOC_CACHE_HOURS = 24
 LISTING_CACHE_HOURS = 20
 DEFAULT_DAILY_SYMBOL_BUDGET = 2_500
-B3_BUDGET_CAP = 600
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,11}$")
 
 _UNIVERSE_SNAPSHOT_KEY: dict[ChewieMarket, str] = {
@@ -108,6 +107,8 @@ class ChewieFundamentalsService:
     def refresh_daily(self, market: ChewieMarket, *, budget: int | None = None) -> dict[str, int]:
         """Refresh up to ``budget`` symbols of the full listing and persist the
         merged snapshot. ``budget=None`` refreshes the entire listing."""
+        if market == "B3":
+            return self._refresh_daily_b3()
         listing = self._full_listing(market)
         listing_by_symbol = {row["symbol"]: row for row in listing}
         previous = self._snapshot_items(market)
@@ -177,16 +178,42 @@ class ChewieFundamentalsService:
             f"{market}_FUNDAMENTALS",
             methodology_id,
             {"market": market, "universe_size": len(listing), "refreshed": refreshed},
-            {"items": merged, "universe_size": len(listing)},
+            {"items": merged, "universe_size": len(listing), "source": "EODHD Fundamentals"},
             datetime.now(timezone.utc),
         )
         return {"universe": len(listing), "covered": len(merged), "refreshed": refreshed}
 
+    def _refresh_daily_b3(self) -> dict[str, int]:
+        """B3 fundamentals come from the tracked B3 screener universe, which
+        is already sourced from Brapi's stock catalog (real B3-listed common
+        and preferred shares only -- fractional-lot tickers and Nasdaq/NYSE
+        BDR wrappers are excluded upstream) with an official CVM/EODHD
+        overlay. No separate listing or fundamentals fetch is needed."""
+        universe_rows = self._universe_stocks("B3")
+        items = [self._item_from_b3_universe_row(row) for row in universe_rows]
+        methodology_id = self.database.ensure_methodology_version(
+            METHODOLOGY_KEY,
+            METHODOLOGY_VERSION,
+            {"cadence": "daily", "scope": "B3 tracked universe (Brapi-sourced), display-only"},
+            "Daily B3 fundamentals snapshot sourced from the Brapi-backed screener universe.",
+        )
+        self.database.save_analysis_snapshot(
+            ANALYSIS_TYPE,
+            "B3_FUNDAMENTALS",
+            methodology_id,
+            {"market": "B3", "universe_size": len(items), "refreshed": len(items)},
+            {"items": items, "universe_size": len(items), "source": "Brapi Pro + EODHD overlay"},
+            datetime.now(timezone.utc),
+        )
+        return {"universe": len(items), "covered": len(items), "refreshed": len(items)}
+
     def refresh_all(self, *, budget: int | None = None) -> dict[str, dict[str, int]]:
         total = DEFAULT_DAILY_SYMBOL_BUDGET if budget is None else max(0, int(budget))
         counts: dict[str, dict[str, int]] = {}
-        counts["B3"] = self.refresh_daily("B3", budget=min(total, B3_BUDGET_CAP))
-        remaining = max(0, total - counts["B3"]["refreshed"])
+        # B3 is read straight from the already-fetched screener universe, so
+        # it costs zero EODHD fundamentals calls and never eats the US budget.
+        counts["B3"] = self.refresh_daily("B3")
+        remaining = total
         needs = {
             market: max(1, self._pending_count(market))
             for market in ("NASDAQ", "NYSE")
@@ -225,9 +252,10 @@ class ChewieFundamentalsService:
                 if isinstance(published_at, datetime)
                 else str(published_at or datetime.now(timezone.utc).isoformat())
             )
+            default_source = "Brapi Pro + EODHD overlay" if market == "B3" else "EODHD Fundamentals"
             return {
                 "market": market,
-                "source": "EODHD Fundamentals · daily snapshot",
+                "source": f"{outputs.get('source') or default_source} · daily snapshot",
                 "universe_size": int(outputs.get("universe_size") or len(items)),
                 "covered_count": len(items),
                 "generated_at": generated_at,
@@ -367,9 +395,14 @@ class ChewieFundamentalsService:
         outputs = snapshot.get("outputs") if snapshot else None
         rows = outputs.get("rows") if isinstance(outputs, dict) else None
         rows = rows if isinstance(rows, list) else []
+        # The B3 universe is stocks-only by construction (Brapi
+        # type=stock/subType=stock) and never sets "security_type"; only the
+        # US universe tags "Stock" vs "ETF" rows and needs the filter.
         stocks = [
             row for row in rows
-            if isinstance(row, dict) and row.get("security_type") == "Stock" and row.get("symbol")
+            if isinstance(row, dict)
+            and row.get("symbol")
+            and (market == "B3" or row.get("security_type") == "Stock")
         ]
         stocks.sort(key=lambda row: _number(row.get("market_cap")) or 0.0, reverse=True)
         return stocks
@@ -385,18 +418,23 @@ class ChewieFundamentalsService:
                     return payload
         stocks = self._universe_stocks(market)
         selected = stocks[:TOP_DISPLAY]
-        symbols = [str(row["symbol"]) for row in selected]
-        fundamentals_by_symbol = (
-            self.client.fundamentals(symbols, exchange=_PROVIDER_EXCHANGE[market], workers=10)
-            if symbols else {}
-        )
-        items = [
-            self._item(market, row, fundamentals_by_symbol.get(str(row["symbol"])) or {})
-            for row in selected
-        ]
+        if market == "B3":
+            items = [self._item_from_b3_universe_row(row) for row in selected]
+            source = "Brapi Pro + EODHD overlay"
+        else:
+            symbols = [str(row["symbol"]) for row in selected]
+            fundamentals_by_symbol = (
+                self.client.fundamentals(symbols, exchange=_PROVIDER_EXCHANGE[market], workers=10)
+                if symbols else {}
+            )
+            items = [
+                self._item(market, row, fundamentals_by_symbol.get(str(row["symbol"])) or {})
+                for row in selected
+            ]
+            source = "EODHD Fundamentals"
         payload = {
             "market": market,
-            "source": "EODHD Fundamentals · bootstrap (aguardando ciclo diário)",
+            "source": f"{source} · bootstrap (aguardando ciclo diário)",
             "universe_size": len(stocks),
             "covered_count": len(items),
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -408,14 +446,23 @@ class ChewieFundamentalsService:
 
     def _adhoc_from_query(self, market: ChewieMarket, query: str, folded: str) -> dict[str, Any] | None:
         """Live lookup for anything not yet covered by the snapshot: resolve
-        the query against the full listing (name or ticker), then fetch."""
+        the query against the full listing (name or ticker), then fetch.
+
+        B3 deliberately skips the raw EODHD exchange listing here -- it is
+        noisy with fractional-lot tickers and Nasdaq/NYSE BDR wrappers, which
+        is exactly what must NOT show up under the B3 tab. A ticker-shaped
+        query is fetched directly; free-text company names outside the
+        tracked Brapi universe are not resolved for B3.
+        """
         candidate = query.upper().replace(" ", "")
         if not SYMBOL_PATTERN.fullmatch(candidate):
             candidate = ""
-        try:
-            listing = self._full_listing(market)
-        except Exception:
-            listing = []
+        listing: list[dict[str, Any]] = []
+        if market != "B3":
+            try:
+                listing = self._full_listing(market)
+            except Exception:
+                listing = []
         if listing:
             symbols = {row["symbol"] for row in listing}
             if candidate not in symbols:
@@ -463,6 +510,54 @@ class ChewieFundamentalsService:
             "price": _number(getattr(quote, "price", None)),
             "change_percent": _number(getattr(quote, "change_percent", None)),
             "as_of": getattr(quote, "as_of", None),
+        }
+
+    @staticmethod
+    def _item_from_b3_universe_row(row: dict[str, Any]) -> dict[str, Any]:
+        """Shape a B3 screener universe row (Brapi-primary, EODHD/CVM overlay
+        already blended in) directly into a display item -- no extra fetch."""
+        cash = _number(row.get("cash"))
+        debt = _number(row.get("debt"))
+        ebitda = _number(row.get("ebitda"))
+        net_debt = (debt - cash) if debt is not None and cash is not None else None
+        net_debt_to_ebitda = round(net_debt / ebitda, 2) if net_debt is not None and ebitda else None
+        sources = ["Brapi"]
+        if int(row.get("data_source_count") or 1) >= 2:
+            sources.append("EODHD overlay")
+        return {
+            "market": "B3",
+            "symbol": str(row.get("symbol")),
+            "name": str(row.get("name") or row.get("symbol")),
+            "sector": str(row.get("sector") or "Unclassified"),
+            "logo_url": row.get("logo_url"),
+            "market_cap": _number(row.get("market_cap")),
+            "fundamentals_as_of": row.get("fundamentals_as_of"),
+            "sources": sources,
+            "multiples": {
+                "pe": _number(row.get("pe")),
+                "forward_pe": _number(row.get("forward_pe")),
+                "ev_ebitda": _number(row.get("ev_ebitda")),
+                "peg": _number(row.get("peg")),
+                "price_to_book": _number(row.get("price_to_book")),
+                "dividend_yield_percent": _percent(row.get("dividend_yield")),
+            },
+            "profitability": {
+                "roe_percent": _percent(row.get("roe")),
+                "roa_percent": None,
+                "profit_margin_percent": _percent(row.get("profit_margin")),
+                "operating_margin_percent": None,
+                "ebitda_margin_percent": _percent(row.get("ebitda_margin")),
+            },
+            "leverage": {
+                "debt_to_equity": _number(row.get("debt_to_equity")),
+                "net_debt_to_ebitda": net_debt_to_ebitda,
+                "total_cash": cash,
+                "total_debt": debt,
+            },
+            "growth": {
+                "revenue_growth_percent": _percent(row.get("revenue_growth")),
+                "earnings_growth_percent": _percent(row.get("earnings_growth")),
+            },
         }
 
     @staticmethod
