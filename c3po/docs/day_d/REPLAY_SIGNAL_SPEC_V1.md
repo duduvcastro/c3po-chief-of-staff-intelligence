@@ -116,7 +116,7 @@ values use `(previous_ATR * 13 + current_TR) / 14`. ATR is unavailable before
 - Risk budget: 0.15% of current virtual NAV at entry, converted to dollars and
   frozen for the trade's lifetime.
 - Maximum five simultaneous positions, aggregate initial stop risk of 0.75% of
-  NAV, no leverage and no duplicate symbol across setups.
+  NAV, no leverage and no simultaneous duplicate exposure to one symbol.
 - Position notional may not exceed 20% of NAV.
 - Quantity may not exceed 1% of the volume in the prior five completed
   one-minute bars.
@@ -129,8 +129,10 @@ values use `(previous_ATR * 13 + current_TR) / 14`. ATR is unavailable before
 - Quantity is integer `floor(risk_budget_usd / risk_per_share_usd)`.
 - A notional, participation, cash or minimum-quantity breach rejects the signal;
   it does not silently resize it.
-- If both setups accept the same symbol, the first accepted signal keeps it and
-  the later signal is blocked and logged.
+- If a position is already open in a symbol, any later signal for that symbol
+  is blocked and logged. Once the position is fully closed, a later valid
+  opportunity may re-enter the same symbol during that session. Each setup's
+  own per-symbol attempt limit remains unchanged.
 
 The point-model spread and stop execution economics are inputs of the later
 frozen cost/fill contract. The formulas and the rejection behavior are frozen
