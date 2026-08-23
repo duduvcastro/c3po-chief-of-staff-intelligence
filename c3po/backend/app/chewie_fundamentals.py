@@ -18,10 +18,13 @@ ChewieMarket = Literal["B3", "NASDAQ", "NYSE"]
 
 ANALYSIS_TYPE = "chewie_fundamentals"
 METHODOLOGY_KEY = "chewie_fundamentals_daily"
-METHODOLOGY_VERSION = 1
+METHODOLOGY_VERSION = 2
 TOP_DISPLAY = 30
 SEARCH_LIMIT = 12
 ADHOC_CACHE_HOURS = 24
+LISTING_CACHE_HOURS = 20
+DEFAULT_DAILY_SYMBOL_BUDGET = 2_500
+B3_BUDGET_CAP = 600
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,11}$")
 
 _UNIVERSE_SNAPSHOT_KEY: dict[ChewieMarket, str] = {
@@ -56,56 +59,143 @@ def _fold(value: str) -> str:
     return "".join(ch for ch in normalized if not unicodedata.combining(ch)).lower()
 
 
-class ChewieFundamentalsService:
-    """Daily fundamentals snapshot for the tracked B3/NASDAQ/NYSE stock universe.
+def _is_common_stock(row: dict[str, Any]) -> bool:
+    security_type = str(row.get("Type") or row.get("type") or "").upper()
+    if not security_type:
+        return True
+    excluded = ("ETF", "FUND", "INDEX", "NOTE", "BOND", "WARRANT", "RIGHT", "PREFERRED")
+    return not any(value in security_type for value in excluded)
 
-    The snapshot is refreshed once per day by the valuation worker; requests
-    only read persisted data. Search falls back to a live single-symbol lookup
-    for stocks outside the tracked universe. This never feeds valuation,
-    screening or trading decisions.
+
+def _us_listing_market(row: dict[str, Any]) -> str | None:
+    exchange = " ".join(
+        str(row.get(key) or "") for key in ("Exchange", "ExchangeCode", "exchange")
+    ).upper()
+    if "NASDAQ" in exchange or "XNAS" in exchange:
+        return "NASDAQ"
+    if ("NYSE" in exchange or "XNYS" in exchange) and not any(
+        value in exchange for value in ("ARCA", "AMERICAN", "MKT")
+    ):
+        return "NYSE"
+    return None
+
+
+class ChewieFundamentalsService:
+    """Daily fundamentals snapshot for the FULL B3/NASDAQ/NYSE stock listings.
+
+    The complete exchange listing (~400 B3 + thousands of US common stocks)
+    is covered through a nightly refresh budget: B3 refreshes whole every
+    night, the US listings rotate in cohorts until every symbol is covered
+    and then keep cycling oldest-first, while the visible top 30 refresh
+    daily. Requests only read the persisted snapshot; search falls back to
+    a live single-symbol lookup for anything not yet covered. This never
+    feeds valuation, screening or trading decisions.
     """
 
     def __init__(self, settings: Settings, database: Database, http: JsonHttpClient) -> None:
         self.settings = settings
         self.database = database
+        self.http = http
         self.client = EodhdClient(settings.eodhd_base_url, settings.eodhd_api_token, http)
         self.fmp = FmpClient(settings.fmp_base_url, settings.fmp_api_token, http)
         self._lock = Lock()
         self._bootstrap_cache: dict[ChewieMarket, tuple[datetime, dict[str, Any]]] = {}
         self._adhoc_cache: dict[tuple[ChewieMarket, str], tuple[datetime, dict[str, Any] | None]] = {}
+        self._listing_cache: dict[str, tuple[datetime, list[dict[str, Any]]]] = {}
 
     # ------------------------------------------------------------------ daily
 
-    def refresh_daily(self, market: ChewieMarket) -> int:
-        """Fetch fundamentals for the FULL stock universe and persist a snapshot."""
-        stocks = self._universe_stocks(market)
-        symbols = [str(row["symbol"]) for row in stocks]
+    def refresh_daily(self, market: ChewieMarket, *, budget: int | None = None) -> dict[str, int]:
+        """Refresh up to ``budget`` symbols of the full listing and persist the
+        merged snapshot. ``budget=None`` refreshes the entire listing."""
+        listing = self._full_listing(market)
+        listing_by_symbol = {row["symbol"]: row for row in listing}
+        previous = self._snapshot_items(market)
+        previous_by_symbol = {
+            str(item.get("symbol")): item
+            for item in previous
+            if str(item.get("symbol")) in listing_by_symbol
+        }
+
+        queue: list[str] = []
+        seen: set[str] = set()
+
+        def enqueue(symbol: str) -> None:
+            if symbol in listing_by_symbol and symbol not in seen:
+                queue.append(symbol)
+                seen.add(symbol)
+
+        top_current = sorted(
+            previous_by_symbol.values(),
+            key=lambda item: _number(item.get("market_cap")) or 0.0,
+            reverse=True,
+        )[:TOP_DISPLAY]
+        for item in top_current:
+            enqueue(str(item.get("symbol")))
+        for row in listing:
+            if row["symbol"] not in previous_by_symbol:
+                enqueue(row["symbol"])
+        for item in sorted(
+            previous_by_symbol.values(), key=lambda value: str(value.get("refreshed_at") or "")
+        ):
+            enqueue(str(item.get("symbol")))
+
+        selected = queue if budget is None else queue[: max(0, int(budget))]
+        universe_rows = {str(row.get("symbol")): row for row in self._universe_stocks(market)}
         fundamentals_by_symbol = (
-            self.client.fundamentals(symbols, exchange=_PROVIDER_EXCHANGE[market], workers=10)
-            if symbols else {}
+            self.client.fundamentals(selected, exchange=_PROVIDER_EXCHANGE[market], workers=10)
+            if selected else {}
         )
-        items = []
-        for row in stocks:
-            fundamentals = fundamentals_by_symbol.get(str(row["symbol"])) or {}
-            items.append(self._item(market, row, fundamentals))
+        refreshed_at = datetime.now(timezone.utc).isoformat()
+        refreshed = 0
+        for symbol in selected:
+            fundamentals = fundamentals_by_symbol.get(symbol)
+            if not fundamentals:
+                continue
+            row = universe_rows.get(symbol) or {
+                "symbol": symbol,
+                "name": listing_by_symbol[symbol].get("name"),
+            }
+            item = self._item(market, row, fundamentals)
+            item["refreshed_at"] = refreshed_at
+            previous_by_symbol[symbol] = item
+            refreshed += 1
+
+        merged = sorted(
+            previous_by_symbol.values(),
+            key=lambda item: _number(item.get("market_cap")) or 0.0,
+            reverse=True,
+        )
         methodology_id = self.database.ensure_methodology_version(
             METHODOLOGY_KEY,
             METHODOLOGY_VERSION,
-            {"cadence": "daily", "scope": "display-only fundamentals"},
-            "Daily EODHD fundamentals snapshot for the Chewie Fundamentals tab.",
+            {"cadence": "daily-budgeted", "scope": "full exchange listing, display-only"},
+            "Daily budgeted EODHD fundamentals snapshot over the full exchange listing.",
         )
         self.database.save_analysis_snapshot(
             ANALYSIS_TYPE,
             f"{market}_FUNDAMENTALS",
             methodology_id,
-            {"market": market, "universe_size": len(stocks)},
-            {"items": items, "universe_size": len(stocks)},
+            {"market": market, "universe_size": len(listing), "refreshed": refreshed},
+            {"items": merged, "universe_size": len(listing)},
             datetime.now(timezone.utc),
         )
-        return len(items)
+        return {"universe": len(listing), "covered": len(merged), "refreshed": refreshed}
 
-    def refresh_all(self) -> dict[str, int]:
-        return {market: self.refresh_daily(market) for market in ("B3", "NASDAQ", "NYSE")}
+    def refresh_all(self, *, budget: int | None = None) -> dict[str, dict[str, int]]:
+        total = DEFAULT_DAILY_SYMBOL_BUDGET if budget is None else max(0, int(budget))
+        counts: dict[str, dict[str, int]] = {}
+        counts["B3"] = self.refresh_daily("B3", budget=min(total, B3_BUDGET_CAP))
+        remaining = max(0, total - counts["B3"]["refreshed"])
+        needs = {
+            market: max(1, self._pending_count(market))
+            for market in ("NASDAQ", "NYSE")
+        }
+        need_total = sum(needs.values())
+        nasdaq_budget = round(remaining * needs["NASDAQ"] / need_total) if need_total else 0
+        counts["NASDAQ"] = self.refresh_daily("NASDAQ", budget=nasdaq_budget)
+        counts["NYSE"] = self.refresh_daily("NYSE", budget=max(0, remaining - counts["NASDAQ"]["refreshed"]))
+        return counts
 
     def has_snapshot(self, market: ChewieMarket) -> bool:
         return self.database.latest_analysis_snapshot(ANALYSIS_TYPE, f"{market}_FUNDAMENTALS") is not None
@@ -150,10 +240,7 @@ class ChewieFundamentalsService:
         folded = _fold(clean)
         matches: list[dict[str, Any]] = []
         if folded:
-            snapshot = self.database.latest_analysis_snapshot(ANALYSIS_TYPE, f"{market}_FUNDAMENTALS")
-            outputs = snapshot.get("outputs") if snapshot else None
-            items = outputs.get("items") if isinstance(outputs, dict) else None
-            for item in items if isinstance(items, list) else []:
+            for item in self._snapshot_items(market):
                 if not isinstance(item, dict):
                     continue
                 symbol = _fold(str(item.get("symbol") or ""))
@@ -164,7 +251,7 @@ class ChewieFundamentalsService:
                     break
             matches.sort(key=lambda item: (not _fold(str(item.get("symbol"))).startswith(folded), -(item.get("market_cap") or 0.0)))
         if not matches:
-            adhoc = self._adhoc_lookup(market, clean)
+            adhoc = self._adhoc_from_query(market, clean, folded)
             if adhoc:
                 matches = [{**adhoc, "from_universe": False}]
         return {"market": market, "query": clean, "items": matches[:SEARCH_LIMIT]}
@@ -197,6 +284,18 @@ class ChewieFundamentalsService:
             "news_sentiment": self._news_sentiment(market, clean),
         }
 
+    def render_report(self, market: ChewieMarket, symbol: str) -> Path | None:
+        payload = self.report_payload(market, symbol)
+        if payload is None:
+            return None
+        from .chewie_pdf import ChewieFundamentalsPdfRenderer
+
+        output_dir = self.settings.one_pager_output_dir.parent / "chewie-reports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path = output_dir / f"{payload['symbol']}-{market}-fundamentals.pdf"
+        ChewieFundamentalsPdfRenderer().render(path, payload, datetime.now(timezone.utc))
+        return path
+
     def _fmp_consensus(self, market: ChewieMarket, symbol: str) -> dict[str, float] | None:
         if not self.settings.fmp_api_token:
             return None
@@ -219,19 +318,47 @@ class ChewieFundamentalsService:
         except Exception:
             return None
 
-    def render_report(self, market: ChewieMarket, symbol: str) -> Path | None:
-        payload = self.report_payload(market, symbol)
-        if payload is None:
-            return None
-        from .chewie_pdf import ChewieFundamentalsPdfRenderer
-
-        output_dir = self.settings.one_pager_output_dir.parent / "chewie-reports"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        path = output_dir / f"{payload['symbol']}-{market}-fundamentals.pdf"
-        ChewieFundamentalsPdfRenderer().render(path, payload, datetime.now(timezone.utc))
-        return path
-
     # ------------------------------------------------------------------ internals
+
+    def _full_listing(self, market: ChewieMarket) -> list[dict[str, Any]]:
+        """Complete common-stock listing for the market, cached for the day."""
+        exchange = _PROVIDER_EXCHANGE[market]
+        with self._lock:
+            cached = self._listing_cache.get(exchange)
+        if cached is None or datetime.now(timezone.utc) - cached[0] >= timedelta(hours=LISTING_CACHE_HOURS):
+            payload = self.http.get_json(
+                f"{self.settings.eodhd_base_url.rstrip('/')}/api/exchange-symbol-list/{exchange}",
+                params={"api_token": self.settings.eodhd_api_token, "fmt": "json"},
+            )
+            rows = payload if isinstance(payload, list) else (payload or {}).get("data", [])
+            rows = [row for row in rows if isinstance(row, dict)]
+            with self._lock:
+                self._listing_cache[exchange] = (datetime.now(timezone.utc), rows)
+            cached = (datetime.now(timezone.utc), rows)
+        output: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for row in cached[1]:
+            if not _is_common_stock(row):
+                continue
+            if exchange == "US" and _us_listing_market(row) != market:
+                continue
+            symbol = str(row.get("Code") or row.get("code") or "").upper().removesuffix(".US").removesuffix(".SA")
+            if not symbol or symbol in seen or not SYMBOL_PATTERN.fullmatch(symbol):
+                continue
+            seen.add(symbol)
+            output.append({"symbol": symbol, "name": str(row.get("Name") or row.get("name") or symbol)})
+        return output
+
+    def _snapshot_items(self, market: ChewieMarket) -> list[dict[str, Any]]:
+        snapshot = self.database.latest_analysis_snapshot(ANALYSIS_TYPE, f"{market}_FUNDAMENTALS")
+        outputs = snapshot.get("outputs") if snapshot else None
+        items = outputs.get("items") if isinstance(outputs, dict) else None
+        return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
+
+    def _pending_count(self, market: ChewieMarket) -> int:
+        listing = self._full_listing(market)
+        covered = {str(item.get("symbol")) for item in self._snapshot_items(market)}
+        return sum(1 for row in listing if row["symbol"] not in covered)
 
     def _universe_stocks(self, market: ChewieMarket) -> list[dict[str, Any]]:
         snapshot = self.database.latest_analysis_snapshot(
@@ -248,37 +375,63 @@ class ChewieFundamentalsService:
         return stocks
 
     def _bootstrap_rows(self, market: ChewieMarket) -> dict[str, Any]:
-        """Before the first nightly cycle, build the display page live (top 30 only)."""
+        """Before the first nightly cycle, build the display page live (top 30
+        of the tracked screener universe only -- deliberately light)."""
         with self._lock:
             cached = self._bootstrap_cache.get(market)
             if cached:
                 cached_at, payload = cached
                 if datetime.now(timezone.utc) - cached_at < timedelta(minutes=30):
                     return payload
-            stocks = self._universe_stocks(market)
-            selected = stocks[:TOP_DISPLAY]
-            symbols = [str(row["symbol"]) for row in selected]
-            fundamentals_by_symbol = (
-                self.client.fundamentals(symbols, exchange=_PROVIDER_EXCHANGE[market], workers=10)
-                if symbols else {}
-            )
-            items = [
-                self._item(market, row, fundamentals_by_symbol.get(str(row["symbol"])) or {})
-                for row in selected
-            ]
-            payload = {
-                "market": market,
-                "source": "EODHD Fundamentals · bootstrap (aguardando ciclo diário)",
-                "universe_size": len(stocks),
-                "covered_count": len(items),
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-                "items": items,
-            }
+        stocks = self._universe_stocks(market)
+        selected = stocks[:TOP_DISPLAY]
+        symbols = [str(row["symbol"]) for row in selected]
+        fundamentals_by_symbol = (
+            self.client.fundamentals(symbols, exchange=_PROVIDER_EXCHANGE[market], workers=10)
+            if symbols else {}
+        )
+        items = [
+            self._item(market, row, fundamentals_by_symbol.get(str(row["symbol"])) or {})
+            for row in selected
+        ]
+        payload = {
+            "market": market,
+            "source": "EODHD Fundamentals · bootstrap (aguardando ciclo diário)",
+            "universe_size": len(stocks),
+            "covered_count": len(items),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "items": items,
+        }
+        with self._lock:
             self._bootstrap_cache[market] = (datetime.now(timezone.utc), payload)
-            return payload
+        return payload
 
-    def _adhoc_lookup(self, market: ChewieMarket, query: str) -> dict[str, Any] | None:
-        symbol = query.upper().replace(" ", "")
+    def _adhoc_from_query(self, market: ChewieMarket, query: str, folded: str) -> dict[str, Any] | None:
+        """Live lookup for anything not yet covered by the snapshot: resolve
+        the query against the full listing (name or ticker), then fetch."""
+        candidate = query.upper().replace(" ", "")
+        if not SYMBOL_PATTERN.fullmatch(candidate):
+            candidate = ""
+        try:
+            listing = self._full_listing(market)
+        except Exception:
+            listing = []
+        if listing:
+            symbols = {row["symbol"] for row in listing}
+            if candidate not in symbols:
+                match = next(
+                    (
+                        row for row in listing
+                        if _fold(row["symbol"]).startswith(folded) or folded in _fold(str(row["name"]))
+                    ),
+                    None,
+                )
+                candidate = match["symbol"] if match else candidate
+        if not candidate:
+            return None
+        return self._adhoc_lookup(market, candidate)
+
+    def _adhoc_lookup(self, market: ChewieMarket, symbol: str) -> dict[str, Any] | None:
         if not SYMBOL_PATTERN.fullmatch(symbol):
             return None
         key = (market, symbol)

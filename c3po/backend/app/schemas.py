@@ -454,6 +454,7 @@ class ChewieFundamentalsItem(BaseModel):
     logo_url: str | None = None
     market_cap: float | None = None
     fundamentals_as_of: str | None = None
+    refreshed_at: str | None = None
     sources: list[str] = Field(default_factory=list)
     from_universe: bool = True
     multiples: ChewieMultiples

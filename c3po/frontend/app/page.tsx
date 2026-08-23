@@ -619,6 +619,7 @@ interface ChewieFundamentalsItem {
   logo_url: string | null;
   market_cap: number | null;
   fundamentals_as_of: string | null;
+  refreshed_at: string | null;
   sources: string[];
   from_universe: boolean;
   multiples: { pe: number | null; forward_pe: number | null; ev_ebitda: number | null; peg: number | null; price_to_book: number | null; dividend_yield_percent: number | null };

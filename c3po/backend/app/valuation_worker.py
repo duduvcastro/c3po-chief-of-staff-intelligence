@@ -123,7 +123,7 @@ def main() -> None:
         chewie_pending = chewie_last is None or chewie_last.astimezone(SAO_PAULO) < chewie_due_at
         if chewie_pending and chewie_due_at <= now < chewie_window_end:
             try:
-                chewie_counts = chewie.refresh_all()
+                chewie_counts = chewie.refresh_all(budget=settings.chewie_daily_symbol_budget)
                 logger.info("Chewie fundamentals daily snapshot complete: %s", chewie_counts)
             except Exception:
                 logger.exception("Chewie fundamentals snapshot failed; keeping the previous snapshot")

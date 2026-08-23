@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     eodhd_api_token: str = Field(default="", validation_alias=AliasChoices("C3PO_EODHD_API_TOKEN", "EODHD_API_TOKEN"))
     eodhd_base_url: str = "https://eodhd.com"
     eodhd_plan: str = "unconfigured"
+    chewie_daily_symbol_budget: int = 2_500
     finnhub_api_token: str = Field(default="", validation_alias=AliasChoices("C3PO_FINNHUB_API_TOKEN", "FINNHUB_API_TOKEN"))
     finnhub_base_url: str = "https://finnhub.io"
     fmp_api_token: str = Field(default="", validation_alias=AliasChoices("C3PO_FMP_API_TOKEN", "FMP_API_TOKEN"))
