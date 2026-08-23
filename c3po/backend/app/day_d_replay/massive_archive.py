@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
 from enum import StrEnum
+import fcntl
 import hashlib
 import json
 import os
@@ -124,39 +126,41 @@ class MassiveFlatFileArchive:
         datasets: Sequence[FlatFileDataset],
         measured_at: datetime | None = None,
     ) -> Path:
-        plan = self.plan(session_date=session_date, datasets=datasets)
-        required_bytes = sum(
-            item.content_length for item in plan if not Path(item.local_path).exists()
-        )
-        self.root.mkdir(parents=True, exist_ok=True)
-        free_bytes = int(self._disk_usage(self.root).free)
-        if free_bytes - required_bytes < self.minimum_free_bytes:
-            raise MassiveArchiveError(
-                "disk guard blocked Massive download: "
-                f"free={free_bytes}, download={required_bytes}, reserve={self.minimum_free_bytes}"
-            )
-
-        archived = tuple(self._download_one(item) for item in plan)
         observed_at = measured_at or datetime.now(timezone.utc)
         if observed_at.tzinfo is None or observed_at.utcoffset() is None:
             raise ValueError("measured_at must be timezone-aware")
-        manifest = {
-            "schema_version": self.manifest_version,
-            "provider": "Massive",
-            "asset_class": "stocks",
-            "source_kind": "SIP Flat Files",
-            "session_date": session_date.isoformat(),
-            "measured_at": observed_at.astimezone(timezone.utc).isoformat(),
-            "artifacts": [asdict(item) for item in archived],
-            "raw_files_are_unadjusted": True,
-            "corporate_action_adjustment_required": True,
-            "official_replay_ready": False,
-        }
-        manifest_path = self._manifest_path(session_date, observed_at)
-        self._atomic_json(manifest_path, manifest)
-        return manifest_path
+        self.root.mkdir(parents=True, exist_ok=True)
+        with self._exclusive_download_lock():
+            self._quarantine_orphan_parts(observed_at)
+            plan = self.plan(session_date=session_date, datasets=datasets)
+            required_bytes = sum(
+                item.content_length for item in plan if not Path(item.local_path).exists()
+            )
+            free_bytes = int(self._disk_usage(self.root).free)
+            if free_bytes - required_bytes < self.minimum_free_bytes:
+                raise MassiveArchiveError(
+                    "disk guard blocked Massive download: "
+                    f"free={free_bytes}, download={required_bytes}, reserve={self.minimum_free_bytes}"
+                )
 
-    def _download_one(self, item: PlannedArtifact) -> ArchivedArtifact:
+            archived = tuple(self._download_one(item, observed_at=observed_at) for item in plan)
+            manifest = {
+                "schema_version": self.manifest_version,
+                "provider": "Massive",
+                "asset_class": "stocks",
+                "source_kind": "SIP Flat Files",
+                "session_date": session_date.isoformat(),
+                "measured_at": observed_at.astimezone(timezone.utc).isoformat(),
+                "artifacts": [asdict(item) for item in archived],
+                "raw_files_are_unadjusted": True,
+                "corporate_action_adjustment_required": True,
+                "official_replay_ready": False,
+            }
+            manifest_path = self._manifest_path(session_date, observed_at)
+            self._atomic_json(manifest_path, manifest)
+            return manifest_path
+
+    def _download_one(self, item: PlannedArtifact, *, observed_at: datetime) -> ArchivedArtifact:
         target = Path(item.local_path)
         metadata_path = self._artifact_metadata_path(target)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -188,6 +192,43 @@ class MassiveFlatFileArchive:
             if temporary.stat().st_size != item.content_length:
                 raise MassiveArchiveError(f"downloaded artifact size mismatch: {item.object_key}")
             try:
+                post_download = self._remote_metadata(item)
+            except Exception as exc:
+                quarantine = self._quarantine_file(
+                    temporary,
+                    category="remote-rehead-failed",
+                    observed_at=observed_at,
+                )
+                self._atomic_json(quarantine.with_name(f"{quarantine.name}.metadata.json"), {
+                    "schema_version": self.manifest_version,
+                    "reason": "remote_metadata_rehead_failed_after_download",
+                    "planned": asdict(item),
+                    "error_type": type(exc).__name__,
+                    "quarantined_at": observed_at.astimezone(timezone.utc).isoformat(),
+                })
+                raise MassiveArchiveError(
+                    f"remote metadata could not be rechecked; artifact quarantined: {item.object_key}"
+                ) from None
+            if (
+                post_download["content_length"] != item.content_length
+                or post_download["remote_etag"] != item.remote_etag
+            ):
+                quarantine = self._quarantine_file(
+                    temporary,
+                    category="remote-changed",
+                    observed_at=observed_at,
+                )
+                self._atomic_json(quarantine.with_name(f"{quarantine.name}.metadata.json"), {
+                    "schema_version": self.manifest_version,
+                    "reason": "remote_metadata_changed_between_plan_and_download",
+                    "planned": asdict(item),
+                    "post_download": post_download,
+                    "quarantined_at": observed_at.astimezone(timezone.utc).isoformat(),
+                })
+                raise MassiveArchiveError(
+                    f"remote metadata changed during download; artifact quarantined: {item.object_key}"
+                )
+            try:
                 os.link(temporary, target)
             except FileExistsError as exc:
                 raise MassiveArchiveError(f"artifact appeared concurrently; refusing overwrite: {target}") from exc
@@ -205,6 +246,74 @@ class MassiveFlatFileArchive:
             "sha256": archived.sha256,
         })
         return archived
+
+    def _remote_metadata(self, item: PlannedArtifact) -> dict[str, Any]:
+        metadata = self.store.head_object(Bucket=item.bucket, Key=item.object_key)
+        try:
+            content_length = int(metadata["ContentLength"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise MassiveArchiveError(
+                f"Massive object has no valid size after download: {item.object_key}"
+            ) from exc
+        return {
+            "content_length": content_length,
+            "remote_etag": self._clean_etag(metadata.get("ETag")),
+        }
+
+    @contextmanager
+    def _exclusive_download_lock(self):  # noqa: ANN202 - contextmanager iterator
+        lock_path = self.root / ".massive-download.lock"
+        with lock_path.open("a+", encoding="utf-8") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise MassiveArchiveError("another Massive download is already running") from exc
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def _quarantine_orphan_parts(self, observed_at: datetime) -> None:
+        quarantine_root = self.root / "provider=massive" / "quarantine"
+        orphan_parts = tuple(
+            path for path in self.root.rglob("*.part")
+            if quarantine_root not in path.parents
+        )
+        for orphan in orphan_parts:
+            quarantine = self._quarantine_file(
+                orphan,
+                category="orphan-part",
+                observed_at=observed_at,
+            )
+            self._atomic_json(quarantine.with_name(f"{quarantine.name}.metadata.json"), {
+                "schema_version": self.manifest_version,
+                "reason": "orphan_partial_discovered_before_download",
+                "original_path": str(orphan),
+                "quarantined_at": observed_at.astimezone(timezone.utc).isoformat(),
+            })
+
+    def _quarantine_file(
+        self,
+        source: Path,
+        *,
+        category: str,
+        observed_at: datetime,
+    ) -> Path:
+        suffix = observed_at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+        source_name = source.name.removeprefix(".")
+        if source_name.endswith(".part"):
+            source_name = f"{source_name.removesuffix('.part')}.quarantined"
+        destination = (
+            self.root
+            / "provider=massive"
+            / "quarantine"
+            / f"category={category}"
+            / f"{suffix}-{uuid4().hex}-{source_name}"
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        os.link(source, destination)
+        source.unlink()
+        return destination
 
     @staticmethod
     def _archived(item: PlannedArtifact, target: Path, *, reused: bool) -> ArchivedArtifact:

@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+import fcntl
 import hashlib
 import json
 from pathlib import Path
@@ -159,3 +160,74 @@ def test_massive_archive_removes_partial_file_after_size_mismatch(tmp_path: Path
 
     assert not list(tmp_path.rglob("*.part"))
     assert not list(tmp_path.rglob("source.csv.gz"))
+
+
+def test_massive_archive_quarantines_download_when_rehead_changes(tmp_path: Path) -> None:
+    key = _key(FlatFileDataset.TRADES)
+
+    class ChangingStore(FakeStore):
+        def __init__(self, blobs: dict[str, bytes]) -> None:
+            super().__init__(blobs)
+            self.head_calls = 0
+
+        def head_object(self, *, Bucket: str, Key: str) -> dict[str, object]:
+            self.head_calls += 1
+            metadata = super().head_object(Bucket=Bucket, Key=Key)
+            if self.head_calls > 1:
+                metadata["ETag"] = '"changed-after-plan"'
+            return metadata
+
+    store = ChangingStore({key: b"downloaded-once"})
+    archive = _archive(tmp_path, store)
+
+    with pytest.raises(MassiveArchiveError, match="changed during download"):
+        archive.download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES,),
+            measured_at=datetime(2026, 8, 22, 3, tzinfo=timezone.utc),
+        )
+
+    assert not archive.local_path(FlatFileDataset.TRADES, date(2026, 8, 21)).exists()
+    quarantined = list(tmp_path.rglob("category=remote-changed/*source.csv.gz*"))
+    assert len([path for path in quarantined if not path.name.endswith(".json")]) == 1
+    assert len([path for path in quarantined if path.name.endswith(".metadata.json")]) == 1
+    assert not list(tmp_path.rglob("*.part"))
+
+
+def test_massive_archive_quarantines_orphan_parts_before_next_download(tmp_path: Path) -> None:
+    key = _key(FlatFileDataset.TRADES)
+    store = FakeStore({key: b"fresh"})
+    archive = _archive(tmp_path, store)
+    orphan = tmp_path / "provider=massive" / "dataset=trades" / ".old-download.part"
+    orphan.parent.mkdir(parents=True)
+    orphan.write_bytes(b"incomplete")
+
+    archive.download(
+        session_date=date(2026, 8, 21),
+        datasets=(FlatFileDataset.TRADES,),
+        measured_at=datetime(2026, 8, 22, 4, tzinfo=timezone.utc),
+    )
+
+    assert not orphan.exists()
+    quarantined = list(tmp_path.rglob("category=orphan-part/*old-download.quarantined*"))
+    assert len([path for path in quarantined if not path.name.endswith(".json")]) == 1
+    assert len([path for path in quarantined if path.name.endswith(".metadata.json")]) == 1
+    assert archive.local_path(FlatFileDataset.TRADES, date(2026, 8, 21)).read_bytes() == b"fresh"
+
+
+def test_massive_archive_refuses_concurrent_download_process(tmp_path: Path) -> None:
+    key = _key(FlatFileDataset.TRADES)
+    store = FakeStore({key: b"fresh"})
+    archive = _archive(tmp_path, store)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    lock_path = tmp_path / ".massive-download.lock"
+
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(MassiveArchiveError, match="already running"):
+            archive.download(
+                session_date=date(2026, 8, 21),
+                datasets=(FlatFileDataset.TRADES,),
+            )
+
+    assert store.downloads == []

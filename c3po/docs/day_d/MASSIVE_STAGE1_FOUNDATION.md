@@ -32,6 +32,12 @@ atomically into place. Existing files are reused only when their size matches;
 they are never overwritten. Every batch receives a SHA-256 manifest and is
 explicitly marked `official_replay_ready: false`.
 
+Before publication, a downloaded object is re-checked remotely. A changed
+ETag or byte count quarantines the local file instead of publishing it. A
+single-writer filesystem lock prevents two operators from downloading into the
+same spool concurrently, and abandoned `.part` files are moved into immutable
+quarantine before the next approved run.
+
 No application service invokes this command automatically. The API container
 has a persistent `/app/day-d-data` volume solely so an explicitly approved
 operator run survives container replacement.
@@ -73,7 +79,7 @@ python -m app.day_d_replay.massive_archive \
 
 ## Next gate
 
-After this foundation is reviewed and merged, credentials may be installed on
-the server and a plan-only probe may measure exact object sizes. Those measured
-sizes feed the numeric T0 disk/CPU/I/O thresholds. No historical file is
-downloaded until that six-hands gate is frozen.
+Credentials are installed and the complete plan-only T0 sweep is documented in
+[`MASSIVE_T0_CAPACITY_SWEEP.md`](./MASSIVE_T0_CAPACITY_SWEEP.md). No historical
+file is downloaded until the dedicated data disk, retention destination and
+numeric thresholds are approved and frozen by the six hands.
