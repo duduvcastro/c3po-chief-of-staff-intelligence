@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 V2EngineMarket = Literal["B3", "US"]
 
-ENGINE_VERSION = 1
+ENGINE_VERSION = 2
 
 # ---------------------------------------------------------------------------
 # Frozen V2 principles (Fable, 2026-08-23):
@@ -15,8 +15,9 @@ ENGINE_VERSION = 1
 #       estimates, the company's own history, market consensus TP);
 #   P2  no free constants -- a fair multiple comes from peers, sector medians
 #       or own history, or the model declares itself unable (low_conviction);
-#   P3  the DCF is anchored to CONSENSUS growth (and reports the growth the
-#       price implies), never to a house growth premise;
+#   P3  reverse DCF solves the growth already implied by the market price and
+#       compares it with consensus growth. It never turns consensus growth
+#       into an unconstrained forward intrinsic value;
 #   P4  divergence vs consensus is a measured output with frozen bands
 #       (>30% -> low_conviction + max shrink; 15-30% -> flagged note);
 #   cyclicals value mid-cycle earnings -- peak TTM/NTM is never the sole base.
@@ -53,7 +54,7 @@ MODEL_LABELS = {
     "peer_comps": "Comps de peers reais",
     "own_history": "Banda histórica própria",
     "earnings_power": "Earnings power (FY1/FY2)",
-    "consensus_dcf": "DCF ancorado no consenso",
+    "reverse_dcf": "Reverse DCF / crescimento implícito",
     "rim": "Residual Income (RIM)",
     "ddm": "Dividendos descontados (DDM)",
 }
@@ -143,14 +144,14 @@ class ValuationV2Engine:
         inputs = self._inputs(row, packet, price)
         ladder: list[str] = []
 
-        fair_pe, pe_source = self._fair_multiple(
-            "pe", packet, peer_multiples, sector_fair_multiples, inputs
+        fair_pe, pe_source, pe_basis = self._fair_multiple(
+            "pe", packet, peer_multiples, sector_fair_multiples
         )
-        fair_ev_ebitda, ev_source = self._fair_multiple(
-            "ev_ebitda", packet, peer_multiples, sector_fair_multiples, inputs
+        fair_ev_ebitda, ev_source, _ = self._fair_multiple(
+            "ev_ebitda", packet, peer_multiples, sector_fair_multiples
         )
-        fair_pb, pb_source = self._fair_multiple(
-            "price_to_book", packet, peer_multiples, sector_fair_multiples, inputs
+        fair_pb, pb_source, _ = self._fair_multiple(
+            "price_to_book", packet, peer_multiples, sector_fair_multiples
         )
         ladder.extend(filter(None, [
             f"pe:{pe_source}" if fair_pe else "pe:unavailable",
@@ -166,17 +167,26 @@ class ValuationV2Engine:
                 inputs, price, peer_multiples or {}
             ))
             self._add(models, "own_history", self._own_history_tp(
-                packet, inputs, price, financial=True
+                packet, inputs, price, profile=profile, financial=True
             ))
         else:
             self._add(models, "peer_comps", self._peer_comps_tp(
                 inputs, price, peer_multiples or {}
             ))
-            self._add(models, "own_history", self._own_history_tp(packet, inputs, price))
-            self._add(models, "earnings_power", self._earnings_power_tp(
-                inputs, price, fair_pe, pe_source, profile
+            self._add(models, "own_history", self._own_history_tp(
+                packet, inputs, price, profile=profile
             ))
-            self._add(models, "consensus_dcf", self._consensus_dcf_tp(inputs, price, profile))
+            earnings_power = self._earnings_power_tp(
+                inputs, price, fair_pe, pe_source, pe_basis, profile
+            )
+            if pe_source == "own_history" and "own_history" in models:
+                # The same historical P/E x trailing/mid-cycle EPS already
+                # lives inside own_history. Counting it again as a separate
+                # model would manufacture confidence from one anchor.
+                ladder.append("earnings_power:deduplicated_against_own_history")
+            else:
+                self._add(models, "earnings_power", earnings_power)
+            self._add(models, "reverse_dcf", self._reverse_dcf_signal(inputs, price, profile))
 
         if not models:
             return {
@@ -220,8 +230,8 @@ class ValuationV2Engine:
             ),
             key=lambda item: str(item.get("fiscal_year_end")),
         )
-        ntm_eps, consensus_growth, analysts_eps = self._ntm_eps(estimates)
-        ntm_ebitda = _number(estimates[0].get("ebitda_avg")) if estimates else None
+        ntm_eps, consensus_growth, analysts_eps, fy1_fraction = self._ntm_eps(estimates)
+        ntm_ebitda, _ = self._ntm_metric(estimates, "ebitda_avg")
 
         trailing_eps = _number(row.get("eps")) or (
             price / pe if (pe := _valid_multiple(row.get("pe"), PE_RANGE)) else None
@@ -250,6 +260,7 @@ class ValuationV2Engine:
             "net_debt": net_debt,
             "ntm_eps": ntm_eps,
             "ntm_ebitda": ntm_ebitda,
+            "fy1_fraction": fy1_fraction,
             "consensus_growth": consensus_growth,
             "analysts_eps": analysts_eps,
             "trailing_eps": trailing_eps,
@@ -263,29 +274,53 @@ class ValuationV2Engine:
             "estimates": estimates,
         }
 
-    def _ntm_eps(self, estimates: list[dict[str, Any]]) -> tuple[float | None, float | None, int]:
+    def _ntm_eps(
+        self, estimates: list[dict[str, Any]],
+    ) -> tuple[float | None, float | None, int, float]:
         if not estimates:
-            return None, None, 0
+            return None, None, 0, 1.0
         fy1 = estimates[0]
         fy1_eps = _number(fy1.get("eps_avg"))
         analysts = int(_number(fy1.get("analysts_eps")) or 0)
+        _, fy1_fraction = self._ntm_metric(estimates, "eps_avg")
+        fy2_eps = _number(estimates[1].get("eps_avg")) if len(estimates) > 1 else None
+        if fy1_eps is None:
+            return None, None, analysts, fy1_fraction
+        ntm, _ = self._ntm_metric(estimates, "eps_avg")
+        growth = (
+            _clamp(fy2_eps / fy1_eps - 1, -0.20, 0.35)
+            if fy2_eps is not None and fy1_eps > 0 else None
+        )
+        return ntm, growth, analysts, fy1_fraction
+
+    def _ntm_metric(
+        self, estimates: list[dict[str, Any]], field: str,
+    ) -> tuple[float | None, float]:
+        """Time-weight FY1/FY2 on one consistent NTM convention.
+
+        The remaining fraction of FY1 supplies that fraction of the next
+        twelve months; FY2 supplies the balance. The same convention applies
+        to EPS and EBITDA so peer models never mix a weighted numerator with
+        an unweighted fiscal-year denominator.
+        """
+        if not estimates:
+            return None, 1.0
+        fy1 = estimates[0]
         try:
             fy1_end = date.fromisoformat(str(fy1.get("fiscal_year_end")))
             fy1_fraction = _clamp((fy1_end - self.today).days / 365.0, 0.0, 1.0)
         except ValueError:
             fy1_fraction = 1.0
-        fy2_eps = _number(estimates[1].get("eps_avg")) if len(estimates) > 1 else None
-        if fy1_eps is None:
-            return None, None, analysts
-        ntm = (
-            fy1_eps * fy1_fraction + fy2_eps * (1 - fy1_fraction)
-            if fy2_eps is not None else fy1_eps
+        fy1_value = _number(fy1.get(field))
+        if fy1_value is None:
+            return None, fy1_fraction
+        fy2_value = _number(estimates[1].get(field)) if len(estimates) > 1 else None
+        if fy2_value is None:
+            return fy1_value, fy1_fraction
+        return (
+            fy1_value * fy1_fraction + fy2_value * (1 - fy1_fraction),
+            fy1_fraction,
         )
-        growth = (
-            _clamp(fy2_eps / fy1_eps - 1, -0.20, 0.35)
-            if fy2_eps is not None and fy1_eps > 0 else None
-        )
-        return ntm, growth, analysts
 
     # ------------------------------------------------------------- fair multiples
 
@@ -295,24 +330,50 @@ class ValuationV2Engine:
         packet: dict[str, Any],
         peer_multiples: dict[str, dict[str, Any]] | None,
         sector_fair_multiples: dict[str, float] | None,
-        inputs: dict[str, Any],
-    ) -> tuple[float | None, str | None]:
+    ) -> tuple[float | None, str | None, str | None]:
         """The frozen ladder: real peers -> sector medians -> own history.
-        No constant fallback exists by design (P2)."""
+        No constant fallback exists by design (P2).
+
+        P/E is intentionally basis-aware. A forward peer/sector multiple is
+        never mixed with a trailing one in the same sample, and the returned
+        basis tells earnings-power which EPS denominator is compatible.
+        """
         bounds = {"pe": PE_RANGE, "ev_ebitda": EV_EBITDA_RANGE, "price_to_book": PB_RANGE}[metric]
-        peer_values: list[float] = []
-        for peer in (peer_multiples or {}).values():
-            raw = peer.get("forward_pe") or peer.get("pe") if metric == "pe" else peer.get(metric)
-            value = _valid_multiple(raw, bounds)
-            if value is not None:
-                peer_values.append(value)
-        if len(peer_values) >= MIN_PEER_SAMPLE:
-            fair = _winsorized_median(peer_values)
-            if fair is not None:
-                return fair, "peers"
-        sector_value = _valid_multiple((sector_fair_multiples or {}).get(metric), bounds)
-        if sector_value is not None:
-            return sector_value, "sector_median"
+        if metric == "pe":
+            forward_values = [
+                value for peer in (peer_multiples or {}).values()
+                if (value := _valid_multiple(peer.get("forward_pe"), bounds)) is not None
+            ]
+            trailing_values = [
+                value for peer in (peer_multiples or {}).values()
+                if (value := _valid_multiple(peer.get("pe"), bounds)) is not None
+            ]
+            if len(forward_values) >= MIN_PEER_SAMPLE:
+                return _winsorized_median(forward_values), "peers_forward", "forward"
+            if len(trailing_values) >= MIN_PEER_SAMPLE:
+                return _winsorized_median(trailing_values), "peers_trailing", "trailing"
+            sector_forward = _valid_multiple(
+                (sector_fair_multiples or {}).get("forward_pe"), bounds
+            )
+            if sector_forward is not None:
+                return sector_forward, "sector_forward_median", "forward"
+            sector_trailing = _valid_multiple(
+                (sector_fair_multiples or {}).get("pe"), bounds
+            )
+            if sector_trailing is not None:
+                return sector_trailing, "sector_trailing_median", "trailing"
+        else:
+            peer_values = [
+                value for peer in (peer_multiples or {}).values()
+                if (value := _valid_multiple(peer.get(metric), bounds)) is not None
+            ]
+            if len(peer_values) >= MIN_PEER_SAMPLE:
+                fair = _winsorized_median(peer_values)
+                if fair is not None:
+                    return fair, "peers", None
+            sector_value = _valid_multiple((sector_fair_multiples or {}).get(metric), bounds)
+            if sector_value is not None:
+                return sector_value, "sector_median", None
         history = [
             value for item in packet.get("ratios_annual") or []
             if isinstance(item, dict)
@@ -321,8 +382,8 @@ class ValuationV2Engine:
         if len(history) >= MIN_HISTORY_YEARS:
             fair = _winsorized_median(history)
             if fair is not None:
-                return fair, "own_history"
-        return None, None
+                return fair, "own_history", "trailing" if metric == "pe" else None
+        return None, None, None
 
     # ------------------------------------------------------------------ models
 
@@ -339,18 +400,15 @@ class ValuationV2Engine:
     def _peer_comps_tp(
         self, inputs: dict[str, Any], price: float, peer_multiples: dict[str, dict[str, Any]],
     ) -> dict[str, Any] | None:
+        """Independent peer-comps anchor for non-financial companies.
+
+        P/E belongs to earnings-power, where its compatible EPS basis is
+        explicit. Reusing that same P/E x EPS result here would count one
+        economic anchor twice whenever EV/EBITDA and P/B are unavailable.
+        """
         values: list[float] = []
         used: list[str] = []
-        pe_values = [
-            v for peer in peer_multiples.values()
-            if (v := _valid_multiple(peer.get("forward_pe") or peer.get("pe"), PE_RANGE)) is not None
-        ]
-        earnings_base = inputs["ntm_eps"] or inputs["trailing_eps"]
-        if len(pe_values) >= MIN_PEER_SAMPLE and earnings_base and earnings_base > 0:
-            fair = _winsorized_median(pe_values)
-            if fair and (tp := self._bounded(fair * earnings_base, price)):
-                values.append(tp)
-                used.append("pe")
+        used_samples: list[list[float]] = []
         ev_values = [
             v for peer in peer_multiples.values()
             if (v := _valid_multiple(peer.get("ev_ebitda"), EV_EBITDA_RANGE)) is not None
@@ -366,6 +424,7 @@ class ValuationV2Engine:
                 if (tp := self._bounded(equity / inputs["shares"], price)):
                     values.append(tp)
                     used.append("ev_ebitda")
+                    used_samples.append(ev_values)
         pb_values = [
             v for peer in peer_multiples.values()
             if (v := _valid_multiple(peer.get("price_to_book"), PB_RANGE)) is not None
@@ -375,10 +434,15 @@ class ValuationV2Engine:
             if fair and (tp := self._bounded(fair * inputs["book_value"], price)):
                 values.append(tp)
                 used.append("price_to_book")
+                used_samples.append(pb_values)
         if not values:
             return None
-        sample = max(len(pe_values), len(ev_values), len(pb_values))
-        dispersion = _dispersion(pe_values or ev_values or pb_values)
+        sample = min(len(sample_values) for sample_values in used_samples)
+        dispersions = [
+            value for sample_values in used_samples
+            if (value := _dispersion(sample_values)) is not None
+        ]
+        dispersion = max(dispersions) if dispersions else None
         reliability = _clamp(sample / 8, 0.25, 1.0) * (
             0.5 if dispersion is not None and dispersion > PEER_DISPERSION_CAP else 1.0
         )
@@ -428,13 +492,21 @@ class ValuationV2Engine:
         }
 
     def _own_history_tp(
-        self, packet: dict[str, Any], inputs: dict[str, Any], price: float, *, financial: bool = False,
+        self,
+        packet: dict[str, Any],
+        inputs: dict[str, Any],
+        price: float,
+        *,
+        profile: str,
+        financial: bool = False,
     ) -> dict[str, Any] | None:
         ratios = [item for item in packet.get("ratios_annual") or [] if isinstance(item, dict)]
         values: list[float] = []
         used: list[str] = []
         pe_history = [v for item in ratios if (v := _valid_multiple(item.get("pe"), PE_RANGE))]
-        earnings_base = inputs["ntm_eps"] or inputs["trailing_eps"]
+        earnings_base = (
+            inputs["mid_cycle_eps"] if profile == "cyclical" else inputs["trailing_eps"]
+        )
         if not financial and len(pe_history) >= MIN_HISTORY_YEARS and earnings_base and earnings_base > 0:
             fair = _winsorized_median(pe_history)
             if fair and (tp := self._bounded(fair * earnings_base, price)):
@@ -461,6 +533,10 @@ class ValuationV2Engine:
             "tp": median(values),
             "reliability": round(_clamp(years / 10, 0.3, 1.0), 3),
             "metrics_used": used,
+            "earnings_base": (
+                "mid_cycle_median" if profile == "cyclical" and "pe" in used
+                else "trailing" if "pe" in used else None
+            ),
             "history_years": years,
             "current_pe_percentile_in_history": percentile,
         }
@@ -471,28 +547,30 @@ class ValuationV2Engine:
         price: float,
         fair_pe: float | None,
         fair_pe_source: str | None,
+        fair_pe_basis: str | None,
         profile: str,
     ) -> dict[str, Any] | None:
         if fair_pe is None:
             return None
-        base = inputs["ntm_eps"]
-        base_kind = "ntm_fy_weighted"
         if profile == "cyclical":
             # Frozen rule: cyclicals are valued on mid-cycle earnings; peak
             # TTM/NTM is never the sole base.
-            if inputs["mid_cycle_eps"]:
-                base = inputs["mid_cycle_eps"]
-                base_kind = "mid_cycle_median"
-            elif base is not None:
-                base_kind = "ntm_unnormalized_flagged"
+            base = inputs["mid_cycle_eps"]
+            base_kind = "mid_cycle_median"
+        elif fair_pe_basis == "forward":
+            base = inputs["ntm_eps"]
+            base_kind = "ntm_fy_weighted"
+        else:
+            base = inputs["trailing_eps"]
+            base_kind = "trailing"
         if base is None or base <= 0:
             return None
         tp = self._bounded(fair_pe * base, price)
         if tp is None:
             return None
         reliability = _clamp(inputs["analysts_eps"] / 20, 0.3, 1.0)
-        if base_kind == "ntm_unnormalized_flagged":
-            reliability *= 0.6
+        if fair_pe_basis != "forward":
+            reliability = min(reliability, 0.7)
         return {
             "tp": tp,
             "reliability": round(reliability, 3),
@@ -501,28 +579,44 @@ class ValuationV2Engine:
             "earnings_base": base_kind,
         }
 
-    def _consensus_dcf_tp(
+    def _reverse_dcf_signal(
         self, inputs: dict[str, Any], price: float, profile: str,
     ) -> dict[str, Any] | None:
-        base = inputs["ntm_eps"]
-        base_kind = "ntm_fy_weighted"
-        if profile == "cyclical" and inputs["mid_cycle_eps"]:
+        if profile == "cyclical":
             base = inputs["mid_cycle_eps"]
             base_kind = "mid_cycle_median"
+        else:
+            base = inputs["ntm_eps"]
+            base_kind = "ntm_fy_weighted"
         growth = inputs["consensus_growth"]
         if base is None or base <= 0 or growth is None:
             return None
         ke = inputs["cost_of_equity"]
-        value = self._two_stage_value(base, growth, ke)
-        tp = self._bounded(value, price)
+        implied = self._implied_growth(base, ke, price)
+        if implied is None:
+            return None
+
+        # Reverse DCF is a bounded signal, not a second forward DCF. The
+        # price-equivalent compares one year of FY1/FY2 consensus growth with
+        # the growth already embedded in the quote. Because both growth rates
+        # are bounded by the frozen solver interval, this signal cannot create
+        # the 3x targets that motivated P3.
+        growth_ratio = (1 + growth) / max(1 + implied, 0.01)
+        tp = self._bounded(price * growth_ratio, price)
         if tp is None:
             return None
-        implied = self._implied_growth(base, ke, price)
+        censored = implied <= -0.25 + 1e-6 or implied >= 0.40 - 1e-6
+        reliability = _clamp(inputs["analysts_eps"] / 20, 0.3, 1.0) * 0.9
+        if censored:
+            reliability *= 0.5
         return {
             "tp": tp,
-            "reliability": round(_clamp(inputs["analysts_eps"] / 20, 0.3, 1.0) * 0.9, 3),
+            "reliability": round(reliability, 3),
             "consensus_growth": round(growth, 4),
-            "implied_growth": round(implied, 4) if implied is not None else None,
+            "implied_growth": round(implied, 4),
+            "growth_gap": round(growth - implied, 4),
+            "growth_ratio_price_equivalent": round(growth_ratio, 4),
+            "implied_growth_censored": censored,
             "cost_of_equity": round(ke, 4),
             "earnings_base": base_kind,
         }
@@ -616,15 +710,15 @@ class ValuationV2Engine:
             int(_number(row.get("eodhd_analysts")) or 0),
             int(_number(row.get("brapi_analysts")) or 0),
         )
-        divergence = (
+        internal_divergence = (
             abs(internal_tp / consensus_tp - 1) if consensus_tp and consensus_tp > 0 else None
         )
         divergence_flag = None
-        if divergence is not None:
-            if divergence > DIVERGENCE_LOW_CONVICTION_BAND:
+        if internal_divergence is not None:
+            if internal_divergence > DIVERGENCE_LOW_CONVICTION_BAND:
                 divergence_flag = "low_conviction_band"
                 low_conviction = True
-            elif divergence > DIVERGENCE_NOTE_BAND:
+            elif internal_divergence > DIVERGENCE_NOTE_BAND:
                 divergence_flag = "note_band"
         elif not any(name in models for name in ("peer_comps", "own_history")):
             # No consensus AND neither external anchor -> unable by design.
@@ -644,6 +738,9 @@ class ValuationV2Engine:
         else:
             consensus_weight = 0.0
         v2_tp = internal_tp * (1 - consensus_weight) + (consensus_tp or 0.0) * consensus_weight
+        final_divergence = (
+            abs(v2_tp / consensus_tp - 1) if consensus_tp and consensus_tp > 0 else None
+        )
 
         attribution = None
         if consensus_tp and consensus_tp > 0:
@@ -675,9 +772,16 @@ class ValuationV2Engine:
             "consensus_tp": consensus_tp,
             "analyst_count": analyst_count,
             "consensus_weight": consensus_weight,
-            "divergence_vs_consensus": round(divergence, 4) if divergence is not None else None,
+            "consensus_weight_source": "v1_policy_pending_v2_3_calibration",
+            "internal_divergence_vs_consensus": (
+                round(internal_divergence, 4) if internal_divergence is not None else None
+            ),
+            "final_divergence_vs_consensus": (
+                round(final_divergence, 4) if final_divergence is not None else None
+            ),
             "divergence_flag": divergence_flag,
             "attribution_model": attribution,
+            "attribution_definition": "model_with_largest_absolute_divergence_from_consensus",
             "fair_multiple_ladder": ladder,
             "risk_free_rate": round(self.risk_free_rate, 4),
             "risk_free_source": self.risk_free_source,

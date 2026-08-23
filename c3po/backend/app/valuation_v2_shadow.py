@@ -9,14 +9,14 @@ from .database import Database
 from .market_data.brapi import BrapiClient
 from .market_data.http import JsonHttpClient
 from .valuation_v2_data import ValuationV2DataService
-from .valuation_v2_engine import ValuationV2Engine
+from .valuation_v2_engine import ENGINE_VERSION, ValuationV2Engine
 
 
 V2Market = Literal["B3", "NASDAQ", "NYSE"]
 
 ANALYSIS_TYPE = "valuation_v2_shadow"
 METHODOLOGY_KEY = "valuation_v2_shadow"
-METHODOLOGY_VERSION = 1
+METHODOLOGY_VERSION = 2
 
 _UNIVERSE_SNAPSHOT_KEY: dict[V2Market, str] = {
     "B3": "B3_UNIVERSE",
@@ -81,7 +81,7 @@ class ValuationV2ShadowService:
             symbol = str(row.get("symbol"))
             packet = packets.get(symbol)
             peer_symbols = [
-                str(peer.get("symbol"))
+                str(peer.get("canonical_symbol") or peer.get("symbol"))
                 for peer in (packet or {}).get("peers") or []
                 if isinstance(peer, dict) and peer.get("symbol")
             ]
@@ -98,12 +98,22 @@ class ValuationV2ShadowService:
             )
             if result is None:
                 continue
-            v1_tp = _number(row.get("internal_tp")) or _number(row.get("our_tp"))
+            v1_final_tp = _number(row.get("our_tp"))
+            v1_internal_tp = _number(row.get("internal_tp"))
+            if v1_final_tp is None:
+                v1_final_tp = v1_internal_tp
+            if v1_internal_tp is None:
+                v1_internal_tp = v1_final_tp
             consensus = result.get("consensus_tp")
-            result["v1_tp"] = v1_tp
-            result["v1_divergence_vs_consensus"] = (
-                round(abs(v1_tp / consensus - 1), 4)
-                if v1_tp and consensus else None
+            result["v1_final_tp"] = v1_final_tp
+            result["v1_internal_tp"] = v1_internal_tp
+            result["v1_final_divergence_vs_consensus"] = (
+                round(abs(v1_final_tp / consensus - 1), 4)
+                if v1_final_tp and consensus else None
+            )
+            result["v1_internal_divergence_vs_consensus"] = (
+                round(abs(v1_internal_tp / consensus - 1), 4)
+                if v1_internal_tp and consensus else None
             )
             result["peer_multiples_resolved"] = len(peer_multiples)
             results[symbol] = result
@@ -113,7 +123,11 @@ class ValuationV2ShadowService:
         methodology_id = self.database.ensure_methodology_version(
             METHODOLOGY_KEY,
             METHODOLOGY_VERSION,
-            {"engine_version": engine.__class__.__module__, "consumers": "none_shadow_only"},
+            {
+                "engine_version": ENGINE_VERSION,
+                "comparison_rulers": "internal_to_internal,final_to_final",
+                "consumers": "none_shadow_only",
+            },
             "Valuation V2 shadow: V2 computed beside V1, consumed by nothing.",
         )
         self.database.save_analysis_snapshot(
@@ -156,39 +170,58 @@ class ValuationV2ShadowService:
 
     @staticmethod
     def _summary(comparisons: list[dict[str, Any]]) -> dict[str, Any]:
-        v2_divergences = [
-            item["divergence_vs_consensus"]
-            for item in comparisons
-            if item.get("divergence_vs_consensus") is not None
-        ]
-        v1_divergences = [
-            item["v1_divergence_vs_consensus"]
-            for item in comparisons
-            if item.get("v1_divergence_vs_consensus") is not None
-        ]
+        def values(field: str) -> list[float]:
+            return [
+                float(item[field]) for item in comparisons if item.get(field) is not None
+            ]
+
+        v2_internal = values("internal_divergence_vs_consensus")
+        v1_internal = values("v1_internal_divergence_vs_consensus")
+        v2_final = values("final_divergence_vs_consensus")
+        v1_final = values("v1_final_divergence_vs_consensus")
         by_profile: dict[str, list[float]] = {}
         for item in comparisons:
-            if item.get("divergence_vs_consensus") is not None:
+            if item.get("internal_divergence_vs_consensus") is not None:
                 by_profile.setdefault(str(item.get("profile")), []).append(
-                    item["divergence_vs_consensus"]
+                    item["internal_divergence_vs_consensus"]
                 )
+
+        def percentile(values_: list[float], fraction: float) -> float | None:
+            result = _percentile(values_, fraction)
+            return round(result, 4) if result is not None else None
+
+        v2_internal_p50 = percentile(v2_internal, 0.50)
+        v2_internal_p90 = percentile(v2_internal, 0.90)
+        v1_internal_p50 = percentile(v1_internal, 0.50)
+        v1_internal_p90 = percentile(v1_internal, 0.90)
         return {
             "evaluated": len(comparisons),
-            "with_consensus": len(v2_divergences),
+            "with_consensus": len(v2_internal),
             "low_conviction": sum(bool(item.get("low_conviction")) for item in comparisons),
-            "v2_divergence_p50": round(_percentile(v2_divergences, 0.50) or 0, 4) if v2_divergences else None,
-            "v2_divergence_p90": round(_percentile(v2_divergences, 0.90) or 0, 4) if v2_divergences else None,
-            "v1_divergence_p50": round(_percentile(v1_divergences, 0.50) or 0, 4) if v1_divergences else None,
-            "v1_divergence_p90": round(_percentile(v1_divergences, 0.90) or 0, 4) if v1_divergences else None,
-            "meets_p50_target": (
-                (_percentile(v2_divergences, 0.50) or 1) <= 0.15 if v2_divergences else None
-            ),
-            "meets_p90_target": (
-                (_percentile(v2_divergences, 0.90) or 1) <= 0.30 if v2_divergences else None
-            ),
+            "comparison_ruler_for_p4": "internal_tp_vs_consensus",
+            "v2_internal_divergence_p50": v2_internal_p50,
+            "v2_internal_divergence_p90": v2_internal_p90,
+            "v1_internal_divergence_p50": v1_internal_p50,
+            "v1_internal_divergence_p90": v1_internal_p90,
+            "v2_final_divergence_p50": percentile(v2_final, 0.50),
+            "v2_final_divergence_p90": percentile(v2_final, 0.90),
+            "v1_final_divergence_p50": percentile(v1_final, 0.50),
+            "v1_final_divergence_p90": percentile(v1_final, 0.90),
+            # Operator-compatible names are explicit aliases of the frozen P4
+            # internal ruler, never a mixture of internal and final TPs.
+            "v2_divergence_p50": v2_internal_p50,
+            "v2_divergence_p90": v2_internal_p90,
+            "v1_divergence_p50": v1_internal_p50,
+            "v1_divergence_p90": v1_internal_p90,
+            "meets_p50_target": v2_internal_p50 <= 0.15 if v2_internal_p50 is not None else None,
+            "meets_p90_target": v2_internal_p90 <= 0.30 if v2_internal_p90 is not None else None,
+            "internal_divergence_p50_by_profile": {
+                profile: percentile(profile_values, 0.50)
+                for profile, profile_values in sorted(by_profile.items())
+            },
             "divergence_p50_by_profile": {
-                profile: round(_percentile(values, 0.50) or 0, 4)
-                for profile, values in sorted(by_profile.items())
+                profile: percentile(profile_values, 0.50)
+                for profile, profile_values in sorted(by_profile.items())
             },
         }
 
@@ -277,23 +310,39 @@ class ValuationV2ShadowService:
         return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
 
     def _risk_free(self, market: V2Market) -> float | None:
-        """B3: the live Tesouro Direto prefixado curve (the V2 fix for the
-        structural downward bias the flat 18% discount produced). US: the
-        engine's own fallback until the shadow grows a Treasury feed."""
+        """B3: the prefixado point closest to the model's five-year horizon.
+
+        Taking the median of every listed maturity silently mixed short and
+        long duration. Matching the reverse-DCF horizon makes the observed
+        curve an auditable input. US keeps the engine fallback until the
+        shadow grows a Treasury feed.
+        """
         if market != "B3":
             return None
         if not self.settings.brapi_token:
             return None
         try:
             client = BrapiClient(self.settings.brapi_base_url, self.settings.brapi_token, self.http)
-            rates = [
-                rate for bond in client.treasury_rates(indexer="prefixado")
-                if (rate := _number(bond.get("buy_rate") or bond.get("sell_rate"))) is not None
-                and 0 < rate < 50
-            ]
-            if not rates:
+            candidates: list[tuple[int, float]] = []
+            fallback_rates: list[float] = []
+            for bond in client.treasury_rates(indexer="prefixado"):
+                bond_rates = [
+                    rate for field in ("buy_rate", "sell_rate")
+                    if (rate := _number(bond.get(field))) is not None and 0 < rate < 50
+                ]
+                if not bond_rates:
+                    continue
+                rate = median(bond_rates)
+                fallback_rates.append(rate)
+                duration_days = int(_number(bond.get("duration_days")) or 0)
+                if duration_days > 0:
+                    candidates.append((duration_days, rate))
+            if not fallback_rates:
                 return None
-            value = median(rates)
+            value = (
+                min(candidates, key=lambda item: abs(item[0] - 5 * 365))[1]
+                if candidates else median(fallback_rates)
+            )
             return value / 100 if value > 1 else value
         except Exception:
             return None
