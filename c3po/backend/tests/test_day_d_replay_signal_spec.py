@@ -200,6 +200,10 @@ def test_s3_v1_is_frozen_without_rearm_or_same_bar_fill() -> None:
     assert "raw_breakout_bar.rvol >= 1.5" in gates
     assert "QQQ.latest_completed_bar.close > QQQ.current_completed_bar.vwap" not in gates
     assert "QQQ.latest_completed_bar.close > QQQ.current_completed_bar_vwap" in gates
+    assert (
+        "raw_breakout_bar.event_at - QQQ.latest_completed_bar.event_at <= 1_minute"
+        in gates
+    )
     assert "raw_breakout_bar.close <= opening_range_high + 0.5 * opening_range_range" in gates
 
     profit = s3["profit_plan"]
@@ -249,8 +253,15 @@ def test_s5_v1_is_bar_based_with_frozen_target() -> None:
         "value": "completed_bar_vwap_observed_at_entry_fill_time",
         "frozen_for_trade_lifetime": True,
         "moving_vwap_after_entry_ignored": True,
-        "target_must_be_strictly_above_entry_fill": True,
-        "invalid_target_rule": "reject_signal",
+        "ex_ante_validity_rule": (
+            "decision_time_vwap_must_be_strictly_above_reclaim_bar_high"
+        ),
+        "ex_ante_entry_reference": "reclaim_bar_high",
+        "target_must_be_strictly_above_entry_fill": False,
+        "post_fill_above_target_rule": (
+            "filled_trade_remains_real_and_exits_under_normal_rules_without_retroactive_veto"
+        ),
+        "invalid_target_rule": "reject_signal_at_decision_time_only",
     }
     assert s5["maximum_holding_seconds"] == 2700
     assert s5["failed_or_expired_attempt_rule"] == (

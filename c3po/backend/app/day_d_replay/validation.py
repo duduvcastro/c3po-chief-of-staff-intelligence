@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -28,7 +29,10 @@ REQUIRED_SYNTHETIC_PROPERTIES = {
     "optimistic_net_result_gte_point_gte_pessimistic",
     "R_is_invariant_to_virtual_NAV_scale",
     "raw_tail_R_is_not_clipped",
+    "adjacent_halts_delay_execution_until_final_reopen",
 }
+SYNTHETIC_WORLD_PLANTS = {"negative": -0.5, "zero": 0.0, "positive": 0.5}
+SYNTHETIC_WORLD_TOLERANCE_R = 0.025
 
 
 class OfficialReplayBlocked(RuntimeError):
@@ -53,7 +57,11 @@ def synthetic_truth_evidence_hash(report: SyntheticTruthReport) -> str:
     evidence = {
         "version": report.version,
         "git_commit": report.git_commit,
+        "harness_contract_hash": report.harness_contract_hash,
+        "signal_contract_hash": report.signal_contract_hash,
         "seed": report.run_seed,
+        "passed": report.passed,
+        "measured_at": report.measured_at.isoformat(),
         "world_results": report.world_results,
         "property_results": report.property_results,
     }
@@ -163,7 +171,10 @@ def validate_official_readiness(
     else:
         if synthetic_truth.version != "DAY-D-SYNTHETIC-TRUTH-v1":
             failures.append("synthetic truth has an unexpected version")
-        if not synthetic_truth.passed or not manifest.synthetic_truth_gate_passed:
+        if (
+            synthetic_truth.passed is not True
+            or manifest.synthetic_truth_gate_passed is not True
+        ):
             failures.append("synthetic-truth gate did not pass")
         if synthetic_truth.git_commit != manifest.git_commit:
             failures.append("synthetic truth did not run from the official replay commit")
@@ -184,10 +195,42 @@ def validate_official_readiness(
             synthetic_truth
         ):
             failures.append("synthetic-truth evidence hash does not match its payload")
+        for world, planted in SYNTHETIC_WORLD_PLANTS.items():
+            result = synthetic_truth.world_results.get(world)
+            if result is None:
+                failures.append(f"synthetic world is missing: {world}")
+                continue
+            if result.get("planted") != planted:
+                failures.append(f"synthetic world plant changed: {world}")
+            setup_values = []
+            for setup in ("S3-v1", "S5-v1"):
+                recovered = result.get(setup)
+                if recovered is None:
+                    failures.append(f"synthetic world {world} is missing {setup}")
+                    continue
+                if not isinstance(recovered, (int, float)) or not math.isfinite(
+                    recovered
+                ):
+                    failures.append(
+                        f"synthetic world {world}/{setup} is not a finite number"
+                    )
+                    continue
+                setup_values.append(recovered)
+                if abs(recovered - planted) > SYNTHETIC_WORLD_TOLERANCE_R:
+                    failures.append(
+                        f"synthetic world {world}/{setup} exceeded bilateral tolerance"
+                    )
+            mean = result.get("mean")
+            if not isinstance(mean, (int, float)) or not math.isfinite(mean):
+                failures.append(f"synthetic world mean is not finite: {world}")
+            elif len(setup_values) == 2 and abs(
+                mean - sum(setup_values) / 2.0
+            ) > 1e-12:
+                failures.append(f"synthetic world mean is inconsistent: {world}")
         missing_properties = sorted(
             property_name
             for property_name in REQUIRED_SYNTHETIC_PROPERTIES
-            if not synthetic_truth.property_results.get(property_name, False)
+            if synthetic_truth.property_results.get(property_name) is not True
         )
         if missing_properties:
             failures.append(

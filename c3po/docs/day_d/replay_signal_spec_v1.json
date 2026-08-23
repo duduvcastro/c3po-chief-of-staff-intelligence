@@ -198,6 +198,7 @@
         "raw_breakout_bar.close > current_completed_bar_vwap",
         "raw_breakout_bar.rvol >= 1.5",
         "QQQ.latest_completed_bar.close > QQQ.current_completed_bar_vwap",
+        "raw_breakout_bar.event_at - QQQ.latest_completed_bar.event_at <= 1_minute",
         "raw_breakout_bar.close <= opening_range_high + 0.5 * opening_range_range",
         "decision_at < 11:45:00"
       ],
@@ -259,8 +260,11 @@
         "value": "completed_bar_vwap_observed_at_entry_fill_time",
         "frozen_for_trade_lifetime": true,
         "moving_vwap_after_entry_ignored": true,
-        "target_must_be_strictly_above_entry_fill": true,
-        "invalid_target_rule": "reject_signal"
+        "ex_ante_validity_rule": "decision_time_vwap_must_be_strictly_above_reclaim_bar_high",
+        "ex_ante_entry_reference": "reclaim_bar_high",
+        "target_must_be_strictly_above_entry_fill": false,
+        "post_fill_above_target_rule": "filled_trade_remains_real_and_exits_under_normal_rules_without_retroactive_veto",
+        "invalid_target_rule": "reject_signal_at_decision_time_only"
       },
       "maximum_holding_seconds": 2700,
       "timeout_anchor": "entry_fill_at",

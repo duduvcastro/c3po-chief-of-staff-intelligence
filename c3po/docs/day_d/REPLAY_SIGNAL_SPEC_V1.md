@@ -147,7 +147,8 @@ One attempt per symbol per session:
    - close above `OR_high`;
    - close above current completed-bar VWAP;
    - RVOL at least 1.5;
-   - latest completed QQQ close above its same-definition VWAP;
+   - latest completed QQQ close above its same-definition VWAP, with that QQQ
+     bar no more than one minute older than the breakout bar;
    - close no higher than `OR_high + 0.5 * OR_range`; and
    - decision time before 11:45 ET.
 4. If that first raw breakout fails any gate, the symbol expires for S3 that
@@ -188,9 +189,11 @@ per symbol per session:
    allowed.
 5. Structural stop is one minimum tick below the lowest completed-bar low from
    excursion through reclaim, subject to the shared floor and maximum.
-6. Target is the completed-bar VWAP observed at entry fill time. It is frozen
-   for the trade's lifetime and must be strictly above the entry fill;
-   otherwise reject the signal.
+6. Target is the completed-bar VWAP observed at entry fill time and is frozen
+   for the trade's lifetime. Signal validity is decided ex ante: decision-time
+   VWAP must be strictly above the reclaim-bar high. A later adverse fill above
+   the frozen target remains a real trade and exits under the normal rules; it
+   is never removed retroactively.
 7. Exit at the target or after 45 minutes, whichever comes first, unless a
    stop or portfolio risk override acts earlier.
 8. A failed or expired attempt cannot rearm that session.
