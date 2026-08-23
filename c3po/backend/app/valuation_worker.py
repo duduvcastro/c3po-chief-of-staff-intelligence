@@ -15,6 +15,7 @@ from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerService
 from .official_fundamentals import ensure_builtin_official_fundamentals
 from .valuation_policy import METHODOLOGY_VERSION
+from .valuation_v2_data import ValuationV2DataService
 
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
@@ -77,6 +78,7 @@ def main() -> None:
     us_screener = USScreeningService(settings, database, realtime, one_pagers)
     one_pagers.set_us_screener(us_screener)
     chewie = ChewieFundamentalsService(settings, database, market_data.http)
+    v2_data = ValuationV2DataService(settings, database, market_data.http)
 
     while True:
         now = datetime.now(SAO_PAULO)
@@ -112,27 +114,38 @@ def main() -> None:
                 time.sleep(15 * 60)
                 continue
 
-        # The Chewie fundamentals snapshot refreshes once per day at 01:00
-        # Sao Paulo, and ONLY inside the 01:00-08:00 pre-market window, so its
-        # provider calls never compete with market-time API usage. A worker
-        # that comes up mid-day waits for the next 01:00 slot.
+        # The Chewie fundamentals and Valuation V2.1 data snapshots refresh
+        # once per day at 01:00 Sao Paulo, and ONLY inside the 01:00-08:00
+        # pre-market window, so their provider calls never compete with
+        # market-time API usage. A worker that comes up mid-day waits for the
+        # next 01:00 slot.
         now = datetime.now(SAO_PAULO)
-        chewie_due_at = start_of_today(now) + timedelta(hours=1)
-        chewie_window_end = start_of_today(now) + timedelta(hours=8)
+        offhours_due_at = start_of_today(now) + timedelta(hours=1)
+        offhours_window_end = start_of_today(now) + timedelta(hours=8)
         chewie_last = chewie.last_refreshed_at()
-        chewie_pending = chewie_last is None or chewie_last.astimezone(SAO_PAULO) < chewie_due_at
-        if chewie_pending and chewie_due_at <= now < chewie_window_end:
-            try:
-                chewie_counts = chewie.refresh_all(budget=settings.chewie_daily_symbol_budget)
-                logger.info("Chewie fundamentals daily snapshot complete: %s", chewie_counts)
-            except Exception:
-                logger.exception("Chewie fundamentals snapshot failed; keeping the previous snapshot")
-            chewie_pending = False
+        chewie_pending = chewie_last is None or chewie_last.astimezone(SAO_PAULO) < offhours_due_at
+        v2_last = v2_data.last_refreshed_at()
+        v2_pending = v2_last is None or v2_last.astimezone(SAO_PAULO) < offhours_due_at
+        if offhours_due_at <= now < offhours_window_end:
+            if chewie_pending:
+                try:
+                    chewie_counts = chewie.refresh_all(budget=settings.chewie_daily_symbol_budget)
+                    logger.info("Chewie fundamentals daily snapshot complete: %s", chewie_counts)
+                except Exception:
+                    logger.exception("Chewie fundamentals snapshot failed; keeping the previous snapshot")
+                chewie_pending = False
+            if v2_pending:
+                try:
+                    v2_counts = v2_data.refresh_all()
+                    logger.info("Valuation V2.1 data snapshot complete: %s", v2_counts)
+                except Exception:
+                    logger.exception("Valuation V2.1 data snapshot failed; keeping the previous snapshot")
+                v2_pending = False
 
         now = datetime.now(SAO_PAULO)
         wake_targets = [next_midnight(now)]
-        if chewie_pending and now < chewie_due_at:
-            wake_targets.append(chewie_due_at)
+        if (chewie_pending or v2_pending) and now < offhours_due_at:
+            wake_targets.append(offhours_due_at)
         wake_at = min(wake_targets)
         logger.info("Next valuation-worker wake-up at %s", wake_at.isoformat())
         time.sleep(max(30, int((wake_at - now).total_seconds())))
