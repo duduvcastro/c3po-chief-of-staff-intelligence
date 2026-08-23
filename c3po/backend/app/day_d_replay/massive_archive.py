@@ -15,6 +15,10 @@ from typing import Any, BinaryIO, Callable, Protocol, Sequence
 from uuid import uuid4
 
 from .massive_campaign import CampaignGuardError, MassiveCampaignGuard
+from .qualification_scope import (
+    QUALIFICATION_SESSION_DATES,
+    QUALIFICATION_TICK_DATASETS,
+)
 
 
 class MassiveArchiveError(RuntimeError):
@@ -169,10 +173,22 @@ class MassiveFlatFileArchive:
                     f"ceiling={self.local_spool_ceiling_bytes}"
                 )
             free_bytes = int(self._disk_usage(self.root).free)
-            if free_bytes - required_bytes < self.minimum_free_bytes:
+            requested_datasets = {item.dataset for item in plan}
+            drill_headroom_bytes = 0
+            if (
+                session_date in QUALIFICATION_SESSION_DATES
+                and requested_datasets == QUALIFICATION_TICK_DATASETS
+            ):
+                drill_headroom_bytes = max(item.content_length for item in plan)
+            if (
+                free_bytes - required_bytes - drill_headroom_bytes
+                < self.minimum_free_bytes
+            ):
                 raise MassiveArchiveError(
                     "disk guard blocked Massive download: "
-                    f"free={free_bytes}, download={required_bytes}, reserve={self.minimum_free_bytes}"
+                    f"free={free_bytes}, download={required_bytes}, "
+                    f"drill_headroom={drill_headroom_bytes}, "
+                    f"reserve={self.minimum_free_bytes}"
                 )
 
             archived_items: list[ArchivedArtifact] = []

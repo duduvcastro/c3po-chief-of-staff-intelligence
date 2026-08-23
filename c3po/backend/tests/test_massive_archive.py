@@ -236,6 +236,25 @@ def test_massive_archive_disk_guard_blocks_before_any_download(tmp_path: Path) -
     assert store.downloads == []
 
 
+def test_qualification_lot_reserves_largest_raw_object_for_restore_drill(
+    tmp_path: Path,
+) -> None:
+    blobs = {
+        _key(FlatFileDataset.TRADES): b"t" * 200,
+        _key(FlatFileDataset.QUOTES): b"q" * 300,
+    }
+    store = FakeStore(blobs)
+    archive = _archive(tmp_path, store, free=1_799)
+
+    with pytest.raises(MassiveArchiveError, match="drill_headroom=300"):
+        archive.download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES, FlatFileDataset.QUOTES),
+        )
+
+    assert store.downloads == []
+
+
 def test_massive_archive_removes_partial_file_after_size_mismatch(tmp_path: Path) -> None:
     key = _key(FlatFileDataset.TRADES)
 

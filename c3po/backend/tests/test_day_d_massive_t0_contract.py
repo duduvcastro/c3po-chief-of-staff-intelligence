@@ -4,6 +4,11 @@ from decimal import Decimal, ROUND_CEILING
 import json
 from pathlib import Path
 
+from app.day_d_replay.qualification_scope import (
+    QUALIFICATION_SESSION_DATES,
+    QUALIFICATION_TICK_DATASETS,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -68,10 +73,18 @@ def test_owner_approved_hybrid_retention_without_unlocking_downloads() -> None:
     ] == 0.5
     assert retention["minute_aggregates"]["retain_indefinitely"] is True
     assert len(retention["full_ticks"]["qualification_sessions"]) == 12
+    assert {
+        item.isoformat() for item in QUALIFICATION_SESSION_DATES
+    } == set(retention["full_ticks"]["qualification_sessions"])
+    assert QUALIFICATION_TICK_DATASETS == {"trades", "quotes"}
     assert retention["full_ticks"]["official_replay_window"]["sessions"] == 252
     assert retention["symbol_slices"]["universe_size"] == 61
     assert retention["all_five_year_raw_ticks_archived"] is False
     assert contract["first_byte_gate"]["historical_download_authorized"] is False
+    deletion = approvals["qualified_tick_lot_local_deletion"]
+    assert deletion["approved"] is True
+    assert deletion["minute_aggregates_excluded"] is True
+    assert deletion["largest_raw_object_restore_required_per_lot"] is True
 
 
 def test_ingestion_policy_forbids_silent_clamping_and_accounts_for_every_row() -> None:
@@ -111,6 +124,8 @@ def test_stage1_stays_locked_until_infrastructure_and_r1_are_verified() -> None:
     }
     assert authorization["scope"]["official_252_session_tick_window_authorized"] is False
     assert authorization["scope"]["limited_first_byte_scope_bytes"] == 131_006_214_944
+    assert authorization["scope"]["qualified_tick_lot_local_deletion_authorized"] is True
+    assert authorization["scope"]["minute_aggregate_local_deletion_authorized"] is False
 
 
 def test_compose_can_bind_the_dedicated_disk_without_changing_container_path() -> None:

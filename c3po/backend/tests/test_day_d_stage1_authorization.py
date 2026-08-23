@@ -22,6 +22,8 @@ def test_stage1_authorization_allows_only_purchase_and_passive_capture() -> None
     )
     assert contract["scope"]["official_replay_authorized"] is False
     assert contract["scope"]["production_trading_change_authorized"] is False
+    assert contract["scope"]["qualified_tick_lot_local_deletion_authorized"] is True
+    assert contract["scope"]["minute_aggregate_local_deletion_authorized"] is False
     assert contract["supersedes_stage0_prohibition_for"] == [
         "purchase_polygon",
         "enable_raw_capture",
