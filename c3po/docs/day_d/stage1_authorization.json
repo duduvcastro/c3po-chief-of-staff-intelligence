@@ -20,6 +20,19 @@
     "production_trading_change_authorized": false,
     "capital_use_authorized": false
   },
+  "owner_approvals": {
+    "dedicated_100_gib_lightsail_disk_approved": true,
+    "hybrid_download_and_retention_scope_approved": true,
+    "backblaze_b2_object_storage_approved": true,
+    "backblaze_b2_monthly_budget_usd": 15
+  },
+  "frozen_contracts": {
+    "massive_t0": "day_d/massive_t0_contract.json",
+    "massive_ingestion_policy": {
+      "path": "day_d/massive_ingestion_policy_v1.json",
+      "status": "proposed_for_six_hands_review"
+    }
+  },
   "supersedes_stage0_prohibition_for": [
     "purchase_polygon"
   ],
@@ -30,11 +43,10 @@
     "use_real_trading_capital"
   ],
   "required_before_first_download": [
-    "six_hands_review_of_stage1_foundation",
-    "numeric_T0_disk_and_host_capacity_thresholds_frozen",
-    "read_only_plan_reports_remote_object_sizes",
-    "local_disk_guard_passes",
-    "retention_and_backup_destination_approved"
+    "dedicated_100_gib_disk_provisioned_mounted_and_verified",
+    "backblaze_b2_account_bucket_credentials_and_checksum_roundtrip_verified",
+    "massive_ingestion_policy_v1_frozen_after_six_hands_review",
+    "campaign_byte_accounting_and_pause_guard_implemented_and_tested"
   ],
   "secrets_policy": {
     "api_and_flat_file_credentials_are_separate": true,
