@@ -360,3 +360,14 @@ def test_immutable_writer_is_idempotent_only_for_identical_bytes(tmp_path: Path)
     assert target.read_bytes() == first
     with pytest.raises(FileExistsError, match="Immutable artifact"):
         write_immutable_json(target, {"a": 2})
+
+
+def test_operator_output_prefers_the_reports_own_hash() -> None:
+    assert ab_module._artifact_sha256({  # noqa: SLF001
+        "manifest_sha256": "parent",
+        "report_sha256": "report",
+    }) == "report"
+    assert (
+        ab_module._artifact_sha256({"manifest_sha256": "manifest"})  # noqa: SLF001
+        == "manifest"
+    )
