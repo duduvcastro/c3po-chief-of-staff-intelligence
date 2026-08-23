@@ -270,6 +270,194 @@ class FmpClient:
             if quarter == 0:
                 quarter, year = 4, year - 1
 
+    def stock_peers(self, symbol: str) -> list[dict[str, Any]]:
+        """Real peer companies for ``symbol`` (FMP's own peer taxonomy) --
+        the Valuation V2 replacement for fair-multiple constants. Returns
+        [] on any failure; a missing peer set is a fallback-ladder signal,
+        never an error."""
+        try:
+            payload = self.http.get_json(
+                f"{self.base_url}/stable/stock-peers",
+                params={"symbol": symbol, "apikey": self.token},
+            )
+        except Exception:
+            return []
+        rows = payload if isinstance(payload, list) else []
+        output: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            # Legacy v4 shape: one row carrying the whole list.
+            peers_list = row.get("peersList")
+            if isinstance(peers_list, list):
+                output.extend(
+                    {"symbol": str(peer).strip().upper()}
+                    for peer in peers_list
+                    if str(peer).strip()
+                )
+                continue
+            peer_symbol = str(row.get("symbol") or "").strip().upper()
+            if not peer_symbol or peer_symbol == symbol.strip().upper():
+                continue
+            output.append({
+                "symbol": peer_symbol,
+                "company_name": str(row.get("companyName") or ""),
+                "price": number(row.get("price")),
+                "market_cap": number(row.get("mktCap")),
+            })
+        return output
+
+    def analyst_estimates_annual(self, symbol: str, *, limit: int = 8) -> list[dict[str, Any]]:
+        """Forward consensus estimates per FISCAL YEAR (revenue/EBITDA/EPS
+        avg-low-high plus analyst counts) -- the term structure that
+        replaces EODHD's single-point forwardEps in Valuation V2. Rows are
+        returned newest-first as FMP sends them; [] on any failure."""
+        try:
+            payload = self.http.get_json(
+                f"{self.base_url}/stable/analyst-estimates",
+                params={
+                    "symbol": symbol,
+                    "period": "annual",
+                    "limit": max(1, min(limit, 20)),
+                    "apikey": self.token,
+                },
+            )
+        except Exception:
+            return []
+        rows = payload if isinstance(payload, list) else []
+        output: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            fiscal_end = self._valid_date(row.get("date"))
+            if fiscal_end is None:
+                continue
+            output.append({
+                "fiscal_year_end": fiscal_end.isoformat(),
+                "revenue_avg": number(row.get("revenueAvg")),
+                "revenue_low": number(row.get("revenueLow")),
+                "revenue_high": number(row.get("revenueHigh")),
+                "ebitda_avg": number(row.get("ebitdaAvg")),
+                "eps_avg": number(row.get("epsAvg")),
+                "eps_low": number(row.get("epsLow")),
+                "eps_high": number(row.get("epsHigh")),
+                "analysts_revenue": int(
+                    number(row.get("numAnalystsRevenue"))
+                    or number(row.get("numberAnalystEstimatedRevenue"))
+                    or 0
+                ),
+                "analysts_eps": int(
+                    number(row.get("numAnalystsEps"))
+                    or number(row.get("numberAnalystsEstimatedEps"))
+                    or 0
+                ),
+            })
+        return output
+
+    def ratios_annual(self, symbol: str, *, limit: int = 10) -> list[dict[str, Any]]:
+        """Up to ``limit`` fiscal years of reported valuation/profitability
+        ratios -- the company's OWN historical band, Valuation V2's second
+        external anchor. [] on any failure."""
+        try:
+            payload = self.http.get_json(
+                f"{self.base_url}/stable/ratios",
+                params={
+                    "symbol": symbol,
+                    "period": "annual",
+                    "limit": max(1, min(limit, 20)),
+                    "apikey": self.token,
+                },
+            )
+        except Exception:
+            return []
+        rows = payload if isinstance(payload, list) else []
+        output: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            fiscal_end = self._valid_date(row.get("date"))
+            if fiscal_end is None:
+                continue
+            output.append({
+                "fiscal_year_end": fiscal_end.isoformat(),
+                "pe": number(row.get("priceToEarningsRatio")) or number(row.get("priceEarningsRatio")),
+                "price_to_book": number(row.get("priceToBookRatio")) or number(row.get("priceToBookValueRatio")),
+                "price_to_sales": number(row.get("priceToSalesRatio")),
+                "ev_ebitda": number(row.get("enterpriseValueMultiple")),
+                "roe": number(row.get("returnOnEquity")),
+                "net_margin": number(row.get("netProfitMargin")),
+                "operating_margin": number(row.get("operatingProfitMargin")),
+                "gross_margin": number(row.get("grossProfitMargin")),
+                "debt_to_equity": number(row.get("debtToEquityRatio")) or number(row.get("debtEquityRatio")),
+                "dividend_yield": number(row.get("dividendYield")),
+            })
+        return output
+
+    def key_metrics_annual(self, symbol: str, *, limit: int = 10) -> list[dict[str, Any]]:
+        """Up to ``limit`` fiscal years of per-share/return metrics (ROIC,
+        market cap, revenue and FCF per share) complementing ratios_annual
+        for the own-history anchor. [] on any failure."""
+        try:
+            payload = self.http.get_json(
+                f"{self.base_url}/stable/key-metrics",
+                params={
+                    "symbol": symbol,
+                    "period": "annual",
+                    "limit": max(1, min(limit, 20)),
+                    "apikey": self.token,
+                },
+            )
+        except Exception:
+            return []
+        rows = payload if isinstance(payload, list) else []
+        output: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            fiscal_end = self._valid_date(row.get("date"))
+            if fiscal_end is None:
+                continue
+            output.append({
+                "fiscal_year_end": fiscal_end.isoformat(),
+                "market_cap": number(row.get("marketCap")),
+                "enterprise_value": number(row.get("enterpriseValue")),
+                "roic": number(row.get("returnOnInvestedCapital")) or number(row.get("roic")),
+                "revenue_per_share": number(row.get("revenuePerShare")),
+                "fcf_per_share": number(row.get("freeCashFlowPerShare")),
+                "eps": number(row.get("netIncomePerShare")),
+            })
+        return output
+
+    def valuation_v2_packet(self, symbol: str) -> dict[str, Any]:
+        """The complete per-symbol V2.1 data packet: real peers, forward
+        estimates per fiscal year, and ten years of own-history ratios and
+        key metrics. Every section degrades to []/None independently."""
+        return {
+            "symbol": symbol.strip().upper(),
+            "peers": self.stock_peers(symbol),
+            "analyst_estimates_annual": self.analyst_estimates_annual(symbol),
+            "ratios_annual": self.ratios_annual(symbol),
+            "key_metrics_annual": self.key_metrics_annual(symbol),
+        }
+
+    def valuation_v2_batch(
+        self, symbols: list[str], *, workers: int = 10,
+    ) -> dict[str, dict[str, Any]]:
+        """valuation_v2_packet() for many symbols in parallel -- mirrors
+        consensus_batch()'s pattern for the nightly cycle."""
+        clean_symbols = list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
+        if not clean_symbols:
+            return {}
+
+        def fetch(symbol: str) -> tuple[str, dict[str, Any]]:
+            return symbol, self.valuation_v2_packet(symbol)
+
+        output: dict[str, dict[str, Any]] = {}
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, 20))) as executor:
+            for symbol, result in executor.map(fetch, clean_symbols):
+                output[symbol] = result
+        return output
+
     @staticmethod
     def _first_row(payload: Any) -> dict[str, Any] | None:
         rows = payload if isinstance(payload, list) else []
