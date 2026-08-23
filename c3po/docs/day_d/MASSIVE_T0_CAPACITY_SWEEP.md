@@ -11,7 +11,7 @@ immutable server report is stored outside Git at:
 ```
 
 Its SHA-256 is
-`3b68d8f70197c6d257fe90e9d8e8360cfc48df123cd4c255c4acde97d9c0ceb2`.
+`3b68d8f70197cd6257fe90e9d8e8360cfc48df123cd4c255c4acde97d9c0ceb2`.
 The machine-readable freeze is
 [`massive_t0_contract.json`](./massive_t0_contract.json).
 
