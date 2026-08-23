@@ -20,7 +20,11 @@
     "limited_first_byte_scope_bytes": 131006214944,
     "campaign_pause_bytes": 137556525692,
     "official_252_session_tick_window_authorized": false,
-    "raw_capture_authorized": false,
+    "raw_capture_authorized": true,
+    "raw_capture_authorized_at": "2026-08-23",
+    "raw_capture_runtime_default_enabled": false,
+    "raw_capture_enablement_condition": "after_reviewed_microstructure_readiness_merge_before_next_us_open",
+    "raw_capture_scope": "passive_eodhd_raw_plus_derived_aggregates_and_t0_resource_telemetry_only",
     "official_replay_authorized": false,
     "production_trading_change_authorized": false,
     "capital_use_authorized": false
@@ -31,7 +35,9 @@
     "backblaze_b2_object_storage_approved": true,
     "backblaze_b2_monthly_budget_usd": 15,
     "dedicated_disk_container_bind_verified": true,
-    "backblaze_b2_checksum_roundtrip_verified": true
+    "backblaze_b2_checksum_roundtrip_verified": true,
+    "passive_microstructure_capture_before_next_us_open_approved": true,
+    "first_week_disable_condition": "sustained_drops_or_queue_saturation_during_opening_burst"
   },
   "frozen_contracts": {
     "massive_t0": "day_d/massive_t0_contract.json",
@@ -41,10 +47,10 @@
     }
   },
   "supersedes_stage0_prohibition_for": [
-    "purchase_polygon"
+    "purchase_polygon",
+    "enable_raw_capture"
   ],
   "does_not_supersede_stage0_prohibition_for": [
-    "enable_raw_capture",
     "run_official_replay",
     "change_production_trading_behavior",
     "use_real_trading_capital"

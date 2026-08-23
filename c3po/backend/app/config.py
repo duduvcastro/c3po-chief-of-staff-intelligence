@@ -183,10 +183,18 @@ class Settings(BaseSettings):
     r2d2_ws_rotation_grace_cycles: int = 3
     r2d2_ws_rotation_core_percent: float = 50.0
     r2d2_microstructure_raw_capture_enabled: bool = False
-    r2d2_microstructure_raw_dir: Path = Path("/app/microstructure-raw")
+    r2d2_microstructure_raw_dir: Path = Path(
+        "/app/day-d-data/provider=eodhd/microstructure/raw"
+    )
     r2d2_microstructure_raw_queue_size: int = 100_000
     r2d2_microstructure_raw_rotate_mb: int = 256
     r2d2_microstructure_raw_flush_every: int = 1_000
+    r2d2_microstructure_processor_enabled: bool = True
+    r2d2_microstructure_bbo_max_age_seconds: float = 2.0
+    r2d2_microstructure_allowed_lateness_seconds: float = 2.0
+    r2d2_microstructure_aggregate_queue_size: int = 100_000
+    r2d2_microstructure_telemetry_enabled: bool = True
+    r2d2_microstructure_telemetry_interval_seconds: float = 1.0
     r2d2_fmp_prefilter_enabled: bool = True
     r2d2_fmp_prefilter_cache_seconds: int = 15
     r2d2_fmp_prefilter_max_quote_age_seconds: int = 120

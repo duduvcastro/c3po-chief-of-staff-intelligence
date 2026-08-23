@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 import time
 from threading import Event, Thread
 
@@ -11,7 +13,9 @@ from .market_data.b3_screener import B3ScreenerService
 from .market_data.service import MarketDataService
 from .market_data.realtime import RealtimeMarketsService
 from .market_data.eodhd_stream import EodhdRealtimeStream
-from .microstructure_capture import AppendOnlyRawStreamCapture
+from .microstructure_capture import AppendOnlyRawStreamCapture, CompositeRawStreamCapture
+from .microstructure_processor import MicrostructureProcessor
+from .microstructure_telemetry import MicrostructureResourceTelemetry
 from .one_pager import OnePagerService
 from .r2d2 import R2D2PaperService
 
@@ -22,6 +26,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+def _validated_capture_root(capture_root: Path, data_root: Path) -> Path:
+    resolved_capture = capture_root.resolve()
+    resolved_data = data_root.resolve()
+    try:
+        resolved_capture.relative_to(resolved_data)
+    except ValueError as exc:
+        raise RuntimeError(
+            "Microstructure capture must use the dedicated Day D data mount"
+        ) from exc
+    if resolved_capture == resolved_data:
+        raise RuntimeError(
+            "Microstructure capture must use a child directory of the Day D data mount"
+        )
+    return resolved_capture
 
 
 def _risk_monitor_loop(service: R2D2PaperService, stop: Event, interval_seconds: float) -> None:
@@ -58,19 +78,60 @@ def main() -> None:
     database.initialize()
     market_data = MarketDataService(settings, database)
     raw_capture = None
+    processor = None
+    telemetry = None
+    captures = []
     if settings.r2d2_microstructure_raw_capture_enabled:
-        raw_capture = AppendOnlyRawStreamCapture(
+        capture_root = _validated_capture_root(
             settings.r2d2_microstructure_raw_dir,
+            settings.day_d_dataset_root,
+        )
+        minimum_free_bytes = int(
+            settings.day_d_dataset_min_free_disk_gb * 1024**3
+        )
+        raw_capture = AppendOnlyRawStreamCapture(
+            capture_root,
             queue_size=settings.r2d2_microstructure_raw_queue_size,
             rotate_bytes=settings.r2d2_microstructure_raw_rotate_mb * 1024 * 1024,
             flush_every=settings.r2d2_microstructure_raw_flush_every,
+            minimum_free_bytes=minimum_free_bytes,
         )
+        captures.append(raw_capture)
+        if settings.r2d2_microstructure_processor_enabled:
+            processor = MicrostructureProcessor(
+                capture_root.parent / "aggregates",
+                bbo_max_age_seconds=settings.r2d2_microstructure_bbo_max_age_seconds,
+                allowed_lateness_seconds=settings.r2d2_microstructure_allowed_lateness_seconds,
+                queue_size=settings.r2d2_microstructure_aggregate_queue_size,
+                rotate_bytes=settings.r2d2_microstructure_raw_rotate_mb * 1024 * 1024,
+                flush_every=settings.r2d2_microstructure_raw_flush_every,
+                minimum_free_bytes=minimum_free_bytes,
+            )
+            captures.append(processor)
+        if settings.r2d2_microstructure_telemetry_enabled:
+            telemetry = MicrostructureResourceTelemetry(
+                capture_root.parent / "telemetry",
+                raw_capture=raw_capture,
+                processor=processor,
+                interval_seconds=(
+                    settings.r2d2_microstructure_telemetry_interval_seconds
+                ),
+                minimum_free_bytes=minimum_free_bytes,
+                service_name=os.getenv("C3PO_SERVICE_NAME", "r2d2-worker"),
+            )
+    capture_pipeline = CompositeRawStreamCapture(captures) if captures else None
     stream = EodhdRealtimeStream(
         settings.eodhd_api_token,
         max_symbols=settings.r2d2_ws_max_symbols,
-        raw_capture=raw_capture,
+        raw_capture=capture_pipeline,
     )
     stream.start()
+    if telemetry:
+        try:
+            telemetry.start()
+        except Exception:
+            stream.stop()
+            raise
     realtime = RealtimeMarketsService(settings, database, market_data.http, stream=stream)
     screener = B3ScreenerService(settings, database, market_data.http)
     investor_relations = InvestorRelationsService(settings, database)
@@ -127,11 +188,35 @@ def main() -> None:
                 if scan_entries and raw_capture:
                     capture_stats = raw_capture.stats()
                     logger.info(
-                        "R2D2 microstructure raw capture accepted=%d written=%d dropped=%d errors=%d",
+                        "R2D2 microstructure raw capture accepted=%d written=%d "
+                        "dropped=%d disk_dropped=%d queue=%d/%d high_water=%d errors=%d",
                         capture_stats.accepted,
                         capture_stats.written,
                         capture_stats.dropped,
+                        capture_stats.disk_guard_dropped,
+                        capture_stats.queue_depth,
+                        capture_stats.queue_capacity,
+                        capture_stats.queue_high_water,
                         capture_stats.write_errors,
+                    )
+                if scan_entries and processor:
+                    processor_stats = processor.stats()
+                    logger.info(
+                        "R2D2 microstructure processor accepted=%d processed=%d malformed=%d "
+                        "ignored=%d late=%d dropped=%d disk_dropped=%d "
+                        "queue=%d/%d high_water=%d aggregates=%d errors=%d",
+                        processor_stats.accepted,
+                        processor_stats.processed,
+                        processor_stats.malformed,
+                        processor_stats.ignored,
+                        processor_stats.late,
+                        processor_stats.dropped,
+                        processor_stats.disk_guard_dropped,
+                        processor_stats.queue_depth,
+                        processor_stats.queue_capacity,
+                        processor_stats.queue_high_water,
+                        processor_stats.aggregates_written,
+                        processor_stats.write_errors,
                     )
             except Exception:
                 logger.exception("Unhandled R2D2 worker error")
@@ -143,6 +228,8 @@ def main() -> None:
         if fast_risk_thread:
             fast_risk_thread.join(timeout=10)
         stream.stop()
+        if telemetry:
+            telemetry.stop()
 
 
 if __name__ == "__main__":

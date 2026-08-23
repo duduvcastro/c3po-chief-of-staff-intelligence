@@ -356,3 +356,16 @@ Stage 2 prerequisites to durable retention.
 Only after every unchecked item is complete may a later pull request propose
 changing either setup to `replay_eligible`. Stage 1 still requires a separate
 approval.
+
+## Phase 0A microstructure contract
+
+EODHD supplies trades and BBOs on separate streams. Aggressor side is therefore
+an estimate, never represented as an exchange flag. Schema v1 uses only a prior
+BBO no more than two seconds old, then distinguishes tick rule at a fresh
+midpoint from tick rule without a fresh BBO, inherited tick and unknown.
+
+One- and five-second aggregates retain per-method volume/count, spread
+mean/min/max, BBO-age p50/p95 and bucket-level late/drop/discard counters. Raw
+append-only payloads remain the source of truth. The collector, processor and
+one-second resource telemetry remain passive and are rooted on the dedicated
+Day D disk behind the frozen free-space reserve.

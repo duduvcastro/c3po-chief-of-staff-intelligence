@@ -117,10 +117,15 @@ def test_compose_can_bind_the_dedicated_disk_without_changing_container_path() -
     compose = (ROOT / "compose.yml").read_text(encoding="utf-8")
     root_env = (ROOT.parent / ".env.example").read_text(encoding="utf-8")
 
-    assert (
+    dedicated_mount = (
         "${C3PO_DAY_D_DATA_MOUNT_SOURCE:-c3po_day_d_data}:/app/day-d-data"
-        in compose
     )
+    assert compose.count(dedicated_mount) >= 2
+    assert "c3po_microstructure_raw:/app/microstructure-raw" not in compose
+    assert (
+        "C3PO_R2D2_MICROSTRUCTURE_RAW_DIR: "
+        "/app/day-d-data/provider=eodhd/microstructure/raw"
+    ) in compose
     assert "C3PO_DAY_D_DATA_MOUNT_SOURCE=c3po_day_d_data" in root_env
     assert "C3PO_DAY_D_DATA_MOUNT_SOURCE=/mnt/day-d-data" in root_env
 

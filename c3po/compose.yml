@@ -130,10 +130,12 @@ services:
       C3PO_R2D2_MAX_MARKET_PERCENT: 48
       C3PO_R2D2_TRADE_COOLDOWN_MINUTES: 8
       C3PO_R2D2_MAX_DAILY_ORDERS: ${C3PO_R2D2_MAX_DAILY_ORDERS:-500}
+      C3PO_R2D2_MICROSTRUCTURE_RAW_DIR: /app/day-d-data/provider=eodhd/microstructure/raw
+      C3PO_SERVICE_NAME: r2d2-worker
       TZ: America/Sao_Paulo
     command: ["python", "-m", "app.r2d2_worker"]
     volumes:
-      - c3po_microstructure_raw:/app/microstructure-raw
+      - ${C3PO_DAY_D_DATA_MOUNT_SOURCE:-c3po_day_d_data}:/app/day-d-data
     depends_on:
       db:
         condition: service_healthy
@@ -161,7 +163,6 @@ services:
 volumes:
   c3po_postgres:
   c3po_one_pagers:
-  c3po_microstructure_raw:
   c3po_day_d_data:
 
 networks:

@@ -1,6 +1,6 @@
 # Day D Massive Stage 1 foundation
 
-**Status:** owner-authorized foundation; capture and official replay remain disabled
+**Status:** first-byte and passive live capture authorized; official replay remains disabled
 
 Massive (formerly Polygon.io) Stocks Advanced is the independent SIP source for
 the Day D replay. It does not replace EODHD in live production. Its role is to
@@ -8,9 +8,12 @@ audit trades, NBBO quotes, minute bars and corporate actions without asking the
 same provider that generated the live signal to certify itself.
 
 The owner authorization is machine-readable in
-[`stage1_authorization.json`](./stage1_authorization.json). It supersedes only
-the Stage 0 prohibition on purchasing Polygon/Massive. Raw capture, bulk
-downloads, official replay and production trading changes remain unauthorized.
+[`stage1_authorization.json`](./stage1_authorization.json). It supersedes the
+Stage 0 prohibitions on purchasing Polygon/Massive and enabling passive EODHD
+microstructure capture. Capture remains off by default until the reviewed
+readiness merge and controlled worker restart. Bulk downloads beyond the
+limited first-byte scope, official replay and production trading changes remain
+unauthorized.
 
 ## Provider surfaces
 
