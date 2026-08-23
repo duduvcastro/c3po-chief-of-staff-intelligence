@@ -40,7 +40,7 @@ CANONICAL_SCOPE_REPORT_RELATIVE_PATH = Path(
     "provider=massive/plans/t0-plan-sweep-20260823T021819.718086Z.json"
 )
 CANONICAL_SCOPE_REPORT_SHA256 = (
-    "3b68d8f70197c6d257fe90e9d8e8360cfc48df123cd4c255c4acde97d9c0ceb2"
+    "3b68d8f70197cd6257fe90e9d8e8360cfc48df123cd4c255c4acde97d9c0ceb2"
 )
 
 
