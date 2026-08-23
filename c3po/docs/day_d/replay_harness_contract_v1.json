@@ -230,6 +230,8 @@
     "session_without_trade_but_with_carry_mark_is_not_zero": true,
     "raw_r_persisted_without_clip": true,
     "mfe_and_mae_persisted_without_clip": true,
+    "same_symbol_session_reentry_flag_required_on_closed_trade_and_ledger_events": true,
+    "same_symbol_session_reentry_flag_is_diagnostic_not_blocking": true,
     "flat_at_close_is_independent_policy_complete_book": true,
     "corporate_actions": {
       "split": "adjust_quantity_basis_levels_and_marks_without_creating_pnl",

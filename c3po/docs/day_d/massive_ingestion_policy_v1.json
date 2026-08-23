@@ -1,6 +1,7 @@
 {
   "schema_version": "DAY-D-MASSIVE-INGESTION-POLICY-v1",
-  "status": "proposed_for_six_hands_review",
+  "status": "frozen_by_six_hands",
+  "frozen_at": "2026-08-23",
   "purpose": "freeze auditable normalization behavior before any official dataset build",
   "raw_source_policy": {
     "raw_provider_payload_is_immutable": true,
@@ -12,54 +13,70 @@
     "source_size_clamping_allowed": false,
     "source_timestamp_clamping_allowed": false,
     "missing_value_imputation_allowed": false,
+    "repair_or_timestamp_swap_allowed": false,
     "one_terminal_outcome_per_raw_row": true,
-    "accounting_identity": "raw_rows_seen = emitted_rows + dropped_rows",
-    "unknown_drop_reason_action": "fail_dataset_build",
-    "accounting_mismatch_action": "fail_dataset_build"
+    "accounting_identity": "raw_rows_seen == emitted_rows + dropped_rows + filtered_rows",
+    "unknown_drop_reason_action": "fail_and_quarantine_without_partial_normalized_artifact",
+    "accounting_mismatch_action": "fail_and_quarantine_without_partial_normalized_artifact"
   },
-  "drop_reasons": {
-    "common": [
-      "row_not_an_object",
-      "missing_required_field",
-      "invalid_timestamp",
-      "noncausal_available_before_event"
-    ],
-    "trade": [
-      "nonpositive_price",
-      "nonpositive_size"
-    ],
-    "quote": [
-      "nonpositive_bid",
-      "nonpositive_ask",
-      "nonpositive_bid_size",
-      "nonpositive_ask_size",
-      "crossed_quote"
-    ]
+  "quality_drop_reasons_closed_taxonomy": [
+    "malformed_row",
+    "nonpositive_price",
+    "nonpositive_trade_size",
+    "crossed_or_invalid_bbo",
+    "timestamp_missing_or_invalid",
+    "available_before_event",
+    "duplicate_exact"
+  ],
+  "scope_filter_reasons_closed_taxonomy": [
+    "out_of_session_window",
+    "symbol_not_in_scope"
+  ],
+  "quote_semantics": {
+    "one_sided_quote_with_zero_price_and_zero_size_on_missing_side_is_valid": true,
+    "crossed_quote_is_quality_drop": true,
+    "negative_size_is_quality_drop": true
   },
   "counters": {
-    "dimensions": [
-      "provider",
-      "dataset",
-      "session_date",
-      "symbol",
-      "terminal_outcome",
-      "drop_reason"
+    "required_granularity": [
+      "source_file",
+      "session"
     ],
     "required_totals": [
       "raw_rows_seen",
       "emitted_rows",
       "dropped_rows",
+      "filtered_rows",
       "clamped_rows",
       "imputed_rows"
     ],
+    "quality_drop_counts_by_reason_required": true,
+    "scope_filter_counts_by_reason_required": true,
+    "first_discarded_samples_per_reason": 100,
     "clamped_rows_must_equal": 0,
     "imputed_rows_must_equal": 0,
     "manifest_inclusion_required": true
   },
   "qualification": {
     "official_replay_ready_before_review": false,
-    "drop_rate_threshold_frozen_before_observation": false,
-    "rationale": "the 12 qualification sessions measure provider-specific rates before T1 freezes an acceptance threshold",
+    "quality_drop_rate_denominator": "emitted_rows + dropped_rows",
+    "quality_drop_rate_thresholds": {
+      "trades": 0.005,
+      "quotes": 0.01
+    },
+    "threshold_breach_action": "fail_and_quarantine_without_partial_normalized_artifact",
+    "drop_rate_threshold_frozen_before_first_byte": true,
     "human_review_required_before_t1": true
-  }
+  },
+  "required_file_manifest_fields": [
+    "raw_parent.path",
+    "raw_parent.bytes",
+    "raw_parent.sha256",
+    "policy_version",
+    "counters",
+    "identity",
+    "quality_drop_rate",
+    "quality_drop_threshold",
+    "discard_samples_first_100_per_reason"
+  ]
 }

@@ -168,6 +168,7 @@ def test_shared_risk_and_sizing_are_frozen() -> None:
         "the_same_symbol_in_the_same_session; "
         "each_setup_own_attempt_limit_still_applies"
     )
+    assert "diagnostic and never blocks" in risk["same_symbol_session_reentry_audit"]
 
 
 def test_s3_v1_is_frozen_without_rearm_or_same_bar_fill() -> None:

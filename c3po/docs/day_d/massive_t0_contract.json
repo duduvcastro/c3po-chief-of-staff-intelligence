@@ -15,7 +15,7 @@
     "source_csv_files_downloaded": 0,
     "all_datasets_planned_bytes": 10147240790449,
     "trades_and_quotes_planned_bytes": 10121381193889,
-    "minute_aggregates_planned_bytes": 25859696560,
+    "minute_aggregates_planned_bytes": 25859596560,
     "maximum_session": {
       "session_date": "2025-04-07",
       "bytes": 23106059947
@@ -32,8 +32,14 @@
     "local_spool_ceiling_formula": "3 * per_session_abort_bytes",
     "spool_plus_reserve_bytes": 97724834306,
     "disk_headroom_after_spool_and_reserve_bytes": 9649348094,
-    "campaign_pause_bytes": 10654602829972,
-    "campaign_pause_formula": "ceil(all_datasets_planned_bytes * 1.05)",
+    "authorized_first_byte_scope_bytes": 131006214944,
+    "authorized_first_byte_scope_breakdown": {
+      "five_year_minute_aggregates_bytes": 25859596560,
+      "twelve_qualification_sessions_trades_and_quotes_bytes": 105146618384
+    },
+    "campaign_pause_bytes": 137556525692,
+    "campaign_pause_formula": "ceil(authorized_first_byte_scope_bytes * 1.05)",
+    "full_sweep_bytes_are_not_the_campaign_denominator": true,
     "per_object_verification": {
       "local_bytes_must_equal_planned_content_length": true,
       "local_sha256_required": true,
@@ -92,7 +98,11 @@
       "filesystem_uuid": "641e0447-cd48-4cc3-8521-2d25fd584c3a",
       "mountpoint": "/mnt/day-d-data",
       "fstab_verified": true,
-      "container_bind_pending_reviewed_deploy": true
+      "container_bind_pending_reviewed_deploy": false,
+      "container_bind_verified": true,
+      "container_path": "/app/day-d-data",
+      "disk_guard_measures_path": "/app/day-d-data",
+      "host_path_backing_disk_guard": "/mnt/day-d-data"
     },
     "hybrid_download_and_retention_scope": {
       "approved": true
@@ -100,16 +110,55 @@
     "backblaze_b2_object_storage": {
       "approved": true,
       "monthly_budget_usd": 15,
-      "provider_account_and_bucket_provisioned": false
+      "provider_account_and_bucket_provisioned": true,
+      "bucket": "c3po-day-d-cold-us-east-20260823",
+      "endpoint": "https://s3.us-east-005.backblazeb2.com",
+      "checksum_roundtrip_verified": true,
+      "verification_report_path": "/app/day-d-data/provider=backblaze/verification/b2-roundtrip-20260823T034248.127182Z.json",
+      "verification_report_sha256": "393823351f56a5549a9334f7f5254384bd77a5965b7192623b1028cee820cd9f",
+      "test_payload_sha256": "31cd13c91eae9f3510c199480f9e994be5fb8cff60c667fccc326248598d6775",
+      "test_payload_bytes": 27,
+      "remote_delete_verified": true,
+      "bucket_versioning_verified": true,
+      "object_lock_and_version_retention_verified": true,
+      "paid_download_cap_usd_per_day": 0,
+      "restore_drill_requires_temporary_cap_usd_per_day": 0.5,
+      "restore_drill_required_before_local_deletion": true,
+      "restore_drill_procedure": "day_d/B2_RESTORE_DRILL.md"
     }
   },
   "first_byte_gate": {
     "historical_download_authorized": false,
-    "remaining_requirements": [
+    "runtime_flag": "C3PO_DAY_D_HISTORICAL_DOWNLOAD_AUTHORIZED",
+    "authorized_scope": {
+      "minute_aggregates": {
+        "range_start": "2021-08-23",
+        "range_end": "2026-08-21",
+        "bytes": 25859596560
+      },
+      "trades_and_quotes": {
+        "sessions": 12,
+        "dates_source": "retention.full_ticks.qualification_sessions",
+        "bytes": 105146618384
+      },
+      "total_bytes": 131006214944,
+      "pause_bytes": 137556525692
+    },
+    "explicitly_blocked_scope": [
+      "252_session_official_replay_window",
+      "all_five_year_raw_ticks",
+      "any_unlisted_dataset_or_session",
+      "historical_REST_except_health_check"
+    ],
+    "completed_requirements": [
       "dedicated_100_gib_disk_provisioned_mounted_and_verified",
       "backblaze_b2_account_bucket_credentials_and_checksum_roundtrip_verified",
       "massive_ingestion_policy_v1_frozen_after_six_hands_review",
       "campaign_byte_accounting_and_pause_guard_implemented_and_tested"
+    ],
+    "remaining_requirements": [
+      "review_and_merge_first_byte_gate_pr",
+      "explicitly_enable_runtime_flag_after_reviewed_merge"
     ]
   }
 }

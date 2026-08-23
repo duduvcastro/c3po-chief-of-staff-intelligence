@@ -434,6 +434,7 @@ def test_ledger_preserves_intraday_plus_overnight_identity_and_raw_tail() -> Non
         entry_atr=0.5,
         high_water=107.0,
         remaining_quantity=100,
+        same_symbol_session_reentry=True,
     )
 
     closed, records = build_closed_trade(
@@ -445,8 +446,13 @@ def test_ledger_preserves_intraday_plus_overnight_identity_and_raw_tail() -> Non
 
     assert closed.raw_r == pytest.approx(7.0)
     assert closed.raw_r > 5.0
+    assert closed.same_symbol_session_reentry is True
     assert closed.consolidated_r == pytest.approx(closed.intraday_r + closed.overnight_r)
     assert any(record.event_type == "official_close_transfer_mark" for record in records)
+    assert all(
+        record.metadata["same_symbol_session_reentry"] is True
+        for record in records
+    )
 
     persisted_transfer, no_duplicate_records = build_closed_trade(
         position=position,
