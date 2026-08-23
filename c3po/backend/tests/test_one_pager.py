@@ -871,9 +871,10 @@ def test_v2_shadow_band_renders_without_replacing_the_official_tp(tmp_path) -> N
     analysis["v2_shadow"] = {
         "v2_tp": 512.34,
         "v2_upside_percent": 8.7,
-        "divergence_vs_consensus": 0.121,
+        "internal_divergence_vs_consensus": 0.121,
+        "final_divergence_vs_consensus": 0.079,
         "model_count": 4,
-        "attribution_model": "peer_comps",
+        "attribution_model": "reverse_dcf",
         "low_conviction": False,
     }
     start = datetime(2025, 8, 5, tzinfo=timezone.utc)
@@ -903,6 +904,19 @@ def test_valuation_v2_shadow_lookup_reads_the_persisted_snapshot(tmp_path) -> No
         {"results": {"MSFT": {"v2_tp": 501.0, "low_conviction": False}}},
         datetime.now(timezone.utc),
     )
+    service.database.save_analysis_snapshot(
+        "valuation_v2_shadow",
+        "B3_V2_SHADOW",
+        methodology_id,
+        {},
+        {"results": {"MSFT": {"v2_tp": 99.0, "low_conviction": True}}},
+        datetime.now(timezone.utc),
+    )
 
-    assert service._valuation_v2_shadow("msft") == {"v2_tp": 501.0, "low_conviction": False}
-    assert service._valuation_v2_shadow("UNKNOWN") is None
+    assert service._valuation_v2_shadow("msft", "US") == {
+        "v2_tp": 501.0, "low_conviction": False
+    }
+    assert service._valuation_v2_shadow("msft", "B3") == {
+        "v2_tp": 99.0, "low_conviction": True
+    }
+    assert service._valuation_v2_shadow("UNKNOWN", "US") is None

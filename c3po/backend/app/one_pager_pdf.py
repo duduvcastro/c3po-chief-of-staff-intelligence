@@ -153,37 +153,61 @@ class PremiumOnePagerRenderer:
         pdf.roundRect(MARGIN, band_y, PAGE_W - 2 * MARGIN, band_h, 3, fill=1, stroke=1)
         pdf.setFillColor(colors.HexColor("#8A6D1F"))
         pdf.setFont("Helvetica-Bold", 6.0)
-        pdf.drawString(MARGIN + 8, band_y + 4.6, "VALUATION V2 · SHADOW")
-        parts: list[str] = [
+        label_x = MARGIN + 8
+        content_x = MARGIN + 102
+        content_w = PAGE_W - MARGIN - 8 - content_x
+        pdf.drawString(label_x, band_y + 8.1, "VALUATION V2 · SHADOW")
+        pdf.setFillColor(SUB)
+        pdf.setFont("Helvetica-Oblique", 4.5)
+        pdf.drawString(label_x, band_y + 2.1, "não substitui o TP oficial")
+
+        headline: list[str] = [
             f"TP {self._money(shadow.get('v2_tp'), data['currency'])}",
         ]
         upside = shadow.get("v2_upside_percent")
         if upside is not None:
-            parts.append(f"upside {float(upside):+.1f}%".replace(".", ","))
-        divergence = shadow.get("divergence_vs_consensus")
-        if divergence is not None:
-            parts.append(f"vs consenso ±{float(divergence) * 100:.1f}%".replace(".", ","))
+            headline.append(f"upside {float(upside):+.1f}%".replace(".", ","))
+        final_divergence = shadow.get("final_divergence_vs_consensus")
+        if final_divergence is not None:
+            headline.append(
+                f"distância final do consenso {float(final_divergence) * 100:.1f}%".replace(".", ",")
+            )
         model_count = shadow.get("model_count")
         if model_count:
-            parts.append(f"{int(model_count)} modelos de âncora externa")
+            headline.append(f"{int(model_count)} modelos")
+
+        audit: list[str] = []
+        internal_divergence = shadow.get("internal_divergence_vs_consensus")
+        if internal_divergence is not None:
+            audit.append(
+                f"P4 interno {float(internal_divergence) * 100:.1f}%".replace(".", ",")
+            )
         attribution = shadow.get("attribution_model")
         if attribution:
             labels = {
                 "peer_comps": "peers", "own_history": "hist. própria",
-                "earnings_power": "earnings power", "consensus_dcf": "DCF-consenso",
+                "earnings_power": "earnings power", "reverse_dcf": "reverse DCF",
                 "rim": "RIM", "ddm": "DDM",
             }
-            parts.append(f"dominante: {labels.get(str(attribution), str(attribution))}")
-        parts.append("LOW CONVICTION" if shadow.get("low_conviction") else "convicção ok")
+            audit.append(
+                f"maior divergência: {labels.get(str(attribution), str(attribution))}"
+            )
+        audit.append("LOW CONVICTION" if shadow.get("low_conviction") else "convicção ok")
+
+        headline_text = "  ·  ".join(headline)
         pdf.setFillColor(INK)
-        pdf.setFont("Helvetica", 5.8)
-        pdf.drawString(MARGIN + 92, band_y + 4.6, "  ·  ".join(parts)[:160])
-        pdf.setFillColor(SUB)
-        pdf.setFont("Helvetica-Oblique", 4.8)
-        pdf.drawRightString(
-            PAGE_W - MARGIN - 8, band_y + 4.6,
-            "não substitui o TP oficial acima; motor V2 em observação",
+        pdf.setFont(
+            "Helvetica-Bold",
+            self._fit_font(headline_text, "Helvetica-Bold", 5.8, 4.5, content_w),
         )
+        pdf.drawString(content_x, band_y + 8.1, headline_text)
+        audit_text = "  ·  ".join(audit)
+        pdf.setFillColor(SUB)
+        pdf.setFont(
+            "Helvetica",
+            self._fit_font(audit_text, "Helvetica", 4.8, 4.0, content_w),
+        )
+        pdf.drawString(content_x, band_y + 2.1, audit_text)
 
     def _header(self, pdf: canvas.Canvas, data: dict[str, Any]) -> None:
         pdf.setFillColor(INK)
