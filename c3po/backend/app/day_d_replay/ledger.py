@@ -110,6 +110,9 @@ def build_closed_trade(
         mfe_r = 0.0
         mae_r = 0.0
 
+    audit_metadata = {
+        "same_symbol_session_reentry": position.same_symbol_session_reentry,
+    }
     records: list[LedgerRecord] = [
         LedgerRecord(
             position_id=position.position_id,
@@ -123,7 +126,7 @@ def build_closed_trade(
             mark_delta_usd=0.0,
             r_delta=-entry_cost / position.risk_budget_usd,
             raw_r_lifetime_after_event=-entry_cost / position.risk_budget_usd,
-            metadata={"fill_kind": position.entry_fill.kind},
+            metadata={"fill_kind": position.entry_fill.kind, **audit_metadata},
         )
     ]
     running_cash_pnl = -entry_cost
@@ -166,7 +169,7 @@ def build_closed_trade(
                     raw_r_lifetime_after_event=(
                         running_cash_pnl / position.risk_budget_usd
                     ),
-                    metadata={"fill_kind": fill.kind},
+                    metadata={"fill_kind": fill.kind, **audit_metadata},
                 )
             )
             continue
@@ -196,7 +199,7 @@ def build_closed_trade(
                         raw_r_lifetime_after_event=(
                             running_cash_pnl / position.risk_budget_usd
                         ),
-                        metadata={},
+                        metadata=dict(audit_metadata),
                     )
                 )
             continue
@@ -218,7 +221,7 @@ def build_closed_trade(
                         (running_cash_pnl + float(payload))
                         / position.risk_budget_usd
                     ),
-                    metadata={"fictitious_fee_usd": 0.0},
+                    metadata={"fictitious_fee_usd": 0.0, **audit_metadata},
                 )
             )
 
@@ -244,5 +247,6 @@ def build_closed_trade(
         mae_r=mae_r,
         opened_at=position.opened_at,
         closed_at=closed_at,
+        same_symbol_session_reentry=position.same_symbol_session_reentry,
     )
     return closed, tuple(sorted(records, key=lambda item: item.event_at))

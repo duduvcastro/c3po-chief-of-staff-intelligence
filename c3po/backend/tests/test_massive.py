@@ -44,7 +44,12 @@ def test_massive_trades_preserve_participant_and_sip_timestamps_across_pages() -
             }],
         },
     ])
-    client = MassiveClient("https://api.massive.com", "secret-token", http)  # type: ignore[arg-type]
+    client = MassiveClient(
+        "https://api.massive.com",
+        "secret-token",
+        http,  # type: ignore[arg-type]
+        historical_access_authorized=True,
+    )
 
     trades = list(client.iter_trades("aapl", session_date=date(2018, 2, 2)))
 
@@ -101,7 +106,12 @@ def test_massive_quotes_drop_incomplete_or_noncausal_bbo_rows() -> None:
             },
         ],
     }])
-    client = MassiveClient("https://api.massive.com", "token", http)  # type: ignore[arg-type]
+    client = MassiveClient(
+        "https://api.massive.com",
+        "token",
+        http,  # type: ignore[arg-type]
+        historical_access_authorized=True,
+    )
 
     quotes = list(client.iter_quotes("AAPL", session_date=date(2018, 2, 2)))
 
@@ -116,6 +126,7 @@ def test_massive_pagination_cannot_leave_configured_origin() -> None:
         "https://api.massive.com",
         "token",
         FakeHttp([{"results": [], "next_url": "https://attacker.invalid/steal"}]),  # type: ignore[arg-type]
+        historical_access_authorized=True,
     )
 
     with pytest.raises(MassiveResponseError, match="leave the configured origin"):
@@ -123,7 +134,12 @@ def test_massive_pagination_cannot_leave_configured_origin() -> None:
 
 
 def test_massive_rejects_unconfigured_token_and_unsafe_symbol() -> None:
-    client = MassiveClient("https://api.massive.com", "", FakeHttp([]))  # type: ignore[arg-type]
+    client = MassiveClient(
+        "https://api.massive.com",
+        "",
+        FakeHttp([]),  # type: ignore[arg-type]
+        historical_access_authorized=True,
+    )
 
     with pytest.raises(ValueError, match="not configured"):
         list(client.iter_trades("AAPL", session_date=date(2026, 8, 21)))
@@ -140,7 +156,12 @@ def test_massive_redacts_api_key_from_rest_error_and_traceback() -> None:
                 f"403 for {url}?{urlencode(params)}&cursor=next"
             )
 
-    client = MassiveClient("https://api.massive.com", token, FailingHttp())  # type: ignore[arg-type]
+    client = MassiveClient(
+        "https://api.massive.com",
+        token,
+        FailingHttp(),  # type: ignore[arg-type]
+        historical_access_authorized=True,
+    )
 
     with pytest.raises(MassiveResponseError) as captured:
         list(client.iter_trades("AAPL", session_date=date(2026, 8, 21)))
@@ -150,3 +171,14 @@ def test_massive_redacts_api_key_from_rest_error_and_traceback() -> None:
     assert "massive%2Fsecret%2Btoken" not in str(captured.value)
     assert token not in rendered_traceback
     assert "[REDACTED]" in str(captured.value)
+
+
+def test_massive_historical_rest_is_blocked_by_default() -> None:
+    client = MassiveClient(
+        "https://api.massive.com",
+        "token",
+        FakeHttp([]),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(MassiveResponseError, match="historical REST access is disabled"):
+        list(client.iter_trades("AAPL", session_date=date(2026, 8, 21)))

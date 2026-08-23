@@ -14,6 +14,8 @@ import shutil
 from typing import Any, BinaryIO, Callable, Protocol, Sequence
 from uuid import uuid4
 
+from .massive_campaign import CampaignGuardError, MassiveCampaignGuard
+
 
 class MassiveArchiveError(RuntimeError):
     pass
@@ -81,12 +83,21 @@ class MassiveFlatFileArchive:
         root: Path,
         bucket: str = "flatfiles",
         minimum_free_bytes: int = 20 * 1024**3,
+        per_session_abort_bytes: int = 25_416_665_942,
+        local_spool_ceiling_bytes: int = 76_249_997_826,
+        campaign_guard: MassiveCampaignGuard | None = None,
         disk_usage: Callable[[str | os.PathLike[str]], Any] = shutil.disk_usage,
     ) -> None:
         self.store = store
         self.root = root
         self.bucket = bucket
         self.minimum_free_bytes = max(0, minimum_free_bytes)
+        self.per_session_abort_bytes = max(0, per_session_abort_bytes)
+        self.local_spool_ceiling_bytes = max(0, local_spool_ceiling_bytes)
+        self.campaign_guard = campaign_guard or MassiveCampaignGuard(
+            root=root,
+            download_authorized=False,
+        )
         self._disk_usage = disk_usage
 
     def plan(
@@ -132,10 +143,31 @@ class MassiveFlatFileArchive:
         self.root.mkdir(parents=True, exist_ok=True)
         with self._exclusive_download_lock():
             self._quarantine_orphan_parts(observed_at)
+            try:
+                self.campaign_guard.assert_download_authorized()
+            except CampaignGuardError as exc:
+                raise MassiveArchiveError(str(exc)) from exc
             plan = self.plan(session_date=session_date, datasets=datasets)
+            try:
+                self.campaign_guard.assert_projected_bytes(plan)
+            except CampaignGuardError as exc:
+                raise MassiveArchiveError(str(exc)) from exc
             required_bytes = sum(
                 item.content_length for item in plan if not Path(item.local_path).exists()
             )
+            planned_session_bytes = sum(item.content_length for item in plan)
+            if planned_session_bytes > self.per_session_abort_bytes:
+                raise MassiveArchiveError(
+                    "per-session byte guard blocked Massive download: "
+                    f"planned={planned_session_bytes}, limit={self.per_session_abort_bytes}"
+                )
+            current_spool_bytes = self._current_spool_bytes()
+            if current_spool_bytes + required_bytes > self.local_spool_ceiling_bytes:
+                raise MassiveArchiveError(
+                    "local spool guard blocked Massive download: "
+                    f"current={current_spool_bytes}, download={required_bytes}, "
+                    f"ceiling={self.local_spool_ceiling_bytes}"
+                )
             free_bytes = int(self._disk_usage(self.root).free)
             if free_bytes - required_bytes < self.minimum_free_bytes:
                 raise MassiveArchiveError(
@@ -143,7 +175,18 @@ class MassiveFlatFileArchive:
                     f"free={free_bytes}, download={required_bytes}, reserve={self.minimum_free_bytes}"
                 )
 
-            archived = tuple(self._download_one(item, observed_at=observed_at) for item in plan)
+            archived_items: list[ArchivedArtifact] = []
+            for item in plan:
+                archived_item = self._download_one(item, observed_at=observed_at)
+                try:
+                    self.campaign_guard.record_verified(
+                        archived_item,
+                        verified_at=observed_at,
+                    )
+                except CampaignGuardError as exc:
+                    raise MassiveArchiveError(str(exc)) from exc
+                archived_items.append(archived_item)
+            archived = tuple(archived_items)
             manifest = {
                 "schema_version": self.manifest_version,
                 "provider": "Massive",
@@ -155,10 +198,21 @@ class MassiveFlatFileArchive:
                 "raw_files_are_unadjusted": True,
                 "corporate_action_adjustment_required": True,
                 "official_replay_ready": False,
+                "campaign_verified_bytes": self.campaign_guard.verified_bytes(),
             }
             manifest_path = self._manifest_path(session_date, observed_at)
             self._atomic_json(manifest_path, manifest)
             return manifest_path
+
+    def _current_spool_bytes(self) -> int:
+        total = 0
+        for metadata_path in self.root.glob(
+            "provider=massive/dataset=*/session_date=*/source.csv.gz.metadata.json"
+        ):
+            source_path = metadata_path.with_name("source.csv.gz")
+            if source_path.exists():
+                total += source_path.stat().st_size
+        return total
 
     def _download_one(self, item: PlannedArtifact, *, observed_at: datetime) -> ArchivedArtifact:
         target = Path(item.local_path)
@@ -436,6 +490,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         root=settings.day_d_dataset_root,
         bucket=settings.massive_flat_files_bucket,
         minimum_free_bytes=int(settings.day_d_dataset_min_free_disk_gb * 1024**3),
+        campaign_guard=MassiveCampaignGuard(
+            root=settings.day_d_dataset_root,
+            download_authorized=settings.day_d_historical_download_authorized,
+        ),
     )
     datasets = tuple(FlatFileDataset(value) for value in args.dataset)
     if args.download:

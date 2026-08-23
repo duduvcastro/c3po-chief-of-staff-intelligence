@@ -25,16 +25,25 @@ class MassiveClient:
     code = "massive"
     name = "Massive Stocks Advanced"
 
-    def __init__(self, base_url: str, token: str, http: JsonHttpClient) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        token: str,
+        http: JsonHttpClient,
+        *,
+        historical_access_authorized: bool = False,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.http = http
+        self.historical_access_authorized = historical_access_authorized
         parsed = urlparse(self.base_url)
         if parsed.scheme != "https" or not parsed.netloc:
             raise ValueError("Massive base URL must be an absolute HTTPS URL")
         self._origin = (parsed.scheme, parsed.netloc)
 
     def iter_trades(self, symbol: str, *, session_date: date) -> Iterator[dict[str, Any]]:
+        self._require_historical_access()
         params = self._session_params(session_date)
         for row in self._iter_results(f"/v3/trades/{self._symbol(symbol)}", params=params):
             normalized = self._normalize_trade(symbol, row)
@@ -42,6 +51,7 @@ class MassiveClient:
                 yield normalized
 
     def iter_quotes(self, symbol: str, *, session_date: date) -> Iterator[dict[str, Any]]:
+        self._require_historical_access()
         params = self._session_params(session_date)
         for row in self._iter_results(f"/v3/quotes/{self._symbol(symbol)}", params=params):
             normalized = self._normalize_quote(symbol, row)
@@ -55,6 +65,7 @@ class MassiveClient:
         execution_date_gte: date | None = None,
         execution_date_lte: date | None = None,
     ) -> list[dict[str, Any]]:
+        self._require_historical_access()
         params: dict[str, Any] = {"limit": 5_000, "sort": "execution_date.asc"}
         if ticker:
             params["ticker"] = self._symbol(ticker)
@@ -71,6 +82,7 @@ class MassiveClient:
         ex_dividend_date_gte: date | None = None,
         ex_dividend_date_lte: date | None = None,
     ) -> list[dict[str, Any]]:
+        self._require_historical_access()
         params: dict[str, Any] = {"limit": 5_000, "sort": "ex_dividend_date.asc"}
         if ticker:
             params["ticker"] = self._symbol(ticker)
@@ -79,6 +91,12 @@ class MassiveClient:
         if ex_dividend_date_lte:
             params["ex_dividend_date.lte"] = ex_dividend_date_lte.isoformat()
         return list(self._iter_results("/stocks/v1/dividends", params=params))
+
+    def _require_historical_access(self) -> None:
+        if not self.historical_access_authorized:
+            raise MassiveResponseError(
+                "Massive historical REST access is disabled by the Day D first-byte gate"
+            )
 
     def _iter_results(
         self,

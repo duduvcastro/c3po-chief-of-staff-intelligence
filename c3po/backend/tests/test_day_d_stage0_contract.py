@@ -143,6 +143,8 @@ def test_ledger_identity_and_daily_carry_marking_are_explicit() -> None:
     assert ledger["transfer_mark_has_fictitious_fee"] is False
     assert ledger["daily_marking"] is True
     assert ledger["no_new_trade_with_open_carry_is_zero"] is False
+    assert ledger["same_symbol_session_reentry_flag_required"] is True
+    assert ledger["same_symbol_session_reentry_is_diagnostic_not_blocking"] is True
     assert ledger["corporate_actions_required"] is True
     assert ledger["flat_at_close_is_independent_policy_complete_replay"] is True
 

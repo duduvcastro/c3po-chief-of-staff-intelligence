@@ -1,6 +1,6 @@
 # Day D Massive T0 capacity sweep
 
-**Status:** T0 frozen from provider metadata only; first historical byte remains blocked
+**Status:** T0 and R1 frozen; first byte awaits reviewed merge and explicit runtime enablement
 
 The first complete T0 sweep used S3-compatible `HeadObject` calls only. It did
 not download, decompress, slice, or replay any Massive Flat File. The canonical
@@ -57,19 +57,25 @@ download by themselves.
 - Per-object verification: local bytes must match planned `ContentLength`
   exactly, followed by a remote re-HEAD whose `ContentLength` and ETag must
   still match the plan.
-- Campaign backstop: realized bytes above the complete plan by more than 5%
-  pause the campaign for six-hands review.
+- Authorized first-byte scope: 131,006,214,944 bytes, comprising all five-year
+  minute aggregates plus trades and quotes for the 12 qualification sessions.
+- Campaign backstop: cumulative verified bytes above 137,556,525,692 bytes
+  (authorized scope + 5%) pause the campaign for six-hands review. The 10.15 TB
+  full sweep is measurement context, never this campaign's denominator.
 
-The application disk cannot satisfy these thresholds. The owner approved a
-dedicated 100 GiB Lightsail data disk, the hybrid retention scope and Backblaze
-B2 with a monthly budget of up to US$15. Provisioning and end-to-end checksum
-verification remain required before the first historical byte is downloaded.
+The dedicated 100 GiB Lightsail disk is mounted at `/mnt/day-d-data` and bound
+to `/app/day-d-data`; the disk guard measures that mount, not the application
+root. Backblaze B2 is provisioned and its upload/download/checksum/delete round
+trip is verified. A restore drill governed by
+[`B2_RESTORE_DRILL.md`](./B2_RESTORE_DRILL.md) remains mandatory before any
+local source deletion.
 
 ## Frozen hybrid retention
 
 - Retain all five years of minute aggregates indefinitely.
-- Download full ticks only for the 12 qualification sessions and the 252 most
-  recent exchange sessions at the final preregistration hash.
+- The first-byte campaign may download full ticks only for the 12 qualification
+  sessions. The 252 most recent exchange sessions remain blocked until the
+  final preregistration hash freezes their dates and grants separate scope.
 - Retain immutable 61-symbol slices indefinitely, chained to the parent raw
   SHA-256.
 - Retain complete raw files for processed sessions until the final verdict plus
@@ -92,12 +98,14 @@ python -m app.day_d_replay.massive_plan_sweep \
 
 This command has no download flag and calls only the archive planner. The
 separate archive command remains plan-only unless an operator explicitly adds
-`--download`, which is still prohibited by `stage1_authorization.json`.
+`--download`, which remains blocked unless the reviewed PR is merged and
+`C3PO_DAY_D_HISTORICAL_DOWNLOAD_AUTHORIZED=true` is set explicitly.
 
 ## Remaining first-byte gates
 
-1. Provision, mount and verify the dedicated 100 GiB data disk.
-2. Provision Backblaze B2 and verify an upload/download/checksum round trip.
-3. Complete the six-hands review of
-   [`massive_ingestion_policy_v1.json`](./massive_ingestion_policy_v1.json).
-4. Implement and test campaign-level byte accounting and the +5% pause guard.
+1. Review and merge the R1/first-byte gate PR.
+2. Explicitly enable `C3PO_DAY_D_HISTORICAL_DOWNLOAD_AUTHORIZED` after that
+   reviewed merge.
+
+The runtime flag defaults to false. No code path in this change enables it or
+starts a download automatically.

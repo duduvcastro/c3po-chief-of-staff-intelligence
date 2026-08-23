@@ -15,6 +15,11 @@
     "credential_installation_authorized_after_reviewed_merge": true,
     "plan_only_data_inspection_authorized": true,
     "bulk_download_authorized": false,
+    "limited_first_byte_download_authorized_after_reviewed_merge": true,
+    "limited_first_byte_scope": "five_year_minute_aggregates_plus_twelve_qualification_sessions_trades_and_quotes",
+    "limited_first_byte_scope_bytes": 131006214944,
+    "campaign_pause_bytes": 137556525692,
+    "official_252_session_tick_window_authorized": false,
     "raw_capture_authorized": false,
     "official_replay_authorized": false,
     "production_trading_change_authorized": false,
@@ -24,13 +29,15 @@
     "dedicated_100_gib_lightsail_disk_approved": true,
     "hybrid_download_and_retention_scope_approved": true,
     "backblaze_b2_object_storage_approved": true,
-    "backblaze_b2_monthly_budget_usd": 15
+    "backblaze_b2_monthly_budget_usd": 15,
+    "dedicated_disk_container_bind_verified": true,
+    "backblaze_b2_checksum_roundtrip_verified": true
   },
   "frozen_contracts": {
     "massive_t0": "day_d/massive_t0_contract.json",
     "massive_ingestion_policy": {
       "path": "day_d/massive_ingestion_policy_v1.json",
-      "status": "proposed_for_six_hands_review"
+      "status": "frozen_by_six_hands"
     }
   },
   "supersedes_stage0_prohibition_for": [
@@ -43,6 +50,10 @@
     "use_real_trading_capital"
   ],
   "required_before_first_download": [
+    "review_and_merge_first_byte_gate_pr",
+    "explicitly_enable_C3PO_DAY_D_HISTORICAL_DOWNLOAD_AUTHORIZED_after_reviewed_merge"
+  ],
+  "completed_first_byte_requirements": [
     "dedicated_100_gib_disk_provisioned_mounted_and_verified",
     "backblaze_b2_account_bucket_credentials_and_checksum_roundtrip_verified",
     "massive_ingestion_policy_v1_frozen_after_six_hands_review",

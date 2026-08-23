@@ -88,6 +88,8 @@
     "real_exit_cost_component_for_carry": "overnight",
     "daily_marking": true,
     "no_new_trade_with_open_carry_is_zero": false,
+    "same_symbol_session_reentry_flag_required": true,
+    "same_symbol_session_reentry_is_diagnostic_not_blocking": true,
     "corporate_actions_required": true,
     "flat_at_close_is_independent_policy_complete_replay": true
   },

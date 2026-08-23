@@ -389,6 +389,7 @@ class DayDReplayHarness:
         sequence = itertools.count()
 
         for session in dataset.sessions:
+            session_symbol_entry_counts: dict[str, int] = {}
             features = self._session_features(session)
             (
                 session_evaluations,
@@ -485,6 +486,7 @@ class DayDReplayHarness:
                         rejections=rejections,
                         entry_audits=entry_audits,
                         dataset=dataset,
+                        session_symbol_entry_counts=session_symbol_entry_counts,
                     )
                     state = next(
                         (
@@ -683,6 +685,9 @@ class DayDReplayHarness:
                             "official_close_price": close_price,
                             "remaining_quantity": state.position.remaining_quantity,
                             "fictitious_fee_usd": 0.0,
+                            "same_symbol_session_reentry": (
+                                state.position.same_symbol_session_reentry
+                            ),
                         },
                     )
                 )
@@ -945,6 +950,7 @@ class DayDReplayHarness:
         rejections: list[ReplayRejection],
         entry_audits: dict[tuple[date, str, str], ReplayEntryAudit],
         dataset: ReplayDataset,
+        session_symbol_entry_counts: dict[str, int],
     ) -> float:
         signal = candidate.signal
         audit_key = (session.session_date, signal.symbol, signal.setup_version)
@@ -1064,6 +1070,10 @@ class DayDReplayHarness:
             f"{session.session_date}:{signal.symbol}:{signal.setup_version}:"
             f"{fill.filled_at.isoformat()}"
         )
+        same_symbol_session_reentry = self._register_session_symbol_entry(
+            session_symbol_entry_counts,
+            signal.symbol,
+        )
         position = Position(
             position_id=position_id,
             setup_version=signal.setup_version,
@@ -1079,6 +1089,7 @@ class DayDReplayHarness:
             entry_atr=signal.entry_atr,
             high_water=fill.raw_reference_price,
             remaining_quantity=fill.quantity,
+            same_symbol_session_reentry=same_symbol_session_reentry,
         )
         open_states[position_id] = _ManagedPosition(
             position=position,
@@ -1095,6 +1106,14 @@ class DayDReplayHarness:
             final_fill=fill,
         )
         return cash - total_cost
+
+    @staticmethod
+    def _register_session_symbol_entry(
+        counts: dict[str, int], symbol: str
+    ) -> bool:
+        prior_entries = counts.get(symbol, 0)
+        counts[symbol] = prior_entries + 1
+        return prior_entries > 0
 
     def _enqueue_next_exit(
         self,
@@ -1841,7 +1860,12 @@ class DayDReplayHarness:
                         raw_r_lifetime_after_event=(
                             marked_lifetime / position.risk_budget_usd
                         ),
-                        metadata={"cash_per_share_usd": action.cash_per_share_usd},
+                        metadata={
+                            "cash_per_share_usd": action.cash_per_share_usd,
+                            "same_symbol_session_reentry": (
+                                position.same_symbol_session_reentry
+                            ),
+                        },
                     )
                 )
                 continue

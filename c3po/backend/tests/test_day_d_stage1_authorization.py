@@ -13,6 +13,8 @@ def test_stage1_authorization_supersedes_only_the_provider_purchase_block() -> N
     assert contract["provider"]["plan"] == "Stocks Advanced"
     assert contract["scope"]["purchase_authorized"] is True
     assert contract["scope"]["bulk_download_authorized"] is False
+    assert contract["scope"]["limited_first_byte_download_authorized_after_reviewed_merge"] is True
+    assert contract["scope"]["official_252_session_tick_window_authorized"] is False
     assert contract["scope"]["raw_capture_authorized"] is False
     assert contract["scope"]["official_replay_authorized"] is False
     assert contract["scope"]["production_trading_change_authorized"] is False
@@ -26,9 +28,15 @@ def test_stage1_authorization_requires_verified_storage_and_ingestion_policy() -
     )
     requirements = set(contract["required_before_first_download"])
 
-    assert "dedicated_100_gib_disk_provisioned_mounted_and_verified" in requirements
-    assert "backblaze_b2_account_bucket_credentials_and_checksum_roundtrip_verified" in requirements
-    assert "massive_ingestion_policy_v1_frozen_after_six_hands_review" in requirements
-    assert "campaign_byte_accounting_and_pause_guard_implemented_and_tested" in requirements
+    assert requirements == {
+        "review_and_merge_first_byte_gate_pr",
+        "explicitly_enable_C3PO_DAY_D_HISTORICAL_DOWNLOAD_AUTHORIZED_after_reviewed_merge",
+    }
+    assert set(contract["completed_first_byte_requirements"]) == {
+        "dedicated_100_gib_disk_provisioned_mounted_and_verified",
+        "backblaze_b2_account_bucket_credentials_and_checksum_roundtrip_verified",
+        "massive_ingestion_policy_v1_frozen_after_six_hands_review",
+        "campaign_byte_accounting_and_pause_guard_implemented_and_tested",
+    }
     assert contract["owner_approvals"]["hybrid_download_and_retention_scope_approved"] is True
     assert contract["secrets_policy"]["credentials_in_chat_forbidden"] is True

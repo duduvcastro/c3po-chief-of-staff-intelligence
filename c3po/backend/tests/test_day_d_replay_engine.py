@@ -140,6 +140,15 @@ def _manifest() -> RunManifest:
     )
 
 
+def test_same_symbol_session_reentry_flag_does_not_block_later_entries() -> None:
+    counts: dict[str, int] = {}
+
+    assert DayDReplayHarness._register_session_symbol_entry(counts, "AAA") is False
+    assert DayDReplayHarness._register_session_symbol_entry(counts, "AAA") is True
+    assert DayDReplayHarness._register_session_symbol_entry(counts, "BBB") is False
+    assert counts == {"AAA": 2, "BBB": 1}
+
+
 def test_engine_runs_s3_causally_and_t30_exits_only_net_positive() -> None:
     cutoff = datetime(2026, 8, 20, 16, tzinfo=NEW_YORK)
     universe = UniverseManifest(

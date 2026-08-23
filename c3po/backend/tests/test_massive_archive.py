@@ -12,6 +12,7 @@ from app.day_d_replay.massive_archive import (
     MassiveArchiveError,
     MassiveFlatFileArchive,
 )
+from app.day_d_replay.massive_campaign import MassiveCampaignGuard
 
 
 class FakeStore:
@@ -34,12 +35,60 @@ def _key(dataset: FlatFileDataset) -> str:
     return MassiveFlatFileArchive.object_key(dataset, date(2026, 8, 21))
 
 
-def _archive(tmp_path: Path, store: FakeStore, *, free: int = 10_000) -> MassiveFlatFileArchive:
+def _archive(
+    tmp_path: Path,
+    store: FakeStore,
+    *,
+    free: int = 10_000,
+    disk_usage=None,
+    download_authorized: bool = True,
+    per_session_abort_bytes: int = 25_416_665_942,
+    local_spool_ceiling_bytes: int = 76_249_997_826,
+) -> MassiveFlatFileArchive:
+    artifacts: dict[str, dict[str, object]] = {}
+    for dataset in FlatFileDataset:
+        key = _key(dataset)
+        if key not in store.blobs:
+            continue
+        metadata = store.head_object(Bucket="flatfiles", Key=key)
+        artifacts[dataset.value] = {
+            "content_length": int(metadata["ContentLength"]),
+            "remote_etag": str(metadata["ETag"]).strip('"'),
+            "object_key": key,
+        }
+    if hasattr(store, "head_calls"):
+        store.head_calls = 0
+    scope_report = tmp_path / "scope.json"
+    scope_report.parent.mkdir(parents=True, exist_ok=True)
+    scope_report.write_text(json.dumps({
+        "schema_version": "DAY-D-MASSIVE-T0-PLAN-SWEEP-v1",
+        "downloaded": False,
+        "source_csv_files": 0,
+        "sessions": [{
+            "session_date": "2026-08-21",
+            "artifacts": artifacts,
+        }],
+    }), encoding="utf-8")
     return MassiveFlatFileArchive(
         store,
         root=tmp_path,
         minimum_free_bytes=1_000,
-        disk_usage=lambda _path: SimpleNamespace(free=free),
+        per_session_abort_bytes=per_session_abort_bytes,
+        local_spool_ceiling_bytes=local_spool_ceiling_bytes,
+        campaign_guard=MassiveCampaignGuard(
+            root=tmp_path,
+            download_authorized=download_authorized,
+            canonical_scope_report=scope_report,
+            canonical_scope_report_sha256=hashlib.sha256(
+                scope_report.read_bytes()
+            ).hexdigest(),
+            authorized_scope_bytes=sum(
+                int(item["content_length"]) for item in artifacts.values()
+            ),
+            campaign_pause_bytes=10_000,
+            require_complete_frozen_scope=False,
+        ),
+        disk_usage=disk_usage or (lambda _path: SimpleNamespace(free=free)),
     )
 
 
@@ -56,6 +105,51 @@ def test_massive_archive_plans_canonical_flat_file_paths_without_downloading(tmp
     assert plan[0].object_key == "us_stocks_sip/trades_v1/2026/08/2026-08-21.csv.gz"
     assert plan[0].content_length == len(b"trade-data")
     assert plan[0].remote_etag == hashlib.md5(b"trade-data").hexdigest()  # noqa: S324
+    assert store.downloads == []
+
+
+def test_massive_archive_keeps_download_disabled_until_reviewed_runtime_enablement(tmp_path: Path) -> None:
+    store = FakeStore({_key(FlatFileDataset.TRADES): b"trade-data"})
+
+    with pytest.raises(MassiveArchiveError, match="historical download remains disabled"):
+        _archive(tmp_path, store, download_authorized=False).download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES,),
+        )
+
+    assert store.downloads == []
+
+
+def test_disk_guard_measures_the_configured_data_mount_root(tmp_path: Path) -> None:
+    store = FakeStore({_key(FlatFileDataset.TRADES): b"trade-data"})
+    observed_paths: list[Path] = []
+
+    def disk_usage(path):  # noqa: ANN001
+        observed_paths.append(Path(path))
+        return SimpleNamespace(free=10_000)
+
+    _archive(tmp_path, store, disk_usage=disk_usage).download(
+        session_date=date(2026, 8, 21),
+        datasets=(FlatFileDataset.TRADES,),
+    )
+
+    assert observed_paths == [tmp_path]
+
+
+def test_massive_archive_enforces_per_session_and_local_spool_limits(tmp_path: Path) -> None:
+    store = FakeStore({_key(FlatFileDataset.TRADES): b"trade-data"})
+
+    with pytest.raises(MassiveArchiveError, match="per-session byte guard"):
+        _archive(tmp_path, store, per_session_abort_bytes=9).download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES,),
+        )
+    with pytest.raises(MassiveArchiveError, match="local spool guard"):
+        _archive(tmp_path, store, local_spool_ceiling_bytes=9).download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES,),
+        )
+
     assert store.downloads == []
 
 
@@ -117,7 +211,7 @@ def test_massive_archive_refuses_changed_remote_metadata_without_overwriting(tmp
     )
     store.blobs[key] = b"changed!"
 
-    with pytest.raises(MassiveArchiveError, match="remote metadata changed"):
+    with pytest.raises(MassiveArchiveError, match="metadata differs"):
         archive.download(
             session_date=date(2026, 8, 21),
             datasets=(FlatFileDataset.TRADES,),

@@ -529,6 +529,7 @@ class Position:
     entry_atr: float
     high_water: float
     remaining_quantity: int
+    same_symbol_session_reentry: bool = False
     partial_filled: bool = False
     chandelier_activated: bool = False
     chandelier_stop: float | None = None
@@ -581,6 +582,7 @@ class ClosedTrade:
     mae_r: float
     opened_at: datetime
     closed_at: datetime
+    same_symbol_session_reentry: bool = False
 
 
 @dataclass(frozen=True, slots=True)
