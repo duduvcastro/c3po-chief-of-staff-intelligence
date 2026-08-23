@@ -7163,6 +7163,7 @@ type ServiceLogoKind =
   | "finnhub"
   | "fmp"
   | "backblaze"
+  | "massive"
   | "openai"
   | "anthropic"
   | "cvm"
@@ -7189,6 +7190,7 @@ function serviceLogoKind(name: string, groupKey: SystemHealthGroupKey): ServiceL
   if (normalized.includes("finnhub")) return "finnhub";
   if (normalized.includes("fmp") || normalized.includes("financial modeling")) return "fmp";
   if (normalized.includes("backblaze") || normalized.includes("b2")) return "backblaze";
+  if (normalized.includes("massive")) return "massive";
   if (normalized.includes("openai") || normalized.includes("codex")) return "openai";
   if (normalized.includes("anthropic") || normalized.includes("claude")) return "anthropic";
   if (normalized.includes("cvm")) return "cvm";
@@ -7212,6 +7214,8 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
     finnhub: "/service-finnhub.png",
     cvm: "/cvm-mark.png",
     sec: "/sec-mark.gif",
+    backblaze: "/backblaze-mark.svg",
+    massive: "/massive-mark.svg",
   };
   const officialAsset = officialAssets[kind];
   if (officialAsset) {
@@ -7239,7 +7243,6 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
   if (kind === "btg") return <span className="service-logo service-logo-btg service-logo-word" aria-hidden="true"><b>BTG</b></span>;
   if (kind === "itau") return <span className="service-logo service-logo-itau service-logo-word" aria-hidden="true"><b>itaú</b></span>;
   if (kind === "eodhd") return <span className="service-logo service-logo-eodhd service-logo-word" aria-hidden="true"><i /><i /><i /><b>EOD</b></span>;
-  if (kind === "backblaze") return <span className="service-logo service-logo-backblaze service-logo-word" aria-hidden="true"><b>B2</b></span>;
   if (kind === "openai") return <span className="service-logo service-logo-openai service-logo-word" aria-hidden="true"><b>AI</b></span>;
   if (kind === "anthropic") return <span className="service-logo service-logo-anthropic service-logo-word" aria-hidden="true"><b>CL</b></span>;
   if (kind === "issuer") return <span className="service-logo service-logo-issuer service-logo-word" aria-hidden="true"><b>RI</b></span>;
