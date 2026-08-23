@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_stage1_authorization_supersedes_only_the_provider_purchase_block() -> None:
+def test_stage1_authorization_allows_only_purchase_and_passive_capture() -> None:
     contract = json.loads(
         (ROOT / "docs" / "day_d" / "stage1_authorization.json").read_text(encoding="utf-8")
     )
@@ -15,11 +15,19 @@ def test_stage1_authorization_supersedes_only_the_provider_purchase_block() -> N
     assert contract["scope"]["bulk_download_authorized"] is False
     assert contract["scope"]["limited_first_byte_download_authorized_after_reviewed_merge"] is True
     assert contract["scope"]["official_252_session_tick_window_authorized"] is False
-    assert contract["scope"]["raw_capture_authorized"] is False
+    assert contract["scope"]["raw_capture_authorized"] is True
+    assert contract["scope"]["raw_capture_runtime_default_enabled"] is False
+    assert contract["scope"]["raw_capture_scope"] == (
+        "passive_eodhd_raw_plus_derived_aggregates_and_t0_resource_telemetry_only"
+    )
     assert contract["scope"]["official_replay_authorized"] is False
     assert contract["scope"]["production_trading_change_authorized"] is False
-    assert contract["supersedes_stage0_prohibition_for"] == ["purchase_polygon"]
-    assert "enable_raw_capture" in contract["does_not_supersede_stage0_prohibition_for"]
+    assert contract["supersedes_stage0_prohibition_for"] == [
+        "purchase_polygon",
+        "enable_raw_capture",
+    ]
+    assert "enable_raw_capture" not in contract["does_not_supersede_stage0_prohibition_for"]
+    assert "run_official_replay" in contract["does_not_supersede_stage0_prohibition_for"]
 
 
 def test_stage1_authorization_requires_verified_storage_and_ingestion_policy() -> None:

@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 
+import pytest
+
 from app.microstructure_capture import CompositeRawStreamCapture
 from app.microstructure_processor import MicrostructureProcessor
 
@@ -21,6 +23,7 @@ def _rows(root: Path, interval: int = 1) -> list[dict]:
 def test_processor_classifies_trades_against_the_nearest_prior_fresh_bbo(tmp_path: Path) -> None:
     processor = MicrostructureProcessor(
         tmp_path, intervals_seconds=(1,), bbo_max_age_seconds=2, flush_every=1,
+        minimum_free_bytes=0,
     )
     processor.start()
     base = datetime(2026, 8, 21, 14, 30, tzinfo=timezone.utc)
@@ -53,6 +56,7 @@ def test_processor_classifies_trades_against_the_nearest_prior_fresh_bbo(tmp_pat
 def test_processor_ignores_stale_bbo_and_falls_back_to_tick_rule(tmp_path: Path) -> None:
     processor = MicrostructureProcessor(
         tmp_path, intervals_seconds=(1,), bbo_max_age_seconds=2,
+        minimum_free_bytes=0,
     )
     processor.start()
     base = datetime(2026, 8, 21, 14, 30, tzinfo=timezone.utc)
@@ -71,12 +75,16 @@ def test_processor_ignores_stale_bbo_and_falls_back_to_tick_rule(tmp_path: Path)
     assert trade_row["unknown_trades"] == 1
     assert trade_row["buy_trades"] == 1
     assert trade_row["tick_rule_trades"] == 1
+    assert trade_row["classification_method_counts"]["tick_rule_no_bbo"] == 1
+    assert trade_row["classification_method_volumes"]["tick_rule_no_bbo"] == 75
     assert trade_row["bbo_classified_trades"] == 0
     assert trade_row["classification_coverage"] == 0.5
 
 
 def test_processor_never_uses_a_quote_from_the_future(tmp_path: Path) -> None:
-    processor = MicrostructureProcessor(tmp_path, intervals_seconds=(1,))
+    processor = MicrostructureProcessor(
+        tmp_path, intervals_seconds=(1,), minimum_free_bytes=0,
+    )
     processor.start()
     base = datetime(2026, 8, 21, 14, 30, tzinfo=timezone.utc)
     processor.record("quote", json.dumps({
@@ -94,7 +102,9 @@ def test_processor_never_uses_a_quote_from_the_future(tmp_path: Path) -> None:
 
 
 def test_processor_emits_one_and_five_second_aggregates(tmp_path: Path) -> None:
-    processor = MicrostructureProcessor(tmp_path, intervals_seconds=(1, 5))
+    processor = MicrostructureProcessor(
+        tmp_path, intervals_seconds=(1, 5), minimum_free_bytes=0,
+    )
     processor.start()
     base = datetime(2026, 8, 21, 14, 30, tzinfo=timezone.utc)
     for offset in (0.1, 1.1, 4.1):
@@ -116,6 +126,7 @@ def test_processor_emits_one_and_five_second_aggregates(tmp_path: Path) -> None:
 def test_processor_counts_delayed_and_too_late_events_without_aggregating_them(tmp_path: Path) -> None:
     processor = MicrostructureProcessor(
         tmp_path, intervals_seconds=(1,), allowed_lateness_seconds=2,
+        minimum_free_bytes=0,
     )
     processor.start()
     base = datetime(2026, 8, 21, 14, 30, tzinfo=timezone.utc)
@@ -136,15 +147,104 @@ def test_processor_counts_delayed_and_too_late_events_without_aggregating_them(t
     assert stats.processed == 1
     assert stats.late == 1
     assert stats.ignored == 1
+    assert sum(row["late_event_count"] for row in _rows(tmp_path)) == 1
+    assert sum(row["discarded_event_count"] for row in _rows(tmp_path)) == 1
+
+
+def test_processor_preserves_method_spread_and_bbo_age_breakdowns(
+    tmp_path: Path,
+) -> None:
+    processor = MicrostructureProcessor(
+        tmp_path,
+        intervals_seconds=(5,),
+        bbo_max_age_seconds=2,
+        allowed_lateness_seconds=5,
+        minimum_free_bytes=0,
+    )
+    processor.start()
+    base = datetime(2026, 8, 21, 14, 30, tzinfo=timezone.utc)
+    processor.record("quote", json.dumps({
+        "s": "AAPL", "bp": 100, "ap": 102, "t": _timestamp_ms(base),
+    }), received_at=base)
+    processor.record("quote", json.dumps({
+        "s": "AAPL", "bp": 100, "ap": 104,
+        "t": _timestamp_ms(base + timedelta(milliseconds=50)),
+    }), received_at=base + timedelta(milliseconds=50))
+    processor.record("trade", json.dumps({
+        "s": "AAPL", "p": 104, "v": 30,
+        "t": _timestamp_ms(base + timedelta(milliseconds=100)),
+    }), received_at=base + timedelta(milliseconds=100))
+    processor.record("trade", json.dumps({
+        "s": "AAPL", "p": 102, "v": 20,
+        "t": _timestamp_ms(base + timedelta(milliseconds=200)),
+    }), received_at=base + timedelta(milliseconds=200))
+    processor.record("trade", json.dumps({
+        "s": "AAPL", "p": 102.5, "v": 10,
+        "t": _timestamp_ms(base + timedelta(seconds=3)),
+    }), received_at=base + timedelta(seconds=3))
+    processor.record("trade", json.dumps({
+        "s": "AAPL", "p": 102.5, "v": 5,
+        "t": _timestamp_ms(base + timedelta(seconds=3, milliseconds=100)),
+    }), received_at=base + timedelta(seconds=3, milliseconds=100))
+    processor.stop()
+
+    row = _rows(tmp_path, 5)[0]
+    assert row["classification_method_counts"] == {
+        "bbo_midpoint": 1,
+        "tick_rule_at_mid": 1,
+        "tick_rule_no_bbo": 1,
+        "inherited_tick": 1,
+        "unknown": 0,
+    }
+    assert row["classification_method_volumes"] == {
+        "bbo_midpoint": 30,
+        "tick_rule_at_mid": 20,
+        "tick_rule_no_bbo": 10,
+        "inherited_tick": 5,
+        "unknown": 0,
+    }
+    assert row["min_spread_bps"] < row["mean_spread_bps"] < row["max_spread_bps"]
+    assert row["p50_bbo_age_ms"] == 100.0
+    assert row["p95_bbo_age_ms"] == 145.0
+
+
+def test_processor_attributes_queue_drops_to_processing_time_buckets(
+    tmp_path: Path,
+) -> None:
+    processor = MicrostructureProcessor(
+        tmp_path,
+        intervals_seconds=(1,),
+        queue_size=1,
+        minimum_free_bytes=0,
+    )
+    observed = datetime(2026, 8, 21, 14, 30, tzinfo=timezone.utc)
+    payload = json.dumps({
+        "s": "META", "p": 700, "v": 10, "t": _timestamp_ms(observed),
+    })
+    assert processor.record("trade", payload, received_at=observed) is True
+    assert processor.record("trade", payload, received_at=observed) is False
+    processor.start()
+    processor.stop()
+
+    assert sum(row["dropped_event_count"] for row in _rows(tmp_path)) == 1
 
 
 class _LifecycleCapture:
-    def __init__(self, name: str, events: list[str]) -> None:
+    def __init__(
+        self,
+        name: str,
+        events: list[str],
+        *,
+        fail_start: bool = False,
+    ) -> None:
         self.name = name
         self.events = events
+        self.fail_start = fail_start
 
     def start(self) -> None:
         self.events.append(f"start:{self.name}")
+        if self.fail_start:
+            raise RuntimeError(f"failed:{self.name}")
 
     def record(self, feed: str, payload: str, *, received_at: datetime) -> bool:
         self.events.append(f"record:{self.name}:{feed}:{payload}")
@@ -170,3 +270,16 @@ def test_composite_capture_fans_out_and_stops_in_reverse_order() -> None:
         "record:raw:trade:payload", "record:processor:trade:payload",
         "stop:processor", "stop:raw",
     ]
+
+
+def test_composite_capture_rolls_back_started_consumers_on_startup_failure() -> None:
+    events: list[str] = []
+    composite = CompositeRawStreamCapture([
+        _LifecycleCapture("raw", events),
+        _LifecycleCapture("processor", events, fail_start=True),
+    ])
+
+    with pytest.raises(RuntimeError, match="failed:processor"):
+        composite.start()
+
+    assert events == ["start:raw", "start:processor", "stop:raw"]
