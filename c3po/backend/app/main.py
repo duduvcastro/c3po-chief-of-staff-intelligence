@@ -55,6 +55,7 @@ from .schemas import (
     AuthSessionResponse,
     B3CandidateResponse,
     ChewieFundamentalsResponse,
+    ChewieSearchResponse,
     CommandCenterResponse,
     FeedbackRequest,
     FeedbackResponse,
@@ -1372,16 +1373,43 @@ def matrix_power_nyse() -> MatrixPowerResponse:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
 
-@app.get("/api/v1/chewie-fundamentals/{market}", response_model=ChewieFundamentalsResponse)
-def chewie_fundamentals_view(market: str, refresh: bool = Query(default=False)) -> ChewieFundamentalsResponse:
+def _chewie_market(market: str) -> str:
     normalized = market.strip().upper()
     if normalized not in {"B3", "NASDAQ", "NYSE"}:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown market")
+    return normalized
+
+
+@app.get("/api/v1/chewie-fundamentals/{market}", response_model=ChewieFundamentalsResponse)
+def chewie_fundamentals_view(market: str) -> ChewieFundamentalsResponse:
+    normalized = _chewie_market(market)
     try:
-        payload = chewie_fundamentals.rows(normalized, refresh=refresh)  # type: ignore[arg-type]
+        payload = chewie_fundamentals.rows(normalized)  # type: ignore[arg-type]
     except (MarketDataRequestError, RuntimeError) as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     return ChewieFundamentalsResponse(**payload)
+
+
+@app.get("/api/v1/chewie-fundamentals/{market}/search", response_model=ChewieSearchResponse)
+def chewie_fundamentals_search(market: str, q: str = Query(min_length=1, max_length=40)) -> ChewieSearchResponse:
+    normalized = _chewie_market(market)
+    try:
+        payload = chewie_fundamentals.search(normalized, q)  # type: ignore[arg-type]
+    except (MarketDataRequestError, RuntimeError) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    return ChewieSearchResponse(**payload)
+
+
+@app.get("/api/v1/chewie-fundamentals/{market}/{symbol}/report.pdf", response_class=FileResponse)
+def chewie_fundamentals_report(market: str, symbol: str) -> FileResponse:
+    normalized = _chewie_market(market)
+    try:
+        path = chewie_fundamentals.render_report(normalized, symbol)  # type: ignore[arg-type]
+    except (MarketDataRequestError, RuntimeError) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    if path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Símbolo não encontrado na fonte de fundamentos")
+    return FileResponse(path, media_type="application/pdf", filename=path.name)
 
 
 @app.get("/api/v1/r2d2", response_model=R2D2DashboardResponse)

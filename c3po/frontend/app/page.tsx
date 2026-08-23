@@ -619,7 +619,10 @@ interface ChewieFundamentalsItem {
   logo_url: string | null;
   market_cap: number | null;
   fundamentals_as_of: string | null;
-  multiples: { pe: number | null; forward_pe: number | null; ev_ebitda: number | null; peg: number | null; price_to_book: number | null };
+  refreshed_at: string | null;
+  sources: string[];
+  from_universe: boolean;
+  multiples: { pe: number | null; forward_pe: number | null; ev_ebitda: number | null; peg: number | null; price_to_book: number | null; dividend_yield_percent: number | null };
   profitability: { roe_percent: number | null; roa_percent: number | null; profit_margin_percent: number | null; operating_margin_percent: number | null; ebitda_margin_percent: number | null };
   leverage: { debt_to_equity: number | null; net_debt_to_ebitda: number | null; total_cash: number | null; total_debt: number | null };
   growth: { revenue_growth_percent: number | null; earnings_growth_percent: number | null };
@@ -631,6 +634,12 @@ interface ChewieFundamentalsResponse {
   universe_size: number;
   covered_count: number;
   generated_at: string;
+  items: ChewieFundamentalsItem[];
+}
+
+interface ChewieSearchResponse {
+  market: ResearchMarket;
+  query: string;
   items: ChewieFundamentalsItem[];
 }
 
@@ -5259,14 +5268,19 @@ function ChewieFundamentalsView() {
   const [data, setData] = useState<ChewieFundamentalsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ChewieFundamentalsItem[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const requestRef = useRef(0);
+  const searchRequestRef = useRef(0);
 
-  const load = useCallback(async (refresh = false) => {
+  const load = useCallback(async () => {
     const requestId = ++requestRef.current;
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`${API_URL}/api/v1/chewie-fundamentals/${activeMarket.toLowerCase()}?refresh=${refresh ? "true" : "false"}`, {
+      const response = await fetch(`${API_URL}/api/v1/chewie-fundamentals/${activeMarket.toLowerCase()}`, {
         cache: "no-store",
         credentials: "include"
       });
@@ -5284,8 +5298,47 @@ function ChewieFundamentalsView() {
 
   useEffect(() => {
     setData(null);
-    load(false);
+    setQuery("");
+    setSearchResults(null);
+    load();
   }, [load]);
+
+  useEffect(() => {
+    const clean = query.trim();
+    if (clean.length < 2) {
+      setSearchResults(null);
+      setSearchError("");
+      setSearchLoading(false);
+      return;
+    }
+    const requestId = ++searchRequestRef.current;
+    setSearchLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `${API_URL}/api/v1/chewie-fundamentals/${activeMarket.toLowerCase()}/search?q=${encodeURIComponent(clean)}`,
+          { cache: "no-store", credentials: "include" }
+        );
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+        if (requestId === searchRequestRef.current) {
+          setSearchResults((payload as ChewieSearchResponse).items);
+          setSearchError("");
+        }
+      } catch (requestError) {
+        if (requestId === searchRequestRef.current) {
+          setSearchResults([]);
+          setSearchError(requestError instanceof Error ? requestError.message : "Busca indisponível");
+        }
+      } finally {
+        if (requestId === searchRequestRef.current) setSearchLoading(false);
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [activeMarket, query]);
+
+  const pdfUrl = (item: ChewieFundamentalsItem) =>
+    `${API_URL}/api/v1/chewie-fundamentals/${activeMarket.toLowerCase()}/${encodeURIComponent(item.symbol)}/report.pdf`;
 
   return (
     <div className="content-stack">
@@ -5300,14 +5353,55 @@ function ChewieFundamentalsView() {
         </div>
         <PanelHeader title={`${activeMarket} Chewie Fundamentals`} icon={ChewieFundamentalsIcon} />
         <div className="chewie-summary-bar">
-          <div><span>Universe</span><strong>{data?.universe_size ?? "—"}</strong><small>{activeMarket} tracked stocks</small></div>
-          <div><span>Covered</span><strong>{data?.covered_count ?? "—"}</strong><small>top by market cap</small></div>
-          <div><span>Source</span><strong>{data?.source ?? "EODHD Fundamentals"}</strong><small>{data ? formatDate(data.generated_at) : "loading"}</small></div>
-          <button className="screen-refresh" onClick={() => load(true)} disabled={loading} title="Recarregar os fundamentos">
+          <div><span>Universo</span><strong>{data?.universe_size ?? "—"}</strong><small>{data?.covered_count ?? "—"} com fundamentos</small></div>
+          <div><span>Exibindo</span><strong>Top {data?.items.length ?? 30}</strong><small>por market cap · busque o resto</small></div>
+          <div><span>Fonte</span><strong>{data?.source ?? "EODHD + screener blend"}</strong><small>{data ? `1x ao dia · ${formatDate(data.generated_at)}` : "loading"}</small></div>
+          <button className="screen-refresh" onClick={() => load()} disabled={loading} title="Recarregar o snapshot diário">
             <RefreshCw size={16} className={loading ? "spin" : ""} />
-            <span>{loading ? "Updating" : "Refresh"}</span>
+            <span>{loading ? "Updating" : "Reload"}</span>
           </button>
         </div>
+        <div className="chewie-search-bar">
+          <Search size={15} />
+          <input
+            type="search"
+            value={query}
+            placeholder={`Buscar qualquer ação da ${activeMarket} por ticker ou nome...`}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="Buscar ação"
+          />
+          {searchLoading && <RefreshCw size={14} className="spin" />}
+        </div>
+        {query.trim().length >= 2 && (
+          <div className="chewie-search-results">
+            {searchError && <div className="screen-error"><AlertTriangle size={17} /><span>{searchError}</span></div>}
+            {!searchError && searchResults && searchResults.length === 0 && !searchLoading && (
+              <div className="chewie-search-empty">Nenhuma ação encontrada para “{query.trim()}” na {activeMarket}.</div>
+            )}
+            {searchResults?.map((item) => (
+              <div className="chewie-search-hit" key={item.symbol}>
+                <div className="chewie-company">
+                  <div className="chewie-logo">
+                    {item.logo_url ? <img src={item.logo_url} alt="" /> : <span>{item.symbol.slice(0, 2)}</span>}
+                  </div>
+                  <div>
+                    <strong>{item.symbol}{!item.from_universe && <em className="chewie-outside-badge">fora do universo</em>}</strong>
+                    <span>{item.name} · {item.sector}</span>
+                  </div>
+                </div>
+                <div className="chewie-search-metrics">
+                  <span>P/L <strong>{formatMultiple(item.multiples.pe)}</strong></span>
+                  <span>ROE <strong>{formatPercent(item.profitability.roe_percent)}</strong></span>
+                  <span>MC <strong>{formatCompact(item.market_cap)}</strong></span>
+                </div>
+                <a className="chewie-pdf-button" href={pdfUrl(item)} target="_blank" rel="noreferrer" title={`Gerar PDF de fundamentos de ${item.symbol}`}>
+                  <FileChartColumn size={15} />
+                  <span>Gerar PDF</span>
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="chewie-group-tabs" role="tablist" aria-label="Fundamentals category">
           {chewieGroups.map((group) => (
             <button key={group.key} role="tab" aria-selected={activeGroup === group.key} className={activeGroup === group.key ? "active" : ""} onClick={() => setActiveGroup(group.key)}>
@@ -5315,7 +5409,7 @@ function ChewieFundamentalsView() {
             </button>
           ))}
         </div>
-        {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => load(true)}>Retry</button></div>}
+        {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => load()}>Retry</button></div>}
         {loading && !data ? <CandidateTableLoading /> : data && data.items.length === 0 ? (
           <div className="candidate-empty-state">No fundamentals coverage for {activeMarket} yet.</div>
         ) : data && (
@@ -5324,7 +5418,7 @@ function ChewieFundamentalsView() {
               <thead>
                 <tr>
                   <th>Company</th>
-                  {activeGroup === "multiples" && <><th>P/E</th><th>Fwd P/E</th><th>EV/EBITDA</th><th>PEG</th><th>P/B</th></>}
+                  {activeGroup === "multiples" && <><th>P/E</th><th>Fwd P/E</th><th>EV/EBITDA</th><th>PEG</th><th>P/B</th><th>Div. yield</th></>}
                   {activeGroup === "profitability" && <><th>ROE</th><th>ROA</th><th>Profit margin</th><th>Op. margin</th><th>EBITDA margin</th></>}
                   {activeGroup === "leverage" && <><th>Debt/Equity</th><th>Net debt/EBITDA</th><th>Total cash</th><th>Total debt</th></>}
                   {activeGroup === "growth" && <><th>Revenue growth</th><th>Earnings growth</th></>}
@@ -5351,6 +5445,7 @@ function ChewieFundamentalsView() {
                       <td>{formatMultiple(item.multiples.ev_ebitda)}</td>
                       <td>{formatMultiple(item.multiples.peg)}</td>
                       <td>{formatMultiple(item.multiples.price_to_book)}</td>
+                      <td>{formatPercent(item.multiples.dividend_yield_percent)}</td>
                     </>}
                     {activeGroup === "profitability" && <>
                       <td>{formatPercent(item.profitability.roe_percent)}</td>
