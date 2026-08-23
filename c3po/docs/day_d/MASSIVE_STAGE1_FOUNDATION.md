@@ -51,7 +51,13 @@ C3PO_MASSIVE_FLAT_FILES_ACCESS_KEY=
 C3PO_MASSIVE_FLAT_FILES_SECRET_KEY=
 C3PO_DAY_D_DATASET_ROOT=/app/day-d-data
 C3PO_DAY_D_DATASET_MIN_FREE_DISK_GB=20
+C3PO_DAY_D_DATA_MOUNT_SOURCE=/mnt/day-d-data
 ```
+
+`C3PO_DAY_D_DATA_MOUNT_SOURCE` changes only the host-side Compose source. The
+container path remains `/app/day-d-data`, so the application contract does not
+depend on a host device name. Local development may omit the variable and keeps
+the `c3po_day_d_data` named volume.
 
 The REST token and S3 credentials must never be copied into Git, logs, issue
 text or chat.

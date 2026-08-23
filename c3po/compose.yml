@@ -34,7 +34,7 @@ services:
     volumes:
       - ..:/legacy:ro
       - c3po_one_pagers:/app/generated-one-pagers
-      - c3po_day_d_data:/app/day-d-data
+      - ${C3PO_DAY_D_DATA_MOUNT_SOURCE:-c3po_day_d_data}:/app/day-d-data
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

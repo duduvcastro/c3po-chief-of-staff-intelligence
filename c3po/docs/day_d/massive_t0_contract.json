@@ -83,7 +83,16 @@
   "owner_approvals": {
     "dedicated_100_gib_lightsail_disk": {
       "approved": true,
-      "monthly_budget_usd": 10
+      "monthly_budget_usd": 10,
+      "provisioned": true,
+      "resource_name": "day-d-data-100gb",
+      "availability_zone": "sa-east-1a",
+      "linux_device": "/dev/nvme1n1",
+      "filesystem": "ext4",
+      "filesystem_uuid": "641e0447-cd48-4cc3-8521-2d25fd584c3a",
+      "mountpoint": "/mnt/day-d-data",
+      "fstab_verified": true,
+      "container_bind_pending_reviewed_deploy": true
     },
     "hybrid_download_and_retention_scope": {
       "approved": true
