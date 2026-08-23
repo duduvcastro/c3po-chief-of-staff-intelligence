@@ -173,7 +173,7 @@
     "minimum_quantity_shares": 1,
     "oversized_notional_rule": "reject_not_resize",
     "participation_breach_rule": "reject_not_resize",
-    "duplicate_symbol_across_setups_rule": "first_accepted_signal_keeps_symbol; later_signal_is_blocked_and_logged",
+    "duplicate_symbol_across_setups_rule": "block_only_while_the_symbol_has_open_exposure; after_the_position_is_fully_closed_a_later_valid_signal_may_reenter_the_same_symbol_in_the_same_session; each_setup_own_attempt_limit_still_applies",
     "insufficient_cash_rule": "reject_and_log"
   },
   "setups": {

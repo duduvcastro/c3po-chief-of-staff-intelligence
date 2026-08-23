@@ -162,6 +162,12 @@ def test_shared_risk_and_sizing_are_frozen() -> None:
     assert risk["fractional_shares_allowed"] is False
     assert risk["oversized_notional_rule"] == "reject_not_resize"
     assert risk["participation_breach_rule"] == "reject_not_resize"
+    assert risk["duplicate_symbol_across_setups_rule"] == (
+        "block_only_while_the_symbol_has_open_exposure; "
+        "after_the_position_is_fully_closed_a_later_valid_signal_may_reenter_"
+        "the_same_symbol_in_the_same_session; "
+        "each_setup_own_attempt_limit_still_applies"
+    )
 
 
 def test_s3_v1_is_frozen_without_rearm_or_same_bar_fill() -> None:
