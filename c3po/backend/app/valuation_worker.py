@@ -16,6 +16,7 @@ from .one_pager import OnePagerService
 from .official_fundamentals import ensure_builtin_official_fundamentals
 from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
+from .valuation_v2_shadow import ValuationV2ShadowService
 
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
@@ -79,6 +80,7 @@ def main() -> None:
     one_pagers.set_us_screener(us_screener)
     chewie = ChewieFundamentalsService(settings, database, market_data.http)
     v2_data = ValuationV2DataService(settings, database, market_data.http)
+    v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
 
     while True:
         now = datetime.now(SAO_PAULO)
@@ -140,6 +142,11 @@ def main() -> None:
                     logger.info("Valuation V2.1 data snapshot complete: %s", v2_counts)
                 except Exception:
                     logger.exception("Valuation V2.1 data snapshot failed; keeping the previous snapshot")
+                try:
+                    shadow_summaries = v2_shadow.run_all()
+                    logger.info("Valuation V2 shadow complete: %s", shadow_summaries)
+                except Exception:
+                    logger.exception("Valuation V2 shadow failed; keeping the previous shadow")
                 v2_pending = False
 
         now = datetime.now(SAO_PAULO)
