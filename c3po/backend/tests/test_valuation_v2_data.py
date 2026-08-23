@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -5,7 +6,7 @@ import pytest
 from app.config import get_settings
 from app.database import Database
 from app.market_data.fmp import FmpClient
-from app.valuation_v2_data import ValuationV2DataService
+from app.valuation_v2_data import ValuationV2DataService, _configure_cli_logging
 
 
 class StubHttp:
@@ -19,6 +20,23 @@ class StubHttp:
             if fragment in url:
                 return payload(params) if callable(payload) else payload
         return []
+
+
+def test_cli_logging_suppresses_authenticated_http_request_urls() -> None:
+    httpx_logger = logging.getLogger("httpx")
+    httpcore_logger = logging.getLogger("httpcore")
+    previous_levels = (httpx_logger.level, httpcore_logger.level)
+    try:
+        httpx_logger.setLevel(logging.INFO)
+        httpcore_logger.setLevel(logging.INFO)
+
+        _configure_cli_logging()
+
+        assert not httpx_logger.isEnabledFor(logging.INFO)
+        assert not httpcore_logger.isEnabledFor(logging.INFO)
+    finally:
+        httpx_logger.setLevel(previous_levels[0])
+        httpcore_logger.setLevel(previous_levels[1])
 
 
 def _future_fy(years_ahead: int = 1) -> str:

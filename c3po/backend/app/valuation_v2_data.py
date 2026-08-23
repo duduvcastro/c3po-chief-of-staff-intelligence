@@ -41,6 +41,13 @@ _UNIVERSE_SNAPSHOT_KEY: dict[V2Market, str] = {
 }
 
 
+def _configure_cli_logging() -> None:
+    """Keep authenticated provider URLs out of operator backfill output."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    for logger_name in ("httpx", "httpcore"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
 def _number(value: Any) -> float | None:
     try:
         parsed = float(value)
@@ -308,12 +315,11 @@ def main() -> int:
     """Explicit operator backfill (outside trading hours): fetch and persist
     the V2.1 packets now instead of waiting for the next 01:00 cycle."""
     import json
-    import logging
 
     from .config import get_settings
     from .market_data.service import MarketDataService
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    _configure_cli_logging()
     settings = get_settings()
     database = Database(settings)
     database.initialize()
