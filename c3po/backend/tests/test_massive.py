@@ -1,8 +1,11 @@
 from datetime import date, datetime, timezone
+import traceback
+from urllib.parse import urlencode
 
 import pytest
 
 from app.market_data.massive import MassiveClient, MassiveResponseError
+from app.market_data.http import MarketDataRequestError
 
 
 class FakeHttp:
@@ -126,3 +129,24 @@ def test_massive_rejects_unconfigured_token_and_unsafe_symbol() -> None:
         list(client.iter_trades("AAPL", session_date=date(2026, 8, 21)))
     with pytest.raises(ValueError, match="invalid Massive stock symbol"):
         list(client.iter_trades("../AAPL", session_date=date(2026, 8, 21)))
+
+
+def test_massive_redacts_api_key_from_rest_error_and_traceback() -> None:
+    token = "massive/secret+token"
+
+    class FailingHttp:
+        def get_json(self, url: str, *, params: dict[str, object]) -> object:
+            raise MarketDataRequestError(
+                f"403 for {url}?{urlencode(params)}&cursor=next"
+            )
+
+    client = MassiveClient("https://api.massive.com", token, FailingHttp())  # type: ignore[arg-type]
+
+    with pytest.raises(MassiveResponseError) as captured:
+        list(client.iter_trades("AAPL", session_date=date(2026, 8, 21)))
+
+    rendered_traceback = "".join(traceback.format_exception(captured.value))
+    assert token not in str(captured.value)
+    assert "massive%2Fsecret%2Btoken" not in str(captured.value)
+    assert token not in rendered_traceback
+    assert "[REDACTED]" in str(captured.value)

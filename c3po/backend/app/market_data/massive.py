@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import date, datetime, timezone
+import re
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, quote_plus, urlparse
 
-from .http import JsonHttpClient
+from .http import JsonHttpClient, MarketDataRequestError
 from .models import number
 
 
@@ -95,7 +96,11 @@ class MassiveClient:
             if url in seen_urls:
                 raise MassiveResponseError("Massive pagination returned a repeated URL")
             seen_urls.add(url)
-            payload = self.http.get_json(url, params=request_params)
+            try:
+                payload = self.http.get_json(url, params=request_params)
+            except MarketDataRequestError as exc:
+                message = self._redact_request_error(exc)
+                raise MassiveResponseError(f"Massive request failed: {message}") from None
             if not isinstance(payload, dict):
                 raise MassiveResponseError("Massive response must be an object")
             results = payload.get("results") or []
@@ -113,6 +118,22 @@ class MassiveClient:
             # embedded in next_url, so only the credential is sent again.
             request_params = {"apiKey": self.token}
         raise MassiveResponseError("Massive pagination exceeded the safety limit")
+
+    def _redact_request_error(self, exc: Exception) -> str:
+        message = str(exc)
+        encoded_secrets = {
+            self.token,
+            quote(self.token, safe=""),
+            quote_plus(self.token, safe=""),
+        }
+        for secret in encoded_secrets:
+            if secret:
+                message = message.replace(secret, "[REDACTED]")
+        return re.sub(
+            r"(?i)(apiKey=)[^&\s\"']+",
+            r"\1[REDACTED]",
+            message,
+        )
 
     def _require_same_origin(self, url: str) -> None:
         parsed = urlparse(url)
