@@ -286,6 +286,7 @@
   "synthetic_truth_gate": {
     "mandatory_before_any_official_result": true,
     "fixed_seed": 20260822,
+    "per_setup_bilateral_tolerance_r": 0.025,
     "worlds": [
       {
         "name": "negative",
@@ -313,7 +314,8 @@
       "zero_latency_result_is_not_worse_than_point_result_after_costs",
       "optimistic_net_result_gte_point_gte_pessimistic",
       "R_is_invariant_to_virtual_NAV_scale",
-      "raw_tail_R_is_not_clipped"
+      "raw_tail_R_is_not_clipped",
+      "adjacent_halts_delay_execution_until_final_reopen"
     ],
     "failure_behavior": "CI_failure_and_no_official_result_artifact",
     "world_execution_path": "S3-v1_and_S5-v1_each_run_signal_fill_sizing_flat_close_and_unclipped_ledger_through_DayDReplayHarness"

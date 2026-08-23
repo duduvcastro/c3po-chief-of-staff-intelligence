@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from .features import require_monotonic_feature_availability
 from .models import BarFeature, SetupEvaluation, SetupSignal
 
 NEW_YORK = ZoneInfo("America/New_York")
+MAX_QQQ_FEATURE_AGE = timedelta(minutes=1)
 
 
 def _session_date(features: list[BarFeature]):
@@ -82,6 +84,8 @@ def evaluate_s3(
         return _evaluation(
             setup="S3-v1", feature=None, attempted=False, reasons=["NO_SESSION_BARS"]
         )
+    require_monotonic_feature_availability(features)
+    require_monotonic_feature_availability(qqq_features)
     ordered = sorted(features, key=lambda item: item.event_at)
     opening_range = [
         item
@@ -153,6 +157,8 @@ def evaluate_s3(
         reasons.append("ATR_UNAVAILABLE")
     if qqq is None or qqq.vwap is None or qqq.bar.close <= qqq.vwap:
         reasons.append("QQQ_NOT_ABOVE_VWAP")
+    elif raw.event_at - qqq.event_at > MAX_QQQ_FEATURE_AGE:
+        reasons.append("QQQ_FEATURE_STALE")
     if raw.bar.close > opening_high + 0.5 * opening_width:
         reasons.append("BREAKOUT_TOO_EXTENDED")
     if raw.event_at.astimezone(NEW_YORK).time() >= time(11, 45):
@@ -213,6 +219,7 @@ def evaluate_s5(
         return _evaluation(
             setup="S5-v1", feature=None, attempted=False, reasons=["NO_SESSION_BARS"]
         )
+    require_monotonic_feature_availability(features)
     ordered = sorted(features, key=lambda item: item.event_at)
     excursion_index = next(
         (
@@ -270,6 +277,8 @@ def evaluate_s5(
         reasons.append("SIGNAL_UNAVAILABLE_BEFORE_EXPIRY")
     if reclaim.atr is None or reclaim.vwap is None or reclaim.rvol is None:
         reasons.append("RECLAIM_FEATURE_UNAVAILABLE")
+    elif reclaim.vwap <= reclaim.bar.high:
+        reasons.append("S5_TARGET_NOT_ABOVE_EX_ANTE_ENTRY_REFERENCE")
     if reasons:
         return _evaluation(
             setup="S5-v1", feature=reclaim, attempted=True, reasons=reasons
@@ -300,6 +309,7 @@ def evaluate_s5(
             "reclaim_close": reclaim.bar.close,
             "preceding_bar_midpoint": (previous.bar.high + previous.bar.low) / 2.0,
             "reclaim_high": reclaim.bar.high,
+            "ex_ante_entry_reference": reclaim.bar.high,
             "vwap": reclaim.vwap,
             "rvol": reclaim.rvol,
             "atr": reclaim.atr,

@@ -86,10 +86,13 @@ well-formed but invented digest is not sufficient.
 CI runs negative (-0.5R), zero (0R) and positive (+0.5R) worlds for both
 S3-v1 and S5-v1 through the actual `DayDReplayHarness`: completed-bar signal,
 activation, fill, sizing, policy-complete synthetic book close and the same
-un-clipped R ledger used by replay. It also checks future-data mutation,
-same-bar rejection, latency ordering, cost monotonicity, NAV-scale invariance
-and preservation of a raw +7R tail. An official manifest accepts that report
-only when its commit and contract hashes match the replay.
+un-clipped R ledger used by replay. Prices and non-zero costs are planted
+independently of harness output, and each setup must recover each world within
+a bilateral tolerance of 0.025R. It also checks future-data mutation, same-bar
+rejection, strict latency ordering through deterministic jitter, full-harness
+cost monotonicity, adjacent halts, NAV-scale invariance and preservation of a
+raw +7R tail. An official manifest accepts that report only when its commit,
+payload and contract hashes match the replay.
 
 The same-commit artifact is generated explicitly, with no wall-clock default:
 

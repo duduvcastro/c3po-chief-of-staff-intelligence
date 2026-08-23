@@ -210,8 +210,12 @@ class ExecutionModel:
 
     @staticmethod
     def _after_halt(tape: MarketTape, arrival_at: datetime) -> datetime:
-        halt = tape.halt_at(arrival_at)
-        return halt.end_at if halt is not None else arrival_at
+        current = arrival_at
+        while (halt := tape.halt_at(current)) is not None:
+            if halt.end_at <= current:
+                raise ValueError("halt interval did not advance execution time")
+            current = halt.end_at
+        return current
 
     def fill_entry(
         self,

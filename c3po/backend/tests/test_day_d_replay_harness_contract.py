@@ -5,22 +5,33 @@ import hashlib
 from dataclasses import replace
 from datetime import date, datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import app.day_d_replay.execution as execution_module
+import app.day_d_replay.synthetic as synthetic_module
 
 from app.day_d_replay.costs import CostTable
 from app.day_d_replay.engine import DayDReplayHarness, ReplayDataset
+from app.day_d_replay.execution import ExecutionModel, MarketTape
 from app.day_d_replay.models import (
     CostScenario,
     DataGateResult,
     FeeSchedule,
     RunManifest,
     RunMode,
+    Quote,
     SpreadCell,
     UniverseManifest,
     UniverseMember,
 )
-from app.day_d_replay.synthetic import run_synthetic_truth_gate
+from app.day_d_replay.synthetic import (
+    _at,
+    _latency_property,
+    _synthetic_engine_manifest,
+    _synthetic_engine_s5_session,
+    run_synthetic_truth_gate,
+)
 from app.day_d_replay.synthetic_gate import main as synthetic_gate_main
 from app.day_d_replay.validation import (
     HARNESS_CONTRACT_PATH,
@@ -28,6 +39,7 @@ from app.day_d_replay.validation import (
     OfficialReplayBlocked,
     dataset_manifest_hash,
     sha256_file,
+    synthetic_truth_evidence_hash,
     validate_official_readiness,
 )
 
@@ -137,6 +149,7 @@ def test_harness_contract_is_research_only_and_fail_closed() -> None:
         "raise_and_emit_no_official_result"
     )
     assert contract["synthetic_truth_gate"]["mandatory_before_any_official_result"] is True
+    assert contract["synthetic_truth_gate"]["per_setup_bilateral_tolerance_r"] == 0.025
     assert contract["official_result_matrix"] == {
         "book_policies": ["operational", "flat_at_close"],
         "latency_scenarios": ["point", "0ms", "250ms", "1000ms", "2000ms"],
@@ -171,6 +184,69 @@ def test_synthetic_truth_recovers_all_three_worlds_and_properties() -> None:
     assert report.world_results["zero"]["mean"] == pytest.approx(0.0)
     assert report.world_results["positive"]["mean"] == pytest.approx(0.5)
     assert all(report.property_results.values())
+    assert synthetic_truth_evidence_hash(report) == report.evidence_hash
+    assert synthetic_truth_evidence_hash(replace(report, passed=False)) != report.evidence_hash
+    assert synthetic_truth_evidence_hash(
+        replace(report, measured_at=report.measured_at.replace(hour=13))
+    ) != report.evidence_hash
+
+
+def test_s5_adverse_fill_above_target_is_not_retroactively_deleted() -> None:
+    session = _synthetic_engine_s5_session(99.0)
+    adverse_quote = Quote(
+        "adverse-s5-fill",
+        "SYN",
+        _at(9, 46, 1),
+        _at(9, 46, 1),
+        100.18,
+        100.20,
+        10_000,
+        10_000,
+    )
+    session = replace(
+        session,
+        tapes_by_symbol={
+            **session.tapes_by_symbol,
+            "SYN": MarketTape(symbol="SYN", trades=(), quotes=(adverse_quote,)),
+        },
+    )
+    fee = replace(
+        _fee(),
+        version="SYNTHETIC-FEE-v1",
+        commission_per_share_usd=0.0,
+        minimum_commission_usd=0.0,
+        sec_section_31_rate=0.0,
+        finra_taf_per_share_usd=0.0,
+    )
+    result = DayDReplayHarness(
+        manifest=_synthetic_engine_manifest(latency_scenario="0ms")
+    ).run_flat_at_close_counterfactual(
+        ReplayDataset(
+            sessions=(session,),
+            checksums={},
+            fee_schedule=fee,
+            cost_table=CostTable.from_cells(
+                "DAY-D-COST-v1",
+                (
+                    SpreadCell(
+                        liquidity_quintile=1,
+                        time_bucket="ALL",
+                        half_spread_p25_usd=0.01,
+                        half_spread_p50_usd=0.02,
+                        observation_count=100,
+                        source_sessions_end=date(2026, 8, 17),
+                        available_at=_at(8, 0),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    audit = next(item for item in result.entry_audits if item.setup_version == "S5-v1")
+    assert audit.entry_accepted is True
+    assert audit.final_fill is not None
+    assert audit.final_fill.economic_price >= 100.20
+    assert any(trade.setup_version == "S5-v1" for trade in result.closed_trades)
 
 
 def test_synthetic_truth_cli_persists_auditable_artifact(tmp_path: Path) -> None:
@@ -251,6 +327,120 @@ def test_official_readiness_rejects_tampered_synthetic_payload() -> None:
             synthetic_truth=replace(report, world_results=tampered_worlds),
             preregistration_payload=PREREGISTRATION_PAYLOAD,
         )
+
+
+def test_official_readiness_rederives_per_setup_world_tolerances() -> None:
+    checksums = {"market-data.parquet": "c" * 64}
+    manifest = _manifest(checksums=checksums)
+    report = run_synthetic_truth_gate(
+        git_commit=manifest.git_commit,
+        measured_at=manifest.created_at,
+    )
+    worlds = {name: dict(values) for name, values in report.world_results.items()}
+    worlds["positive"]["S3-v1"] += 0.03
+    worlds["positive"]["S5-v1"] -= 0.03
+    worlds["positive"]["mean"] = 0.5
+    forged = replace(report, world_results=worlds)
+    forged = replace(forged, evidence_hash=synthetic_truth_evidence_hash(forged))
+
+    with pytest.raises(OfficialReplayBlocked, match="bilateral tolerance"):
+        validate_official_readiness(
+            manifest=manifest,
+            checksums=checksums,
+            universes=(_universe(),),
+            fee_schedule=_fee(),
+            cost_table=_cost_table(),
+            synthetic_truth=forged,
+            preregistration_payload=PREREGISTRATION_PAYLOAD,
+        )
+
+
+def test_synthetic_gate_rejects_a_dead_cost_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        CostTable,
+        "half_spread",
+        lambda self, **kwargs: 0.0,
+    )
+    monkeypatch.setattr(execution_module, "execution_fee", lambda *args, **kwargs: 0.0)
+
+    report = run_synthetic_truth_gate(
+        git_commit="a" * 40,
+        measured_at=datetime(2026, 8, 22, 12, tzinfo=timezone.utc),
+    )
+
+    assert report.passed is False
+
+
+def test_synthetic_gate_rejects_a_biased_entry_fill(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = ExecutionModel.fill_entry
+
+    def biased_fill(self, **kwargs):
+        fill = original(self, **kwargs)
+        return None if fill is None else replace(
+            fill, economic_price=fill.economic_price + 0.25
+        )
+
+    monkeypatch.setattr(ExecutionModel, "fill_entry", biased_fill)
+    report = run_synthetic_truth_gate(
+        git_commit="a" * 40,
+        measured_at=datetime(2026, 8, 22, 12, tzinfo=timezone.utc),
+    )
+
+    assert report.passed is False
+
+
+def test_synthetic_gate_rejects_compensating_setup_biases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = synthetic_module._recover_full_harness_episode
+
+    def biased_recovery(**kwargs):
+        value = original(**kwargs)
+        return value + (0.03 if kwargs["setup_version"] == "S3-v1" else -0.03)
+
+    monkeypatch.setattr(
+        synthetic_module, "_recover_full_harness_episode", biased_recovery
+    )
+    report = run_synthetic_truth_gate(
+        git_commit="a" * 40,
+        measured_at=datetime(2026, 8, 22, 12, tzinfo=timezone.utc),
+    )
+
+    assert report.passed is False
+
+
+def test_synthetic_gate_rejects_a_noop_latency_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ExecutionModel, "_latency", lambda self, order_key: 0)
+
+    assert _latency_property() is False
+    assert run_synthetic_truth_gate(
+        git_commit="a" * 40,
+        measured_at=datetime(2026, 8, 22, 12, tzinfo=timezone.utc),
+    ).passed is False
+
+
+def test_official_fragility_matrix_fails_closed_without_an_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checksums = {"market-data.parquet": "c" * 64}
+    manifest = _manifest(checksums=checksums)
+
+    def non_monotonic_result(self, dataset, *, book_policy="operational"):
+        edge = {
+            CostScenario.OPTIMISTIC: -1.0,
+            CostScenario.POINT: 0.0,
+            CostScenario.PESSIMISTIC: 1.0,
+        }[self.manifest.cost_scenario]
+        return SimpleNamespace(
+            ending_nav_usd=self.initial_nav_usd + edge,
+            evaluations=(),
+        )
+
+    monkeypatch.setattr(DayDReplayHarness, "_run_single", non_monotonic_result)
+    with pytest.raises(OfficialReplayBlocked, match="fragility gate failed"):
+        DayDReplayHarness(manifest=manifest).run_fragility_matrix(SimpleNamespace())
 
 
 def test_official_readiness_validates_each_dataset_checksum() -> None:

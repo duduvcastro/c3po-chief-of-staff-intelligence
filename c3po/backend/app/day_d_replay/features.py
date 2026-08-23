@@ -10,6 +10,19 @@ from .models import BarFeature, MinuteBar, PriorVolumeCurve
 NEW_YORK = ZoneInfo("America/New_York")
 
 
+def require_monotonic_feature_availability(
+    features: list[BarFeature],
+) -> None:
+    """Fail closed when later market events became available before earlier ones."""
+
+    ordered = sorted(features, key=lambda item: item.event_at)
+    for previous, current in zip(ordered, ordered[1:]):
+        if current.available_at < previous.available_at:
+            raise ValueError(
+                "feature availability must be monotonic in market-event order"
+            )
+
+
 def cumulative_volume_curve(bars: list[MinuteBar]) -> dict[int, float]:
     """Return cumulative volume keyed by zero-based regular-session minute."""
 
@@ -53,6 +66,11 @@ def build_session_features(
         raise ValueError("duplicate one-minute bars are not allowed")
     if len({bar.start_at.astimezone(NEW_YORK).date() for bar in ordered}) != 1:
         raise ValueError("build_session_features accepts one session at a time")
+    for previous, current in zip(ordered, ordered[1:]):
+        if current.available_at < previous.available_at:
+            raise ValueError(
+                "bar availability must be monotonic in market-event order"
+            )
 
     session_open = ordered[0].start_at.astimezone(NEW_YORK).replace(
         hour=9, minute=30, second=0, microsecond=0
@@ -129,6 +147,7 @@ def latest_completed_feature(
 
     if at.tzinfo is None or at.utcoffset() is None:
         raise ValueError("at must be timezone-aware")
+    require_monotonic_feature_availability(features)
     ordered = sorted(features, key=lambda item: item.available_at)
     available_times = [item.available_at for item in ordered]
     index = bisect_right(available_times, at) - 1

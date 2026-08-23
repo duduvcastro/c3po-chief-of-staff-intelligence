@@ -331,12 +331,17 @@ class DayDReplayHarness:
             for latency in latency_scenarios
             for cost in cost_scenarios
         )
-        return ReplayMatrixResult(
+        matrix = ReplayMatrixResult(
             results=results,
             books_share_identical_signals=books_share_identical_signals,
             zero_vs_1000ms_sign_stable=zero_vs_1000,
             cost_monotonic_by_latency=monotonic,
         )
+        if not matrix.passed_fragility_gate:
+            raise OfficialReplayBlocked(
+                "official replay fragility gate failed; no matrix artifact may be emitted"
+            )
+        return matrix
 
     def _run_single(
         self, dataset: ReplayDataset, *, book_policy: str = "operational"
@@ -529,6 +534,12 @@ class DayDReplayHarness:
                 if planned.partial:
                     state.position.partial_filled = True
                     state.position.chandelier_activated = True
+                self._advance_chandelier_state(
+                    state=state,
+                    session=session,
+                    features=features.get(state.position.symbol, []),
+                    through=persisted_fill.filled_at,
+                )
                 if state.position.remaining_quantity > 0:
                     self._enqueue_next_exit(
                         queue=queue,
@@ -901,8 +912,6 @@ class DayDReplayHarness:
         feature = latest_completed_feature(symbol_features, trial.filled_at)
         if feature is None or feature.vwap is None:
             return None, "ENTRY_TIME_VWAP_UNAVAILABLE"
-        if signal.setup_version == "S5-v1" and feature.vwap <= trial.economic_price:
-            return None, "S5_FROZEN_VWAP_TARGET_NOT_ABOVE_FILL"
         completed = [
             item
             for item in symbol_features
@@ -1656,11 +1665,8 @@ class DayDReplayHarness:
         high_water = state.position.high_water
         chandelier = state.position.chandelier_stop
         activated = state.position.chandelier_activated
-        activation_level = (
-            state.position.average_cost_per_share
-            + 1.5 * state.position.risk_per_share_usd
-            if state.position.quantity == 1
-            else None
+        activation_level = state.position.average_cost_per_share + 1.5 * (
+            state.position.risk_per_share_usd
         )
         for trade in sorted(
             tape.trades,
@@ -1670,14 +1676,18 @@ class DayDReplayHarness:
                 continue
             if trade.available_at > through:
                 continue
-            feature = latest_completed_feature(features, trade.available_at)
-            if feature is None or feature.atr is None:
+            if tape.halt_at(trade.event_at) is not None:
                 continue
-            if not activated:
-                if activation_level is None or trade.price < activation_level:
-                    continue
-                activated = True
             high_water = max(high_water, trade.price)
+            if (
+                not activated
+                and state.position.quantity == 1
+                and trade.price >= activation_level
+            ):
+                activated = True
+
+        feature = latest_completed_feature(features, through)
+        if activated and feature is not None and feature.atr is not None:
             proposed = high_water - 2.5 * feature.atr
             chandelier = proposed if chandelier is None else max(chandelier, proposed)
         state.position.high_water = high_water

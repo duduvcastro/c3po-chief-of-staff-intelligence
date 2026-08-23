@@ -585,7 +585,87 @@ def test_carried_chandelier_ignores_trade_unavailable_by_official_close() -> Non
     )
 
     assert position.high_water == 100.0
-    assert position.chandelier_stop is None
+    assert position.chandelier_stop == pytest.approx(98.75)
+
+
+def test_chandelier_keeps_entry_to_partial_high_water_and_never_retreats() -> None:
+    entry = Fill(
+        "AAA", Side.BUY, "entry", _at(10, 0), _at(10, 0), _at(10, 0),
+        100.0, 100.0, 10, 0.0, 0.0, None, "entry", 0, 0, False,
+    )
+    position = Position(
+        position_id="entry-to-partial-high-water",
+        setup_version="S3-v1",
+        symbol="AAA",
+        session_date=date(2026, 8, 21),
+        quantity=10,
+        entry_fill=entry,
+        average_cost_per_share=100.0,
+        risk_budget_usd=10.0,
+        risk_per_share_usd=1.0,
+        initial_stop=99.0,
+        target_price=None,
+        entry_atr=0.4,
+        high_water=100.0,
+        remaining_quantity=5,
+        partial_filled=True,
+        chandelier_activated=True,
+    )
+    state = _ManagedPosition(position, 1, {"AAA"}, last_mark=101.6)
+    before_partial = (
+        TradePrint("high", "AAA", _at(10, 5), _at(10, 5), 102.8, 100),
+        TradePrint("partial", "AAA", _at(10, 9), _at(10, 9), 101.6, 100),
+    )
+    feature = BarFeature(
+        MinuteBar(
+            "AAA", _at(10, 5), _at(10, 6), _at(10, 6),
+            102.0, 102.8, 101.5, 101.6, 1000,
+        ),
+        1000,
+        101.5,
+        2.0,
+        0.4,
+    )
+    session = SimpleNamespace(
+        tapes_by_symbol={"AAA": MarketTape(symbol="AAA", trades=before_partial, quotes=())}
+    )
+
+    DayDReplayHarness._advance_chandelier_state(
+        state=state, session=session, features=[feature], through=_at(10, 10)
+    )
+
+    assert position.high_water == pytest.approx(102.8)
+    assert position.chandelier_stop == pytest.approx(101.8)
+
+    later = TradePrint("lower", "AAA", _at(10, 11), _at(10, 11), 101.7, 100)
+    wider_atr = replace(feature, atr=0.6)
+    session = SimpleNamespace(
+        tapes_by_symbol={
+            "AAA": MarketTape(
+                symbol="AAA", trades=before_partial + (later,), quotes=()
+            )
+        }
+    )
+    DayDReplayHarness._advance_chandelier_state(
+        state=state, session=session, features=[wider_atr], through=_at(10, 12)
+    )
+
+    assert position.high_water == pytest.approx(102.8)
+    assert position.chandelier_stop == pytest.approx(101.8)
+
+
+def test_adjacent_halts_delay_execution_until_the_final_reopen() -> None:
+    tape = MarketTape(
+        symbol="AAA",
+        trades=(),
+        quotes=(),
+        halts=(
+            HaltInterval("AAA", _at(10, 0), _at(10, 1), _at(10, 0)),
+            HaltInterval("AAA", _at(10, 1), _at(10, 2), _at(10, 1)),
+        ),
+    )
+
+    assert ExecutionModel._after_halt(tape, _at(10, 0, 30)) == _at(10, 2)
 
 
 def test_overnight_position_includes_prints_at_the_opening_timestamp() -> None:

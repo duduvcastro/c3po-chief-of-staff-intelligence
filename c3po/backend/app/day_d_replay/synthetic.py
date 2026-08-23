@@ -15,6 +15,7 @@ from .models import (
     CostScenario,
     FeeSchedule,
     Fill,
+    HaltInterval,
     MinuteBar,
     OfficialCloseObservation,
     Position,
@@ -31,10 +32,29 @@ from .models import (
     UniverseMember,
 )
 from .signals import evaluate_s3, evaluate_s5
-from .validation import HARNESS_CONTRACT_PATH, SIGNAL_CONTRACT_PATH, sha256_file
+from .validation import (
+    HARNESS_CONTRACT_PATH,
+    SIGNAL_CONTRACT_PATH,
+    SYNTHETIC_WORLD_TOLERANCE_R,
+    sha256_file,
+)
 
 NEW_YORK = ZoneInfo("America/New_York")
 FIXED_SEED = 20260822
+SYNTHETIC_WORLD_CLOSES = {
+    "S3-v1": {
+        -0.5: 100.85087663111453,
+        0.0: 101.7229938992304,
+        0.5: 102.59511116734626,
+        7.0: 113.93263565285254,
+    },
+    "S5-v1": {
+        -0.5: 98.95586494992423,
+        0.0: 99.82294107776197,
+        0.5: 100.69001720559972,
+        7.0: 111.96200686749035,
+    },
+}
 
 
 def _at(hour: int, minute: int, second: int = 0, millisecond: int = 0) -> datetime:
@@ -245,7 +265,11 @@ def _official_close(
     )
 
 
-def _synthetic_engine_manifest() -> RunManifest:
+def _synthetic_engine_manifest(
+    *,
+    latency_scenario: str = "point",
+    cost_scenario: CostScenario = CostScenario.POINT,
+) -> RunManifest:
     return RunManifest(
         run_id="synthetic-truth-engine",
         run_mode=RunMode.SYNTHETIC,
@@ -264,8 +288,8 @@ def _synthetic_engine_manifest() -> RunManifest:
         risk_policy_version="DAY-D-RISK-v1",
         calendar_version="DAY-D-CALENDAR-v1",
         harness_version="DAY-D-HARNESS-v1",
-        latency_scenario="0ms",
-        cost_scenario=CostScenario.POINT,
+        latency_scenario=latency_scenario,
+        cost_scenario=cost_scenario,
         run_seed=FIXED_SEED,
         data_gate_results=(),
         synthetic_truth_gate_passed=False,
@@ -438,18 +462,30 @@ def _synthetic_engine_s5_session(close_price: float) -> ReplaySession:
     )
 
 
-def _recover_full_harness_episode(*, setup_version: str, planted_r: float) -> float:
+def _recover_full_harness_episode(
+    *,
+    setup_version: str,
+    planted_r: float,
+    cost_scenario: CostScenario = CostScenario.POINT,
+    latency_scenario: str = "point",
+) -> float:
+    """Recover an independently planted world through the real harness.
+
+    Close prices are fixed constants derived from the synthetic market design,
+    never from a calibration run or any output produced by the harness under test.
+    """
+
     fee = FeeSchedule(
         version="SYNTHETIC-FEE-v1",
         source="synthetic-truth",
         effective_at=_at(8, 0),
         captured_at=_at(8, 0),
         content_hash="0" * 64,
-        commission_per_share_usd=0.0,
-        minimum_commission_usd=0.0,
-        sec_section_31_rate=0.0,
-        finra_taf_per_share_usd=0.0,
-        finra_taf_cap_usd=0.0,
+        commission_per_share_usd=0.03,
+        minimum_commission_usd=1.0,
+        sec_section_31_rate=0.0000278,
+        finra_taf_per_share_usd=0.000166,
+        finra_taf_cap_usd=8.30,
     )
     cost = CostTable.from_cells(
         "DAY-D-COST-v1",
@@ -457,15 +493,18 @@ def _recover_full_harness_episode(*, setup_version: str, planted_r: float) -> fl
             SpreadCell(
                 liquidity_quintile=1,
                 time_bucket="ALL",
-                half_spread_p25_usd=0.0,
-                half_spread_p50_usd=0.0,
+                half_spread_p25_usd=0.025,
+                half_spread_p50_usd=0.05,
                 observation_count=100,
                 source_sessions_end=date(2026, 8, 17),
                 available_at=_at(8, 0),
             ),
         ),
     )
-    manifest = _synthetic_engine_manifest()
+    manifest = _synthetic_engine_manifest(
+        latency_scenario=latency_scenario,
+        cost_scenario=cost_scenario,
+    )
 
     session_factory = (
         _synthetic_engine_session
@@ -475,30 +514,18 @@ def _recover_full_harness_episode(*, setup_version: str, planted_r: float) -> fl
     if setup_version not in {"S3-v1", "S5-v1"}:
         raise ValueError("unsupported synthetic setup")
 
-    def run(close_price: float):
-        return DayDReplayHarness(manifest=manifest).run_flat_at_close_counterfactual(
-            ReplayDataset(
-                sessions=(session_factory(close_price),),
-                checksums={},
-                fee_schedule=fee,
-                cost_table=cost,
-            )
+    try:
+        planted_close = SYNTHETIC_WORLD_CLOSES[setup_version][planted_r]
+    except KeyError as exc:
+        raise ValueError("unsupported planted synthetic world") from exc
+    result = DayDReplayHarness(manifest=manifest).run_flat_at_close_counterfactual(
+        ReplayDataset(
+            sessions=(session_factory(planted_close),),
+            checksums={},
+            fee_schedule=fee,
+            cost_table=cost,
         )
-
-    calibration_price = 101.62 if setup_version == "S3-v1" else 99.72
-    calibration = run(calibration_price)
-    audit = next(
-        item
-        for item in calibration.entry_audits
-        if item.entry_accepted and item.setup_version == setup_version
     )
-    assert audit.final_fill is not None
-    assert audit.risk_budget_usd is not None
-    desired_close = (
-        audit.final_fill.economic_price
-        + planted_r * audit.risk_budget_usd / audit.final_fill.quantity
-    )
-    result = run(desired_close)
     closed = next(
         trade for trade in result.closed_trades if trade.setup_version == setup_version
     )
@@ -616,9 +643,9 @@ def _s5_features() -> list[BarFeature]:
             symbol="SYN",
             start=_at(9, 44),
             open_=99.85,
-            high=100.05,
+            high=99.95,
             low=99.8,
-            close=100.01,
+            close=99.9,
             vwap=99.98,
             rvol=2.0,
             atr=0.2,
@@ -684,6 +711,10 @@ def _future_mutation_property() -> bool:
             )
         ]
     ).signal
+    assert first_s3 is not None
+    assert mutated_s3 is not None
+    assert first_s5 is not None
+    assert mutated_s5 is not None
     return decision_fingerprint(first_s3) == decision_fingerprint(
         mutated_s3
     ) and decision_fingerprint(first_s5) == decision_fingerprint(mutated_s5)
@@ -749,7 +780,8 @@ def _latency_property() -> bool:
     )
     quotes = (
         Quote("q1", "SYN", _at(10, 0, 0, 100), _at(10, 0, 0, 100), 100.0, 100.1, 10, 10),
-        Quote("q2", "SYN", _at(10, 0, 0, 600), _at(10, 0, 0, 600), 100.5, 100.6, 10, 10),
+        Quote("q2", "SYN", _at(10, 0, 0, 400), _at(10, 0, 0, 400), 100.3, 100.4, 10, 10),
+        Quote("q3", "SYN", _at(10, 0, 1, 100), _at(10, 0, 1, 100), 100.7, 100.8, 10, 10),
     )
     tape = MarketTape(symbol="SYN", trades=(), quotes=quotes)
     zero = ExecutionModel(
@@ -762,7 +794,7 @@ def _latency_property() -> bool:
         quote_max_age_milliseconds=1000,
     )
     point = ExecutionModel(
-        fee_schedule=fee, run_seed=FIXED_SEED, fixed_latency_milliseconds=500
+        fee_schedule=fee, run_seed=FIXED_SEED
     ).fill_entry(
         signal=signal,
         tape=tape,
@@ -770,7 +802,30 @@ def _latency_property() -> bool:
         half_spread_usd=0.05,
         quote_max_age_milliseconds=1000,
     )
-    return zero is not None and point is not None and zero.economic_price <= point.economic_price
+    slow = ExecutionModel(
+        fee_schedule=fee, run_seed=FIXED_SEED, fixed_latency_milliseconds=1000
+    ).fill_entry(
+        signal=signal,
+        tape=tape,
+        quantity=10,
+        half_spread_usd=0.05,
+        quote_max_age_milliseconds=1000,
+    )
+    return (
+        zero is not None
+        and point is not None
+        and slow is not None
+        and 0 < point.latency_milliseconds < 1000
+        and zero.economic_price < point.economic_price < slow.economic_price
+        and slow.economic_price - zero.economic_price >= 0.50
+    )
+
+
+def _adjacent_halts_property() -> bool:
+    first = HaltInterval("SYN", _at(10, 0), _at(10, 1), _at(10, 0))
+    second = HaltInterval("SYN", _at(10, 1), _at(10, 2), _at(10, 1))
+    tape = MarketTape(symbol="SYN", trades=(), quotes=(), halts=(first, second))
+    return ExecutionModel._after_halt(tape, _at(10, 0, 30)) == _at(10, 2)
 
 
 def run_synthetic_truth_gate(
@@ -783,13 +838,9 @@ def run_synthetic_truth_gate(
     """Run the deterministic CI truth worlds through the real R ledger."""
 
     world_results: dict[str, dict[str, float]] = {}
-    thresholds = {
-        "negative": (-0.5, lambda value: value <= -0.4),
-        "zero": (0.0, lambda value: abs(value) <= 0.05),
-        "positive": (0.5, lambda value: value >= 0.4),
-    }
+    thresholds = {"negative": -0.5, "zero": 0.0, "positive": 0.5}
     world_passes: list[bool] = []
-    for world, (planted, predicate) in thresholds.items():
+    for world, planted in thresholds.items():
         setup_results = {
             setup: _recover_full_harness_episode(
                 setup_version=setup,
@@ -801,20 +852,32 @@ def run_synthetic_truth_gate(
         setup_results["mean"] = recovered
         setup_results["planted"] = planted
         world_results[world] = setup_results
-        world_passes.append(predicate(recovered))
+        world_passes.append(
+            all(
+                abs(setup_results[setup] - planted)
+                <= SYNTHETIC_WORLD_TOLERANCE_R
+                for setup in ("S3-v1", "S5-v1")
+            )
+        )
 
-    optimistic = _recover_episode(
-        setup_version="S3-v1", planted_r=0.5, entry_spread=0.01, exit_spread=0.01
+    optimistic = _recover_full_harness_episode(
+        setup_version="S3-v1",
+        planted_r=0.5,
+        cost_scenario=CostScenario.OPTIMISTIC,
     )
-    point = _recover_episode(
-        setup_version="S3-v1", planted_r=0.5, entry_spread=0.02, exit_spread=0.02
+    point = _recover_full_harness_episode(
+        setup_version="S3-v1",
+        planted_r=0.5,
+        cost_scenario=CostScenario.POINT,
     )
-    pessimistic = _recover_episode(
-        setup_version="S3-v1", planted_r=0.5, entry_spread=0.04, exit_spread=0.04
+    pessimistic = _recover_full_harness_episode(
+        setup_version="S3-v1",
+        planted_r=0.5,
+        cost_scenario=CostScenario.PESSIMISTIC,
     )
     scale_one = _recover_episode(setup_version="S5-v1", planted_r=0.5, nav_scale=1)
     scale_two = _recover_episode(setup_version="S5-v1", planted_r=0.5, nav_scale=2)
-    raw_tail = _recover_episode(setup_version="S3-v1", planted_r=7.0)
+    raw_tail = _recover_full_harness_episode(setup_version="S3-v1", planted_r=7.0)
     properties = {
         "future_data_mutation_does_not_change_prior_decision": _future_mutation_property(),
         "same_bar_fill_is_rejected": _same_bar_property(),
@@ -822,12 +885,19 @@ def run_synthetic_truth_gate(
         "optimistic_net_result_gte_point_gte_pessimistic": optimistic >= point >= pessimistic,
         "R_is_invariant_to_virtual_NAV_scale": abs(scale_one - scale_two) < 1e-12,
         "raw_tail_R_is_not_clipped": raw_tail > 5.0,
+        "adjacent_halts_delay_execution_until_final_reopen": _adjacent_halts_property(),
     }
     passed = all(world_passes) and all(properties.values())
+    harness_contract_hash = sha256_file(harness_contract_path)
+    signal_contract_hash = sha256_file(signal_contract_path)
     evidence = {
         "version": "DAY-D-SYNTHETIC-TRUTH-v1",
         "git_commit": git_commit,
+        "harness_contract_hash": harness_contract_hash,
+        "signal_contract_hash": signal_contract_hash,
         "seed": FIXED_SEED,
+        "passed": passed,
+        "measured_at": measured_at.isoformat(),
         "world_results": world_results,
         "property_results": properties,
     }
@@ -837,8 +907,8 @@ def run_synthetic_truth_gate(
     return SyntheticTruthReport(
         version="DAY-D-SYNTHETIC-TRUTH-v1",
         git_commit=git_commit,
-        harness_contract_hash=sha256_file(harness_contract_path),
-        signal_contract_hash=sha256_file(signal_contract_path),
+        harness_contract_hash=harness_contract_hash,
+        signal_contract_hash=signal_contract_hash,
         run_seed=FIXED_SEED,
         passed=passed,
         measured_at=measured_at,

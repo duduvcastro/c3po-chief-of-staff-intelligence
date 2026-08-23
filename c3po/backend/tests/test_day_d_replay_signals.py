@@ -151,7 +151,7 @@ def test_s3_uses_first_breakout_only_and_does_not_rearm() -> None:
     assert "RVOL_BELOW_1_5" in evaluation.reasons
 
 
-def test_s3_decision_waits_for_delayed_opening_range_input() -> None:
+def test_s3_fails_closed_when_feature_availability_is_not_monotonic() -> None:
     opening = [_feature(index) for index in range(15)]
     opening[5] = _feature(5, available_delay_seconds=1400)
     breakout = _feature(15, high=101.4, low=99.8, close=101.2, vwap=100.0)
@@ -160,10 +160,8 @@ def test_s3_decision_waits_for_delayed_opening_range_input() -> None:
         for index in range(16)
     ]
 
-    evaluation = evaluate_s3(opening + [breakout], qqq)
-
-    assert evaluation.signal is None
-    assert "SIGNAL_UNAVAILABLE_BEFORE_EXPIRY" in evaluation.reasons
+    with pytest.raises(ValueError, match="availability must be monotonic"):
+        evaluate_s3(opening + [breakout], qqq)
 
 
 def test_s3_expiry_counts_three_completed_bars_instead_of_wall_minutes() -> None:
@@ -197,6 +195,42 @@ def test_s3_expiry_counts_three_completed_bars_instead_of_wall_minutes() -> None
     assert evaluation.signal.expires_at == _at(9, 50)
 
 
+def test_s3_rejects_a_stale_or_negative_qqq_gate() -> None:
+    opening = [_feature(index) for index in range(15)]
+    breakout = _feature(15, high=101.4, low=99.8, close=101.2, vwap=100.0)
+    stale_qqq = [
+        _feature(
+            index,
+            symbol="QQQ",
+            open_=500,
+            high=501,
+            low=499,
+            close=500.5,
+            vwap=500,
+        )
+        for index in range(14)
+    ]
+    stale = evaluate_s3(opening + [breakout], stale_qqq)
+    assert stale.signal is None
+    assert "QQQ_FEATURE_STALE" in stale.reasons
+
+    below_vwap = stale_qqq + [
+        _feature(
+            index,
+            symbol="QQQ",
+            open_=500,
+            high=501,
+            low=499,
+            close=499.5,
+            vwap=500,
+        )
+        for index in (14, 15)
+    ]
+    negative = evaluate_s3(opening + [breakout], below_vwap)
+    assert negative.signal is None
+    assert "QQQ_NOT_ABOVE_VWAP" in negative.reasons
+
+
 def test_s5_freezes_first_excursion_and_later_completed_reclaim() -> None:
     features = [
         _feature(index, high=100.1, low=99.95, close=100.0, atr=0.2, rvol=1.0)
@@ -206,7 +240,14 @@ def test_s5_freezes_first_excursion_and_later_completed_reclaim() -> None:
         13, high=100.0, low=99.6, close=99.8, vwap=100.0, atr=0.2, rvol=1.0
     )
     reclaim = _feature(
-        14, high=100.1, low=99.8, close=100.01, vwap=99.98, atr=0.2, rvol=2.0
+        14,
+        open_=99.85,
+        high=99.95,
+        low=99.8,
+        close=99.9,
+        vwap=99.98,
+        atr=0.2,
+        rvol=2.0,
     )
 
     evaluation = evaluate_s5(features + [excursion, reclaim])
@@ -215,5 +256,30 @@ def test_s5_freezes_first_excursion_and_later_completed_reclaim() -> None:
     assert evaluation.signal is not None
     assert evaluation.signal.session_date == date(2026, 8, 21)
     assert evaluation.signal.structural_stop == pytest.approx(99.59)
-    assert evaluation.signal.activation_price == pytest.approx(100.1)
+    assert evaluation.signal.activation_price == pytest.approx(99.95)
     assert evaluation.signal.target_hint is None
+
+
+def test_s5_rejects_target_ex_ante_instead_of_vetoing_a_later_fill() -> None:
+    features = [
+        _feature(index, high=100.1, low=99.95, close=100.0, atr=0.2, rvol=1.0)
+        for index in range(13)
+    ]
+    excursion = _feature(
+        13, high=100.0, low=99.6, close=99.8, vwap=100.0, atr=0.2, rvol=1.0
+    )
+    reclaim = _feature(
+        14,
+        open_=99.85,
+        high=100.05,
+        low=99.8,
+        close=99.9,
+        vwap=100.0,
+        atr=0.2,
+        rvol=2.0,
+    )
+
+    evaluation = evaluate_s5(features + [excursion, reclaim])
+
+    assert evaluation.signal is None
+    assert "S5_TARGET_NOT_ABOVE_EX_ANTE_ENTRY_REFERENCE" in evaluation.reasons
