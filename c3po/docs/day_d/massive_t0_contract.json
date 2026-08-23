@@ -125,6 +125,18 @@
       "restore_drill_requires_temporary_cap_usd_per_day": 0.5,
       "restore_drill_required_before_local_deletion": true,
       "restore_drill_procedure": "day_d/B2_RESTORE_DRILL.md"
+    },
+    "qualified_tick_lot_local_deletion": {
+      "approved": true,
+      "scope": "exactly_trades_and_quotes_for_one_frozen_qualification_session",
+      "delete_targets_source": "immutable_offload_lot_report_only",
+      "largest_raw_object_restore_required_per_lot": true,
+      "billing_cap_return_to_zero_evidence_required": true,
+      "remote_rehead_before_each_unlink_required": true,
+      "minute_aggregates_excluded": true,
+      "failure_action": "quarantine_until_six_hands_review",
+      "backblaze_becomes_primary_archive_after_local_raw_deletion": true,
+      "catastrophic_fallback": "Massive_re_download_verified_against_frozen_T0_metadata"
     }
   },
   "first_byte_gate": {

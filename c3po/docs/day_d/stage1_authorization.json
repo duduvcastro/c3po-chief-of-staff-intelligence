@@ -19,6 +19,9 @@
     "limited_first_byte_scope": "five_year_minute_aggregates_plus_twelve_qualification_sessions_trades_and_quotes",
     "limited_first_byte_scope_bytes": 131006214944,
     "campaign_pause_bytes": 137556525692,
+    "qualified_tick_lot_local_deletion_authorized": true,
+    "qualified_tick_lot_local_deletion_scope": "only_trades_and_quotes_from_one_complete_frozen_qualification_session_after_verified_offload_raw_restore_and_billing_cap_return",
+    "minute_aggregate_local_deletion_authorized": false,
     "official_252_session_tick_window_authorized": false,
     "raw_capture_authorized": true,
     "raw_capture_authorized_at": "2026-08-23",
@@ -37,6 +40,7 @@
     "dedicated_disk_container_bind_verified": true,
     "backblaze_b2_checksum_roundtrip_verified": true,
     "passive_microstructure_capture_before_next_us_open_approved": true,
+    "qualified_tick_lot_rolling_deletion_approved": true,
     "first_week_disable_condition": "sustained_drops_or_queue_saturation_during_opening_burst"
   },
   "frozen_contracts": {
