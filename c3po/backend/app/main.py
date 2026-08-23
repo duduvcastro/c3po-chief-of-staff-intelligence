@@ -1409,7 +1409,12 @@ def chewie_fundamentals_report(market: str, symbol: str) -> FileResponse:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     if path is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Símbolo não encontrado na fonte de fundamentos")
-    return FileResponse(path, media_type="application/pdf", filename=path.name)
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=path.name,
+        content_disposition_type="inline",
+    )
 
 
 @app.get("/api/v1/r2d2", response_model=R2D2DashboardResponse)
