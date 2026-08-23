@@ -84,3 +84,15 @@ def test_stage1_stays_locked_until_infrastructure_and_r1_are_verified() -> None:
     assert "backblaze_b2_account_bucket_credentials_and_checksum_roundtrip_verified" in requirements
     assert "massive_ingestion_policy_v1_frozen_after_six_hands_review" in requirements
     assert "campaign_byte_accounting_and_pause_guard_implemented_and_tested" in requirements
+
+
+def test_compose_can_bind_the_dedicated_disk_without_changing_container_path() -> None:
+    compose = (ROOT / "compose.yml").read_text(encoding="utf-8")
+    root_env = (ROOT.parent / ".env.example").read_text(encoding="utf-8")
+
+    assert (
+        "${C3PO_DAY_D_DATA_MOUNT_SOURCE:-c3po_day_d_data}:/app/day-d-data"
+        in compose
+    )
+    assert "C3PO_DAY_D_DATA_MOUNT_SOURCE=c3po_day_d_data" in root_env
+    assert "C3PO_DAY_D_DATA_MOUNT_SOURCE=/mnt/day-d-data" in root_env
