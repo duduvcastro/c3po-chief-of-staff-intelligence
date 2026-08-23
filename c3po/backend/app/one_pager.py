@@ -270,6 +270,7 @@ class OnePagerService:
             analysis["official_disclosure"] = official_disclosure
             analysis["ri_url"] = ri_context["ri_url"]
             analysis["ri_checked_at"] = ri_context["checked_at"]
+            analysis["v2_shadow"] = self._valuation_v2_shadow(symbol, market)
             report = self._write_report(analysis, history)
             self._persist_us_valuation_snapshot(analysis, report)
             self.database.finish_ingestion_run(run_id, "succeeded", 2, 1)
@@ -936,6 +937,27 @@ class OnePagerService:
             },
             report.generated_at,
         )
+
+    def _valuation_v2_shadow(self, symbol: str, market: str) -> dict[str, Any] | None:
+        """Latest V2 shadow result for ``symbol``, if one exists. Purely
+        informational: the PDF renders it as a clearly-labeled shadow strip
+        while every production number stays on the V1 engine. Any failure
+        returns None -- the One Pager never depends on the shadow."""
+        try:
+            clean = symbol.strip().upper()
+            shadow_markets = ("B3",) if market == "B3" else ("NASDAQ", "NYSE")
+            for shadow_market in shadow_markets:
+                snapshot = self.database.latest_analysis_snapshot(
+                    "valuation_v2_shadow", f"{shadow_market}_V2_SHADOW"
+                )
+                outputs = snapshot.get("outputs") if snapshot else None
+                results = outputs.get("results") if isinstance(outputs, dict) else None
+                result = results.get(clean) if isinstance(results, dict) else None
+                if isinstance(result, dict) and result.get("v2_tp") is not None:
+                    return result
+        except Exception:
+            return None
+        return None
 
     def _render_pdf(self, path: Path, data: dict[str, Any], history: list[dict[str, Any]], generated_at: datetime) -> None:
         PremiumOnePagerRenderer().render(path, data, history, generated_at)
