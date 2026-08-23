@@ -8,7 +8,7 @@ from .config import Settings
 from .database import Database
 from .market_data.brapi import BrapiClient
 from .market_data.http import JsonHttpClient
-from .valuation_v2_data import ValuationV2DataService
+from .valuation_v2_data import ValuationV2DataService, _configure_cli_logging
 from .valuation_v2_engine import ENGINE_VERSION, ValuationV2Engine
 
 
@@ -352,12 +352,11 @@ def main() -> int:
     """Explicit operator run (outside trading hours): compute and persist the
     V2 shadow now instead of waiting for the next off-hours cycle."""
     import json
-    import logging
 
     from .config import get_settings
     from .market_data.service import MarketDataService
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    _configure_cli_logging()
     settings = get_settings()
     database = Database(settings)
     database.initialize()
