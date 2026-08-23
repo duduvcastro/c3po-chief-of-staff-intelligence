@@ -9,3 +9,4 @@ websockets>=14,<16
 reportlab>=4.2,<5
 cryptography>=45,<47
 qrcode>=8,<9
+boto3>=1.40,<2

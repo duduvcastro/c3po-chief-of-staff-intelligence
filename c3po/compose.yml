@@ -34,6 +34,7 @@ services:
     volumes:
       - ..:/legacy:ro
       - c3po_one_pagers:/app/generated-one-pagers
+      - c3po_day_d_data:/app/day-d-data
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -161,6 +162,7 @@ volumes:
   c3po_postgres:
   c3po_one_pagers:
   c3po_microstructure_raw:
+  c3po_day_d_data:
 
 networks:
   c3po_internal:

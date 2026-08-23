@@ -136,6 +136,7 @@ def _service(*, disk_percent: float = 62.0, eodhd_base_url: str = "https://eodhd
         eodhd_base_url=eodhd_base_url,
         finnhub_api_token="configured",
         fmp_api_token="configured",
+        massive_api_token="configured",
         server_usage_disk_warning_percent=70,
         server_usage_cpu_peak_warning_percent=85,
     )
@@ -159,7 +160,7 @@ def test_consolidated_health_covers_every_operational_area() -> None:
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler",
     }
     assert "WhatsApp capture" not in {item.name for group in response.groups for item in group.items}
 
@@ -182,9 +183,9 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     usage = next(item for group in response.groups for item in group.items if item.name == "Daily API Usage")
     assert usage.status == "attention"
     assert response.status == "attention"
-    assert response.quality == 95
-    assert response.healthy_count == 21
-    assert response.total_count == 22
+    assert response.quality == 96
+    assert response.healthy_count == 22
+    assert response.total_count == 23
 
 
 def test_finnhub_is_monitored_in_market_quotes() -> None:
@@ -203,7 +204,7 @@ def test_fmp_is_monitored_in_market_quotes() -> None:
     fmp = next(item for item in quotes.items if item.name == "FMP")
     assert fmp.status == "healthy"
     assert "Ultimate" in fmp.detail
-    assert quotes.total_count == 4
+    assert quotes.total_count == 5
 
 
 def test_fmp_is_offline_without_a_configured_credential() -> None:
@@ -216,6 +217,35 @@ def test_fmp_is_offline_without_a_configured_credential() -> None:
     fmp = next(item for item in quotes.items if item.name == "FMP")
     assert fmp.status == "offline"
     assert "not configured" in fmp.detail
+
+
+def test_massive_is_monitored_in_market_quotes() -> None:
+    response = _service().snapshot(force=True)
+
+    quotes = next(group for group in response.groups if group.key == "quotes")
+    massive = next(item for item in quotes.items if item.name == "Massive")
+    assert massive.status == "healthy"
+    assert "Stocks Advanced" in massive.detail
+    assert "SIP replay reference" in massive.detail
+
+
+def test_massive_is_offline_without_a_configured_credential() -> None:
+    service = _service()
+    service.settings.massive_api_token = ""
+
+    response = service.snapshot(force=True)
+
+    quotes = next(group for group in response.groups if group.key == "quotes")
+    massive = next(item for item in quotes.items if item.name == "Massive")
+    assert massive.status == "offline"
+    assert "not configured" in massive.detail
+
+
+def test_health_error_redacts_market_data_credentials() -> None:
+    error = RuntimeError("GET https://api.massive.com/v1/status?apiKey=secret-value&x=1 failed")
+
+    assert "secret-value" not in SystemHealthService._safe_error(error)
+    assert "apiKey=[redacted]" in SystemHealthService._safe_error(error)
 
 
 def test_daily_api_usage_accepts_base_url_that_already_contains_api_path() -> None:

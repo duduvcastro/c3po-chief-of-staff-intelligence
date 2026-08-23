@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -283,6 +284,7 @@ class SystemHealthService:
             ))
         items.append(self._finnhub_health(now))
         items.append(self._fmp_health(now))
+        items.append(self._massive_health(now))
         return items or [IntegrationHealth(
             name="Market data APIs",
             status="offline",
@@ -341,6 +343,32 @@ class SystemHealthService:
             )
         except Exception as exc:
             return self._offline_item("FMP", exc, now)
+
+    def _massive_health(self, now: datetime) -> IntegrationHealth:
+        if not self.settings.massive_api_token:
+            return IntegrationHealth(
+                name="Massive",
+                status="offline",
+                detail="Stocks Advanced credential is not configured",
+                last_update=self._format_time(now),
+            )
+        try:
+            response = self.external_get(
+                f"{self.settings.massive_base_url.rstrip('/')}/v1/marketstatus/now",
+                params={"apiKey": self.settings.massive_api_token},
+                timeout=self.settings.system_health_external_timeout_seconds,
+                follow_redirects=True,
+                headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
+            )
+            response.raise_for_status()
+            return IntegrationHealth(
+                name="Massive",
+                status="healthy",
+                detail="United States · Stocks Advanced · SIP replay reference",
+                last_update=self._format_time(now),
+            )
+        except Exception as exc:
+            return self._offline_item("Massive", exc, now)
 
     def _external_services_health(self, now: datetime) -> list[IntegrationHealth]:
         return [
@@ -619,4 +647,9 @@ class SystemHealthService:
     @staticmethod
     def _safe_error(exc: Exception) -> str:
         message = str(exc).replace("\n", " ").strip()
+        message = re.sub(
+            r"(?i)(api_key|apikey|api_token|token)=([^&\s]+)",
+            r"\1=[redacted]",
+            message,
+        )
         return message[:180] or exc.__class__.__name__
