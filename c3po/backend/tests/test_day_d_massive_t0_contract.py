@@ -96,3 +96,12 @@ def test_compose_can_bind_the_dedicated_disk_without_changing_container_path() -
     )
     assert "C3PO_DAY_D_DATA_MOUNT_SOURCE=c3po_day_d_data" in root_env
     assert "C3PO_DAY_D_DATA_MOUNT_SOURCE=/mnt/day-d-data" in root_env
+
+
+def test_production_deploy_uses_the_preserved_root_env_for_compose() -> None:
+    pipeline = (ROOT.parent / ".github" / "workflows" / "c3po-pipeline.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert pipeline.count("docker compose --env-file .env -f c3po/compose.yml") == 4
+    assert "docker compose -f c3po/compose.yml" not in pipeline

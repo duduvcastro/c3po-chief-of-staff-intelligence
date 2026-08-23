@@ -160,8 +160,8 @@ jobs:
             "$RELEASE_DIR/" "$APP_DIR/"
 
           cd "$APP_DIR"
-          docker compose -f c3po/compose.yml config --quiet
-          docker compose -f c3po/compose.yml up -d --build
+          docker compose --env-file .env -f c3po/compose.yml config --quiet
+          docker compose --env-file .env -f c3po/compose.yml up -d --build
 
           for attempt in $(seq 1 30); do
             web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
@@ -174,8 +174,7 @@ jobs:
             sleep 5
           done
 
-          docker compose -f c3po/compose.yml ps
-          docker compose -f c3po/compose.yml logs --tail=120 api web
+          docker compose --env-file .env -f c3po/compose.yml ps
+          docker compose --env-file .env -f c3po/compose.yml logs --tail=120 api web
           exit 1
           REMOTE
-
