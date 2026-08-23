@@ -419,6 +419,7 @@ class ValuationV3Engine(ValuationV2Engine):
             **baseline,
             "tp": median(values),
             "reliability": round(reliability, 3),
+            "metrics_used": list(audits),
             "quality_adjustments": audits,
         }
 

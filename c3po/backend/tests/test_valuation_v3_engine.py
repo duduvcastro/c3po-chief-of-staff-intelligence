@@ -298,6 +298,28 @@ def test_incomplete_quality_falls_back_to_v2_and_never_increases_reliability():
     assert v3["models"]["earnings_power"]["reliability"] <= v2["models"]["earnings_power"]["reliability"]
 
 
+def test_peer_comps_metrics_used_lists_only_adjusted_legs_that_survive():
+    peers = _quality_peers()
+    packet = _packet(key_metrics_annual=[
+        {
+            "fiscal_year_end": "2025-12-31",
+            "eps": 8.0,
+            "market_cap": 190e9,
+            "enterprise_value": 310e9,
+        }
+    ])
+
+    result = _us_engine().evaluate(
+        _row(), packet, peer_multiples=peers, target_quality=_target_quality(0)
+    )
+
+    assert result is not None
+    peer_comps = result["models"]["peer_comps"]
+    assert set(peer_comps["metrics_used"]) == set(peer_comps["quality_adjustments"])
+    assert "price_to_book" in peer_comps["metrics_used"]
+    assert "ev_ebitda" not in peer_comps["metrics_used"]
+
+
 @pytest.mark.parametrize("profile", ["financial", "cyclical", "utilities", "real_estate"])
 def test_quality_excluded_profiles_keep_v2_model_outputs(profile: str):
     row = _row(valuation_profile=profile, dividend_yield=0.04, roe=0.18)
