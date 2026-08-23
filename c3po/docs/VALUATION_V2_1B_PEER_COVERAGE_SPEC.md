@@ -35,6 +35,11 @@ O crescimento continua vindo de `analyst_estimates_annual`. Não existe
 fallback para `ratios_annual.roe`, derivação por DuPont, mistura com Chewie ou
 preenchimento. Campo ausente torna a base indisponível, como antes.
 
+A PR de dados precisa acrescentar explicitamente `roe`, normalizado do campo
+bruto `returnOnEquity`, a cada linha de `key_metrics_annual`. O cliente atual
+descarta esse campo ao normalizar market cap, EV, ROIC e métricas por ação;
+alterar apenas o leitor V3 sem corrigir o normalizador não resolve a cobertura.
+
 Essa emenda substitui somente a frase `ROE anual mais recente em
 ratios_annual` do §2.2 de `ENGINE_V3_SPEC.md`. Toda a fórmula §2.3 permanece
 byte por byte congelada.
@@ -101,6 +106,9 @@ portanto H3 ainda não podia ser comparada.
 
 O próximo A/B só pode congelar um novo conjunto depois de:
 
+0. todos os pacotes dos alvos `T` serem re-coletados após a correção do
+   normalizador, com a contagem de `roe` não nulo e os statuses do provedor
+   verificados no relatório pré-A/B; cobertura igual a zero falha fechado;
 1. o ciclo Chewie publicar uma fotografia nova e acumulada;
 2. o job V2.1b tentar todo o grafo direto dessa fotografia;
 3. o relatório pré-A/B mostrar separadamente elegibilidade `fmp_forward` e
@@ -119,9 +127,11 @@ preenche um campo ausente da base forward.
 6. Símbolo B3 mantém o símbolo de provedor e resolve `.SA` deterministicamente.
 7. Falha de um endpoint não apaga a evidência nem o status do outro.
 8. O snapshot é imutável e uma nova execução não sobrescreve evidência antiga.
-9. O engine v2 reproduz os mesmos resultados e nenhum consumidor importa o
+9. O novo congelamento recusa pacotes-alvo anteriores à correção do
+   normalizador ou uma cobertura de ROE igual a zero.
+10. O engine v2 reproduz os mesmos resultados e nenhum consumidor importa o
    novo snapshot.
-10. O novo A/B só começa após reproduzir o baseline v2 e validar hashes de
+11. O novo A/B só começa após reproduzir o baseline v2 e validar hashes de
     todos os snapshots, igual ao harness aprovado na #203.
 
 ## 8. Próximo gate
