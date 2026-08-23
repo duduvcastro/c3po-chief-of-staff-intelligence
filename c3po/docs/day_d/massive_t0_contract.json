@@ -1,0 +1,106 @@
+{
+  "schema_version": "DAY-D-MASSIVE-T0-v1",
+  "status": "frozen_by_six_hands",
+  "frozen_at": "2026-08-23",
+  "provider": "Massive",
+  "canonical_measurement": {
+    "method": "head_only_no_historical_payload_downloaded",
+    "report_path": "/app/day-d-data/provider=massive/plans/t0-plan-sweep-20260823T021819.718086Z.json",
+    "report_sha256": "3b68d8f70197c6d257fe90e9d8e8360cfc48df123cd4c255c4acde97d9c0ceb2",
+    "report_bytes": 1007975,
+    "range_start": "2021-08-23",
+    "range_end": "2026-08-21",
+    "complete_sessions": 1255,
+    "partial_sessions": 0,
+    "source_csv_files_downloaded": 0,
+    "all_datasets_planned_bytes": 10147240790449,
+    "trades_and_quotes_planned_bytes": 10121381193889,
+    "minute_aggregates_planned_bytes": 25859696560,
+    "maximum_session": {
+      "session_date": "2025-04-07",
+      "bytes": 23106059947
+    }
+  },
+  "thresholds": {
+    "dedicated_data_disk_bytes": 107374182400,
+    "dedicated_data_disk_gib": 100,
+    "minimum_free_reserve_bytes": 21474836480,
+    "minimum_free_reserve_gib": 20,
+    "per_session_abort_bytes": 25416665942,
+    "per_session_abort_formula": "ceil(maximum_measured_session_bytes * 1.10)",
+    "local_spool_ceiling_bytes": 76249997826,
+    "local_spool_ceiling_formula": "3 * per_session_abort_bytes",
+    "spool_plus_reserve_bytes": 97724834306,
+    "disk_headroom_after_spool_and_reserve_bytes": 9649348094,
+    "campaign_pause_bytes": 10654602829972,
+    "campaign_pause_formula": "ceil(all_datasets_planned_bytes * 1.05)",
+    "per_object_verification": {
+      "local_bytes_must_equal_planned_content_length": true,
+      "local_sha256_required": true,
+      "post_download_remote_head_required": true,
+      "post_download_content_length_must_equal_plan": true,
+      "post_download_etag_must_equal_plan": true,
+      "metadata_change_action": "abort_and_quarantine"
+    }
+  },
+  "retention": {
+    "policy": "hybrid",
+    "minute_aggregates": {
+      "scope": "all_five_year_sessions_in_canonical_measurement",
+      "retain_indefinitely": true
+    },
+    "full_ticks": {
+      "qualification_sessions": [
+        "2026-08-21",
+        "2026-08-20",
+        "2026-08-19",
+        "2025-03-21",
+        "2025-06-20",
+        "2025-09-19",
+        "2025-06-27",
+        "2024-09-18",
+        "2024-08-05",
+        "2022-06-13",
+        "2025-11-28",
+        "2024-12-24"
+      ],
+      "official_replay_window": {
+        "sessions": 252,
+        "selection": "most_recent_exchange_sessions_at_final_preregistration_hash",
+        "dates_frozen": false
+      },
+      "retain_until": "final_verdict_plus_12_months"
+    },
+    "symbol_slices": {
+      "universe_size": 61,
+      "retain_indefinitely": true,
+      "immutable": true,
+      "parent_raw_sha256_required": true
+    },
+    "all_five_year_raw_ticks_archived": false,
+    "rederivation_source": "provider_flat_files_re_downloadable_under_a_future_subscription"
+  },
+  "owner_approvals": {
+    "dedicated_100_gib_lightsail_disk": {
+      "approved": true,
+      "monthly_budget_usd": 10
+    },
+    "hybrid_download_and_retention_scope": {
+      "approved": true
+    },
+    "backblaze_b2_object_storage": {
+      "approved": true,
+      "monthly_budget_usd": 15,
+      "provider_account_and_bucket_provisioned": false
+    }
+  },
+  "first_byte_gate": {
+    "historical_download_authorized": false,
+    "remaining_requirements": [
+      "dedicated_100_gib_disk_provisioned_mounted_and_verified",
+      "backblaze_b2_account_bucket_credentials_and_checksum_roundtrip_verified",
+      "massive_ingestion_policy_v1_frozen_after_six_hands_review",
+      "campaign_byte_accounting_and_pause_guard_implemented_and_tested"
+    ]
+  }
+}

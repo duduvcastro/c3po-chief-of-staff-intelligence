@@ -1,14 +1,19 @@
 # Day D Massive T0 capacity sweep
 
-**Status:** measured with provider metadata only; first historical byte remains blocked
+**Status:** T0 frozen from provider metadata only; first historical byte remains blocked
 
 The first complete T0 sweep used S3-compatible `HeadObject` calls only. It did
-not download, decompress, slice, or replay any Massive Flat File. The immutable
-server report is stored outside Git at:
+not download, decompress, slice, or replay any Massive Flat File. The canonical
+immutable server report is stored outside Git at:
 
 ```text
-/app/day-d-data/provider=massive/plans/t0-plan-sweep-20260823T015935.279879Z.json
+/app/day-d-data/provider=massive/plans/t0-plan-sweep-20260823T021819.718086Z.json
 ```
+
+Its SHA-256 is
+`3b68d8f70197c6d257fe90e9d8e8360cfc48df123cd4c255c4acde97d9c0ceb2`.
+The machine-readable freeze is
+[`massive_t0_contract.json`](./massive_t0_contract.json).
 
 That first operator report captured the aggregate distributions and stratified
 spot checks. The canonical repository command added by the follow-up change
@@ -39,24 +44,37 @@ The largest measured session was 2025-04-07. No session exceeded the
 provisional 24 GiB abort threshold. Raw trades and quotes alone total about
 9.20 TiB; all requested datasets total about 9.23 TiB.
 
-## Thresholds derived from the sweep
+## Frozen thresholds
 
-These values are measured proposals for the six-hands T0 freeze. They do not
-authorize a download.
+These values were frozen by the six-hands review. They do not authorize a
+download by themselves.
 
 - Dedicated data-disk reserve: 20 GiB.
-- Per-session abort threshold: 23.671 GiB, equal to 21.519 GiB x 1.10.
-- Local spool ceiling: 71.013 GiB, equal to three abort-threshold sessions.
+- Per-session abort threshold: 25,416,665,942 bytes, equal to the exact
+  23,106,059,947-byte maximum multiplied by 1.10 and rounded up.
+- Local spool ceiling: 76,249,997,826 bytes, equal to three abort-threshold
+  sessions.
 - Per-object verification: local bytes must match planned `ContentLength`
   exactly, followed by a remote re-HEAD whose `ContentLength` and ETag must
   still match the plan.
 - Campaign backstop: realized bytes above the complete plan by more than 5%
   pause the campaign for six-hands review.
 
-The application disk cannot satisfy these thresholds. A separate 100 GiB data
-disk is the minimum proposed spool, and raw retention requires object storage.
-The owner must approve both the disk purchase and the raw-retention scope before
-the first historical byte is downloaded.
+The application disk cannot satisfy these thresholds. The owner approved a
+dedicated 100 GiB Lightsail data disk, the hybrid retention scope and Backblaze
+B2 with a monthly budget of up to US$15. Provisioning and end-to-end checksum
+verification remain required before the first historical byte is downloaded.
+
+## Frozen hybrid retention
+
+- Retain all five years of minute aggregates indefinitely.
+- Download full ticks only for the 12 qualification sessions and the 252 most
+  recent exchange sessions at the final preregistration hash.
+- Retain immutable 61-symbol slices indefinitely, chained to the parent raw
+  SHA-256.
+- Retain complete raw files for processed sessions until the final verdict plus
+  12 months.
+- Do not archive the full five-year tick corpus.
 
 ## Reproducible command
 
@@ -78,8 +96,8 @@ separate archive command remains plan-only unless an operator explicitly adds
 
 ## Remaining first-byte gates
 
-1. Owner approval of the dedicated disk and object-storage retention policy.
-2. Six-hands freeze of the numeric thresholds above.
-3. Freeze of the dataset drop/clamp counters and policy before dataset build.
-4. Reviewed deployment of API-key redaction, post-download re-HEAD, orphan-part
-   quarantine and the single-writer download lock.
+1. Provision, mount and verify the dedicated 100 GiB data disk.
+2. Provision Backblaze B2 and verify an upload/download/checksum round trip.
+3. Complete the six-hands review of
+   [`massive_ingestion_policy_v1.json`](./massive_ingestion_policy_v1.json).
+4. Implement and test campaign-level byte accounting and the +5% pause guard.

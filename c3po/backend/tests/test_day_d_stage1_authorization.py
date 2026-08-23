@@ -20,13 +20,15 @@ def test_stage1_authorization_supersedes_only_the_provider_purchase_block() -> N
     assert "enable_raw_capture" in contract["does_not_supersede_stage0_prohibition_for"]
 
 
-def test_stage1_authorization_requires_t0_and_disk_guard_before_download() -> None:
+def test_stage1_authorization_requires_verified_storage_and_ingestion_policy() -> None:
     contract = json.loads(
         (ROOT / "docs" / "day_d" / "stage1_authorization.json").read_text(encoding="utf-8")
     )
     requirements = set(contract["required_before_first_download"])
 
-    assert "numeric_T0_disk_and_host_capacity_thresholds_frozen" in requirements
-    assert "read_only_plan_reports_remote_object_sizes" in requirements
-    assert "local_disk_guard_passes" in requirements
+    assert "dedicated_100_gib_disk_provisioned_mounted_and_verified" in requirements
+    assert "backblaze_b2_account_bucket_credentials_and_checksum_roundtrip_verified" in requirements
+    assert "massive_ingestion_policy_v1_frozen_after_six_hands_review" in requirements
+    assert "campaign_byte_accounting_and_pause_guard_implemented_and_tested" in requirements
+    assert contract["owner_approvals"]["hybrid_download_and_retention_scope_approved"] is True
     assert contract["secrets_policy"]["credentials_in_chat_forbidden"] is True

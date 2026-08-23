@@ -1,0 +1,65 @@
+{
+  "schema_version": "DAY-D-MASSIVE-INGESTION-POLICY-v1",
+  "status": "proposed_for_six_hands_review",
+  "purpose": "freeze auditable normalization behavior before any official dataset build",
+  "raw_source_policy": {
+    "raw_provider_payload_is_immutable": true,
+    "raw_payload_is_never_rewritten_by_normalization": true,
+    "raw_parent_sha256_required_for_every_derived_slice": true
+  },
+  "normalization_policy": {
+    "source_price_clamping_allowed": false,
+    "source_size_clamping_allowed": false,
+    "source_timestamp_clamping_allowed": false,
+    "missing_value_imputation_allowed": false,
+    "one_terminal_outcome_per_raw_row": true,
+    "accounting_identity": "raw_rows_seen = emitted_rows + dropped_rows",
+    "unknown_drop_reason_action": "fail_dataset_build",
+    "accounting_mismatch_action": "fail_dataset_build"
+  },
+  "drop_reasons": {
+    "common": [
+      "row_not_an_object",
+      "missing_required_field",
+      "invalid_timestamp",
+      "noncausal_available_before_event"
+    ],
+    "trade": [
+      "nonpositive_price",
+      "nonpositive_size"
+    ],
+    "quote": [
+      "nonpositive_bid",
+      "nonpositive_ask",
+      "nonpositive_bid_size",
+      "nonpositive_ask_size",
+      "crossed_quote"
+    ]
+  },
+  "counters": {
+    "dimensions": [
+      "provider",
+      "dataset",
+      "session_date",
+      "symbol",
+      "terminal_outcome",
+      "drop_reason"
+    ],
+    "required_totals": [
+      "raw_rows_seen",
+      "emitted_rows",
+      "dropped_rows",
+      "clamped_rows",
+      "imputed_rows"
+    ],
+    "clamped_rows_must_equal": 0,
+    "imputed_rows_must_equal": 0,
+    "manifest_inclusion_required": true
+  },
+  "qualification": {
+    "official_replay_ready_before_review": false,
+    "drop_rate_threshold_frozen_before_observation": false,
+    "rationale": "the 12 qualification sessions measure provider-specific rates before T1 freezes an acceptance threshold",
+    "human_review_required_before_t1": true
+  }
+}
