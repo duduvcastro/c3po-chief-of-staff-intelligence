@@ -1,9 +1,18 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from .http import JsonHttpClient
 from .models import number
+
+
+def _first_number(*values: Any) -> float | None:
+    """Return the first numeric value, preserving valid zeroes."""
+    for value in values:
+        parsed = number(value)
+        if parsed is not None:
+            return parsed
+    return None
 
 
 class FmpClient:
@@ -275,60 +284,64 @@ class FmpClient:
         the Valuation V2 replacement for fair-multiple constants. Returns
         [] on any failure; a missing peer set is a fallback-ladder signal,
         never an error."""
-        try:
-            payload = self.http.get_json(
-                f"{self.base_url}/stable/stock-peers",
-                params={"symbol": symbol, "apikey": self.token},
-            )
-        except Exception:
-            return []
-        rows = payload if isinstance(payload, list) else []
+        rows, _status = self._stock_peers_result(symbol)
+        return rows
+
+    def _stock_peers_result(self, symbol: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        rows, status = self._valuation_v2_rows(
+            "stock-peers",
+            {"symbol": symbol, "apikey": self.token},
+        )
         output: list[dict[str, Any]] = []
+        source_symbol = symbol.strip().upper()
         for row in rows:
-            if not isinstance(row, dict):
-                continue
             # Legacy v4 shape: one row carrying the whole list.
             peers_list = row.get("peersList")
             if isinstance(peers_list, list):
                 output.extend(
-                    {"symbol": str(peer).strip().upper()}
+                    self._peer_item(str(peer), source_symbol=source_symbol)
                     for peer in peers_list
-                    if str(peer).strip()
+                    if str(peer).strip() and str(peer).strip().upper() != source_symbol
                 )
                 continue
             peer_symbol = str(row.get("symbol") or "").strip().upper()
-            if not peer_symbol or peer_symbol == symbol.strip().upper():
+            if not peer_symbol or peer_symbol == source_symbol:
                 continue
-            output.append({
-                "symbol": peer_symbol,
-                "company_name": str(row.get("companyName") or ""),
-                "price": number(row.get("price")),
-                "market_cap": number(row.get("mktCap")),
-            })
-        return output
+            output.append(self._peer_item(
+                peer_symbol,
+                source_symbol=source_symbol,
+                company_name=str(row.get("companyName") or ""),
+                price=number(row.get("price")),
+                market_cap=number(row.get("mktCap")),
+            ))
+        unique = {str(item["symbol"]): item for item in output}
+        parsed = list(unique.values())
+        return parsed, self._finalize_v2_status(status, len(parsed))
 
     def analyst_estimates_annual(self, symbol: str, *, limit: int = 8) -> list[dict[str, Any]]:
         """Forward consensus estimates per FISCAL YEAR (revenue/EBITDA/EPS
         avg-low-high plus analyst counts) -- the term structure that
         replaces EODHD's single-point forwardEps in Valuation V2. Rows are
-        returned newest-first as FMP sends them; [] on any failure."""
-        try:
-            payload = self.http.get_json(
-                f"{self.base_url}/stable/analyst-estimates",
-                params={
-                    "symbol": symbol,
-                    "period": "annual",
-                    "limit": max(1, min(limit, 20)),
-                    "apikey": self.token,
-                },
-            )
-        except Exception:
-            return []
-        rows = payload if isinstance(payload, list) else []
+        returned in fiscal-date order so callers can select FY1/FY2 relative
+        to their as-of date instead of trusting provider response order. []
+        on any failure."""
+        rows, _status = self._analyst_estimates_annual_result(symbol, limit=limit)
+        return rows
+
+    def _analyst_estimates_annual_result(
+        self, symbol: str, *, limit: int = 8,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        rows, status = self._valuation_v2_rows(
+            "analyst-estimates",
+            {
+                "symbol": symbol,
+                "period": "annual",
+                "limit": max(1, min(limit, 20)),
+                "apikey": self.token,
+            },
+        )
         output: list[dict[str, Any]] = []
         for row in rows:
-            if not isinstance(row, dict):
-                continue
             fiscal_end = self._valid_date(row.get("date"))
             if fiscal_end is None:
                 continue
@@ -342,78 +355,84 @@ class FmpClient:
                 "eps_low": number(row.get("epsLow")),
                 "eps_high": number(row.get("epsHigh")),
                 "analysts_revenue": int(
-                    number(row.get("numAnalystsRevenue"))
-                    or number(row.get("numberAnalystEstimatedRevenue"))
+                    _first_number(
+                        row.get("numAnalystsRevenue"),
+                        row.get("numberAnalystEstimatedRevenue"),
+                    )
                     or 0
                 ),
                 "analysts_eps": int(
-                    number(row.get("numAnalystsEps"))
-                    or number(row.get("numberAnalystsEstimatedEps"))
+                    _first_number(
+                        row.get("numAnalystsEps"),
+                        row.get("numberAnalystsEstimatedEps"),
+                    )
                     or 0
                 ),
             })
-        return output
+        output.sort(key=lambda row: str(row["fiscal_year_end"]))
+        return output, self._finalize_v2_status(status, len(output))
 
     def ratios_annual(self, symbol: str, *, limit: int = 10) -> list[dict[str, Any]]:
         """Up to ``limit`` fiscal years of reported valuation/profitability
         ratios -- the company's OWN historical band, Valuation V2's second
         external anchor. [] on any failure."""
-        try:
-            payload = self.http.get_json(
-                f"{self.base_url}/stable/ratios",
-                params={
-                    "symbol": symbol,
-                    "period": "annual",
-                    "limit": max(1, min(limit, 20)),
-                    "apikey": self.token,
-                },
-            )
-        except Exception:
-            return []
-        rows = payload if isinstance(payload, list) else []
+        rows, _status = self._ratios_annual_result(symbol, limit=limit)
+        return rows
+
+    def _ratios_annual_result(
+        self, symbol: str, *, limit: int = 10,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        rows, status = self._valuation_v2_rows(
+            "ratios",
+            {
+                "symbol": symbol,
+                "period": "annual",
+                "limit": max(1, min(limit, 20)),
+                "apikey": self.token,
+            },
+        )
         output: list[dict[str, Any]] = []
         for row in rows:
-            if not isinstance(row, dict):
-                continue
             fiscal_end = self._valid_date(row.get("date"))
             if fiscal_end is None:
                 continue
             output.append({
                 "fiscal_year_end": fiscal_end.isoformat(),
-                "pe": number(row.get("priceToEarningsRatio")) or number(row.get("priceEarningsRatio")),
-                "price_to_book": number(row.get("priceToBookRatio")) or number(row.get("priceToBookValueRatio")),
+                "pe": _first_number(row.get("priceToEarningsRatio"), row.get("priceEarningsRatio")),
+                "price_to_book": _first_number(row.get("priceToBookRatio"), row.get("priceToBookValueRatio")),
                 "price_to_sales": number(row.get("priceToSalesRatio")),
                 "ev_ebitda": number(row.get("enterpriseValueMultiple")),
                 "roe": number(row.get("returnOnEquity")),
                 "net_margin": number(row.get("netProfitMargin")),
                 "operating_margin": number(row.get("operatingProfitMargin")),
                 "gross_margin": number(row.get("grossProfitMargin")),
-                "debt_to_equity": number(row.get("debtToEquityRatio")) or number(row.get("debtEquityRatio")),
+                "debt_to_equity": _first_number(row.get("debtToEquityRatio"), row.get("debtEquityRatio")),
                 "dividend_yield": number(row.get("dividendYield")),
             })
-        return output
+        output.sort(key=lambda row: str(row["fiscal_year_end"]), reverse=True)
+        return output, self._finalize_v2_status(status, len(output))
 
     def key_metrics_annual(self, symbol: str, *, limit: int = 10) -> list[dict[str, Any]]:
         """Up to ``limit`` fiscal years of per-share/return metrics (ROIC,
         market cap, revenue and FCF per share) complementing ratios_annual
         for the own-history anchor. [] on any failure."""
-        try:
-            payload = self.http.get_json(
-                f"{self.base_url}/stable/key-metrics",
-                params={
-                    "symbol": symbol,
-                    "period": "annual",
-                    "limit": max(1, min(limit, 20)),
-                    "apikey": self.token,
-                },
-            )
-        except Exception:
-            return []
-        rows = payload if isinstance(payload, list) else []
+        rows, _status = self._key_metrics_annual_result(symbol, limit=limit)
+        return rows
+
+    def _key_metrics_annual_result(
+        self, symbol: str, *, limit: int = 10,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        rows, status = self._valuation_v2_rows(
+            "key-metrics",
+            {
+                "symbol": symbol,
+                "period": "annual",
+                "limit": max(1, min(limit, 20)),
+                "apikey": self.token,
+            },
+        )
         output: list[dict[str, Any]] = []
         for row in rows:
-            if not isinstance(row, dict):
-                continue
             fiscal_end = self._valid_date(row.get("date"))
             if fiscal_end is None:
                 continue
@@ -421,23 +440,35 @@ class FmpClient:
                 "fiscal_year_end": fiscal_end.isoformat(),
                 "market_cap": number(row.get("marketCap")),
                 "enterprise_value": number(row.get("enterpriseValue")),
-                "roic": number(row.get("returnOnInvestedCapital")) or number(row.get("roic")),
+                "roic": _first_number(row.get("returnOnInvestedCapital"), row.get("roic")),
                 "revenue_per_share": number(row.get("revenuePerShare")),
                 "fcf_per_share": number(row.get("freeCashFlowPerShare")),
                 "eps": number(row.get("netIncomePerShare")),
             })
-        return output
+        output.sort(key=lambda row: str(row["fiscal_year_end"]), reverse=True)
+        return output, self._finalize_v2_status(status, len(output))
 
     def valuation_v2_packet(self, symbol: str) -> dict[str, Any]:
         """The complete per-symbol V2.1 data packet: real peers, forward
         estimates per fiscal year, and ten years of own-history ratios and
         key metrics. Every section degrades to []/None independently."""
+        peers, peers_status = self._stock_peers_result(symbol)
+        estimates, estimates_status = self._analyst_estimates_annual_result(symbol)
+        ratios, ratios_status = self._ratios_annual_result(symbol)
+        metrics, metrics_status = self._key_metrics_annual_result(symbol)
         return {
             "symbol": symbol.strip().upper(),
-            "peers": self.stock_peers(symbol),
-            "analyst_estimates_annual": self.analyst_estimates_annual(symbol),
-            "ratios_annual": self.ratios_annual(symbol),
-            "key_metrics_annual": self.key_metrics_annual(symbol),
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "peers": peers,
+            "analyst_estimates_annual": estimates,
+            "ratios_annual": ratios,
+            "key_metrics_annual": metrics,
+            "provider_status": {
+                "peers": peers_status,
+                "analyst_estimates": estimates_status,
+                "ratios": ratios_status,
+                "key_metrics": metrics_status,
+            },
         }
 
     def valuation_v2_batch(
@@ -457,6 +488,71 @@ class FmpClient:
             for symbol, result in executor.map(fetch, clean_symbols):
                 output[symbol] = result
         return output
+
+    def _valuation_v2_rows(
+        self, endpoint: str, params: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Fetch one V2 endpoint without exposing request URLs or API keys.
+
+        Public list-returning helpers keep their existing fallback contract,
+        while the packet records whether an empty list was a real empty
+        response, an invalid payload, or a provider failure.
+        """
+        try:
+            payload = self.http.get_json(
+                f"{self.base_url}/stable/{endpoint}", params=params,
+            )
+        except Exception as exc:
+            return [], {
+                "status": "error",
+                "error_type": type(exc).__name__,
+                "raw_rows": 0,
+                "parsed_rows": 0,
+            }
+        if not isinstance(payload, list):
+            return [], {
+                "status": "invalid_payload",
+                "error_type": None,
+                "raw_rows": 0,
+                "parsed_rows": 0,
+            }
+        rows = [row for row in payload if isinstance(row, dict)]
+        return rows, {
+            "status": "ok" if payload else "empty",
+            "error_type": None,
+            "raw_rows": len(payload),
+            "parsed_rows": 0,
+        }
+
+    @staticmethod
+    def _finalize_v2_status(status: dict[str, Any], parsed_rows: int) -> dict[str, Any]:
+        result = {**status, "parsed_rows": parsed_rows}
+        if result.get("status") == "ok" and parsed_rows == 0:
+            result["status"] = "empty"
+        return result
+
+    @staticmethod
+    def _peer_item(
+        symbol: str,
+        *,
+        source_symbol: str,
+        company_name: str = "",
+        price: float | None = None,
+        market_cap: float | None = None,
+    ) -> dict[str, Any]:
+        peer_symbol = symbol.strip().upper()
+        canonical = (
+            peer_symbol.removesuffix(".SA")
+            if source_symbol.endswith(".SA") and peer_symbol.endswith(".SA")
+            else peer_symbol
+        )
+        return {
+            "symbol": peer_symbol,
+            "canonical_symbol": canonical,
+            "company_name": company_name,
+            "price": price,
+            "market_cap": market_cap,
+        }
 
     @staticmethod
     def _first_row(payload: Any) -> dict[str, Any] | None:

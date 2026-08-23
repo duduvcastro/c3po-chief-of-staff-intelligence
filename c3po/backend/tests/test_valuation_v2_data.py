@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from app.config import get_settings
 from app.database import Database
 from app.market_data.fmp import FmpClient
@@ -76,11 +78,15 @@ def test_fmp_client_parses_the_four_v2_endpoint_families():
     packet = client.valuation_v2_packet("AAPL")
 
     assert [peer["symbol"] for peer in packet["peers"]] == ["MSFT", "GOOGL", "META", "NVDA"]
-    assert packet["analyst_estimates_annual"][0]["eps_avg"] == 8.2
-    assert packet["analyst_estimates_annual"][0]["analysts_eps"] == 25
+    estimates = packet["analyst_estimates_annual"]
+    assert [row["fiscal_year_end"] for row in estimates] == sorted(
+        row["fiscal_year_end"] for row in estimates
+    )
+    assert next(row for row in estimates if row["eps_avg"] == 8.2)["analysts_eps"] == 25
     assert len(packet["ratios_annual"]) == 7
     assert packet["ratios_annual"][0]["pe"] == 26.0
     assert packet["key_metrics_annual"][0]["roic"] == 0.45
+    assert {status["status"] for status in packet["provider_status"].values()} == {"ok"}
 
 
 def test_fmp_client_supports_the_legacy_peers_list_shape_and_failures():
@@ -96,6 +102,8 @@ def test_fmp_client_supports_the_legacy_peers_list_shape_and_failures():
     assert packet["peers"] == []
     assert packet["ratios_annual"] == []
     assert packet["analyst_estimates_annual"] == []
+    assert {status["status"] for status in packet["provider_status"].values()} == {"error"}
+    assert "secret" not in str(packet)
 
 
 def test_refresh_daily_persists_packets_with_anchor_coverage_accounting():
@@ -110,14 +118,34 @@ def test_refresh_daily_persists_packets_with_anchor_coverage_accounting():
 
     counts = service.refresh_daily("NASDAQ")
 
-    assert counts == {"universe": 1, "covered": 1, "all_anchors": 1}
+    assert counts == {
+        "universe": 1,
+        "attempted": 1,
+        "covered": 1,
+        "all_anchors": 1,
+        "provider_error_symbols": 0,
+    }
     packet = service.packets("NASDAQ")["AAPL"]
     coverage = packet["coverage"]
     assert coverage["peers_ok"] is True and coverage["peer_count"] == 4
     assert coverage["estimates_ok"] is True and coverage["forward_fiscal_years"] == 2
+    assert packet["fy1_estimate"]["fiscal_year_end"] < packet["fy2_estimate"]["fiscal_year_end"]
     assert coverage["history_ok"] is True and coverage["history_years"] == 7
     summary = service.coverage_summary("NASDAQ")
-    assert summary == {"covered": 1, "peers_ok": 1, "estimates_ok": 1, "history_ok": 1, "all_anchors": 1}
+    assert summary == {
+        "universe": 1,
+        "attempted": 1,
+        "covered": 1,
+        "uncovered": 0,
+        "provider_complete": 1,
+        "provider_error_symbols": 0,
+        "endpoint_errors": 0,
+        "endpoint_responses": 4,
+        "peers_ok": 1,
+        "estimates_ok": 1,
+        "history_ok": 1,
+        "all_anchors": 1,
+    }
 
 
 def test_b3_symbols_use_the_sa_suffix_and_keep_local_symbol_keys():
@@ -134,6 +162,23 @@ def test_b3_symbols_use_the_sa_suffix_and_keep_local_symbol_keys():
     packet = service.packets("B3")["PETR4"]
     assert packet["provider_symbol"] == "PETR4.SA"
     assert packet["symbol"] == "PETR4"
+
+
+def test_b3_peer_symbols_preserve_provider_and_canonical_forms():
+    http = StubHttp({
+        "stock-peers": [
+            {"symbol": "BRAV3.SA", "companyName": "Brava Energia"},
+            {"symbol": "PRIO3.SA", "companyName": "PRIO"},
+        ],
+    })
+    client = FmpClient("https://fmp.test", "token", http)  # type: ignore[arg-type]
+
+    peers = client.stock_peers("PETR4.SA")
+
+    assert [(peer["symbol"], peer["canonical_symbol"]) for peer in peers] == [
+        ("BRAV3.SA", "BRAV3"),
+        ("PRIO3.SA", "PRIO3"),
+    ]
 
 
 def test_missing_anchors_are_recorded_not_invented():
@@ -155,11 +200,13 @@ def test_missing_anchors_are_recorded_not_invented():
 
     assert counts["all_anchors"] == 0
     coverage = service.packets("NYSE")["TINY"]["coverage"]
-    assert coverage == {
-        "peer_count": 2, "peers_ok": False,
-        "forward_fiscal_years": 0, "estimates_ok": False,
-        "history_years": 2, "history_ok": False,
-    }
+    assert coverage["has_any_data"] is True
+    assert coverage["provider_complete"] is True
+    assert coverage["provider_error_count"] == 0
+    assert coverage["peer_count"] == 2 and coverage["peers_ok"] is False
+    assert coverage["forward_fiscal_years"] == 0 and coverage["estimates_ok"] is False
+    assert coverage["fy1_available"] is False and coverage["fy2_available"] is False
+    assert coverage["history_years"] == 2 and coverage["history_ok"] is False
 
 
 def test_refresh_is_a_noop_without_fmp_credentials():
@@ -169,6 +216,88 @@ def test_refresh_is_a_noop_without_fmp_credentials():
     http = StubHttp({})
     service = ValuationV2DataService(settings, database, http)  # type: ignore[arg-type]
 
-    assert service.refresh_daily("NASDAQ") == {"universe": 0, "covered": 0, "all_anchors": 0}
+    assert service.refresh_daily("NASDAQ") == {
+        "universe": 0,
+        "attempted": 0,
+        "covered": 0,
+        "all_anchors": 0,
+        "provider_error_symbols": 0,
+    }
     assert http.calls == []
     assert service.packets("NASDAQ") == {}
+
+
+def test_total_provider_outage_does_not_replace_the_last_good_snapshot():
+    settings = get_settings().model_copy(update={"fmp_api_token": "token"})
+    database = Database(settings)
+    _seed_universe(database, "NASDAQ", [
+        {"symbol": "AAPL", "security_type": "Stock", "market_cap": 3e12},
+    ])
+    good = ValuationV2DataService(settings, database, StubHttp(_full_fmp_stub()))  # type: ignore[arg-type]
+    good.refresh_daily("NASDAQ")
+    previous = good.packets("NASDAQ")
+
+    def boom(_params):
+        raise RuntimeError("request URL contains apiKey=must-not-leak")
+
+    outage = ValuationV2DataService(settings, database, StubHttp({
+        "stock-peers": boom,
+        "analyst-estimates": boom,
+        "stable/ratios": boom,
+        "key-metrics": boom,
+    }))  # type: ignore[arg-type]
+
+    with pytest.raises(RuntimeError, match="provider outage"):
+        outage.refresh_daily("NASDAQ")
+
+    assert outage.packets("NASDAQ") == previous
+
+
+def test_partial_provider_failure_is_persisted_without_hiding_other_anchors():
+    settings = get_settings().model_copy(update={"fmp_api_token": "token"})
+    database = Database(settings)
+    _seed_universe(database, "NYSE", [
+        {"symbol": "JPM", "security_type": "Stock", "market_cap": 8e11},
+    ])
+
+    def boom(_params):
+        raise RuntimeError("provider unavailable")
+
+    payloads = _full_fmp_stub()
+    payloads["stock-peers"] = boom
+    service = ValuationV2DataService(settings, database, StubHttp(payloads))  # type: ignore[arg-type]
+
+    counts = service.refresh_daily("NYSE")
+
+    assert counts["covered"] == 1
+    assert counts["provider_error_symbols"] == 1
+    packet = service.packets("NYSE")["JPM"]
+    assert packet["provider_status"]["peers"]["status"] == "error"
+    assert packet["provider_status"]["ratios"]["status"] == "ok"
+    assert packet["coverage"]["provider_complete"] is False
+    assert service.coverage_summary("NYSE")["endpoint_errors"] == 1
+
+
+def test_numeric_zeroes_are_not_replaced_by_legacy_fallback_fields():
+    http = StubHttp({
+        "stable/ratios": [{
+            "date": _past_fy(1),
+            "priceToEarningsRatio": 0,
+            "priceEarningsRatio": 99,
+            "debtToEquityRatio": 0,
+            "debtEquityRatio": 88,
+        }],
+        "key-metrics": [{
+            "date": _past_fy(1),
+            "returnOnInvestedCapital": 0,
+            "roic": 77,
+        }],
+    })
+    client = FmpClient("https://fmp.test", "token", http)  # type: ignore[arg-type]
+
+    ratios = client.ratios_annual("ZERO")
+    metrics = client.key_metrics_annual("ZERO")
+
+    assert ratios[0]["pe"] == 0
+    assert ratios[0]["debt_to_equity"] == 0
+    assert metrics[0]["roic"] == 0

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 from typing import Any, Literal
 
@@ -21,6 +22,17 @@ METHODOLOGY_VERSION = 1
 # least one future fiscal year with a consensus EPS.
 MIN_PEER_SAMPLE = 4
 MIN_HISTORY_YEARS = 5
+
+_PACKET_DATA_KEYS = (
+    "peers",
+    "analyst_estimates_annual",
+    "ratios_annual",
+    "key_metrics_annual",
+)
+_PROVIDER_ENDPOINTS = ("peers", "analyst_estimates", "ratios", "key_metrics")
+_PROVIDER_FAILURE_STATUSES = {"error", "invalid_payload"}
+
+logger = logging.getLogger("c3po.valuation_v2_data")
 
 _UNIVERSE_SNAPSHOT_KEY: dict[V2Market, str] = {
     "B3": "B3_UNIVERSE",
@@ -60,7 +72,13 @@ class ValuationV2DataService:
 
     def refresh_daily(self, market: V2Market) -> dict[str, int]:
         if not self.settings.fmp_api_token:
-            return {"universe": 0, "covered": 0, "all_anchors": 0}
+            return {
+                "universe": 0,
+                "attempted": 0,
+                "covered": 0,
+                "all_anchors": 0,
+                "provider_error_symbols": 0,
+            }
         universe = self._universe_stocks(market)
         symbols = [str(row["symbol"]) for row in universe]
         provider_by_symbol = {
@@ -72,16 +90,36 @@ class ValuationV2DataService:
         today = datetime.now(timezone.utc).date()
         packets: dict[str, dict[str, Any]] = {}
         for symbol in symbols:
-            packet = packets_by_provider.get(provider_by_symbol[symbol])
-            if not packet:
-                continue
-            packets[symbol] = {
+            provider_symbol = provider_by_symbol[symbol]
+            packet = packets_by_provider.get(provider_symbol) or self._missing_packet(provider_symbol)
+            enriched = {
                 **packet,
                 "symbol": symbol,
-                "provider_symbol": provider_by_symbol[symbol],
-                "coverage": self._coverage(packet, today=today),
+                "provider_symbol": provider_symbol,
             }
-        summary = self._summary(packets)
+            forward = self._forward_estimates(enriched, today=today)
+            enriched["forward_estimates"] = forward
+            enriched["fy1_estimate"] = forward[0] if forward else None
+            enriched["fy2_estimate"] = forward[1] if len(forward) > 1 else None
+            enriched["coverage"] = self._coverage(enriched, today=today)
+            packets[symbol] = enriched
+        summary = self._summary(packets, universe_size=len(universe))
+        if packets and summary["endpoint_responses"] == 0:
+            logger.error(
+                "Valuation V2.1 provider outage market=%s attempted=%s endpoint_errors=%s; "
+                "previous snapshot preserved",
+                market,
+                summary["attempted"],
+                summary["endpoint_errors"],
+            )
+            raise RuntimeError(f"FMP Valuation V2.1 provider outage for {market}")
+        if summary["provider_error_symbols"]:
+            logger.warning(
+                "Valuation V2.1 partial provider failure market=%s symbols=%s endpoint_errors=%s",
+                market,
+                summary["provider_error_symbols"],
+                summary["endpoint_errors"],
+            )
         methodology_id = self.database.ensure_methodology_version(
             METHODOLOGY_KEY,
             METHODOLOGY_VERSION,
@@ -101,7 +139,13 @@ class ValuationV2DataService:
             {"packets": packets, "universe_size": len(universe), "coverage_summary": summary},
             datetime.now(timezone.utc),
         )
-        return {"universe": len(universe), "covered": len(packets), "all_anchors": summary["all_anchors"]}
+        return {
+            "universe": len(universe),
+            "attempted": summary["attempted"],
+            "covered": summary["covered"],
+            "all_anchors": summary["all_anchors"],
+            "provider_error_symbols": summary["provider_error_symbols"],
+        }
 
     def refresh_all(self) -> dict[str, dict[str, int]]:
         return {market: self.refresh_daily(market) for market in ("B3", "NASDAQ", "NYSE")}
@@ -142,12 +186,7 @@ class ValuationV2DataService:
             peer for peer in packet.get("peers") or []
             if isinstance(peer, dict) and peer.get("symbol")
         ]
-        forward_estimates = [
-            row for row in packet.get("analyst_estimates_annual") or []
-            if isinstance(row, dict)
-            and _number(row.get("eps_avg")) is not None
-            and str(row.get("fiscal_year_end") or "") >= today.isoformat()
-        ]
+        forward_estimates = ValuationV2DataService._forward_estimates(packet, today=today)
         history_years = {
             str(row.get("fiscal_year_end"))[:4]
             for row in packet.get("ratios_annual") or []
@@ -157,20 +196,50 @@ class ValuationV2DataService:
                 for field in ("pe", "ev_ebitda", "price_to_book")
             )
         }
+        statuses = packet.get("provider_status")
+        statuses = statuses if isinstance(statuses, dict) else {}
+        endpoint_statuses = [
+            statuses.get(endpoint) if isinstance(statuses.get(endpoint), dict) else {}
+            for endpoint in _PROVIDER_ENDPOINTS
+        ]
+        provider_error_count = sum(
+            str(status.get("status") or "") in _PROVIDER_FAILURE_STATUSES
+            for status in endpoint_statuses
+        )
+        endpoint_response_count = sum(
+            str(status.get("status") or "") in {"ok", "empty"}
+            for status in endpoint_statuses
+        )
+        has_any_data = any(bool(packet.get(key)) for key in _PACKET_DATA_KEYS)
         return {
+            "has_any_data": has_any_data,
+            "provider_complete": endpoint_response_count == len(_PROVIDER_ENDPOINTS),
+            "provider_error_count": provider_error_count,
+            "endpoint_response_count": endpoint_response_count,
             "peer_count": len(peers),
             "peers_ok": len(peers) >= MIN_PEER_SAMPLE,
             "forward_fiscal_years": len(forward_estimates),
+            "fy1_available": len(forward_estimates) >= 1,
+            "fy2_available": len(forward_estimates) >= 2,
             "estimates_ok": len(forward_estimates) >= 1,
             "history_years": len(history_years),
             "history_ok": len(history_years) >= MIN_HISTORY_YEARS,
         }
 
     @staticmethod
-    def _summary(packets: dict[str, dict[str, Any]]) -> dict[str, int]:
+    def _summary(
+        packets: dict[str, dict[str, Any]], *, universe_size: int,
+    ) -> dict[str, int]:
         coverages = [packet["coverage"] for packet in packets.values()]
         return {
-            "covered": len(coverages),
+            "universe": universe_size,
+            "attempted": len(coverages),
+            "covered": sum(bool(item["has_any_data"]) for item in coverages),
+            "uncovered": max(0, universe_size - sum(bool(item["has_any_data"]) for item in coverages)),
+            "provider_complete": sum(bool(item["provider_complete"]) for item in coverages),
+            "provider_error_symbols": sum(bool(item["provider_error_count"]) for item in coverages),
+            "endpoint_errors": sum(int(item["provider_error_count"]) for item in coverages),
+            "endpoint_responses": sum(int(item["endpoint_response_count"]) for item in coverages),
             "peers_ok": sum(bool(item["peers_ok"]) for item in coverages),
             "estimates_ok": sum(bool(item["estimates_ok"]) for item in coverages),
             "history_ok": sum(bool(item["history_ok"]) for item in coverages),
@@ -178,6 +247,41 @@ class ValuationV2DataService:
                 bool(item["peers_ok"] and item["estimates_ok"] and item["history_ok"])
                 for item in coverages
             ),
+        }
+
+    @staticmethod
+    def _forward_estimates(packet: dict[str, Any], *, today: date) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        for row in packet.get("analyst_estimates_annual") or []:
+            if not isinstance(row, dict) or _number(row.get("eps_avg")) is None:
+                continue
+            try:
+                fiscal_end = date.fromisoformat(str(row.get("fiscal_year_end") or ""))
+            except ValueError:
+                continue
+            if fiscal_end >= today:
+                output.append(row)
+        output.sort(key=lambda row: str(row.get("fiscal_year_end") or ""))
+        return output
+
+    @staticmethod
+    def _missing_packet(provider_symbol: str) -> dict[str, Any]:
+        missing_status = {
+            "status": "error",
+            "error_type": "MissingBatchResult",
+            "raw_rows": 0,
+            "parsed_rows": 0,
+        }
+        return {
+            "symbol": provider_symbol,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "peers": [],
+            "analyst_estimates_annual": [],
+            "ratios_annual": [],
+            "key_metrics_annual": [],
+            "provider_status": {
+                endpoint: dict(missing_status) for endpoint in _PROVIDER_ENDPOINTS
+            },
         }
 
     def _universe_stocks(self, market: V2Market) -> list[dict[str, Any]]:
