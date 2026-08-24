@@ -115,7 +115,7 @@ def test_daily_learning_ignores_a_corrected_trades_phantom_loss() -> None:
         "executed_at": datetime(2026, 8, 18, 20, 0, tzinfo=timezone.utc),
     })
 
-    state = service._ensure_daily_learning(experiment, date(2026, 8, 24))
+    state = service._ensure_daily_learning(experiment, date(2026, 8, 25))
 
     assert state["metrics"]["win_rate_percent"] == 75.0
     assert state["metrics"]["profit_factor"] == 12.0

@@ -84,6 +84,15 @@ def test_r2d2_dashboard_separates_cumulative_nav_from_calendar_day_pnl(
 ) -> None:
     service = _service()
     service.ensure_initialized()
+    realized_sessions = [
+        {"session_date": date(2026, 8, 20), "realized_pnl_usd": -10_000},
+        {"session_date": date(2026, 8, 21), "realized_pnl_usd": 4_000},
+    ]
+    monkeypatch.setattr(
+        service.repo,
+        "realized_pnl_by_session",
+        lambda experiment_id: list(realized_sessions),
+    )
     service.repo.memory["snapshots"][date(2026, 8, 20)] = {
         "session_date": date(2026, 8, 20),
         "nav_usd": 990_000,
@@ -132,6 +141,7 @@ def test_r2d2_dashboard_separates_cumulative_nav_from_calendar_day_pnl(
         "open_positions": 0,
         "is_final": False,
     }
+    realized_sessions.append({"session_date": date(2026, 8, 22), "realized_pnl_usd": -500})
 
     today_dashboard = service.dashboard()
 
@@ -140,6 +150,40 @@ def test_r2d2_dashboard_separates_cumulative_nav_from_calendar_day_pnl(
     assert today_dashboard.daily_pnl_usd == -500
     assert today_dashboard.daily_return_percent == -0.0503
     assert today_dashboard.daily_pnl_date == "2026-08-22"
+
+
+def test_r2d2_realized_track_keeps_prior_week_in_nav_but_not_daily_pnl() -> None:
+    track = r2d2_module._realized_daily_track(
+        [
+            {
+                "session_date": date(2026, 8, 21),
+                "nav_usd": 955_044.15,
+                "daily_pnl_usd": -39_981.68,
+                "is_final": True,
+            },
+            {
+                "session_date": date(2026, 8, 24),
+                "nav_usd": 983_844.15,
+                "daily_pnl_usd": 28_800.00,
+                "is_final": False,
+            },
+        ],
+        [
+            {"session_date": date(2026, 8, 17), "realized_pnl_usd": -1_000.00},
+            {"session_date": date(2026, 8, 18), "realized_pnl_usd": -2_000.00},
+            {"session_date": date(2026, 8, 19), "realized_pnl_usd": 500.00},
+            {"session_date": date(2026, 8, 20), "realized_pnl_usd": -2_474.17},
+            {"session_date": date(2026, 8, 21), "realized_pnl_usd": -39_981.68},
+            {"session_date": date(2026, 8, 24), "realized_pnl_usd": -814.57},
+        ],
+        1_000_000,
+    )
+
+    assert track[-2]["accounting_nav_usd"] == 955_044.15
+    assert track[-1]["daily_pnl_usd"] == -814.57
+    assert round(track[-1]["daily_return_percent"], 6) == -0.085291
+    assert track[-1]["cumulative_pnl_usd"] == -45_770.42
+    assert track[-1]["accounting_nav_usd"] == 954_229.58
 
 
 def test_r2d2_scans_full_us_catalog_and_promotes_stocks_and_etfs() -> None:
@@ -660,11 +704,13 @@ def test_r2d2_daily_learning_is_versioned_and_tightens_with_weak_evidence() -> N
         }
     for offset in range(8):
         service.repo.memory["trades"].append({
+            "experiment_id": experiment["id"],
+            "side": "SELL",
             "realized_pnl_usd": -1_000,
             "executed_at": datetime(2026, 8, 18, 18, offset, tzinfo=timezone.utc),
         })
 
-    state = service._ensure_daily_learning(experiment, date(2026, 8, 24))
+    state = service._ensure_daily_learning(experiment, date(2026, 8, 25))
 
     assert state["version"] == 2
     assert state["parameters"]["entry_upside_floor"] == 20.5
@@ -790,6 +836,12 @@ def test_r2d2_virtual_ledger_records_buy_sell_costs_and_realized_pnl() -> None:
     assert round(experiment["cash_balance"], 2) == 1_000_272.0
     assert round(float(trade["realized_pnl_usd"]), 2) == 272.0
     assert round(float(trade["realized_return_percent"]), 2) == 2.72
+    assert repository.realized_pnl_by_session(experiment["id"]) == [
+        {
+            "session_date": trade["executed_at"].astimezone(SAO_PAULO).date(),
+            "realized_pnl_usd": 272.0,
+        }
+    ]
     assert len(repository.trades(experiment["id"])) == 2
     assert repository.trade_summary(experiment["id"]) == {
         "total_transactions": 2,

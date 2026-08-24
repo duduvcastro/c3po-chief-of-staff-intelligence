@@ -148,6 +148,48 @@ def _date_value(value: Any) -> date:
     return date.fromisoformat(str(value).strip().split()[0])
 
 
+def _realized_daily_track(
+    snapshots: list[dict[str, Any]],
+    realized_sessions: list[dict[str, Any]],
+    starting_capital: float,
+    *,
+    through_date: date | None = None,
+) -> list[dict[str, Any]]:
+    """Build the accounting track from net realized SELL P&L only.
+
+    Live NAV remains cash plus marked positions. The accounting NAV and Daily
+    P&L are deliberately separate: they are the starting capital plus the
+    immutable realized trade ledger, never a difference between two marks.
+    """
+    snapshots_by_date = {
+        _date_value(item["session_date"]): item
+        for item in snapshots
+        if through_date is None or _date_value(item["session_date"]) <= through_date
+    }
+    realized_by_date = {
+        _date_value(item["session_date"]): _float(item.get("realized_pnl_usd"))
+        for item in realized_sessions
+        if through_date is None or _date_value(item["session_date"]) <= through_date
+    }
+    session_dates = sorted(set(snapshots_by_date) | set(realized_by_date))
+    accounting_nav = round(starting_capital, 2)
+    track: list[dict[str, Any]] = []
+    for session_date in session_dates:
+        daily_pnl = round(realized_by_date.get(session_date, 0.0), 2)
+        base_nav = accounting_nav
+        accounting_nav = round(accounting_nav + daily_pnl, 2)
+        snapshot = snapshots_by_date.get(session_date) or {}
+        track.append({
+            "session_date": session_date,
+            "accounting_nav_usd": accounting_nav,
+            "cumulative_pnl_usd": round(accounting_nav - starting_capital, 2),
+            "daily_pnl_usd": daily_pnl,
+            "daily_return_percent": daily_pnl / base_nav * 100 if base_nav else 0.0,
+            "is_final": bool(snapshot.get("is_final")),
+        })
+    return track
+
+
 class R2D2Repository:
     """Persistent paper ledger. It deliberately exposes no real-broker operation."""
 
@@ -726,20 +768,28 @@ class R2D2Repository:
     def save_snapshot(self, experiment_id: str, session_date: date, nav: float, cash: float,
                       exposure: float, positions: int, is_final: bool = False) -> dict[str, Any]:
         snapshots = self.snapshots(experiment_id)
-        prior = next((item for item in reversed(snapshots) if item["session_date"] < session_date), None)
-        if prior:
-            base = _float(prior["nav_usd"])
-        elif not self.database.database_url:
-            base = _float((self.memory.get("experiment") or {}).get("starting_capital"), nav)
+        if not self.database.database_url:
+            starting_capital = _float((self.memory.get("experiment") or {}).get("starting_capital"), nav)
         else:
             with self.database.connection() as connection:
                 row = connection.execute(
                     "SELECT starting_capital FROM r2d2_experiments WHERE id=%s",
                     (experiment_id,),
                 ).fetchone()
-            base = _float(row[0], nav) if row else nav
-        pnl = nav - base
-        daily_return = pnl / base * 100 if base else 0.0
+            starting_capital = _float(row[0], nav) if row else nav
+        current_snapshot = {
+            "session_date": session_date,
+            "is_final": is_final,
+        }
+        track = _realized_daily_track(
+            [*snapshots, current_snapshot],
+            self.realized_pnl_by_session(experiment_id),
+            starting_capital,
+            through_date=session_date,
+        )
+        current_track = next(item for item in reversed(track) if item["session_date"] == session_date)
+        pnl = _float(current_track["daily_pnl_usd"])
+        daily_return = _float(current_track["daily_return_percent"])
         payload = {
             "session_date": session_date, "nav_usd": nav, "cash_usd": cash,
             "daily_pnl_usd": pnl, "daily_return_percent": daily_return,
@@ -809,6 +859,42 @@ class R2D2Repository:
                 "fill_price_local", "fx_to_usd", "gross_value_usd", "fees_usd", "slippage_usd",
                 "realized_pnl_usd", "reason", "decision_snapshot", "executed_at", "quote_as_of")
         return [dict(zip(keys, row)) for row in rows]
+
+    def realized_pnl_by_session(self, experiment_id: str) -> list[dict[str, Any]]:
+        """Net realized SELL P&L grouped by the São Paulo accounting date."""
+        if not self.database.database_url:
+            buckets: dict[date, float] = {}
+            for item in self.memory["trades"]:
+                if item.get("experiment_id") != experiment_id:
+                    continue
+                if item.get("side") != "SELL" or item.get("realized_pnl_usd") is None:
+                    continue
+                if _trade_is_corrected(item):
+                    continue
+                executed_at = item.get("executed_at")
+                if not isinstance(executed_at, datetime):
+                    continue
+                session_date = executed_at.astimezone(SAO_PAULO).date()
+                buckets[session_date] = buckets.get(session_date, 0.0) + _float(item["realized_pnl_usd"])
+            return [
+                {"session_date": session_date, "realized_pnl_usd": pnl}
+                for session_date, pnl in sorted(buckets.items())
+            ]
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """SELECT (executed_at AT TIME ZONE 'America/Sao_Paulo')::date AS session_date,
+                          COALESCE(SUM(realized_pnl_usd), 0)
+                   FROM r2d2_trades
+                   WHERE experiment_id=%s AND side='SELL' AND realized_pnl_usd IS NOT NULL
+                     AND NOT (decision_snapshot ? 'correction')
+                   GROUP BY session_date
+                   ORDER BY session_date""",
+                (experiment_id,),
+            ).fetchall()
+        return [
+            {"session_date": row[0], "realized_pnl_usd": _float(row[1])}
+            for row in rows
+        ]
 
     def trade_summary(self, experiment_id: str) -> dict[str, int]:
         if not self.database.database_url:
@@ -1089,6 +1175,13 @@ class R2D2PaperService:
 
         previous = states[-1] if states else None
         parameters = {**BASE_ENTRY_POLICY, **(dict(previous["parameters"]) if previous else {})}
+        all_snapshots = self.repo.snapshots(experiment["id"])
+        accounting_track = _realized_daily_track(
+            all_snapshots,
+            self.repo.realized_pnl_by_session(experiment["id"]),
+            _float(experiment["starting_capital"]),
+            through_date=effective_date - timedelta(days=1),
+        )
         snapshots = [
             item for item in self.repo.snapshots(experiment["id"])
             if item.get("is_final") and item["session_date"] < effective_date
@@ -1099,7 +1192,12 @@ class R2D2PaperService:
             and item["executed_at"].astimezone(SAO_PAULO).date() < effective_date
             and not _trade_is_corrected(item)
         ][:50]
-        returns = [_float(item["daily_return_percent"]) for item in snapshots]
+        finalized_dates = {_date_value(item["session_date"]) for item in snapshots}
+        finalized_track = [
+            item for item in accounting_track
+            if item["session_date"] in finalized_dates
+        ]
+        returns = [_float(item["daily_return_percent"]) for item in finalized_track]
         realized = [_float(item["realized_pnl_usd"]) for item in exits]
         wins = [value for value in realized if value > 0]
         losses = [value for value in realized if value < 0]
@@ -1108,8 +1206,8 @@ class R2D2PaperService:
         profit_factor = min(99.0, gross_profit / gross_loss) if gross_loss else (99.0 if gross_profit else 0.0)
         peak = 0.0
         max_drawdown = 0.0
-        for item in snapshots:
-            nav = _float(item["nav_usd"])
+        for item in finalized_track:
+            nav = _float(item["accounting_nav_usd"])
             peak = max(peak, nav)
             if peak:
                 max_drawdown = max(max_drawdown, (peak - nav) / peak * 100)
@@ -1198,18 +1296,20 @@ class R2D2PaperService:
         nav = cash + exposure
         snapshots = self.repo.snapshots(experiment["id"])
         local_date = datetime.now(SAO_PAULO).date()
-        current = next((row for row in reversed(snapshots) if row["session_date"] <= local_date), None)
+        starting_capital = _float(experiment["starting_capital"])
+        accounting_track = _realized_daily_track(
+            snapshots,
+            self.repo.realized_pnl_by_session(experiment["id"]),
+            starting_capital,
+            through_date=local_date,
+        )
+        current = accounting_track[-1] if accounting_track else None
         daily_pnl = _float(current.get("daily_pnl_usd")) if current else 0.0
         daily_return = _float(current.get("daily_return_percent")) if current else 0.0
         daily_pnl_date = current["session_date"].isoformat() if current else None
-        cumulative_pnl = sum(
-            _float(row.get("daily_pnl_usd"))
-            for row in snapshots
-            if row["session_date"] <= local_date
-        )
-        starting_capital = _float(experiment["starting_capital"])
+        cumulative_pnl = sum(_float(row["daily_pnl_usd"]) for row in accounting_track)
         accounting_nav = starting_capital + cumulative_pnl
-        closed = [row for row in snapshots if row.get("is_final")]
+        closed = [row for row in accounting_track if row.get("is_final")]
         positives = sum(_float(row["daily_return_percent"]) > 0 for row in closed)
         negatives = sum(_float(row["daily_return_percent"]) < 0 for row in closed)
         trade_summary = self.repo.trade_summary(experiment["id"])
@@ -1287,10 +1387,10 @@ class R2D2PaperService:
             daily_pnl_date=daily_pnl_date,
             open_positions=len(positions), stats=stats,
             track_record=[R2D2TrackPoint(
-                session_date=row["session_date"].isoformat(), nav_usd=_float(row["nav_usd"]),
+                session_date=row["session_date"].isoformat(), nav_usd=_float(row["accounting_nav_usd"]),
                 daily_pnl_usd=_float(row["daily_pnl_usd"]), daily_return_percent=_float(row["daily_return_percent"]),
                 is_final=bool(row["is_final"]),
-            ) for row in snapshots],
+            ) for row in accounting_track],
             learning_curve=[R2D2LearningCurvePoint(
                 session_date=row["session_date"].isoformat(),
                 positive_percent=round(row["positive"] / (row["positive"] + row["negative"]) * 100, 1),
