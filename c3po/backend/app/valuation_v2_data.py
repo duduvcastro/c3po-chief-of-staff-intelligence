@@ -14,7 +14,9 @@ V2Market = Literal["B3", "NASDAQ", "NYSE"]
 
 ANALYSIS_TYPE = "valuation_v2_data"
 METHODOLOGY_KEY = "valuation_v2_data_foundation"
-METHODOLOGY_VERSION = 1
+METHODOLOGY_VERSION = 2
+DATA_SCHEMA_VERSION = "VALUATION-V2-DATA-v2"
+ROE_SOURCE = "fmp_stable_key_metrics_returnOnEquity"
 
 # Frozen anchor thresholds from the V2 design (Fable, 2026-08-23): a peer
 # group anchors a fair multiple only with at least four peers; the own-history
@@ -85,6 +87,8 @@ class ValuationV2DataService:
                 "covered": 0,
                 "all_anchors": 0,
                 "provider_error_symbols": 0,
+                "roe_available": 0,
+                "fmp_forward_quality": 0,
             }
         universe = self._universe_stocks(market)
         symbols = [str(row["symbol"]) for row in universe]
@@ -134,6 +138,7 @@ class ValuationV2DataService:
                 "anchors": "fmp_peers,fy_estimates,own_history_10y",
                 "min_peer_sample": MIN_PEER_SAMPLE,
                 "min_history_years": MIN_HISTORY_YEARS,
+                "roe_source": ROE_SOURCE,
                 "consumers": "none_until_v2_2_engine",
             },
             "Valuation V2.1 data foundations: external anchors only, no free constants.",
@@ -142,8 +147,20 @@ class ValuationV2DataService:
             ANALYSIS_TYPE,
             f"{market}_V2_DATA",
             methodology_id,
-            {"market": market, "universe_size": len(universe), **summary},
-            {"packets": packets, "universe_size": len(universe), "coverage_summary": summary},
+            {
+                "market": market,
+                "universe_size": len(universe),
+                "data_schema_version": DATA_SCHEMA_VERSION,
+                "roe_source": ROE_SOURCE,
+                **summary,
+            },
+            {
+                "packets": packets,
+                "universe_size": len(universe),
+                "data_schema_version": DATA_SCHEMA_VERSION,
+                "roe_source": ROE_SOURCE,
+                "coverage_summary": summary,
+            },
             datetime.now(timezone.utc),
         )
         return {
@@ -152,6 +169,8 @@ class ValuationV2DataService:
             "covered": summary["covered"],
             "all_anchors": summary["all_anchors"],
             "provider_error_symbols": summary["provider_error_symbols"],
+            "roe_available": summary["roe_available"],
+            "fmp_forward_quality": summary["fmp_forward_quality"],
         }
 
     def refresh_all(self) -> dict[str, dict[str, int]]:
@@ -194,6 +213,17 @@ class ValuationV2DataService:
             if isinstance(peer, dict) and peer.get("symbol")
         ]
         forward_estimates = ValuationV2DataService._forward_estimates(packet, today=today)
+        forward_revenues = ValuationV2DataService._forward_revenue_estimates(
+            packet, today=today
+        )
+        roe_years = {
+            fiscal_end.year
+            for row in packet.get("key_metrics_annual") or []
+            if isinstance(row, dict)
+            and _number(row.get("roe")) is not None
+            and (fiscal_end := ValuationV2DataService._fiscal_date(row)) is not None
+            and fiscal_end <= today
+        }
         history_years = {
             str(row.get("fiscal_year_end"))[:4]
             for row in packet.get("ratios_annual") or []
@@ -229,6 +259,10 @@ class ValuationV2DataService:
             "fy1_available": len(forward_estimates) >= 1,
             "fy2_available": len(forward_estimates) >= 2,
             "estimates_ok": len(forward_estimates) >= 1,
+            "forward_revenue_years": len(forward_revenues),
+            "roe_years": len(roe_years),
+            "roe_available": bool(roe_years),
+            "fmp_forward_quality": bool(roe_years and len(forward_revenues) >= 2),
             "history_years": len(history_years),
             "history_ok": len(history_years) >= MIN_HISTORY_YEARS,
         }
@@ -249,6 +283,10 @@ class ValuationV2DataService:
             "endpoint_responses": sum(int(item["endpoint_response_count"]) for item in coverages),
             "peers_ok": sum(bool(item["peers_ok"]) for item in coverages),
             "estimates_ok": sum(bool(item["estimates_ok"]) for item in coverages),
+            "roe_available": sum(bool(item["roe_available"]) for item in coverages),
+            "fmp_forward_quality": sum(
+                bool(item["fmp_forward_quality"]) for item in coverages
+            ),
             "history_ok": sum(bool(item["history_ok"]) for item in coverages),
             "all_anchors": sum(
                 bool(item["peers_ok"] and item["estimates_ok"] and item["history_ok"])
@@ -270,6 +308,34 @@ class ValuationV2DataService:
                 output.append(row)
         output.sort(key=lambda row: str(row.get("fiscal_year_end") or ""))
         return output
+
+    @staticmethod
+    def _forward_revenue_estimates(
+        packet: dict[str, Any], *, today: date,
+    ) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        for row in packet.get("analyst_estimates_annual") or []:
+            if (
+                not isinstance(row, dict)
+                or (revenue := _number(row.get("revenue_avg"))) is None
+                or revenue <= 0
+            ):
+                continue
+            try:
+                fiscal_end = date.fromisoformat(str(row.get("fiscal_year_end") or ""))
+            except ValueError:
+                continue
+            if fiscal_end >= today:
+                output.append(row)
+        output.sort(key=lambda row: str(row.get("fiscal_year_end") or ""))
+        return output
+
+    @staticmethod
+    def _fiscal_date(row: dict[str, Any]) -> date | None:
+        try:
+            return date.fromisoformat(str(row.get("fiscal_year_end") or ""))
+        except ValueError:
+            return None
 
     @staticmethod
     def _missing_packet(provider_symbol: str) -> dict[str, Any]:

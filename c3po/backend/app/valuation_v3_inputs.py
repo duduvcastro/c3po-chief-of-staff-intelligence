@@ -27,8 +27,8 @@ def fmp_forward_quality(packet: dict[str, Any] | None, *, as_of: date) -> dict[s
     to complete an otherwise partial forward record.
     """
     packet = packet or {}
-    ratios: list[tuple[date, float]] = []
-    for row in packet.get("ratios_annual") or []:
+    key_metrics: list[tuple[date, float]] = []
+    for row in packet.get("key_metrics_annual") or []:
         if not isinstance(row, dict):
             continue
         try:
@@ -37,10 +37,10 @@ def fmp_forward_quality(packet: dict[str, Any] | None, *, as_of: date) -> dict[s
             continue
         roe = _number(row.get("roe"))
         if fiscal_end <= as_of and roe is not None:
-            ratios.append((fiscal_end, roe))
-    if not ratios:
+            key_metrics.append((fiscal_end, roe))
+    if not key_metrics:
         return None
-    ratios.sort(key=lambda item: item[0], reverse=True)
+    key_metrics.sort(key=lambda item: item[0], reverse=True)
 
     estimates: list[tuple[date, float]] = []
     for row in packet.get("analyst_estimates_annual") or []:
@@ -59,9 +59,9 @@ def fmp_forward_quality(packet: dict[str, Any] | None, *, as_of: date) -> dict[s
 
     growth = estimates[1][1] / estimates[0][1] - 1
     return {
-        "roe": ratios[0][1],
+        "roe": key_metrics[0][1],
         "revenue_growth": growth,
-        "roe_fiscal_year_end": ratios[0][0].isoformat(),
+        "roe_fiscal_year_end": key_metrics[0][0].isoformat(),
         "fy1_end": estimates[0][0].isoformat(),
         "fy2_end": estimates[1][0].isoformat(),
         "source": "fmp_forward",

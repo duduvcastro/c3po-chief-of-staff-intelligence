@@ -413,8 +413,8 @@ class FmpClient:
         return output, self._finalize_v2_status(status, len(output))
 
     def key_metrics_annual(self, symbol: str, *, limit: int = 10) -> list[dict[str, Any]]:
-        """Up to ``limit`` fiscal years of per-share/return metrics (ROIC,
-        market cap, revenue and FCF per share) complementing ratios_annual
+        """Up to ``limit`` fiscal years of per-share/return metrics (ROE,
+        ROIC, market cap, revenue and FCF per share) complementing ratios_annual
         for the own-history anchor. [] on any failure."""
         rows, _status = self._key_metrics_annual_result(symbol, limit=limit)
         return rows
@@ -440,6 +440,7 @@ class FmpClient:
                 "fiscal_year_end": fiscal_end.isoformat(),
                 "market_cap": number(row.get("marketCap")),
                 "enterprise_value": number(row.get("enterpriseValue")),
+                "roe": number(row.get("returnOnEquity")),
                 "roic": _first_number(row.get("returnOnInvestedCapital"), row.get("roic")),
                 "revenue_per_share": number(row.get("revenuePerShare")),
                 "fcf_per_share": number(row.get("freeCashFlowPerShare")),
@@ -482,6 +483,46 @@ class FmpClient:
 
         def fetch(symbol: str) -> tuple[str, dict[str, Any]]:
             return symbol, self.valuation_v2_packet(symbol)
+
+        output: dict[str, dict[str, Any]] = {}
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, 20))) as executor:
+            for symbol, result in executor.map(fetch, clean_symbols):
+                output[symbol] = result
+        return output
+
+    def valuation_v2_peer_quality_packet(self, symbol: str) -> dict[str, Any]:
+        """Lightweight V2.1b packet for one direct peer.
+
+        Only the two FMP families required by the frozen ``fmp_forward``
+        quality basis are fetched. Peer discovery remains owned by the target
+        packet, so this method can never recurse into peers-of-peers.
+        """
+        estimates, estimates_status = self._analyst_estimates_annual_result(symbol)
+        metrics, metrics_status = self._key_metrics_annual_result(symbol)
+        return {
+            "symbol": symbol.strip().upper(),
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "analyst_estimates_annual": estimates,
+            "key_metrics_annual": metrics,
+            "provider_status": {
+                "analyst_estimates": estimates_status,
+                "key_metrics": metrics_status,
+            },
+        }
+
+    def valuation_v2_peer_quality_batch(
+        self, symbols: list[str], *, workers: int = 10,
+    ) -> dict[str, dict[str, Any]]:
+        clean_symbols = list(
+            dict.fromkeys(
+                symbol.strip().upper() for symbol in symbols if symbol.strip()
+            )
+        )
+        if not clean_symbols:
+            return {}
+
+        def fetch(symbol: str) -> tuple[str, dict[str, Any]]:
+            return symbol, self.valuation_v2_peer_quality_packet(symbol)
 
         output: dict[str, dict[str, Any]] = {}
         with ThreadPoolExecutor(max_workers=max(1, min(workers, 20))) as executor:

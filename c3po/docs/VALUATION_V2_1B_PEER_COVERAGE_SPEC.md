@@ -1,6 +1,6 @@
 # Valuation V2.1b — Fechamento de Dados de Qualidade dos Peers
 
-**Status:** proposta para auditoria a seis mãos · **Escopo:** dados somente ·
+**Status:** congelada na PR #205 · **Escopo:** dados somente ·
 **Dependência:** A/B v3 reprovado de 23/08/2026 · **Consumidores:** nenhum
 
 ## 1. Objetivo e limites
