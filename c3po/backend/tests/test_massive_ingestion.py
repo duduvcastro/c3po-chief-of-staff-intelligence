@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 
@@ -8,6 +9,20 @@ from app.day_d_replay.massive_ingestion import (
     MassiveIngestionError,
     MassiveR1Normalizer,
     RowDisposition,
+)
+from app.day_d_replay.point_in_time_universe import (
+    MANIFEST_SCHEMA_VERSION,
+    RANKING_INPUT_SCHEMA_VERSION,
+    REFERENCE_ENDPOINT,
+    REFERENCE_POLICY_VERSION,
+    UNIVERSE_POLICY_VERSION,
+    PointInTimeUniverseBuilder,
+)
+from app.day_d_replay.qualification_scope import (
+    QUALIFICATION_CALENDAR_PATH,
+    QUALIFICATION_CALENDAR_VERSION,
+    QUALIFICATION_PREVIOUS_SESSION_DATES,
+    QUALIFICATION_RANKING_SESSION_DATES,
 )
 
 
@@ -67,6 +82,130 @@ def _normalizer(*, permissive: bool = False) -> MassiveR1Normalizer:
     return normalizer
 
 
+def _canonical(payload: object) -> bytes:
+    return (
+        json.dumps(
+            payload,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode()
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _universe_manifest(tmp_path: Path) -> Path:
+    root = tmp_path / "day-d-data"
+    previous = QUALIFICATION_PREVIOUS_SESSION_DATES[SESSION]
+    page = (
+        root
+        / "provider=massive"
+        / "reference-tickers"
+        / f"as_of={previous.isoformat()}"
+        / "page-0001.json"
+    )
+    page.parent.mkdir(parents=True)
+    page.write_bytes(_canonical({"results": [], "status": "OK"}))
+    ranking = (
+        root
+        / "provider=massive"
+        / "universe-ranking-inputs"
+        / f"session_date={SESSION.isoformat()}"
+        / "ranking-inputs.ndjson"
+    )
+    ranking.parent.mkdir(parents=True)
+    ranking.write_bytes(b"{}\n")
+
+    tradeable_symbols = ["AAPL", *(f"T{index:03d}" for index in range(59))]
+    rows = [
+        {
+            "role": "tradeable",
+            "benchmark": False,
+            "rank": index,
+            "symbol": symbol,
+        }
+        for index, symbol in enumerate(tradeable_symbols, start=1)
+    ]
+    rows.append({
+        "role": "benchmark",
+        "benchmark": True,
+        "rank": None,
+        "symbol": "QQQ",
+    })
+    relative_page = page.relative_to(root)
+    relative_ranking = ranking.relative_to(root)
+    payload = {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
+        "policy_version": UNIVERSE_POLICY_VERSION,
+        "reference_policy_version": REFERENCE_POLICY_VERSION,
+        "session_date": SESSION.isoformat(),
+        "previous_session_date": previous.isoformat(),
+        "calendar": {
+            "version": QUALIFICATION_CALENDAR_VERSION,
+            "contract_sha256": _sha256(QUALIFICATION_CALENDAR_PATH),
+            "ranking_session_dates": [
+                value.isoformat()
+                for value in QUALIFICATION_RANKING_SESSION_DATES[SESSION]
+            ],
+        },
+        "reference": {
+            "provider": "Massive",
+            "endpoint": REFERENCE_ENDPOINT,
+            "query": PointInTimeUniverseBuilder._reference_query(previous),
+            "request_count": 1,
+            "pages": [{
+                "page_number": 1,
+                "path": str(relative_page),
+                "bytes": page.stat().st_size,
+                "sha256": _sha256(page),
+            }],
+        },
+        "selection_rule": PointInTimeUniverseBuilder.selection_rule(),
+        "ranking_inputs": {
+            "schema_version": RANKING_INPUT_SCHEMA_VERSION,
+            "path": str(relative_ranking),
+            "bytes": ranking.stat().st_size,
+            "sha256": _sha256(ranking),
+            "parent_minute_aggregate_sources": [
+                {"session_date": value.isoformat()}
+                for value in QUALIFICATION_RANKING_SESSION_DATES[SESSION]
+            ],
+        },
+        "universe": {
+            "tradeable_count": 60,
+            "benchmark_count": 1,
+            "total_count": 61,
+            "benchmark_is_ranked": False,
+            "rows": rows,
+        },
+        "anti_lookahead": {
+            "reference_date_equals_previous_session": True,
+            "ranking_window_ends_at_previous_session_inclusive": True,
+            "session_d_data_used": False,
+            "future_corporate_actions_used": False,
+        },
+    }
+    payload["payload_sha256"] = hashlib.sha256(_canonical(payload)).hexdigest()
+    manifest = (
+        root
+        / "provider=massive"
+        / "universe-manifests"
+        / f"session_date={SESSION.isoformat()}"
+        / "universe.json"
+    )
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
 def test_r1_accounts_every_trade_as_emitted_dropped_or_filtered(tmp_path: Path) -> None:
     raw = tmp_path / "trades.csv"
     valid = _trade()
@@ -88,7 +227,7 @@ def test_r1_accounts_every_trade_as_emitted_dropped_or_filtered(tmp_path: Path) 
         session_date=SESSION,
         regular_open=OPEN,
         regular_close=CLOSE,
-        symbols_in_scope={"AAPL"},
+        universe_manifest_path=_universe_manifest(tmp_path),
     )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -123,6 +262,7 @@ def test_r1_preserves_legitimate_one_sided_quote_and_drops_crossed_bbo(tmp_path:
         session_date=SESSION,
         regular_open=OPEN,
         regular_close=CLOSE,
+        universe_manifest_path=_universe_manifest(tmp_path),
     )
 
     emitted = json.loads(output.read_text(encoding="utf-8"))
@@ -133,6 +273,7 @@ def test_r1_preserves_legitimate_one_sided_quote_and_drops_crossed_bbo(tmp_path:
 
 
 def test_r1_does_not_dedupe_distinct_sequences_and_rejects_empty_bbo(tmp_path: Path) -> None:
+    universe_manifest = _universe_manifest(tmp_path)
     trades = tmp_path / "trades.csv"
     _csv(trades, [_trade(sequence_number=10), _trade(sequence_number=11)])
     trade_output = tmp_path / "trades.ndjson"
@@ -143,6 +284,7 @@ def test_r1_does_not_dedupe_distinct_sequences_and_rejects_empty_bbo(tmp_path: P
         session_date=SESSION,
         regular_open=OPEN,
         regular_close=CLOSE,
+        universe_manifest_path=universe_manifest,
     )
 
     quotes = tmp_path / "quotes.csv"
@@ -155,6 +297,7 @@ def test_r1_does_not_dedupe_distinct_sequences_and_rejects_empty_bbo(tmp_path: P
         session_date=SESSION,
         regular_open=OPEN,
         regular_close=CLOSE,
+        universe_manifest_path=universe_manifest,
     )
 
     assert len(trade_output.read_text(encoding="utf-8").splitlines()) == 2
@@ -176,6 +319,7 @@ def test_r1_quality_threshold_quarantines_file_and_emits_no_dataset(tmp_path: Pa
             session_date=SESSION,
             regular_open=OPEN,
             regular_close=CLOSE,
+            universe_manifest_path=_universe_manifest(tmp_path),
         )
 
     assert not output.exists()
@@ -204,6 +348,7 @@ def test_r1_unknown_terminal_outcome_fails_closed_and_is_quarantined(tmp_path: P
             session_date=SESSION,
             regular_open=OPEN,
             regular_close=CLOSE,
+            universe_manifest_path=_universe_manifest(tmp_path),
         )
 
     assert not output.exists()
@@ -224,6 +369,7 @@ def test_r1_keeps_at_most_first_100_samples_per_quality_reason(tmp_path: Path) -
         session_date=SESSION,
         regular_open=OPEN,
         regular_close=CLOSE,
+        universe_manifest_path=_universe_manifest(tmp_path),
     )
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -232,6 +378,7 @@ def test_r1_keeps_at_most_first_100_samples_per_quality_reason(tmp_path: Path) -
 
 def test_r1_session_manifest_reconciles_file_manifests(tmp_path: Path) -> None:
     normalizer = _normalizer(permissive=True)
+    universe_manifest = _universe_manifest(tmp_path)
     manifests = []
     for dataset, row in (("trades", _trade()), ("quotes", _quote())):
         raw = tmp_path / f"{dataset}.csv"
@@ -243,6 +390,7 @@ def test_r1_session_manifest_reconciles_file_manifests(tmp_path: Path) -> None:
             session_date=SESSION,
             regular_open=OPEN,
             regular_close=CLOSE,
+            universe_manifest_path=universe_manifest,
         ))
 
     session_path = normalizer.aggregate_session(
@@ -258,3 +406,43 @@ def test_r1_session_manifest_reconciles_file_manifests(tmp_path: Path) -> None:
     assert set(payload["quality_by_dataset"]) == {"trades", "quotes"}
     assert payload["quality_by_dataset"]["trades"]["passed"] is True
     assert "duplicate_exact" in payload["discard_samples_first_100_per_reason"]
+    assert payload["point_in_time_universe"]["symbol_count"] == 61
+
+
+def test_r1_refuses_to_run_without_a_hash_bound_universe(tmp_path: Path) -> None:
+    raw = tmp_path / "trades.csv"
+    _csv(raw, [_trade()])
+    output = tmp_path / "normalized.ndjson"
+
+    with pytest.raises(MassiveIngestionError, match="requires a hash-bound"):
+        _normalizer(permissive=True).normalize_file(
+            raw_path=raw,
+            output_path=output,
+            dataset="trades",
+            session_date=SESSION,
+            regular_open=OPEN,
+            regular_close=CLOSE,
+            universe_manifest_path=None,
+        )
+
+    assert not output.exists()
+
+
+def test_r1_refuses_a_tampered_universe_manifest(tmp_path: Path) -> None:
+    universe_manifest = _universe_manifest(tmp_path)
+    payload = json.loads(universe_manifest.read_text(encoding="utf-8"))
+    payload["universe"]["rows"][0]["symbol"] = "MSFT"
+    universe_manifest.write_text(json.dumps(payload), encoding="utf-8")
+    raw = tmp_path / "trades.csv"
+    _csv(raw, [_trade()])
+
+    with pytest.raises(MassiveIngestionError, match="payload checksum mismatch"):
+        _normalizer(permissive=True).normalize_file(
+            raw_path=raw,
+            output_path=tmp_path / "normalized.ndjson",
+            dataset="trades",
+            session_date=SESSION,
+            regular_open=OPEN,
+            regular_close=CLOSE,
+            universe_manifest_path=universe_manifest,
+        )

@@ -19,6 +19,12 @@
     "limited_first_byte_scope": "five_year_minute_aggregates_plus_twelve_qualification_sessions_trades_and_quotes",
     "limited_first_byte_scope_bytes": 131006214944,
     "campaign_pause_bytes": 137556525692,
+    "point_in_time_reference_tickers_authorized_after_reviewed_merge": true,
+    "point_in_time_reference_endpoint": "/v3/reference/tickers",
+    "point_in_time_reference_scope": "only_the_twelve_frozen_qualification_previous_session_dates_with_complete_pagination_and_immutable_page_hashes",
+    "point_in_time_reference_request_count_is_evidence_not_campaign_bytes": true,
+    "historical_rest_trades_authorized": false,
+    "historical_rest_quotes_authorized": false,
     "qualified_tick_lot_local_deletion_authorized": true,
     "qualified_tick_lot_local_deletion_scope": "only_trades_and_quotes_from_one_complete_frozen_qualification_session_after_verified_offload_raw_restore_and_billing_cap_return",
     "minute_aggregate_local_deletion_authorized": false,
@@ -41,6 +47,7 @@
     "backblaze_b2_checksum_roundtrip_verified": true,
     "passive_microstructure_capture_before_next_us_open_approved": true,
     "qualified_tick_lot_rolling_deletion_approved": true,
+    "point_in_time_reference_tickers_for_qualification_universes_approved": true,
     "first_week_disable_condition": "sustained_drops_or_queue_saturation_during_opening_burst"
   },
   "frozen_contracts": {
@@ -55,6 +62,7 @@
     "enable_raw_capture"
   ],
   "does_not_supersede_stage0_prohibition_for": [
+    "download_historical_trades_or_quotes_via_rest",
     "run_official_replay",
     "change_production_trading_behavior",
     "use_real_trading_capital"

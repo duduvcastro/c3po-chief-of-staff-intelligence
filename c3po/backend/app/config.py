@@ -91,6 +91,7 @@ class Settings(BaseSettings):
     day_d_dataset_root: Path = Path("/app/day-d-data")
     day_d_dataset_min_free_disk_gb: float = 20.0
     day_d_historical_download_authorized: bool = False
+    day_d_point_in_time_reference_authorized: bool = False
     day_d_b2_key_id: str = ""
     day_d_b2_application_key: str = ""
     day_d_b2_bucket: str = ""
