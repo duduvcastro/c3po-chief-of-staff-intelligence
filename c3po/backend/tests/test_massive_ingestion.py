@@ -99,7 +99,7 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _universe_manifest(tmp_path: Path) -> Path:
+def _universe_manifest(tmp_path: Path, *, primary_symbol: str = "AAPL") -> Path:
     root = tmp_path / "day-d-data"
     previous = QUALIFICATION_PREVIOUS_SESSION_DATES[SESSION]
     page = (
@@ -121,7 +121,7 @@ def _universe_manifest(tmp_path: Path) -> Path:
     ranking.parent.mkdir(parents=True)
     ranking.write_bytes(b"{}\n")
 
-    tradeable_symbols = ["AAPL", *(f"T{index:03d}" for index in range(59))]
+    tradeable_symbols = [primary_symbol, *(f"T{index:03d}" for index in range(59))]
     rows = [
         {
             "role": "tradeable",
@@ -246,6 +246,32 @@ def test_r1_accounts_every_trade_as_emitted_dropped_or_filtered(tmp_path: Path) 
     assert counters["clamped_rows"] == counters["imputed_rows"] == 0
     assert manifest["identity"]["passed"] is True
     assert len(output.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_r1_scope_matches_provider_symbols_case_sensitively(tmp_path: Path) -> None:
+    raw = tmp_path / "trades.csv"
+    _csv(raw, [
+        _trade(ticker="ALPA", sequence_number=10),
+        _trade(ticker="ALpA", sequence_number=11),
+    ])
+    output = tmp_path / "normalized.ndjson"
+
+    manifest_path = _normalizer(permissive=True).normalize_file(
+        raw_path=raw,
+        output_path=output,
+        dataset="trades",
+        session_date=SESSION,
+        regular_open=OPEN,
+        regular_close=CLOSE,
+        universe_manifest_path=_universe_manifest(tmp_path, primary_symbol="ALPA"),
+    )
+
+    emitted = json.loads(output.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert emitted["symbol"] == "ALPA"
+    assert manifest["counters"]["emitted_rows"] == 1
+    assert manifest["counters"]["filtered_rows"] == 1
+    assert manifest["counters"]["filter_reasons"]["symbol_not_in_scope"] == 1
 
 
 def test_r1_preserves_legitimate_one_sided_quote_and_drops_crossed_bbo(tmp_path: Path) -> None:
