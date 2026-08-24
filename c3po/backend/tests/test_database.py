@@ -136,6 +136,21 @@ def test_ir_source_health_surfaces_finnhub_runs(tmp_path) -> None:
     assert health["finnhub"]["last_status"] == "succeeded"
 
 
+def test_ingestion_run_health_preserves_success_but_surfaces_latest_failure(tmp_path) -> None:
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+    code = "valuation-worker-v2-data"
+    succeeded = database.begin_ingestion_run(code, "V2 data", "valuation_worker", {})
+    database.finish_ingestion_run(succeeded, "succeeded", 0, 3)
+    failed = database.begin_ingestion_run(code, "V2 data", "valuation_worker", {})
+    database.finish_ingestion_run(failed, "failed", 0, 0, "provider unavailable")
+
+    health = database.ingestion_run_health([code])[code]
+
+    assert health["last_status"] == "failed"
+    assert health["last_success_at"] is not None
+    assert health["last_error"] == "provider unavailable"
+
+
 def test_insider_transaction_activity_counts_buys_and_sells_from_both_shapes(tmp_path) -> None:
     """Root-caused 2026-08-20: CVM VLMO insider data was fully ingested and
     stored but never read back by anything -- governance_risk was a hardcoded
