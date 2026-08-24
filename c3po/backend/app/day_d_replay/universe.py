@@ -136,7 +136,7 @@ def build_d1_universe(
         candidates.append((
             median_dollar_volume,
             _normalized_symbol(symbol),
-            symbol.upper(),
+            symbol,
             d1,
         ))
 
