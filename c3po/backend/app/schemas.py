@@ -689,11 +689,27 @@ class R2D2Position(BaseModel):
     volume_state: str = "pending"
     data_status: str = "pending"
     decision_state: str = "monitor"
+    technical_defense_score: float = Field(default=0, ge=0, le=100)
+    technical_defense_severity: str = "healthy"
+    technical_defense_reviews: int = Field(default=0, ge=0)
+    technical_defense_reductions: int = Field(default=0, ge=0)
+    technical_defense_drivers: list[str] = Field(default_factory=list)
+    technical_defense_reviewed_at: datetime | None = None
     quote_status: str = "stored"
     quote_as_of: datetime | None = None
     technical_as_of: datetime | None = None
     opened_at: datetime
     updated_at: datetime
+
+
+class R2D2LivePositionsResponse(BaseModel):
+    generated_at: datetime
+    refresh_seconds: int = Field(default=1, ge=1)
+    nav_usd: float
+    cash_usd: float
+    gross_exposure_usd: float
+    open_positions: int = Field(ge=0)
+    positions: list[R2D2Position]
 
 
 class R2D2Trade(BaseModel):

@@ -292,6 +292,12 @@ interface R2D2DashboardData {
     volume_state: string;
     data_status: string;
     decision_state: string;
+    technical_defense_score: number;
+    technical_defense_severity: string;
+    technical_defense_reviews: number;
+    technical_defense_reductions: number;
+    technical_defense_drivers: string[];
+    technical_defense_reviewed_at: string | null;
     quote_status: string;
     quote_as_of: string | null;
     technical_as_of: string | null;
@@ -337,6 +343,16 @@ interface R2D2DashboardData {
   };
   mandate: Record<string, unknown>;
   generated_at: string;
+}
+
+interface R2D2LivePositionsData {
+  generated_at: string;
+  refresh_seconds: number;
+  nav_usd: number;
+  cash_usd: number;
+  gross_exposure_usd: number;
+  open_positions: number;
+  positions: R2D2DashboardData["positions"];
 }
 
 interface ServerUsagePoint {
@@ -1101,6 +1117,52 @@ interface GlobalSearchResult {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_C3PO_API_URL ?? "http://localhost:8000";
+
+function useR2D2LivePositions() {
+  const [telemetry, setTelemetry] = useState<R2D2LivePositionsData | null>(null);
+  const requestInFlight = useRef(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      if (requestInFlight.current) return;
+      requestInFlight.current = true;
+      try {
+        const response = await fetch(`${API_URL}/api/v1/r2d2/live-positions`, {
+          cache: "no-store",
+          credentials: "include"
+        });
+        if (!response.ok) return;
+        const payload: R2D2LivePositionsData = await response.json();
+        if (!mounted) return;
+        setTelemetry((current) => {
+          if (current && Date.parse(payload.generated_at) < Date.parse(current.generated_at)) return current;
+          return payload;
+        });
+      } catch {
+        // Keep the last valid marks visible while the full dashboard remains available.
+      } finally {
+        requestInFlight.current = false;
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+
+    void load();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 1_000);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, []);
+
+  return telemetry;
+}
 
 function MillenniumFalconIcon({ size = 24 }: { size?: number }) {
   return (
@@ -3146,6 +3208,7 @@ function LeahCloudView({ session }: { session: AuthSession }) {
 
 function R2D2RisingView() {
   const [data, setData] = useState<R2D2DashboardData | null>(null);
+  const liveTelemetry = useR2D2LivePositions();
   const [error, setError] = useState("");
   const requestInFlight = useRef(false);
   const [hoveredAllocation, setHoveredAllocation] = useState<{
@@ -3212,7 +3275,11 @@ function R2D2RisingView() {
   const signedMoney = (value: number) => `${value >= 0 ? "+" : "-"}${money(Math.abs(value))}`;
   const signedPercent = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
   const signedPositionPercent = (returnPercent: number, pnlUsd: number) => `${pnlUsd >= 0 ? "+" : "-"}${formatPositionPercentMagnitude(returnPercent)}%`;
-  const cashPercent = data.nav_usd > 0 ? data.cash_usd / data.nav_usd * 100 : 100;
+  const positions = liveTelemetry?.positions ?? data.positions;
+  const markedNav = liveTelemetry?.nav_usd ?? data.nav_usd;
+  const cash = liveTelemetry?.cash_usd ?? data.cash_usd;
+  const openPositions = liveTelemetry?.open_positions ?? data.open_positions;
+  const cashPercent = markedNav > 0 ? cash / markedNav * 100 : 100;
   const saoPauloDateKey = (value: string | Date) => new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
@@ -3240,7 +3307,7 @@ function R2D2RisingView() {
         : `${trade.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares sold · ${trade.realized_pnl_usd === null ? "P&L pending" : `${signedMoney(trade.realized_pnl_usd)} realized`}.`,
       tone: trade.side === "BUY" ? "buy" : (trade.realized_pnl_usd ?? 0) >= 0 ? "sell-positive" : "sell-negative"
     })),
-    ...data.positions
+    ...positions
       .filter((position) => saoPauloDateKey(position.updated_at) === todayKey)
       .map((position) => ({
         id: `position-${position.market}-${position.symbol}`,
@@ -3284,9 +3351,9 @@ function R2D2RisingView() {
     { label: "Days ≤ -0.5%", value: data.stats.below_minus_half_percent_days, detail: "Material down sessions", tone: "critical" }
   ];
   const allocationPalette = ["#316fbb", "#2c9b70", "#7b61c9", "#d99b38", "#d45b55", "#4f9fb3", "#96733d", "#6b7b91", "#c35f99", "#9baf48", "#d1aa2f"];
-  const allocationTotal = data.positions.reduce((sum, position) => sum + position.market_value_usd, 0) + data.cash_usd;
+  const allocationTotal = positions.reduce((sum, position) => sum + position.market_value_usd, 0) + cash;
   const allocationItems = [
-    ...[...data.positions]
+    ...[...positions]
       .sort((left, right) => right.market_value_usd - left.market_value_usd)
       .map((position, index) => ({
         label: position.symbol,
@@ -3296,7 +3363,7 @@ function R2D2RisingView() {
         value: position.market_value_usd,
         color: allocationPalette[index % (allocationPalette.length - 1)]
       })),
-    { label: "Cash", name: "Available cash", logoUrl: "/market-marks/usd.svg", detail: "Available", value: data.cash_usd, color: allocationPalette[allocationPalette.length - 1] }
+    { label: "Cash", name: "Available cash", logoUrl: "/market-marks/usd.svg", detail: "Available", value: cash, color: allocationPalette[allocationPalette.length - 1] }
   ].map((item) => ({
     ...item,
     percent: allocationTotal > 0 ? item.value / allocationTotal * 100 : 0
@@ -3394,9 +3461,9 @@ function R2D2RisingView() {
           </div>
         </div>
         <div><span>Starting capital</span><strong>{money(data.starting_capital_usd)}</strong><small>Virtual capital · paper only</small></div>
-        <div><span>Net asset value</span><strong>{money(data.nav_usd)}</strong><small>{signedPercent(data.total_return_percent)} since launch</small></div>
+        <div><span>Net asset value</span><strong>{money(data.accounting_nav_usd)}</strong><small>{signedPercent(data.total_return_percent)} since launch</small></div>
         <div><span>Daily P&amp;L</span><strong className={data.daily_pnl_usd > 0 ? "r2d2-up" : data.daily_pnl_usd < 0 ? "r2d2-down" : "r2d2-flat"}>{signedMoney(data.daily_pnl_usd)}</strong><small>{signedPercent(data.daily_return_percent)}</small></div>
-        <div><span>Open positions</span><strong>{data.open_positions}</strong><small>{money(data.cash_usd)} cash · {cashPercent.toFixed(1)}%</small></div>
+        <div><span>Open positions</span><strong>{openPositions}</strong><small>{money(cash)} cash · {cashPercent.toFixed(1)}%</small></div>
       </section>
 
       <section className="r2d2-scoreboard" aria-label="Daily performance scoreboard">
@@ -3454,7 +3521,7 @@ function R2D2RisingView() {
         <div className="r2d2-ledger-head">
           <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span>P&amp;L</span><span>Technical</span><span>Trend / Flow</span><span>Stop</span><span>Decision</span>
         </div>
-        {data.positions.length ? data.positions.map((position) => (
+        {positions.length ? positions.map((position) => (
           <div className="r2d2-ledger-row" key={`${position.market}-${position.symbol}`}>
             <div className="r2d2-asset-cell">
               <div className="r2d2-company-logo"><CompanyLogo logoUrl={position.logo_url} symbol={position.symbol} /></div>
@@ -3476,7 +3543,18 @@ function R2D2RisingView() {
             <div><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
             <div><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>
             <span>{formatCurrency(position.stop_price_local, position.currency)}</span>
-            <div><strong>{position.decision_state}</strong><small>{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares</small></div>
+            <div>
+              <strong>{position.decision_state}</strong>
+              <small>{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares</small>
+              {(position.technical_defense_reviews > 0 || position.technical_defense_reductions > 0 || position.technical_defense_severity !== "healthy") && (
+                <small
+                  className="r2d2-defense-status"
+                  title={position.technical_defense_drivers.join("; ") || "Technical defense active"}
+                >
+                  {`DEF ${position.technical_defense_score.toFixed(0)}/100 · ${position.technical_defense_reviews} review${position.technical_defense_reviews === 1 ? "" : "s"} · ${position.technical_defense_reductions} cut${position.technical_defense_reductions === 1 ? "" : "s"}`}
+                </small>
+              )}
+            </div>
           </div>
         )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No paper positions yet</strong><span>The first eligible cycle begins when the exchanges open on 17/08/2026.</span></div></div>}
       </section>
@@ -3513,7 +3591,7 @@ function R2D2RisingView() {
                 </circle>
               ))}
             </svg>
-            <div className="r2d2-donut-center"><span>NAV</span><strong>{money(data.nav_usd)}</strong><small>{data.open_positions} positions + cash</small></div>
+            <div className="r2d2-donut-center"><span>MARKED</span><strong>{money(markedNav)}</strong><small>{openPositions} positions + cash</small></div>
             {hoveredAllocation ? (
               <div
                 className="r2d2-donut-tooltip"
@@ -3819,6 +3897,7 @@ function C3POOpeningView({ onEnter }: { onEnter: () => void }) {
 
 function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData | null }) {
   const [r2d2, setR2d2] = useState<R2D2DashboardData | null>(null);
+  const liveTelemetry = useR2D2LivePositions();
   const [indices, setIndices] = useState<LiveMarketItem[]>([]);
   const [health, setHealth] = useState<SystemHealthData | null>(systemHealth);
   const [error, setError] = useState("");
@@ -3917,15 +3996,22 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         day: "2-digit", month: "2-digit", year: "numeric"
       })
     : null;
+  const livePositions = liveTelemetry?.positions ?? r2d2?.positions ?? [];
+  const liveOpenPositions = liveTelemetry?.open_positions ?? r2d2?.open_positions ?? 0;
+  const liveTelemetryTime = liveTelemetry?.generated_at
+    ? new Date(liveTelemetry.generated_at).toLocaleTimeString("pt-BR", {
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
+      })
+    : null;
 
   return (
     <div className="falcon-view falcon-capcom-view">
       <section className="falcon-capcom-metrics" aria-label="R2D2 mission telemetry">
         <div className="falcon-capcom-identity">
           <MillenniumFalconIcon size={42} />
-          <div><span>R2D2 live telemetry</span><strong title={r2d2?.methodology_version}>{r2d2?.methodology_version ?? "Connecting"}</strong><small>2-second mission refresh</small></div>
+          <div><span>R2D2 live telemetry</span><strong title={r2d2?.methodology_version}>{r2d2?.methodology_version ?? "Connecting"}</strong><small>{liveTelemetryTime ? `POSITIONS LIVE · ${liveTelemetryTime}` : "POSITION FEED CONNECTING"}</small></div>
         </div>
-        <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.accounting_nav_usd) : "—"} detail={`${r2d2?.open_positions ?? 0} open positions`} tone="gold" />
+        <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.accounting_nav_usd) : "—"} detail={`${liveOpenPositions} open positions`} tone="gold" />
         <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${dailyPnlDate ?? "No session"} · ${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}%` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
         <FalconMetric label="Positive Transactions" value={`${todayPositiveTransactions}`} secondaryValue={`${todayPositiveShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="green" />
         <FalconMetric label="Negative Transactions" value={`${todayNegativeTransactions}`} secondaryValue={`${todayNegativeShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="red" />
@@ -3933,12 +4019,12 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
 
       {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => { setError(""); void loadR2D2(); void loadIndices(); }}>Retry</button></div>}
 
-      {r2d2?.positions.length ? (
-        <section className={`falcon-portfolio-ticker${r2d2.positions.length === 1 ? " falcon-portfolio-ticker-static" : ""}`} aria-label="Open portfolio positions">
+      {livePositions.length ? (
+        <section className={`falcon-portfolio-ticker${livePositions.length === 1 ? " falcon-portfolio-ticker-static" : ""}`} aria-label="Open portfolio positions">
           <div className="falcon-portfolio-ticker-track">
             {[0, 1].map((copy) => (
               <div className="falcon-portfolio-ticker-set" aria-hidden={copy === 1} key={copy}>
-                {r2d2.positions.map((position) => {
+                {livePositions.map((position) => {
                   const isPositive = position.unrealized_pnl_usd >= 0;
                   const price = new Intl.NumberFormat(position.currency === "BRL" ? "pt-BR" : "en-US", {
                     minimumFractionDigits: 2,

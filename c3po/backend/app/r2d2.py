@@ -27,6 +27,7 @@ from .schemas import (
     R2D2DashboardResponse,
     R2D2LearningCurvePoint,
     R2D2LearningState,
+    R2D2LivePositionsResponse,
     R2D2Position,
     R2D2SummaryStats,
     R2D2TrackPoint,
@@ -420,6 +421,20 @@ class R2D2Repository:
                 "chandelier_stop_price_local", "chandelier_confirmation_count",
                 "chandelier_last_confirmation_tick_at")
         return [dict(zip(keys, row)) for row in rows]
+
+    def experiment(self, code: str) -> dict[str, Any] | None:
+        """Read the current experiment without running the initialization upsert."""
+        if not self.database.database_url:
+            experiment = self.memory["experiment"]
+            return dict(experiment) if experiment and experiment.get("code") == code else None
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """SELECT id::text, code, status, base_currency, starting_capital, cash_balance,
+                          start_date, checkpoint_date, methodology_version, mandate, created_at, updated_at
+                   FROM r2d2_experiments WHERE code=%s""",
+                (code,),
+            ).fetchone()
+        return self._experiment(row) if row else None
 
     def update_mark(self, experiment_id: str, market: str, symbol: str, price: float, fx: float,
                     high_water: float, stop: float, updated_at: datetime,
@@ -1258,9 +1273,12 @@ class R2D2PaperService:
         self._learning_state = state
         return state
 
-    def dashboard(self) -> R2D2DashboardResponse:
-        experiment = self.ensure_initialized()
-        positions = self.repo.positions(experiment["id"])
+    def _position_telemetry(
+        self,
+        experiment: dict[str, Any],
+        positions: list[dict[str, Any]],
+        now: datetime,
+    ) -> tuple[list[R2D2Position], float, float, float]:
         stream = getattr(self.realtime, "stream", None)
         if stream:
             stream.set_group(
@@ -1269,7 +1287,6 @@ class R2D2PaperService:
                 priority=140,
             )
         cash = _float(experiment["cash_balance"])
-        now = datetime.now(timezone.utc)
         display_marks: dict[tuple[str, str], tuple[float, str, datetime | None]] = {}
         for row in positions:
             stored_price = _float(row["last_price_local"])
@@ -1294,6 +1311,74 @@ class R2D2PaperService:
             for row in positions
         )
         nav = cash + exposure
+        position_models = []
+        for row in positions:
+            strategy = dict(row.get("strategy_snapshot") or {})
+            technical = dict(strategy.get("live_technical") or strategy.get("technical_indicators") or {})
+            technical_defense = dict(strategy.get("technical_defense") or {})
+            technical_defense_drivers = [
+                str(driver).strip()
+                for driver in technical_defense.get("drivers") or []
+                if str(driver).strip()
+            ]
+            logo_url = str(strategy.get("logo_url") or "").strip() or None
+            if not logo_url and row["market"] in ACTIVE_MARKETS:
+                logo_url = f"https://eodhd.com/img/logos/US/{str(row['symbol']).lower()}.png"
+            display_price, quote_status, quote_as_of = display_marks[(row["market"], row["symbol"])]
+            market_value = _float(row["quantity"]) * display_price * _float(row["fx_to_usd"], 1)
+            cost = _float(row["quantity"]) * _float(row["average_cost_usd"])
+            pnl = market_value - cost
+            decision_state = str(strategy.get("decision_state") or "monitor")
+            if quote_status == "live" and decision_state == "awaiting live quote":
+                decision_state = "live monitoring"
+            position_models.append(R2D2Position(
+                market=row["market"], symbol=row["symbol"], name=row["name"], logo_url=logo_url,
+                currency=row["currency"],
+                quantity=_float(row["quantity"]), average_cost_local=_float(row["average_cost_local"]),
+                last_price_local=display_price, market_value_usd=round(market_value, 2),
+                unrealized_pnl_usd=round(pnl, 2), unrealized_return_percent=round(pnl / cost * 100, 6) if cost else 0,
+                allocation_percent=round(market_value / nav * 100, 2) if nav else 0,
+                stop_price_local=_float(row["stop_price_local"]),
+                technical_score=_float(technical.get("score")),
+                trend_state=str(technical.get("trend_state") or "pending"),
+                volume_state=str(technical.get("volume_state") or "pending"),
+                data_status=str(technical.get("data_status") or "pending"),
+                decision_state=decision_state,
+                technical_defense_score=_float(technical_defense.get("score")),
+                technical_defense_severity=str(technical_defense.get("severity") or "healthy"),
+                technical_defense_reviews=max(0, int(_float(strategy.get("defense_streak")))),
+                technical_defense_reductions=max(0, int(_float(strategy.get("defense_reductions")))),
+                technical_defense_drivers=technical_defense_drivers,
+                technical_defense_reviewed_at=strategy.get("last_review_at"),
+                quote_status=quote_status,
+                quote_as_of=quote_as_of,
+                technical_as_of=technical.get("as_of"),
+                opened_at=row["opened_at"], updated_at=row["updated_at"],
+            ))
+        return position_models, cash, exposure, nav
+
+    def live_positions(self) -> R2D2LivePositionsResponse:
+        experiment = self.repo.experiment(self.settings.r2d2_experiment_code)
+        if experiment is None:
+            experiment = self.ensure_initialized()
+        positions = self.repo.positions(experiment["id"])
+        now = datetime.now(timezone.utc)
+        position_models, cash, exposure, nav = self._position_telemetry(experiment, positions, now)
+        return R2D2LivePositionsResponse(
+            generated_at=now,
+            refresh_seconds=1,
+            nav_usd=round(nav, 2),
+            cash_usd=round(cash, 2),
+            gross_exposure_usd=round(exposure, 2),
+            open_positions=len(position_models),
+            positions=position_models,
+        )
+
+    def dashboard(self) -> R2D2DashboardResponse:
+        experiment = self.ensure_initialized()
+        positions = self.repo.positions(experiment["id"])
+        now = datetime.now(timezone.utc)
+        position_models, cash, exposure, nav = self._position_telemetry(experiment, positions, now)
         snapshots = self.repo.snapshots(experiment["id"])
         local_date = datetime.now(SAO_PAULO).date()
         starting_capital = _float(experiment["starting_capital"])
@@ -1323,38 +1408,6 @@ class R2D2PaperService:
             win_rate_percent=round(positives / len(closed) * 100, 2) if closed else 0.0,
             **trade_summary,
         )
-        position_models = []
-        for row in positions:
-            strategy = dict(row.get("strategy_snapshot") or {})
-            technical = dict(strategy.get("live_technical") or strategy.get("technical_indicators") or {})
-            logo_url = str(strategy.get("logo_url") or "").strip() or None
-            if not logo_url and row["market"] in ACTIVE_MARKETS:
-                logo_url = f"https://eodhd.com/img/logos/US/{str(row['symbol']).lower()}.png"
-            display_price, quote_status, quote_as_of = display_marks[(row["market"], row["symbol"])]
-            market_value = _float(row["quantity"]) * display_price * _float(row["fx_to_usd"], 1)
-            cost = _float(row["quantity"]) * _float(row["average_cost_usd"])
-            pnl = market_value - cost
-            decision_state = str(strategy.get("decision_state") or "monitor")
-            if quote_status == "live" and decision_state == "awaiting live quote":
-                decision_state = "live monitoring"
-            position_models.append(R2D2Position(
-                market=row["market"], symbol=row["symbol"], name=row["name"], logo_url=logo_url,
-                currency=row["currency"],
-                quantity=_float(row["quantity"]), average_cost_local=_float(row["average_cost_local"]),
-                last_price_local=display_price, market_value_usd=round(market_value, 2),
-                unrealized_pnl_usd=round(pnl, 2), unrealized_return_percent=round(pnl / cost * 100, 6) if cost else 0,
-                allocation_percent=round(market_value / nav * 100, 2) if nav else 0,
-                stop_price_local=_float(row["stop_price_local"]),
-                technical_score=_float(technical.get("score")),
-                trend_state=str(technical.get("trend_state") or "pending"),
-                volume_state=str(technical.get("volume_state") or "pending"),
-                data_status=str(technical.get("data_status") or "pending"),
-                decision_state=decision_state,
-                quote_status=quote_status,
-                quote_as_of=quote_as_of,
-                technical_as_of=technical.get("as_of"),
-                opened_at=row["opened_at"], updated_at=row["updated_at"],
-            ))
         trades = [R2D2Trade(
             id=row["id"], market=row["market"], symbol=row["symbol"], name=row["name"], side=row["side"],
             quantity=_float(row["quantity"]), signal_price_local=_float(row["signal_price_local"]),

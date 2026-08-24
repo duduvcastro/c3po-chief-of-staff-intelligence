@@ -10,7 +10,7 @@ from app.config import Settings
 from app.database import Database
 from app.r2d2 import SAO_PAULO, R2D2PaperService, R2D2Repository, _date_value
 from app import r2d2 as r2d2_module
-from app.market_data.eodhd_stream import EodhdRealtimeStream
+from app.market_data.eodhd_stream import EodhdRealtimeStream, EodhdStreamQuote
 from fastapi.testclient import TestClient
 from app import main as app_main
 
@@ -897,6 +897,108 @@ def test_r2d2_dashboard_api_contract() -> None:
     assert payload["mandate"]["continuous_operation"] is True
     assert "end_date" not in payload
     assert payload["learning"]["version"] >= 1
+
+
+def test_r2d2_live_positions_uses_fresh_stream_marks_without_loading_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service()
+    experiment = service.ensure_initialized()
+    cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ"])
+    observed_at = datetime.now(timezone.utc)
+    candidate = {
+        "market": "NASDAQ",
+        "symbol": "LIVE",
+        "name": "Live Mark Corp",
+        "currency": "USD",
+        "stop_price": 95.0,
+        "decision_state": "awaiting live quote",
+        "live_technical": {
+            "score": 72.0,
+            "trend_state": "uptrend",
+            "volume_state": "confirmed",
+            "data_status": "live",
+            "as_of": observed_at.isoformat(),
+        },
+        "technical_defense": {
+            "score": 55.0,
+            "severity": "reduce",
+            "drivers": ["price below VWAP", "price below EMA8"],
+        },
+        "defense_streak": 1,
+        "defense_reductions": 0,
+        "last_review_at": observed_at.isoformat(),
+    }
+    service.repo.execute_trade(
+        experiment,
+        cycle_id=cycle_id,
+        candidate=candidate,
+        side="BUY",
+        quantity=10,
+        signal_price=100.0,
+        fill_price=100.0,
+        fx=1.0,
+        fees=0.0,
+        slippage=0.0,
+        reason="live telemetry test",
+        decision=candidate,
+        quote_as_of=observed_at,
+    )
+
+    class Stream:
+        group: tuple[str, list[str], int] | None = None
+
+        def set_group(self, name: str, symbols: list[str], *, priority: int) -> None:
+            self.group = (name, symbols, priority)
+
+        @staticmethod
+        def quote(symbol: str) -> EodhdStreamQuote:
+            assert symbol == "LIVE"
+            return EodhdStreamQuote(symbol=symbol, price=105.0, as_of=observed_at, market_state="open")
+
+    stream = Stream()
+    service.realtime = SimpleNamespace(stream=stream)  # type: ignore[assignment]
+    monkeypatch.setattr(
+        service.repo,
+        "snapshots",
+        lambda experiment_id: pytest.fail("live telemetry must not load dashboard history"),
+    )
+
+    payload = service.live_positions()
+
+    assert payload.refresh_seconds == 1
+    assert payload.open_positions == 1
+    assert payload.gross_exposure_usd == 1_050.0
+    assert payload.nav_usd == 1_000_050.0
+    assert stream.group == ("r2d2-dashboard", ["LIVE"], 140)
+    position = payload.positions[0]
+    assert position.last_price_local == 105.0
+    assert position.market_value_usd == 1_050.0
+    assert position.unrealized_pnl_usd == 50.0
+    assert position.unrealized_return_percent == 5.0
+    assert position.quote_status == "live"
+    assert position.quote_as_of == observed_at
+    assert position.decision_state == "live monitoring"
+    assert position.technical_defense_score == 55.0
+    assert position.technical_defense_severity == "reduce"
+    assert position.technical_defense_reviews == 1
+    assert position.technical_defense_reductions == 0
+    assert position.technical_defense_drivers == ["price below VWAP", "price below EMA8"]
+    assert position.technical_defense_reviewed_at == observed_at
+
+
+def test_r2d2_live_positions_api_contract() -> None:
+    with TestClient(app_main.app) as client:
+        response = client.get("/api/v1/r2d2/live-positions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["refresh_seconds"] == 1
+    assert payload["open_positions"] == len(payload["positions"])
+    assert set(payload) == {
+        "generated_at", "refresh_seconds", "nav_usd", "cash_usd",
+        "gross_exposure_usd", "open_positions", "positions",
+    }
 
 
 def test_eodhd_stream_aggregates_live_trades_into_five_minute_bars() -> None:
