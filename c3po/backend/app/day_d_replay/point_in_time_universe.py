@@ -129,7 +129,7 @@ class MassivePointInTimeReferenceClient:
         }
         seen_request_urls: set[str] = set()
         seen_tickers: set[str] = set()
-        previous_ticker: str | None = None
+        previous_raw_ticker: str | None = None
         pages: list[ReferencePage] = []
         for page_number in range(1, max_pages + 1):
             public_request_url = self._public_request_url(url, params)
@@ -151,15 +151,16 @@ class MassivePointInTimeReferenceClient:
             if not isinstance(results, list) or any(not isinstance(row, dict) for row in results):
                 raise PointInTimeUniverseError("reference page results must be objects")
             for row in results:
-                ticker = str(row.get("ticker") or "").strip().upper()
-                if not ticker:
+                raw_ticker = str(row.get("ticker") or "").strip()
+                if not raw_ticker:
                     raise PointInTimeUniverseError("reference page contains a tickerless row")
+                ticker = raw_ticker.upper()
                 if ticker in seen_tickers:
                     raise PointInTimeUniverseError(f"reference pagination duplicated ticker {ticker}")
-                if previous_ticker is not None and ticker < previous_ticker:
+                if previous_raw_ticker is not None and raw_ticker < previous_raw_ticker:
                     raise PointInTimeUniverseError("reference pages are not globally ticker-sorted")
                 seen_tickers.add(ticker)
-                previous_ticker = ticker
+                previous_raw_ticker = raw_ticker
 
             sanitized = dict(raw_payload)
             next_url = str(raw_payload.get("next_url") or "").strip()
