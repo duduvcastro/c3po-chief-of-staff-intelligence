@@ -10,6 +10,7 @@ from app.config import Settings
 from app.database import Database
 from app.r2d2 import SAO_PAULO, R2D2PaperService, R2D2Repository, _date_value
 from app import r2d2 as r2d2_module
+from app import r2d2_entry_control
 from app.market_data.eodhd_stream import EodhdRealtimeStream, EodhdStreamQuote
 from fastapi.testclient import TestClient
 from app import main as app_main
@@ -44,6 +45,8 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
     assert dashboard.checkpoint_date == "2026-11-14"
     assert dashboard.checkpoint_days == 90
     assert dashboard.starting_capital_usd == 1_000_000
+    assert dashboard.entries_paused is False
+    assert dashboard.entries_paused_at is None
     assert experiment["mandate"]["mode"] == "paper_only"
     assert experiment["mandate"]["markets"] == ["NASDAQ", "NYSE"]
     assert "B3" in experiment["mandate"]["retired_markets"]
@@ -1680,6 +1683,111 @@ def test_r2d2_daily_order_cap_blocks_new_entries() -> None:
 
     assert dashboard.open_positions == 0
     assert dashboard.stats.total_transactions == 0
+
+
+def test_r2d2_entry_pause_is_audited_and_visible_on_dashboard() -> None:
+    service = _service()
+    experiment = service.ensure_initialized()
+    changed_at = datetime(2026, 8, 24, 20, 0, tzinfo=timezone.utc)
+
+    changed = service.repo.set_entries_paused(
+        experiment["code"],
+        paused=True,
+        operator="Dudu",
+        reason="Six-hands review of the exit-policy evidence",
+        changed_at=changed_at,
+    )
+
+    assert changed["entries_paused"] is True
+    assert changed["entries_paused_at"] == changed_at
+    dashboard = service.dashboard()
+    assert dashboard.status == "running"
+    assert dashboard.entries_paused is True
+    assert dashboard.entries_paused_at == changed_at
+    assert dashboard.entries_pause_operator == "Dudu"
+    assert dashboard.entries_pause_reason == "Six-hands review of the exit-policy evidence"
+    events = service.repo.database.list_audit_events(action="r2d2.entries_paused")
+    assert len(events) == 1
+    assert events[0]["actor"] == "Dudu"
+    assert events[0]["detail"]["previous_entries_paused"] is False
+    assert events[0]["detail"]["entries_paused"] is True
+
+    unchanged = service.repo.set_entries_paused(
+        experiment["code"],
+        paused=True,
+        operator="Dudu",
+        reason="Repeated operator command",
+        changed_at=changed_at + timedelta(minutes=1),
+    )
+    assert unchanged["entries_paused_at"] == changed_at
+    assert len(service.repo.database.list_audit_events(action="r2d2.entries_paused")) == 1
+
+
+def test_r2d2_entry_pause_keeps_exits_running_but_skips_every_entry_scan() -> None:
+    service = _service()
+    experiment = service.ensure_initialized()
+    service.repo.set_entries_paused(
+        experiment["code"], paused=True, operator="Dudu", reason="Evidence review",
+    )
+    exits: list[str] = []
+    service._position_quotes = lambda positions, now: {}  # type: ignore[method-assign]
+    service._mark_and_exit = (  # type: ignore[method-assign]
+        lambda *args, **kwargs: exits.append("evaluated") or 1
+    )
+    service._us_candidates = (  # type: ignore[method-assign]
+        lambda *args, **kwargs: pytest.fail("paused entries must not scan candidates")
+    )
+
+    dashboard = service.run_cycle(datetime(2026, 8, 24, 14, 0, tzinfo=timezone.utc))
+
+    assert exits == ["evaluated"]
+    assert dashboard.entries_paused is True
+    assert dashboard.last_cycle is not None
+    assert dashboard.last_cycle.status == "succeeded"
+    assert dashboard.last_cycle.scanned_count == 0
+    assert dashboard.last_cycle.trade_count == 1
+
+
+def test_r2d2_entry_pause_blocks_stale_cycle_buy_and_rotation_defensively() -> None:
+    service = _service()
+    stale_experiment = service.ensure_initialized()
+    cycle_id = service.repo.start_cycle(stale_experiment["id"], ["NASDAQ"])
+    service.repo.set_entries_paused(
+        stale_experiment["code"], paused=True, operator="Dudu", reason="Evidence review",
+    )
+    candidate = {
+        "market": "NASDAQ", "symbol": "BLOCK", "name": "Blocked Corp",
+        "quote_status": "live", "quote_as_of": datetime.now(timezone.utc),
+    }
+
+    assert service._buy(stale_experiment, cycle_id, candidate, []) is None
+    assert service._rotate_if_better(
+        stale_experiment, cycle_id, candidate, [], {}, datetime.now(timezone.utc),
+    ) == 0
+
+
+def test_r2d2_entry_control_is_plan_first(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    settings = _settings()
+    database = Database(settings)
+    repository = R2D2Repository(database)
+    repository.ensure_experiment(settings)
+    monkeypatch.setattr(r2d2_entry_control, "Settings", lambda: settings)
+    monkeypatch.setattr(r2d2_entry_control, "Database", lambda _: database)
+    arguments = ["--pause", "--operator", "Dudu", "--reason", "Evidence review"]
+
+    assert r2d2_entry_control.main(arguments) == 0
+    planned = json.loads(capsys.readouterr().out)
+    assert planned["mode"] == "plan"
+    assert repository.experiment(settings.r2d2_experiment_code)["entries_paused"] is False
+
+    assert r2d2_entry_control.main([*arguments, "--execute"]) == 0
+    executed = json.loads(capsys.readouterr().out)
+    assert executed["mode"] == "execute"
+    assert executed["entries_paused"] is True
+    assert repository.experiment(settings.r2d2_experiment_code)["entries_paused"] is True
 
 
 def test_r2d2_weekly_conviction_rejects_an_uncontrolled_pullback() -> None:
