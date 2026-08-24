@@ -1315,6 +1315,12 @@ class R2D2PaperService:
         for row in positions:
             strategy = dict(row.get("strategy_snapshot") or {})
             technical = dict(strategy.get("live_technical") or strategy.get("technical_indicators") or {})
+            technical_defense = dict(strategy.get("technical_defense") or {})
+            technical_defense_drivers = [
+                str(driver).strip()
+                for driver in technical_defense.get("drivers") or []
+                if str(driver).strip()
+            ]
             logo_url = str(strategy.get("logo_url") or "").strip() or None
             if not logo_url and row["market"] in ACTIVE_MARKETS:
                 logo_url = f"https://eodhd.com/img/logos/US/{str(row['symbol']).lower()}.png"
@@ -1338,6 +1344,12 @@ class R2D2PaperService:
                 volume_state=str(technical.get("volume_state") or "pending"),
                 data_status=str(technical.get("data_status") or "pending"),
                 decision_state=decision_state,
+                technical_defense_score=_float(technical_defense.get("score")),
+                technical_defense_severity=str(technical_defense.get("severity") or "healthy"),
+                technical_defense_reviews=max(0, int(_float(strategy.get("defense_streak")))),
+                technical_defense_reductions=max(0, int(_float(strategy.get("defense_reductions")))),
+                technical_defense_drivers=technical_defense_drivers,
+                technical_defense_reviewed_at=strategy.get("last_review_at"),
                 quote_status=quote_status,
                 quote_as_of=quote_as_of,
                 technical_as_of=technical.get("as_of"),
