@@ -1487,6 +1487,65 @@ class Database:
             for row in rows
         }
 
+    def ingestion_run_health(self, source_codes: list[str]) -> dict[str, dict[str, Any]]:
+        clean = sorted({code for code in source_codes if code})
+        if not clean:
+            return {}
+        if not self.database_url:
+            output: dict[str, dict[str, Any]] = {}
+            for run in sorted(self._ingestion_runs.values(), key=lambda item: item["started_at"]):
+                code = run.get("source_code")
+                if code not in clean:
+                    continue
+                prior = output.get(code, {})
+                output[code] = {
+                    "last_status": run.get("status"),
+                    "started_at": run.get("started_at"),
+                    "completed_at": run.get("completed_at"),
+                    "last_success_at": (
+                        run.get("completed_at")
+                        if run.get("status") == "succeeded"
+                        else prior.get("last_success_at")
+                    ),
+                    "last_error": (
+                        run.get("error_summary")
+                        if run.get("status") == "failed"
+                        else None
+                    ),
+                    "metadata": run.get("metadata") or {},
+                }
+            return output
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT ON (source.code)
+                    source.code,
+                    run.status,
+                    run.started_at,
+                    run.completed_at,
+                    max(run.completed_at) FILTER (WHERE run.status = 'succeeded')
+                        OVER (PARTITION BY source.code) AS last_success_at,
+                    CASE WHEN run.status = 'failed' THEN run.error_summary END AS last_error,
+                    run.metadata
+                FROM data_sources source
+                JOIN ingestion_runs run ON run.source_id = source.id
+                WHERE source.code = ANY(%s::text[])
+                ORDER BY source.code, run.started_at DESC
+                """,
+                (clean,),
+            ).fetchall()
+        return {
+            row[0]: {
+                "last_status": row[1],
+                "started_at": row[2],
+                "completed_at": row[3],
+                "last_success_at": row[4],
+                "last_error": row[5],
+                "metadata": row[6] or {},
+            }
+            for row in rows
+        }
+
     def list_realtime_portfolio(self) -> list[dict[str, Any]]:
         if not self.database_url:
             return sorted(

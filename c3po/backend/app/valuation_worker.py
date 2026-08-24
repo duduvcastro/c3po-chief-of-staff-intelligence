@@ -1,6 +1,8 @@
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, time as wall_time, timedelta
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .chewie_fundamentals import ChewieFundamentalsService
@@ -18,12 +20,36 @@ from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
 from .valuation_v2_peer_quality import ValuationV2PeerQualityService
 from .valuation_v2_shadow import ValuationV2ShadowService
+from .valuation_worker_contract import (
+    VALUATION_WORKER_CANONICAL_PHASE,
+    VALUATION_WORKER_PHASES,
+    VALUATION_WORKER_SOURCE_TYPE,
+)
 
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("c3po.valuation_worker")
+
+CANONICAL_RETRY_DELAY = timedelta(minutes=15)
+OFFHOURS_RETRY_DELAY = timedelta(minutes=30)
+OFFHOURS_START_HOUR = 1
+OFFHOURS_END_HOUR = 8
+
+
+@dataclass(frozen=True)
+class OffhoursPhase:
+    key: str
+    last_completed_at: Callable[[], datetime | None]
+    operation: Callable[[], Any]
+
+
+@dataclass(frozen=True)
+class WorkerIterationResult:
+    next_wake_at: datetime
+    canonical_status: str
+    phase_statuses: dict[str, str]
 
 
 def start_of_today(now: datetime) -> datetime:
@@ -32,6 +58,141 @@ def start_of_today(now: datetime) -> datetime:
 
 def next_midnight(now: datetime) -> datetime:
     return start_of_today(now) + timedelta(days=1)
+
+
+def _phase_is_due(last_completed_at: datetime | None, due_at: datetime) -> bool:
+    if last_completed_at is None:
+        return True
+    if last_completed_at.tzinfo is None:
+        last_completed_at = last_completed_at.replace(tzinfo=SAO_PAULO)
+    return last_completed_at.astimezone(SAO_PAULO) < due_at
+
+
+def _result_item_count(result: Any) -> int:
+    if result is None:
+        return 0
+    if isinstance(result, (dict, list, tuple, set)):
+        return len(result)
+    return 1
+
+
+def _run_recorded_phase(
+    database: Database,
+    phase_key: str,
+    operation: Callable[[], Any],
+    *,
+    scheduled_for: datetime,
+    canonical_status: str,
+) -> Any:
+    definition = VALUATION_WORKER_PHASES[phase_key]
+    metadata = {
+        "phase": phase_key,
+        "scheduled_for": scheduled_for.isoformat(),
+        "timezone": str(SAO_PAULO),
+        "canonical_status": canonical_status,
+        "uses_persisted_universe_fallback": (
+            phase_key != VALUATION_WORKER_CANONICAL_PHASE
+            and canonical_status == "failed"
+        ),
+        "count_semantics": "top_level_result_items",
+    }
+    run_id = database.begin_ingestion_run(
+        definition["code"],
+        definition["name"],
+        VALUATION_WORKER_SOURCE_TYPE,
+        metadata,
+    )
+    try:
+        result = operation()
+    except Exception as exc:
+        error_summary = f"{type(exc).__name__}: {exc}"[:1000]
+        database.finish_ingestion_run(run_id, "failed", 0, 0, error_summary)
+        raise
+    database.finish_ingestion_run(
+        run_id,
+        "succeeded",
+        0,
+        _result_item_count(result),
+    )
+    return result
+
+
+def run_worker_iteration(
+    database: Database,
+    *,
+    now: datetime,
+    canonical_due: bool,
+    canonical_operation: Callable[[], Any],
+    offhours_phases: tuple[OffhoursPhase, ...],
+) -> WorkerIterationResult:
+    canonical_status = "current"
+    phase_statuses: dict[str, str] = {}
+    wake_targets = [next_midnight(now)]
+
+    if canonical_due:
+        try:
+            _run_recorded_phase(
+                database,
+                VALUATION_WORKER_CANONICAL_PHASE,
+                canonical_operation,
+                scheduled_for=start_of_today(now),
+                canonical_status="running",
+            )
+            canonical_status = "succeeded"
+        except Exception:
+            canonical_status = "failed"
+            logger.exception(
+                "Nightly valuation cycle failed; off-hours phases remain independent"
+            )
+            wake_targets.append(now + CANONICAL_RETRY_DELAY)
+
+    offhours_due_at = start_of_today(now) + timedelta(hours=OFFHOURS_START_HOUR)
+    offhours_window_end = start_of_today(now) + timedelta(hours=OFFHOURS_END_HOUR)
+    due_phases = [
+        phase
+        for phase in offhours_phases
+        if _phase_is_due(phase.last_completed_at(), offhours_due_at)
+    ]
+
+    if now < offhours_due_at:
+        if due_phases:
+            wake_targets.append(offhours_due_at)
+            phase_statuses.update({phase.key: "pending" for phase in due_phases})
+    elif now < offhours_window_end:
+        retry_required = False
+        for phase in due_phases:
+            try:
+                result = _run_recorded_phase(
+                    database,
+                    phase.key,
+                    phase.operation,
+                    scheduled_for=offhours_due_at,
+                    canonical_status=canonical_status,
+                )
+                phase_statuses[phase.key] = "succeeded"
+                logger.info(
+                    "%s complete: %s",
+                    VALUATION_WORKER_PHASES[phase.key]["name"],
+                    result,
+                )
+            except Exception:
+                phase_statuses[phase.key] = "failed"
+                retry_required = True
+                logger.exception(
+                    "%s failed; keeping prior evidence and retrying inside the window",
+                    VALUATION_WORKER_PHASES[phase.key]["name"],
+                )
+        retry_at = now + OFFHOURS_RETRY_DELAY
+        if retry_required and retry_at < offhours_window_end:
+            wake_targets.append(retry_at)
+    else:
+        phase_statuses.update({phase.key: "outside_window" for phase in due_phases})
+
+    return WorkerIterationResult(
+        next_wake_at=min(wake_targets),
+        canonical_status=canonical_status,
+        phase_statuses=phase_statuses,
+    )
 
 
 def run_nightly(
@@ -86,6 +247,21 @@ def main() -> None:
     )
     v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
 
+    offhours_phases = (
+        OffhoursPhase(
+            "chewie",
+            chewie.last_refreshed_at,
+            lambda: chewie.refresh_all(budget=settings.chewie_daily_symbol_budget),
+        ),
+        OffhoursPhase("v2_data", v2_data.last_refreshed_at, v2_data.refresh_all),
+        OffhoursPhase("shadow", v2_shadow.last_run_at, v2_shadow.run_all),
+        OffhoursPhase(
+            "peer_quality",
+            v2_peer_quality.last_refreshed_at,
+            v2_peer_quality.refresh_all,
+        ),
+    )
+
     while True:
         now = datetime.now(SAO_PAULO)
         candidate = database.latest_analysis_snapshot("candidate_screen", "B3_TOP_10")
@@ -112,63 +288,21 @@ def main() -> None:
         )
         bootstrap_required = candidate is None or universe is None or not version_is_current or not us_versions_current
         cycle_due = latest_local is None or latest_local < start_of_today(now)
-        if bootstrap_required or cycle_due:
-            try:
-                run_nightly(database, investor_relations, screener, us_screener)
-            except Exception:
-                logger.exception("Nightly valuation cycle failed; retrying in 15 minutes")
-                time.sleep(15 * 60)
-                continue
-
-        # The Chewie fundamentals and Valuation V2.1 data snapshots refresh
-        # once per day at 01:00 Sao Paulo, and ONLY inside the 01:00-08:00
-        # pre-market window, so their provider calls never compete with
-        # market-time API usage. A worker that comes up mid-day waits for the
-        # next 01:00 slot.
-        now = datetime.now(SAO_PAULO)
-        offhours_due_at = start_of_today(now) + timedelta(hours=1)
-        offhours_window_end = start_of_today(now) + timedelta(hours=8)
-        chewie_last = chewie.last_refreshed_at()
-        chewie_pending = chewie_last is None or chewie_last.astimezone(SAO_PAULO) < offhours_due_at
-        v2_last = v2_data.last_refreshed_at()
-        v2_pending = v2_last is None or v2_last.astimezone(SAO_PAULO) < offhours_due_at
-        if offhours_due_at <= now < offhours_window_end:
-            if chewie_pending:
-                try:
-                    chewie_counts = chewie.refresh_all(budget=settings.chewie_daily_symbol_budget)
-                    logger.info("Chewie fundamentals daily snapshot complete: %s", chewie_counts)
-                except Exception:
-                    logger.exception("Chewie fundamentals snapshot failed; keeping the previous snapshot")
-                chewie_pending = False
-            if v2_pending:
-                try:
-                    v2_counts = v2_data.refresh_all()
-                    logger.info("Valuation V2.1 data snapshot complete: %s", v2_counts)
-                except Exception:
-                    logger.exception("Valuation V2.1 data snapshot failed; keeping the previous snapshot")
-                try:
-                    peer_quality_counts = v2_peer_quality.refresh_all()
-                    logger.info(
-                        "Valuation V2.1b peer-quality snapshot complete: %s",
-                        peer_quality_counts,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Valuation V2.1b peer-quality snapshot failed; "
-                        "keeping the previous snapshot"
-                    )
-                try:
-                    shadow_summaries = v2_shadow.run_all()
-                    logger.info("Valuation V2 shadow complete: %s", shadow_summaries)
-                except Exception:
-                    logger.exception("Valuation V2 shadow failed; keeping the previous shadow")
-                v2_pending = False
+        result = run_worker_iteration(
+            database,
+            now=now,
+            canonical_due=bootstrap_required or cycle_due,
+            canonical_operation=lambda: run_nightly(
+                database,
+                investor_relations,
+                screener,
+                us_screener,
+            ),
+            offhours_phases=offhours_phases,
+        )
 
         now = datetime.now(SAO_PAULO)
-        wake_targets = [next_midnight(now)]
-        if (chewie_pending or v2_pending) and now < offhours_due_at:
-            wake_targets.append(offhours_due_at)
-        wake_at = min(wake_targets)
+        wake_at = result.next_wake_at
         logger.info("Next valuation-worker wake-up at %s", wake_at.isoformat())
         time.sleep(max(30, int((wake_at - now).total_seconds())))
 
