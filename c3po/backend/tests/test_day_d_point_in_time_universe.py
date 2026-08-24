@@ -210,6 +210,116 @@ def test_reference_client_validates_provider_raw_ticker_order_before_normalizati
     assert [row["ticker"] for row in pages[0].payload["results"]] == ["ACRX", "ACRpC"]
 
 
+def test_reference_client_keeps_case_distinct_provider_symbols_separate() -> None:
+    client = MassivePointInTimeReferenceClient(
+        "https://api.massive.com",
+        "secret",
+        _SinglePageHttp(["ALPA", "ALpA"]),
+    )
+
+    pages = client.fetch_pages(as_of=date(2022, 6, 10))
+
+    assert [row["ticker"] for row in pages[0].payload["results"]] == ["ALPA", "ALpA"]
+
+
+def test_reference_client_still_rejects_exact_raw_ticker_duplicates() -> None:
+    client = MassivePointInTimeReferenceClient(
+        "https://api.massive.com",
+        "secret",
+        _SinglePageHttp(["ALPA", "ALPA"]),
+    )
+
+    with pytest.raises(PointInTimeUniverseError, match="duplicated raw ticker ALPA"):
+        client.fetch_pages(as_of=date(2022, 6, 10))
+
+
+def test_builder_keeps_preferred_case_variant_out_of_common_stock_bars(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        {
+            "ticker": "ALPA",
+            "name": "Alpha Pro Tech, Ltd.",
+            "market": "stocks",
+            "locale": "us",
+            "active": True,
+            "primary_exchange": "XNYS",
+            "currency_name": "usd",
+            "cik": "0000884269",
+            "type": "CS",
+        },
+        *[
+            {
+                "ticker": f"S{index:03d}",
+                "name": f"Issuer {index}",
+                "market": "stocks",
+                "locale": "us",
+                "active": True,
+                "primary_exchange": "XNAS",
+                "currency_name": "usd",
+                "cik": f"{index + 1:010d}",
+                "type": "CS",
+            }
+            for index in range(59)
+        ],
+        {
+            "ticker": "ALpA",
+            "name": "Air Lease Corporation Preferred Series A",
+            "market": "stocks",
+            "locale": "us",
+            "active": True,
+            "primary_exchange": "XNYS",
+            "currency_name": "usd",
+            "cik": "0001487712",
+            "type": "PFD",
+        },
+        {
+            "ticker": "QQQ",
+            "name": "Invesco QQQ Trust",
+            "market": "stocks",
+            "locale": "us",
+            "active": True,
+            "primary_exchange": "XNAS",
+            "currency_name": "usd",
+            "cik": "0001067839",
+            "type": "ETF",
+        },
+    ]
+    page = ReferencePage(1, "https://api.massive.com/v3/reference/tickers", {
+        "status": "OK",
+        "results": rows,
+    })
+    builder = PointInTimeUniverseBuilder(
+        root=tmp_path,
+        reference_client=_StaticReferenceClient(rows),
+    )
+
+    securities, _qqq, filters = builder._reference_securities((page,))
+
+    assert "ALPA" in securities
+    assert "ALpA" not in securities
+    assert filters["wrong_provider_type"] == 1
+
+    source = tmp_path / "source.csv.gz"
+    observed_at = datetime(2022, 6, 10, 15, 59, tzinfo=NEW_YORK)
+    window_ns = int(observed_at.astimezone(timezone.utc).timestamp() * 1_000_000_000)
+    with gzip.open(source, "wt", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=("ticker", "window_start", "close", "volume"))
+        writer.writeheader()
+        writer.writerow({"ticker": "ALPA", "window_start": window_ns, "close": "4", "volume": "100"})
+        writer.writerow({"ticker": "ALpA", "window_start": window_ns, "close": "25", "volume": "900"})
+
+    observations = builder._daily_observations(
+        source_path=source,
+        session_date=date(2022, 6, 10),
+        symbols=set(securities),
+    )
+
+    assert [(row.symbol, str(row.official_close_usd), str(row.regular_session_volume)) for row in observations] == [
+        ("ALPA", "4", "100")
+    ]
+
+
 def test_reference_client_still_rejects_raw_ticker_order_inversion() -> None:
     client = MassivePointInTimeReferenceClient(
         "https://api.massive.com",

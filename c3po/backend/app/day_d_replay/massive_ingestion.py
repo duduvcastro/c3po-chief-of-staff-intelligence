@@ -321,7 +321,7 @@ class MassiveR1Normalizer:
     ) -> RowDisposition:
         if not isinstance(row, Mapping):
             return RowDisposition("dropped", reason=QualityDropReason.MALFORMED_ROW)
-        symbol = str(row.get("ticker") or row.get("symbol") or "").strip().upper()
+        symbol = str(row.get("ticker") or row.get("symbol") or "").strip()
         if not symbol:
             return RowDisposition("dropped", reason=QualityDropReason.MALFORMED_ROW)
         if symbol not in symbols_in_scope:
