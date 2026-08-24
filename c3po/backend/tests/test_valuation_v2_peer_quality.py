@@ -189,6 +189,38 @@ def test_direct_peer_closure_is_non_recursive_and_pre_ab_report_is_by_metric():
     assert snapshot["outputs"]["guardrails"]["recursive_peer_fetch"] is False
 
 
+def test_provider_alias_selection_preserves_market_specific_symbol():
+    graph = {
+        "PETR4": [{"canonical_symbol": "BRAV3", "provider_symbol": "BRAV3"}],
+        "VALE3": [{"canonical_symbol": "BRAV3", "provider_symbol": "BRAV3.SA"}],
+    }
+
+    assert ValuationV2PeerQualityService._provider_symbols(
+        graph, market="B3"
+    ) == {"BRAV3": "BRAV3.SA"}
+    assert ValuationV2PeerQualityService._provider_symbols(
+        graph, market="US"
+    ) == {"BRAV3": "BRAV3"}
+
+
+def test_us_collection_requires_both_chewie_market_snapshots():
+    settings = get_settings().model_copy(update={"fmp_api_token": "token"})
+    database = Database(settings)
+    _save_snapshot(
+        database,
+        "chewie_fundamentals",
+        "NASDAQ_FUNDAMENTALS",
+        inputs={"market": "NASDAQ"},
+        outputs={"items": []},
+    )
+    service = ValuationV2PeerQualityService(  # type: ignore[arg-type]
+        settings, database, _quality_http()
+    )
+
+    with pytest.raises(RuntimeError, match="missing Chewie snapshots"):
+        service._chewie_snapshots("US")
+
+
 def test_us_collection_is_shared_but_reported_separately_by_exchange():
     settings = get_settings().model_copy(update={"fmp_api_token": "token"})
     database = Database(settings)

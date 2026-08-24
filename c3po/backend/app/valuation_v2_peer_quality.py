@@ -119,7 +119,7 @@ class ValuationV2PeerQualityService:
 
         graph = self._direct_peer_graph(target_packets, market=market)
         target_symbols = set(target_packets)
-        provider_by_peer = self._provider_symbols(graph)
+        provider_by_peer = self._provider_symbols(graph, market=market)
         closure_symbols = sorted(set(provider_by_peer) - target_symbols)
         packets_by_provider = self.fmp.valuation_v2_peer_quality_batch(
             [provider_by_peer[symbol] for symbol in closure_symbols], workers=10
@@ -355,6 +355,8 @@ class ValuationV2PeerQualityService:
     @staticmethod
     def _provider_symbols(
         graph: Mapping[str, list[dict[str, str]]],
+        *,
+        market: PeerQualityMarket,
     ) -> dict[str, str]:
         candidates: dict[str, set[str]] = {}
         for peers in graph.values():
@@ -363,7 +365,12 @@ class ValuationV2PeerQualityService:
                     peer["provider_symbol"]
                 )
         return {
-            symbol: sorted(provider_symbols)[0]
+            symbol: min(
+                provider_symbols,
+                key=lambda provider: ValuationV2PeerQualityService._provider_rank(
+                    provider, market=market
+                ),
+            )
             for symbol, provider_symbols in sorted(candidates.items())
         }
 
@@ -508,7 +515,7 @@ class ValuationV2PeerQualityService:
             for snapshot in target_snapshots.values()
         )
         closure_fully_attempted = len(closure_packets) == len(
-            set(self._provider_symbols(graph)) - set(target_packets)
+            set(self._provider_symbols(graph, market=market)) - set(target_packets)
         )
         chewie_new = bool(chewie_snapshots) and all(
             str(snapshot.get("id") or "") != _REJECTED_AB_CHEWIE_IDS.get(key.split("_")[0])
@@ -643,7 +650,13 @@ class ValuationV2PeerQualityService:
         self, market: PeerQualityMarket,
     ) -> dict[str, dict[str, Any]]:
         keys = [f"{item}_FUNDAMENTALS" for item in _TARGET_MARKETS[market]]
-        return self.database.latest_analysis_snapshots("chewie_fundamentals", keys)
+        snapshots = self.database.latest_analysis_snapshots("chewie_fundamentals", keys)
+        missing = [key for key in keys if key not in snapshots]
+        if missing:
+            raise RuntimeError(
+                f"Valuation V2.1b missing Chewie snapshots: {missing}"
+            )
+        return snapshots
 
     def _universe_snapshots(
         self, market: PeerQualityMarket,
