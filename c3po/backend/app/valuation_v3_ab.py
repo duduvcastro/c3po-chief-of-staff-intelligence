@@ -31,9 +31,9 @@ from .valuation_v3_macro import package_hash_is_valid, validate_us_curve_package
 
 MANIFEST_SCHEMA_VERSION = "VALUATION-V3-AB-MANIFEST-v1"
 REPORT_SCHEMA_VERSION = "VALUATION-V3-AB-REPORT-v1"
-AB_AS_OF = date(2026, 8, 23)
+AB_AS_OF = date(2026, 8, 24)
 MARKETS = ("B3", "NASDAQ", "NYSE")
-EXPECTED_COUNTS = {"B3": 100, "NASDAQ": 294, "NYSE": 299}
+EXPECTED_COUNTS = {"B3": 100, "NASDAQ": 219, "NYSE": 298}
 ENGINE_FILE_PATHS = {
     "v2": Path(__file__).with_name("valuation_v2_engine.py"),
     "v3": Path(__file__).with_name("valuation_v3_engine.py"),
@@ -74,52 +74,62 @@ def _published(value: str) -> datetime:
 
 FROZEN_SNAPSHOT_REFERENCES = (
     FrozenSnapshotReference(
-        "universe", "B3", "fafc3cb7-e134-4145-8d48-104efec4d0bb",
-        "valuation_universe", "B3_UNIVERSE", _published("2026-08-23T03:02:01.735588"),
+        "universe", "B3", "71437151-ab94-4e72-b289-a98f1237034a",
+        "valuation_universe", "B3_UNIVERSE", _published("2026-08-24T14:21:19.551280"),
     ),
     FrozenSnapshotReference(
-        "universe", "NASDAQ", "105c391b-e97a-4bc7-9147-275e2ea19210",
-        "valuation_universe", "NASDAQ_UNIVERSE", _published("2026-08-22T03:05:59.859601"),
+        "universe", "NASDAQ", "23648729-1a0c-404d-9a8b-02f3151486dc",
+        "valuation_universe", "NASDAQ_UNIVERSE", _published("2026-08-24T14:22:26.804975"),
     ),
     FrozenSnapshotReference(
-        "universe", "NYSE", "497f6881-aa09-4e9b-bb3b-8296c06188af",
-        "valuation_universe", "NYSE_UNIVERSE", _published("2026-08-22T03:08:08.206357"),
+        "universe", "NYSE", "50230542-e3ca-41f0-8d8b-ae2a720e9698",
+        "valuation_universe", "NYSE_UNIVERSE", _published("2026-08-24T14:24:35.879275"),
     ),
     FrozenSnapshotReference(
-        "v2_data", "B3", "597a521b-85f1-476c-ab89-a1b2281f7d06",
-        "valuation_v2_data", "B3_V2_DATA", _published("2026-08-23T20:01:49.336367"),
+        "v2_data", "B3", "e34863d9-1f43-4c03-b424-a72789b228aa",
+        "valuation_v2_data", "B3_V2_DATA", _published("2026-08-24T22:07:55.602340"),
     ),
     FrozenSnapshotReference(
-        "v2_data", "NASDAQ", "453f3e3c-26a0-4356-930d-7897cf63e273",
-        "valuation_v2_data", "NASDAQ_V2_DATA", _published("2026-08-23T20:02:50.959346"),
+        "v2_data", "NASDAQ", "a06cd2a4-d9cd-4d42-9e17-6a5d039c2add",
+        "valuation_v2_data", "NASDAQ_V2_DATA", _published("2026-08-24T22:08:41.898935"),
     ),
     FrozenSnapshotReference(
-        "v2_data", "NYSE", "9aeefef0-99f0-48b5-b3b0-1a0806c12b34",
-        "valuation_v2_data", "NYSE_V2_DATA", _published("2026-08-23T20:03:54.422841"),
+        "v2_data", "NYSE", "ab7cbff7-263b-4d02-a663-1f75394d4dc4",
+        "valuation_v2_data", "NYSE_V2_DATA", _published("2026-08-24T22:09:43.342217"),
     ),
     FrozenSnapshotReference(
-        "chewie", "B3", "e86f90da-8dc3-4291-8645-25d5c30c246e",
-        "chewie_fundamentals", "B3_FUNDAMENTALS", _published("2026-08-23T06:33:25.317650"),
+        "peer_quality", "B3", "2ce5521a-f7d3-47bb-b2aa-9614eb56d732",
+        "valuation_v2_peer_quality", "B3_V2_PEER_QUALITY",
+        _published("2026-08-24T22:10:08.018267"),
     ),
     FrozenSnapshotReference(
-        "chewie", "NASDAQ", "b969e458-5184-426e-8ffb-4c1c1ac469f4",
-        "chewie_fundamentals", "NASDAQ_FUNDAMENTALS", _published("2026-08-23T06:35:07.041436"),
+        "peer_quality", "US", "ce5573df-0068-4c38-a716-918e288f1b17",
+        "valuation_v2_peer_quality", "US_V2_PEER_QUALITY",
+        _published("2026-08-24T22:12:03.871595"),
     ),
     FrozenSnapshotReference(
-        "chewie", "NYSE", "bc45ee83-be9c-4cb3-8ec0-73468eb29811",
-        "chewie_fundamentals", "NYSE_FUNDAMENTALS", _published("2026-08-23T06:36:15.194761"),
+        "chewie", "B3", "71507f75-d32c-4b9f-9000-95f8177d5823",
+        "chewie_fundamentals", "B3_FUNDAMENTALS", _published("2026-08-24T22:03:35.615463"),
     ),
     FrozenSnapshotReference(
-        "v2_shadow", "B3", "076f4ba5-5819-4be8-acf2-97d4b04bbcf9",
-        "valuation_v2_shadow", "B3_V2_SHADOW", _published("2026-08-23T20:10:19.264617"),
+        "chewie", "NASDAQ", "ce9295c0-c298-4cc6-bb0b-562223f42044",
+        "chewie_fundamentals", "NASDAQ_FUNDAMENTALS", _published("2026-08-24T22:06:01.276426"),
     ),
     FrozenSnapshotReference(
-        "v2_shadow", "NASDAQ", "7fbe53b0-5808-4057-b6f7-ed8f7c5a28c9",
-        "valuation_v2_shadow", "NASDAQ_V2_SHADOW", _published("2026-08-23T20:10:19.819307"),
+        "chewie", "NYSE", "681caff1-b974-465e-b1de-5a6f8e9b87fa",
+        "chewie_fundamentals", "NYSE_FUNDAMENTALS", _published("2026-08-24T22:07:34.054720"),
     ),
     FrozenSnapshotReference(
-        "v2_shadow", "NYSE", "0af1538b-efb9-4e5b-a60e-26382aaecc35",
-        "valuation_v2_shadow", "NYSE_V2_SHADOW", _published("2026-08-23T20:10:20.396467"),
+        "v2_shadow", "B3", "d791cfad-cf57-4cd5-b8ae-0e36b2ae044e",
+        "valuation_v2_shadow", "B3_V2_SHADOW", _published("2026-08-24T22:09:44.257020"),
+    ),
+    FrozenSnapshotReference(
+        "v2_shadow", "NASDAQ", "5108788b-ccc8-45a2-a510-bfef11777323",
+        "valuation_v2_shadow", "NASDAQ_V2_SHADOW", _published("2026-08-24T22:09:44.772199"),
+    ),
+    FrozenSnapshotReference(
+        "v2_shadow", "NYSE", "ef06f13e-795d-4b26-a4ff-23b26236cee5",
+        "valuation_v2_shadow", "NYSE_V2_SHADOW", _published("2026-08-24T22:09:45.496865"),
     ),
 )
 
@@ -563,9 +573,12 @@ def _market_context(
     }
     multiples = _multiples_index(market, rows_by_market, chewie_by_market)
     source_markets = ("B3",) if market == "B3" else ("NASDAQ", "NYSE")
-    quality_packets: dict[str, dict[str, Any]] = {}
+    peer_quality_market = "B3" if market == "B3" else "US"
+    quality_packets = _packets(loaded[("peer_quality", peer_quality_market)])
     quality_items: list[dict[str, Any]] = []
     for source_market in source_markets:
+        # Target packets win defensively if a malformed closure snapshot ever
+        # repeats a target symbol, even though V2.1b defines closure as P - T.
         quality_packets.update(packets_by_market[source_market])
         quality_items.extend(chewie_by_market[source_market])
     quality_index = build_quality_index(quality_packets, quality_items, as_of=AB_AS_OF)
@@ -1014,8 +1027,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 def _artifact_sha256(payload: Mapping[str, Any]) -> str | None:
     # Reports also carry the parent manifest hash. Prefer the artifact's own
-    # self-hash so the operator output never labels the parent hash as the
-    # report hash.
+    # self-hash so operator output never labels the parent as the report hash.
     value = payload.get("report_sha256") or payload.get("manifest_sha256")
     return str(value) if value else None
 
