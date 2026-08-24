@@ -128,7 +128,7 @@ class MassivePointInTimeReferenceClient:
             "apiKey": self.token,
         }
         seen_request_urls: set[str] = set()
-        seen_tickers: set[str] = set()
+        seen_raw_tickers: set[str] = set()
         previous_raw_ticker: str | None = None
         pages: list[ReferencePage] = []
         for page_number in range(1, max_pages + 1):
@@ -154,12 +154,13 @@ class MassivePointInTimeReferenceClient:
                 raw_ticker = str(row.get("ticker") or "").strip()
                 if not raw_ticker:
                     raise PointInTimeUniverseError("reference page contains a tickerless row")
-                ticker = raw_ticker.upper()
-                if ticker in seen_tickers:
-                    raise PointInTimeUniverseError(f"reference pagination duplicated ticker {ticker}")
+                if raw_ticker in seen_raw_tickers:
+                    raise PointInTimeUniverseError(
+                        f"reference pagination duplicated raw ticker {raw_ticker}"
+                    )
                 if previous_raw_ticker is not None and raw_ticker < previous_raw_ticker:
                     raise PointInTimeUniverseError("reference pages are not globally ticker-sorted")
-                seen_tickers.add(ticker)
+                seen_raw_tickers.add(raw_ticker)
                 previous_raw_ticker = raw_ticker
 
             sanitized = dict(raw_payload)
@@ -172,7 +173,7 @@ class MassivePointInTimeReferenceClient:
                 raise PointInTimeUniverseError("reference evidence would contain the API token")
             pages.append(ReferencePage(page_number, public_request_url, sanitized))
             if not next_url:
-                if not seen_tickers:
+                if not seen_raw_tickers:
                     raise PointInTimeUniverseError("reference query returned no tickers")
                 return tuple(pages)
             url = next_url
@@ -439,7 +440,7 @@ class PointInTimeUniverseBuilder:
         for page in pages:
             for row in page.payload.get("results", []):
                 filters["rows_seen"] += 1
-                symbol = str(row.get("ticker") or "").strip().upper()
+                symbol = str(row.get("ticker") or "").strip()
                 if row.get("active") is not True:
                     filters["inactive"] += 1
                     continue
@@ -504,7 +505,7 @@ class PointInTimeUniverseBuilder:
                     f"minute aggregate columns are incomplete: {source_path}"
                 )
             for row in reader:
-                symbol = str(row.get("ticker") or "").strip().upper()
+                symbol = str(row.get("ticker") or "").strip()
                 if symbol not in symbols:
                     continue
                 try:
@@ -792,7 +793,7 @@ def load_point_in_time_universe_manifest(
         raise PointInTimeUniverseError("QQQ must be the unranked benchmark")
     if benchmarks[0].get("benchmark") is not True:
         raise PointInTimeUniverseError("QQQ benchmark flag is missing")
-    symbols = [str(row.get("symbol") or "").strip().upper() for row in rows]
+    symbols = [str(row.get("symbol") or "").strip() for row in rows]
     if any(not symbol for symbol in symbols) or len(symbols) != len(set(symbols)):
         raise PointInTimeUniverseError("point-in-time universe symbols are invalid")
 
