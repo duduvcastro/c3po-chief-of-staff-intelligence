@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 95198)
-Total output lines: 8069
-
 "use client";
 
 import {
@@ -2523,7 +2520,4047 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     const needsAlerts = allowed.has("alerts");
     const needsFeedIndicators = allowed.has("relations") || allowed.has("intelligence");
     try {
-      const [alertsResponse, indicators…55198 tokens truncated… 18} textAnchor="middle">{formatWeatherHour(hour.time)}</text> : null)}
+      const [alertsResponse, indicatorsResponse] = await Promise.all([
+        needsAlerts ? fetch(`${API_URL}/api/v1/alerts`, { cache: "no-store", credentials: "include" }) : Promise.resolve(null),
+        needsFeedIndicators ? fetch(`${API_URL}/api/v1/navigation-indicators`, { cache: "no-store", credentials: "include" }) : Promise.resolve(null)
+      ]);
+      if (alertsResponse?.status === 401 || indicatorsResponse?.status === 401) {
+        onSessionExpired();
+        return;
+      }
+      if (alertsResponse?.ok) {
+        const alertsPayload: AlertsData = await alertsResponse.json();
+        setActiveAlertCount(alertsPayload.unread_count ?? alertsPayload.items.filter((item) => !item.is_read).length);
+      }
+      if (indicatorsResponse?.ok) setNavigationIndicators(await indicatorsResponse.json());
+    } catch {
+      // Badge refresh is best effort and must not interrupt the active workspace.
+    }
+  }, [onSessionExpired, session.permissions]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const allowed = new Set(session.permissions);
+      const needsCommand = allowed.has("command");
+      const needsReports = allowed.has("command") || allowed.has("candidates");
+      const needsProviders = allowed.has("markets") || allowed.has("realtime") || allowed.has("candidates") || allowed.has("health");
+      const [commandResponse, reportsResponse, providersResponse, systemHealthResponse] = await Promise.all([
+        needsCommand ? fetch(`${API_URL}/api/v1/command-center`, { cache: "no-store", credentials: "include" }) : Promise.resolve(null),
+        needsReports ? fetch(`${API_URL}/api/v1/reports`, { cache: "no-store", credentials: "include" }) : Promise.resolve(null),
+        needsProviders ? fetch(`${API_URL}/api/v1/market-data/providers`, { cache: "no-store", credentials: "include" }) : Promise.resolve(null),
+        fetch(`${API_URL}/api/v1/system-health`, { cache: "no-store", credentials: "include" })
+      ]);
+      if ([commandResponse, reportsResponse, providersResponse, systemHealthResponse].some((response) => response?.status === 401)) {
+        onSessionExpired();
+        return;
+      }
+      if (commandResponse && !commandResponse.ok) throw new Error(`API ${commandResponse.status}`);
+      if (commandResponse) setData(await commandResponse.json());
+      if (reportsResponse?.ok) {
+        const reportPayload = await reportsResponse.json();
+        setReports(reportPayload.items ?? []);
+      }
+      if (providersResponse?.ok) setMarketProviders(await providersResponse.json());
+      if (systemHealthResponse.ok) setSystemHealth(await systemHealthResponse.json());
+      await refreshNotificationState();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Connection failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [onSessionExpired, refreshNotificationState, session.permissions]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshNotificationState();
+    };
+    const interval = window.setInterval(refreshWhenVisible, 60_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshNotificationState]);
+
+  const markNavigationFeedSeen = useCallback(async (view: NavigationFeedKey) => {
+    const seenAt = new Date().toISOString();
+    setNavigationIndicators((current) => current ? {
+      ...current,
+      feeds: {
+        ...current.feeds,
+        [view]: {
+          ...(current.feeds[view] ?? { latest_at: null }),
+          has_new: false,
+          unseen_count: 0,
+          last_seen_at: seenAt
+        }
+      }
+    } : current);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/navigation-seen`, {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ view })
+      });
+      if (response.status === 401) {
+        onSessionExpired();
+        return;
+      }
+      if (!response.ok) throw new Error(`API ${response.status}`);
+    } catch {
+      void refreshNotificationState();
+    }
+  }, [onSessionExpired, refreshNotificationState]);
+
+  useEffect(() => {
+    if (activeView === "relations" || activeView === "intelligence") {
+      void markNavigationFeedSeen(activeView);
+    }
+  }, [activeView, markNavigationFeedSeen, viewRevision]);
+
+  const selectView = (view: ViewKey, realtimeTab?: RealtimeTabKey, viewQuery?: string) => {
+    if (view !== "home" && !visibleNavItems.some((item) => item.key === view)) return;
+    const previousTracker = pageLoadTrackerRef.current;
+    if (previousTracker?.quietTimer !== null && previousTracker?.quietTimer !== undefined) {
+      window.clearTimeout(previousTracker.quietTimer);
+    }
+    pageLoadTrackerRef.current = null;
+    if (view !== "home") {
+      const tracker = {
+        startedAt: window.performance.now(),
+        inFlight: 0,
+        quietTimer: null as number | null,
+        apiIntervals: [] as { startedAt: number; endedAt: number }[],
+        backendTotalMs: 0,
+        requestCount: 0
+      };
+      pageLoadTrackerRef.current = tracker;
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => schedulePageLoadCompletion(tracker)));
+    }
+    if (view === "finance") setFinanceRefreshKey((value) => value + 1);
+    setActiveView(view);
+    setViewRevision((value) => value + 1);
+    setMenuOpen(false);
+    const params = new URLSearchParams(window.location.search);
+    params.set("view", view);
+    if (view === "realtime" && realtimeTab) params.set("market", realtimeTab.toLowerCase());
+    else params.delete("market");
+    if (viewQuery?.trim()) params.set("q", viewQuery.trim());
+    else params.delete("q");
+    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+  };
+
+  return (
+    <InstrumentPreviewProvider>
+    <div className="app-shell">
+      <aside className={`sidebar ${menuOpen ? "sidebar-open" : ""}`}>
+        <div className="brand-row">
+          <button className="brand-home-link" type="button" onClick={() => selectView("home")} aria-label="Abrir apresentação do C3PO">
+            <div className="brand-mark" role="img" aria-label="C3PO protocol droid emblem" />
+            <div>
+              <strong>C3PO</strong>
+              <span>Chief of Staff Intelligence</span>
+            </div>
+          </button>
+          <button className="icon-button sidebar-close" onClick={() => setMenuOpen(false)} aria-label="Close navigation">
+            <X size={18} />
+          </button>
+        </div>
+
+        <nav className="primary-nav" aria-label="Primary navigation">
+          {visibleNavItems.map((item) => {
+            const Icon = item.icon;
+            const iconSize = item.key === "command" || item.key === "realtime" || item.key === "weather" || item.key === "relations" || item.key === "matrix" || item.key === "chewie" || item.key === "alerts" || item.key === "health" || item.key === "helm" ? 22 : 18;
+            const hasNew = item.key === "alerts"
+              ? activeAlertCount > 0
+              : (item.key === "relations" || item.key === "intelligence")
+                ? Boolean(navigationIndicators?.feeds[item.key]?.has_new)
+                : false;
+            return (
+              <button
+                key={item.key}
+                className={activeView === item.key ? "nav-item nav-item-active" : "nav-item"}
+                onClick={() => selectView(item.key)}
+              >
+                <span className="nav-item-icon-wrap">
+                  <Icon size={iconSize} />
+                  {hasNew && <span className="nav-notification-dot" aria-hidden="true" />}
+                </span>
+                <span className="nav-item-label">{item.label}</span>
+                {item.key === "health" && systemHealth && (
+                  <span className={`nav-health-percent nav-health-${systemHealth.status}`}>
+                    {systemHealth.quality}%
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="sidebar-foot">
+          <button className="profile-row" type="button" onClick={() => { setProfileOpen(true); setMenuOpen(false); }} aria-expanded={profileOpen} aria-haspopup="dialog">
+            <UserAvatar className="avatar" displayName={session.display_name} email={session.email} />
+            <div><strong>{session.display_name || session.email}</strong><span>{session.is_admin ? "Owner · Death Star" : "Authorized command access"}</span></div>
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <button className="icon-button menu-button" onClick={() => setMenuOpen(true)} aria-label="Open navigation">
+            <Menu size={20} />
+          </button>
+          <GlobalSearch
+            session={session}
+            items={visibleNavItems}
+            onNavigate={selectView}
+            onSessionExpired={onSessionExpired}
+          />
+          <div className="topbar-actions">
+            <div className="as-of">
+              <Clock3 size={15} />
+              <span>{activeView === "home" ? "C3PO protocol online" : activeView === "relations" ? "Regulatory feed live" : activeView === "news" ? "Headlines live" : activeView === "r2d2" ? "Paper portfolio ready" : activeView === "intelligence" ? "Valuation audit live" : activeView === "health" ? "Consolidated checks live" : activeView === "serverusage" ? "AWS telemetry live" : activeView === "leah" ? "Personal iCloud workspace" : activeView === "weather" ? "Dagobah models live" : `As of ${formatDate(data?.generated_at)}`}</span>
+            </div>
+            <button className="icon-button" onClick={loadData} disabled={loading} aria-label="Refresh data" title="Refresh data">
+              <RefreshCw size={18} className={loading ? "spin" : ""} />
+            </button>
+            {session.permissions.includes("alerts") && <button className="icon-button" onClick={() => selectView("alerts")} aria-label="Open Radar Alerts" title="Radar Alerts">
+              <Bell size={18} />
+              {activeAlertCount > 0 && <span className="notification-dot" />}
+            </button>}
+            <button className="icon-button" onClick={onLogout} aria-label="Sair do C3PO" title="Sair">
+              <LogOut size={18} />
+            </button>
+          </div>
+        </header>
+
+        <section className={activeView === "home" ? "page-frame page-frame-home" : "page-frame"}>
+          {activeView !== "home" && <div className="page-heading">
+            <div className="page-heading-copy">
+              <span className="eyebrow">{viewTitles[activeView].eyebrow}</span>
+              <h1>{viewTitles[activeView].title}</h1>
+              <p>
+                {activeView === "command"
+                  ? "Controle executivo do R2D2, índices globais e prontidão operacional em uma única tela."
+                  : activeView === "relations"
+                  ? "Official disclosures, issuer updates and valuation-review status in one audit trail."
+                  : activeView === "news"
+                    ? "As cinco notícias mais recentes e relevantes de cada fonte, reunidas em um briefing único."
+                  : activeView === "r2d2"
+                    ? "Laboratório de execução virtual para validar a inteligência do C3PO com capital simulado, governança e track record auditável."
+                  : activeView === "intelligence"
+                    ? "Histórico permanente das alterações de valuation, com gatilho, fonte e metodologia."
+                  : activeView === "serverusage"
+                    ? "CPU and storage telemetry for the infrastructure running C3PO."
+                    : activeView === "leah"
+                      ? "Sua agenda e suas tarefas em uma área pessoal, separada para cada usuário."
+                    : activeView === "health"
+                      ? "Cloudflare, APIs, Open Finance, AWS, market data, official sources and automatic routines in one operational view."
+                    : activeView === "weather"
+                      ? "Previsão operacional das próximas 24 horas para os locais fixos e qualquer lugar do mundo."
+                  : data
+                    ? `${data.greeting}, Eduardo. ${data.report_title}.`
+                  : "Connecting to your intelligence layer."}
+              </p>
+            </div>
+            <div className={`page-heading-mark page-heading-mark-${activeView}`} role="img" aria-label={`${viewTitles[activeView].title} logo`}>
+              <ActiveViewIcon size={98} />
+            </div>
+            <div className={`freshness freshness-${activeView === "leah" ? "unavailable" : activeView === "relations" || activeView === "news" || activeView === "r2d2" || activeView === "intelligence" || activeView === "health" || activeView === "serverusage" || activeView === "weather" ? "current" : data?.provenance.status ?? "unavailable"}`}>
+              <ShieldCheck size={16} />
+              <span>{activeView === "command" ? "R2D2 + Master Luke + Storm Troops" : activeView === "relations" ? "CVM / SEC official sources" : activeView === "news" ? "Globo + UOL + Bloomberg + CNBC" : activeView === "r2d2" ? "Paper strategy enabled · real brokerage disabled" : activeView === "intelligence" ? "C3PO valuation audit trail" : activeView === "health" ? "Cloudflare + APIs + Pluggy + AWS + data sources" : activeView === "serverusage" ? "60-second host samples" : activeView === "leah" ? "Per-user iCloud sync" : activeView === "weather" ? "Open-Meteo multi-model" : data?.provenance.source ?? "Source pending"}</span>
+            </div>
+          </div>}
+
+          {activeView !== "home" && error && (
+            <div className="error-banner"><AlertTriangle size={18} /><span>API unavailable: {error}</span><button onClick={loadData}>Retry</button></div>
+          )}
+          {loading && !data && activeView === "command" ? <LoadingState /> : (
+            <ViewRouter
+              key={`${activeView}-${viewRevision}`}
+              activeView={activeView}
+              data={data}
+              reports={reports}
+              portfolio={data?.portfolio ?? []}
+              marketProviders={marketProviders}
+              systemHealth={systemHealth}
+              financeRefreshKey={financeRefreshKey}
+              onNavigate={selectView}
+              onAlertsRead={setActiveAlertCount}
+              session={session}
+              pageLoadStats={pageLoadStats}
+            />
+          )}
+        </section>
+      </main>
+      {profileOpen && <ProfilePanel session={session} items={visibleNavItems} onClose={() => setProfileOpen(false)} onLogout={onLogout} />}
+      {menuOpen && <button className="mobile-overlay" onClick={() => setMenuOpen(false)} aria-label="Close navigation overlay" />}
+    </div>
+    </InstrumentPreviewProvider>
+  );
+}
+
+function ViewRouter({
+  activeView,
+  data,
+  reports,
+  portfolio,
+  marketProviders,
+  systemHealth,
+  financeRefreshKey,
+  onNavigate,
+  onAlertsRead,
+  session,
+  pageLoadStats
+}: {
+  activeView: ViewKey;
+  data: CommandCenterData | null;
+  reports: ReportItem[];
+  portfolio: PortfolioItem[];
+  marketProviders: MarketDataProvider[];
+  systemHealth: SystemHealthData | null;
+  financeRefreshKey: number;
+  onNavigate: (view: ViewKey, realtimeTab?: RealtimeTabKey, query?: string) => void;
+  onAlertsRead: (count: number) => void;
+  session: AuthSession;
+  pageLoadStats: PageLoadPerformanceStats;
+}) {
+  const canGenerateOnePagers = session.is_admin || session.capabilities.includes("onepager_generate");
+  const canDeleteData = session.is_admin || session.capabilities.includes("delete");
+  if (activeView === "home") return <C3POOpeningView onEnter={() => onNavigate("command")} />;
+  if (activeView === "helm") return <HelmChairView session={session} />;
+  if (activeView === "portfolio" && data) return <PortfolioView data={data} portfolio={portfolio} />;
+  if (activeView === "relations") return <InvestorRelationsView canManage={session.is_admin} />;
+  if (activeView === "news") return <RebellionNewsView />;
+  if (activeView === "r2d2") return <R2D2RisingView />;
+  if (activeView === "markets") return <MarketsView />;
+  if (activeView === "realtime") return <RealTimeView canManage={session.is_admin} canDelete={canDeleteData} />;
+  if (activeView === "weather") return <WeatherView />;
+  if (activeView === "intelligence") return <IQRecordsView />;
+  if (activeView === "health") return <HealthView data={systemHealth} />;
+  if (activeView === "serverusage") return <ServerUsageView pageLoadStats={pageLoadStats} />;
+  if (activeView === "leah") return <LeahCloudView session={session} />;
+  if (activeView === "alerts") return <AlertsView onRead={onAlertsRead} />;
+  if (activeView === "finance") return <FinanceView refreshKey={financeRefreshKey} />;
+  if (activeView === "candidates") return <CandidatesView reports={reports} marketProviders={marketProviders} />;
+  if (activeView === "matrix") return <MatrixPowerView />;
+  if (activeView === "chewie") return <ChewieFundamentalsView />;
+  if (activeView === "onepager") return <OnePagerView canGenerate={canGenerateOnePagers} />;
+  if (activeView === "command") return <MillenniumFalconView systemHealth={systemHealth} />;
+  return <LoadingState />;
+}
+
+type LeahCloudTab = "agenda" | "tasks";
+type LeahCalendarMode = "day" | "month" | "year";
+
+const leahDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const leahStartOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const leahBrazilNationalHolidays: Record<string, string> = {
+  "01-01": "Confraternização Universal",
+  "04-21": "Tiradentes",
+  "05-01": "Dia Mundial do Trabalho",
+  "09-07": "Independência do Brasil",
+  "10-12": "Nossa Senhora Aparecida",
+  "11-02": "Finados",
+  "11-15": "Proclamação da República",
+  "11-20": "Dia Nacional de Zumbi e da Consciência Negra",
+  "12-25": "Natal"
+};
+const leahHolidayName = (date: Date) => leahBrazilNationalHolidays[leahDateKey(date).slice(5)] ?? null;
+const leahIsWeekend = (date: Date) => date.getDay() === 0 || date.getDay() === 6;
+const leahDateTimeInput = (value: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
+function leahMonthCells(cursor: Date) {
+  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const start = new Date(first);
+  start.setDate(first.getDate() - first.getDay());
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return date;
+  });
+}
+
+function LeahCloudView({ session }: { session: AuthSession }) {
+  const [activeTab, setActiveTab] = useState<LeahCloudTab>("agenda");
+  const [data, setData] = useState<LeahCloudResponse | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [pairing, setPairing] = useState<{ code: string; expires_at: string } | null>(null);
+  const [title, setTitle] = useState("");
+  const [dateTime, setDateTime] = useState("");
+  const [calendarMode, setCalendarMode] = useState<LeahCalendarMode>("month");
+  const [calendarCursor, setCalendarCursor] = useState(() => leahStartOfDay(new Date()));
+  const [editorItem, setEditorItem] = useState<LeahItem | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorTitle, setEditorTitle] = useState("");
+  const [editorNotes, setEditorNotes] = useState("");
+  const [editorStartsAt, setEditorStartsAt] = useState("");
+  const [editorEndsAt, setEditorEndsAt] = useState("");
+  const [editorAllDay, setEditorAllDay] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/leah`, { cache: "no-store", credentials: "include" });
+      if (!response.ok) throw new Error("Não foi possível carregar a Leah Cloud.");
+      setData(await response.json());
+      setError("");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Falha ao carregar a Leah Cloud.");
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const timer = window.setInterval(() => void load(), 15_000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  const items = data?.items ?? [];
+  const events = items.filter((item) => item.kind === "event").sort((a, b) => (a.starts_at || "").localeCompare(b.starts_at || ""));
+  const tasks = items.filter((item) => item.kind === "task").sort((a, b) => Number(a.is_completed) - Number(b.is_completed) || (a.due_at || "9999").localeCompare(b.due_at || "9999"));
+  const openTasks = tasks.filter((item) => !item.is_completed);
+  const localDay = new Date().toISOString().slice(0, 10);
+  const todayTasks = openTasks.filter((item) => item.due_at?.slice(0, 10) === localDay).length;
+  const upcomingTasks = openTasks.filter((item) => item.due_at && item.due_at.slice(0, 10) > localDay).length;
+  const eventsByDay = useMemo(() => {
+    const grouped = new Map<string, LeahItem[]>();
+    events.forEach((item) => {
+      if (!item.starts_at) return;
+      const key = leahDateKey(new Date(item.starts_at));
+      grouped.set(key, [...(grouped.get(key) ?? []), item]);
+    });
+    return grouped;
+  }, [events]);
+  const cursorEvents = eventsByDay.get(leahDateKey(calendarCursor)) ?? [];
+  const monthCells = useMemo(() => leahMonthCells(calendarCursor), [calendarCursor]);
+
+  async function pairMac() {
+    setBusy(true);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/leah/pairings`, { method: "POST", credentials: "include" });
+      if (!response.ok) throw new Error("Não foi possível criar o código de conexão.");
+      setPairing(await response.json());
+      setError("");
+    } catch (pairError) {
+      setError(pairError instanceof Error ? pairError.message : "Falha ao criar código.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createItem(event: FormEvent) {
+    event.preventDefault();
+    if (!title.trim()) return;
+    setBusy(true);
+    const isEvent = activeTab === "agenda";
+    const startsAt = dateTime ? new Date(dateTime).toISOString() : null;
+    try {
+      const response = await fetch(`${API_URL}/api/v1/leah/items`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: isEvent ? "event" : "task",
+          title: title.trim(),
+          notes: "",
+          starts_at: isEvent ? startsAt : null,
+          ends_at: isEvent && startsAt ? new Date(new Date(startsAt).getTime() + 3_600_000).toISOString() : null,
+          due_at: isEvent ? null : startsAt,
+          is_all_day: false,
+          is_completed: false
+        })
+      });
+      if (!response.ok) throw new Error("Não foi possível criar o item.");
+      setTitle("");
+      setDateTime("");
+      await load();
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Falha ao criar item.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openEventEditor(date: Date, item: LeahItem | null = null) {
+    const start = item?.starts_at ? new Date(item.starts_at) : new Date(date.getFullYear(), date.getMonth(), date.getDate(), 9, 0);
+    const end = item?.ends_at ? new Date(item.ends_at) : new Date(start.getTime() + 3_600_000);
+    setEditorItem(item);
+    setEditorTitle(item?.title ?? "");
+    setEditorNotes(item?.notes ?? "");
+    setEditorStartsAt(leahDateTimeInput(start.toISOString()));
+    setEditorEndsAt(leahDateTimeInput(end.toISOString()));
+    setEditorAllDay(item?.is_all_day ?? false);
+    setEditorOpen(true);
+  }
+
+  async function saveEvent(event: FormEvent) {
+    event.preventDefault();
+    if (!editorTitle.trim() || !editorStartsAt || !editorEndsAt) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/leah/items${editorItem ? `/${editorItem.id}` : ""}`, {
+        method: editorItem ? "PUT" : "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "event",
+          title: editorTitle.trim(),
+          notes: editorNotes,
+          starts_at: new Date(editorStartsAt).toISOString(),
+          ends_at: new Date(editorEndsAt).toISOString(),
+          due_at: null,
+          is_all_day: editorAllDay,
+          is_completed: false
+        })
+      });
+      if (!response.ok) throw new Error("Não foi possível salvar o evento.");
+      setEditorOpen(false);
+      await load();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Falha ao salvar evento.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function navigateCalendar(direction: -1 | 1) {
+    const next = new Date(calendarCursor);
+    if (calendarMode === "day") next.setDate(next.getDate() + direction);
+    if (calendarMode === "month") next.setMonth(next.getMonth() + direction, 1);
+    if (calendarMode === "year") next.setFullYear(next.getFullYear() + direction, 0, 1);
+    setCalendarCursor(next);
+  }
+
+  const calendarTitle = calendarMode === "day"
+    ? new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(calendarCursor)
+    : calendarMode === "month"
+      ? new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(calendarCursor)
+      : String(calendarCursor.getFullYear());
+
+  async function updateTask(item: LeahItem) {
+    await fetch(`${API_URL}/api/v1/leah/items/${item.id}`, {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "task", title: item.title, notes: item.notes, due_at: item.due_at, is_completed: !item.is_completed })
+    });
+    await load();
+  }
+
+  async function removeItem(item: LeahItem) {
+    await fetch(`${API_URL}/api/v1/leah/items/${item.id}`, { method: "DELETE", credentials: "include" });
+    await load();
+  }
+
+  const formatItemDate = (value: string | null) => value
+    ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
+    : "Sem data";
+
+  return (
+    <div className="leah-cloud">
+      <section className="leah-account-band" aria-label="Conta pessoal da Leah Cloud">
+        <UserAvatar className="leah-account-avatar" displayName={session.display_name} email={session.email} />
+        <div className="leah-account-copy">
+          <span>ESPAÇO PESSOAL</span>
+          <strong>{session.display_name || session.email || "Usuário C3PO"}</strong>
+          <small>{session.email}</small>
+        </div>
+        <div className={`leah-connection-state ${data?.connected ? "leah-connected" : ""}`} role="status">
+          <i aria-hidden="true" />
+          <div><span>ICLOUD</span><strong>{data?.connected ? `${data.devices.length} Mac conectado` : "Aguardando conexão"}</strong></div>
+          <div className="leah-connection-actions">
+            <a className="leah-agent-download" href="/downloads/leah-cloud-agent-macos.pkg" download>
+              <Download size={15} /> Baixar agente para Mac
+            </a>
+            {!data?.connected && <button type="button" className="leah-connect-button" disabled={busy} onClick={() => void pairMac()}><Plus size={15} /> Conectar este Mac</button>}
+          </div>
+        </div>
+      </section>
+
+      {pairing && (
+        <section className="leah-pairing" aria-live="polite">
+          <div><span>CÓDIGO TEMPORÁRIO</span><strong>{pairing.code}</strong></div>
+          <p>Abra o aplicativo Leah Cloud neste Mac e informe este código. Ele expira em 10 minutos.</p>
+          <button type="button" aria-label="Fechar código" onClick={() => setPairing(null)}><X size={17} /></button>
+        </section>
+      )}
+      {error && <div className="leah-error" role="alert">{error}</div>}
+
+      <div className="leah-tabs" role="tablist" aria-label="Áreas da Leah Cloud">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "agenda"}
+          className={activeTab === "agenda" ? "leah-tab leah-tab-active" : "leah-tab"}
+          onClick={() => setActiveTab("agenda")}
+        >
+          <CalendarDays size={17} />
+          <span>Agenda</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "tasks"}
+          className={activeTab === "tasks" ? "leah-tab leah-tab-active" : "leah-tab"}
+          onClick={() => setActiveTab("tasks")}
+        >
+          <BookOpenCheck size={17} />
+          <span>Tarefas</span>
+        </button>
+      </div>
+
+      {activeTab === "agenda" ? (
+        <section className="leah-workspace leah-calendar-workspace" role="tabpanel" aria-label="Agenda">
+          <header className="leah-calendar-toolbar">
+            <button type="button" className="leah-calendar-add" title="Novo evento" onClick={() => openEventEditor(calendarCursor)}><Plus size={19} /></button>
+            <div className="leah-calendar-modes" role="group" aria-label="Visualização do calendário">
+              {(["day", "month", "year"] as LeahCalendarMode[]).map((mode) => <button type="button" key={mode} className={calendarMode === mode ? "active" : ""} onClick={() => setCalendarMode(mode)}>{mode === "day" ? "Dia" : mode === "month" ? "Mês" : "Ano"}</button>)}
+            </div>
+            <div className="leah-calendar-nav">
+              <button type="button" title="Anterior" onClick={() => navigateCalendar(-1)}><ChevronLeft size={18} /></button>
+              <button type="button" onClick={() => setCalendarCursor(leahStartOfDay(new Date()))}>Hoje</button>
+              <button type="button" title="Próximo" onClick={() => navigateCalendar(1)}><ChevronRight size={18} /></button>
+            </div>
+          </header>
+          <div className="leah-calendar-title"><h2>{calendarTitle}</h2><span>{events.length} eventos sincronizados</span></div>
+          {calendarMode === "month" && <div className="leah-month-view">
+            <div className="leah-weekdays">{["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."].map((day) => <span key={day}>{day}</span>)}</div>
+            <div className="leah-month-grid">{monthCells.map((date) => {
+              const key = leahDateKey(date);
+              const dayEvents = eventsByDay.get(key) ?? [];
+              const outside = date.getMonth() !== calendarCursor.getMonth();
+              const isToday = key === leahDateKey(new Date());
+              const holidayName = leahHolidayName(date);
+              return <div
+                key={key}
+                className={`leah-calendar-day ${outside ? "outside" : ""} ${leahIsWeekend(date) ? "weekend" : ""} ${holidayName ? "holiday" : ""} ${isToday ? "today" : ""}`}
+                title={holidayName ?? undefined}
+                onClick={() => { setCalendarCursor(date); openEventEditor(date); }}
+              >
+                <button type="button" className="leah-day-number" onClick={(event) => { event.stopPropagation(); setCalendarCursor(date); setCalendarMode("day"); }}>{date.getDate()}</button>
+                <div className="leah-day-events">{dayEvents.slice(0, 4).map((item) => <button type="button" key={item.id} onClick={(event) => { event.stopPropagation(); openEventEditor(date, item); }}><i /><span>{item.title}</span><time>{item.is_all_day ? "" : new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(item.starts_at!))}</time></button>)}{dayEvents.length > 4 && <small>e mais {dayEvents.length - 4}</small>}</div>
+              </div>;
+            })}</div>
+          </div>}
+          {calendarMode === "day" && <div className="leah-day-view">
+            <aside><strong>{calendarCursor.getDate()}</strong><span>{new Intl.DateTimeFormat("pt-BR", { weekday: "short" }).format(calendarCursor)}</span></aside>
+            <div>{cursorEvents.length ? cursorEvents.map((item) => <button type="button" className="leah-day-event" key={item.id} onClick={() => openEventEditor(calendarCursor, item)}><time>{item.starts_at ? new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(item.starts_at)) : ""}</time><i /><span><strong>{item.title}</strong><small>{item.notes || (item.source === "icloud" ? "iCloud" : "Leah Cloud")}</small></span></button>) : <button type="button" className="leah-day-empty" onClick={() => openEventEditor(calendarCursor)}><Plus size={18} /> Adicionar evento neste dia</button>}</div>
+          </div>}
+          {calendarMode === "year" && <div className="leah-year-view">{Array.from({ length: 12 }, (_, month) => {
+            const monthDate = new Date(calendarCursor.getFullYear(), month, 1);
+            return <button type="button" key={month} onClick={() => { setCalendarCursor(monthDate); setCalendarMode("month"); }}><strong>{new Intl.DateTimeFormat("pt-BR", { month: "long" }).format(monthDate)}</strong><div>{["D", "S", "T", "Q", "Q", "S", "S"].map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}{leahMonthCells(monthDate).map((date) => {
+              const holidayName = leahHolidayName(date);
+              return <i
+                key={leahDateKey(date)}
+                className={`${date.getMonth() === month ? "" : "outside"} ${leahIsWeekend(date) ? "weekend" : ""} ${holidayName ? "holiday" : ""} ${(eventsByDay.get(leahDateKey(date))?.length ?? 0) > 0 ? "has-event" : ""}`}
+                title={holidayName ?? undefined}
+              >{date.getDate()}</i>;
+            })}</div></button>;
+          })}</div>}
+        </section>
+      ) : (
+        <section className="leah-workspace" role="tabpanel" aria-label="Tarefas">
+          <header className="leah-workspace-head">
+            <div><span>PENDÊNCIAS</span><h2>Tarefas</h2></div>
+            <div className="leah-count"><strong>{openTasks.length}</strong><span>abertas</span></div>
+          </header>
+          <div className="leah-task-summary" aria-label="Resumo das tarefas">
+            <div><span>Hoje</span><strong>{todayTasks}</strong></div>
+            <div><span>Próximas</span><strong>{upcomingTasks}</strong></div>
+            <div><span>Concluídas</span><strong>{tasks.length - openTasks.length}</strong></div>
+          </div>
+          <form className="leah-create-row" onSubmit={createItem}>
+            <input aria-label="Título da tarefa" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Nova tarefa" />
+            <input aria-label="Prazo" type="datetime-local" value={dateTime} onChange={(event) => setDateTime(event.target.value)} />
+            <button type="submit" disabled={busy || !title.trim()}><Plus size={17} /> Adicionar</button>
+          </form>
+          {tasks.length === 0 ? <div className="leah-empty-state leah-empty-state-tasks">
+            <span className="leah-empty-icon"><BookOpenCheck size={26} /></span>
+            <strong>Nenhuma lista sincronizada</strong>
+            <small>As tarefas deste usuário aparecerão aqui quando o agente pessoal estiver conectado.</small>
+          </div> : <div className="leah-item-list">{tasks.map((item) => <article className={`leah-item ${item.is_completed ? "leah-item-complete" : ""}`} key={item.id}><button type="button" className="leah-check" title={item.is_completed ? "Reabrir" : "Concluir"} onClick={() => void updateTask(item)}>{item.is_completed ? <Check size={16} /> : null}</button><div><strong>{item.title}</strong><small>{formatItemDate(item.due_at)} · {item.source === "icloud" ? "Lembretes" : "Leah Cloud"}</small></div><button type="button" title="Excluir" onClick={() => void removeItem(item)}><Trash2 size={17} /></button></article>)}</div>}
+        </section>
+      )}
+      {editorOpen && createPortal(<div className="leah-event-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditorOpen(false); }}>
+        <form className="leah-event-editor" role="dialog" aria-modal="true" aria-label={editorItem ? "Editar evento" : "Novo evento"} onSubmit={saveEvent}>
+          <header><div><span>{editorItem ? "EDITAR EVENTO" : "NOVO EVENTO"}</span><h2>{editorItem ? editorItem.title : "Adicionar à agenda"}</h2></div><button type="button" title="Fechar" onClick={() => setEditorOpen(false)}><X size={19} /></button></header>
+          <label><span>Título</span><input autoFocus value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} placeholder="Nome do evento" /></label>
+          <label className="leah-event-all-day"><input type="checkbox" checked={editorAllDay} onChange={(event) => setEditorAllDay(event.target.checked)} /><span>Dia inteiro</span></label>
+          <div className="leah-event-dates"><label><span>Início</span><input type="datetime-local" value={editorStartsAt} onChange={(event) => setEditorStartsAt(event.target.value)} /></label><label><span>Término</span><input type="datetime-local" value={editorEndsAt} onChange={(event) => setEditorEndsAt(event.target.value)} /></label></div>
+          <label><span>Observações</span><textarea value={editorNotes} onChange={(event) => setEditorNotes(event.target.value)} rows={4} /></label>
+          <footer>{editorItem ? <button type="button" className="leah-event-delete" onClick={() => { void removeItem(editorItem); setEditorOpen(false); }}><Trash2 size={16} /> Excluir</button> : <span />}<div><button type="button" onClick={() => setEditorOpen(false)}>Cancelar</button><button type="submit" className="leah-event-save" disabled={busy || !editorTitle.trim()}>Salvar</button></div></footer>
+        </form>
+      </div>, document.body)}
+    </div>
+  );
+}
+
+function R2D2RisingView() {
+  const [data, setData] = useState<R2D2DashboardData | null>(null);
+  const liveTelemetry = useR2D2LivePositions();
+  const [error, setError] = useState("");
+  const requestInFlight = useRef(false);
+  const [hoveredAllocation, setHoveredAllocation] = useState<{
+    label: string;
+    name: string;
+    detail: string;
+    value: number;
+    percent: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const learningScrollRef = useRef<HTMLDivElement | null>(null);
+  const [learningContainerWidth, setLearningContainerWidth] = useState(900);
+
+  useEffect(() => {
+    const node = learningScrollRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setLearningContainerWidth(width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const load = useCallback(async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
+    try {
+      const response = await fetch(`${API_URL}/api/v1/r2d2`, { cache: "no-store", credentials: "include" });
+      if (!response.ok) throw new Error(`API ${response.status}`);
+      setData(await response.json());
+      setError("");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "R2D2 data unavailable");
+    } finally {
+      requestInFlight.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, 2_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [load]);
+
+  if (!data) return error ? <div className="error-banner"><AlertTriangle size={16} />{error}</div> : <LoadingState />;
+
+  const money = (value: number) => new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", maximumFractionDigits: 0
+  }).format(value).replace("$", "US$ ");
+  const moneyExact = (value: number) => new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2
+  }).format(value).replace("$", "US$ ");
+  const signedMoney = (value: number) => `${value >= 0 ? "+" : "-"}${money(Math.abs(value))}`;
+  const signedPercent = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+  const signedPositionPercent = (returnPercent: number, pnlUsd: number) => `${pnlUsd >= 0 ? "+" : "-"}${formatPositionPercentMagnitude(returnPercent)}%`;
+  const positions = liveTelemetry?.positions ?? data.positions;
+  const markedNav = liveTelemetry?.nav_usd ?? data.nav_usd;
+  const cash = liveTelemetry?.cash_usd ?? data.cash_usd;
+  const openPositions = liveTelemetry?.open_positions ?? data.open_positions;
+  const cashPercent = markedNav > 0 ? cash / markedNav * 100 : 100;
+  const saoPauloDateKey = (value: string | Date) => new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(value));
+  const todayKey = saoPauloDateKey(new Date());
+  const todayTrades = data.trades.filter((trade) => saoPauloDateKey(trade.executed_at) === todayKey);
+  const todayPositiveTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
+  const todayNegativeTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
+  const lifetimeClosedTrades = data.stats.positive_transactions + data.stats.negative_transactions;
+  const lifetimePositiveShare = lifetimeClosedTrades > 0 ? data.stats.positive_transactions / lifetimeClosedTrades * 100 : 0;
+  const lifetimeNegativeShare = lifetimeClosedTrades > 0 ? data.stats.negative_transactions / lifetimeClosedTrades * 100 : 0;
+  const intelligenceLog = [
+    ...todayTrades.map((trade) => ({
+      id: `trade-${trade.id}`,
+      timestamp: trade.executed_at,
+      action: trade.side,
+      symbol: trade.symbol,
+      name: trade.name,
+      market: trade.market,
+      rationale: trade.reason,
+      detail: trade.side === "BUY"
+        ? `${trade.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares acquired at ${trade.currency} ${trade.fill_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
+        : `${trade.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares sold · ${trade.realized_pnl_usd === null ? "P&L pending" : `${signedMoney(trade.realized_pnl_usd)} realized`}.`,
+      tone: trade.side === "BUY" ? "buy" : (trade.realized_pnl_usd ?? 0) >= 0 ? "sell-positive" : "sell-negative"
+    })),
+    ...positions
+      .filter((position) => saoPauloDateKey(position.updated_at) === todayKey)
+      .map((position) => ({
+        id: `position-${position.market}-${position.symbol}`,
+        timestamp: position.updated_at,
+        action: position.decision_state || "MONITOR",
+        symbol: position.symbol,
+        name: position.name,
+        market: position.market,
+        rationale: `Motor state: ${position.decision_state || "monitoring"}. Technical score ${position.technical_score.toFixed(1)}; trend ${position.trend_state}; flow ${position.volume_state}.`,
+        detail: `Position ${signedPositionPercent(position.unrealized_return_percent, position.unrealized_pnl_usd)} · stop ${position.currency} ${position.stop_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · quote ${position.quote_status}.`,
+        tone: "monitor"
+      }))
+  ].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
+  const launchChecks = [
+    { label: "Market feeds", detail: "EODHD live · Nasdaq + NYSE · B3 execution disabled", state: "ready" },
+    { label: "Canonical valuation", detail: "Dark Side + Last Jedi + Laser Pager", state: "ready" },
+    { label: "Risk mandate", detail: "No leverage · failed-entry defense -0.3% · hard stop -0.65%", state: "ready" },
+    {
+      label: "Paper execution",
+      detail: data.entries_paused
+        ? "ENTRIES PAUSED · exits, risk monitor and EOD remain active"
+        : `20-second risk monitor · one-minute opportunity scan · ${data.status}`,
+      state: data.entries_paused || data.status === "paused" ? "pending" : "ready"
+    },
+    { label: "Turnover policy", detail: "20-80 qualified orders/session · 120 hard cap · costs included", state: "ready" },
+    { label: "Daily learning loop", detail: `Version ${data.learning.version} · ${data.learning.sample_days} sessions · ${data.learning.sample_trades} completed exits`, state: "ready" }
+  ];
+  const points = data.track_record.length ? data.track_record : [{
+    session_date: data.start_date, nav_usd: data.starting_capital_usd,
+    daily_pnl_usd: 0, daily_return_percent: 0, is_final: false
+  }];
+  const values = points.map((point) => point.nav_usd);
+  const center = data.starting_capital_usd;
+  const spread = Math.max(center * 0.01, Math.max(...values) - Math.min(...values), 1);
+  const chartMin = Math.min(...values, center) - spread * 0.35;
+  const chartMax = Math.max(...values, center) + spread * 0.35;
+  const chartPath = points.map((point, index) => {
+    const x = points.length === 1 ? 706 : index / (points.length - 1) * 706;
+    const y = 158 - ((point.nav_usd - chartMin) / (chartMax - chartMin)) * 146;
+    return `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(" ");
+  const lastY = 158 - ((values[values.length - 1] - chartMin) / (chartMax - chartMin)) * 146;
+  const counters = [
+    { label: "Positive days", value: data.stats.positive_days, detail: `${data.stats.win_rate_percent.toFixed(1)}% win rate`, tone: "positive" },
+    { label: "Days ≥ +0.5%", value: data.stats.above_half_percent_days, detail: "Measured target, never forced", tone: "positive" },
+    { label: "Negative days", value: data.stats.negative_days, detail: `${data.stats.closed_days} closed sessions`, tone: "critical" },
+    { label: "Days ≤ -0.5%", value: data.stats.below_minus_half_percent_days, detail: "Material down sessions", tone: "critical" }
+  ];
+  const allocationPalette = ["#316fbb", "#2c9b70", "#7b61c9", "#d99b38", "#d45b55", "#4f9fb3", "#96733d", "#6b7b91", "#c35f99", "#9baf48", "#d1aa2f"];
+  const allocationTotal = positions.reduce((sum, position) => sum + position.market_value_usd, 0) + cash;
+  const allocationItems = [
+    ...[...positions]
+      .sort((left, right) => right.market_value_usd - left.market_value_usd)
+      .map((position, index) => ({
+        label: position.symbol,
+        name: position.name,
+        logoUrl: position.logo_url,
+        detail: position.market,
+        value: position.market_value_usd,
+        color: allocationPalette[index % (allocationPalette.length - 1)]
+      })),
+    { label: "Cash", name: "Available cash", logoUrl: "/market-marks/usd.svg", detail: "Available", value: cash, color: allocationPalette[allocationPalette.length - 1] }
+  ].map((item) => ({
+    ...item,
+    percent: allocationTotal > 0 ? item.value / allocationTotal * 100 : 0
+  }));
+  const donutRadius = 68;
+  const donutCircumference = 2 * Math.PI * donutRadius;
+  let allocationCursor = 0;
+  const allocationSlices = allocationItems.map((item) => {
+    const start = allocationCursor;
+    allocationCursor += item.percent / 100;
+    return { ...item, start };
+  });
+  const learningCurve = data.learning_curve;
+  const LEARNING_MOVING_AVERAGE_WINDOW = 5;
+  const learningMovingAverage = learningCurve.map((_, index) => {
+    const window = learningCurve.slice(Math.max(0, index - (LEARNING_MOVING_AVERAGE_WINDOW - 1)), index + 1);
+    return window.reduce((sum, point) => sum + point.positive_percent, 0) / window.length;
+  });
+  const learningLastMovingAverage = learningMovingAverage.length
+    ? learningMovingAverage[learningMovingAverage.length - 1]
+    : 0;
+  const learningLastActual = learningCurve.length
+    ? learningCurve[learningCurve.length - 1].positive_percent
+    : 0;
+  const learningPositiveValues = learningCurve
+    .map((point) => point.positive_percent)
+    .sort((left, right) => left - right);
+  const learningPositiveMedian = learningPositiveValues.length
+    ? learningPositiveValues.length % 2
+      ? learningPositiveValues[Math.floor(learningPositiveValues.length / 2)]
+      : (learningPositiveValues[learningPositiveValues.length / 2 - 1] + learningPositiveValues[learningPositiveValues.length / 2]) / 2
+    : 0;
+  const learningMedianDelta = learningLastActual - learningPositiveMedian;
+  const learningMedianDeltaTone = learningMedianDelta > 0 ? "positive" : learningMedianDelta < 0 ? "negative" : "neutral";
+  const learningTrendDelta = learningLastActual - learningLastMovingAverage;
+  const learningTrendTone = learningTrendDelta > 1 ? "positive" : learningTrendDelta < -1 ? "negative" : "neutral";
+  const learningTrendLabel = learningCurve.length < 2
+    ? "Aguardando mais dias"
+    : learningTrendDelta > 1
+      ? `Melhorando · ${learningTrendDelta >= 0 ? "+" : ""}${learningTrendDelta.toFixed(1)}pp vs média móvel`
+      : learningTrendDelta < -1
+        ? `Piorando · ${learningTrendDelta.toFixed(1)}pp vs média móvel`
+        : "Estável vs média móvel";
+  const LEARNING_MIN_SLOT = 48;
+  const LEARNING_MAX_GROUP_WIDTH = 46;
+  const LEARNING_BAR_GAP = 3;
+  const LEARNING_GAP = 12;
+  const LEARNING_PLOT_LEFT = 34;
+  const LEARNING_PLOT_TOP = 26;
+  const LEARNING_PLOT_HEIGHT = 150;
+  const LEARNING_CHART_HEIGHT = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 40;
+  // Bars stretch to fill the panel's full width (growing toward the right edge as
+  // days are added) as long as they stay legible; once there are too many days to
+  // fit at a comfortable minimum width, the chart switches to a fixed bar width and
+  // scrolls horizontally instead of squeezing bars unreadably thin.
+  const learningPlotWidth = Math.max(0, learningContainerWidth - LEARNING_PLOT_LEFT - LEARNING_GAP);
+  const learningFitSlot = learningCurve.length > 0 ? learningPlotWidth / learningCurve.length : LEARNING_MIN_SLOT;
+  const learningFillsContainer = learningFitSlot >= LEARNING_MIN_SLOT;
+  const learningSlot = learningFillsContainer ? learningFitSlot : LEARNING_MIN_SLOT;
+  const learningBarGroupWidth = Math.max(15, Math.min(LEARNING_MAX_GROUP_WIDTH, learningSlot - LEARNING_GAP));
+  const learningBarWidth = (learningBarGroupWidth - LEARNING_BAR_GAP) / 2;
+  const learningChartWidth = learningFillsContainer
+    ? learningContainerWidth
+    : LEARNING_PLOT_LEFT + learningCurve.length * learningSlot + LEARNING_GAP;
+  const learningMovingAveragePoints = learningMovingAverage.map((value, index) => ({
+    x: LEARNING_PLOT_LEFT + index * learningSlot + learningSlot / 2,
+    y: LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (value / 100) * LEARNING_PLOT_HEIGHT
+  }));
+  const learningMovingAveragePath = learningMovingAveragePoints
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
+    .join(" ");
+  const showAllocationTooltip = (
+    event: ReactPointerEvent<SVGCircleElement>,
+    item: (typeof allocationSlices)[number]
+  ) => {
+    const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
+    if (!bounds) return;
+    setHoveredAllocation({
+      ...item,
+      x: Math.min(Math.max(event.clientX - bounds.left, 18), bounds.width - 18),
+      y: Math.min(Math.max(event.clientY - bounds.top, 18), bounds.height - 18)
+    });
+  };
+
+  return (
+    <div className="r2d2-view">
+      {error ? <div className="error-banner"><AlertTriangle size={16} />{error}</div> : null}
+      <section className="r2d2-capital-band" aria-label="Paper portfolio capital">
+        <div className="r2d2-capital-identity">
+          <R2D2RisingIcon size={38} />
+          <div>
+            <span>SIMULATION STATUS</span>
+            <strong>{data.entries_paused ? "ENTRIES PAUSED" : data.status === "scheduled" ? "Launch scheduled" : data.status === "running" ? "Continuous paper run" : data.status}</strong>
+            <small>{data.entries_paused ? `${data.entries_pause_reason ?? "New entries are blocked"} · exits and protection remain active` : `From ${data.start_date} · ${data.checkpoint_days}-day checkpoint ${data.checkpoint_date}${data.checkpoint_reached ? " reached" : ""}`}</small>
+          </div>
+        </div>
+        <div><span>Starting capital</span><strong>{money(data.starting_capital_usd)}</strong><small>Virtual capital · paper only</small></div>
+        <div><span>Net asset value</span><strong>{money(data.accounting_nav_usd)}</strong><small>{signedPercent(data.total_return_percent)} since launch</small></div>
+        <div><span>Daily P&amp;L</span><strong className={data.daily_pnl_usd > 0 ? "r2d2-up" : data.daily_pnl_usd < 0 ? "r2d2-down" : "r2d2-flat"}>{signedMoney(data.daily_pnl_usd)}</strong><small>{signedPercent(data.daily_return_percent)}</small></div>
+        <div><span>Open positions</span><strong>{openPositions}</strong><small>{money(cash)} cash · {cashPercent.toFixed(1)}%</small></div>
+      </section>
+
+      <section className="r2d2-scoreboard" aria-label="Daily performance scoreboard">
+        {counters.map((counter) => (
+          <div key={counter.label} className={`r2d2-counter r2d2-counter-${counter.tone}`}>
+            <span>{counter.label}</span><strong>{counter.value}</strong><small>{counter.detail}</small>
+          </div>
+        ))}
+      </section>
+
+      <div className="r2d2-primary-grid">
+        <section className="panel r2d2-track-panel">
+          <header className="panel-header r2d2-track-header">
+            <div><LineChart size={18} /><h2>Track Record</h2></div>
+            <div className="r2d2-track-totals">
+              <span className="r2d2-track-positive">Positive <strong>{data.stats.positive_transactions}</strong><em>{lifetimePositiveShare.toFixed(1)}%</em></span>
+              <span className="r2d2-track-negative">Negative <strong>{data.stats.negative_transactions}</strong><em>{lifetimeNegativeShare.toFixed(1)}%</em></span>
+              <small>{lifetimeClosedTrades} closed trades</small>
+            </div>
+          </header>
+          <div className="r2d2-chart" role="img" aria-label="R2D2 Rising paper portfolio track record">
+            <div className="r2d2-chart-scale"><span>{money(chartMax)}</span><span>{money((chartMax + chartMin) / 2)}</span><span>{money(chartMin)}</span></div>
+            <div className="r2d2-chart-field">
+              <i /><i /><i />
+              <svg viewBox="0 0 720 170" preserveAspectRatio="none" aria-hidden="true">
+                <path d={`M0 ${158 - ((center - chartMin) / (chartMax - chartMin)) * 146}H720`} className="r2d2-chart-baseline" />
+                <path d={chartPath} className="r2d2-chart-line" />
+                <circle cx="706" cy={lastY} r="5" />
+              </svg>
+              <div className="r2d2-chart-axis"><span>{data.start_date}</span><span>{data.operating_days_elapsed} days live</span><span>Continuous</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section className="panel r2d2-intelligence-panel">
+          <PanelHeader title="Intelligence Log" icon={Activity} />
+          <div className="r2d2-intelligence-list">
+            {intelligenceLog.length ? intelligenceLog.map((entry) => (
+              <article className={`r2d2-intelligence-entry r2d2-intelligence-${entry.tone}`} key={entry.id}>
+                <time>{new Date(entry.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "America/Sao_Paulo" })}</time>
+                <span className="r2d2-intelligence-action">{entry.action}</span>
+                <div>
+                  <header><R2D2Ticker symbol={entry.symbol} name={entry.name} /><small>{entry.market}</small></header>
+                  <p>{entry.rationale}</p>
+                  <small>{entry.detail}</small>
+                </div>
+              </article>
+            )) : <div className="r2d2-intelligence-empty"><Activity size={24} /><strong>No intelligence events today</strong><span>Trades and live position decisions will appear here as the engine evaluates the session.</span></div>}
+          </div>
+        </section>
+      </div>
+
+      <section className="panel r2d2-ledger-panel">
+        <PanelHeader title="Virtual Positions" icon={WalletCards} />
+        <div className="r2d2-ledger-head">
+          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span>P&amp;L</span><span>Technical</span><span>Trend / Flow</span><span>Stop</span><span>Decision</span>
+        </div>
+        {positions.length ? positions.map((position) => (
+          <div className="r2d2-ledger-row" key={`${position.market}-${position.symbol}`}>
+            <div className="r2d2-asset-cell">
+              <div className="r2d2-company-logo"><CompanyLogo logoUrl={position.logo_url} symbol={position.symbol} /></div>
+              <R2D2Ticker symbol={position.symbol} name={position.name} />
+            </div>
+            <span className="r2d2-last-price">{formatCurrency(position.last_price_local, position.currency)}</span>
+            <span>{position.allocation_percent.toFixed(1)}%</span>
+            <strong className="r2d2-position-value">{moneyExact(position.market_value_usd)}</strong>
+            <div className="r2d2-live-pnl">
+              <strong className={position.unrealized_pnl_usd >= 0 ? "positive" : "negative"}>{signedPositionPercent(position.unrealized_return_percent, position.unrealized_pnl_usd)}</strong>
+              <span className={position.unrealized_pnl_usd >= 0 ? "positive" : "negative"}>
+                {`${position.unrealized_pnl_usd >= 0 ? "+" : "-"}${moneyExact(Math.abs(position.unrealized_pnl_usd))}`}
+              </span>
+              <small className={position.quote_status === "live" ? "positive" : "muted"}>
+                {position.quote_status === "live" ? "LIVE" : "LAST MARK"}
+                {position.quote_as_of ? ` · ${new Date(position.quote_as_of).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}
+              </small>
+            </div>
+            <div><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
+            <div><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>
+            <span>{formatCurrency(position.stop_price_local, position.currency)}</span>
+            <div>
+              <strong>{position.decision_state}</strong>
+              <small>{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares</small>
+              {(position.technical_defense_reviews > 0 || position.technical_defense_reductions > 0 || position.technical_defense_severity !== "healthy") && (
+                <small
+                  className="r2d2-defense-status"
+                  title={position.technical_defense_drivers.join("; ") || "Technical defense active"}
+                >
+                  {`DEF ${position.technical_defense_score.toFixed(0)}/100 · ${position.technical_defense_reviews} review${position.technical_defense_reviews === 1 ? "" : "s"} · ${position.technical_defense_reductions} cut${position.technical_defense_reductions === 1 ? "" : "s"}`}
+                </small>
+              )}
+            </div>
+          </div>
+        )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No paper positions yet</strong><span>The first eligible cycle begins when the exchanges open on 17/08/2026.</span></div></div>}
+      </section>
+
+      <section className="panel r2d2-allocation-panel">
+        <PanelHeader title="Portfolio Allocation" icon={ChartPie} />
+        <div className="r2d2-allocation-content">
+          <div className="r2d2-donut-wrap">
+            <svg className="r2d2-donut" viewBox="0 0 180 180" role="img" aria-label="Virtual portfolio allocation by asset and cash">
+              <circle className="r2d2-donut-track" cx="90" cy="90" r={donutRadius} />
+              {allocationSlices.map((item) => (
+                <circle
+                  key={`${item.label}-${item.detail}`}
+                  className={`r2d2-donut-slice${hoveredAllocation?.label === item.label ? " r2d2-donut-slice-active" : ""}${hoveredAllocation && hoveredAllocation.label !== item.label ? " r2d2-donut-slice-muted" : ""}`}
+                  cx="90"
+                  cy="90"
+                  r={donutRadius}
+                  stroke={item.color}
+                  strokeDasharray={`${item.percent / 100 * donutCircumference} ${donutCircumference}`}
+                  strokeDashoffset={-item.start * donutCircumference}
+                  tabIndex={0}
+                  aria-label={`${item.label}, ${item.name}, ${item.percent.toFixed(1)}% da carteira, ${moneyExact(item.value)}`}
+                  onPointerEnter={(event) => showAllocationTooltip(event, item)}
+                  onPointerMove={(event) => showAllocationTooltip(event, item)}
+                  onPointerLeave={() => setHoveredAllocation(null)}
+                  onFocus={(event) => {
+                    const bounds = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
+                    if (!bounds) return;
+                    setHoveredAllocation({ ...item, x: bounds.width / 2, y: 28 });
+                  }}
+                  onBlur={() => setHoveredAllocation(null)}
+                >
+                  <title>{`${item.label} · ${item.name} · ${item.percent.toFixed(1)}% · ${moneyExact(item.value)}`}</title>
+                </circle>
+              ))}
+            </svg>
+            <div className="r2d2-donut-center"><span>MARKED</span><strong>{money(markedNav)}</strong><small>{openPositions} positions + cash</small></div>
+            {hoveredAllocation ? (
+              <div
+                className="r2d2-donut-tooltip"
+                role="tooltip"
+                style={{ left: hoveredAllocation.x, top: hoveredAllocation.y }}
+              >
+                <strong>{hoveredAllocation.label}</strong>
+                <span>{hoveredAllocation.name}</span>
+                <small>{hoveredAllocation.detail} · {moneyExact(hoveredAllocation.value)} · {hoveredAllocation.percent.toFixed(1)}%</small>
+              </div>
+            ) : null}
+          </div>
+          <div className="r2d2-allocation-legend">
+            {allocationItems.map((item) => (
+              <div
+                key={`${item.label}-${item.detail}`}
+                className={hoveredAllocation?.label === item.label ? "r2d2-allocation-legend-active" : undefined}
+              >
+                <i style={{ backgroundColor: item.color }} />
+                <span className="r2d2-allocation-logo">
+                  {item.label === "Cash"
+                    ? <img src={item.logoUrl ?? "/market-marks/usd.svg"} alt="USD" />
+                    : <CompanyLogo logoUrl={item.logoUrl} symbol={item.label} />}
+                </span>
+                <div>{item.label === "Cash" ? <strong>Cash</strong> : <R2D2Ticker symbol={item.label} name={item.name} />}<small>{item.detail}</small></div>
+                <span>{moneyExact(item.value)}</span>
+                <b>{item.percent.toFixed(1)}%</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="panel r2d2-learning-panel">
+        <header className="panel-header r2d2-learning-header">
+          <div><Brain size={18} /><h2>Learning Curve</h2></div>
+          {learningCurve.length ? (
+            <div className="r2d2-learning-summary">
+              <span>Média móvel (5d)<strong>{learningLastMovingAverage.toFixed(1)}%</strong></span>
+              <span>Dias operados<strong>{learningCurve.length}</strong></span>
+              <small className={`r2d2-learning-trend-${learningTrendTone}`}>{learningTrendLabel}</small>
+            </div>
+          ) : null}
+        </header>
+        <div className="r2d2-learning-content">
+          <div className="r2d2-learning-scroll" ref={learningScrollRef}>
+            {learningCurve.length ? (
+            <svg
+              className="r2d2-learning-svg"
+              viewBox={`0 0 ${learningChartWidth} ${LEARNING_CHART_HEIGHT}`}
+              width={learningChartWidth}
+              height={LEARNING_CHART_HEIGHT}
+              role="img"
+              aria-label="Curva de aprendizado: percentuais diários de operações positivas e negativas, com linha de média móvel de 5 dias para as operações positivas"
+            >
+              {[0, 25, 50, 75, 100].map((tick) => {
+                const y = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (tick / 100) * LEARNING_PLOT_HEIGHT;
+                return (
+                  <g key={tick}>
+                    <line x1={LEARNING_PLOT_LEFT} x2={learningChartWidth} y1={y} y2={y} className="r2d2-learning-grid" />
+                    <text x={LEARNING_PLOT_LEFT - 6} y={y + 3} textAnchor="end" className="r2d2-learning-tick">{tick}%</text>
+                  </g>
+                );
+              })}
+              {learningCurve.map((point, index) => {
+                const totalTrades = point.positive_trades + point.negative_trades;
+                const positivePercent = totalTrades ? point.positive_trades / totalTrades * 100 : point.positive_percent;
+                const negativePercent = totalTrades ? point.negative_trades / totalTrades * 100 : Math.max(0, 100 - point.positive_percent);
+                const groupX = LEARNING_PLOT_LEFT + index * learningSlot + (learningSlot - learningBarGroupWidth) / 2;
+                const positiveHeight = Math.max((positivePercent / 100) * LEARNING_PLOT_HEIGHT, 14);
+                const negativeHeight = Math.max((negativePercent / 100) * LEARNING_PLOT_HEIGHT, 14);
+                const positiveY = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - positiveHeight;
+                const negativeY = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - negativeHeight;
+                const label = new Date(`${point.session_date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+                return (
+                  <g key={point.session_date}>
+                    <rect
+                      x={groupX}
+                      y={positiveY}
+                      width={learningBarWidth}
+                      height={positiveHeight}
+                      rx={2}
+                      className="r2d2-learning-bar-positive"
+                    >
+                      <title>{`${label} · ${Math.round(positivePercent)}% positivas (${point.positive_trades}/${totalTrades} operações)`}</title>
+                    </rect>
+                    <text x={groupX + learningBarWidth / 2} y={positiveY + 11} textAnchor="middle" className="r2d2-learning-bar-label">{Math.round(positivePercent)}%</text>
+                    <rect
+                      x={groupX + learningBarWidth + LEARNING_BAR_GAP}
+                      y={negativeY}
+                      width={learningBarWidth}
+                      height={negativeHeight}
+                      rx={2}
+                      className="r2d2-learning-bar-negative"
+                    >
+                      <title>{`${label} · ${Math.round(negativePercent)}% negativas (${point.negative_trades}/${totalTrades} operações)`}</title>
+                    </rect>
+                    <text x={groupX + learningBarWidth + LEARNING_BAR_GAP + learningBarWidth / 2} y={negativeY + 11} textAnchor="middle" className="r2d2-learning-bar-label">{Math.round(negativePercent)}%</text>
+                    <text x={groupX + learningBarGroupWidth / 2} y={LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 15} textAnchor="middle" className="r2d2-learning-axis-label">{label}</text>
+                    <text x={groupX + learningBarGroupWidth / 2} y={LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT + 28} textAnchor="middle" className="r2d2-learning-trades-count">{`${totalTrades} op.`}</text>
+                  </g>
+                );
+              })}
+              {learningMovingAveragePoints.length > 1 ? (
+                <path d={learningMovingAveragePath} className="r2d2-learning-ma-line" />
+              ) : null}
+              {learningMovingAveragePoints.map((point, index) => (
+                <circle key={`ma-${learningCurve[index].session_date}`} cx={point.x} cy={point.y} r={2.5} className="r2d2-learning-ma-dot">
+                  <title>{`Média móvel 5 dias em ${learningCurve[index].session_date}: ${learningMovingAverage[index].toFixed(1)}%`}</title>
+                </circle>
+              ))}
+              {learningMovingAveragePoints.length ? (
+                <g>
+                  <rect x={learningChartWidth - 350} y={4} width={346} height={18} rx={9} className="r2d2-learning-ma-badge" />
+                  <rect x={learningChartWidth - 338} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-trades" />
+                  <text x={learningChartWidth - 327} y={13} className="r2d2-learning-legend-label">Transações</text>
+                  <rect x={learningChartWidth - 252} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-positive" />
+                  <text x={learningChartWidth - 241} y={13} className="r2d2-learning-legend-label">Positivas</text>
+                  <rect x={learningChartWidth - 178} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-negative" />
+                  <text x={learningChartWidth - 167} y={13} className="r2d2-learning-legend-label">Negativas</text>
+                  <circle cx={learningChartWidth - 92} cy={13} r={3.5} className="r2d2-learning-ma-dot" />
+                  <text x={learningChartWidth - 84} y={13} className="r2d2-learning-ma-label">{`MM5 ${learningLastMovingAverage.toFixed(1)}%`}</text>
+                </g>
+              ) : null}
+            </svg>
+            ) : (
+              <div className="r2d2-ledger-empty"><Brain size={24} /><div><strong>Sem dias operados ainda</strong><span>A curva de aprendizado aparece após o primeiro dia com vendas encerradas.</span></div></div>
+            )}
+          </div>
+          {learningCurve.length ? (
+            <aside className="r2d2-learning-median-card" aria-label="Mediana de operações positivas">
+              <div>
+                <span>Mediana positiva</span>
+                <strong>{learningPositiveMedian.toFixed(1)}%</strong>
+                <small>{learningCurve.length} dias operados</small>
+              </div>
+              <div>
+                <span>Delta diário</span>
+                <strong className={`r2d2-learning-median-${learningMedianDeltaTone}`}>
+                  {learningMedianDelta >= 0 ? "+" : ""}{learningMedianDelta.toFixed(1)}pp
+                </strong>
+                <small>Último dia vs mediana</small>
+              </div>
+            </aside>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="panel r2d2-trades-panel">
+        <header className="panel-header r2d2-trades-header">
+          <div><BookOpenCheck size={18} /><h2>Daily Buy / Sell Log</h2></div>
+          <div className="r2d2-trade-summary" aria-label="Resumo das transações">
+            <span className="positive" title="Vendas encerradas hoje com P&L realizado positivo"><b>{todayPositiveTrades}</b> positivas</span>
+            <span className="negative" title="Vendas encerradas hoje com P&L realizado negativo"><b>{todayNegativeTrades}</b> negativas</span>
+          </div>
+        </header>
+        <div className="r2d2-trade-head"><span>Time</span><span>Side</span><span>Asset</span><span>Market</span><span>Quantity</span><span>Cash transaction</span><span>Realized P&amp;L</span><span>Decision rationale</span></div>
+        {todayTrades.length ? todayTrades.map((trade) => {
+          const sideTone = trade.side === "BUY"
+            ? "buy"
+            : trade.realized_pnl_usd !== null && trade.realized_pnl_usd > 0
+              ? "sell-positive"
+              : trade.realized_pnl_usd !== null && trade.realized_pnl_usd < 0
+                ? "sell-negative"
+                : "sell-flat";
+          const cashTransaction = trade.side === "BUY"
+            ? -(trade.gross_value_usd + trade.fees_usd)
+            : trade.gross_value_usd - trade.fees_usd;
+
+          return (
+            <div className="r2d2-trade-row" key={trade.id}>
+              <time>{new Date(trade.executed_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</time>
+              <b className={`r2d2-side r2d2-side-${sideTone}`}>{trade.side}</b>
+              <R2D2Ticker symbol={trade.symbol} name={trade.name} /><span>{trade.market}</span>
+              <span>{trade.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })}</span>
+              <strong className={`r2d2-cash-transaction r2d2-cash-${sideTone}`} title={trade.side === "BUY" ? "Saída líquida de caixa" : "Entrada líquida de caixa"}>
+                {`${cashTransaction >= 0 ? "+" : "-"}${moneyExact(Math.abs(cashTransaction))}`}
+              </strong>
+              <span className={`r2d2-realized-pnl ${trade.realized_pnl_usd === null ? "r2d2-pnl-open" : trade.realized_pnl_usd > 0 ? "positive" : trade.realized_pnl_usd < 0 ? "negative" : "r2d2-pnl-flat"}`}>
+                {trade.realized_pnl_usd === null ? <b>—</b> : <><strong>{`${trade.realized_pnl_usd >= 0 ? "+" : "-"}${moneyExact(Math.abs(trade.realized_pnl_usd))}`}</strong><small>{trade.realized_return_percent === null ? "—" : signedPercent(trade.realized_return_percent)}</small></>}
+              </span>
+              <p>{trade.reason}</p>
+            </div>
+          );
+        }) : <div className="r2d2-ledger-empty"><BookOpenCheck size={24} /><div><strong>No executions today</strong><span>Today&apos;s virtual fills and rationales will appear here.</span></div></div>}
+      </section>
+
+      <footer className="r2d2-cycle-strip">
+        <ShieldCheck size={15} />
+        <span>Last cycle: <strong>{data.last_cycle?.status ?? "initialized"}</strong></span>
+        <span>Scanned: <strong>{data.last_cycle?.scanned_count ?? 0}</strong></span>
+        <span>Signals: <strong>{data.last_cycle?.signal_count ?? 0}</strong></span>
+        <span>Trades: <strong>{data.last_cycle?.trade_count ?? 0}</strong></span>
+        <span>Method: <strong>{data.methodology_version}</strong></span>
+        <span>Learning: <strong>v{data.learning.version} · {data.learning.effective_date}</strong></span>
+      </footer>
+
+      <section className="panel r2d2-gates-panel r2d2-gates-horizontal">
+        <PanelHeader title="Launch Gates" icon={ShieldCheck} />
+        <div className="r2d2-gates-horizontal-body">
+          <div className="r2d2-gate-list">
+            {launchChecks.map((check) => (
+              <div key={check.label}>
+                <span className={`r2d2-gate-dot r2d2-gate-${check.state}`} />
+                <div><strong>{check.label}</strong><small>{check.detail}</small></div>
+                <b>{check.state === "ready" ? "READY" : "REVIEW"}</b>
+              </div>
+            ))}
+          </div>
+          <footer className="r2d2-gates-foot">
+            <LockKeyhole size={14} />
+            <span>Live brokerage execution remains technically absent and locked.</span>
+          </footer>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function R2D2Ticker({ symbol, name }: { symbol: string; name: string }) {
+  return (
+    <span className="r2d2-ticker" tabIndex={0} aria-label={`${symbol}: ${name}`}>
+      <strong>{symbol}</strong>
+      <span className="r2d2-ticker-tooltip" role="tooltip">{name}</span>
+    </span>
+  );
+}
+
+function C3POOpeningView({ onEnter }: { onEnter: () => void }) {
+  const stars = useMemo(() => Array.from({ length: 96 }, (_, index) => {
+    const size = 1 + ((index * 17) % 3);
+    return {
+      left: `${(index * 47 + 11) % 100}%`,
+      top: `${(index * 83 + 7) % 100}%`,
+      width: `${size}px`,
+      height: `${size}px`,
+      opacity: 0.28 + ((index * 13) % 58) / 100,
+      animationDelay: `${-((index * 0.37) % 4).toFixed(2)}s`
+    };
+  }), []);
+
+  useEffect(() => {
+    const skipOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onEnter();
+    };
+    const autoEnter = window.setTimeout(onEnter, 67_000);
+    window.addEventListener("keydown", skipOnEscape);
+    return () => {
+      window.clearTimeout(autoEnter);
+      window.removeEventListener("keydown", skipOnEscape);
+    };
+  }, [onEnter]);
+
+  return (
+    <section className="c3po-opening" aria-labelledby="c3po-opening-title">
+      <div className="c3po-opening-stars" aria-hidden="true">
+        {stars.map((style, index) => <i key={index} style={style} />)}
+      </div>
+      <button className="c3po-opening-skip" type="button" onClick={onEnter} aria-label="Pular introdução e entrar no Falcon CAPCOM">
+        <span>Pular introdução</span>
+        <ChevronRight size={17} />
+      </button>
+
+      <p className="c3po-opening-distance">Há muito tempo, numa galáxia muito, muito distante...</p>
+
+      <div className="c3po-opening-logo" aria-hidden="true">
+        <C3POProtocolIcon size={154} />
+        <strong>C3PO</strong>
+        <span>Chief of Staff Intelligence</span>
+      </div>
+
+      <div className="c3po-opening-viewport">
+        <article className="c3po-opening-crawl">
+          <p className="c3po-opening-episode">EPISÓDIO I</p>
+          <h1 id="c3po-opening-title">A INTELIGÊNCIA DESPERTA</h1>
+          <p>
+            Em uma realidade onde mercados, empresas, contas, notícias e decisões mudam a cada instante,
+            nasce o C3PO: um Chief of Staff Intelligence privado, criado para transformar sinais dispersos em
+            clareza executiva.
+          </p>
+          <p>
+            Conectado à B3, Nasdaq e NYSE, aos dados financeiros, aos comunicados oficiais, ao Open Finance
+            e às rotinas do dia, o sistema observa, compara e registra cada movimento. Sua metodologia combina
+            valuation, consenso, risco, fundamentos e inteligência acumulada para revelar oportunidades e
+            proteger decisões.
+          </p>
+          <p>
+            A cada nova informação, o C3PO aprende. Valuations são revistos, alertas ganham contexto e o
+            histórico preserva o motivo de cada mudança. Morning, Lunch e Night Summaries permanecem como
+            registros do tempo, enquanto a plataforma evolui continuamente.
+          </p>
+          <p>
+            Sua missão é simples: entregar a Dudu uma visão única, confiável e acionável do que exige atenção
+            agora, do que pode criar valor amanhã e de como cada decisão foi construída.
+          </p>
+          <p className="c3po-opening-mission">Este é o centro de comando.<br />A inteligência está online.</p>
+        </article>
+      </div>
+
+    </section>
+  );
+}
+
+function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData | null }) {
+  const [r2d2, setR2d2] = useState<R2D2DashboardData | null>(null);
+  const liveTelemetry = useR2D2LivePositions();
+  const [indices, setIndices] = useState<LiveMarketItem[]>([]);
+  const [health, setHealth] = useState<SystemHealthData | null>(systemHealth);
+  const [error, setError] = useState("");
+  const mountedRef = useRef(true);
+  const r2d2RequestInFlight = useRef(false);
+  const marketRequestInFlight = useRef(false);
+
+  const loadR2D2 = useCallback(async () => {
+    if (r2d2RequestInFlight.current) return;
+    r2d2RequestInFlight.current = true;
+    try {
+      const response = await fetch(`${API_URL}/api/v1/r2d2`, { cache: "no-store", credentials: "include" });
+      if (!response.ok) throw new Error(`R2D2 API ${response.status}`);
+      if (mountedRef.current) setR2d2(await response.json());
+    } catch (requestError) {
+      if (mountedRef.current) setError(requestError instanceof Error ? requestError.message : "R2D2 unavailable");
+    } finally {
+      r2d2RequestInFlight.current = false;
+    }
+  }, []);
+
+  const loadIndices = useCallback(async () => {
+    if (marketRequestInFlight.current) return;
+    marketRequestInFlight.current = true;
+    try {
+      const [indexResponse, marketResponse] = await Promise.all([
+        fetch(`${API_URL}/api/v1/markets/live/index`, { cache: "no-store", credentials: "include" }),
+        fetch(`${API_URL}/api/v1/markets/live`, { cache: "no-store", credentials: "include" })
+      ]);
+      if (!indexResponse.ok || !marketResponse.ok) throw new Error(`Markets API ${indexResponse.ok ? marketResponse.status : indexResponse.status}`);
+      const indexPayload: LiveMarketIndexResponse = await indexResponse.json();
+      const marketPayload: LiveMarketsResponse = await marketResponse.json();
+      const promotedSymbols = ["Nikkei", "Shanghai", "DAX"];
+      const promoted = promotedSymbols
+        .map((symbol) => (marketPayload.groups["Future Index"] ?? []).find((item) => item.symbol === symbol))
+        .filter((item): item is LiveMarketItem => Boolean(item));
+      if (mountedRef.current) setIndices([...indexPayload.items, ...promoted]);
+    } catch (requestError) {
+      if (mountedRef.current) setError(requestError instanceof Error ? requestError.message : "Indices unavailable");
+    } finally {
+      marketRequestInFlight.current = false;
+    }
+  }, []);
+
+  const loadHealth = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/system-health`, { cache: "no-store", credentials: "include" });
+      if (response.ok && mountedRef.current) setHealth(await response.json());
+    } catch {
+      // The last valid readiness bar remains visible during transient failures.
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    void loadR2D2();
+    void loadIndices();
+    void loadHealth();
+    const r2d2Timer = window.setInterval(() => document.visibilityState === "visible" && void loadR2D2(), 2_000);
+    const marketTimer = window.setInterval(() => document.visibilityState === "visible" && void loadIndices(), 10_000);
+    const healthTimer = window.setInterval(() => document.visibilityState === "visible" && void loadHealth(), 60_000);
+    return () => {
+      mountedRef.current = false;
+      window.clearInterval(r2d2Timer);
+      window.clearInterval(marketTimer);
+      window.clearInterval(healthTimer);
+    };
+  }, [loadHealth, loadIndices, loadR2D2]);
+
+  const usd = (value: number) => new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2
+  }).format(value).replace("$", "US$ ");
+  const signedUsd = (value: number) => `${value >= 0 ? "+" : "-"}${usd(Math.abs(value))}`;
+  const saoPauloDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+  const todayKey = saoPauloDate.format(new Date());
+  const todayTrades = r2d2?.trades.filter((trade) => saoPauloDate.format(new Date(trade.executed_at)) === todayKey) ?? [];
+  const todayPositiveSellLegs = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
+  const todayNegativeSellLegs = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
+  const todayRealizedSellLegs = todayPositiveSellLegs + todayNegativeSellLegs;
+  const todayPositiveSellShare = todayRealizedSellLegs > 0 ? todayPositiveSellLegs / todayRealizedSellLegs * 100 : 0;
+  const todayNegativeSellShare = todayRealizedSellLegs > 0 ? todayNegativeSellLegs / todayRealizedSellLegs * 100 : 0;
+  const healthHeadline = health?.status === "healthy"
+    ? "All services operational"
+    : health?.status === "offline"
+      ? "Service interruption detected"
+      : "Conditions require attention";
+  const healthTone = !health ? "warning" : health.quality >= 100 ? "good" : health.quality >= 80 ? "warning" : "critical";
+  const dailyConsumption = health?.api_usage?.[0] ?? null;
+  const dailyPnlDate = r2d2?.daily_pnl_date
+    ? new Date(`${r2d2.daily_pnl_date}T12:00:00`).toLocaleDateString("pt-BR", {
+        day: "2-digit", month: "2-digit", year: "numeric"
+      })
+    : null;
+  const livePositions = liveTelemetry?.positions ?? r2d2?.positions ?? [];
+  const liveOpenPositions = liveTelemetry?.open_positions ?? r2d2?.open_positions ?? 0;
+  const liveTelemetryTime = liveTelemetry?.generated_at
+    ? new Date(liveTelemetry.generated_at).toLocaleTimeString("pt-BR", {
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
+      })
+    : null;
+
+  return (
+    <div className="falcon-view falcon-capcom-view">
+      <section className="falcon-capcom-metrics" aria-label="R2D2 mission telemetry">
+        <div className="falcon-capcom-identity">
+          <MillenniumFalconIcon size={42} />
+          <div><span>R2D2 live telemetry</span><strong title={r2d2?.methodology_version}>{r2d2?.methodology_version ?? "Connecting"}</strong><small>{liveTelemetryTime ? `POSITIONS LIVE · ${liveTelemetryTime}` : "POSITION FEED CONNECTING"}</small></div>
+        </div>
+        <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.accounting_nav_usd) : "—"} detail={`${liveOpenPositions} open positions`} tone="gold" />
+        <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${dailyPnlDate ?? "No session"} · ${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}%` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
+        <FalconMetric label="Positive Sell Legs" value={`${todayPositiveSellLegs}`} secondaryValue={`${todayPositiveSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="green" />
+        <FalconMetric label="Negative Sell Legs" value={`${todayNegativeSellLegs}`} secondaryValue={`${todayNegativeSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="red" />
+      </section>
+
+      {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => { setError(""); void loadR2D2(); void loadIndices(); }}>Retry</button></div>}
+
+      {livePositions.length ? (
+        <section className={`falcon-portfolio-ticker${livePositions.length === 1 ? " falcon-portfolio-ticker-static" : ""}`} aria-label="Open portfolio positions">
+          <div className="falcon-portfolio-ticker-track">
+            {[0, 1].map((copy) => (
+              <div className="falcon-portfolio-ticker-set" aria-hidden={copy === 1} key={copy}>
+                {livePositions.map((position) => {
+                  const isPositive = position.unrealized_pnl_usd >= 0;
+                  const price = new Intl.NumberFormat(position.currency === "BRL" ? "pt-BR" : "en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                  }).format(position.last_price_local);
+                  return (
+                    <div className="falcon-portfolio-ticker-item" key={`${copy}-${position.market}-${position.symbol}`}>
+                      <div><strong>{position.symbol}</strong><span className={isPositive ? "ticker-price-up" : "ticker-price-down"}>{position.currency === "BRL" ? "R$ " : "$ "}{price}</span></div>
+                      <p className={isPositive ? "ticker-change-up" : "ticker-change-down"}>
+                        {isPositive ? "+" : "-"}{formatPositionPercentMagnitude(position.unrealized_return_percent)}%
+                        <small>($ {usd(Math.abs(position.unrealized_pnl_usd)).replace("US$ ", "")})</small>
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="panel live-market-panel live-market-panel-cards live-market-panel-index falcon-capcom-index">
+        <div className="live-market-group-head">
+          <div><span>Index</span><strong>{indices.length} instruments</strong></div>
+          <small>Same canonical feed as Master Luke</small>
+        </div>
+        <div className="live-market-table">
+          <div className="live-market-table-head"><span>Instrument</span><span>Price</span><span>Change</span><span>Session range</span><span>Quote</span></div>
+          {indices.map((item) => <LiveMarketRow key={item.symbol} item={item} />)}
+          {!indices.length && <div className="falcon-panel-loading" />}
+        </div>
+      </section>
+
+      <div className={`quality-banner quality-${healthTone} falcon-capcom-readiness falcon-capcom-readiness-with-usage`}>
+        <div className="quality-score">{health?.quality ?? 0}%</div>
+        <div><span>Storm Troops Readiness</span><strong>{healthHeadline}</strong><small>{health ? `${health.healthy_count}/${health.total_count} services operational · ${formatDate(health.generated_at)}` : "Collecting service conditions"}</small></div>
+        <div className="quality-meter"><span style={{ width: `${health?.quality ?? 0}%` }} /></div>
+        <div className={`falcon-capcom-consumption api-usage-${dailyConsumption?.status ?? "healthy"}`}>
+          <header>
+            <div><ServiceLogo name={dailyConsumption?.provider ?? "EODHD"} groupKey="quotes" /><span>Daily Consumption</span></div>
+            <strong>{dailyConsumption ? `${dailyConsumption.percent_used.toFixed(1).replace(".", ",")}%` : "—"}</strong>
+          </header>
+          <div className="api-usage-meter"><span style={{ width: `${Math.min(100, dailyConsumption?.percent_used ?? 0)}%` }} /></div>
+          <small>{dailyConsumption ? `${dailyConsumption.used.toLocaleString("pt-BR")} of ${dailyConsumption.limit.toLocaleString("pt-BR")} calls` : "Collecting API usage"}</small>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FalconMetric({ label, value, secondaryValue, detail, tone }: { label: string; value: string; secondaryValue?: string; detail: string; tone: "gold" | "blue" | "green" | "red" }) {
+  return <div className={`falcon-flight-metric falcon-flight-${tone}`}><span>{label}</span><strong>{value}{secondaryValue ? <em> · {secondaryValue}</em> : null}</strong><small>{detail}</small></div>;
+}
+
+function MarketsView() {
+  const [snapshot, setSnapshot] = useState<LiveMarketsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [indexError, setIndexError] = useState("");
+  const mountedRef = useRef(true);
+  const snapshotRef = useRef<LiveMarketsResponse | null>(null);
+  const indexItemsRef = useRef<LiveMarketItem[] | null>(null);
+  const indexRequestInFlight = useRef(false);
+
+  const loadMarkets = useCallback(async () => {
+    if (!snapshotRef.current) setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/markets/live`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      if (!mountedRef.current) return;
+      const nextSnapshot = indexItemsRef.current
+        ? { ...payload, groups: { ...payload.groups, Index: indexItemsRef.current } }
+        : payload;
+      snapshotRef.current = nextSnapshot;
+      setSnapshot(nextSnapshot);
+    } catch (requestError) {
+      if (mountedRef.current) setError(requestError instanceof Error ? requestError.message : "Live markets unavailable");
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, []);
+
+  const loadIndices = useCallback(async () => {
+    if (indexRequestInFlight.current) return;
+    indexRequestInFlight.current = true;
+    try {
+      const response = await fetch(`${API_URL}/api/v1/markets/live/index`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      const payload: LiveMarketIndexResponse = await response.json();
+      if (!response.ok) throw new Error(`API ${response.status}`);
+      if (!mountedRef.current) return;
+      setIndexError("");
+      indexItemsRef.current = payload.items;
+      setSnapshot((current) => {
+        if (!current) return current;
+        const nextSnapshot = {
+          ...current,
+          generated_at: payload.generated_at,
+          groups: { ...current.groups, Index: payload.items }
+        };
+        snapshotRef.current = nextSnapshot;
+        return nextSnapshot;
+      });
+    } catch (requestError) {
+      if (mountedRef.current) setIndexError(requestError instanceof Error ? requestError.message : "Live indices unavailable");
+    } finally {
+      indexRequestInFlight.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    loadMarkets();
+    loadIndices();
+    const marketsInterval = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadMarkets();
+    }, 10_000);
+    const indexInterval = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadIndices();
+    }, 10_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        loadMarkets();
+        loadIndices();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      mountedRef.current = false;
+      window.clearInterval(marketsInterval);
+      window.clearInterval(indexInterval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [loadIndices, loadMarkets]);
+
+  const groupOrder = ["Index", "Future Index", "Currencies", "Crypto"];
+  const promotedIndexSymbols = ["Nikkei", "Shanghai", "DAX"];
+  const futureItems = snapshot?.groups["Future Index"] ?? [];
+  const promotedIndexItems = promotedIndexSymbols
+    .map((symbol) => futureItems.find((item) => item.symbol === symbol))
+    .filter((item): item is LiveMarketItem => Boolean(item));
+  const displayGroups: Record<string, LiveMarketItem[]> = snapshot ? {
+    ...snapshot.groups,
+    Index: [...(snapshot.groups.Index ?? []), ...promotedIndexItems],
+    "Future Index": futureItems.filter((item) => !promotedIndexSymbols.includes(item.symbol))
+  } : {};
+  const visibleMarketItems = groupOrder.flatMap((group) => displayGroups[group] ?? []);
+  const itemCount = visibleMarketItems.length;
+  const staleCount = visibleMarketItems.filter((item) => item.status === "stale").length;
+  const latestQuote = visibleMarketItems.reduce<string | undefined>((latest, item) => {
+    if (!latest || new Date(item.as_of) > new Date(latest)) return item.as_of;
+    return latest;
+  }, undefined);
+
+  return (
+    <div className="content-stack live-markets-view">
+      {loading && !snapshot ? <LiveMarketsLoading /> : snapshot && (
+        <div className="live-market-grid">
+          {groupOrder.map((group) => {
+            const items = displayGroups[group] ?? [];
+            return (
+              <section className={`panel live-market-panel live-market-panel-cards live-market-panel-${group.toLowerCase().replace(/\s+/g, "-")}`} key={group}>
+                <div className="live-market-group-head">
+                  <div><span>{group}</span><strong>{items.length} instruments</strong></div>
+                  <small>{marketGroupSourceLabel(group)}</small>
+                </div>
+                <div className="live-market-table">
+                  <div className="live-market-table-head"><span>Instrument</span><span>Price</span><span>Change</span><span>Session range</span><span>Quote</span></div>
+                  {items.map((item) => <LiveMarketRow key={item.symbol} item={item} />)}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      <section className="panel live-markets-control">
+        <PanelHeader title="Live Market Feed" icon={MasterLukeIcon} />
+        <div className="live-market-summary">
+          <div><span>Coverage</span><strong>{itemCount}</strong><small>tracked instruments</small></div>
+          <div><span>Refresh</span><strong>10s</strong><small>somente enquanto Master Luke estiver visível</small></div>
+          <div><span>Sources</span><strong>2</strong><small>EODHD + global public feed</small></div>
+          <div><span>Fallbacks</span><strong className={staleCount ? "negative-text" : "positive-text"}>{staleCount}</strong><small>stale quotes retained</small></div>
+          <div className="live-market-clock"><span><i /> Feed active</span><strong>{formatDate(latestQuote ?? snapshot?.generated_at)}</strong><small>automatic · no page refresh</small></div>
+        </div>
+        {(error || indexError) && <div className="screen-error"><AlertTriangle size={17} /><span>{error || indexError}</span></div>}
+        {!!snapshot?.errors.length && <div className="live-market-warning"><AlertTriangle size={14} /><span>{snapshot.errors.length} source exception(s); last valid prices remain visible.</span></div>}
+      </section>
+
+      {snapshot && (
+        <section className="panel live-market-method">
+          <PanelHeader title="Feed Discipline" icon={ShieldCheck} />
+          <div><p>{snapshot.methodology.global}</p><p>{snapshot.methodology.refresh}</p><p>{snapshot.methodology.fallback}</p></div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function LiveMarketRow({ item }: { item: LiveMarketItem }) {
+  const direction: Direction = (item.change_percent ?? 0) > 0 ? "up" : (item.change_percent ?? 0) < 0 ? "down" : "flat";
+  const range = item.low !== null && item.high !== null && item.high > item.low
+    ? Math.max(0, Math.min(100, ((item.price - item.low) / (item.high - item.low)) * 100))
+    : 50;
+  return (
+    <article className="live-market-row">
+      <div className="live-market-instrument">
+        <MarketInstrumentMark symbol={item.symbol} name={item.name} />
+        <div>
+          <InstrumentPreviewTarget
+            instrument={{ symbol: item.symbol, name: item.name, market: item.group }}
+            className="live-market-ticker-preview"
+          >
+            <strong>{item.symbol}</strong>
+          </InstrumentPreviewTarget>
+          <span>{item.name}</span>
+        </div>
+      </div>
+      <div className="live-market-price"><strong>{formatLiveMarketPrice(item)}</strong><span>{item.currency}</span></div>
+      <div className={`live-market-change change-${direction}`}><DirectionIcon direction={direction} /><strong>{formatPercent(item.change_percent, 2)}</strong></div>
+      <div className="live-market-range">
+        <div><i style={{ left: `${range}%` }} /></div>
+        <span>{item.low !== null ? formatLiveMarketPrice({ ...item, price: item.low }) : "N/D"}</span>
+        <span>{item.high !== null ? formatLiveMarketPrice({ ...item, price: item.high }) : "N/D"}</span>
+      </div>
+      <div className="live-market-quote"><span className={`market-state market-state-${item.status}`}>{item.status}</span><strong>{formatDate(item.as_of)}</strong><small>{item.provider} · ~{item.delay_minutes}m</small></div>
+    </article>
+  );
+}
+
+const marketIndexMarks: Record<string, string> = {
+  "S&P 500 Fut.": "/market-marks/sp500.svg",
+  "Nasdaq Fut.": "/market-marks/nasdaq.svg",
+  Nikkei: "/market-marks/nikkei.svg",
+  DAX: "/market-marks/dax.svg",
+  Shanghai: "/market-marks/shanghai.svg",
+  US3Y: "/market-marks/us-treasury.svg",
+  US10Y: "/market-marks/us-treasury.svg",
+  IBOV: "/market-marks/b3.svg",
+  NASDAQ: "/market-marks/nasdaq.svg",
+  NYSE: "/market-marks/nyse.svg"
+};
+
+const marketInstrumentMarks: Record<string, string> = {
+  ...marketIndexMarks,
+  "USD/BRL": "/market-marks/usd.svg",
+  "EUR/BRL": "/market-marks/euro.svg",
+  "GBP/BRL": "/market-marks/pound.svg",
+  BTC: "/market-marks/btc-coin.jpg",
+  ETH: "/market-marks/eth.svg",
+  SOL: "/market-marks/sol.svg",
+  BONK: "/market-marks/bonk.svg",
+  DOGE: "/market-marks/doge.svg"
+};
+
+function MarketInstrumentMark({ symbol, name }: { symbol: string; name: string }) {
+  const source = marketInstrumentMarks[symbol] ?? "/market-marks/global-index.svg";
+  return <span className="market-index-mark"><img src={source} alt={`${name} mark`} /></span>;
+}
+
+function marketGroupSourceLabel(group: string) {
+  if (group === "Index") return "B3, Nasdaq, NYSE and global benchmarks · automatic 10-second refresh";
+  if (group === "Future Index") return "US futures and Treasury yields";
+  return "EODHD All-In-One";
+}
+
+function LiveMarketsLoading() {
+  return <div className="live-market-loading">{Array.from({ length: 4 }).map((_, index) => <div key={index} />)}</div>;
+}
+
+function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete: boolean }) {
+  const [activeMarket, setActiveMarket] = useState<RealtimeTabKey>(() => {
+    if (typeof window === "undefined") return "B3";
+    const requested = new URLSearchParams(window.location.search).get("market")?.toUpperCase();
+    return ["B3", "NASDAQ", "NYSE", "PORTFOLIO"].includes(requested ?? "") ? requested as RealtimeTabKey : "B3";
+  });
+  const [snapshots, setSnapshots] = useState<Partial<Record<RealtimeMarketKey, RealtimeMarketResponse>>>({});
+  const [portfolio, setPortfolio] = useState<RealtimePortfolioResponse | null>(null);
+  const [loadingMarket, setLoadingMarket] = useState<RealtimeTabKey | null>("B3");
+  const [error, setError] = useState("");
+  const mountedRef = useRef(true);
+  const snapshot = activeMarket === "PORTFOLIO" ? null : snapshots[activeMarket];
+
+  const selectRealtimeMarket = (market: RealtimeTabKey) => {
+    setActiveMarket(market);
+    const params = new URLSearchParams(window.location.search);
+    params.set("view", "realtime");
+    params.set("market", market.toLowerCase());
+    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+  };
+
+  const loadMarket = useCallback(async (market: RealtimeTabKey) => {
+    setLoadingMarket(market);
+    setError("");
+    try {
+      const endpoint = market === "PORTFOLIO" ? "portfolio/items" : market.toLowerCase();
+      const response = await fetch(`${API_URL}/api/v1/realtime/${endpoint}`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      if (!mountedRef.current) return;
+      if (market === "PORTFOLIO") setPortfolio(payload);
+      else setSnapshots((current) => ({ ...current, [market]: payload }));
+    } catch (requestError) {
+      if (mountedRef.current) setError(requestError instanceof Error ? requestError.message : "Real-time market feed unavailable");
+    } finally {
+      if (mountedRef.current) setLoadingMarket(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    loadMarket(activeMarket);
+    const refreshMilliseconds = activeMarket === "B3" ? 60_000 : 3_000;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadMarket(activeMarket);
+    }, refreshMilliseconds);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") loadMarket(activeMarket);
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      mountedRef.current = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [activeMarket, loadMarket]);
+
+  const tables: { key: keyof Pick<RealtimeMarketResponse, "gainers" | "losers" | "volume_leaders" | "cash_leaders">; title: string; detail: string; tone: string; metric: "volume" | "cash" }[] = [
+    { key: "gainers", title: "Top Gainers", detail: "5 maiores altas da sessão", tone: "positive", metric: "volume" },
+    { key: "losers", title: "Top Losers", detail: "5 maiores quedas da sessão", tone: "negative", metric: "volume" },
+    { key: "volume_leaders", title: "Volume Leaders", detail: "Maior quantidade de ações negociadas", tone: "volume", metric: "volume" },
+    { key: "cash_leaders", title: "Cash Leaders", detail: "Maior volume financeiro estimado", tone: "cash", metric: "cash" }
+  ];
+
+  return (
+    <div className="content-stack realtime-view">
+      <section className="panel realtime-control">
+        <div className="realtime-tabs" role="tablist" aria-label="Hyperspace exchanges">
+          {([
+            { key: "B3", label: "B3", logo: "/market-marks/b3.svg" },
+            { key: "NASDAQ", label: "NASDAQ", logo: "/market-marks/nasdaq.svg" },
+            { key: "NYSE", label: "NYSE", logo: "/market-marks/nyse.svg" },
+            { key: "PORTFOLIO", label: "My Portfolio", logo: "/market-marks/my-portfolio.svg" }
+          ] as { key: RealtimeTabKey; label: string; logo: string }[]).map((market) => (
+            <button
+              key={market.key}
+              role="tab"
+              aria-selected={activeMarket === market.key}
+              className={activeMarket === market.key ? "realtime-tab realtime-tab-active" : "realtime-tab"}
+              onClick={() => selectRealtimeMarket(market.key)}
+            >
+              <img src={market.logo} alt="" className="realtime-tab-logo" />
+              {market.label}
+            </button>
+          ))}
+          <button className="realtime-refresh" onClick={() => loadMarket(activeMarket)} disabled={loadingMarket === activeMarket} title="Atualizar agora">
+            <RefreshCw size={15} className={loadingMarket === activeMarket ? "spin" : ""} />
+            <span>Atualizar</span>
+          </button>
+        </div>
+
+        {snapshot && activeMarket !== "PORTFOLIO" && (
+          <div className="realtime-index-band">
+            <div className="realtime-index-mark"><LineChart size={22} /></div>
+            <div className="realtime-index-name">
+              <span>Índice de referência</span>
+              <strong>{snapshot.index.name}</strong>
+              <InstrumentPreviewTarget
+                instrument={{ symbol: snapshot.index.symbol, name: snapshot.index.name, market: "Indices" }}
+                className="realtime-index-ticker-preview"
+              >
+                <small>{snapshot.index.symbol}</small>
+              </InstrumentPreviewTarget>
+            </div>
+            <div className="realtime-index-value"><span>Último</span><strong>{formatRealtimeNumber(snapshot.index.value)}</strong><small>{snapshot.index.currency}</small></div>
+            <div className={`realtime-index-change ${(snapshot.index.change_percent ?? 0) >= 0 ? "positive-text" : "negative-text"}`}>
+              <span>Variação</span><strong>{formatPercent(snapshot.index.change_percent, 2)}</strong><small>Sessão atual</small>
+            </div>
+            <div className="realtime-index-meta"><span className={`market-state market-state-${snapshot.index.status}`}>{snapshot.index.status}</span><strong>{formatDate(snapshot.index.as_of)}</strong><small>{snapshot.source} · ranking ~{snapshot.delay_minutes} min</small></div>
+            <div className="realtime-universe"><span>Universo analisado</span><strong>{snapshot.universe_size.toLocaleString("pt-BR")}</strong><small>ações válidas</small></div>
+          </div>
+        )}
+        {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span></div>}
+      </section>
+
+      {activeMarket === "PORTFOLIO" ? (
+        portfolio || loadingMarket !== "PORTFOLIO"
+          ? <MyRealtimePortfolio snapshot={portfolio} loading={loadingMarket === "PORTFOLIO"} onChanged={setPortfolio} canManage={canManage} canDelete={canDelete} />
+          : <RealTimeLoading compact />
+      ) : !snapshot && loadingMarket ? <RealTimeLoading /> : snapshot && (
+        <div className="realtime-leader-grid">
+          {tables.map((table) => (
+            <RealtimeLeaderTable
+              key={table.key}
+              title={table.title}
+              detail={table.detail}
+              tone={table.tone}
+              metric={table.metric}
+              items={snapshot[table.key]}
+              market={activeMarket}
+            />
+          ))}
+        </div>
+      )}
+
+      {(snapshot || portfolio) && (
+        <div className="realtime-footnote">
+          <ShieldCheck size={14} />
+          <span>Atualização automática a cada {(snapshot ?? portfolio)?.refresh_seconds ?? 60}s enquanto esta aba estiver visível.</span>
+          <small>{activeMarket === "PORTFOLIO"
+            ? "Carteira salva no C3PO; papéis dos EUA usam WebSocket quando marcados LIVE."
+            : activeMarket === "B3"
+              ? "Brapi Pro · melhor cotação disponível próxima de 5 min."
+              : "Ranking amplo T-15; preços visíveis usam WebSocket quando marcados LIVE."}</small>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MyRealtimePortfolio({
+  snapshot,
+  loading,
+  onChanged,
+  canManage,
+  canDelete
+}: {
+  snapshot: RealtimePortfolioResponse | null;
+  loading: boolean;
+  onChanged: (snapshot: RealtimePortfolioResponse) => void;
+  canManage: boolean;
+  canDelete: boolean;
+}) {
+  const [symbol, setSymbol] = useState("");
+  const [mutating, setMutating] = useState("");
+  const [error, setError] = useState("");
+  const [symbolSuggestions, setSymbolSuggestions] = useState<RealtimePortfolioSymbolSuggestion[]>([]);
+  const [searchingSymbols, setSearchingSymbols] = useState(false);
+  const [suggestionError, setSuggestionError] = useState("");
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+  const symbolSearchRef = useRef<HTMLDivElement>(null);
+  const symbolInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const closeSuggestions = (event: PointerEvent) => {
+      if (!symbolSearchRef.current?.contains(event.target as Node)) setSuggestionsOpen(false);
+    };
+    window.addEventListener("pointerdown", closeSuggestions);
+    return () => window.removeEventListener("pointerdown", closeSuggestions);
+  }, []);
+
+  useEffect(() => {
+    const query = symbol.trim();
+    if (!query) {
+      setSymbolSuggestions([]);
+      setSearchingSymbols(false);
+      setSuggestionError("");
+      return;
+    }
+    const controller = new AbortController();
+    const debounce = window.setTimeout(async () => {
+      setSearchingSymbols(true);
+      setSuggestionError("");
+      try {
+        const params = new URLSearchParams({ q: query, limit: "8" });
+        const response = await fetch(`${API_URL}/api/v1/realtime/portfolio/search?${params.toString()}`, {
+          cache: "no-store",
+          credentials: "include",
+          signal: controller.signal
+        });
+        const payload: RealtimePortfolioSymbolSearchResponse & { detail?: string } = await response.json();
+        if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+        setSymbolSuggestions(payload.items);
+        setActiveSuggestionIndex(0);
+        if (payload.errors.length && !payload.items.length) setSuggestionError("Não foi possível consultar todos os mercados.");
+      } catch (requestError) {
+        if (!(requestError instanceof DOMException && requestError.name === "AbortError")) {
+          setSymbolSuggestions([]);
+          setSuggestionError("Busca de ativos temporariamente indisponível.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setSearchingSymbols(false);
+      }
+    }, 180);
+    return () => {
+      window.clearTimeout(debounce);
+      controller.abort();
+    };
+  }, [symbol]);
+
+  const persistSymbol = async (rawSymbol: string) => {
+    if (!canManage) return;
+    const normalized = rawSymbol.trim().toUpperCase();
+    if (!normalized || mutating) return;
+    setMutating(normalized);
+    setError("");
+    setSuggestionsOpen(false);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/realtime/portfolio/items`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: normalized })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      onChanged(payload);
+      setSymbol("");
+      setSymbolSuggestions([]);
+      setSuggestionError("");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Não foi possível adicionar o ativo");
+    } finally {
+      setMutating("");
+    }
+  };
+
+  const addSymbol = async (event: FormEvent) => {
+    event.preventDefault();
+    await persistSymbol(symbol);
+  };
+
+  const chooseSuggestion = (suggestion: RealtimePortfolioSymbolSuggestion) => {
+    setSymbol(suggestion.symbol);
+    setSuggestionsOpen(false);
+    setActiveSuggestionIndex(0);
+    setError("");
+    symbolInputRef.current?.focus();
+  };
+
+  const handleSymbolKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      setSuggestionsOpen(false);
+      return;
+    }
+    if (!suggestionsOpen || !symbolSuggestions.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveSuggestionIndex((index) => (index + 1) % symbolSuggestions.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveSuggestionIndex((index) => (index - 1 + symbolSuggestions.length) % symbolSuggestions.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      void persistSymbol(symbolSuggestions[activeSuggestionIndex]?.symbol ?? symbol);
+    }
+  };
+  const exactSymbolSuggestion = symbolSuggestions.some((suggestion) => suggestion.symbol === symbol.trim().toUpperCase());
+
+  const removeSymbol = async (ticker: string) => {
+    if (!canDelete) return;
+    setMutating(ticker);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/realtime/portfolio/items/${encodeURIComponent(ticker)}`, {
+        method: "DELETE",
+        credentials: "include"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      onChanged(payload);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Não foi possível remover a ação");
+    } finally {
+      setMutating("");
+    }
+  };
+
+  return (
+    <section className="panel realtime-portfolio-panel">
+      <div className="realtime-portfolio-toolbar">
+        <div>
+          <span>My Portfolio</span>
+          <strong>{snapshot?.item_count ?? 0} ativos acompanhados</strong>
+          <small>{snapshot?.sources.length ? snapshot.sources.join(" + ") : "Adicione o primeiro ticker para começar"}</small>
+        </div>
+        {canManage ? <form className="realtime-portfolio-form" onSubmit={addSymbol}>
+          <label htmlFor="realtime-portfolio-symbol">Ticker</label>
+          <div>
+            <div className="realtime-portfolio-symbol-search" ref={symbolSearchRef}>
+              <Search size={17} className="realtime-portfolio-symbol-icon" />
+              <input
+                ref={symbolInputRef}
+                id="realtime-portfolio-symbol"
+                value={symbol}
+                onChange={(event) => {
+                  setSymbol(event.target.value.toUpperCase());
+                  setSuggestionsOpen(true);
+                  setError("");
+                }}
+                onFocus={() => setSuggestionsOpen(true)}
+                onKeyDown={handleSymbolKeyDown}
+                placeholder="Digite ticker ou empresa"
+                maxLength={80}
+                autoComplete="off"
+                spellCheck={false}
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={suggestionsOpen && !!symbol.trim()}
+                aria-controls="realtime-portfolio-symbol-suggestions"
+                aria-activedescendant={symbolSuggestions[activeSuggestionIndex] ? `portfolio-symbol-${symbolSuggestions[activeSuggestionIndex].market}-${symbolSuggestions[activeSuggestionIndex].symbol}` : undefined}
+              />
+              {searchingSymbols && <RefreshCw size={14} className="spin realtime-portfolio-symbol-spinner" />}
+              {suggestionsOpen && !!symbol.trim() && (
+                <div className="realtime-portfolio-suggestions" id="realtime-portfolio-symbol-suggestions" role="listbox">
+                  {symbolSuggestions.map((suggestion, index) => (
+                    <button
+                      type="button"
+                      id={`portfolio-symbol-${suggestion.market}-${suggestion.symbol}`}
+                      className={index === activeSuggestionIndex ? "realtime-portfolio-suggestion realtime-portfolio-suggestion-active" : "realtime-portfolio-suggestion"}
+                      key={`${suggestion.market}-${suggestion.symbol}`}
+                      onClick={() => chooseSuggestion(suggestion)}
+                      onMouseEnter={() => setActiveSuggestionIndex(index)}
+                      role="option"
+                      aria-selected={index === activeSuggestionIndex}
+                    >
+                      <span className="realtime-portfolio-suggestion-symbol">{suggestion.symbol}</span>
+                      <span className="realtime-portfolio-suggestion-copy">
+                        <strong>{suggestion.name}</strong>
+                        <small>{suggestion.market} · {suggestion.security_type}</small>
+                      </span>
+                      {suggestion.already_tracked
+                        ? <em><Check size={12} /> Acompanhado</em>
+                        : <ChevronRight size={15} />}
+                    </button>
+                  ))}
+                  {!symbolSuggestions.length && !searchingSymbols && (
+                    <div className="realtime-portfolio-suggestion-empty">
+                      <Search size={15} />
+                      <span>{suggestionError || "Nenhum ativo encontrado"}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <button type="submit" disabled={!exactSymbolSuggestion || !!mutating} title="Selecione uma ação ou ETF válido">
+              <Plus size={16} />
+              <span>Adicionar</span>
+            </button>
+          </div>
+        </form> : <div className="realtime-portfolio-readonly"><ShieldCheck size={17} /><div><strong>Carteira protegida</strong><span>Inclusões são exclusivas do proprietário.</span></div></div>}
+      </div>
+
+      {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span></div>}
+      {!!snapshot?.errors.length && <div className="live-market-warning"><AlertTriangle size={14} /><span>{snapshot.errors.join(" · ")}</span></div>}
+
+      {loading && !snapshot ? <div className="realtime-portfolio-skeleton" /> : snapshot?.items.length ? (
+        <div className="realtime-portfolio-table">
+          <div className="realtime-portfolio-head">
+            <span>Asset</span><span>Market</span><span>Price</span><span>Change</span><span>Volume</span><span>Cash volume</span><span>Quote</span><span />
+          </div>
+          {snapshot.items.map((item) => (
+            <div className="realtime-portfolio-row" key={item.symbol}>
+              <div className="realtime-portfolio-company">
+                <div className="realtime-portfolio-company-logo"><CompanyLogo logoUrl={item.logo_url} symbol={item.symbol} /></div>
+                <div className="realtime-portfolio-company-text">
+                  <InstrumentPreviewTarget
+                    instrument={{ symbol: item.symbol, name: item.name, market: item.market }}
+                    className="realtime-portfolio-ticker-preview"
+                  >
+                    <strong>{item.symbol}</strong>
+                  </InstrumentPreviewTarget>
+                  <span>{item.name}</span>
+                </div>
+              </div>
+              {valuationMarketMarks[item.market] ? (
+                <img src={valuationMarketMarks[item.market]} alt={item.market} title={item.market} className="realtime-portfolio-market-logo" />
+              ) : (
+                <span className="realtime-portfolio-market">{item.market}</span>
+              )}
+              <strong className="realtime-portfolio-price">{item.status === "stale" ? "N/D" : formatCurrency(item.price, item.currency)}</strong>
+              {item.status === "stale" ? (
+                <span className="realtime-portfolio-change">N/D</span>
+              ) : (
+                <span className={`realtime-portfolio-change ${item.change_percent >= 0 ? "change-up" : "change-down"}`}>
+                  <DirectionIcon direction={item.change_percent >= 0 ? "up" : "down"} size={13} />{formatPercent(item.change_percent, 2)}
+                </span>
+              )}
+              <span className="realtime-portfolio-volume">{item.status === "stale" ? "N/D" : formatCompact(item.volume)}</span>
+              <span className="realtime-portfolio-cash">{item.status === "stale" ? "N/D" : formatCompact(item.cash_volume)}</span>
+              <div className="realtime-portfolio-quote"><span className={`market-state market-state-${item.status}`}>{item.status}</span><small>{formatDate(item.as_of)} · ~{item.delay_minutes}m</small></div>
+              {canDelete ? <button className="realtime-portfolio-delete" onClick={() => removeSymbol(item.symbol)} disabled={mutating === item.symbol} title={`Remover ${item.symbol}`} aria-label={`Remover ${item.symbol}`}>
+                <Trash2 size={15} />
+              </button> : <span className="realtime-portfolio-lock"><LockKeyhole size={14} /></span>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="realtime-portfolio-empty"><BriefcaseBusiness size={24} /><strong>Sua carteira em tempo real começa aqui</strong><span>Digite uma ação ou ETF da B3 ou dos mercados dos Estados Unidos, incluindo OTC.</span></div>
+      )}
+    </section>
+  );
+}
+
+const RealtimePortfolioIntradayPreview = forwardRef<HTMLDivElement, {
+  item: InstrumentPreviewDescriptor;
+  data?: RealtimePortfolioIntradayResponse;
+  loading: boolean;
+  error?: string;
+  position: { left: number; top: number; width: number };
+  pinned: boolean;
+  onClose: () => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}>(function RealtimePortfolioIntradayPreview({
+  item,
+  data,
+  loading,
+  error,
+  position,
+  pinned,
+  onClose,
+  onMouseEnter,
+  onMouseLeave
+}, ref) {
+  const chart = useMemo(() => {
+    if (!data?.points.length) return null;
+    const width = 354;
+    const height = 150;
+    const padding = { top: 10, right: 8, bottom: 23, left: 44 };
+    const prices = data.points.map((point) => point.price);
+    const rawMin = Math.min(...prices);
+    const rawMax = Math.max(...prices);
+    const spread = Math.max(rawMax - rawMin, rawMax * 0.002);
+    const min = rawMin - spread * 0.12;
+    const max = rawMax + spread * 0.12;
+    const plotWidth = width - padding.left - padding.right;
+    const plotHeight = height - padding.top - padding.bottom;
+    const coordinate = (point: RealtimePortfolioIntradayPoint, index: number) => ({
+      x: padding.left + (data.points.length === 1 ? plotWidth / 2 : index * plotWidth / (data.points.length - 1)),
+      y: padding.top + (max - point.price) * plotHeight / (max - min)
+    });
+    const coordinates = data.points.map(coordinate);
+    const line = coordinates.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+    const area = `${padding.left},${padding.top + plotHeight} ${line} ${padding.left + plotWidth},${padding.top + plotHeight}`;
+    const gridValues = [rawMax, (rawMax + rawMin) / 2, rawMin];
+    const timeIndexes = Array.from(new Set([0, Math.floor((data.points.length - 1) / 2), data.points.length - 1]));
+    return { width, height, padding, plotWidth, plotHeight, coordinates, line, area, gridValues, timeIndexes, rawMax, rawMin };
+  }, [data]);
+
+  return (
+    <div
+      ref={ref}
+      className={`realtime-intraday-preview ${pinned ? "realtime-intraday-preview-pinned" : ""}`}
+      style={position}
+      role="dialog"
+      aria-label={`Gráfico intradiário de ${item.symbol}`}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <div className="realtime-intraday-head">
+        <div>
+          <span>{data ? (data.series_kind === "daily" ? "Últimos 30 fechamentos" : `Sessão ${new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(new Date(`${data.session_date}T12:00:00`))}`) : "Gráfico intradiário"}</span>
+          <strong>{item.symbol}</strong>
+          <small>{item.name}</small>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Fechar gráfico"><X size={16} /></button>
+      </div>
+      {loading && !data ? (
+        <div className="realtime-intraday-loading"><RefreshCw className="spin" size={18} /><span>Carregando pregão...</span></div>
+      ) : error && !data ? (
+        <div className="realtime-intraday-error"><AlertTriangle size={18} /><span>{error}</span></div>
+      ) : data && chart ? (
+        <>
+          <div className="realtime-intraday-summary">
+            <div><span>Último</span><strong>{formatIntradayPrice(data.current, data.currency, data.market)}</strong></div>
+            <div className={data.change_percent >= 0 ? "change-up" : "change-down"}>
+              <DirectionIcon direction={data.change_percent >= 0 ? "up" : "down"} size={15} />
+              <strong>{formatPercent(data.change_percent, 2)}</strong><small>{data.series_kind === "daily" ? "vs. fechamento anterior" : "desde a abertura"}</small>
+            </div>
+          </div>
+          <div className="realtime-intraday-chart">
+            <svg viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label={`Evolução de ${item.symbol} ao longo do pregão`}>
+              {chart.gridValues.map((value, index) => {
+                const y = chart.padding.top + index * chart.plotHeight / 2;
+                return <g key={`${value}-${index}`}>
+                  <line x1={chart.padding.left} y1={y} x2={chart.padding.left + chart.plotWidth} y2={y} />
+                  <text x={chart.padding.left - 6} y={y + 3} textAnchor="end">{value.toFixed(2)}</text>
+                </g>;
+              })}
+              <polygon points={chart.area} />
+              <polyline points={chart.line} />
+              {chart.timeIndexes.map((index) => {
+                const point = chart.coordinates[index];
+                const time = new Intl.DateTimeFormat(
+                  "pt-BR",
+                  data.series_kind === "daily" ? { day: "2-digit", month: "2-digit" } : { hour: "2-digit", minute: "2-digit" }
+                ).format(new Date(data.points[index].as_of));
+                return <text className="realtime-intraday-time" key={`${time}-${index}`} x={point.x} y={chart.height - 5} textAnchor={index === 0 ? "start" : index === data.points.length - 1 ? "end" : "middle"}>{time}</text>;
+              })}
+              <circle cx={chart.coordinates.at(-1)?.x} cy={chart.coordinates.at(-1)?.y} r="4" />
+            </svg>
+          </div>
+          <div className="realtime-intraday-metrics">
+            <span>Low <strong>{formatIntradayPrice(data.low, data.currency, data.market)}</strong></span>
+            <span>High <strong>{formatIntradayPrice(data.high, data.currency, data.market)}</strong></span>
+            <span className={`market-state market-state-${data.status}`}>{data.status}</span>
+          </div>
+          <div className="realtime-intraday-source"><span>{data.source}</span><small>{data.series_kind === "daily" ? "diário · fechamento oficial" : `${data.interval_minutes}m · atraso ~${data.delay_minutes}m`}</small></div>
+        </>
+      ) : null}
+    </div>
+  );
+});
+
+function RealtimeLeaderTable({
+  title,
+  detail,
+  tone,
+  metric,
+  items,
+  market
+}: {
+  title: string;
+  detail: string;
+  tone: string;
+  metric: "volume" | "cash";
+  items: RealtimeMarketLeader[];
+  market: RealtimeMarketKey;
+}) {
+  return (
+    <section className={`panel realtime-leader-panel realtime-leader-${tone}`}>
+      <div className="realtime-leader-head">
+        <div><span>{title}</span><small>{detail}</small></div>
+        {tone === "positive" ? <TrendingUp size={18} /> : tone === "negative" ? <TrendingDown size={18} /> : <Activity size={18} />}
+      </div>
+      <div className="realtime-table-wrap">
+        <div className="realtime-table-head"><span>#</span><span>Company</span><span>Price</span><span>Change</span><span>{metric === "cash" ? "Cash" : "Volume"}</span></div>
+        {items.map((item, index) => (
+          <div className="realtime-table-row" key={item.symbol}>
+            <span className="realtime-rank">{index + 1}</span>
+            <div className="realtime-company">
+              <div className="realtime-symbol-line"><InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.name, market }}><strong>{item.symbol}</strong></InstrumentPreviewTarget><span className={`market-state market-state-${item.status}`}>{item.status}</span></div>
+              <span>{item.name}</span>
+            </div>
+            <strong className="realtime-price">{formatCurrency(item.price, item.currency)}</strong>
+            <span className={item.change_percent >= 0 ? "change-up" : "change-down"}>
+              <DirectionIcon direction={item.change_percent >= 0 ? "up" : "down"} size={13} />
+              {formatPercent(item.change_percent, 2)}
+            </span>
+            <strong className="realtime-volume">{formatCompact(metric === "cash" ? item.cash_volume : item.volume)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formatRealtimeNumber(value: number) {
+  return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+}
+
+function RealTimeLoading({ compact = false }: { compact?: boolean }) {
+  return <div className={`realtime-loading ${compact ? "realtime-loading-compact" : ""}`}>{Array.from({ length: compact ? 1 : 4 }).map((_, index) => <div key={index} />)}</div>;
+}
+
+function PortfolioView({ data, portfolio }: { data: CommandCenterData; portfolio: PortfolioItem[] }) {
+  return (
+    <div className="content-stack">
+      <div className="feature-strip">
+        <div><span>Billfish FIA</span><strong>{data.billfish.net_worth ?? "Not available"}</strong><small>Status {data.billfish.status ?? "pending"}</small></div>
+        <div><span>Daily change</span><strong className={data.billfish.daily_change?.startsWith("-") ? "negative-text" : "positive-text"}>{data.billfish.daily_change ?? "N/D"}</strong><small>{data.billfish.source ?? "Source pending"}</small></div>
+        <div><span>Net worth change</span><strong>{data.billfish.net_worth_change ?? "N/D"}</strong><small>Latest BTG snapshot</small></div>
+      </div>
+      <section className="panel">
+        <PanelHeader title="Portfolio Stocks" icon={BriefcaseBusiness} />
+        <div className="data-table">
+          <div className="data-table-head"><span>Company</span><span>Price</span><span>Change</span><span>Signal</span></div>
+          {portfolio.map((item) => (
+            <div className="data-table-row" key={item.symbol}>
+              <div className="company-cell"><div className="company-monogram">{item.symbol.slice(0, 2)}</div><InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.symbol }}><strong>{item.symbol}</strong></InstrumentPreviewTarget></div>
+              <strong>{item.price}</strong>
+              <span className={`change-${item.direction}`}><DirectionIcon direction={item.direction} />{item.change}</span>
+              <span className="status-label status-observe">Observe</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CandidatesView({ reports, marketProviders }: { reports: ReportItem[]; marketProviders: MarketDataProvider[] }) {
+  const [activeMarket, setActiveMarket] = useState<ResearchMarket>("B3");
+  const [screen, setScreen] = useState<B3CandidateResponse | null>(null);
+  const [screenLoading, setScreenLoading] = useState(true);
+  const [screenError, setScreenError] = useState("");
+  const screenRequestRef = useRef(0);
+
+  const loadScreen = useCallback(async (refresh = false) => {
+    const requestId = ++screenRequestRef.current;
+    setScreenLoading(true);
+    setScreenError("");
+    try {
+      const request = () => fetch(`${API_URL}/api/v1/candidates/${activeMarket.toLowerCase()}?refresh=${refresh ? "true" : "false"}`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      let response = await request();
+      if ([502, 503, 504].includes(response.status)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+        response = await request();
+      }
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Last Jedi is reconnecting to the valuation service. Please retry in a moment.");
+      }
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      if (requestId === screenRequestRef.current) setScreen(payload);
+    } catch (requestError) {
+      if (requestId === screenRequestRef.current) {
+        setScreenError(requestError instanceof Error ? requestError.message : "Screening unavailable");
+      }
+    } finally {
+      if (requestId === screenRequestRef.current) setScreenLoading(false);
+    }
+  }, [activeMarket]);
+
+  useEffect(() => {
+    setScreen(null);
+    loadScreen(false);
+  }, [loadScreen]);
+
+  const providerStatus = (code: MarketDataProvider["code"]) => {
+    const provider = marketProviders.find((item) => item.code === code);
+    if (!provider || provider.status === "unconfigured") return "Awaiting credential";
+    if (provider.status === "attention") return "Configured · validation pending";
+    return `Operational · ${provider.plan}`;
+  };
+  const coverage = [
+    { market: "B3", universe: "350", source: "Brapi Pro + BCB macro", status: providerStatus("brapi") },
+    { market: "NASDAQ", universe: "300", source: "EODHD + public coverage", status: providerStatus("eodhd") },
+    { market: "NYSE", universe: "300", source: "EODHD + public coverage", status: providerStatus("eodhd") },
+    { market: "ETFs", universe: "50", source: "EODHD fund data", status: providerStatus("eodhd") }
+  ];
+  return (
+    <div className="content-stack">
+      <section className="panel candidate-ranking-panel">
+        <div className="research-market-tabs" role="tablist" aria-label="Last Jedi markets">
+          {(["B3", "NASDAQ", "NYSE"] as ResearchMarket[]).map((market) => (
+            <button key={market} role="tab" aria-selected={activeMarket === market} className={activeMarket === market ? "active" : ""} onClick={() => setActiveMarket(market)}>{market}</button>
+          ))}
+        </div>
+        <PanelHeader title={`Top 10 ${activeMarket}`} icon={Target} />
+        <div className="screen-summary-bar">
+          <div><span>Universe</span><strong>{screen?.universe_size ?? (activeMarket === "B3" ? 350 : 325)}</strong><small>{activeMarket === "B3" ? "liquid stocks" : "stocks + ETFs"}</small></div>
+          <div><span>Strict matches</span><strong>{screen?.items.length ?? "—"}</strong><small>{screen ? `${screen.eligible_count} passed data gates` : "hard entry gates"}</small></div>
+          <div><span>Methodology</span><strong>{screen ? `v${screen.methodology_version}` : "—"}</strong><small>{screen?.methodology ?? "C3PO canonical valuation"}</small></div>
+          <div><span>Source</span><strong>{screen?.source ?? (activeMarket === "B3" ? "Brapi Pro" : "EODHD All-In-One")}</strong><small>{screen ? formatDate(screen.generated_at) : "loading"}</small></div>
+          <button className="screen-refresh" onClick={() => loadScreen(true)} disabled={screenLoading} title={`Recarregar o ultimo screening diario da ${activeMarket}`}>
+            <RefreshCw size={16} className={screenLoading ? "spin" : ""} />
+            <span>{screenLoading ? "Updating" : "Refresh"}</span>
+          </button>
+        </div>
+
+        {screenError && <div className="screen-error"><AlertTriangle size={17} /><span>{screenError}</span><button onClick={() => loadScreen(true)}>Retry</button></div>}
+        {screenLoading && !screen ? <CandidateTableLoading /> : screen && screen.items.length === 0 ? (
+          <div className="candidate-empty-state">
+            No company currently clears every Power Zone, confidence, dispersion and entry gate in today's validated snapshot.
+          </div>
+        ) : screen && (
+          <div className="candidate-live-table-wrap">
+            <table className="candidate-live-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Company</th>
+                  <th>Price</th>
+                  <th>C3PO TP</th>
+                  <th>Buy-in</th>
+                  <th>Multiples</th>
+                  <th>Score / Risk</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {screen.items.map((item) => (
+                  <tr key={item.symbol}>
+                    <td><span className="candidate-rank">{String(item.rank).padStart(2, "0")}</span></td>
+                    <td>
+                      <div className="candidate-company">
+                        <div className="candidate-logo">
+                          <CompanyLogo logoUrl={item.logo_url} symbol={item.symbol} />
+                        </div>
+                        <div className={item.security_type === "ETF" ? "candidate-etf" : ""}><InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.name, market: activeMarket }}><strong>{item.symbol}</strong></InstrumentPreviewTarget><span>{item.name}</span><small title={`${item.sector_source ?? "Sector source pending"} · confidence ${item.sector_confidence?.toFixed(0) ?? "N/D"}/100`}>{item.security_type} · {item.valuation_profile} · {item.sector}</small></div>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="candidate-number"><strong>{formatResearchPrice(item.price, activeMarket)}</strong><span className={(item.change_percent ?? 0) >= 0 ? "change-up" : "change-down"}><DirectionIcon direction={(item.change_percent ?? 0) > 0 ? "up" : (item.change_percent ?? 0) < 0 ? "down" : "flat"} />{formatPercent(item.change_percent)}</span></div>
+                    </td>
+                    <td>
+                      <div className="candidate-number candidate-target">
+                        <strong>{formatResearchPrice(item.our_tp, activeMarket)}</strong><span>{formatPercent(item.upside_percent)}</span>
+                        <small>TP validated {item.tp_validation_score.toFixed(0)}/100{item.consensus_gap_percent !== null ? ` · gap ${item.consensus_gap_percent.toFixed(1)}%` : ""}</small>
+                        <small>Internal {formatResearchPrice(item.internal_tp, activeMarket)} · {(100 - item.consensus_weight_percent).toFixed(0)}%</small>
+                        <small>Expected 12M {formatPercent(item.expected_total_return_percent)}</small>
+                        {item.public_consensus_tp ? <small>Consensus {formatResearchPrice(item.public_consensus_tp, activeMarket)} · {item.consensus_weight_percent.toFixed(0)}%{item.analyst_count ? ` · ${item.analyst_count} analysts` : ""}</small> : <small>{item.security_type === "ETF" ? "ETF model · no analyst consensus" : "Consensus unavailable · 0%"}</small>}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="candidate-number" title={Object.entries(item.buy_in_models).map(([name, value]) => `${name}: ${formatResearchPrice(value, activeMarket)}`).join(" · ")}><strong>{formatResearchPrice(item.buy_in, activeMarket)}</strong><span className={item.price_vs_buy_in_percent <= 15 ? "entry-near" : "entry-far"}>{formatPercent(item.price_vs_buy_in_percent)} vs entry</span><small>{item.security_type === "ETF" ? "Fund + market entry" : "Fundamental + market entry"}</small></div>
+                    </td>
+                    <td>
+                      <div className="candidate-multiples" title={`ADTV 90d ${formatResearchPrice(item.average_daily_value_90d ?? 0, activeMarket)} · P/B ${formatMultiple(item.price_to_book)} · ROE ${formatPercent(item.roe_percent)} · FCF yield ${formatPercent(item.fcf_yield_percent)}`}>
+                        <span>P/E <strong>{formatMultiple(item.pe)}</strong></span>
+                        <span>FWRD P/E <strong>{formatMultiple(item.forward_pe)}</strong></span>
+                        <span>EV/EBITDA <strong>{formatMultiple(item.ev_ebitda)}</strong></span>
+                        <span>PEG <strong>{formatMultiple(item.peg)}</strong></span>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="candidate-score" title={`Power Score ${item.score}/100 · Risk ${item.risk_score}/100 · TP validation ${item.tp_validation_score}/100 · Confidence ${item.valuation_confidence}/100 · Source agreement ${item.source_agreement_percent}% · ${item.data_source_count} sources · Dispersion ${item.method_dispersion_percent}%`}><strong>{item.score.toFixed(1)}</strong><span><i style={{ width: `${item.score}%` }} /></span><small>Risk {item.risk_score.toFixed(1)} · TP valid {item.tp_validation_score.toFixed(0)}</small></div>
+                    </td>
+                    <td>
+                      <span className={`candidate-status candidate-status-${item.status}`} title={`${item.thesis} ${item.risk}`}>
+                        {item.status === "full_match" ? "Full match" : item.status === "near_buy" ? "Near buy" : "Watchlist"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="screen-method-note">
+          <ShieldCheck size={16} />
+          <span>{screen ? `${screen.methodology} v${screen.methodology_version}` : "C3PO valuation model"}: official disclosures and market evidence are reconciled before the nightly valuation. Last Jedi remains restricted to independently validated C3PO Target Prices, ordered by upside.</span>
+          {screen && screen.items.length > 0 && <small>As of {formatDate(screen.items[0]?.as_of)} · Market cap leader {formatCompact(Math.max(...screen.items.map((item) => item.market_cap ?? 0)))}</small>}
+        </div>
+      </section>
+
+      <section className="panel">
+        <PanelHeader title="Screening Coverage" icon={Target} />
+        <div className="data-table candidate-table">
+          <div className="data-table-head"><span>Market</span><span>Universe</span><span>Primary source</span><span>Status</span></div>
+          {coverage.map((item) => (
+            <div className="data-table-row" key={item.market}>
+              <strong>{item.market}</strong><span>{item.universe}</span><span>{item.source}</span><span className={`status-label ${item.status.startsWith("Operational") ? "status-ok" : "status-pending"}`}>{item.status}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="panel">
+        <PanelHeader title="Methodology Ledger" icon={ShieldCheck} />
+        <div className="ledger-grid">
+          <div><span>Canonical model</span><strong>Dark Side · Power Zone</strong></div>
+          <div><span>Selection order</span><strong>Power Zone, then C3PO TP upside descending</strong></div>
+          <div><span>TP upside gate</span><strong>{screen?.criteria.tp_upside ?? "C3PO TP upside >= Selic + 6 p.p."}</strong></div>
+          <div><span>Risk gate</span><strong>{screen?.criteria.risk ?? "Below eligible-universe median"}</strong></div>
+          <div><span>Confidence gate</span><strong>{screen?.criteria.confidence ?? "Confidence and method agreement"}</strong></div>
+          <div><span>Buy-in framework</span><strong>Five institutional lenses + market structure</strong></div>
+          <div><span>Valuation model</span><strong>Five sector-adapted methods</strong></div>
+          <div><span>Power Score weights</span><strong>{screen?.criteria.score ?? "Return · risk · quality · confidence · entry"}</strong></div>
+          <div><span>Published snapshots</span><strong>{reports.filter((report) => report.name.includes("summary")).length}</strong></div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MatrixPowerView() {
+  const [activeMarket, setActiveMarket] = useState<ResearchMarket>("B3");
+  const [matrix, setMatrix] = useState<MatrixPowerResponse | null>(null);
+  const [matrixLoading, setMatrixLoading] = useState(true);
+  const [matrixError, setMatrixError] = useState("");
+  const [activeQuadrant, setActiveQuadrant] = useState<"all" | MatrixQuadrant>("all");
+  const [signalFilter, setSignalFilter] = useState<"all" | "validated" | "provisional">("all");
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const [movements, setMovements] = useState<{ symbol: string; from: MatrixQuadrant; to: MatrixQuadrant }[]>([]);
+  const matrixRef = useRef<MatrixPowerResponse | null>(null);
+  const mountedRef = useRef(true);
+  const matrixRequestRef = useRef(0);
+
+  const loadMatrix = useCallback(async () => {
+    const requestId = ++matrixRequestRef.current;
+    if (!matrixRef.current) setMatrixLoading(true);
+    setMatrixError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/matrix-power/${activeMarket.toLowerCase()}`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      if (!mountedRef.current || requestId !== matrixRequestRef.current) return;
+      const previous = matrixRef.current;
+      if (previous) {
+        const previousQuadrants = new Map(previous.items.map((item) => [item.symbol, item.quadrant]));
+        setMovements(payload.items
+          .filter((item: MatrixPowerItem) => previousQuadrants.has(item.symbol) && previousQuadrants.get(item.symbol) !== item.quadrant)
+          .map((item: MatrixPowerItem) => ({ symbol: item.symbol, from: previousQuadrants.get(item.symbol) as MatrixQuadrant, to: item.quadrant }))
+          .slice(0, 8));
+      }
+      matrixRef.current = payload;
+      setMatrix(payload);
+    } catch (requestError) {
+      if (mountedRef.current && requestId === matrixRequestRef.current) {
+        setMatrixError(requestError instanceof Error ? requestError.message : "Dark Side unavailable");
+      }
+    } finally {
+      if (mountedRef.current && requestId === matrixRequestRef.current) setMatrixLoading(false);
+    }
+  }, [activeMarket]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    matrixRef.current = null;
+    setMatrix(null);
+    setSelectedSymbol(null);
+    setMovements([]);
+    loadMatrix();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadMatrix();
+    }, 60_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") loadMatrix();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      mountedRef.current = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [loadMatrix]);
+
+  const counts = useMemo(() => {
+    const output: Record<MatrixQuadrant, number> = {
+      high_return_low_risk: 0,
+      high_return_high_risk: 0,
+      low_return_low_risk: 0,
+      low_return_high_risk: 0
+    };
+    matrix?.items.forEach((item) => { output[item.quadrant] += 1; });
+    return output;
+  }, [matrix]);
+
+  const visibleItems = useMemo(() => {
+    if (!matrix) return [];
+    return matrix.items.filter((item) => (
+      (activeQuadrant === "all" || item.quadrant === activeQuadrant)
+      && (signalFilter === "all" || item.signal_quality === signalFilter)
+    ));
+  }, [activeQuadrant, matrix, signalFilter]);
+
+  const selectedItem = useMemo(() => {
+    if (!visibleItems.length) return null;
+    return visibleItems.find((item) => item.symbol === selectedSymbol)
+      ?? [...visibleItems].sort((left, right) => right.power_score - left.power_score)[0];
+  }, [selectedSymbol, visibleItems]);
+
+  const latestQuote = useMemo(() => {
+    if (!matrix?.items.length) return matrix?.generated_at;
+    return matrix.items.reduce((latest, item) => new Date(item.as_of) > new Date(latest) ? item.as_of : latest, matrix.items[0].as_of);
+  }, [matrix]);
+
+  return (
+    <div className="content-stack matrix-power-view">
+      <section className="panel matrix-control-panel">
+        <div className="research-market-tabs" role="tablist" aria-label="Dark Side markets">
+          {(["B3", "NASDAQ", "NYSE"] as ResearchMarket[]).map((market) => (
+            <button key={market} role="tab" aria-selected={activeMarket === market} className={activeMarket === market ? "active" : ""} onClick={() => setActiveMarket(market)}>
+              <img src={valuationMarketMarks[market]} alt="" className="research-market-tab-logo" />
+              {market}
+            </button>
+          ))}
+        </div>
+        <PanelHeader title={`${activeMarket} Dark Side`} icon={DarkSideIcon} />
+        <div className="matrix-summary-bar">
+          <div><span>Universe</span><strong>{matrix?.universe_size ?? (activeMarket === "B3" ? 350 : 325)}</strong><small>{activeMarket === "B3" ? "B3 liquid stocks" : `${activeMarket} stocks + ETFs`}</small></div>
+          <div><span>Calculated TPs</span><strong>{matrix?.coverage_audit?.calculated_tp ?? matrix?.source_eligible_count ?? "—"}</strong><small>{matrix?.source_eligible_count ?? "—"} cleared source gates</small></div>
+          <div><span>Validated</span><strong>{matrix?.validated_count ?? "—"}</strong><small>eligible for Last Jedi</small></div>
+          <div><span>Provisional</span><strong>{matrix?.provisional_count ?? "—"}</strong><small>Dark Side only · review required</small></div>
+          <div><span>C3PO TP upside hurdle</span><strong>{matrix ? formatPercent(matrix.tp_upside_cutoff_percent) : "Selic + 6 p.p."}</strong><small>Expected Return is analytical only</small></div>
+          <div><span>Risk divider</span><strong>{matrix?.risk_cutoff.toFixed(1) ?? "—"}</strong><small>min(40, filtered-universe median)</small></div>
+          <div className="matrix-live-cell"><span><i /> Live Dark Side</span><strong>{formatDate(latestQuote)}</strong><small>auto · 60s · delayed {matrix?.provider_delay_minutes ?? 5}m</small></div>
+        </div>
+        <div className="matrix-segments" role="group" aria-label="Filter Dark Side quadrants">
+          <button className={activeQuadrant === "all" ? "active" : ""} onClick={() => setActiveQuadrant("all")}>All <span>{matrix?.item_count ?? 0}</span></button>
+          {matrixQuadrants.map((quadrant) => (
+            <button key={quadrant.key} className={`${activeQuadrant === quadrant.key ? "active" : ""} segment-${quadrant.key}`} onClick={() => setActiveQuadrant(quadrant.key)}>
+              {quadrant.shortLabel} <span>{counts[quadrant.key]}</span>
+            </button>
+          ))}
+          <span className="matrix-segment-divider" />
+          <button className={signalFilter === "all" ? "active" : ""} onClick={() => setSignalFilter("all")}>All evidence <span>{matrix?.item_count ?? 0}</span></button>
+          <button className={`matrix-quality-validated ${signalFilter === "validated" ? "active" : ""}`} onClick={() => setSignalFilter("validated")}>Validated <span>{matrix?.validated_count ?? 0}</span></button>
+          <button className={`matrix-quality-provisional ${signalFilter === "provisional" ? "active" : ""}`} onClick={() => setSignalFilter("provisional")}>Provisional <span>{matrix?.provisional_count ?? 0}</span></button>
+        </div>
+        {matrixError && <div className="screen-error"><AlertTriangle size={17} /><span>{matrixError}</span></div>}
+      </section>
+
+      {matrixLoading && !matrix ? <MatrixPowerLoading /> : matrix && (
+        <section className="matrix-workspace">
+          <div className="matrix-stage-scroll">
+            <div className="matrix-stage" aria-label={`Live ${activeMarket} Dark Side risk-return quadrant`}>
+              <div className="matrix-zone matrix-zone-power"><strong>POWER ZONE</strong><span>High TP upside · Low risk</span><b>{counts.high_return_low_risk}</b></div>
+              <div className="matrix-zone matrix-zone-aggressive"><strong>AGGRESSIVE</strong><span>High TP upside · High risk</span><b>{counts.high_return_high_risk}</b></div>
+              <div className="matrix-zone matrix-zone-defensive"><strong>DEFENSIVE</strong><span>Low TP upside · Low risk</span><b>{counts.low_return_low_risk}</b></div>
+              <div className="matrix-zone matrix-zone-avoid"><strong>AVOID ZONE</strong><span>Low TP upside · High risk</span><b>{counts.low_return_high_risk}</b></div>
+              <div className="matrix-line matrix-line-vertical"><span>Risk {matrix.risk_cutoff.toFixed(1)}</span></div>
+              <div className="matrix-line matrix-line-horizontal"><span>TP upside {formatPercent(matrix.tp_upside_cutoff_percent)}</span></div>
+              <span className="matrix-axis matrix-axis-return">C3PO TP UPSIDE</span>
+              <span className="matrix-axis matrix-axis-risk">RISK SCORE</span>
+              {visibleItems.map((item) => {
+                const moved = movements.some((movement) => movement.symbol === item.symbol);
+                return (
+                  <button
+                    key={item.symbol}
+                    className={`matrix-node node-${item.quadrant} ${item.signal_quality === "provisional" ? "matrix-node-provisional" : ""} ${selectedItem?.symbol === item.symbol ? "matrix-node-selected" : ""} ${moved ? "matrix-node-moved" : ""}`}
+                    style={{ left: `${item.x_percent}%`, bottom: `${item.y_percent}%` }}
+                    onClick={() => setSelectedSymbol(item.symbol)}
+                    title={`${item.symbol} · ${formatResearchPrice(item.price, activeMarket)} · TP upside ${formatPercent(item.tp_upside_percent)} · risco ${item.risk_score.toFixed(1)} · ${item.signal_quality === "validated" ? "valuation validado" : "valuation provisório"}`}
+                    aria-label={`${item.symbol}, C3PO TP upside ${item.tp_upside_percent.toFixed(1)} percent, risk ${item.risk_score.toFixed(1)}`}
+                  >
+                    <InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.name, market: activeMarket }} nested pinOnClick={false} showIcon={false}><span className={item.security_type === "ETF" ? "matrix-etf-symbol" : ""} style={{ fontSize: item.symbol.length > 4 ? "6px" : "7px" }}>{item.symbol}</span></InstrumentPreviewTarget>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <aside className="matrix-inspector">
+            {selectedItem && (
+              <>
+                <header>
+                  <div className="matrix-inspector-logo"><CompanyLogo logoUrl={selectedItem.logo_url} symbol={selectedItem.symbol} /></div>
+                  <div><span>{selectedItem.security_type} · {selectedItem.signal_quality === "validated" ? "Validated signal" : "Provisional analysis"}</span><InstrumentPreviewTarget instrument={{ symbol: selectedItem.symbol, name: selectedItem.name, market: activeMarket }}><strong className={selectedItem.security_type === "ETF" ? "matrix-etf-symbol" : ""}>{selectedItem.symbol}</strong></InstrumentPreviewTarget><small>{selectedItem.name}</small></div>
+                </header>
+                <div className={`matrix-quadrant-tag tag-${selectedItem.quadrant}`}>{matrixQuadrants.find((item) => item.key === selectedItem.quadrant)?.label}</div>
+                <dl className="matrix-inspector-grid">
+                  <div><dt>Price</dt><dd>{formatResearchPrice(selectedItem.price, activeMarket)} <span className={(selectedItem.change_percent ?? 0) >= 0 ? "change-up" : "change-down"}>{formatPercent(selectedItem.change_percent)}</span></dd></div>
+                  <div><dt>C3PO TP upside</dt><dd>{formatPercent(selectedItem.tp_upside_percent)}</dd></div>
+                  <div><dt>Expected return 12M</dt><dd>{formatPercent(selectedItem.expected_return_percent)}</dd></div>
+                  <div><dt>Risk score</dt><dd>{selectedItem.risk_score.toFixed(1)}</dd></div>
+                  <div><dt>Power score</dt><dd>{selectedItem.power_score.toFixed(1)}</dd></div>
+                  <div><dt>Valuation confidence</dt><dd>{selectedItem.valuation_confidence.toFixed(1)}</dd></div>
+                  <div><dt>Sector / peer group</dt><dd title={selectedItem.industry ?? undefined}>{selectedItem.sector}<span>{selectedItem.peer_group ? ` · ${selectedItem.peer_group}` : ""}</span></dd></div>
+                  <div><dt>Sector validation</dt><dd>{selectedItem.sector_confidence?.toFixed(0) ?? "N/D"}/100 <span>{selectedItem.sector_source ?? "Pending"}</span></dd></div>
+                  <div><dt>TP validation</dt><dd className={selectedItem.signal_quality === "validated" ? "positive-text" : "warning-text"}>{selectedItem.tp_validation_score.toFixed(1)}/100</dd></div>
+                  <div><dt>Valuation methods</dt><dd>{selectedItem.internal_method_count} internal · {selectedItem.valuation_method_count} total</dd></div>
+                  <div><dt>Method dispersion</dt><dd>{formatPercent(selectedItem.method_dispersion_percent)}</dd></div>
+                  <div><dt>Source evidence</dt><dd>{selectedItem.data_source_count} sources</dd></div>
+                  <div><dt>Source agreement</dt><dd>{selectedItem.source_agreement_percent.toFixed(1)}%</dd></div>
+                  <div><dt>Valuation signal</dt><dd className={selectedItem.signal_quality === "validated" ? "positive-text" : "negative-text"}>{selectedItem.signal_quality === "validated" ? "Validated" : "Provisional"}</dd></div>
+                  <div><dt>C3PO TP</dt><dd>{formatResearchPrice(selectedItem.our_tp, activeMarket)}</dd></div>
+                  <div><dt>Internal model</dt><dd>{formatResearchPrice(selectedItem.internal_tp, activeMarket)} <span>{(100 - selectedItem.consensus_weight_percent).toFixed(0)}%</span></dd></div>
+                  <div><dt>Market consensus</dt><dd>{selectedItem.public_consensus_tp !== null ? formatResearchPrice(selectedItem.public_consensus_tp, activeMarket) : selectedItem.security_type === "ETF" ? "ETF model" : "N/D"} <span>{selectedItem.consensus_weight_percent.toFixed(0)}%{selectedItem.analyst_count ? ` · ${selectedItem.analyst_count} analysts` : ""}</span></dd></div>
+                  <div><dt>Internal/consensus gap</dt><dd>{selectedItem.consensus_gap_percent !== null ? formatPercent(selectedItem.consensus_gap_percent) : "N/D"}</dd></div>
+                  <div><dt>Buy-in</dt><dd>{formatResearchPrice(selectedItem.buy_in, activeMarket)}</dd></div>
+                  <div><dt>Beta</dt><dd>{selectedItem.beta?.toFixed(2) ?? "N/D"}</dd></div>
+                  <div><dt>Volatility 90d</dt><dd>{selectedItem.volatility_90d_percent !== null ? formatPercent(selectedItem.volatility_90d_percent) : "N/D"}</dd></div>
+                </dl>
+                {selectedItem.signal_quality === "provisional" && selectedItem.tp_validation_reasons.length > 0 && (
+                  <div className="matrix-evidence-gaps" title={selectedItem.tp_validation_reasons.join(" · ")}>
+                    <AlertTriangle size={13} />
+                    <span>{selectedItem.tp_validation_reasons.slice(0, 2).join(" · ")}</span>
+                  </div>
+                )}
+                <footer><Clock3 size={14} /><span>Quote {formatDate(selectedItem.as_of)}</span></footer>
+              </>
+            )}
+          </aside>
+        </section>
+      )}
+
+      {matrix && (
+        <>
+          <section className="matrix-foot-grid">
+            <div className="panel matrix-method-card"><PanelHeader title={`Dark Side Method · v${matrix.methodology_version}`} icon={ShieldCheck} /><p>{matrix.methodology.return}</p><p>{matrix.methodology.confidence}</p></div>
+            <div className="panel matrix-movement-card"><PanelHeader title="Quadrant Moves" icon={Activity} />
+              {movements.length ? <div>{movements.map((movement) => {
+                const instrument = matrix.items.find((item) => item.symbol === movement.symbol);
+                return (
+                  <span key={movement.symbol}>
+                    <strong>
+                      {instrument ? (
+                        <InstrumentPreviewTarget
+                          instrument={{ symbol: instrument.symbol, name: instrument.name, market: activeMarket }}
+                          nested
+                          pinOnClick={false}
+                        >
+                          {movement.symbol}
+                        </InstrumentPreviewTarget>
+                      ) : movement.symbol}
+                    </strong>
+                    {matrixQuadrants.find((item) => item.key === movement.from)?.shortLabel} → {matrixQuadrants.find((item) => item.key === movement.to)?.shortLabel}
+                  </span>
+                );
+              })}</div> : <p>No quadrant changes in this session.</p>}
+            </div>
+          </section>
+          <section className="panel matrix-coverage-panel">
+            <PanelHeader title="Coverage Audit" icon={Target} />
+            <div className="matrix-coverage-grid">
+              <div><span>Missing quote</span><strong>{matrix.coverage_audit.missing_quote ?? 0}</strong></div>
+              <div><span>History gate</span><strong>{matrix.coverage_audit.insufficient_history ?? 0}</strong></div>
+              <div><span>Size gate</span><strong>{matrix.coverage_audit.market_cap_gate ?? 0}</strong></div>
+              <div><span>Liquidity gate</span><strong>{matrix.coverage_audit.liquidity_gate ?? 0}</strong></div>
+              <div><span>Fundamental gate</span><strong>{matrix.coverage_audit.fundamental_quality_gate ?? 0}</strong></div>
+              <div><span>Valuation review</span><strong>{matrix.coverage_audit.valuation_review ?? 0}</strong></div>
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+type ChewieGroup = "multiples" | "profitability" | "leverage" | "growth";
+
+const chewieGroups: { key: ChewieGroup; label: string }[] = [
+  { key: "multiples", label: "Multiples" },
+  { key: "profitability", label: "Profitability" },
+  { key: "leverage", label: "Leverage & liquidity" },
+  { key: "growth", label: "Growth" },
+];
+
+function ChewieFundamentalsView() {
+  const [activeMarket, setActiveMarket] = useState<ResearchMarket>("B3");
+  const [activeGroup, setActiveGroup] = useState<ChewieGroup>("multiples");
+  const [data, setData] = useState<ChewieFundamentalsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<ChewieFundamentalsItem[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const requestRef = useRef(0);
+  const searchRequestRef = useRef(0);
+
+  const load = useCallback(async () => {
+    const requestId = ++requestRef.current;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/chewie-fundamentals/${activeMarket.toLowerCase()}`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      if (requestId === requestRef.current) setData(payload);
+    } catch (requestError) {
+      if (requestId === requestRef.current) {
+        setError(requestError instanceof Error ? requestError.message : "Chewie Fundamentals unavailable");
+      }
+    } finally {
+      if (requestId === requestRef.current) setLoading(false);
+    }
+  }, [activeMarket]);
+
+  useEffect(() => {
+    setData(null);
+    setQuery("");
+    setSearchResults(null);
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    const clean = query.trim();
+    if (clean.length < 2) {
+      setSearchResults(null);
+      setSearchError("");
+      setSearchLoading(false);
+      return;
+    }
+    const requestId = ++searchRequestRef.current;
+    setSearchLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `${API_URL}/api/v1/chewie-fundamentals/${activeMarket.toLowerCase()}/search?q=${encodeURIComponent(clean)}`,
+          { cache: "no-store", credentials: "include" }
+        );
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+        if (requestId === searchRequestRef.current) {
+          setSearchResults((payload as ChewieSearchResponse).items);
+          setSearchError("");
+        }
+      } catch (requestError) {
+        if (requestId === searchRequestRef.current) {
+          setSearchResults([]);
+          setSearchError(requestError instanceof Error ? requestError.message : "Busca indisponível");
+        }
+      } finally {
+        if (requestId === searchRequestRef.current) setSearchLoading(false);
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [activeMarket, query]);
+
+  const pdfUrl = (item: ChewieFundamentalsItem) =>
+    `${API_URL}/api/v1/chewie-fundamentals/${activeMarket.toLowerCase()}/${encodeURIComponent(item.symbol)}/report.pdf`;
+
+  return (
+    <div className="content-stack">
+      <section className="panel candidate-ranking-panel">
+        <div className="research-market-tabs" role="tablist" aria-label="Chewie Fundamentals markets">
+          {(["B3", "NASDAQ", "NYSE"] as ResearchMarket[]).map((market) => (
+            <button key={market} role="tab" aria-selected={activeMarket === market} className={activeMarket === market ? "active" : ""} onClick={() => setActiveMarket(market)}>
+              <img src={valuationMarketMarks[market]} alt="" className="research-market-tab-logo" />
+              {market}
+            </button>
+          ))}
+        </div>
+        <PanelHeader title={`${activeMarket} Chewie Fundamentals`} icon={ChewieFundamentalsIcon} />
+        <div className="chewie-summary-bar">
+          <div><span>Universo</span><strong>{data?.universe_size ?? "—"}</strong><small>{data?.covered_count ?? "—"} com fundamentos</small></div>
+          <div><span>Exibindo</span><strong>Top {data?.items.length ?? 30}</strong><small>por market cap · busque o resto</small></div>
+          <div><span>Fonte</span><strong>{data?.source ?? "EODHD + screener blend"}</strong><small>{data ? `1x ao dia · ${formatDate(data.generated_at)}` : "loading"}</small></div>
+          <button className="screen-refresh" onClick={() => load()} disabled={loading} title="Recarregar o snapshot diário">
+            <RefreshCw size={16} className={loading ? "spin" : ""} />
+            <span>{loading ? "Updating" : "Reload"}</span>
+          </button>
+        </div>
+        <div className="chewie-search-bar">
+          <Search size={15} />
+          <input
+            type="search"
+            value={query}
+            placeholder={`Buscar qualquer ação da ${activeMarket} por ticker ou nome...`}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="Buscar ação"
+          />
+          {searchLoading && <RefreshCw size={14} className="spin" />}
+        </div>
+        {query.trim().length >= 2 && (
+          <div className="chewie-search-results">
+            {searchError && <div className="screen-error"><AlertTriangle size={17} /><span>{searchError}</span></div>}
+            {!searchError && searchResults && searchResults.length === 0 && !searchLoading && (
+              <div className="chewie-search-empty">Nenhuma ação encontrada para “{query.trim()}” na {activeMarket}.</div>
+            )}
+            {searchResults?.map((item) => (
+              <div className="chewie-search-hit" key={item.symbol}>
+                <div className="chewie-company">
+                  <div className="chewie-logo">
+                    {item.logo_url ? <img src={item.logo_url} alt="" /> : <span>{item.symbol.slice(0, 2)}</span>}
+                  </div>
+                  <div>
+                    <strong>{item.symbol}{!item.from_universe && <em className="chewie-outside-badge">fora do universo</em>}</strong>
+                    <span>{item.name} · {item.sector}</span>
+                  </div>
+                </div>
+                <div className="chewie-search-metrics">
+                  <span>P/L <strong>{formatMultiple(item.multiples.pe)}</strong></span>
+                  <span>ROE <strong>{formatPercent(item.profitability.roe_percent)}</strong></span>
+                  <span>MC <strong>{formatCompactMoney(item.market_cap, activeMarket)}</strong></span>
+                </div>
+                <a className="chewie-pdf-button" href={pdfUrl(item)} target="_blank" rel="noreferrer" title={`Gerar PDF de fundamentos de ${item.symbol}`}>
+                  <FileChartColumn size={15} />
+                  <span>Gerar PDF</span>
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="chewie-group-tabs" role="tablist" aria-label="Fundamentals category">
+          {chewieGroups.map((group) => (
+            <button key={group.key} role="tab" aria-selected={activeGroup === group.key} className={activeGroup === group.key ? "active" : ""} onClick={() => setActiveGroup(group.key)}>
+              {group.label}
+            </button>
+          ))}
+        </div>
+        {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => load()}>Retry</button></div>}
+        {loading && !data ? <CandidateTableLoading /> : data && data.items.length === 0 ? (
+          <div className="candidate-empty-state">No fundamentals coverage for {activeMarket} yet.</div>
+        ) : data && (
+          <div className="chewie-table-wrap">
+            <table className="chewie-table">
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  {activeGroup === "multiples" && <><th>P/E</th><th>Fwd P/E</th><th>EV/EBITDA</th><th>PEG</th><th>P/B</th><th>Div. yield</th></>}
+                  {activeGroup === "profitability" && <><th>ROE</th><th>ROA</th><th>Profit margin</th><th>Op. margin</th><th>EBITDA margin</th></>}
+                  {activeGroup === "leverage" && <><th>Debt/Equity</th><th>Net debt/EBITDA</th><th>Total cash</th><th>Total debt</th></>}
+                  {activeGroup === "growth" && <><th>Revenue growth</th><th>Earnings growth</th></>}
+                  <th>Market cap</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((item) => (
+                  <tr key={item.symbol}>
+                    <td>
+                      <div className="chewie-company">
+                        <div className="chewie-logo">
+                          {item.logo_url ? <img src={item.logo_url} alt="" /> : <span>{item.symbol.slice(0, 2)}</span>}
+                        </div>
+                        <div>
+                          <strong>{item.symbol}</strong>
+                          <span>{item.name} · {item.sector}</span>
+                        </div>
+                      </div>
+                    </td>
+                    {activeGroup === "multiples" && <>
+                      <td>{formatMultiple(item.multiples.pe)}</td>
+                      <td>{formatMultiple(item.multiples.forward_pe)}</td>
+                      <td>{formatMultiple(item.multiples.ev_ebitda)}</td>
+                      <td>{formatMultiple(item.multiples.peg)}</td>
+                      <td>{formatMultiple(item.multiples.price_to_book)}</td>
+                      <td>{formatPercent(item.multiples.dividend_yield_percent)}</td>
+                    </>}
+                    {activeGroup === "profitability" && <>
+                      <td>{formatPercent(item.profitability.roe_percent)}</td>
+                      <td>{formatPercent(item.profitability.roa_percent)}</td>
+                      <td>{formatPercent(item.profitability.profit_margin_percent)}</td>
+                      <td>{formatPercent(item.profitability.operating_margin_percent)}</td>
+                      <td>{formatPercent(item.profitability.ebitda_margin_percent)}</td>
+                    </>}
+                    {activeGroup === "leverage" && <>
+                      <td>{formatMultiple(item.leverage.debt_to_equity)}</td>
+                      <td>{formatMultiple(item.leverage.net_debt_to_ebitda)}</td>
+                      <td>{formatCompactMoney(item.leverage.total_cash, activeMarket)}</td>
+                      <td>{formatCompactMoney(item.leverage.total_debt, activeMarket)}</td>
+                    </>}
+                    {activeGroup === "growth" && <>
+                      <td>{formatPercent(item.growth.revenue_growth_percent)}</td>
+                      <td>{formatPercent(item.growth.earnings_growth_percent)}</td>
+                    </>}
+                    <td>{formatCompactMoney(item.market_cap, activeMarket)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function MatrixPowerLoading() {
+  return <div className="matrix-loading"><div /><aside /></div>;
+}
+
+function CandidateTableLoading() {
+  return <div className="candidate-loading" aria-label="Loading B3 screening">{Array.from({ length: 10 }).map((_, index) => <span key={index} />)}</div>;
+}
+
+function OnePagerView({ canGenerate }: { canGenerate: boolean }) {
+  const [symbol, setSymbol] = useState(() => currentViewQuery().toUpperCase().replace(/\s/g, "").slice(0, 18));
+  const [reports, setReports] = useState<OnePagerReport[]>([]);
+  const [latest, setLatest] = useState<OnePagerReport | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [symbolSuggestions, setSymbolSuggestions] = useState<RealtimePortfolioSymbolSuggestion[]>([]);
+  const [searchingSymbols, setSearchingSymbols] = useState(false);
+  const [suggestionError, setSuggestionError] = useState("");
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+  const symbolSearchRef = useRef<HTMLDivElement>(null);
+  const symbolInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const closeSuggestions = (event: PointerEvent) => {
+      if (!symbolSearchRef.current?.contains(event.target as Node)) setSuggestionsOpen(false);
+    };
+    window.addEventListener("pointerdown", closeSuggestions);
+    return () => window.removeEventListener("pointerdown", closeSuggestions);
+  }, []);
+
+  useEffect(() => {
+    const query = symbol.trim();
+    if (!query) {
+      setSymbolSuggestions([]);
+      setSearchingSymbols(false);
+      setSuggestionError("");
+      return;
+    }
+    const controller = new AbortController();
+    const debounce = window.setTimeout(async () => {
+      setSearchingSymbols(true);
+      setSuggestionError("");
+      try {
+        const params = new URLSearchParams({ q: query, limit: "8" });
+        const response = await fetch(`${API_URL}/api/v1/realtime/portfolio/search?${params.toString()}`, {
+          cache: "no-store",
+          credentials: "include",
+          signal: controller.signal
+        });
+        const payload: RealtimePortfolioSymbolSearchResponse & { detail?: string } = await response.json();
+        if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+        setSymbolSuggestions(payload.items);
+        setActiveSuggestionIndex(0);
+        if (payload.errors.length && !payload.items.length) setSuggestionError("Não foi possível consultar todos os mercados.");
+      } catch (requestError) {
+        if (!(requestError instanceof DOMException && requestError.name === "AbortError")) {
+          setSymbolSuggestions([]);
+          setSuggestionError("Busca de empresas temporariamente indisponível.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setSearchingSymbols(false);
+      }
+    }, 180);
+    return () => {
+      window.clearTimeout(debounce);
+      controller.abort();
+    };
+  }, [symbol]);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/one-pagers`, { cache: "no-store", credentials: "include" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      setReports(payload.items ?? []);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Não foi possível carregar o histórico.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  const generate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canGenerate) return;
+    const cleanSymbol = symbol.trim().toUpperCase();
+    if (!cleanSymbol) return;
+    setLoading(true);
+    setError("");
+    try {
+      const apiBase = API_URL.trim();
+      const endpoint = /^https?:\/\//i.test(apiBase)
+        ? `${apiBase.replace(/\/$/, "")}/api/v1/one-pagers`
+        : `${window.location.origin}/api/v1/one-pagers`;
+      const request = () => new Promise<{ ok: boolean; status: number; body: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", endpoint, true);
+        xhr.withCredentials = true;
+        xhr.timeout = 180_000;
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, body: xhr.responseText });
+        xhr.onerror = () => reject(new Error("Não foi possível conectar ao serviço de análise."));
+        xhr.ontimeout = () => reject(new Error("A análise excedeu o tempo esperado. Tente novamente."));
+        xhr.send(JSON.stringify({ symbol: cleanSymbol }));
+      });
+      let response = await request();
+      if ([502, 503, 504].includes(response.status)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1800));
+        response = await request();
+      }
+      let payload: OnePagerReport & { detail?: string };
+      try {
+        payload = JSON.parse(response.body) as OnePagerReport & { detail?: string };
+      } catch {
+        throw new Error(
+          response.ok
+            ? "A API retornou uma resposta inválida. Tente novamente."
+            : "O serviço de análise está reiniciando. Aguarde alguns segundos e tente novamente."
+        );
+      }
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      setLatest(payload);
+      setReports((current) => [payload, ...current.filter((item) => item.filename !== payload.filename)].slice(0, 12));
+      setSymbol("");
+      setSymbolSuggestions([]);
+      setSuggestionsOpen(false);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Não foi possível gerar o One Pager.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const chooseSuggestion = (suggestion: RealtimePortfolioSymbolSuggestion) => {
+    setSymbol(suggestion.symbol);
+    setSuggestionsOpen(false);
+    setActiveSuggestionIndex(0);
+    setError("");
+    symbolInputRef.current?.focus();
+  };
+
+  const handleSymbolKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      setSuggestionsOpen(false);
+      return;
+    }
+    if (!suggestionsOpen || !symbolSuggestions.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveSuggestionIndex((index) => (index + 1) % symbolSuggestions.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveSuggestionIndex((index) => (index - 1 + symbolSuggestions.length) % symbolSuggestions.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      chooseSuggestion(symbolSuggestions[activeSuggestionIndex]);
+    }
+  };
+
+  const exactSymbolSuggestion = symbolSuggestions.some(
+    (suggestion) => suggestion.symbol === symbol.trim().toUpperCase()
+  );
+
+  return (
+    <div className="content-stack one-pager-view">
+      <section className="one-pager-builder">
+        <div className="one-pager-builder-copy">
+          <span>Equity research engine</span>
+          <h2>Qual empresa você quer analisar?</h2>
+          <p>Digite um ticker da B3 ou dos Estados Unidos. O C3PO coleta cotação, fundamentos, consenso e histórico antes de construir o documento.</p>
+          {canGenerate ? <form className="one-pager-form" onSubmit={generate}>
+            <label htmlFor="one-pager-symbol">Ticker</label>
+            <div className="one-pager-input-row">
+              <div className="one-pager-input" ref={symbolSearchRef}>
+                <Search size={19} />
+                <input
+                  ref={symbolInputRef}
+                  id="one-pager-symbol"
+                  value={symbol}
+                  onChange={(event) => {
+                    setSymbol(event.target.value.toUpperCase());
+                    setSuggestionsOpen(true);
+                    setError("");
+                  }}
+                  onFocus={() => setSuggestionsOpen(true)}
+                  onKeyDown={handleSymbolKeyDown}
+                  placeholder="Digite ticker ou empresa"
+                  maxLength={80}
+                  autoComplete="off"
+                  spellCheck={false}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={suggestionsOpen && !!symbol.trim()}
+                  aria-controls="one-pager-symbol-suggestions"
+                  aria-activedescendant={symbolSuggestions[activeSuggestionIndex] ? `one-pager-symbol-${symbolSuggestions[activeSuggestionIndex].market}-${symbolSuggestions[activeSuggestionIndex].symbol}` : undefined}
+                  required
+                />
+                {searchingSymbols && <RefreshCw size={14} className="spin one-pager-symbol-spinner" />}
+                {suggestionsOpen && !!symbol.trim() && (
+                  <div className="one-pager-suggestions" id="one-pager-symbol-suggestions" role="listbox">
+                    {symbolSuggestions.map((suggestion, index) => (
+                      <button
+                        type="button"
+                        id={`one-pager-symbol-${suggestion.market}-${suggestion.symbol}`}
+                        className={index === activeSuggestionIndex ? "one-pager-suggestion one-pager-suggestion-active" : "one-pager-suggestion"}
+                        key={`${suggestion.market}-${suggestion.symbol}`}
+                        onClick={() => chooseSuggestion(suggestion)}
+                        onMouseEnter={() => setActiveSuggestionIndex(index)}
+                        role="option"
+                        aria-selected={index === activeSuggestionIndex}
+                      >
+                        <span>{suggestion.symbol}</span>
+                        <div>
+                          <strong>{suggestion.name}</strong>
+                          <small>{suggestion.market} · {suggestion.security_type}</small>
+                        </div>
+                        <ChevronRight size={15} />
+                      </button>
+                    ))}
+                    {!symbolSuggestions.length && !searchingSymbols && (
+                      <div className="one-pager-suggestion-empty">
+                        <Search size={15} />
+                        <span>{suggestionError || "Nenhuma empresa encontrada"}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <button type="submit" disabled={loading || !exactSymbolSuggestion} title="Selecione uma empresa válida">
+                {loading ? <RefreshCw size={18} className="spin" /> : <LaserPagerIcon size={20} />}
+                <span>{loading ? "Gerando análise..." : "Gerar One Pager"}</span>
+              </button>
+            </div>
+          </form> : <div className="one-pager-readonly"><LockKeyhole size={18} /><div><strong>Acesso somente para leitura</strong><span>Você pode consultar e abrir o histórico, mas não gerar novos One Pagers.</span></div></div>}
+          {error && <div className="one-pager-error"><AlertTriangle size={16} /><span>{error}</span></div>}
+        </div>
+        <aside className="one-pager-protocol">
+          <span>Research protocol</span>
+          <strong>5-method valuation</strong>
+          <div><i>01</i><p>Cotação e histórico verificados nas APIs contratadas</p></div>
+          <div><i>02</i><p>DCF, earnings, enterprise value, book value e consenso</p></div>
+          <div><i>03</i><p>Buy-in, risco, confiança, tese e pontos de validação</p></div>
+        </aside>
+      </section>
+
+      {latest && (
+        <section className="panel one-pager-ready">
+          <div className="one-pager-ready-head">
+            <div className="one-pager-symbol-mark"><CompanyLogo symbol={latest.symbol} market={latest.market} /></div>
+            <div><span>One Pager concluído</span><InstrumentPreviewTarget instrument={{ symbol: latest.symbol, name: latest.company_name, market: latest.market }}><strong>{latest.symbol} | {latest.company_name}</strong></InstrumentPreviewTarget><small>{latest.market} · {latest.methodology_name}{latest.methodology_version ? ` v${latest.methodology_version}` : ""} · {formatDate(latest.generated_at)}</small></div>
+            <a href={`${API_URL}${latest.download_url}`} target="_blank" rel="noreferrer"><Download size={17} /><span>Abrir PDF</span></a>
+          </div>
+          <div className="one-pager-metrics">
+            <div><span>Price</span><strong>{formatCurrency(latest.price, latest.currency)}</strong></div>
+            <div><span>C3PO TP</span><strong>{formatCurrency(latest.c3po_tp, latest.currency)}</strong></div>
+            <div><span>Upside</span><strong className={latest.upside_percent >= 0 ? "positive-text" : "negative-text"}>{formatPercent(latest.upside_percent)}</strong></div>
+            <div><span>Buy-in</span><strong>{formatCurrency(latest.buy_in, latest.currency)}</strong></div>
+            <div><span>Confidence</span><strong>{latest.confidence}/100</strong></div>
+          </div>
+        </section>
+      )}
+
+      <section className="panel">
+        <PanelHeader title="Generated One Pagers" icon={LaserPagerIcon} action="Refresh" onAction={loadHistory} />
+        {historyLoading ? <div className="one-pager-history-loading">{Array.from({ length: 4 }).map((_, index) => <span key={index} />)}</div> : (
+          <div className="one-pager-history">
+            {reports.map((report) => (
+              <a href={`${API_URL}${report.download_url}`} target="_blank" rel="noreferrer" key={report.filename}>
+                <div className="one-pager-history-mark"><CompanyLogo symbol={report.symbol} market={report.market} /></div>
+                <div><InstrumentPreviewTarget instrument={{ symbol: report.symbol, name: report.company_name, market: report.market }} nested pinOnClick={false}><strong>{report.symbol} | {report.company_name}</strong></InstrumentPreviewTarget><span>{formatDate(report.generated_at)}{report.methodology_version ? ` · v${report.methodology_version}` : " · legacy"} · {report.method_count} methods · confidence {report.confidence}</span></div>
+                <div className="one-pager-history-upside"><span>Upside</span><strong className={report.upside_percent >= 0 ? "positive-text" : "negative-text"}>{formatPercent(report.upside_percent)}</strong></div>
+                <Download size={17} />
+              </a>
+            ))}
+            {!reports.length && <EmptyLine label="Nenhum One Pager gerado nesta biblioteca" />}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+const valuationMarketMarks: Record<string, string> = {
+  B3: "/market-marks/b3.svg",
+  NASDAQ: "/market-marks/nasdaq.svg",
+  NYSE: "/market-marks/nyse.svg"
+};
+
+function MarketMark({ market }: { market: string }) {
+  const src = valuationMarketMarks[market];
+  return src
+    ? <span className="iq-record-market-mark" title={market}><img src={src} alt={market} /></span>
+    : <span className="iq-record-market-mark iq-record-market-mark-text">{market}</span>;
+}
+
+const valuationTriggerLabels: Record<ValuationTrigger, string> = {
+  initial: "Base inicial",
+  financial_results: "Resultado",
+  material_event: "Material relevante",
+  web_research: "Pesquisa web",
+  market_data: "Dados & consenso",
+  methodology: "Metodologia"
+};
+
+const IQ_RECORDS_PAGE_SIZE = 30;
+
+function IQRecordsView() {
+  const initialQuery = currentViewQuery();
+  const [data, setData] = useState<ValuationChangeResponse | null>(null);
+  const [query, setQuery] = useState(initialQuery);
+  const [activeQuery, setActiveQuery] = useState(initialQuery);
+  const [market, setMarket] = useState<"" | "B3" | "NASDAQ" | "NYSE">("");
+  const [triggerType, setTriggerType] = useState<"" | ValuationTrigger>("");
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadRecords = useCallback(async (search = activeQuery, pageNumber = page) => {
+    setLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({
+        limit: String(IQ_RECORDS_PAGE_SIZE),
+        offset: String((pageNumber - 1) * IQ_RECORDS_PAGE_SIZE)
+      });
+      if (search.trim()) params.set("q", search.trim());
+      if (market) params.set("market", market);
+      if (triggerType) params.set("trigger_type", triggerType);
+      const response = await fetch(`${API_URL}/api/v1/valuation-records?${params.toString()}`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      setData(payload);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Não foi possível carregar o histórico de valuation.");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeQuery, market, page, triggerType]);
+
+  useEffect(() => {
+    loadRecords();
+  }, [loadRecords]);
+
+  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextQuery = query.trim();
+    if (nextQuery === activeQuery && page === 1) {
+      loadRecords(nextQuery, 1);
+      return;
+    }
+    setPage(1);
+    setActiveQuery(nextQuery);
+  };
+
+  const records = data?.items ?? [];
+  const totalRecords = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalRecords / IQ_RECORDS_PAGE_SIZE));
+  const firstRecord = totalRecords ? ((page - 1) * IQ_RECORDS_PAGE_SIZE) + 1 : 0;
+  const lastRecord = totalRecords ? Math.min(page * IQ_RECORDS_PAGE_SIZE, totalRecords) : 0;
+  const companyCount = new Set(records.map((item) => `${item.market}:${item.symbol}`)).size;
+  const evidenceCount = records.filter((item) => ["financial_results", "material_event", "web_research"].includes(item.trigger_type)).length;
+  const latestRecord = records[0];
+
+  return (
+    <div className="content-stack iq-records-view">
+      <section className="panel iq-records-summary">
+        <div className="iq-records-intro">
+          <div className="iq-records-mark"><BenKenobiRecordsIcon size={32} /></div>
+          <div>
+            <span>Permanent valuation ledger</span>
+            <strong>Cada mudança preserva o antes, o depois e a evidência.</strong>
+          </div>
+        </div>
+        <div className="iq-records-metrics">
+          <div><span>Registros</span><strong>{data?.total ?? 0}</strong></div>
+          <div><span>Empresas nesta visão</span><strong>{companyCount}</strong></div>
+          <div><span>Novas evidências</span><strong>{evidenceCount}</strong></div>
+          <div><span>Última alteração</span><strong>{latestRecord ? formatRecordDate(latestRecord.changed_at) : "N/D"}</strong></div>
+        </div>
+      </section>
+
+      <section className="panel iq-records-panel">
+        <div className="iq-records-toolbar">
+          <form onSubmit={submitSearch} className="iq-records-search">
+            <Search size={17} />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Ticker ou empresa"
+              aria-label="Buscar registros de valuation"
+            />
+            <button type="submit">Buscar</button>
+          </form>
+          <div className="iq-market-filter" aria-label="Filtrar mercado">
+            {(["", "B3", "NASDAQ", "NYSE"] as const).map((value) => (
+              <button key={value || "all"} className={market === value ? "active" : ""} onClick={() => { setPage(1); setMarket(value); }}>
+                {value || "Todos"}
+              </button>
+            ))}
+          </div>
+          <label className="iq-trigger-filter">
+            <span>Gatilho</span>
+            <select value={triggerType} onChange={(event) => { setPage(1); setTriggerType(event.target.value as "" | ValuationTrigger); }}>
+              <option value="">Todos</option>
+              {(Object.keys(valuationTriggerLabels) as ValuationTrigger[]).map((value) => (
+                <option key={value} value={value}>{valuationTriggerLabels[value]}</option>
+              ))}
+            </select>
+          </label>
+          <button className="icon-button" onClick={() => loadRecords()} disabled={loading} aria-label="Atualizar histórico" title="Atualizar histórico">
+            <RefreshCw size={18} className={loading ? "spin" : ""} />
+          </button>
+        </div>
+
+        {error && <div className="iq-records-error"><AlertTriangle size={17} /><span>{error}</span></div>}
+
+        <div className="iq-records-table" aria-live="polite">
+          <div className="iq-records-head">
+            <span>Data & empresa</span>
+            <span>Gatilho & fonte</span>
+            <span>C3PO TP</span>
+            <span>Buy-in</span>
+            <span>Consenso</span>
+            <span>Metodologia & motivo</span>
+          </div>
+          {loading && !data ? <IQRecordsLoading /> : records.map((record) => <IQRecordRow key={record.id} record={record} />)}
+          {!loading && !records.length && (
+            <div className="iq-records-empty">
+              <BookOpenCheck size={24} />
+              <strong>Nenhuma alteração encontrada</strong>
+              <span>Os próximos recálculos de valuation serão registrados automaticamente aqui.</span>
+            </div>
+          )}
+        </div>
+        {totalRecords > 0 && (
+          <footer className="iq-records-pagination" aria-label="Paginação dos registros">
+            <div>
+              <strong>{firstRecord}–{lastRecord}</strong>
+              <span>de {totalRecords} registros</span>
+            </div>
+            <div className="iq-pagination-controls">
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={loading || page === 1}
+                aria-label="Página anterior"
+                title="Página anterior"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span>Página <strong>{page}</strong> de {totalPages}</span>
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={loading || page === totalPages}
+                aria-label="Próxima página"
+                title="Próxima página"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </footer>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function IQRecordRow({ record }: { record: ValuationChangeRecord }) {
+  const changedFields = valuationChangedFieldLabels(record);
+  return (
+    <article className="iq-record-row">
+      <div className="iq-record-company" data-label="Data & empresa">
+        <time>{formatRecordDate(record.changed_at)}</time>
+        <div className="iq-record-identity">
+          <div className="iq-record-logo"><CompanyLogo logoUrl={record.logo_url} symbol={record.symbol} /></div>
+          <div>
+            <InstrumentPreviewTarget instrument={{ symbol: record.symbol, name: record.company_name, market: record.market }}><strong>{record.symbol}</strong></InstrumentPreviewTarget>
+            <span>{record.company_name}</span>
+            <MarketMark market={record.market} />
+          </div>
+        </div>
+      </div>
+      <div className="iq-record-trigger" data-label="Gatilho & fonte">
+        <span className={`iq-trigger-badge iq-trigger-${record.trigger_type}`}>{valuationTriggerLabels[record.trigger_type]}</span>
+        <strong>{record.trigger_title}</strong>
+        <p>{record.trigger_summary}</p>
+        <div className="iq-changed-fields">
+          <span>{record.trigger_type === "initial" ? "Registrou" : "Alterou"}</span>
+          <strong>{changedFields.join(" · ")}</strong>
+        </div>
+        {record.source_url ? (
+          <a href={record.source_url} target="_blank" rel="noreferrer"><ExternalLink size={13} />{record.source_name || "Abrir fonte"}</a>
+        ) : <small>{record.source_name}</small>}
+      </div>
+      <IQValueChange label="C3PO TP" oldValue={record.old_tp} newValue={record.new_tp} currency={record.currency} change={record.tp_change_percent} />
+      <IQValueChange label="Buy-in" oldValue={record.old_buy_in} newValue={record.new_buy_in} currency={record.currency} />
+      <IQValueChange label="Consenso" oldValue={record.old_consensus_tp} newValue={record.new_consensus_tp} currency={record.currency} />
+      <div className="iq-record-method" data-label="Metodologia & motivo">
+        <strong>{record.methodology_name}{record.methodology_version ? ` v${record.methodology_version}` : ""}</strong>
+        <p>{valuationChangeReason(record, changedFields)}</p>
+        <small>Confiança {record.new_confidence !== null ? `${Math.round(record.new_confidence)}/100` : "N/D"}</small>
+      </div>
+    </article>
+  );
+}
+
+function IQValueChange({
+  label,
+  oldValue,
+  newValue,
+  currency,
+  change
+}: {
+  label: string;
+  oldValue: number | null;
+  newValue: number | null;
+  currency: string;
+  change?: number | null;
+}) {
+  const calculatedChange = change ?? (
+    oldValue !== null && oldValue !== 0 && newValue !== null
+      ? ((newValue / oldValue) - 1) * 100
+      : null
+  );
+  const direction = oldValue === null
+    ? "neutral"
+    : newValue !== null && newValue > oldValue
+      ? "positive"
+      : newValue !== null && newValue < oldValue
+        ? "negative"
+        : "neutral";
+  return (
+    <div className="iq-record-value" data-label={label}>
+      <div className="iq-value-price iq-value-old">
+        <span>Anterior</span>
+        <strong>{oldValue !== null ? formatCurrency(oldValue, currency) : "N/D"}</strong>
+      </div>
+      <div className={`iq-value-direction iq-value-${direction}`}>
+        {direction === "positive" ? <ArrowUp size={13} /> : direction === "negative" ? <ArrowDown size={13} /> : <Minus size={13} />}
+        <span>{oldValue === null ? "Base inicial" : direction === "neutral" ? "Sem mudança" : formatPercent(calculatedChange)}</span>
+      </div>
+      <div className={`iq-value-price iq-value-new iq-value-new-${direction}`}>
+        <span>Novo</span>
+        <strong>{newValue !== null ? formatCurrency(newValue, currency) : "N/D"}</strong>
+      </div>
+    </div>
+  );
+}
+
+function valuationChangedFieldLabels(record: ValuationChangeRecord) {
+  const raw = Array.isArray(record.metadata.changed_fields) ? record.metadata.changed_fields : [];
+  const labels: Record<string, string> = {
+    initial_valuation: "Base de valuation",
+    c3po_tp: "C3PO TP",
+    buy_in: "Buy-in",
+    consensus_tp: "Consenso",
+    confidence: "Confiança"
+  };
+  const fields = raw.map((item) => labels[String(item)]).filter((item): item is string => Boolean(item));
+  return fields.length ? fields : [record.trigger_type === "initial" ? "Base de valuation" : "Premissas do valuation"];
+}
+
+function valuationChangeReason(record: ValuationChangeRecord, changedFields: string[]) {
+  const affected = changedFields.join(", ");
+  if (record.trigger_type === "initial") return "Base inicial criada; ainda não existe um valuation anterior para comparação.";
+  if (record.trigger_type === "financial_results") return `Novo resultado oficial incorporado aos fundamentos, com impacto em ${affected}.`;
+  if (record.trigger_type === "material_event") return `Material oficial alterou premissas do modelo e recalculou ${affected}.`;
+  if (record.trigger_type === "web_research") return `Nova evidência validada no RI, SEC ou web recalibrou ${affected}.`;
+  if (record.trigger_type === "methodology") return `Novos pesos ou parâmetros da metodologia recalcularam ${affected}.`;
+  return `Fundamentos, consenso ou dados de mercado atualizados recalibraram ${affected}.`;
+}
+
+function IQRecordsLoading() {
+  return <div className="iq-records-loading">{Array.from({ length: 5 }).map((_, index) => <span key={index} />)}</div>;
+}
+
+function RebellionNewsView() {
+  const [data, setData] = useState<NewsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [preview, setPreview] = useState<{
+    group: NewsSourceGroup;
+    item: NewsItem;
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
+  const previewCloseTimer = useRef<number | null>(null);
+
+  const closePreview = useCallback(() => {
+    if (previewCloseTimer.current) window.clearTimeout(previewCloseTimer.current);
+    previewCloseTimer.current = window.setTimeout(() => setPreview(null), 90);
+  }, []);
+
+  const openPreview = useCallback((group: NewsSourceGroup, item: NewsItem, anchor: HTMLElement) => {
+    if (window.matchMedia("(hover: none)").matches) return;
+    if (previewCloseTimer.current) window.clearTimeout(previewCloseTimer.current);
+    const rect = anchor.getBoundingClientRect();
+    const width = Math.min(420, window.innerWidth - 24);
+    const estimatedHeight = 248;
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+    const top = window.innerHeight - rect.bottom >= estimatedHeight + 12
+      ? rect.bottom + 8
+      : Math.max(10, rect.top - estimatedHeight - 8);
+    setPreview({ group, item, left, top, width });
+  }, []);
+
+  const loadNews = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/news?refresh=true`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      setData(payload);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Não foi possível carregar as notícias.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNews();
+  }, [loadNews]);
+
+  useEffect(() => {
+    const refreshMs = Math.max(60, data?.refresh_seconds ?? 300) * 1000;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadNews();
+    }, refreshMs);
+    return () => window.clearInterval(interval);
+  }, [data?.refresh_seconds, loadNews]);
+
+  useEffect(() => () => {
+    if (previewCloseTimer.current) window.clearTimeout(previewCloseTimer.current);
+  }, []);
+
+  return (
+    <div className="content-stack rebellion-news-view">
+      <section className="panel rebellion-news-briefing">
+        <div className="rebellion-news-briefing-copy">
+          <div className="rebellion-news-briefing-mark"><RebellionNewsIcon size={27} /></div>
+          <div>
+            <span>Live editorial desk</span>
+            <strong>Quatro fontes, vinte manchetes prioritárias</strong>
+            <small>Seleção automática por atualidade e relevância econômica, política e de mercado.</small>
+          </div>
+        </div>
+        <div className="rebellion-news-metrics">
+          <div><span>Fontes online</span><strong>{data?.source_count ?? "-"}/4</strong></div>
+          <div><span>Notícias</span><strong>{data?.item_count ?? "-"}</strong></div>
+          <div><span>Atualizado</span><strong>{data ? formatDate(data.generated_at) : "Coletando"}</strong></div>
+        </div>
+        <button className="rebellion-news-refresh" type="button" onClick={loadNews} disabled={loading}>
+          <RefreshCw size={16} className={loading ? "spin" : ""} />
+          <span>Atualizar agora</span>
+        </button>
+      </section>
+
+      {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span><button onClick={loadNews}>Tentar novamente</button></div>}
+      {loading && !data ? <RebellionNewsLoading /> : data && (
+        <div className="rebellion-news-grid">
+          {data.groups.map((group) => (
+            <RebellionSourcePanel
+              key={group.code}
+              group={group}
+              onPreviewOpen={openPreview}
+              onPreviewClose={closePreview}
+            />
+          ))}
+        </div>
+      )}
+      {data && <div className="rebellion-news-footnote"><ShieldCheck size={15} /><span>Feeds editoriais oficiais, deduplicados e ordenados pelo C3PO.</span><small>Atualização automática a cada {Math.round(data.refresh_seconds / 60)} minutos.</small></div>}
+      {preview && typeof document !== "undefined" && createPortal(
+        <NewsHoverPreview {...preview} />,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function RebellionSourcePanel({
+  group,
+  onPreviewOpen,
+  onPreviewClose
+}: {
+  group: NewsSourceGroup;
+  onPreviewOpen: (group: NewsSourceGroup, item: NewsItem, anchor: HTMLElement) => void;
+  onPreviewClose: () => void;
+}) {
+  return (
+    <section className={`panel rebellion-source-panel rebellion-source-${group.code}`}>
+      <header className="rebellion-source-head">
+        <a href={group.homepage_url} target="_blank" rel="noreferrer" aria-label={`Abrir ${group.name}`}>
+          <NewsSourceBrand code={group.code} />
+        </a>
+        <div>
+          <span className={`rebellion-source-status rebellion-source-status-${group.status}`}><i />{group.status === "fresh" ? "Atualizado" : group.status === "partial" ? "Parcial" : "Indisponível"}</span>
+          <small>{group.items.length}/5 notícias</small>
+        </div>
+      </header>
+      <div className="rebellion-source-list">
+        {group.items.map((item) => (
+          <a
+            className="rebellion-news-item"
+            href={item.url}
+            key={`${group.code}-${item.rank}-${item.url}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onMouseEnter={(event) => onPreviewOpen(group, item, event.currentTarget)}
+            onMouseLeave={onPreviewClose}
+            onFocus={(event) => onPreviewOpen(group, item, event.currentTarget)}
+            onBlur={onPreviewClose}
+            aria-label={`${item.title}. Abrir em nova aba.`}
+          >
+            <span className="rebellion-news-rank">{String(item.rank).padStart(2, "0")}</span>
+            <div>
+              <strong>{item.title}</strong>
+              {item.summary && <p>{item.summary}</p>}
+              <time dateTime={item.published_at ?? undefined} title={item.published_at ? formatRecordDate(item.published_at) : undefined}>{formatNewsAge(item.published_at)}</time>
+            </div>
+            <ExternalLink size={15} />
+          </a>
+        ))}
+        {!group.items.length && <div className="rebellion-source-empty"><AlertTriangle size={18} /><strong>Fonte temporariamente indisponível</strong><span>{group.errors[0] ?? "Tente atualizar novamente em alguns minutos."}</span></div>}
+      </div>
+      {group.status === "partial" && group.errors.length > 0 && <div className="rebellion-source-warning">Alguns feeds não responderam; as manchetes disponíveis foram preservadas.</div>}
+    </section>
+  );
+}
+
+function NewsHoverPreview({
+  group,
+  item,
+  left,
+  top,
+  width
+}: {
+  group: NewsSourceGroup;
+  item: NewsItem;
+  left: number;
+  top: number;
+  width: number;
+}) {
+  return (
+    <aside
+      className={`rebellion-news-preview rebellion-news-preview-${group.code}`}
+      style={{ left, top, width }}
+      role="tooltip"
+      aria-label={`Prévia de ${item.title}`}
+    >
+      <header>
+        <NewsSourceBrand code={group.code} />
+        <div><span>Prévia editorial</span><small>{formatNewsAge(item.published_at)}</small></div>
+      </header>
+      <div className="rebellion-news-preview-copy">
+        <span>{group.name}</span>
+        <strong>{item.title}</strong>
+        <p>{item.summary || "Abra a matéria para consultar o conteúdo completo na fonte original."}</p>
+      </div>
+      <footer>
+        <span><Clock3 size={13} />{item.published_at ? formatRecordDate(item.published_at) : "Horário não informado"}</span>
+        <strong>Abrir em nova aba <ExternalLink size={13} /></strong>
+      </footer>
+    </aside>
+  );
+}
+
+function NewsSourceBrand({ code }: { code: NewsSourceGroup["code"] }) {
+  if (code === "globo") return <span className="news-brand news-brand-globo"><img src="/globo-com-logo.png" alt="globo.com" /></span>;
+  if (code === "uol") return <span className="news-brand news-brand-uol"><img src="/uol-logo.svg" alt="UOL" /></span>;
+  if (code === "bloomberg") return <span className="news-brand news-brand-bloomberg"><b>Bloomberg</b></span>;
+  return <span className="news-brand news-brand-cnbc"><i><b /><b /><b /><b /><b /></i><em>CNBC</em></span>;
+}
+
+function RebellionNewsLoading() {
+  return <div className="rebellion-news-loading">{Array.from({ length: 4 }).map((_, index) => <div key={index}>{Array.from({ length: 6 }).map((__, row) => <span key={row} />)}</div>)}</div>;
+}
+
+function WeatherView() {
+  const [data, setData] = useState<WeatherResponse | null>(null);
+  const [query, setQuery] = useState("");
+  const [activeSearch, setActiveSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadWeather = useCallback(async (search = "") => {
+    setLoading(true);
+    setError("");
+    try {
+      const suffix = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
+      const response = await fetch(`${API_URL}/api/v1/weather${suffix}`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
+      setData(payload);
+      setActiveSearch(search.trim());
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Não foi possível carregar a previsão.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWeather();
+  }, [loadWeather]);
+
+  useEffect(() => {
+    const refreshMs = Math.max(60, data?.refresh_seconds ?? 300) * 1000;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadWeather(activeSearch);
+    }, refreshMs);
+    return () => window.clearInterval(interval);
+  }, [activeSearch, data?.refresh_seconds, loadWeather]);
+
+  const submitSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (query.trim()) loadWeather(query.trim());
+  };
+
+  const clearSearch = () => {
+    setQuery("");
+    loadWeather();
+  };
+
+  return (
+    <div className="content-stack weather-view">
+      <section className="panel weather-control">
+        <div className="weather-control-copy">
+          <div className="weather-control-mark"><DagobahWeatherIcon size={24} /></div>
+          <div>
+            <span>24-hour forecast desk</span>
+            <strong>Leblon e Campo Belo fixos, com pesquisa mundial</strong>
+            <small>Atualização automática a cada {Math.round((data?.refresh_seconds ?? 300) / 60)} minutos.</small>
+          </div>
+        </div>
+        <form className="weather-search" onSubmit={submitSearch}>
+          <label htmlFor="weather-city-search">Pesquisar no mundo</label>
+          <div>
+            <Search size={17} />
+            <input
+              id="weather-city-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Cidade, região ou país"
+              maxLength={100}
+              autoComplete="off"
+            />
+            {activeSearch && <button type="button" className="weather-search-clear" onClick={clearSearch} title="Remover cidade pesquisada" aria-label="Remover cidade pesquisada"><X size={15} /></button>}
+            <button type="submit" className="weather-search-submit" disabled={loading || !query.trim()} title="Buscar previsão" aria-label="Buscar previsão">
+              {loading ? <RefreshCw size={17} className="spin" /> : <Search size={17} />}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => loadWeather(activeSearch)}>Tentar novamente</button></div>}
+      {data?.errors.length ? <div className="weather-warning"><AlertTriangle size={15} /><span>{data.errors.join(" · ")}</span></div> : null}
+
+      {loading && !data ? <WeatherLoading /> : data && (
+        <>
+          <div className="weather-location-list">
+            {data.locations.map((location) => <WeatherLocationCard key={location.key} location={location} />)}
+          </div>
+          <div className="weather-source-note">
+            <ShieldCheck size={16} />
+            <span>{data.source} · geocodificação mundial e coordenadas específicas para os bairros fixos</span>
+            <small>Coletado em {formatDate(data.generated_at)}</small>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function WeatherLocationCard({ location }: { location: WeatherLocation }) {
+  return (
+    <section className="panel weather-location-card">
+      <header className="weather-location-head">
+        <div className="weather-location-identity">
+          <div><WeatherConditionIcon code={location.current_weather_code} size={26} /></div>
+          <div>
+            <span>{location.fixed ? "Permanent location" : "Searched location"}</span>
+            <strong>{location.label}</strong>
+            <small>{location.latitude.toFixed(4)}, {location.longitude.toFixed(4)} · {location.timezone}</small>
+          </div>
+        </div>
+        <div className="weather-location-current">
+          <div><span>Agora</span><strong>{formatTemperature(location.current_temperature_c)}</strong></div>
+          <div><span>Condição</span><strong>{location.current_condition}</strong></div>
+          <div><span>Vento</span><strong>{formatWind(location.current_wind_kts, location.current_wind_direction)}</strong></div>
+          <div><span>Chuva</span><strong>{formatRain(location.current_precipitation_mm)}</strong></div>
+        </div>
+      </header>
+      <div className="weather-chart-section">
+        <div className="weather-chart-head">
+          <div><span>Próximas 24 horas</span><strong>Temperatura e probabilidade de chuva</strong></div>
+          <div className="weather-chart-legend"><span><i className="temperature" />Temperatura</span><span><i className="rain" />Chuva</span></div>
+        </div>
+        <WeatherChart hours={location.hours} label={location.label} />
+      </div>
+      <div className="weather-hour-grid">
+        {location.hours.map((hour) => (
+          <article key={hour.time} title={`${hour.condition} · sensação ${formatTemperature(hour.apparent_c)}`}>
+            <time>{formatWeatherHour(hour.time)}</time>
+            <WeatherConditionIcon code={hour.weather_code} size={15} />
+            <strong>{formatTemperature(hour.temperature_c)}</strong>
+            <span className="weather-hour-rain"><Droplets size={11} />{formatProbability(hour.rain_probability_percent)}</span>
+            <span className="weather-hour-wind">
+              <ArrowUp size={12} style={{ transform: `rotate(${hour.wind_direction_deg ?? 0}deg)` }} />
+              {hour.wind_direction} {formatKnots(hour.wind_kts)}
+            </span>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WeatherChart({ hours, label }: { hours: WeatherHour[]; label: string }) {
+  const width = 1200;
+  const height = 300;
+  const left = 48;
+  const right = 24;
+  const top = 28;
+  const bottom = 56;
+  const baseY = height - bottom;
+  const temperatures = hours.map((hour) => hour.temperature_c).filter((value): value is number => value !== null);
+  const rawMin = temperatures.length ? Math.min(...temperatures) : 0;
+  const rawMax = temperatures.length ? Math.max(...temperatures) : 1;
+  const minTemp = Math.floor(rawMin - 1);
+  const maxTemp = Math.ceil(Math.max(rawMax + 1, minTemp + 4));
+  const plotHeight = baseY - top;
+  const plotWidth = width - left - right;
+  const x = (index: number) => left + (hours.length <= 1 ? 0 : index * plotWidth / (hours.length - 1));
+  const y = (temperature: number) => top + (maxTemp - temperature) / (maxTemp - minTemp) * plotHeight;
+  let started = false;
+  const path = hours.map((hour, index) => {
+    if (hour.temperature_c === null) return "";
+    const command = started ? "L" : "M";
+    started = true;
+    return `${command}${x(index).toFixed(1)},${y(hour.temperature_c).toFixed(1)}`;
+  }).filter(Boolean).join(" ");
+  const gridValues = [maxTemp, Math.round((maxTemp + minTemp) / 2), minTemp];
+  const barWidth = Math.max(8, Math.min(28, plotWidth / Math.max(1, hours.length) * 0.58));
+
+  return (
+    <svg className="weather-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Previsão de temperatura e chuva para ${label}`}>
+      {gridValues.map((value) => {
+        const gridY = y(value);
+        return <g key={value}><line className="weather-chart-gridline" x1={left} y1={gridY} x2={width - right} y2={gridY} /><text className="weather-chart-y-label" x={left - 9} y={gridY + 4} textAnchor="end">{value}°</text></g>;
+      })}
+      <line className="weather-chart-axis" x1={left} y1={baseY} x2={width - right} y2={baseY} />
+      {hours.map((hour, index) => {
+        const probability = Math.max(0, Math.min(100, hour.rain_probability_percent ?? 0));
+        const barHeight = probability / 100 * Math.min(105, plotHeight * 0.56);
+        return <rect key={`rain-${hour.time}`} className="weather-chart-rain-bar" x={x(index) - barWidth / 2} y={baseY - barHeight} width={barWidth} height={barHeight}><title>{formatWeatherHour(hour.time)} · chuva {formatProbability(hour.rain_probability_percent)}</title></rect>;
+      })}
+      {path && <path className="weather-chart-temperature-line" d={path} />}
+      {hours.map((hour, index) => hour.temperature_c === null ? null : (
+        <g key={`temperature-${hour.time}`}>
+          <circle className="weather-chart-temperature-dot" cx={x(index)} cy={y(hour.temperature_c)} r={index % 3 === 0 ? 4.3 : 2.8}><title>{formatWeatherHour(hour.time)} · {formatTemperature(hour.temperature_c)} · chuva {formatProbability(hour.rain_probability_percent)} · vento {formatWind(hour.wind_kts, hour.wind_direction)}</title></circle>
+          {(index % 3 === 0 || index === hours.length - 1) && <text className="weather-chart-temperature-label" x={x(index)} y={Math.max(14, y(hour.temperature_c) - 10)} textAnchor="middle">{hour.temperature_c.toFixed(1).replace(".", ",")}°</text>}
+        </g>
+      ))}
+      {hours.map((hour, index) => (index % 3 === 0 || index === hours.length - 1) ? <text key={`time-${hour.time}`} className="weather-chart-x-label" x={x(index)} y={height - 18} textAnchor="middle">{formatWeatherHour(hour.time)}</text> : null)}
       <text className="weather-chart-rain-label" x={width - right} y={top - 10} textAnchor="end">CHUVA 0–100%</text>
     </svg>
   );
