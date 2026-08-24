@@ -84,6 +84,18 @@ class _StaticReferenceClient:
         )
 
 
+class _SinglePageHttp:
+    def __init__(self, tickers: list[str]) -> None:
+        self.tickers = tickers
+
+    def get_json(self, url: str, *, params=None, headers=None):  # noqa: ANN001, ANN201
+        del url, params, headers
+        return {
+            "status": "OK",
+            "results": [{"ticker": ticker} for ticker in self.tickers],
+        }
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -183,6 +195,30 @@ def test_reference_client_uses_only_the_authorized_paginated_endpoint() -> None:
     evidence = b"".join(page.canonical_bytes for page in pages)
     assert b"secret" not in evidence
     assert all("secret" not in page.request_url_without_api_key for page in pages)
+
+
+def test_reference_client_validates_provider_raw_ticker_order_before_normalization() -> None:
+    client = MassivePointInTimeReferenceClient(
+        "https://api.massive.com",
+        "secret",
+        _SinglePageHttp(["ACRX", "ACRpC"]),
+    )
+
+    pages = client.fetch_pages(as_of=date(2022, 6, 10))
+
+    assert len(pages) == 1
+    assert [row["ticker"] for row in pages[0].payload["results"]] == ["ACRX", "ACRpC"]
+
+
+def test_reference_client_still_rejects_raw_ticker_order_inversion() -> None:
+    client = MassivePointInTimeReferenceClient(
+        "https://api.massive.com",
+        "secret",
+        _SinglePageHttp(["MSFT", "AAPL"]),
+    )
+
+    with pytest.raises(PointInTimeUniverseError, match="globally ticker-sorted"):
+        client.fetch_pages(as_of=date(2022, 6, 10))
 
 
 def test_reference_client_refuses_off_origin_pagination() -> None:
