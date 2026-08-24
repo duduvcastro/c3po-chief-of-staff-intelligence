@@ -920,6 +920,14 @@ def test_r2d2_live_positions_uses_fresh_stream_marks_without_loading_history(
             "data_status": "live",
             "as_of": observed_at.isoformat(),
         },
+        "technical_defense": {
+            "score": 55.0,
+            "severity": "reduce",
+            "drivers": ["price below VWAP", "price below EMA8"],
+        },
+        "defense_streak": 1,
+        "defense_reductions": 0,
+        "last_review_at": observed_at.isoformat(),
     }
     service.repo.execute_trade(
         experiment,
@@ -971,6 +979,12 @@ def test_r2d2_live_positions_uses_fresh_stream_marks_without_loading_history(
     assert position.quote_status == "live"
     assert position.quote_as_of == observed_at
     assert position.decision_state == "live monitoring"
+    assert position.technical_defense_score == 55.0
+    assert position.technical_defense_severity == "reduce"
+    assert position.technical_defense_reviews == 1
+    assert position.technical_defense_reductions == 0
+    assert position.technical_defense_drivers == ["price below VWAP", "price below EMA8"]
+    assert position.technical_defense_reviewed_at == observed_at
 
 
 def test_r2d2_live_positions_api_contract() -> None:
