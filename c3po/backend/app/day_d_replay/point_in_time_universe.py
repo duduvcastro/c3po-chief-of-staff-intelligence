@@ -176,8 +176,20 @@ class MassivePointInTimeReferenceClient:
                 if not seen_raw_tickers:
                     raise PointInTimeUniverseError("reference query returned no tickers")
                 return tuple(pages)
-            url = next_url
-            params = {"apiKey": self.token}
+            parsed_next = urlsplit(next_url)
+            url = urlunsplit((
+                parsed_next.scheme,
+                parsed_next.netloc,
+                parsed_next.path,
+                "",
+                "",
+            ))
+            params = {
+                key: value
+                for key, value in parse_qsl(parsed_next.query, keep_blank_values=True)
+                if key.lower() != "apikey"
+            }
+            params["apiKey"] = self.token
         raise PointInTimeUniverseError("reference pagination exceeded the safety limit")
 
     def _public_request_url(self, url: str, params: Mapping[str, Any]) -> str:
