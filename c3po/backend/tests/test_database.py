@@ -94,6 +94,31 @@ def test_capture_valuation_changes_labels_nasdaq_and_nyse_by_exchange(tmp_path) 
     assert by_symbol == {"AAPL": "NASDAQ", "JPM": "NYSE", "PETR4": "B3"}
 
 
+def test_latest_analysis_snapshot_outputs_projects_only_requested_field(tmp_path) -> None:
+    database = Database(Settings(database_url="", migrations_dir=tmp_path))
+    methodology_id = database.ensure_methodology_version("peer-quality", 1, {}, "test")
+    now = datetime(2026, 8, 24, 4, 0, tzinfo=timezone.utc)
+    report = {"pre_ab_ready": True, "gates": {"target_roe_non_null": True}}
+    database.save_analysis_snapshot(
+        "valuation_v2_peer_quality",
+        "B3_V2_PEER_QUALITY",
+        methodology_id,
+        {},
+        {"packets": {"large": [1, 2, 3]}, "pre_ab_report": report},
+        now,
+    )
+
+    projected = database.latest_analysis_snapshot_outputs(
+        "valuation_v2_peer_quality",
+        ["B3_V2_PEER_QUALITY", "US_V2_PEER_QUALITY"],
+        "pre_ab_report",
+    )
+
+    assert projected == {
+        "B3_V2_PEER_QUALITY": {"published_at": now, "output": report}
+    }
+
+
 def test_ir_source_health_surfaces_finnhub_runs(tmp_path) -> None:
     """ir_source_health() had a hardcoded {"cvm", "sec", "ri"} allowlist
     predating the Finnhub source (db/020_ir_events_finnhub_source.sql) --

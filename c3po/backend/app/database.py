@@ -2625,6 +2625,44 @@ class Database:
         keys = ("id", "inputs", "outputs", "published_at", "methodology_version_id")
         return {row[0]: dict(zip(keys, row[1:])) for row in rows}
 
+    def latest_analysis_snapshot_outputs(
+        self,
+        analysis_type: str,
+        entity_keys: list[str],
+        output_key: str,
+    ) -> dict[str, dict[str, Any]]:
+        """Read one output field without materializing the full snapshot JSON."""
+        clean_keys = list(dict.fromkeys(key for key in entity_keys if key))
+        if not clean_keys or not output_key:
+            return {}
+        if not self.database_url:
+            output: dict[str, dict[str, Any]] = {}
+            for key in clean_keys:
+                snapshot = self.latest_analysis_snapshot(analysis_type, key)
+                if not snapshot:
+                    continue
+                outputs = snapshot.get("outputs")
+                output[key] = {
+                    "published_at": snapshot.get("published_at"),
+                    "output": outputs.get(output_key) if isinstance(outputs, dict) else None,
+                }
+            return output
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT ON (entity_key)
+                       entity_key, published_at, outputs -> %s
+                FROM analysis_snapshots
+                WHERE analysis_type = %s AND entity_key = ANY(%s)
+                ORDER BY entity_key, published_at DESC
+                """,
+                (output_key, analysis_type, clean_keys),
+            ).fetchall()
+        return {
+            row[0]: {"published_at": row[1], "output": row[2]}
+            for row in rows
+        }
+
     def analysis_snapshot_at_or_before(
         self,
         analysis_type: str,
