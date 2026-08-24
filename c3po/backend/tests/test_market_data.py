@@ -1805,6 +1805,30 @@ def test_check_selic_against_market_yield_is_silent_on_a_normal_term_spread(capl
     assert "diverges" not in caplog.text
 
 
+def test_check_selic_cross_check_normalizes_percentage_point_bond_rates(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    http = StubHttp({
+        "results": [{
+            "symbol": "tesouro-prefixado-01012037",
+            "bondType": "Tesouro Prefixado",
+            "indexer": "prefixado",
+            "maturityDate": "2037-01-01",
+            "durationDays": 4000,
+            "buyRate": 14.79,
+            "sellRate": 14.81,
+        }],
+    })
+    service = B3ScreenerService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    with caplog.at_level("WARNING", logger="app.market_data.b3_screener"):
+        service._check_selic_against_market_yield(0.14)
+
+    assert "diverges" not in caplog.text
+    assert "1481" not in caplog.text
+
+
 def test_disclosure_risk_signal_scales_by_materiality_and_zeroes_when_current() -> None:
     """Root-caused 2026-08-20 (B3 TP audit): disclosure materiality was
     computed and persisted per filing but never fed into governance_risk —
