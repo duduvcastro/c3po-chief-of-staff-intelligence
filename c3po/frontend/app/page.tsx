@@ -292,6 +292,12 @@ interface R2D2DashboardData {
     volume_state: string;
     data_status: string;
     decision_state: string;
+    technical_defense_score: number;
+    technical_defense_severity: string;
+    technical_defense_reviews: number;
+    technical_defense_reductions: number;
+    technical_defense_drivers: string[];
+    technical_defense_reviewed_at: string | null;
     quote_status: string;
     quote_as_of: string | null;
     technical_as_of: string | null;
@@ -3537,7 +3543,18 @@ function R2D2RisingView() {
             <div><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
             <div><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>
             <span>{formatCurrency(position.stop_price_local, position.currency)}</span>
-            <div><strong>{position.decision_state}</strong><small>{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares</small></div>
+            <div>
+              <strong>{position.decision_state}</strong>
+              <small>{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares</small>
+              {(position.technical_defense_reviews > 0 || position.technical_defense_reductions > 0 || position.technical_defense_severity !== "healthy") && (
+                <small
+                  className="r2d2-defense-status"
+                  title={position.technical_defense_drivers.join("; ") || "Technical defense active"}
+                >
+                  {`DEF ${position.technical_defense_score.toFixed(0)}/100 · ${position.technical_defense_reviews} review${position.technical_defense_reviews === 1 ? "" : "s"} · ${position.technical_defense_reductions} cut${position.technical_defense_reductions === 1 ? "" : "s"}`}
+                </small>
+              )}
+            </div>
           </div>
         )) : <div className="r2d2-ledger-empty"><Target size={24} /><div><strong>No paper positions yet</strong><span>The first eligible cycle begins when the exchanges open on 17/08/2026.</span></div></div>}
       </section>
