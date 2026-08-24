@@ -755,6 +755,10 @@ class R2D2LearningState(BaseModel):
 class R2D2DashboardResponse(BaseModel):
     experiment_code: str
     status: Literal["scheduled", "running", "paused", "completed"]
+    entries_paused: bool = False
+    entries_paused_at: datetime | None = None
+    entries_pause_operator: str | None = None
+    entries_pause_reason: str | None = None
     methodology_version: str
     start_date: str
     checkpoint_date: str

@@ -231,6 +231,10 @@ interface ApiUsageMetric {
 interface R2D2DashboardData {
   experiment_code: string;
   status: "scheduled" | "running" | "paused" | "completed";
+  entries_paused: boolean;
+  entries_paused_at: string | null;
+  entries_pause_operator: string | null;
+  entries_pause_reason: string | null;
   methodology_version: string;
   start_date: string;
   checkpoint_date: string;
@@ -3325,7 +3329,13 @@ function R2D2RisingView() {
     { label: "Market feeds", detail: "EODHD live · Nasdaq + NYSE · B3 execution disabled", state: "ready" },
     { label: "Canonical valuation", detail: "Dark Side + Last Jedi + Laser Pager", state: "ready" },
     { label: "Risk mandate", detail: "No leverage · failed-entry defense -0.3% · hard stop -0.65%", state: "ready" },
-    { label: "Paper execution", detail: `20-second risk monitor · one-minute opportunity scan · ${data.status}`, state: data.status === "paused" ? "pending" : "ready" },
+    {
+      label: "Paper execution",
+      detail: data.entries_paused
+        ? "ENTRIES PAUSED · exits, risk monitor and EOD remain active"
+        : `20-second risk monitor · one-minute opportunity scan · ${data.status}`,
+      state: data.entries_paused || data.status === "paused" ? "pending" : "ready"
+    },
     { label: "Turnover policy", detail: "20-80 qualified orders/session · 120 hard cap · costs included", state: "ready" },
     { label: "Daily learning loop", detail: `Version ${data.learning.version} · ${data.learning.sample_days} sessions · ${data.learning.sample_trades} completed exits`, state: "ready" }
   ];
@@ -3456,8 +3466,8 @@ function R2D2RisingView() {
           <R2D2RisingIcon size={38} />
           <div>
             <span>SIMULATION STATUS</span>
-            <strong>{data.status === "scheduled" ? "Launch scheduled" : data.status === "running" ? "Continuous paper run" : data.status}</strong>
-            <small>From {data.start_date} · {data.checkpoint_days}-day checkpoint {data.checkpoint_date}{data.checkpoint_reached ? " reached" : ""}</small>
+            <strong>{data.entries_paused ? "ENTRIES PAUSED" : data.status === "scheduled" ? "Launch scheduled" : data.status === "running" ? "Continuous paper run" : data.status}</strong>
+            <small>{data.entries_paused ? `${data.entries_pause_reason ?? "New entries are blocked"} · exits and protection remain active` : `From ${data.start_date} · ${data.checkpoint_days}-day checkpoint ${data.checkpoint_date}${data.checkpoint_reached ? " reached" : ""}`}</small>
           </div>
         </div>
         <div><span>Starting capital</span><strong>{money(data.starting_capital_usd)}</strong><small>Virtual capital · paper only</small></div>

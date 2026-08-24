@@ -362,13 +362,19 @@ class R2D2Repository:
             "base_currency": "USD", "starting_capital": settings.r2d2_starting_capital_usd,
             "cash_balance": settings.r2d2_starting_capital_usd, "start_date": start,
             "checkpoint_date": checkpoint, "methodology_version": METHODOLOGY_VERSION,
-            "mandate": mandate, "created_at": now, "updated_at": now,
+            "mandate": mandate, "entries_paused": False, "entries_paused_at": None,
+            "entries_pause_operator": None, "entries_pause_reason": None,
+            "created_at": now, "updated_at": now,
         }
         if not self.database.database_url:
             if not self.memory["experiment"]:
                 self.memory["experiment"] = payload
             elif now.astimezone(SAO_PAULO).date() >= self.memory["experiment"]["start_date"]:
                 self.memory["experiment"]["status"] = "running"
+            self.memory["experiment"].setdefault("entries_paused", False)
+            self.memory["experiment"].setdefault("entries_paused_at", None)
+            self.memory["experiment"].setdefault("entries_pause_operator", None)
+            self.memory["experiment"].setdefault("entries_pause_reason", None)
             return dict(self.memory["experiment"])
         with self.database.connection() as connection:
             row = connection.execute(
@@ -386,7 +392,9 @@ class R2D2Repository:
                              < r2d2_experiments.start_date THEN 'scheduled'
                         ELSE 'running' END
                 RETURNING id::text, code, status, base_currency, starting_capital, cash_balance,
-                          start_date, checkpoint_date, methodology_version, mandate, created_at, updated_at
+                          start_date, checkpoint_date, methodology_version, mandate,
+                          entries_paused, entries_paused_at, entries_pause_operator,
+                          entries_pause_reason, created_at, updated_at
                 """,
                 (payload["id"], payload["code"], payload["status"], payload["starting_capital"],
                  payload["cash_balance"], start, checkpoint, checkpoint, METHODOLOGY_VERSION, json.dumps(mandate)),
@@ -397,7 +405,9 @@ class R2D2Repository:
     @staticmethod
     def _experiment(row: Any) -> dict[str, Any]:
         keys = ("id", "code", "status", "base_currency", "starting_capital", "cash_balance",
-                "start_date", "checkpoint_date", "methodology_version", "mandate", "created_at", "updated_at")
+                "start_date", "checkpoint_date", "methodology_version", "mandate",
+                "entries_paused", "entries_paused_at", "entries_pause_operator",
+                "entries_pause_reason", "created_at", "updated_at")
         return dict(zip(keys, row))
 
     def positions(self, experiment_id: str) -> list[dict[str, Any]]:
@@ -430,11 +440,74 @@ class R2D2Repository:
         with self.database.connection() as connection:
             row = connection.execute(
                 """SELECT id::text, code, status, base_currency, starting_capital, cash_balance,
-                          start_date, checkpoint_date, methodology_version, mandate, created_at, updated_at
+                          start_date, checkpoint_date, methodology_version, mandate,
+                          entries_paused, entries_paused_at, entries_pause_operator,
+                          entries_pause_reason, created_at, updated_at
                    FROM r2d2_experiments WHERE code=%s""",
                 (code,),
             ).fetchone()
         return self._experiment(row) if row else None
+
+    def set_entries_paused(
+        self,
+        code: str,
+        *,
+        paused: bool,
+        operator: str,
+        reason: str,
+        changed_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        operator = operator.strip()
+        reason = reason.strip()
+        if not operator or not reason:
+            raise ValueError("operator and reason are required")
+        changed_at = changed_at or datetime.now(timezone.utc)
+        current = self.experiment(code)
+        if current is None:
+            raise LookupError(f"R2D2 experiment not found: {code}")
+        previous = bool(current.get("entries_paused"))
+        if previous == paused:
+            return current
+        action = "r2d2.entries_paused" if paused else "r2d2.entries_resumed"
+        detail = {
+            "previous_entries_paused": previous,
+            "entries_paused": paused,
+            "reason": reason,
+            "changed_at": changed_at.isoformat(),
+        }
+        if not self.database.database_url:
+            self.memory["experiment"].update({
+                "entries_paused": paused,
+                "entries_paused_at": changed_at if paused else None,
+                "entries_pause_operator": operator,
+                "entries_pause_reason": reason,
+                "updated_at": changed_at,
+            })
+            self.database.record_audit_event(operator, action, "r2d2_experiment", code, detail)
+            return dict(self.memory["experiment"])
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """UPDATE r2d2_experiments
+                   SET entries_paused=%s,
+                       entries_paused_at=CASE WHEN %s THEN %s ELSE NULL END,
+                       entries_pause_operator=%s, entries_pause_reason=%s, updated_at=%s
+                   WHERE code=%s
+                   RETURNING id::text, code, status, base_currency, starting_capital, cash_balance,
+                             start_date, checkpoint_date, methodology_version, mandate,
+                             entries_paused, entries_paused_at, entries_pause_operator,
+                             entries_pause_reason, created_at, updated_at""",
+                (paused, paused, changed_at, operator, reason, changed_at, code),
+            ).fetchone()
+            if row is None:
+                raise LookupError(f"R2D2 experiment not found: {code}")
+            connection.execute(
+                """INSERT INTO audit_events
+                       (id, actor, action, subject_type, subject_id, detail, occurred_at)
+                   VALUES (%s, %s, %s, 'r2d2_experiment', %s, %s::jsonb, %s)""",
+                (str(uuid4()), operator, action, code, json.dumps(detail), changed_at),
+            )
+            connection.commit()
+        return self._experiment(row)
 
     def update_mark(self, experiment_id: str, market: str, symbol: str, price: float, fx: float,
                     high_water: float, stop: float, updated_at: datetime,
@@ -1426,6 +1499,10 @@ class R2D2PaperService:
         learning = self._learning_state or self._ensure_daily_learning(experiment, today)
         return R2D2DashboardResponse(
             experiment_code=experiment["code"], status=experiment["status"],
+            entries_paused=bool(experiment.get("entries_paused")),
+            entries_paused_at=experiment.get("entries_paused_at"),
+            entries_pause_operator=experiment.get("entries_pause_operator"),
+            entries_pause_reason=experiment.get("entries_pause_reason"),
             methodology_version=experiment["methodology_version"], start_date=experiment["start_date"].isoformat(),
             checkpoint_date=experiment["checkpoint_date"].isoformat(),
             checkpoint_reached=today >= experiment["checkpoint_date"],
@@ -1545,6 +1622,19 @@ class R2D2PaperService:
             trade_count += exit_count
             self._snapshot(experiment, local_day, now)
             positions = self.repo.positions(experiment["id"])
+            if experiment.get("entries_paused"):
+                self.repo.finish_cycle(
+                    cycle_id, "succeeded", 0, 0, trade_count,
+                    metadata={
+                        "entries_paused": True,
+                        "entries_paused_at": (
+                            experiment["entries_paused_at"].isoformat()
+                            if experiment.get("entries_paused_at") else None
+                        ),
+                        "entries_pause_reason": experiment.get("entries_pause_reason"),
+                    },
+                )
+                return self.dashboard()
             # Risk checks run every 20 seconds, while candidate scans run every minute.
             # An exit must reopen the opportunity set immediately instead of leaving a
             # vacant slot idle until the next scheduled full scan.
@@ -3129,6 +3219,9 @@ class R2D2PaperService:
     def _rotate_if_better(self, experiment: dict[str, Any], cycle_id: str, candidate: dict[str, Any],
                           positions: list[dict[str, Any]], quotes: dict[tuple[str, str], Any],
                           now: datetime) -> int:
+        current = self.repo.experiment(experiment["code"])
+        if experiment.get("entries_paused") or (current and current.get("entries_paused")):
+            return 0
         action, reasons = self._entry_decision(candidate)
         if action != "BUY":
             return 0
@@ -3198,6 +3291,9 @@ class R2D2PaperService:
     def _buy(self, experiment: dict[str, Any], cycle_id: str, item: dict[str, Any],
              positions: list[dict[str, Any]], now: datetime | None = None,
              *, entry_reasons: list[str] | None = None) -> dict[str, Any] | None:
+        current = self.repo.experiment(experiment["code"])
+        if experiment.get("entries_paused") or (current and current.get("entries_paused")):
+            return None
         if item.get("market") not in ACTIVE_MARKETS or item.get("quote_status") != "live":
             return None
         # Root-caused 2026-08-20: item["price"] was captured during
