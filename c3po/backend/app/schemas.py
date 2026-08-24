@@ -689,6 +689,12 @@ class R2D2Position(BaseModel):
     volume_state: str = "pending"
     data_status: str = "pending"
     decision_state: str = "monitor"
+    technical_defense_score: float = Field(default=0, ge=0, le=100)
+    technical_defense_severity: str = "healthy"
+    technical_defense_reviews: int = Field(default=0, ge=0)
+    technical_defense_reductions: int = Field(default=0, ge=0)
+    technical_defense_drivers: list[str] = Field(default_factory=list)
+    technical_defense_reviewed_at: datetime | None = None
     quote_status: str = "stored"
     quote_as_of: datetime | None = None
     technical_as_of: datetime | None = None
