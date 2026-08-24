@@ -1012,6 +1012,14 @@ def _load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _artifact_sha256(payload: Mapping[str, Any]) -> str | None:
+    # Reports also carry the parent manifest hash. Prefer the artifact's own
+    # self-hash so the operator output never labels the parent hash as the
+    # report hash.
+    value = payload.get("report_sha256") or payload.get("manifest_sha256")
+    return str(value) if value else None
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Frozen Valuation V3 A/B harness")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1047,7 +1055,7 @@ def main(argv: list[str] | None = None) -> int:
     write_immutable_json(args.output, payload)
     print(json.dumps({
         "artifact": str(args.output),
-        "sha256": payload.get("manifest_sha256") or payload.get("report_sha256"),
+        "sha256": _artifact_sha256(payload),
     }, sort_keys=True))
     return 0
 
