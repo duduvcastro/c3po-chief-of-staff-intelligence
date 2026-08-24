@@ -958,8 +958,11 @@ class B3ScreenerService:
         if not bonds:
             return
         longest = max(bonds, key=lambda bond: bond.get("duration_days") or 0)
-        rate = longest.get("sell_rate") or longest.get("buy_rate")
-        if rate is None:
+        observed_rate = longest.get("sell_rate") or longest.get("buy_rate")
+        if observed_rate is None:
+            return
+        rate = observed_rate / 100 if observed_rate > 1 else observed_rate
+        if rate <= 0:
             return
         divergence = abs(rate - effective_selic)
         if divergence > SELIC_MARKET_YIELD_DIVERGENCE_WARNING:
