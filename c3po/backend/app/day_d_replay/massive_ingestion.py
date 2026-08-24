@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping
 from uuid import uuid4
 
+from .point_in_time_universe import (
+    PointInTimeUniverseError,
+    load_point_in_time_universe_manifest,
+)
+
 
 class MassiveIngestionError(RuntimeError):
     pass
@@ -62,7 +67,7 @@ class MassiveR1Normalizer:
         session_date: date,
         regular_open: datetime,
         regular_close: datetime,
-        symbols_in_scope: Iterable[str] | None = None,
+        universe_manifest_path: Path | None,
         measured_at: datetime | None = None,
     ) -> Path:
         self._validate_window(session_date, regular_open, regular_close)
@@ -73,12 +78,27 @@ class MassiveR1Normalizer:
         observed_at = measured_at or datetime.now(timezone.utc)
         if observed_at.tzinfo is None or observed_at.utcoffset() is None:
             raise ValueError("measured_at must be timezone-aware")
-        scope = (
-            {str(symbol).strip().upper() for symbol in symbols_in_scope}
-            if symbols_in_scope is not None else None
-        )
-        if scope is not None and not scope:
-            raise MassiveIngestionError("symbols_in_scope cannot be empty when supplied")
+        if universe_manifest_path is None:
+            raise MassiveIngestionError(
+                "R1 requires a hash-bound point-in-time universe manifest"
+            )
+        try:
+            universe_payload, frozen_scope = load_point_in_time_universe_manifest(
+                universe_manifest_path,
+                expected_session_date=session_date,
+            )
+        except PointInTimeUniverseError as exc:
+            raise MassiveIngestionError(f"R1 universe gate failed: {exc}") from exc
+        scope = set(frozen_scope)
+        universe_evidence = {
+            "path": str(universe_manifest_path),
+            "bytes": universe_manifest_path.stat().st_size,
+            "sha256": self._sha256_file(universe_manifest_path),
+            "payload_sha256": universe_payload["payload_sha256"],
+            "policy_version": universe_payload["policy_version"],
+            "session_date": universe_payload["session_date"],
+            "symbol_count": len(scope),
+        }
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = output_path.with_name(f".{output_path.name}.{uuid4().hex}.part")
@@ -162,6 +182,7 @@ class MassiveR1Normalizer:
                     "regular_open": regular_open.astimezone(timezone.utc).isoformat(),
                     "regular_close": regular_close.astimezone(timezone.utc).isoformat(),
                 },
+                "point_in_time_universe": universe_evidence,
                 "counters": counts,
                 "identity": {
                     "formula": "raw_rows_seen == emitted_rows + dropped_rows + filtered_rows",
@@ -227,6 +248,7 @@ class MassiveR1Normalizer:
             for reason in (*QualityDropReason, *ScopeFilterReason)
         }
         quality_by_dataset: dict[str, dict[str, int | float | bool]] = {}
+        universe_evidence: dict[str, Any] | None = None
         for manifest in manifests:
             if manifest.get("policy_version") != self.policy_version:
                 raise MassiveIngestionError("session aggregation encountered an unknown policy")
@@ -257,12 +279,24 @@ class MassiveR1Normalizer:
                 ),
                 "passed": True,
             }
+            candidate_universe = manifest.get("point_in_time_universe")
+            if not isinstance(candidate_universe, dict):
+                raise MassiveIngestionError(
+                    "session aggregation encountered a file without universe evidence"
+                )
+            if universe_evidence is None:
+                universe_evidence = candidate_universe
+            elif candidate_universe != universe_evidence:
+                raise MassiveIngestionError(
+                    "session aggregation cannot mix point-in-time universes"
+                )
         self._assert_identity(totals)
         payload = {
             "schema_version": "DAY-D-MASSIVE-R1-SESSION-v1",
             "policy_version": self.policy_version,
             "session_date": next(iter(session_dates)),
             "file_manifests": [str(path) for path in paths],
+            "point_in_time_universe": universe_evidence,
             "counters": totals,
             "identity": {
                 "formula": "raw_rows_seen == emitted_rows + dropped_rows + filtered_rows",
@@ -282,7 +316,7 @@ class MassiveR1Normalizer:
         dataset: str,
         regular_open: datetime,
         regular_close: datetime,
-        symbols_in_scope: set[str] | None,
+        symbols_in_scope: set[str],
         seen_exact: set[str],
     ) -> RowDisposition:
         if not isinstance(row, Mapping):
@@ -290,7 +324,7 @@ class MassiveR1Normalizer:
         symbol = str(row.get("ticker") or row.get("symbol") or "").strip().upper()
         if not symbol:
             return RowDisposition("dropped", reason=QualityDropReason.MALFORMED_ROW)
-        if symbols_in_scope is not None and symbol not in symbols_in_scope:
+        if symbol not in symbols_in_scope:
             return RowDisposition("filtered", reason=ScopeFilterReason.SYMBOL_NOT_IN_SCOPE)
 
         event_ns = self._positive_int(row.get("participant_timestamp"))

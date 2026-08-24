@@ -15,6 +15,21 @@ def test_stage1_authorization_allows_only_purchase_and_passive_capture() -> None
     assert contract["scope"]["bulk_download_authorized"] is False
     assert contract["scope"]["limited_first_byte_download_authorized_after_reviewed_merge"] is True
     assert contract["scope"]["official_252_session_tick_window_authorized"] is False
+    assert contract["scope"][
+        "point_in_time_reference_tickers_authorized_after_reviewed_merge"
+    ] is True
+    assert contract["scope"]["point_in_time_reference_endpoint"] == (
+        "/v3/reference/tickers"
+    )
+    assert contract["scope"]["point_in_time_reference_scope"] == (
+        "only_the_twelve_frozen_qualification_previous_session_dates_with_"
+        "complete_pagination_and_immutable_page_hashes"
+    )
+    assert contract["scope"][
+        "point_in_time_reference_request_count_is_evidence_not_campaign_bytes"
+    ] is True
+    assert contract["scope"]["historical_rest_trades_authorized"] is False
+    assert contract["scope"]["historical_rest_quotes_authorized"] is False
     assert contract["scope"]["raw_capture_authorized"] is True
     assert contract["scope"]["raw_capture_runtime_default_enabled"] is False
     assert contract["scope"]["raw_capture_scope"] == (
@@ -24,12 +39,18 @@ def test_stage1_authorization_allows_only_purchase_and_passive_capture() -> None
     assert contract["scope"]["production_trading_change_authorized"] is False
     assert contract["scope"]["qualified_tick_lot_local_deletion_authorized"] is True
     assert contract["scope"]["minute_aggregate_local_deletion_authorized"] is False
+    assert contract["owner_approvals"][
+        "point_in_time_reference_tickers_for_qualification_universes_approved"
+    ] is True
     assert contract["supersedes_stage0_prohibition_for"] == [
         "purchase_polygon",
         "enable_raw_capture",
     ]
     assert "enable_raw_capture" not in contract["does_not_supersede_stage0_prohibition_for"]
     assert "run_official_replay" in contract["does_not_supersede_stage0_prohibition_for"]
+    assert "download_historical_trades_or_quotes_via_rest" in contract[
+        "does_not_supersede_stage0_prohibition_for"
+    ]
 
 
 def test_stage1_authorization_requires_verified_storage_and_ingestion_policy() -> None:

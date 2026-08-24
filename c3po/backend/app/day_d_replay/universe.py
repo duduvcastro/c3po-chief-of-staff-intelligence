@@ -111,7 +111,7 @@ def build_d1_universe(
     for snapshot in latest_by_symbol_date.values():
         history_by_symbol[snapshot.symbol].append(snapshot)
 
-    candidates: list[tuple[float, str, SecurityDailySnapshot]] = []
+    candidates: list[tuple[float, str, str, SecurityDailySnapshot]] = []
     for symbol, history in history_by_symbol.items():
         history.sort(key=lambda item: item.session_date)
         d1 = next(
@@ -133,15 +133,22 @@ def build_d1_universe(
         if len({item.session_date for item in window}) != 20:
             continue
         median_dollar_volume = float(median(item.dollar_volume_usd for item in window))
-        candidates.append((median_dollar_volume, _normalized_symbol(symbol), d1))
+        candidates.append((
+            median_dollar_volume,
+            _normalized_symbol(symbol),
+            symbol.upper(),
+            d1,
+        ))
 
-    candidates.sort(key=lambda item: (-item[0], item[1]))
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
 
     # The first candidate for an issuer is necessarily its most liquid class.
-    ranked_unique_issuers: list[tuple[float, str, SecurityDailySnapshot]] = []
+    ranked_unique_issuers: list[
+        tuple[float, str, str, SecurityDailySnapshot]
+    ] = []
     seen_issuers: set[str] = set()
     for candidate in candidates:
-        d1 = candidate[2]
+        d1 = candidate[3]
         if d1.issuer_id in seen_issuers:
             continue
         seen_issuers.add(d1.issuer_id)
@@ -149,7 +156,7 @@ def build_d1_universe(
 
     selected: list[UniverseMember] = []
     skipped: list[tuple[str, str]] = []
-    for median_dollar_volume, _normalized, d1 in ranked_unique_issuers:
+    for median_dollar_volume, _normalized, _raw_symbol, d1 in ranked_unique_issuers:
         unavailable = unavailable_by_symbol.get(d1.symbol)
         if unavailable is not None:
             skipped.append((d1.symbol, unavailable.reason_code.upper()))
