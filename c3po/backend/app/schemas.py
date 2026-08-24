@@ -696,6 +696,16 @@ class R2D2Position(BaseModel):
     updated_at: datetime
 
 
+class R2D2LivePositionsResponse(BaseModel):
+    generated_at: datetime
+    refresh_seconds: int = Field(default=1, ge=1)
+    nav_usd: float
+    cash_usd: float
+    gross_exposure_usd: float
+    open_positions: int = Field(ge=0)
+    positions: list[R2D2Position]
+
+
 class R2D2Trade(BaseModel):
     id: str
     market: Literal["B3", "NASDAQ", "NYSE"]

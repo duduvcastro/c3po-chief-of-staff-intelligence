@@ -91,6 +91,7 @@ from .schemas import (
     RealtimePortfolioResponse,
     RealtimePortfolioSymbolSearchResponse,
     R2D2DashboardResponse,
+    R2D2LivePositionsResponse,
     ServerUsageResponse,
     SystemHealthResponse,
     ValuationChangeResponse,
@@ -1420,6 +1421,11 @@ def chewie_fundamentals_report(market: str, symbol: str) -> FileResponse:
 @app.get("/api/v1/r2d2", response_model=R2D2DashboardResponse)
 def r2d2_dashboard() -> R2D2DashboardResponse:
     return r2d2.dashboard()
+
+
+@app.get("/api/v1/r2d2/live-positions", response_model=R2D2LivePositionsResponse)
+def r2d2_live_positions() -> R2D2LivePositionsResponse:
+    return r2d2.live_positions()
 
 
 @app.post("/api/v1/feedback", response_model=FeedbackResponse, status_code=201)
