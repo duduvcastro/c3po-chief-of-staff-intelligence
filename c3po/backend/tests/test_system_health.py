@@ -1,5 +1,9 @@
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
+from pathlib import Path
+from types import SimpleNamespace
 
 from app.config import Settings
 from app.schemas import (
@@ -23,6 +27,19 @@ class _Connection:
 
 
 class _Database:
+    def __init__(
+        self,
+        now: datetime,
+        *,
+        pre_ab_ready: bool = True,
+        snapshot_published_at: datetime | None = None,
+        include_peer_snapshots: bool = True,
+    ) -> None:
+        self.now = now
+        self.pre_ab_ready = pre_ab_ready
+        self.snapshot_published_at = snapshot_published_at or now
+        self.include_peer_snapshots = include_peer_snapshots
+
     @contextmanager
     def connection(self):
         yield _Connection()
@@ -33,6 +50,33 @@ class _Database:
             "cvm": {"last_status": "succeeded", "last_success_at": now, "last_error": None},
             "sec": {"last_status": "succeeded", "last_success_at": now, "last_error": None},
             "ri": {"last_status": "succeeded", "last_success_at": now, "last_error": None},
+        }
+
+    def latest_analysis_snapshot_outputs(
+        self,
+        analysis_type: str,
+        entity_keys: list[str],
+        output_key: str,
+    ):
+        if analysis_type != "valuation_v2_peer_quality" or not self.include_peer_snapshots:
+            return {}
+        assert output_key == "pre_ab_report"
+        gates = {
+            "target_schema_current": self.pre_ab_ready,
+            "target_roe_non_null": True,
+            "closure_fully_attempted": True,
+            "chewie_snapshot_new_since_rejected_ab": True,
+            "fmp_forward_structural_eligibility_nonzero": True,
+        }
+        return {
+            key: {
+                "published_at": self.snapshot_published_at,
+                "output": {
+                    "gates": dict(gates),
+                    "pre_ab_ready": self.pre_ab_ready,
+                },
+            }
+            for key in entity_keys
         }
 
 
@@ -137,7 +181,16 @@ class _BackblazeClient:
         return {"ResponseMetadata": {"HTTPStatusCode": 200}}
 
 
-def _service(*, disk_percent: float = 62.0, eodhd_base_url: str = "https://eodhd.com") -> SystemHealthService:
+def _service(
+    *,
+    disk_percent: float = 62.0,
+    eodhd_base_url: str = "https://eodhd.com",
+    day_d_root: Path = Path("/__c3po_system_health_day_d_test__"),
+    day_d_free_gib: float = 30.0,
+    pre_ab_ready: bool = True,
+    snapshot_published_at: datetime | None = None,
+    include_peer_snapshots: bool = True,
+) -> SystemHealthService:
     now = datetime.now(timezone.utc)
     settings = Settings(
         database_url="postgresql://configured",
@@ -152,12 +205,18 @@ def _service(*, disk_percent: float = 62.0, eodhd_base_url: str = "https://eodhd
         day_d_b2_key_id="configured-key-id",
         day_d_b2_application_key="configured-application-key",
         day_d_b2_bucket="c3po-day-d-cold-test",
+        day_d_dataset_root=day_d_root,
         server_usage_disk_warning_percent=70,
         server_usage_cpu_peak_warning_percent=85,
     )
     return SystemHealthService(
         settings,
-        _Database(),
+        _Database(
+            now,
+            pre_ab_ready=pre_ab_ready,
+            snapshot_published_at=snapshot_published_at,
+            include_peer_snapshots=include_peer_snapshots,
+        ),
         _Legacy(now),
         _OpenFinance(),
         _MarketData(now),
@@ -165,18 +224,19 @@ def _service(*, disk_percent: float = 62.0, eodhd_base_url: str = "https://eodhd
         cache_seconds=0,
         external_get=_external_get,
         backblaze_client=_BackblazeClient(),
+        disk_usage=lambda _path: SimpleNamespace(free=int(day_d_free_gib * 1024**3)),
     )
 
 
 def test_consolidated_health_covers_every_operational_area() -> None:
     response = _service().snapshot(force=True)
 
-    assert [group.key for group in response.groups] == ["apis", "external_services", "open_finance", "aws", "quotes", "official_sources", "automations"]
+    assert [group.key for group in response.groups] == ["apis", "external_services", "open_finance", "aws", "controls", "quotes", "official_sources", "automations"]
     assert response.status == "healthy"
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve", "B2 zero-cap evidence",
     }
     assert "WhatsApp capture" not in {item.name for group in response.groups for item in group.items}
 
@@ -190,6 +250,125 @@ def test_resource_pressure_marks_aws_and_overall_health_for_review() -> None:
     assert response.quality < 100
 
 
+def test_day_d_and_valuation_controls_are_visible_and_healthy() -> None:
+    response = _service().snapshot(force=True)
+
+    controls = next(group for group in response.groups if group.key == "controls")
+    assert controls.status == "healthy"
+    assert controls.healthy_count == 4
+    assert {item.name for item in controls.items} == {
+        "Valuation V2.1b cycle",
+        "V3 pre-A/B gate",
+        "Day D disk reserve",
+        "B2 zero-cap evidence",
+    }
+
+
+def test_pre_ab_gate_is_red_when_any_frozen_gate_fails() -> None:
+    response = _service(pre_ab_ready=False).snapshot(force=True)
+
+    gate = next(
+        item
+        for group in response.groups
+        for item in group.items
+        if item.name == "V3 pre-A/B gate"
+    )
+    assert gate.status == "offline"
+    assert "target_schema_current" in gate.detail
+
+
+def test_v2_1b_cycle_is_red_after_the_window_when_snapshots_are_stale() -> None:
+    published = datetime(2026, 8, 22, 4, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
+    service = _service(snapshot_published_at=published)
+
+    cycle = next(
+        item
+        for item in service._valuation_v2_1b_health(now)
+        if item.name == "Valuation V2.1b cycle"
+    )
+    assert cycle.status == "offline"
+    assert "B3" in cycle.detail
+    assert "US" in cycle.detail
+
+
+def test_first_v2_1b_cycle_without_evidence_is_pending_not_falsely_red() -> None:
+    service = _service(include_peer_snapshots=False)
+
+    cycle, gate = service._valuation_v2_1b_health(
+        datetime(2026, 8, 24, 2, 0, tzinfo=timezone.utc)
+    )
+
+    assert cycle.status == "attention"
+    assert "First V2.1b evidence pending" in cycle.detail
+    assert gate.status == "attention"
+
+
+def test_day_d_disk_reserve_is_red_below_the_frozen_20_gib() -> None:
+    response = _service(day_d_free_gib=19.99).snapshot(force=True)
+
+    reserve = next(
+        item
+        for group in response.groups
+        for item in group.items
+        if item.name == "Day D disk reserve"
+    )
+    assert reserve.status == "offline"
+    assert "20.0 GiB" in reserve.detail
+
+
+def test_b2_cap_stays_red_until_exact_zero_evidence_is_chained(tmp_path: Path) -> None:
+    measured_at = datetime(2026, 8, 23, 18, 6, tzinfo=timezone.utc)
+    lot_id = "qualification-2024-12-24"
+    raw_path = (
+        tmp_path
+        / "provider=backblaze"
+        / "raw-restore-reports"
+        / f"lot_id={lot_id}"
+        / "raw-restore-test.json"
+    )
+    raw_path.parent.mkdir(parents=True)
+    raw_path.write_text(json.dumps({
+        "schema_version": "DAY-D-B2-RAW-RESTORE-v1",
+        "lot_id": lot_id,
+        "measured_at": measured_at.isoformat(),
+        "passed": True,
+        "restored_sample_removed": True,
+    }), encoding="utf-8")
+    service = _service(day_d_root=tmp_path)
+
+    pending = service._b2_zero_cap_health(measured_at + timedelta(minutes=5))
+
+    assert pending.status == "offline"
+    assert "deletion remains blocked" in pending.detail
+
+    cap_path = (
+        tmp_path
+        / "provider=backblaze"
+        / "billing-cap-evidence"
+        / f"lot_id={lot_id}"
+        / "billing-cap-test.json"
+    )
+    cap_path.parent.mkdir(parents=True)
+    raw_sha = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+    cap_path.write_text(json.dumps({
+        "schema_version": "DAY-D-B2-BILLING-CAP-v1",
+        "lot_id": lot_id,
+        "measured_at": (measured_at + timedelta(minutes=10)).isoformat(),
+        "operator_attestation": True,
+        "raw_restore_report": {"path": str(raw_path.resolve()), "sha256": raw_sha},
+        "original_cap_usd_per_day": 0.0,
+        "temporary_cap_usd_per_day": 0.5,
+        "final_cap_usd_per_day": 0.0,
+        "restored_at": (measured_at + timedelta(minutes=9)).isoformat(),
+    }), encoding="utf-8")
+
+    restored = service._b2_zero_cap_health(measured_at + timedelta(minutes=11))
+
+    assert restored.status == "healthy"
+    assert "Exact US$0/day restoration evidenced" in restored.detail
+
+
 def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     service = _service()
     service.settings.eodhd_api_token = ""
@@ -200,8 +379,8 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     assert usage.status == "attention"
     assert response.status == "attention"
     assert response.quality == 96
-    assert response.healthy_count == 23
-    assert response.total_count == 24
+    assert response.healthy_count == 27
+    assert response.total_count == 28
 
 
 def test_finnhub_is_monitored_in_market_quotes() -> None:

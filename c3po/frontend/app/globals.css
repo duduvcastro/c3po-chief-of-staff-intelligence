@@ -1524,6 +1524,7 @@ button { cursor: pointer; }
 .system-health-group-grid { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: start; }
 .system-health-group { min-width: 0; }
 .system-health-group-aws { order: -1; border-color: rgba(183, 135, 28, .42); }
+.system-health-group-controls { border-color: rgba(34, 111, 151, .38); }
 .health-list-horizontal { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); }
 .health-list-horizontal .health-row { min-width: 0; grid-template-columns: 22px 36px minmax(0, 1fr); padding: 0 14px; border-bottom: 0; border-right: 1px solid var(--line); }
 .health-list-horizontal .health-row:last-child { border-right: 0; }

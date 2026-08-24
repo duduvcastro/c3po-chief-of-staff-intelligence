@@ -196,7 +196,7 @@ interface Integration {
   last_update: string;
 }
 
-type SystemHealthGroupKey = "apis" | "external_services" | "open_finance" | "aws" | "quotes" | "official_sources" | "automations";
+type SystemHealthGroupKey = "apis" | "external_services" | "open_finance" | "aws" | "controls" | "quotes" | "official_sources" | "automations";
 
 interface SystemHealthGroup {
   key: SystemHealthGroupKey;
@@ -7324,6 +7324,7 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
     external_services: Cloud,
     open_finance: WalletCards,
     aws: Server,
+    controls: ShieldCheck,
     quotes: LineChart,
     official_sources: Building2,
     automations: RefreshCw
@@ -7341,12 +7342,13 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
   const orderedGroups = [...data.groups].sort((left, right) => {
     const order: Record<SystemHealthGroupKey, number> = {
       aws: 0,
-      apis: 1,
-      external_services: 2,
-      open_finance: 3,
-      quotes: 4,
-      official_sources: 5,
-      automations: 6
+      controls: 1,
+      apis: 2,
+      external_services: 3,
+      open_finance: 4,
+      quotes: 5,
+      official_sources: 6,
+      automations: 7
     };
     return order[left.key] - order[right.key];
   });

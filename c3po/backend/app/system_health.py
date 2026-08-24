@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
+from pathlib import Path
 import re
+import shutil
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -27,6 +31,7 @@ class SystemHealthService:
         cache_seconds: int = 60,
         external_get: Callable[..., Any] | None = None,
         backblaze_client: Any | None = None,
+        disk_usage: Callable[[Path], Any] | None = None,
     ) -> None:
         self.settings = settings
         self.database = database
@@ -37,6 +42,7 @@ class SystemHealthService:
         self.cache_seconds = cache_seconds
         self.external_get = external_get or httpx.get
         self.backblaze_client = backblaze_client
+        self.disk_usage = disk_usage or shutil.disk_usage
         self._cached_at: datetime | None = None
         self._cached_response: SystemHealthResponse | None = None
 
@@ -57,6 +63,7 @@ class SystemHealthService:
             self._group("external_services", "Contracted & External Services", self._external_services_health(now)),
             self._group("open_finance", "Pluggy & Banks", self._safe_items("Pluggy API", self.open_finance.integration_health, now)),
             self._group("aws", "AWS Infrastructure", self._aws_health(now)),
+            self._group("controls", "Day D & Valuation Controls", self._day_d_and_valuation_health(now)),
             self._group("quotes", "Market Quotes", self._quote_health(now)),
             self._group("official_sources", "Official Intelligence", self._official_sources_health(now)),
             self._group("automations", "Automatic Routines", self._automation_health(now)),
@@ -600,6 +607,262 @@ class SystemHealthService:
                 last_update=self._format_time(server.current.collected_at) if server.current.collected_at else "No recent sample",
             ))
         return items
+
+    def _day_d_and_valuation_health(self, now: datetime) -> list[IntegrationHealth]:
+        return [
+            *self._valuation_v2_1b_health(now),
+            self._day_d_disk_health(now),
+            self._b2_zero_cap_health(now),
+        ]
+
+    def _valuation_v2_1b_health(self, now: datetime) -> list[IntegrationHealth]:
+        keys = ["B3_V2_PEER_QUALITY", "US_V2_PEER_QUALITY"]
+        try:
+            snapshots = self.database.latest_analysis_snapshot_outputs(
+                "valuation_v2_peer_quality", keys, "pre_ab_report"
+            )
+        except Exception as exc:
+            detail = f"Snapshot check failed · {self._safe_error(exc)}"
+            return [
+                IntegrationHealth(
+                    name="Valuation V2.1b cycle",
+                    status="offline",
+                    detail=detail,
+                    last_update=self._format_time(now),
+                ),
+                IntegrationHealth(
+                    name="V3 pre-A/B gate",
+                    status="offline",
+                    detail=detail,
+                    last_update=self._format_time(now),
+                ),
+            ]
+
+        local_now = now.astimezone(SAO_PAULO)
+        due_today = local_now.replace(hour=1, minute=0, second=0, microsecond=0)
+        expected_due = due_today if local_now >= due_today else due_today - timedelta(days=1)
+        window_end = due_today.replace(hour=8)
+        published: dict[str, datetime] = {}
+        for key, snapshot in snapshots.items():
+            value = snapshot.get("published_at")
+            if isinstance(value, datetime):
+                published[key] = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+        missing = [key.split("_")[0] for key in keys if key not in published]
+        stale = [
+            key.split("_")[0]
+            for key, value in published.items()
+            if value.astimezone(SAO_PAULO) < expected_due
+        ]
+        if not published:
+            cycle_status = "attention"
+            cycle_detail = "First V2.1b evidence pending · scheduled window 01:00–08:00 BRT"
+            cycle_update = self._format_time(now)
+        elif not missing and not stale:
+            cycle_status = "healthy"
+            cycle_detail = "B3 and US peer-quality snapshots completed for the expected cycle"
+            cycle_update = self._format_time(min(published.values()))
+        else:
+            inside_current_window = due_today <= local_now < window_end and expected_due == due_today
+            cycle_status = "attention" if inside_current_window else "offline"
+            pending = sorted(set(missing + stale))
+            cycle_detail = (
+                f"Expected cycle since {expected_due:%d/%m %H:%M} BRT · pending: "
+                + ", ".join(pending)
+            )
+            cycle_update = (
+                self._format_time(max(published.values()))
+                if published
+                else self._format_time(now)
+            )
+
+        reports: dict[str, dict[str, Any]] = {}
+        for key, snapshot in snapshots.items():
+            report = snapshot.get("output")
+            if isinstance(report, dict):
+                reports[key.split("_")[0]] = report
+
+        if len(reports) < 2:
+            gate_status = "attention"
+            gate_detail = "Pre-A/B report pending for: " + ", ".join(
+                market for market in ("B3", "US") if market not in reports
+            )
+        else:
+            failed: list[str] = []
+            for market, report in sorted(reports.items()):
+                gates = report.get("gates")
+                if not isinstance(gates, dict):
+                    failed.append(f"{market}:report_malformed")
+                    continue
+                failed.extend(
+                    f"{market}:{name}"
+                    for name, passed in gates.items()
+                    if passed is not True
+                )
+                if report.get("pre_ab_ready") is not True and not any(
+                    item.startswith(f"{market}:") for item in failed
+                ):
+                    failed.append(f"{market}:pre_ab_ready")
+            gate_status = "offline" if failed else "healthy"
+            gate_detail = (
+                "All five frozen gates pass in B3 and US"
+                if not failed
+                else "Blocked · " + ", ".join(failed)
+            )
+
+        return [
+            IntegrationHealth(
+                name="Valuation V2.1b cycle",
+                status=cycle_status,
+                detail=cycle_detail,
+                last_update=cycle_update,
+            ),
+            IntegrationHealth(
+                name="V3 pre-A/B gate",
+                status=gate_status,
+                detail=gate_detail,
+                last_update=cycle_update,
+            ),
+        ]
+
+    def _day_d_disk_health(self, now: datetime) -> IntegrationHealth:
+        root = self.settings.day_d_dataset_root
+        minimum_free_bytes = int(self.settings.day_d_dataset_min_free_disk_gb * 1024**3)
+        try:
+            usage = self.disk_usage(root)
+            free_bytes = int(usage.free)
+        except Exception as exc:
+            return IntegrationHealth(
+                name="Day D disk reserve",
+                status="offline",
+                detail=f"Dedicated mount unavailable · {self._safe_error(exc)}",
+                last_update=self._format_time(now),
+            )
+        status = "healthy" if free_bytes >= minimum_free_bytes else "offline"
+        return IntegrationHealth(
+            name="Day D disk reserve",
+            status=status,
+            detail=(
+                f"{free_bytes / 1024**3:.1f} GiB free · frozen minimum "
+                f"{minimum_free_bytes / 1024**3:.1f} GiB · {root}"
+            ),
+            last_update=self._format_time(now),
+        )
+
+    def _b2_zero_cap_health(self, now: datetime) -> IntegrationHealth:
+        root = self.settings.day_d_dataset_root
+        reports_root = root / "provider=backblaze" / "raw-restore-reports"
+        try:
+            reports = [
+                (path, self._read_evidence(path))
+                for path in reports_root.glob("lot_id=*/raw-restore-*.json")
+            ]
+        except Exception as exc:
+            return IntegrationHealth(
+                name="B2 zero-cap evidence",
+                status="offline",
+                detail=f"Evidence check failed · {self._safe_error(exc)}",
+                last_update=self._format_time(now),
+            )
+        if not reports:
+            return IntegrationHealth(
+                name="B2 zero-cap evidence",
+                status="healthy",
+                detail="No RAW restore drill is waiting for a zero-cap restoration record",
+                last_update=self._format_time(now),
+            )
+
+        raw_path, raw = max(
+            reports,
+            key=lambda item: self._evidence_time(item[1]) or datetime.min.replace(tzinfo=timezone.utc),
+        )
+        lot_id = str(raw.get("lot_id") or "unknown")
+        if raw.get("schema_version") != "DAY-D-B2-RAW-RESTORE-v1" or raw.get("passed") is not True:
+            return IntegrationHealth(
+                name="B2 zero-cap evidence",
+                status="offline",
+                detail=f"Latest RAW drill is not valid · lot {lot_id}",
+                last_update=self._evidence_display_time(raw, now),
+            )
+
+        expected_ref = {
+            "path": str(raw_path.resolve()),
+            "sha256": self._sha256_file(raw_path),
+        }
+        cap_root = root / "provider=backblaze" / "billing-cap-evidence" / f"lot_id={lot_id}"
+        try:
+            caps = [self._read_evidence(path) for path in cap_root.glob("billing-cap-*.json")]
+        except Exception as exc:
+            return IntegrationHealth(
+                name="B2 zero-cap evidence",
+                status="offline",
+                detail=f"Cap evidence check failed · {self._safe_error(exc)}",
+                last_update=self._evidence_display_time(raw, now),
+            )
+        valid_caps = [
+            cap
+            for cap in caps
+            if cap.get("schema_version") == "DAY-D-B2-BILLING-CAP-v1"
+            and cap.get("operator_attestation") is True
+            and cap.get("raw_restore_report") == expected_ref
+            and self._exact_zero(cap.get("original_cap_usd_per_day"))
+            and self._exact_zero(cap.get("final_cap_usd_per_day"))
+            and self._payload_time(cap, "restored_at") is not None
+        ]
+        if not valid_caps:
+            return IntegrationHealth(
+                name="B2 zero-cap evidence",
+                status="offline",
+                detail=f"Zero-cap restoration is not evidenced · lot {lot_id} · deletion remains blocked",
+                last_update=self._evidence_display_time(raw, now),
+            )
+        latest_cap = max(
+            valid_caps,
+            key=lambda item: self._evidence_time(item) or datetime.min.replace(tzinfo=timezone.utc),
+        )
+        return IntegrationHealth(
+            name="B2 zero-cap evidence",
+            status="healthy",
+            detail=f"Exact US$0/day restoration evidenced · lot {lot_id}",
+            last_update=self._evidence_display_time(latest_cap, now),
+        )
+
+    @staticmethod
+    def _read_evidence(path: Path) -> dict[str, Any]:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"evidence is not an object: {path}")
+        return payload
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _evidence_time(payload: dict[str, Any]) -> datetime | None:
+        return SystemHealthService._payload_time(payload, "measured_at")
+
+    @staticmethod
+    def _payload_time(payload: dict[str, Any], key: str) -> datetime | None:
+        try:
+            value = datetime.fromisoformat(str(payload.get(key) or ""))
+        except ValueError:
+            return None
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    @staticmethod
+    def _exact_zero(value: Any) -> bool:
+        try:
+            return float(value) == 0.0
+        except (TypeError, ValueError):
+            return False
+
+    def _evidence_display_time(self, payload: dict[str, Any], fallback: datetime) -> str:
+        return self._format_time(self._evidence_time(payload) or fallback)
 
     def _automation_health(self, now: datetime) -> list[IntegrationHealth]:
         try:
