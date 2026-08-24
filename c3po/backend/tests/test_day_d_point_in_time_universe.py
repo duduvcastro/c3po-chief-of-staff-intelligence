@@ -191,7 +191,13 @@ def test_reference_client_uses_only_the_authorized_paginated_endpoint() -> None:
         "sort": "ticker",
         "apiKey": "secret",
     }
-    assert http.calls[1][1] == {"apiKey": "secret"}
+    assert http.calls[1] == (
+        "https://api.massive.com/v3/reference/tickers",
+        {"cursor": "next", "apiKey": "secret"},
+    )
+    assert pages[1].request_url_without_api_key == (
+        "https://api.massive.com/v3/reference/tickers?cursor=next"
+    )
     evidence = b"".join(page.canonical_bytes for page in pages)
     assert b"secret" not in evidence
     assert all("secret" not in page.request_url_without_api_key for page in pages)
