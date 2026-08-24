@@ -722,9 +722,12 @@ def test_r2d2_daily_learning_is_versioned_and_tightens_with_weak_evidence() -> N
 
 
 def test_r2d2_market_windows_cover_only_live_us_execution_markets() -> None:
+    regular_open = datetime(2026, 8, 17, 13, 30, tzinfo=timezone.utc)
     simultaneous_session = datetime(2026, 8, 17, 14, 0, tzinfo=timezone.utc)
     after_close = datetime(2026, 8, 17, 22, 0, tzinfo=timezone.utc)
 
+    assert R2D2PaperService.risk_markets(regular_open) == ["NASDAQ", "NYSE"]
+    assert R2D2PaperService.open_markets(regular_open) == []
     assert R2D2PaperService.open_markets(simultaneous_session) == ["NASDAQ", "NYSE"]
     assert R2D2PaperService.open_markets(after_close) == []
 

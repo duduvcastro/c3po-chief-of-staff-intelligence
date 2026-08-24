@@ -65,6 +65,7 @@ US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
 POSITION_STREAM_PRIORITY = 200
 # US session policy is centralized here so candidate screening, position
 # protection and close-time decisions cannot silently drift apart again.
+US_REGULAR_OPEN_ET = time(9, 30)
 US_SCREENING_START_ET = time(9, 40)
 US_SCREENING_CUTOFF_ET = time(15, 50)
 US_REGULAR_CLOSE_ET = time(16, 0)
@@ -128,6 +129,38 @@ def _trade_is_corrected(trade: dict[str, Any]) -> bool:
     performance or learning signal must exclude these explicitly instead."""
     snapshot = trade.get("decision_snapshot")
     return isinstance(snapshot, dict) and "correction" in snapshot
+
+
+def _trade_is_strategy_excluded(trade: dict[str, Any]) -> bool:
+    """True for immutable ledger rows that must not train or score strategy.
+
+    Corrections are also excluded from accounting because their P&L is known
+    to be wrong. Operator wind-down SELLs are different: their realized P&L is
+    economically real and remains in the accounting NAV, but the administrative
+    exit must not be treated as a strategy decision or learning outcome.
+    """
+    snapshot = trade.get("decision_snapshot")
+    return _trade_is_corrected(trade) or (
+        isinstance(snapshot, dict) and "operator_wind_down" in snapshot
+    )
+
+
+def _paper_exit_execution(*, market: str, price: float, quantity: float, fx: float) -> dict[str, float]:
+    """Apply the paper ledger's existing market-specific SELL friction model."""
+    slippage_rate = 0.0015 if market == "B3" else 0.0010
+    fee_rate = 0.0006 if market == "B3" else 0.0004
+    fill_price = price * (1 - slippage_rate)
+    gross_value_usd = quantity * fill_price * fx
+    fees_usd = gross_value_usd * fee_rate
+    slippage_usd = quantity * (price - fill_price) * fx
+    return {
+        "slippage_rate": slippage_rate,
+        "fee_rate": fee_rate,
+        "fill_price": fill_price,
+        "gross_value_usd": gross_value_usd,
+        "fees_usd": fees_usd,
+        "slippage_usd": slippage_usd,
+    }
 
 
 def _realized_return_percent(*, gross_value_usd: Any, fees_usd: Any,
@@ -984,11 +1017,51 @@ class R2D2Repository:
             for row in rows
         ]
 
+    def strategy_realized_pnl_by_session(self, experiment_id: str) -> list[dict[str, Any]]:
+        """Realized P&L eligible for strategy metrics and adaptive learning."""
+        if not self.database.database_url:
+            buckets: dict[date, float] = {}
+            for item in self.memory["trades"]:
+                if item.get("experiment_id") != experiment_id:
+                    continue
+                if item.get("side") != "SELL" or item.get("realized_pnl_usd") is None:
+                    continue
+                if _trade_is_strategy_excluded(item):
+                    continue
+                executed_at = item.get("executed_at")
+                if not isinstance(executed_at, datetime):
+                    continue
+                session_date = executed_at.astimezone(SAO_PAULO).date()
+                buckets[session_date] = buckets.get(session_date, 0.0) + _float(
+                    item["realized_pnl_usd"]
+                )
+            return [
+                {"session_date": session_date, "realized_pnl_usd": pnl}
+                for session_date, pnl in sorted(buckets.items())
+            ]
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """SELECT (executed_at AT TIME ZONE 'America/Sao_Paulo')::date AS session_date,
+                          COALESCE(SUM(realized_pnl_usd), 0)
+                   FROM r2d2_trades
+                   WHERE experiment_id=%s AND side='SELL' AND realized_pnl_usd IS NOT NULL
+                     AND NOT (decision_snapshot ? 'correction')
+                     AND NOT (decision_snapshot ? 'operator_wind_down')
+                   GROUP BY session_date
+                   ORDER BY session_date""",
+                (experiment_id,),
+            ).fetchall()
+        return [
+            {"session_date": row[0], "realized_pnl_usd": _float(row[1])}
+            for row in rows
+        ]
+
     def trade_summary(self, experiment_id: str) -> dict[str, int]:
         if not self.database.database_url:
             trades = [
                 item for item in self.memory["trades"]
-                if item.get("experiment_id") == experiment_id and not _trade_is_corrected(item)
+                if item.get("experiment_id") == experiment_id
+                and not _trade_is_strategy_excluded(item)
             ]
             return {
                 "total_transactions": len(trades),
@@ -1001,7 +1074,9 @@ class R2D2Repository:
                           COUNT(*) FILTER (WHERE realized_pnl_usd > 0),
                           COUNT(*) FILTER (WHERE realized_pnl_usd < 0)
                    FROM r2d2_trades
-                   WHERE experiment_id=%s AND NOT (decision_snapshot ? 'correction')""",
+                   WHERE experiment_id=%s
+                     AND NOT (decision_snapshot ? 'correction')
+                     AND NOT (decision_snapshot ? 'operator_wind_down')""",
                 (experiment_id,),
             ).fetchone()
         return dict(zip(
@@ -1016,13 +1091,14 @@ class R2D2Repository:
         (which only covers the last ~1-2 days at real trading volume); this
         aggregates the full r2d2_trades history so the chart still works
         after weeks/months, the same way track_record does via a separate
-        query rather than the capped trades list. Corrected/phantom trades
-        excluded, same as trade_summary().
+        query rather than the capped trades list. Corrected/phantom and
+        administrative wind-down trades are excluded, same as trade_summary().
         """
         if not self.database.database_url:
             trades = [
                 item for item in self.memory["trades"]
-                if item.get("experiment_id") == experiment_id and not _trade_is_corrected(item)
+                if item.get("experiment_id") == experiment_id
+                and not _trade_is_strategy_excluded(item)
             ]
             buckets: dict[date, dict[str, int]] = {}
             for item in trades:
@@ -1051,6 +1127,7 @@ class R2D2Repository:
                    FROM r2d2_trades
                    WHERE experiment_id=%s AND realized_pnl_usd IS NOT NULL
                      AND NOT (decision_snapshot ? 'correction')
+                     AND NOT (decision_snapshot ? 'operator_wind_down')
                    GROUP BY session_date
                    ORDER BY session_date""",
                 (experiment_id,),
@@ -1136,8 +1213,9 @@ class R2D2Repository:
         armed profit lock) does not block: every one of those exit reasons
         says the capital was "released for same-cycle replacement" -- a
         blanket same-day block on the same symbol directly contradicted that
-        stated intent (see 2026-08-18 investigation). Corrected/phantom
-        trades are excluded, matching trade_summary()'s exclusion.
+        stated intent (see 2026-08-18 investigation). Corrected/phantom and
+        administrative wind-down trades are excluded, matching
+        trade_summary()'s exclusion.
         """
         if not self.database.database_url:
             return any(
@@ -1146,7 +1224,7 @@ class R2D2Repository:
                 and row["side"] == "SELL"
                 and row["executed_at"].astimezone(SAO_PAULO).date() == session_date
                 and _float(row.get("realized_pnl_usd")) <= 0
-                and not _trade_is_corrected(row)
+                and not _trade_is_strategy_excluded(row)
                 for row in self.memory["trades"]
             )
         with self.database.connection() as connection:
@@ -1156,6 +1234,7 @@ class R2D2Repository:
                      AND (executed_at AT TIME ZONE 'America/Sao_Paulo')::date=%s
                      AND realized_pnl_usd <= 0
                      AND NOT (decision_snapshot ? 'correction')
+                     AND NOT (decision_snapshot ? 'operator_wind_down')
                    LIMIT 1""",
                 (experiment_id, market, symbol, session_date),
             ).fetchone()
@@ -1264,9 +1343,9 @@ class R2D2PaperService:
         previous = states[-1] if states else None
         parameters = {**BASE_ENTRY_POLICY, **(dict(previous["parameters"]) if previous else {})}
         all_snapshots = self.repo.snapshots(experiment["id"])
-        accounting_track = _realized_daily_track(
+        strategy_track = _realized_daily_track(
             all_snapshots,
-            self.repo.realized_pnl_by_session(experiment["id"]),
+            self.repo.strategy_realized_pnl_by_session(experiment["id"]),
             _float(experiment["starting_capital"]),
             through_date=effective_date - timedelta(days=1),
         )
@@ -1278,11 +1357,11 @@ class R2D2PaperService:
             item for item in self.repo.trades(experiment["id"], limit=250)
             if item.get("realized_pnl_usd") is not None
             and item["executed_at"].astimezone(SAO_PAULO).date() < effective_date
-            and not _trade_is_corrected(item)
+            and not _trade_is_strategy_excluded(item)
         ][:50]
         finalized_dates = {_date_value(item["session_date"]) for item in snapshots}
         finalized_track = [
-            item for item in accounting_track
+            item for item in strategy_track
             if item["session_date"] in finalized_dates
         ]
         returns = [_float(item["daily_return_percent"]) for item in finalized_track]
@@ -1461,13 +1540,19 @@ class R2D2PaperService:
             starting_capital,
             through_date=local_date,
         )
+        strategy_track = _realized_daily_track(
+            snapshots,
+            self.repo.strategy_realized_pnl_by_session(experiment["id"]),
+            starting_capital,
+            through_date=local_date,
+        )
         current = accounting_track[-1] if accounting_track else None
         daily_pnl = _float(current.get("daily_pnl_usd")) if current else 0.0
         daily_return = _float(current.get("daily_return_percent")) if current else 0.0
         daily_pnl_date = current["session_date"].isoformat() if current else None
         cumulative_pnl = sum(_float(row["daily_pnl_usd"]) for row in accounting_track)
         accounting_nav = starting_capital + cumulative_pnl
-        closed = [row for row in accounting_track if row.get("is_final")]
+        closed = [row for row in strategy_track if row.get("is_final")]
         positives = sum(_float(row["daily_return_percent"]) > 0 for row in closed)
         negatives = sum(_float(row["daily_return_percent"]) < 0 for row in closed)
         trade_summary = self.repo.trade_summary(experiment["id"])
@@ -1558,7 +1643,7 @@ class R2D2PaperService:
         """
         markets: list[str] = []
         us = now.astimezone(NEW_YORK)
-        if us.weekday() < 5 and US_SCREENING_START_ET <= us.time() < US_REGULAR_CLOSE_ET:
+        if us.weekday() < 5 and US_REGULAR_OPEN_ET <= us.time() < US_REGULAR_CLOSE_ET:
             markets.extend(("NASDAQ", "NYSE"))
         return markets
 
@@ -3435,20 +3520,18 @@ class R2D2PaperService:
     def _sell(self, experiment: dict[str, Any], cycle_id: str, item: dict[str, Any], position: dict[str, Any],
               quote: Any, fx: float, reason: str, *, quantity_fraction: float = 1.0,
               fast_exit_audit: dict[str, Any] | None = None) -> dict[str, Any]:
-        slip_rate = 0.0015 if item["market"] == "B3" else 0.0010
-        fee_rate = 0.0006 if item["market"] == "B3" else 0.0004
-        fill = quote.price * (1 - slip_rate)
         full_quantity = _float(position["quantity"])
         fraction = max(0.0, min(1.0, quantity_fraction))
         quantity = math.floor(full_quantity * fraction * 100) / 100
         if quantity <= 0 or full_quantity - quantity < 0.01:
             quantity = full_quantity
-        gross = quantity * fill * fx
-        fees = gross * fee_rate
-        slippage = quantity * (quote.price - fill) * fx
+        execution = _paper_exit_execution(
+            market=item["market"], price=quote.price, quantity=quantity, fx=fx,
+        )
         trade = self.repo.execute_trade(
             experiment, cycle_id=cycle_id, candidate=item, side="SELL", quantity=quantity,
-            signal_price=quote.price, fill_price=fill, fx=fx, fees=fees, slippage=slippage,
+            signal_price=quote.price, fill_price=execution["fill_price"], fx=fx,
+            fees=execution["fees_usd"], slippage=execution["slippage_usd"],
             reason=reason, decision={**item, "paper_only": True}, quote_as_of=quote.as_of,
             fast_exit_audit=fast_exit_audit,
         )
