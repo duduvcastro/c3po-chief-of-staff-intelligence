@@ -13,6 +13,11 @@ import httpx
 
 from .config import Settings
 from .schemas import AiUsageMetric, ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
+from .valuation_worker_contract import (
+    VALUATION_WORKER_CANONICAL_PHASE,
+    VALUATION_WORKER_OFFHOURS_PHASES,
+    VALUATION_WORKER_PHASES,
+)
 
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
@@ -610,10 +615,86 @@ class SystemHealthService:
 
     def _day_d_and_valuation_health(self, now: datetime) -> list[IntegrationHealth]:
         return [
+            self._valuation_worker_phase_health(now),
             *self._valuation_v2_1b_health(now),
             self._day_d_disk_health(now),
             self._b2_zero_cap_health(now),
         ]
+
+    def _valuation_worker_phase_health(self, now: datetime) -> IntegrationHealth:
+        definitions = VALUATION_WORKER_PHASES
+        codes = [definition["code"] for definition in definitions.values()]
+        try:
+            states = self.database.ingestion_run_health(codes)
+        except Exception as exc:
+            return IntegrationHealth(
+                name="Valuation worker phases",
+                status="offline",
+                detail=f"Phase evidence unavailable · {self._safe_error(exc)}",
+                last_update=self._format_time(now),
+            )
+
+        local_now = now.astimezone(SAO_PAULO)
+        midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        offhours_due = midnight.replace(hour=1)
+        window_end = midnight.replace(hour=8)
+        expected_at = {
+            VALUATION_WORKER_CANONICAL_PHASE: midnight,
+            **{
+                phase: offhours_due if local_now >= offhours_due else offhours_due - timedelta(days=1)
+                for phase in VALUATION_WORKER_OFFHOURS_PHASES
+            },
+        }
+
+        failed: list[str] = []
+        pending: list[str] = []
+        running: list[str] = []
+        updates: list[datetime] = []
+        for phase, definition in definitions.items():
+            state = states.get(definition["code"], {})
+            status = state.get("last_status")
+            last_success = state.get("last_success_at")
+            for field in ("completed_at", "started_at", "last_success_at"):
+                value = state.get(field)
+                if isinstance(value, datetime):
+                    updates.append(value if value.tzinfo else value.replace(tzinfo=timezone.utc))
+            if status == "failed":
+                error = str(state.get("last_error") or "unknown error").replace("\n", " ")[:120]
+                failed.append(f"{phase}: {error}")
+                continue
+            if status == "running":
+                running.append(phase)
+                continue
+            if not isinstance(last_success, datetime):
+                pending.append(phase)
+                continue
+            success_local = (
+                last_success if last_success.tzinfo else last_success.replace(tzinfo=timezone.utc)
+            ).astimezone(SAO_PAULO)
+            if success_local < expected_at[phase]:
+                pending.append(phase)
+
+        if failed:
+            status = "offline"
+            detail = "Failed · " + " · ".join(failed)
+        elif running or pending:
+            status = "attention" if local_now < window_end else "offline"
+            parts = []
+            if running:
+                parts.append("running: " + ", ".join(running))
+            if pending:
+                parts.append("pending/stale: " + ", ".join(pending))
+            detail = "Phase evidence · " + " · ".join(parts)
+        else:
+            status = "healthy"
+            detail = "Canonical and all four off-hours phases succeeded for the expected cycle"
+
+        return IntegrationHealth(
+            name="Valuation worker phases",
+            status=status,
+            detail=detail,
+            last_update=self._format_time(max(updates) if updates else now),
+        )
 
     def _valuation_v2_1b_health(self, now: datetime) -> list[IntegrationHealth]:
         keys = ["B3_V2_PEER_QUALITY", "US_V2_PEER_QUALITY"]
