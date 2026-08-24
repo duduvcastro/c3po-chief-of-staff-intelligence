@@ -14,6 +14,7 @@ from app.schemas import (
     ServerUsageServer,
 )
 from app.system_health import SystemHealthService
+from app.valuation_worker_contract import VALUATION_WORKER_PHASES
 
 
 class _Cursor:
@@ -34,11 +35,23 @@ class _Database:
         pre_ab_ready: bool = True,
         snapshot_published_at: datetime | None = None,
         include_peer_snapshots: bool = True,
+        valuation_phase_states: dict[str, dict] | None = None,
     ) -> None:
         self.now = now
         self.pre_ab_ready = pre_ab_ready
         self.snapshot_published_at = snapshot_published_at or now
         self.include_peer_snapshots = include_peer_snapshots
+        self.valuation_phase_states = valuation_phase_states or {
+            definition["code"]: {
+                "last_status": "succeeded",
+                "started_at": now,
+                "completed_at": now,
+                "last_success_at": now,
+                "last_error": None,
+                "metadata": {"phase": phase},
+            }
+            for phase, definition in VALUATION_WORKER_PHASES.items()
+        }
 
     @contextmanager
     def connection(self):
@@ -50,6 +63,13 @@ class _Database:
             "cvm": {"last_status": "succeeded", "last_success_at": now, "last_error": None},
             "sec": {"last_status": "succeeded", "last_success_at": now, "last_error": None},
             "ri": {"last_status": "succeeded", "last_success_at": now, "last_error": None},
+        }
+
+    def ingestion_run_health(self, source_codes: list[str]):
+        return {
+            code: self.valuation_phase_states[code]
+            for code in source_codes
+            if code in self.valuation_phase_states
         }
 
     def latest_analysis_snapshot_outputs(
@@ -190,6 +210,7 @@ def _service(
     pre_ab_ready: bool = True,
     snapshot_published_at: datetime | None = None,
     include_peer_snapshots: bool = True,
+    valuation_phase_states: dict[str, dict] | None = None,
 ) -> SystemHealthService:
     now = datetime.now(timezone.utc)
     settings = Settings(
@@ -216,6 +237,7 @@ def _service(
             pre_ab_ready=pre_ab_ready,
             snapshot_published_at=snapshot_published_at,
             include_peer_snapshots=include_peer_snapshots,
+            valuation_phase_states=valuation_phase_states,
         ),
         _Legacy(now),
         _OpenFinance(),
@@ -236,7 +258,7 @@ def test_consolidated_health_covers_every_operational_area() -> None:
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve", "B2 zero-cap evidence",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler", "Valuation worker phases", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve", "B2 zero-cap evidence",
     }
     assert "WhatsApp capture" not in {item.name for group in response.groups for item in group.items}
 
@@ -255,13 +277,42 @@ def test_day_d_and_valuation_controls_are_visible_and_healthy() -> None:
 
     controls = next(group for group in response.groups if group.key == "controls")
     assert controls.status == "healthy"
-    assert controls.healthy_count == 4
+    assert controls.healthy_count == 5
     assert {item.name for item in controls.items} == {
+        "Valuation worker phases",
         "Valuation V2.1b cycle",
         "V3 pre-A/B gate",
         "Day D disk reserve",
         "B2 zero-cap evidence",
     }
+
+
+def test_valuation_worker_phase_failure_is_persistently_visible() -> None:
+    now = datetime.now(timezone.utc)
+    states = {
+        definition["code"]: {
+            "last_status": "succeeded",
+            "started_at": now,
+            "completed_at": now,
+            "last_success_at": now,
+            "last_error": None,
+            "metadata": {"phase": phase},
+        }
+        for phase, definition in VALUATION_WORKER_PHASES.items()
+    }
+    failed_code = VALUATION_WORKER_PHASES["v2_data"]["code"]
+    states[failed_code] = {
+        **states[failed_code],
+        "last_status": "failed",
+        "last_error": "RuntimeError: provider unavailable",
+    }
+    service = _service(valuation_phase_states=states)
+
+    item = service._valuation_worker_phase_health(now)
+
+    assert item.status == "offline"
+    assert "v2_data" in item.detail
+    assert "provider unavailable" in item.detail
 
 
 def test_pre_ab_gate_is_red_when_any_frozen_gate_fails() -> None:
@@ -378,9 +429,9 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     usage = next(item for group in response.groups for item in group.items if item.name == "Daily API Usage")
     assert usage.status == "attention"
     assert response.status == "attention"
-    assert response.quality == 96
-    assert response.healthy_count == 27
-    assert response.total_count == 28
+    assert response.quality == 97
+    assert response.healthy_count == 28
+    assert response.total_count == 29
 
 
 def test_finnhub_is_monitored_in_market_quotes() -> None:
