@@ -3773,7 +3773,7 @@ function R2D2RisingView() {
 
           return (
             <div className="r2d2-trade-row" key={trade.id}>
-              <time>{new Date(trade.executed_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</time>
+              <time>{new Date(trade.executed_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
               <b className={`r2d2-side r2d2-side-${sideTone}`}>{trade.side}</b>
               <R2D2Ticker symbol={trade.symbol} name={trade.name} /><span>{trade.market}</span>
               <span>{trade.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })}</span>
