@@ -693,6 +693,8 @@ def test_r2d2_keeps_scheduling_cycles_after_90_day_checkpoint() -> None:
 def test_r2d2_daily_learning_is_versioned_and_tightens_with_weak_evidence() -> None:
     service = _service()
     experiment = service.ensure_initialized()
+    service.repo.memory["learning"].clear()
+    service._ensure_daily_learning(experiment, date(2026, 8, 24))
     for offset in range(5):
         session_date = date(2026, 8, 18) + timedelta(days=offset)
         service.repo.memory["snapshots"][session_date] = {
