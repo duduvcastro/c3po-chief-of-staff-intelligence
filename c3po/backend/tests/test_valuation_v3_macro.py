@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -125,6 +125,50 @@ def test_curve_validation_rejects_future_missing_and_tampered_inputs():
 
     tampered_fetch_time = {**package, "fetched_at": "2026-08-24T00:00:00+00:00"}
     assert not package_hash_is_valid(tampered_fetch_time)
+
+
+def test_curve_accepts_as_of_close_only_after_d_plus_one_availability():
+    as_of = date(2026, 8, 24)
+    available_at = datetime.combine(
+        as_of + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc
+    )
+    package = {
+        "schema_version": "VALUATION-V3-MACRO-v1",
+        "engine_version": 3,
+        "source": "EODHD Government Bonds",
+        "as_of": as_of.isoformat(),
+        "fetched_at": (available_at + timedelta(hours=3)).isoformat(),
+        "formula": "r3y + (2/7) * (r10y - r3y)",
+        "points": [
+            {
+                "symbol": "US3Y.GBOND",
+                "tenor_years": 3,
+                "observation_date": as_of.isoformat(),
+                "annual_rate": 0.04,
+                "available_at": available_at.isoformat(),
+                "source": "EODHD Government Bonds",
+            },
+            {
+                "symbol": "US10Y.GBOND",
+                "tenor_years": 10,
+                "observation_date": as_of.isoformat(),
+                "annual_rate": 0.05,
+                "available_at": available_at.isoformat(),
+                "source": "EODHD Government Bonds",
+            },
+        ],
+        "interpolated_5y_rate": 0.04 + (2 / 7) * 0.01,
+    }
+    package["payload_sha256"] = canonical_payload_sha256(package)
+
+    assert validate_us_curve_package(package, as_of=as_of) == package[
+        "interpolated_5y_rate"
+    ]
+
+    premature = {**package, "fetched_at": (available_at - timedelta(seconds=1)).isoformat()}
+    premature["payload_sha256"] = canonical_payload_sha256(premature)
+    with pytest.raises(ValuationV3MacroDataError, match="not available when fetched"):
+        validate_us_curve_package(premature, as_of=as_of)
 
 
 def test_curve_validation_rejects_duplicate_or_ambiguous_tenors():

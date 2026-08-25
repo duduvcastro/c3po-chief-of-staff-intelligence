@@ -100,10 +100,13 @@ def validate_us_curve_package(payload: dict[str, Any], *, as_of: date) -> float:
         raise ValuationV3MacroDataError("US curve package metadata mismatch")
     try:
         package_as_of = date.fromisoformat(str(payload.get("as_of") or ""))
+        fetched_at = datetime.fromisoformat(str(payload.get("fetched_at") or ""))
     except ValueError as exc:
-        raise ValuationV3MacroDataError("US curve package has invalid as_of") from exc
+        raise ValuationV3MacroDataError("US curve package has invalid dates") from exc
     if package_as_of != as_of:
         raise ValuationV3MacroDataError("US curve package as_of does not match the run")
+    if fetched_at.tzinfo is None:
+        fetched_at = fetched_at.replace(tzinfo=timezone.utc)
     points = payload.get("points")
     if not isinstance(points, list) or len(points) != 2:
         raise ValuationV3MacroDataError("US curve requires exactly 3Y and 10Y")
@@ -119,7 +122,6 @@ def validate_us_curve_package(payload: dict[str, Any], *, as_of: date) -> float:
         raise ValuationV3MacroDataError("US curve requires exactly 3Y and 10Y")
     observation_dates: set[date] = set()
     rates: dict[int, float] = {}
-    as_of_end = datetime.combine(as_of, time.max, tzinfo=timezone.utc)
     for tenor in (3, 10):
         point = by_tenor[tenor]
         try:
@@ -129,8 +131,12 @@ def validate_us_curve_package(payload: dict[str, Any], *, as_of: date) -> float:
             raise ValuationV3MacroDataError("US curve has invalid dates") from exc
         if available.tzinfo is None:
             available = available.replace(tzinfo=timezone.utc)
-        if observed > as_of or available > as_of_end:
+        if observed > as_of:
             raise ValuationV3MacroDataError("US curve contains a future observation")
+        if available > fetched_at:
+            raise ValuationV3MacroDataError(
+                "US curve observation was not available when fetched"
+            )
         rate = _annual_rate(point.get("annual_rate"))
         if rate is None:
             raise ValuationV3MacroDataError("US curve contains an invalid yield")
