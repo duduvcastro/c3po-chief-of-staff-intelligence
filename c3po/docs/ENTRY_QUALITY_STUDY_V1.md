@@ -1,6 +1,8 @@
 # Estudo de Qualidade de Entrada — Spec V1 (congelada)
 
-**Status:** congelada a seis mãos em 25/08/2026 · incorpora integralmente as dez condições do Codex e a Emenda 1 · co-assinada por Codex, Fable e Dudu · **Escopo:** pesquisa read-only (exceto item 9: PR do adapter, auditada em separado, default-off) · **Toca produção:** nada além da observabilidade e do estado auditado de retomada autorizados pela Emenda 1 · **APIs do adapter:** zero · **Origem:** diagnóstico de 24/08/2026 — 41/59 perdas nunca líquidas-positivas (74% dos dólares perdidos). Formulação do dono: *"nosso maior problema é o que compramos, por que compramos e a que preço compramos."*
+**Status:** congelada a seis mãos em 25/08/2026 · incorpora integralmente as dez condições da primeira rodada do Codex, o veto matemático e os itens de congelamento da segunda rodada (estimador de quatro categorias, limiar de H4, tabela de policy epochs) e a Emenda 1 · co-assinada por Codex, Fable e Dudu · **Escopo:** pesquisa read-only (exceto item 9: PR do adapter, auditada em separado, default-off) · **Toca produção:** nada além da observabilidade e do estado auditado de retomada autorizados pela Emenda 1 · **APIs do adapter:** zero · **Origem:** diagnóstico de 24/08/2026 — 41/59 perdas nunca líquidas-positivas (74% dos dólares perdidos). Formulação do dono: *"nosso maior problema é o que compramos, por que compramos e a que preço compramos."*
+
+---
 
 ## Emenda 1 — retomada de 26/08/2026
 
@@ -36,13 +38,15 @@ O estudo responde com número e **não autoriza mudança nenhuma**. Alteração 
 
 Tabela por sessão × mercado × **policy epoch** (época de política; a recalibragem de 20/08 divide o histórico) com cobertura de: stop persistido, rota de entrada, scores, ATR, VWAP/EMA8 do papel, quote age, preço futuro (barras pós-entrada) e QQQ. **Campo ausente torna apenas aquela dimensão indisponível — sem empréstimo, sem reconstrução, sem proxy posterior.**
 
+O gate publica ainda, antes de qualquer resultado: (a) a **tabela exata de `policy_epoch`** com `effective_from`, `effective_to` e hash do código de cada época — pinada no manifest do relatório, nunca inferida ad hoc; (b) o **quartil superior congelado do `stretch` de H4** (§6), calculado somente dos inputs da coorte, às cegas de qualquer resultado.
+
 ## 4. Medidas por entrada — independentes da política de saída
 
 Tudo computado do preço de entrada em diante, ignorando o cascade. **Sem lookahead (condição 5): a barra parcial da entrada é excluída; cada horizonte usa o último bar completamente encerrado antes do instante-alvo; `entrada + horizonte` além do fechamento → horizonte CENSURADO** (nunca substituído pelo close).
 
 1. **Endpoint primário: retorno líquido a +60 minutos.** Secundários: +15, +30, +120 min e close da sessão (condição 10);
 2. **MFE/MAE intra-sessão** sobre trade bars: pico líquido, vale líquido, minutos-até-pico;
-3. **p(atingir net₀+1R antes de net₀−1R)**: barreiras simétricas **em P&L líquido, centradas no nível líquido inicial da posição** (net₀), com R = distância do stop persistido no BUY. Sob martingale o nulo é **exatamente 50%**; desvio mede drift puro de entrada, fricção cancelada por construção. Ambos os lados tocados na mesma barra → contra a entrada (conservador).
+3. **p(atingir net₀+1R antes de net₀−1R)**: barreiras simétricas **em P&L líquido, centradas no nível líquido inicial da posição** (net₀), com R = distância do stop persistido no BUY. Cada entrada é classificada em exatamente uma de quatro categorias: `upper_first`, `lower_first`, **`ambiguous_same_bar`** (as duas barreiras dentro do range da mesma barra — não é derrota) e `censored` (nenhuma barreira tocada até o fim do horizonte/sessão). **Estimador central**: p̂ = upper_first / (upper_first + lower_first) — só casos resolvidos sem ambiguidade; ambíguos e censurados contados e publicados separadamente. **Cota conservadora publicada junto**: p̂_cons = upper_first / (upper_first + lower_first + ambiguous_same_bar). **Benchmark declarado, não teorema**: o nulo de 50% vale sob processo sem drift e **simétrico por reflexão**; com gaps, barras de minuto e overshoot, é referência de leitura — o veredito nunca sai do ponto, sai do IC (§8).
 4. **Custos exatos do código (condição 6)**: base de custo = BUY persistido (slippage já embutida no fill — **não subtrair `slippage_usd` de novo**); valor líquido de saída hipotética = helper de saída do código (`_paper_exit_execution`).
 
 ## 5. Os três eixos (dimensões congeladas)
@@ -58,7 +62,7 @@ Tudo computado do preço de entrada em diante, ignorando o cascade. **Sem lookah
 - **H1**: entradas 12h-15h BRT têm edge pior que 10h-12h (normalizado por oportunidade);
 - **H2**: entradas em regime `fade` (QQQ abaixo de VWAP e EMA8) têm edge negativo;
 - **H3**: decis do **composite canônico** não separam retorno forward (se confirmada: o score que pesa na compra não diferencia — insumo do business case V3, sem afirmar nada sobre V3);
-- **H4 (reescrita, condição 7)**: entradas com preço esticado acima de VWAP/EMA8 do papel além de limiar congelado têm edge pior.
+- **H4 (reescrita, condição 7; limiar congelado na 2ª rodada)**: entradas "esticadas" têm edge pior. **Definição congelada**: `stretch = min(signal_price/VWAP − 1, signal_price/EMA8 − 1)` do próprio papel no instante da entrada (signal_price, nunca o fill sintético); "esticada" = **quartil superior do stretch na coorte**, calculado apenas dos inputs e publicado no gate de cobertura antes de qualquer resultado.
 
 Endpoint primário decide; secundários são descritivos. IC 95% por **bootstrap de sessão com seed e iterações congelados: seed = 20260824, 10.000 iterações** (condição 10). Resultados sempre separados por `valuation_basis` e policy epoch.
 
@@ -73,7 +77,7 @@ Endpoint primário decide; secundários são descritivos. IC 95% por **bootstrap
 1. Gate de cobertura (§3) — publicado primeiro;
 2. Tabela de edge por eixo/célula (endpoint primário + secundários, MFE/MAE, p(net₀±1R)) com IC;
 3. Veredicto de H1–H4;
-4. **Número-síntese**: p(net₀+1R antes de net₀−1R) global — **nulo = 50% exato**; se ≤ 50%, a porta de entrada não tem edge na moldura simétrica (insumo direto do critério de morte da v1);
+4. **Número-síntese**: p̂ global (estimador central) com IC 95% por bootstrap de sessão, acompanhado de p̂_cons e das contagens de ambíguos/censurados. **Regra de veredito**: IC inteiro abaixo de 50% → a porta de entrada não tem edge na moldura simétrica (insumo direto do critério de morte da v1); IC inteiro acima → tem; **IC cruzando 50% → inconclusivo, registrado como tal** — `≤ 50%` no ponto, sozinho, não prova nada;
 5. Ranking das células piores (candidatas a filtro → shadow) e melhores (onde o edge mora, se existir).
 
 ## 9. Perna prospectiva — `entry_score_adapter` (condição 9, verbatim)
@@ -92,7 +96,7 @@ Endpoint primário decide; secundários são descritivos. IC 95% por **bootstrap
 
 ---
 
-**Assinaturas da Spec V1.**
-**Fable** — co-assinada em 25/08/2026; dez condições do Codex incorporadas integralmente; formalização registrada: barreiras do item 4.3 centradas em net₀ para o nulo de 50% ser exato.
-**Codex** — de acordo em 25/08/2026; condições 1–10 incorporadas acima.
-**Dudu** — de acordo em 25/08/2026; spec congelada a seis mãos, com a Emenda 1 assinada acima.
+**Assinaturas da Spec V1 (congelada com a Emenda 1).**
+**Fable** — co-assinada em 25/08/2026. Dez condições da primeira rodada incorporadas; o veto matemático da segunda rodada aceito na íntegra: a afirmação "nulo = 50% exato" era um resultado de caminhos contínuos aplicado a um mundo com gaps — o estimador de quatro categorias, a cota conservadora e o veredito por IC substituem a formulação. Centralização em net₀ mantida (validada pelo Codex).
+**Codex** — de acordo em 25/08/2026, a esta redação, que incorpora: estimador central só com casos resolvidos; `ambiguous_same_bar` como categoria própria; cota conservadora publicada; benchmark de 50% declarado como referência sob ausência de drift e simetria por reflexão; veredito por IC com resultado inconclusivo possível; limiar de H4 congelado (`stretch` = min dos dois desvios, quartil superior dos inputs, publicado no gate); tabela de `policy_epoch` com `effective_from`/`effective_to`/hash de código no manifest.
+**Dudu** — de acordo em 25/08/2026; spec congelada a seis mãos, com a Emenda 1 assinada acima. Nenhum parâmetro se move até o relatório existir.
