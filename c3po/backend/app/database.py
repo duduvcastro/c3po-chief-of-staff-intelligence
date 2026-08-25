@@ -26,6 +26,7 @@ class Database:
         self._navigation_feed_views: dict[tuple[str, str], datetime] = {}
         self._access_users: dict[str, dict[str, Any]] = {}
         self._totp_credentials: dict[str, dict[str, Any]] = {}
+        self._sms_credentials: dict[str, dict[str, Any]] = {}
         self._data_sources: dict[str, dict[str, Any]] = {}
         self._ingestion_runs: dict[str, dict[str, Any]] = {}
         self._observations: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -1165,6 +1166,120 @@ class Database:
             return self._totp_credentials.pop(normalized_email, None) is not None
         with self.connection() as connection:
             cursor = connection.execute("DELETE FROM auth_totp_credentials WHERE email = %s", (normalized_email,))
+            connection.commit()
+        return cursor.rowcount == 1
+
+    def stage_sms_setup(
+        self,
+        email: str,
+        encrypted_phone: str,
+        phone_last4: str,
+        expires_at: datetime,
+        at: datetime,
+    ) -> None:
+        normalized_email = email.strip().lower()
+        if not self.database_url:
+            existing = self._sms_credentials.get(normalized_email, {})
+            self._sms_credentials[normalized_email] = {
+                "email": normalized_email,
+                "encrypted_phone": existing.get("encrypted_phone"),
+                "phone_last4": existing.get("phone_last4"),
+                "confirmed_at": existing.get("confirmed_at"),
+                "pending_encrypted_phone": encrypted_phone,
+                "pending_phone_last4": phone_last4,
+                "pending_setup_expires_at": expires_at,
+                "created_at": existing.get("created_at", at),
+                "updated_at": at,
+            }
+            return
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO auth_sms_credentials
+                    (email, pending_encrypted_phone, pending_phone_last4,
+                     pending_setup_expires_at, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE
+                SET pending_encrypted_phone = EXCLUDED.pending_encrypted_phone,
+                    pending_phone_last4 = EXCLUDED.pending_phone_last4,
+                    pending_setup_expires_at = EXCLUDED.pending_setup_expires_at,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                (normalized_email, encrypted_phone, phone_last4, expires_at, at, at),
+            )
+            connection.commit()
+
+    def get_sms_credential(self, email: str) -> dict[str, Any] | None:
+        normalized_email = email.strip().lower()
+        if not self.database_url:
+            item = self._sms_credentials.get(normalized_email)
+            return item.copy() if item else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT email, encrypted_phone, phone_last4, confirmed_at,
+                       pending_encrypted_phone, pending_phone_last4,
+                       pending_setup_expires_at, created_at, updated_at
+                FROM auth_sms_credentials WHERE email = %s
+                """,
+                (normalized_email,),
+            ).fetchone()
+        if not row:
+            return None
+        keys = (
+            "email", "encrypted_phone", "phone_last4", "confirmed_at",
+            "pending_encrypted_phone", "pending_phone_last4",
+            "pending_setup_expires_at", "created_at", "updated_at",
+        )
+        return dict(zip(keys, row))
+
+    def confirm_sms_setup(self, email: str, at: datetime) -> bool:
+        normalized_email = email.strip().lower()
+        if not self.database_url:
+            item = self._sms_credentials.get(normalized_email)
+            if (
+                not item
+                or not item.get("pending_encrypted_phone")
+                or not item.get("pending_setup_expires_at")
+                or item["pending_setup_expires_at"] <= at
+            ):
+                return False
+            item.update({
+                "encrypted_phone": item["pending_encrypted_phone"],
+                "phone_last4": item["pending_phone_last4"],
+                "confirmed_at": at,
+                "pending_encrypted_phone": None,
+                "pending_phone_last4": None,
+                "pending_setup_expires_at": None,
+                "updated_at": at,
+            })
+            return True
+        with self.connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE auth_sms_credentials
+                SET encrypted_phone = pending_encrypted_phone,
+                    phone_last4 = pending_phone_last4,
+                    confirmed_at = %s,
+                    pending_encrypted_phone = NULL,
+                    pending_phone_last4 = NULL,
+                    pending_setup_expires_at = NULL,
+                    updated_at = %s
+                WHERE email = %s
+                  AND pending_encrypted_phone IS NOT NULL
+                  AND pending_setup_expires_at > %s
+                """,
+                (at, at, normalized_email, at),
+            )
+            connection.commit()
+        return cursor.rowcount == 1
+
+    def delete_sms_credential(self, email: str) -> bool:
+        normalized_email = email.strip().lower()
+        if not self.database_url:
+            return self._sms_credentials.pop(normalized_email, None) is not None
+        with self.connection() as connection:
+            cursor = connection.execute("DELETE FROM auth_sms_credentials WHERE email = %s", (normalized_email,))
             connection.commit()
         return cursor.rowcount == 1
 

@@ -149,6 +149,17 @@ button { cursor: pointer; }
 .profile-totp-enabled strong { color: #176947; font-size: 10px; }
 .profile-totp-enabled small { margin-top: 3px; color: #747d88; font-size: 8px; }
 .profile-totp-error { margin: 9px 0 0; color: #9e2b26; font-size: 8px; font-weight: 700; }
+.profile-sms-enroll { display: grid; gap: 9px; }
+.profile-sms-enroll > div:first-child span { display: block; color: #858d97; font-size: 8px; font-weight: 800; }
+.profile-sms-enroll > div:first-child strong { display: block; margin-top: 3px; font-size: 10px; }
+.profile-sms-phone { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; }
+.profile-sms-phone input { min-width: 0; height: 32px; padding: 0 9px; border: 1px solid #cfd3d8; border-radius: 5px; outline: 0; font-size: 10px; }
+.profile-sms-phone input:focus { border-color: #9f7a1c; box-shadow: 0 0 0 2px rgba(184,137,23,.1); }
+.profile-sms-confirm { display: grid; gap: 8px; }
+.profile-sms-confirm > strong { font-size: 10px; }
+.profile-sms-confirm .profile-totp-code { margin-top: 0; }
+.profile-sms-cancel { justify-self: start; color: #59626e !important; background: #fff !important; border-color: #d5d8dc !important; }
+.profile-sms-actions { display: grid !important; grid-template-columns: 1fr 1fr; gap: 7px !important; }
 .profile-panel-actions { padding: 13px 18px; border-bottom: 1px solid #e4e6e9; }
 .profile-panel-actions button { width: 100%; min-height: 36px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #d8a7a4; border-radius: 5px; color: #a72f29; background: #fff8f7; font-size: 9px; font-weight: 900; }
 .profile-panel-actions button:hover { border-color: #ba4b44; background: #fceceb; }

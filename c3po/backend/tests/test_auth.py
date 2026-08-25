@@ -1,13 +1,14 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app import main as app_main
-from app.auth import AuthService, AuthenticationError, RateLimitError
+from app.auth import AuthService, AuthenticationError, RateLimitError, SmsDeliveryError
 from app.config import Settings
 from app.database import Database
 
@@ -314,6 +315,156 @@ def test_totp_reconfiguration_keeps_old_secret_until_new_code_is_confirmed(monke
     assert credential["pending_encrypted_secret"] is None
 
 
+def sms_settings(**overrides) -> Settings:
+    return Settings(
+        auth_required=True,
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+        auth_cookie_secure=False,
+        twilio_account_sid="ACtest",
+        twilio_auth_token="twilio-secret",
+        twilio_verify_service_sid="VAtest",
+        **overrides,
+    )
+
+
+def test_sms_setup_encrypts_phone_and_becomes_preferred_login(monkeypatch) -> None:
+    settings = sms_settings()
+    database = Database(settings)
+    database.ensure_access_owner(settings.auth_email, ["command"])
+    service = AuthService(settings, database)
+    sent_to: list[str] = []
+    monkeypatch.setattr(service, "start_sms_verification", sent_to.append)
+    monkeypatch.setattr(service, "check_sms_verification", lambda phone, code: phone == "+5511999999999" and code == "123456")
+
+    setup = service.begin_sms_setup(settings.auth_email, "+55 (11) 99999-9999")
+    assert setup == {"masked_phone": "•••• 9999", "expires_in_seconds": 600}
+    pending = database.get_sms_credential(settings.auth_email)
+    assert pending is not None
+    assert "+5511999999999" not in pending["pending_encrypted_phone"]
+    assert service.decrypt_phone(pending["pending_encrypted_phone"]) == "+5511999999999"
+
+    service.confirm_sms_setup(settings.auth_email, "123456")
+    assert service.sms_status(settings.auth_email) == {
+        "configured": True,
+        "enabled": True,
+        "masked_phone": "•••• 9999",
+    }
+
+    challenge_id, _, method, delivery = service.request_code(settings.auth_email, "127.0.0.1")
+    assert method == "sms"
+    assert delivery is None
+    assert sent_to == ["+5511999999999", "+5511999999999"]
+    token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
+    assert service.authenticate(token)["email"] == settings.auth_email
+
+
+def test_sms_login_falls_back_to_email_when_provider_is_unavailable(monkeypatch) -> None:
+    settings = sms_settings()
+    database = Database(settings)
+    database.ensure_access_owner(settings.auth_email, ["command"])
+    service = AuthService(settings, database)
+    monkeypatch.setattr(service, "start_sms_verification", lambda _phone: None)
+    monkeypatch.setattr(service, "check_sms_verification", lambda _phone, _code: True)
+    service.begin_sms_setup(settings.auth_email, "+5511999999999")
+    service.confirm_sms_setup(settings.auth_email, "123456")
+    monkeypatch.setattr(
+        service,
+        "start_sms_verification",
+        lambda _phone: (_ for _ in ()).throw(SmsDeliveryError("offline")),
+    )
+    monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 654321)
+
+    challenge_id, _, method, delivery = service.request_code(settings.auth_email, "203.0.113.9")
+
+    assert method == "email"
+    assert delivery == ("654321", settings.auth_email)
+    assert database.get_login_code(challenge_id)["verification_method"] == "email"
+    failed = database.list_audit_events(action="auth.sms_delivery_failed")
+    assert failed[0]["detail"] == {"requested_ip": "203.0.113.9", "fallback": "email"}
+
+
+def test_sms_invalid_code_does_not_confirm_or_disable(monkeypatch) -> None:
+    settings = sms_settings()
+    database = Database(settings)
+    database.ensure_access_owner(settings.auth_email, ["command"])
+    service = AuthService(settings, database)
+    monkeypatch.setattr(service, "start_sms_verification", lambda _phone: None)
+    monkeypatch.setattr(service, "check_sms_verification", lambda _phone, code: code == "123456")
+
+    service.begin_sms_setup(settings.auth_email, "+5511999999999")
+    with pytest.raises(AuthenticationError, match="inválido"):
+        service.confirm_sms_setup(settings.auth_email, "000000")
+    assert not service.sms_status(settings.auth_email)["enabled"]
+
+    service.confirm_sms_setup(settings.auth_email, "123456")
+    service.begin_sms_disable(settings.auth_email)
+    with pytest.raises(AuthenticationError, match="inválido"):
+        service.disable_sms(settings.auth_email, "000000")
+    assert service.sms_status(settings.auth_email)["enabled"]
+    service.disable_sms(settings.auth_email, "123456")
+    assert not service.sms_status(settings.auth_email)["enabled"]
+
+
+@pytest.mark.parametrize("phone", ["11999999999", "+55 11 ABCD", "+0123456789", "+55"])
+def test_sms_setup_requires_e164_phone(monkeypatch, phone: str) -> None:
+    settings = sms_settings()
+    database = Database(settings)
+    database.ensure_access_owner(settings.auth_email, ["command"])
+    service = AuthService(settings, database)
+    monkeypatch.setattr(service, "start_sms_verification", lambda _phone: None)
+
+    with pytest.raises(AuthenticationError, match="formato internacional"):
+        service.begin_sms_setup(settings.auth_email, phone)
+
+
+def test_twilio_verify_request_uses_brazilian_locale_and_optional_template(monkeypatch) -> None:
+    settings = sms_settings(
+        twilio_verify_template_sid="HJdomainbound",
+        twilio_timeout_seconds=4.5,
+    )
+    service = AuthService(settings, Database(settings))
+    captured: dict[str, object] = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self) -> bytes:
+            return b'{"status":"pending"}'
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["method"] = request.method
+        captured["authorization"] = request.headers["Authorization"]
+        captured["content_type"] = request.headers["Content-type"]
+        captured["fields"] = parse_qs(request.data.decode("ascii"))
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr("app.auth.urllib.request.urlopen", fake_urlopen)
+
+    service.start_sms_verification("+5511999999999")
+
+    expected_token = base64.b64encode(b"ACtest:twilio-secret").decode("ascii")
+    assert captured == {
+        "url": "https://verify.twilio.com/v2/Services/VAtest/Verifications",
+        "method": "POST",
+        "authorization": f"Basic {expected_token}",
+        "content_type": "application/x-www-form-urlencoded",
+        "fields": {
+            "To": ["+5511999999999"],
+            "Channel": ["sms"],
+            "Locale": ["pt-BR"],
+            "TemplateSid": ["HJdomainbound"],
+        },
+        "timeout": 4.5,
+    }
+
+
 def test_totp_setup_route_requires_and_receives_authenticated_session() -> None:
     email = "totp-route@example.com"
     app_main.database.upsert_access_user(
@@ -350,6 +501,55 @@ def test_totp_setup_route_requires_and_receives_authenticated_session() -> None:
         assert denied.status_code == 401
         assert allowed.status_code == 200
         assert allowed.json()["qr_code_data_url"].startswith("data:image/svg+xml;base64,")
+    finally:
+        app_main.settings.auth_required = previous_required
+
+
+def test_sms_setup_route_requires_session_and_never_returns_full_phone(monkeypatch) -> None:
+    email = "sms-route@example.com"
+    app_main.database.upsert_access_user(
+        {
+            "email": email,
+            "display_name": "SMS Route",
+            "role": "member",
+            "is_active": True,
+            "permissions": ["command"],
+            "created_by": app_main.settings.auth_email,
+        }
+    )
+    token = "sms-route-session-token"
+    now = datetime.now(timezone.utc)
+    app_main.database.create_session(
+        {
+            "id": str(uuid4()),
+            "email": email,
+            "token_hash": app_main.auth_service.session_hash(token),
+            "expires_at": now + timedelta(hours=1),
+            "created_at": now,
+            "last_seen_at": now,
+            "created_ip": "127.0.0.1",
+        }
+    )
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        app_main.auth_service,
+        "begin_sms_setup",
+        lambda actor_email, phone: calls.append((actor_email, phone))
+        or {"masked_phone": "•••• 9999", "expires_in_seconds": 600},
+    )
+    previous_required = app_main.settings.auth_required
+    app_main.settings.auth_required = True
+    try:
+        with TestClient(app_main.app) as client:
+            denied = client.post("/api/v1/auth/sms/setup", json={"phone": "+5511999999999"})
+            client.cookies.set(app_main.SESSION_COOKIE, token)
+            allowed = client.post("/api/v1/auth/sms/setup", json={"phone": "+5511999999999"})
+
+        assert denied.status_code == 401
+        assert allowed.status_code == 200
+        assert allowed.json() == {"masked_phone": "•••• 9999", "expires_in_seconds": 600}
+        assert "+5511999999999" not in allowed.text
+        assert calls == [(email, "+5511999999999")]
     finally:
         app_main.settings.auth_required = previous_required
 

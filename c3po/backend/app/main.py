@@ -11,7 +11,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Res
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from .auth import AuthService, AuthenticationError, EmailDeliveryError, RateLimitError
+from .auth import AuthService, AuthenticationError, EmailDeliveryError, RateLimitError, SmsDeliveryError
 from .api_performance import api_performance
 from .chewie_fundamentals import ChewieFundamentalsService
 from .access_control import (
@@ -62,6 +62,10 @@ from .schemas import (
     LoginCodeRequest,
     LoginCodeResponse,
     LoginVerifyRequest,
+    SmsCodeRequest,
+    SmsSetupRequest,
+    SmsSetupResponse,
+    SmsStatusResponse,
     TotpCodeRequest,
     TotpSetupResponse,
     TotpStatusResponse,
@@ -297,6 +301,7 @@ def session_client_profile(request: Request, session: dict) -> dict[str, str]:
 
 def authenticated_session_response(request: Request, session: dict) -> AuthSessionResponse:
     client = session_client_profile(request, session)
+    sms = auth_service.sms_status(session["email"])
     return AuthSessionResponse(
         authenticated=True,
         email=session["email"],
@@ -310,6 +315,9 @@ def authenticated_session_response(request: Request, session: dict) -> AuthSessi
         capabilities=session.get("capabilities", ["read"]),
         idle_timeout_seconds=settings.auth_member_idle_minutes * 60,
         totp_enabled=auth_service.totp_enabled(session["email"]),
+        sms_configured=bool(sms["configured"]),
+        sms_enabled=bool(sms["enabled"]),
+        sms_masked_phone=sms["masked_phone"],
         **client,
     )
 
@@ -412,6 +420,15 @@ def request_login_code(
         )
     except RateLimitError as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except SmsDeliveryError as exc:
+        database.record_audit_event(
+            payload.email.strip().lower(), "auth.sms_delivery_failed", "auth_challenge", "pending",
+            {"requested_ip": client_ip},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="O SMS está temporariamente indisponível. Use a recuperação por e-mail.",
+        ) from exc
     if delivery:
         background_tasks.add_task(deliver_login_code, *delivery, challenge_id, client_ip)
     return LoginCodeResponse(
@@ -471,6 +488,73 @@ def disable_totp(payload: TotpCodeRequest, request: Request) -> TotpStatusRespon
     return TotpStatusResponse(enabled=False)
 
 
+@app.get("/api/v1/auth/sms", response_model=SmsStatusResponse)
+def sms_status(request: Request) -> SmsStatusResponse:
+    actor = current_access_actor(request)
+    return SmsStatusResponse(**auth_service.sms_status(actor["email"]))
+
+
+@app.post("/api/v1/auth/sms/setup", response_model=SmsSetupResponse)
+def setup_sms(payload: SmsSetupRequest, request: Request) -> SmsSetupResponse:
+    actor = current_access_actor(request)
+    try:
+        setup = auth_service.begin_sms_setup(actor["email"], payload.phone)
+    except SmsDeliveryError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    database.record_audit_event(
+        actor["email"], "auth.sms_setup_started", "access_user", actor["email"],
+        {"masked_phone": setup["masked_phone"]},
+    )
+    return SmsSetupResponse(**setup)
+
+
+@app.post("/api/v1/auth/sms/confirm", response_model=SmsStatusResponse)
+def confirm_sms(payload: SmsCodeRequest, request: Request) -> SmsStatusResponse:
+    actor = current_access_actor(request)
+    try:
+        auth_service.confirm_sms_setup(actor["email"], payload.code)
+    except SmsDeliveryError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    sms = auth_service.sms_status(actor["email"])
+    database.record_audit_event(
+        actor["email"], "auth.sms_enabled", "access_user", actor["email"],
+        {"masked_phone": sms["masked_phone"]},
+    )
+    return SmsStatusResponse(**sms)
+
+
+@app.post("/api/v1/auth/sms/disable/request", response_model=SmsSetupResponse)
+def request_sms_disable(request: Request) -> SmsSetupResponse:
+    actor = current_access_actor(request)
+    try:
+        setup = auth_service.begin_sms_disable(actor["email"])
+    except SmsDeliveryError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    database.record_audit_event(
+        actor["email"], "auth.sms_disable_started", "access_user", actor["email"], {},
+    )
+    return SmsSetupResponse(**setup)
+
+
+@app.post("/api/v1/auth/sms/disable/confirm", response_model=SmsStatusResponse)
+def confirm_sms_disable(payload: SmsCodeRequest, request: Request) -> SmsStatusResponse:
+    actor = current_access_actor(request)
+    try:
+        auth_service.disable_sms(actor["email"], payload.code)
+    except SmsDeliveryError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except AuthenticationError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    database.record_audit_event(actor["email"], "auth.sms_disabled", "access_user", actor["email"], {})
+    return SmsStatusResponse(**auth_service.sms_status(actor["email"]))
+
+
 @app.post("/api/v1/auth/verify-code", response_model=AuthSessionResponse)
 def verify_login_code(
     payload: LoginVerifyRequest,
@@ -482,6 +566,8 @@ def verify_login_code(
         token, expires_at, email = auth_service.verify_code(payload.challenge_id, payload.code, request_ip(request))
     except RateLimitError as exc:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except SmsDeliveryError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except AuthenticationError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     max_age = max(1, int((expires_at - auth_service.now()).total_seconds()))

@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import html
+import json
 import re
 import secrets
 import urllib.error
@@ -9,7 +10,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -34,6 +35,10 @@ class EmailDeliveryError(AuthenticationError):
     pass
 
 
+class SmsDeliveryError(AuthenticationError):
+    pass
+
+
 class AuthService:
     def __init__(self, settings: Settings, database: Database) -> None:
         self.settings = settings
@@ -51,6 +56,10 @@ class AuthService:
         key = hashlib.sha256(f"c3po:totp:{self.settings.auth_secret}".encode("utf-8")).digest()
         return Fernet(base64.urlsafe_b64encode(key))
 
+    def _sms_cipher(self) -> Fernet:
+        key = hashlib.sha256(f"c3po:sms:{self.settings.auth_secret}".encode("utf-8")).digest()
+        return Fernet(base64.urlsafe_b64encode(key))
+
     def encrypt_totp_secret(self, secret: str) -> str:
         return self._totp_cipher().encrypt(secret.encode("ascii")).decode("ascii")
 
@@ -59,6 +68,147 @@ class AuthService:
             return self._totp_cipher().decrypt(encrypted_secret.encode("ascii")).decode("ascii")
         except (InvalidToken, ValueError) as exc:
             raise AuthenticationError("A configuração do autenticador não pôde ser lida.") from exc
+
+    def encrypt_phone(self, phone: str) -> str:
+        return self._sms_cipher().encrypt(phone.encode("ascii")).decode("ascii")
+
+    def decrypt_phone(self, encrypted_phone: str) -> str:
+        try:
+            return self._sms_cipher().decrypt(encrypted_phone.encode("ascii")).decode("ascii")
+        except (InvalidToken, ValueError) as exc:
+            raise AuthenticationError("A configuração do SMS não pôde ser lida.") from exc
+
+    @staticmethod
+    def normalize_phone(phone: str) -> str:
+        normalized = re.sub(r"[\s().-]", "", phone.strip())
+        if not re.fullmatch(r"\+[1-9][0-9]{7,14}", normalized):
+            raise AuthenticationError("Use o formato internacional, por exemplo +5511999999999.")
+        return normalized
+
+    @staticmethod
+    def masked_phone(phone_last4: str | None) -> str | None:
+        return f"•••• {phone_last4}" if phone_last4 else None
+
+    def sms_provider_configured(self) -> bool:
+        return all((
+            self.settings.twilio_account_sid.strip(),
+            self.settings.twilio_auth_token.strip(),
+            self.settings.twilio_verify_service_sid.strip(),
+        ))
+
+    def sms_enabled(self, email: str) -> bool:
+        credential = self.database.get_sms_credential(email)
+        return bool(
+            self.sms_provider_configured()
+            and credential
+            and credential.get("confirmed_at")
+            and credential.get("encrypted_phone")
+        )
+
+    def sms_status(self, email: str) -> dict[str, str | bool | None]:
+        credential = self.database.get_sms_credential(email)
+        enabled = bool(credential and credential.get("confirmed_at") and credential.get("encrypted_phone"))
+        return {
+            "configured": self.sms_provider_configured(),
+            "enabled": enabled,
+            "masked_phone": self.masked_phone(credential.get("phone_last4")) if enabled and credential else None,
+        }
+
+    def _twilio_verify_request(self, resource: str, fields: dict[str, str]) -> dict:
+        if not self.sms_provider_configured():
+            raise SmsDeliveryError("O envio por SMS ainda não está configurado.")
+        service_sid = quote(self.settings.twilio_verify_service_sid.strip(), safe="")
+        url = f"https://verify.twilio.com/v2/Services/{service_sid}/{resource}"
+        token = base64.b64encode(
+            f"{self.settings.twilio_account_sid.strip()}:{self.settings.twilio_auth_token.strip()}".encode("utf-8")
+        ).decode("ascii")
+        request = urllib.request.Request(
+            url,
+            data=urlencode(fields).encode("ascii"),
+            headers={
+                "Authorization": f"Basic {token}",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.settings.twilio_timeout_seconds) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if resource == "VerificationCheck" and exc.code in {400, 404}:
+                return {"status": "pending"}
+            raise SmsDeliveryError("O serviço de SMS recusou a solicitação.") from exc
+        except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            raise SmsDeliveryError("O serviço de SMS está temporariamente indisponível.") from exc
+        if not isinstance(payload, dict):
+            raise SmsDeliveryError("O serviço de SMS retornou uma resposta inválida.")
+        return payload
+
+    def start_sms_verification(self, phone: str) -> None:
+        fields = {"To": phone, "Channel": "sms", "Locale": "pt-BR"}
+        template_sid = self.settings.twilio_verify_template_sid.strip()
+        if template_sid:
+            fields["TemplateSid"] = template_sid
+        payload = self._twilio_verify_request("Verifications", fields)
+        if payload.get("status") != "pending":
+            raise SmsDeliveryError("O serviço de SMS não confirmou o envio do código.")
+
+    def check_sms_verification(self, phone: str, code: str) -> bool:
+        payload = self._twilio_verify_request("VerificationCheck", {"To": phone, "Code": code})
+        return payload.get("status") == "approved"
+
+    def begin_sms_setup(self, email: str, phone: str) -> dict[str, str | int]:
+        normalized_phone = self.normalize_phone(phone)
+        self.start_sms_verification(normalized_phone)
+        now = self.now()
+        expires_at = now + timedelta(minutes=self.settings.auth_code_minutes)
+        self.database.stage_sms_setup(
+            email,
+            self.encrypt_phone(normalized_phone),
+            normalized_phone[-4:],
+            expires_at,
+            now,
+        )
+        return {
+            "masked_phone": self.masked_phone(normalized_phone[-4:]) or "",
+            "expires_in_seconds": self.settings.auth_code_minutes * 60,
+        }
+
+    def confirm_sms_setup(self, email: str, code: str) -> None:
+        now = self.now()
+        credential = self.database.get_sms_credential(email)
+        if (
+            not credential
+            or not credential.get("pending_encrypted_phone")
+            or not credential.get("pending_setup_expires_at")
+            or credential["pending_setup_expires_at"] <= now
+        ):
+            raise AuthenticationError("A configuração expirou. Solicite um novo código por SMS.")
+        phone = self.decrypt_phone(credential["pending_encrypted_phone"])
+        if not self.check_sms_verification(phone, code):
+            raise AuthenticationError("Código SMS inválido ou expirado.")
+        if not self.database.confirm_sms_setup(email, now):
+            raise AuthenticationError("A configuração expirou. Solicite um novo código por SMS.")
+
+    def begin_sms_disable(self, email: str) -> dict[str, str | int]:
+        credential = self.database.get_sms_credential(email)
+        if not credential or not credential.get("confirmed_at") or not credential.get("encrypted_phone"):
+            raise AuthenticationError("O SMS não está ativo.")
+        self.start_sms_verification(self.decrypt_phone(credential["encrypted_phone"]))
+        return {
+            "masked_phone": self.masked_phone(credential.get("phone_last4")) or "",
+            "expires_in_seconds": self.settings.auth_code_minutes * 60,
+        }
+
+    def disable_sms(self, email: str, code: str) -> None:
+        credential = self.database.get_sms_credential(email)
+        if not credential or not credential.get("confirmed_at") or not credential.get("encrypted_phone"):
+            raise AuthenticationError("O SMS não está ativo.")
+        phone = self.decrypt_phone(credential["encrypted_phone"])
+        if not self.check_sms_verification(phone, code):
+            raise AuthenticationError("Código SMS inválido ou expirado.")
+        self.database.delete_sms_credential(email)
 
     @staticmethod
     def totp_code(secret: str, step: int) -> str:
@@ -243,7 +393,26 @@ class AuthService:
 
         challenge_id = str(uuid4())
         code = f"{secrets.randbelow(1_000_000):06d}"
-        verification_method = "totp" if delivery_method == "auto" and self.totp_enabled(normalized_email) else "email"
+        sms_requested = delivery_method in {"auto", "sms"} and self.sms_enabled(normalized_email)
+        if sms_requested:
+            verification_method = "sms"
+        elif delivery_method == "auto" and self.totp_enabled(normalized_email):
+            verification_method = "totp"
+        else:
+            verification_method = "email"
+        active_user = bool(access_user and access_user["is_active"])
+        sms_fallback_used = False
+        if verification_method == "sms" and active_user:
+            credential = self.database.get_sms_credential(normalized_email)
+            try:
+                self.start_sms_verification(self.decrypt_phone(credential["encrypted_phone"]))
+            except (SmsDeliveryError, AuthenticationError):
+                verification_method = "email"
+                sms_fallback_used = True
+                self.database.record_audit_event(
+                    normalized_email, "auth.sms_delivery_failed", "auth_challenge", challenge_id,
+                    {"requested_ip": requested_ip, "fallback": "email"},
+                )
         expires_at = now + timedelta(minutes=self.settings.auth_code_minutes)
         self.database.create_login_code(
             {
@@ -261,9 +430,13 @@ class AuthService:
 
         self.database.record_audit_event(
             normalized_email, "auth.otp_requested", "auth_challenge", challenge_id,
-            {"requested_ip": requested_ip, "delivery_requested": delivery_method},
+            {
+                "requested_ip": requested_ip,
+                "delivery_requested": delivery_method,
+                "sms_fallback_used": sms_fallback_used,
+            },
         )
-        delivery = (code, normalized_email) if verification_method == "email" and access_user and access_user["is_active"] else None
+        delivery = (code, normalized_email) if verification_method == "email" and active_user else None
         return challenge_id, self.settings.auth_code_minutes * 60, verification_method, delivery
 
     def verify_code(self, challenge_id: str, code: str, requested_ip: str) -> tuple[str, datetime, str]:
@@ -277,6 +450,10 @@ class AuthService:
             secret = self.decrypt_totp_secret(credential["encrypted_secret"]) if credential and credential.get("confirmed_at") else ""
             step = self.matching_totp_step(secret, code, now) if secret else None
             valid = step is not None and self.database.claim_totp_step(challenge["email"], step, now)
+        elif challenge.get("verification_method") == "sms":
+            credential = self.database.get_sms_credential(challenge["email"])
+            phone = self.decrypt_phone(credential["encrypted_phone"]) if credential and credential.get("confirmed_at") else ""
+            valid = bool(phone and self.check_sms_verification(phone, code))
         else:
             expected = self.code_hash(challenge_id, code)
             valid = hmac.compare_digest(expected, challenge["code_hash"])

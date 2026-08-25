@@ -1124,7 +1124,7 @@ class NavigationSeenResponse(BaseModel):
 
 class LoginCodeRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
-    delivery_method: Literal["auto", "email"] = "auto"
+    delivery_method: Literal["auto", "email", "sms"] = "auto"
 
 
 class LoginCodeResponse(BaseModel):
@@ -1157,6 +1157,9 @@ class AuthSessionResponse(BaseModel):
     operating_system: str | None = None
     browser: str | None = None
     totp_enabled: bool = False
+    sms_configured: bool = False
+    sms_enabled: bool = False
+    sms_masked_phone: str | None = None
 
 
 class TotpSetupResponse(BaseModel):
@@ -1172,6 +1175,25 @@ class TotpCodeRequest(BaseModel):
 
 class TotpStatusResponse(BaseModel):
     enabled: bool
+
+
+class SmsSetupRequest(BaseModel):
+    phone: str = Field(min_length=8, max_length=32)
+
+
+class SmsSetupResponse(BaseModel):
+    masked_phone: str
+    expires_in_seconds: int
+
+
+class SmsCodeRequest(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class SmsStatusResponse(BaseModel):
+    configured: bool
+    enabled: bool
+    masked_phone: str | None = None
 
 
 class AccessPermission(BaseModel):

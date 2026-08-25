@@ -49,6 +49,7 @@ import {
   Save,
   ShieldCheck,
   Snowflake,
+  Smartphone,
   Sun,
   Target,
   ThumbsDown,
@@ -106,6 +107,9 @@ interface AuthSession {
   operating_system: string | null;
   browser: string | null;
   totp_enabled: boolean;
+  sms_configured: boolean;
+  sms_enabled: boolean;
+  sms_masked_phone: string | null;
 }
 
 interface LeahDevice {
@@ -1986,6 +1990,133 @@ interface TotpSetupData {
   expires_in_seconds: number;
 }
 
+interface SmsSetupData {
+  masked_phone: string;
+  expires_in_seconds: number;
+}
+
+function SmsSecurityPanel({
+  configured,
+  initiallyEnabled,
+  initialMaskedPhone
+}: {
+  configured: boolean;
+  initiallyEnabled: boolean;
+  initialMaskedPhone: string | null;
+}) {
+  const [enabled, setEnabled] = useState(initiallyEnabled);
+  const [maskedPhone, setMaskedPhone] = useState(initialMaskedPhone);
+  const [phone, setPhone] = useState("+55");
+  const [code, setCode] = useState("");
+  const [mode, setMode] = useState<"idle" | "setup" | "disable">("idle");
+  const [changingPhone, setChangingPhone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const beginSetup = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/auth/sms/setup`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone })
+      });
+      const payload = await response.json() as SmsSetupData & { detail?: string };
+      if (!response.ok) throw new Error(payload.detail ?? "Não foi possível enviar o SMS.");
+      setMaskedPhone(payload.masked_phone);
+      setCode("");
+      setMode("setup");
+    } catch (setupError) {
+      setError(setupError instanceof Error ? setupError.message : "Não foi possível enviar o SMS.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const beginDisable = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/auth/sms/disable/request`, { method: "POST", credentials: "include" });
+      const payload = await response.json() as SmsSetupData & { detail?: string };
+      if (!response.ok) throw new Error(payload.detail ?? "Não foi possível enviar o SMS.");
+      setMaskedPhone(payload.masked_phone);
+      setCode("");
+      setMode("disable");
+    } catch (disableError) {
+      setError(disableError instanceof Error ? disableError.message : "Não foi possível enviar o SMS.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirm = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const endpoint = mode === "disable" ? "disable/confirm" : "confirm";
+      const response = await fetch(`${API_URL}/api/v1/auth/sms/${endpoint}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code })
+      });
+      const payload = await response.json() as { enabled?: boolean; masked_phone?: string | null; detail?: string };
+      if (!response.ok) throw new Error(payload.detail ?? "Código SMS inválido.");
+      setEnabled(Boolean(payload.enabled));
+      setMaskedPhone(payload.masked_phone ?? null);
+      setChangingPhone(false);
+      setCode("");
+      setMode("idle");
+    } catch (confirmError) {
+      setError(confirmError instanceof Error ? confirmError.message : "Código SMS inválido.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="profile-panel-section profile-totp profile-sms">
+      <div className="profile-panel-section-title"><Smartphone size={15} /><span>SMS de acesso</span></div>
+      {!configured && (
+        <div className="profile-totp-status"><div><span>PROVEDOR</span><strong>Aguardando configuração</strong></div></div>
+      )}
+      {configured && (!enabled || changingPhone) && mode === "idle" && (
+        <div className="profile-sms-enroll">
+          <div><span>CELULAR</span><strong>{enabled ? "Confirmar novo número" : "Não confirmado"}</strong></div>
+          <div className="profile-sms-phone">
+            <input aria-label="Celular com código do país" value={phone} onChange={(event) => setPhone(event.target.value)} inputMode="tel" autoComplete="tel" placeholder="+5511999999999" />
+            <button type="button" onClick={() => void beginSetup()} disabled={busy || phone.length < 8}>Enviar código</button>
+          </div>
+          {enabled && <button className="profile-sms-cancel" type="button" onClick={() => setChangingPhone(false)} disabled={busy}>Cancelar</button>}
+        </div>
+      )}
+      {configured && mode !== "idle" && (
+        <div className="profile-sms-confirm">
+          <strong>Código enviado para {maskedPhone}</strong>
+          <div className="profile-totp-code">
+            <input aria-label="Código SMS" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" />
+            <button type="button" onClick={() => void confirm()} disabled={busy || code.length !== 6}>{mode === "disable" ? "Desativar" : "Confirmar"}</button>
+          </div>
+          <button className="profile-sms-cancel" type="button" onClick={() => { setMode("idle"); setCode(""); }} disabled={busy}>Cancelar</button>
+        </div>
+      )}
+      {configured && enabled && !changingPhone && mode === "idle" && (
+        <div className="profile-totp-enabled">
+          <div><i /><span><strong>Ativo · {maskedPhone}</strong><small>Método preferido para novos acessos.</small></span></div>
+          <div className="profile-sms-actions">
+            <button type="button" onClick={() => { setPhone("+55"); setChangingPhone(true); }} disabled={busy}>Trocar celular</button>
+            <button type="button" onClick={() => void beginDisable()} disabled={busy}>Desativar</button>
+          </div>
+        </div>
+      )}
+      {error && <p className="profile-totp-error">{error}</p>}
+    </section>
+  );
+}
+
 function TotpSecurityPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) {
   const [enabled, setEnabled] = useState(initiallyEnabled);
   const [setup, setSetup] = useState<TotpSetupData | null>(null);
@@ -2033,7 +2164,7 @@ function TotpSecurityPanel({ initiallyEnabled }: { initiallyEnabled: boolean }) 
 
   return (
     <section className="profile-panel-section profile-totp">
-      <div className="profile-panel-section-title"><LockKeyhole size={15} /><span>Código automático no Safari</span></div>
+      <div className="profile-panel-section-title"><LockKeyhole size={15} /><span>Autenticador de recuperação</span></div>
       {!enabled && !setup && (
         <div className="profile-totp-status">
           <div><span>APP SENHAS</span><strong>Não configurado</strong></div>
@@ -2166,6 +2297,7 @@ function ProfilePanel({
           </div>
         </section>
 
+        <SmsSecurityPanel configured={session.sms_configured} initiallyEnabled={session.sms_enabled} initialMaskedPhone={session.sms_masked_phone} />
         <TotpSecurityPanel initiallyEnabled={session.totp_enabled} />
 
         <div className="profile-panel-actions">
@@ -8034,7 +8166,7 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           <span>Secure command access</span>
           <h1 id="login-title">{challengeId ? "Digite o código" : "Acesse seu command center"}</h1>
           <p>{challengeId
-            ? "Use seu código de seis dígitos. Ele pode estar no autenticador ou no e-mail autorizado."
+            ? "Use seu código de seis dígitos recebido por SMS, autenticador ou e-mail."
             : "Use seu e-mail autorizado. Nenhuma senha é necessária."}</p>
         </div>
 

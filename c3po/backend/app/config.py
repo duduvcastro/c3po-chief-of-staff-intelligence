@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     auth_owner_session_hours: int = 24
     auth_member_idle_minutes: int = 30
     auth_cookie_secure: bool = True
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_verify_service_sid: str = ""
+    twilio_verify_template_sid: str = ""
+    twilio_timeout_seconds: float = 8.0
     public_url: str = "https://c3po.eduardocastro.com.br"
     system_health_external_timeout_seconds: float = 6.0
     github_api_url: str = "https://api.github.com"
