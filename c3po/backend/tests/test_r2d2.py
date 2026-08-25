@@ -156,6 +156,8 @@ def test_r2d2_dashboard_separates_cumulative_nav_from_calendar_day_pnl(
 
 
 def test_r2d2_realized_track_keeps_prior_week_in_nav_but_not_daily_pnl() -> None:
+    # Keep the historical marked snapshots deliberately wrong: the accounting
+    # track must ignore them and reconstruct the factual ledger series below.
     track = r2d2_module._realized_daily_track(
         [
             {
@@ -172,21 +174,21 @@ def test_r2d2_realized_track_keeps_prior_week_in_nav_but_not_daily_pnl() -> None
             },
         ],
         [
-            {"session_date": date(2026, 8, 17), "realized_pnl_usd": -1_000.00},
-            {"session_date": date(2026, 8, 18), "realized_pnl_usd": -2_000.00},
-            {"session_date": date(2026, 8, 19), "realized_pnl_usd": 500.00},
-            {"session_date": date(2026, 8, 20), "realized_pnl_usd": -2_474.17},
-            {"session_date": date(2026, 8, 21), "realized_pnl_usd": -39_981.68},
-            {"session_date": date(2026, 8, 24), "realized_pnl_usd": -814.57},
+            {"session_date": date(2026, 8, 17), "realized_pnl_usd": -1_467.729213},
+            {"session_date": date(2026, 8, 18), "realized_pnl_usd": -10_522.671632},
+            {"session_date": date(2026, 8, 19), "realized_pnl_usd": -6_537.063977},
+            {"session_date": date(2026, 8, 20), "realized_pnl_usd": -15_898.264934},
+            {"session_date": date(2026, 8, 21), "realized_pnl_usd": -10_374.558379},
+            {"session_date": date(2026, 8, 24), "realized_pnl_usd": -8_565.600410},
         ],
         1_000_000,
     )
 
-    assert track[-2]["accounting_nav_usd"] == 955_044.15
-    assert track[-1]["daily_pnl_usd"] == -814.57
-    assert round(track[-1]["daily_return_percent"], 6) == -0.085291
-    assert track[-1]["cumulative_pnl_usd"] == -45_770.42
-    assert track[-1]["accounting_nav_usd"] == 954_229.58
+    assert track[-2]["accounting_nav_usd"] == pytest.approx(955_199.711865)
+    assert track[-1]["daily_pnl_usd"] == pytest.approx(-8_565.600410)
+    assert round(track[-1]["daily_return_percent"], 6) == -0.896734
+    assert track[-1]["cumulative_pnl_usd"] == pytest.approx(-53_365.888545)
+    assert track[-1]["accounting_nav_usd"] == pytest.approx(946_634.111455)
 
 
 def test_r2d2_scans_full_us_catalog_and_promotes_stocks_and_etfs() -> None:
