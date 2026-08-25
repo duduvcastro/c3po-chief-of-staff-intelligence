@@ -24,6 +24,10 @@ VALUATION_WORKER_PHASES: dict[str, dict[str, str]] = {
         "code": "valuation-worker-peer-quality",
         "name": "Valuation V2.1b peer-quality cycle",
     },
+    "v3_shadow": {
+        "code": "valuation-worker-v3-shadow",
+        "name": "Valuation V3 shadow cycle",
+    },
 }
 
 VALUATION_WORKER_CANONICAL_PHASE = "canonical"
@@ -32,4 +36,5 @@ VALUATION_WORKER_OFFHOURS_PHASES = (
     "v2_data",
     "shadow",
     "peer_quality",
+    "v3_shadow",
 )
