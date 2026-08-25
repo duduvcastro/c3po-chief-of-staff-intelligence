@@ -420,6 +420,7 @@ button { cursor: pointer; }
 .r2d2-gate-dot { width: 8px; height: 8px; border-radius: 50%; }
 .r2d2-gate-ready { background: var(--green); box-shadow: 0 0 0 4px rgba(67,183,123,.12); }
 .r2d2-gate-pending { background: var(--amber); box-shadow: 0 0 0 4px rgba(216,156,66,.12); }
+.r2d2-gate-critical { background: var(--red); box-shadow: 0 0 0 4px rgba(218,88,79,.12); }
 .r2d2-gates-foot { min-height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 16px; color: #7c8794; font-size: 9px; }
 .r2d2-gates-foot svg { color: var(--gold-deep); }
 .r2d2-intelligence-panel { min-width: 0; overflow: hidden; }

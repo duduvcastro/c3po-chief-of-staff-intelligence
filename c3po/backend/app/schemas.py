@@ -740,6 +740,7 @@ class R2D2CycleStatus(BaseModel):
     signal_count: int = Field(default=0, ge=0)
     trade_count: int = Field(default=0, ge=0)
     error_summary: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class R2D2LearningState(BaseModel):
@@ -759,6 +760,12 @@ class R2D2DashboardResponse(BaseModel):
     entries_paused_at: datetime | None = None
     entries_pause_operator: str | None = None
     entries_pause_reason: str | None = None
+    policy_epoch: str | None = None
+    policy_epoch_started_at: datetime | None = None
+    entry_score_adapter_enabled: bool = False
+    entry_score_adapter_version: str | None = None
+    entry_score_adapter_status: str = "disabled"
+    entry_score_adapter_last_error: str | None = None
     methodology_version: str
     start_date: str
     checkpoint_date: str
