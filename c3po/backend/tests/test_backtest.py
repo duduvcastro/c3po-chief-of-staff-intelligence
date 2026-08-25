@@ -106,6 +106,30 @@ def test_hard_stop_quote_is_recalibrated_to_the_realized_net_loss_limit():
     assert strategy.estimated_net_exit_pnl_percent(threshold, 100.0) == pytest.approx(-0.65)
 
 
+def test_entry_cost_is_counted_once_in_average_cost_and_once_on_exit():
+    signal_price = 100.0
+    entry_fill = signal_price * (1 + strategy.US_EXIT_SLIPPAGE_RATE)
+    average_cost = entry_fill * (1 + strategy.US_EXIT_FEE_RATE)
+
+    mark_pnl = (signal_price / average_cost - 1) * 100
+    net_pnl = strategy.estimated_net_exit_pnl_percent(signal_price, average_cost)
+
+    assert mark_pnl == pytest.approx(-0.139844162, abs=1e-8)
+    assert net_pnl == pytest.approx(-0.279608437, abs=1e-8)
+    assert net_pnl != pytest.approx(
+        mark_pnl - strategy.SIMULATED_ROUND_TRIP_COST_PERCENT,
+    )
+
+
+def test_entry_stop_quote_price_uses_the_current_quote_basis():
+    # LOW was enriched at 219.14, then filled from a fresh 218.39 tick. The
+    # stop must follow the latter rather than retaining 218.26344 from 219.14.
+    stop = strategy.entry_stop_quote_price(218.39, 0.643205)
+
+    assert stop == pytest.approx(217.51644)
+    assert stop < 218.26344
+
+
 def _volatile_hard_stop_scenario(quote_price: float):
     """Root-caused 2026-08-20: SOC's ATR was 1.6%, so a flat 0.65% hard stop
     sat inside 41% of one ATR and fired on ordinary chop, not a breakdown.
