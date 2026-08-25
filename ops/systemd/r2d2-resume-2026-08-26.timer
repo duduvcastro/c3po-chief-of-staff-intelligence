@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule the audited R2D2 entry resume for 2026-08-26 10:30 BRT
+
+[Timer]
+OnCalendar=2026-08-26 13:30:00 UTC
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=true
+Unit=r2d2-resume-2026-08-26.service
+
+[Install]
+WantedBy=timers.target
