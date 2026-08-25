@@ -181,6 +181,9 @@ def _frozen_snapshots() -> dict[str, dict]:
         elif reference.role == "v2_data":
             row = _row(reference.market)
             outputs = {"packets": {row["symbol"]: _packet(row["symbol"])}}
+        elif reference.role == "peer_quality":
+            symbol = "PEER3" if reference.market == "B3" else "USPEER"
+            outputs = {"packets": {symbol: _packet(symbol)}}
         elif reference.role == "chewie":
             outputs = {"items": []}
         elif reference.role == "v2_shadow":
@@ -243,13 +246,27 @@ def test_manifest_pins_every_snapshot_macro_hash_and_engine_file() -> None:
     loaded = validate_manifest(manifest, _loader(snapshots))
 
     assert manifest["manifest_sha256"] == manifest_hash(manifest)
-    assert len(manifest["snapshots"]) == 14
-    assert len(loaded) == 14
+    assert len(manifest["snapshots"]) == 16
+    assert len(loaded) == 16
     assert manifest["macro_packages"]["selic_macro"]["payload_sha256"] == _selic()[
         "payload_sha256"
     ]
     assert manifest["engines"]["v3"]["engine_version"] == 3
     assert len(manifest["harness"]["file_sha256"]) == 64
+
+
+def test_market_context_uses_frozen_peer_quality_closure_packets() -> None:
+    snapshots = _frozen_snapshots()
+    loaded = {
+        (reference.role, reference.market): snapshots[reference.snapshot_id]
+        for reference in FROZEN_SNAPSHOT_REFERENCES
+    }
+
+    b3_context = ab_module._market_context("B3", loaded)  # noqa: SLF001
+    us_context = ab_module._market_context("NASDAQ", loaded)  # noqa: SLF001
+
+    assert b3_context["quality_index"]["PEER3"]["fmp_forward"]["roe"] == 0.15
+    assert us_context["quality_index"]["USPEER"]["fmp_forward"]["roe"] == 0.15
 
 
 def test_manifest_rejects_self_hash_snapshot_drift_and_latest_substitution() -> None:
