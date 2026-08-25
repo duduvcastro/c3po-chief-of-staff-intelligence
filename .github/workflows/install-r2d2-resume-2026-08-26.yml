@@ -54,7 +54,7 @@ jobs:
           REVISION: ${{ github.sha }}
         run: |
           ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "REVISION='$REVISION' bash -s" <<'REMOTE'
+            "cat > /tmp/install-r2d2-resume-2026-08-26.sh && REVISION='$REVISION' bash /tmp/install-r2d2-resume-2026-08-26.sh" <<'REMOTE'
           set -euo pipefail
 
           APP_DIR=/opt/chief-of-staff-digital
@@ -83,9 +83,10 @@ jobs:
           fi
 
           if ! docker compose --env-file .env -f c3po/compose.yml exec -T r2d2-worker \
-            python -c 'from app.config import Settings; assert Settings().r2d2_entry_score_adapter_enabled is True'; then
+            python -c 'from app.config import Settings; assert Settings().r2d2_entry_score_adapter_enabled is True' \
+            </dev/null; then
             docker compose --env-file .env -f c3po/compose.yml \
-              up -d --no-deps --force-recreate r2d2-worker
+              up -d --no-deps --force-recreate r2d2-worker </dev/null
           fi
           for attempt in $(seq 1 30); do
             worker_id=$(docker compose --env-file .env -f c3po/compose.yml ps -q r2d2-worker)
@@ -99,7 +100,8 @@ jobs:
             sleep 2
           done
           docker compose --env-file .env -f c3po/compose.yml exec -T r2d2-worker \
-            python -c 'from app.config import Settings; assert Settings().r2d2_entry_score_adapter_enabled is True'
+            python -c 'from app.config import Settings; assert Settings().r2d2_entry_score_adapter_enabled is True' \
+            </dev/null
 
           evidence_dir="$APP_DIR/outputs/evidence/r2d2-resume-2026-08-26"
           mkdir -p "$evidence_dir"
@@ -110,7 +112,7 @@ jobs:
             --policy-epoch policy-a-resume-2026-08-26 \
             --operator Dudu \
             --reason "$reason" \
-            > "$evidence_dir/install-plan-preview.json"
+            </dev/null > "$evidence_dir/install-plan-preview.json"
           python3 - "$evidence_dir/install-plan-preview.json" <<'PY'
           import json
           import sys
