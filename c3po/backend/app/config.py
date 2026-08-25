@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     github_api_url: str = "https://api.github.com"
     github_repository: str = "duduvcastro/c3po-chief-of-staff-intelligence"
     deploy_version_file: Path = DEFAULT_LEGACY_ROOT / ".deploy-version"
+    build_sha: str = "development"
     exchange_server: str = Field(default="", validation_alias=AliasChoices("C3PO_EXCHANGE_SERVER", "EXCHANGE_SERVER"))
     exchange_user: str = Field(default="", validation_alias=AliasChoices("C3PO_EXCHANGE_USER", "EXCHANGE_USER"))
     exchange_app_password: str = Field(default="", validation_alias=AliasChoices("C3PO_EXCHANGE_APP_PASSWORD", "EXCHANGE_APP_PASSWORD"))
@@ -132,6 +133,9 @@ class Settings(BaseSettings):
     server_usage_disk_path: Path = Path("/")
     server_usage_interval_seconds: int = 60
     server_usage_retention_days: int = 7
+    performance_flush_seconds: int = Field(default=60, ge=30, le=300)
+    performance_retention_days: int = Field(default=90, ge=30, le=3_650)
+    performance_minimum_sample_sessions: int = Field(default=5, ge=3, le=30)
     server_usage_cpu_peak_warning_percent: float = 85.0
     server_usage_cpu_peak_critical_percent: float = 95.0
     server_usage_cpu_average_warning_percent: float = 70.0

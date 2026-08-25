@@ -433,6 +433,51 @@ interface PageLoadPerformanceStats {
   count: number;
 }
 
+interface PerformanceHistoryResponse {
+  generated_at: string;
+  window_hours: number;
+  retention_days: number;
+  flush_seconds: number;
+  minimum_sample_sessions: number;
+  observed_regular_session_dates: string[];
+  sample_status: "collecting" | "stable";
+  api_routes: {
+    backend_build_sha: string;
+    method: string;
+    route: string;
+    bucket_count: number;
+    request_count: number;
+    average_ms: number;
+    p95_ms: number;
+    max_ms: number;
+    error_percent: number;
+    total_duration_ms: number;
+  }[];
+  page_loads: {
+    frontend_build_sha: string;
+    backend_build_sha: string;
+    view: ViewKey;
+    device_class: "mobile" | "tablet" | "desktop";
+    sample_count: number;
+    average_total_ms: number;
+    p95_total_ms: number;
+    average_api_wait_ms: number;
+    average_backend_ms: number;
+    average_render_ms: number;
+    average_request_count: number;
+  }[];
+}
+
+interface PageLoadTracker {
+  view: ViewKey;
+  startedAt: number;
+  inFlight: number;
+  quietTimer: number | null;
+  apiIntervals: { startedAt: number; endedAt: number }[];
+  backendTotalMs: number;
+  requestCount: number;
+}
+
 interface WeatherHour {
   time: string;
   temperature_c: number | null;
@@ -1140,6 +1185,7 @@ interface GlobalSearchResult {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_C3PO_API_URL ?? "http://localhost:8000";
+const FRONTEND_BUILD_SHA = process.env.NEXT_PUBLIC_C3PO_BUILD_SHA ?? "development";
 
 function useR2D2LivePositions() {
   const [telemetry, setTelemetry] = useState<R2D2LivePositionsData | null>(null);
@@ -2383,6 +2429,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     if (visibleNavItems.some((item) => item.key === "command")) return "command";
     return visibleNavItems[0]?.key ?? "home";
   });
+  const initialViewRef = useRef(activeView);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -2396,14 +2443,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     requestCount: 0,
     count: 0
   });
-  const pageLoadTrackerRef = useRef<{
-    startedAt: number;
-    inFlight: number;
-    quietTimer: number | null;
-    apiIntervals: { startedAt: number; endedAt: number }[];
-    backendTotalMs: number;
-    requestCount: number;
-  } | null>(null);
+  const pageLoadTrackerRef = useRef<PageLoadTracker | null>(null);
   const [financeRefreshKey, setFinanceRefreshKey] = useState(0);
   const [activeAlertCount, setActiveAlertCount] = useState(0);
   const [navigationIndicators, setNavigationIndicators] = useState<NavigationIndicatorsData | null>(null);
@@ -2435,6 +2475,27 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
       requestCount: current.requestCount + tracker.requestCount,
       count: current.count + 1
     }));
+    const deviceClass = window.innerWidth < 768 ? "mobile" : window.innerWidth < 1200 ? "tablet" : "desktop";
+    void fetch(`${API_URL}/api/v1/telemetry/page-load`, {
+      method: "POST",
+      cache: "no-store",
+      credentials: "include",
+      keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sample_id: window.crypto.randomUUID(),
+        view: tracker.view,
+        frontend_build_sha: FRONTEND_BUILD_SHA,
+        device_class: deviceClass,
+        total_ms: durationMs,
+        api_wait_ms: apiWaitMs,
+        backend_total_ms: tracker.backendTotalMs,
+        render_ms: renderMs,
+        request_count: tracker.requestCount
+      })
+    }).catch(() => {
+      // Performance telemetry is best effort and cannot interrupt the active view.
+    });
   }, []);
 
   const schedulePageLoadCompletion = useCallback((tracker: NonNullable<typeof pageLoadTrackerRef.current>) => {
@@ -2442,6 +2503,26 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     if (tracker.quietTimer !== null) window.clearTimeout(tracker.quietTimer);
     tracker.quietTimer = window.setTimeout(() => completePageLoadMeasurement(tracker), 250);
   }, [completePageLoadMeasurement]);
+
+  const startPageLoadMeasurement = useCallback((view: ViewKey) => {
+    const previousTracker = pageLoadTrackerRef.current;
+    if (previousTracker?.quietTimer !== null && previousTracker?.quietTimer !== undefined) {
+      window.clearTimeout(previousTracker.quietTimer);
+    }
+    pageLoadTrackerRef.current = null;
+    if (view === "home") return;
+    const tracker: PageLoadTracker = {
+      view,
+      startedAt: window.performance.now(),
+      inFlight: 0,
+      quietTimer: null,
+      apiIntervals: [],
+      backendTotalMs: 0,
+      requestCount: 0
+    };
+    pageLoadTrackerRef.current = tracker;
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => schedulePageLoadCompletion(tracker)));
+  }, [schedulePageLoadCompletion]);
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
@@ -2477,6 +2558,10 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
       pageLoadTrackerRef.current = null;
     };
   }, [schedulePageLoadCompletion]);
+
+  useEffect(() => {
+    startPageLoadMeasurement(initialViewRef.current);
+  }, [startPageLoadMeasurement]);
 
   useEffect(() => {
     if (!session.idle_timeout_seconds) return;
@@ -2647,23 +2732,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
 
   const selectView = (view: ViewKey, realtimeTab?: RealtimeTabKey, viewQuery?: string) => {
     if (view !== "home" && !visibleNavItems.some((item) => item.key === view)) return;
-    const previousTracker = pageLoadTrackerRef.current;
-    if (previousTracker?.quietTimer !== null && previousTracker?.quietTimer !== undefined) {
-      window.clearTimeout(previousTracker.quietTimer);
-    }
-    pageLoadTrackerRef.current = null;
-    if (view !== "home") {
-      const tracker = {
-        startedAt: window.performance.now(),
-        inFlight: 0,
-        quietTimer: null as number | null,
-        apiIntervals: [] as { startedAt: number; endedAt: number }[],
-        backendTotalMs: 0,
-        requestCount: 0
-      };
-      pageLoadTrackerRef.current = tracker;
-      window.requestAnimationFrame(() => window.requestAnimationFrame(() => schedulePageLoadCompletion(tracker)));
-    }
+    startPageLoadMeasurement(view);
     if (view === "finance") setFinanceRefreshKey((value) => value + 1);
     setActiveView(view);
     setViewRevision((value) => value + 1);
@@ -7280,6 +7349,7 @@ function formatPerformanceDuration(value: number | null) {
 
 function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformanceStats }) {
   const [data, setData] = useState<ServerUsageResponse | null>(null);
+  const [performanceHistory, setPerformanceHistory] = useState<PerformanceHistoryResponse | null>(null);
   const [selectedServerId, setSelectedServerId] = useState("");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -7304,11 +7374,29 @@ function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformance
     }
   }, []);
 
+  const loadPerformanceHistory = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/server-usage/performance?hours=168`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      if (response.ok) setPerformanceHistory(await response.json());
+    } catch {
+      // Keep the latest persisted history while a refresh is unavailable.
+    }
+  }, []);
+
   useEffect(() => {
     load();
     const timer = window.setInterval(() => load(true), 60_000);
     return () => window.clearInterval(timer);
   }, [load]);
+
+  useEffect(() => {
+    void loadPerformanceHistory();
+    const timer = window.setInterval(loadPerformanceHistory, 15 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [loadPerformanceHistory]);
 
   const server = data?.servers.find((item) => item.server_id === selectedServerId) ?? data?.servers[0];
   const pageLoadAverageMs = pageLoadStats.count ? pageLoadStats.totalMs / pageLoadStats.count : null;
@@ -7331,6 +7419,8 @@ function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformance
   );
   const latestDiskIndex = points.reduce((latest, point, index) => point.disk_percent !== null ? index : latest, -1);
   const hovered = hoveredIndex === null ? null : points[hoveredIndex];
+  const historicalApiRoutes = performanceHistory?.api_routes ?? [];
+  const apiRows = historicalApiRoutes.length ? historicalApiRoutes : (data?.api_endpoints ?? []);
   const timeMarkers = points.length
     ? [0, .25, .5, .75, 1].map((ratio) => Math.min(points.length - 1, Math.round((points.length - 1) * ratio)))
     : [];
@@ -7384,20 +7474,42 @@ function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformance
         <section className="server-api-performance">
           <header>
             <div><span>API PERFORMANCE</span><strong>Slowest endpoints</strong></div>
-            <small>Rolling {data?.api_window_minutes ?? 15} min · ordered by p95</small>
+            <small>{performanceHistory
+              ? `${performanceHistory.observed_regular_session_dates.length}/${performanceHistory.minimum_sample_sessions} sessions · ${performanceHistory.retention_days}d retained`
+              : `Rolling ${data?.api_window_minutes ?? 15} min`} · ordered by workload</small>
           </header>
           <div className="server-api-table">
             <div className="server-api-row server-api-row-head"><span>Endpoint</span><span>Requests</span><span>Average</span><span>P95</span><span>Errors</span></div>
-            {(data?.api_endpoints ?? []).slice(0, 8).map((endpoint) => (
-              <div className="server-api-row" key={`${endpoint.method}-${endpoint.route}`}>
-                <strong><em>{endpoint.method}</em>{endpoint.route}</strong>
+            {apiRows.slice(0, 8).map((endpoint) => (
+              <div className="server-api-row" key={`${endpoint.method}-${endpoint.route}-${"backend_build_sha" in endpoint ? endpoint.backend_build_sha : "live"}`}>
+                <strong title={"backend_build_sha" in endpoint ? `Build ${endpoint.backend_build_sha}` : "Live window"}><em>{endpoint.method}</em>{endpoint.route}</strong>
                 <span>{endpoint.request_count.toLocaleString("pt-BR")}</span>
                 <span>{formatPerformanceDuration(endpoint.average_ms)}</span>
                 <span>{formatPerformanceDuration(endpoint.p95_ms)}</span>
                 <span className={endpoint.error_percent > 0 ? "error" : ""}>{endpoint.error_percent.toFixed(1).replace(".", ",")}%</span>
               </div>
             ))}
-            {!data?.api_endpoints.length && <div className="server-api-empty">Collecting the first API samples.</div>}
+            {!apiRows.length && <div className="server-api-empty">Collecting the first API samples.</div>}
+          </div>
+        </section>
+
+        <section className="server-api-performance">
+          <header>
+            <div><span>PAGE LOAD PERFORMANCE</span><strong>Slowest views</strong></div>
+            <small>{performanceHistory?.sample_status ?? "collecting"} · grouped by view, build and viewport</small>
+          </header>
+          <div className="server-api-table">
+            <div className="server-api-row server-api-row-head"><span>View</span><span>Samples</span><span>Average</span><span>P95</span><span>API wait</span></div>
+            {(performanceHistory?.page_loads ?? []).slice(0, 8).map((item) => (
+              <div className="server-api-row" key={`${item.view}-${item.frontend_build_sha}-${item.device_class}`}>
+                <strong title={`Frontend ${item.frontend_build_sha} · Backend ${item.backend_build_sha}`}><em>{item.device_class}</em>{item.view}</strong>
+                <span>{item.sample_count.toLocaleString("pt-BR")}</span>
+                <span>{formatPerformanceDuration(item.average_total_ms)}</span>
+                <span>{formatPerformanceDuration(item.p95_total_ms)}</span>
+                <span>{formatPerformanceDuration(item.average_api_wait_ms)}</span>
+              </div>
+            ))}
+            {!performanceHistory?.page_loads.length && <div className="server-api-empty">Collecting the first persisted page samples.</div>}
           </div>
         </section>
 

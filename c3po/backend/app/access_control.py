@@ -50,7 +50,11 @@ def required_capability(path: str, method: str) -> str | None:
         return "read"
     if normalized_method in {"GET", "HEAD"}:
         return "read"
-    if normalized_method == "POST" and path in {"/api/v1/alerts/read", "/api/v1/navigation-seen"}:
+    if normalized_method == "POST" and path in {
+        "/api/v1/alerts/read",
+        "/api/v1/navigation-seen",
+        "/api/v1/telemetry/page-load",
+    }:
         return "read"
     if normalized_method == "POST" and path == "/api/v1/one-pagers":
         return "onepager_generate"

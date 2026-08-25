@@ -33,6 +33,8 @@ class Database:
         self._analysis_snapshots: list[dict[str, Any]] = []
         self._valuation_changes: list[dict[str, Any]] = []
         self._server_usage_samples: list[dict[str, Any]] = []
+        self._api_performance_buckets: list[dict[str, Any]] = []
+        self._page_load_performance_samples: list[dict[str, Any]] = []
         self._realtime_portfolio: dict[str, dict[str, Any]] = {}
         self._ir_companies: dict[tuple[str, str], dict[str, Any]] = {}
         self._ir_security_map: dict[tuple[str, str], str] = {}
@@ -1449,6 +1451,150 @@ class Database:
             )
             connection.commit()
             return cursor.rowcount
+
+    def save_api_performance_buckets(self, buckets: list[dict[str, Any]]) -> int:
+        if not buckets:
+            return 0
+        if not self.database_url:
+            existing = {item["id"] for item in self._api_performance_buckets}
+            inserted = [item.copy() for item in buckets if item["id"] not in existing]
+            self._api_performance_buckets.extend(inserted)
+            self._api_performance_buckets.sort(key=lambda item: item["bucket_start"])
+            return len(inserted)
+        rows = [(
+            item["id"], item["process_id"], item["bucket_start"], item["bucket_seconds"],
+            item["backend_build_sha"], item["method"], item["route_template"],
+            item["request_count"], item["error_count"], item["duration_sum_ms"],
+            item["duration_max_ms"], json.dumps(item["durations_ms"]),
+        ) for item in buckets]
+        with self.connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO platform_api_performance_buckets
+                        (id, process_id, bucket_start, bucket_seconds, backend_build_sha,
+                         method, route_template, request_count, error_count,
+                         duration_sum_ms, duration_max_ms, durations_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    rows,
+                )
+            connection.commit()
+        return len(rows)
+
+    def list_api_performance_buckets(self, since: datetime) -> list[dict[str, Any]]:
+        if not self.database_url:
+            return [
+                item.copy() for item in self._api_performance_buckets
+                if item["bucket_start"] >= since
+            ]
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, process_id, bucket_start, bucket_seconds, backend_build_sha,
+                       method, route_template, request_count, error_count,
+                       duration_sum_ms, duration_max_ms, durations_ms
+                FROM platform_api_performance_buckets
+                WHERE bucket_start >= %s
+                ORDER BY bucket_start, method, route_template
+                """,
+                (since,),
+            ).fetchall()
+        keys = (
+            "id", "process_id", "bucket_start", "bucket_seconds", "backend_build_sha",
+            "method", "route_template", "request_count", "error_count",
+            "duration_sum_ms", "duration_max_ms", "durations_ms",
+        )
+        return [dict(zip(keys, row)) for row in rows]
+
+    def save_page_load_performance_samples(self, samples: list[dict[str, Any]]) -> int:
+        if not samples:
+            return 0
+        if not self.database_url:
+            existing = {str(item["sample_id"]) for item in self._page_load_performance_samples}
+            inserted = [
+                {**item, "view_key": item["view"]}
+                for item in samples
+                if str(item["sample_id"]) not in existing
+            ]
+            self._page_load_performance_samples.extend(inserted)
+            self._page_load_performance_samples.sort(key=lambda item: item["received_at"])
+            return len(inserted)
+        rows = [(
+            item["sample_id"], item["received_at"], item["view"], item["frontend_build_sha"],
+            item["backend_build_sha"], item["device_class"], item["total_ms"],
+            item["api_wait_ms"], item["backend_total_ms"], item["render_ms"],
+            item["request_count"],
+        ) for item in samples]
+        with self.connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    """
+                    INSERT INTO platform_page_load_performance_samples
+                        (sample_id, received_at, view_key, frontend_build_sha,
+                         backend_build_sha, device_class, total_ms, api_wait_ms,
+                         backend_total_ms, render_ms, request_count)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (sample_id) DO NOTHING
+                    """,
+                    rows,
+                )
+            connection.commit()
+        return len(rows)
+
+    def list_page_load_performance_samples(self, since: datetime) -> list[dict[str, Any]]:
+        if not self.database_url:
+            return [
+                item.copy() for item in self._page_load_performance_samples
+                if item["received_at"] >= since
+            ]
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT sample_id, received_at, view_key, frontend_build_sha,
+                       backend_build_sha, device_class, total_ms, api_wait_ms,
+                       backend_total_ms, render_ms, request_count
+                FROM platform_page_load_performance_samples
+                WHERE received_at >= %s
+                ORDER BY received_at, view_key
+                """,
+                (since,),
+            ).fetchall()
+        keys = (
+            "sample_id", "received_at", "view_key", "frontend_build_sha",
+            "backend_build_sha", "device_class", "total_ms", "api_wait_ms",
+            "backend_total_ms", "render_ms", "request_count",
+        )
+        return [dict(zip(keys, row)) for row in rows]
+
+    def purge_performance_observations(self, before: datetime) -> int:
+        if not self.database_url:
+            api_original = len(self._api_performance_buckets)
+            page_original = len(self._page_load_performance_samples)
+            self._api_performance_buckets = [
+                item for item in self._api_performance_buckets if item["bucket_start"] >= before
+            ]
+            self._page_load_performance_samples = [
+                item for item in self._page_load_performance_samples if item["received_at"] >= before
+            ]
+            return (
+                api_original
+                + page_original
+                - len(self._api_performance_buckets)
+                - len(self._page_load_performance_samples)
+            )
+        with self.connection() as connection:
+            api_cursor = connection.execute(
+                "DELETE FROM platform_api_performance_buckets WHERE bucket_start < %s",
+                (before,),
+            )
+            page_cursor = connection.execute(
+                "DELETE FROM platform_page_load_performance_samples WHERE received_at < %s",
+                (before,),
+            )
+            connection.commit()
+            return api_cursor.rowcount + page_cursor.rowcount
 
     def market_data_provider_health(self) -> dict[str, dict[str, Any]]:
         if not self.database_url:

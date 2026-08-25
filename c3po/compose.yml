@@ -28,6 +28,7 @@ services:
       - ../.env
     environment:
       C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
+      C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
       C3PO_LEGACY_ROOT: /legacy
       C3PO_MIGRATIONS_DIR: /app/db
       C3PO_CORS_ORIGINS: http://localhost:8081,http://127.0.0.1:8081,http://localhost:3000,http://127.0.0.1:3000
@@ -149,6 +150,7 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_C3PO_API_URL: ${C3PO_PUBLIC_API_URL:-}
+        NEXT_PUBLIC_C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
     ports:
       - "127.0.0.1:8081:80"
     depends_on:

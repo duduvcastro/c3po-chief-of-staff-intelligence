@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Provenance(BaseModel):
@@ -987,6 +988,77 @@ class ServerUsageResponse(BaseModel):
     api_endpoints: list[ApiEndpointPerformance] = Field(default_factory=list)
     api_window_minutes: int = 15
     methodology: dict[str, str]
+
+
+PerformanceView = Literal[
+    "command", "markets", "realtime", "weather", "portfolio", "relations",
+    "news", "r2d2", "candidates", "matrix", "chewie", "onepager",
+    "intelligence", "finance", "alerts", "health", "serverusage", "leah", "helm",
+]
+
+
+class PageLoadPerformanceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sample_id: UUID
+    view: PerformanceView
+    frontend_build_sha: str = Field(
+        min_length=7,
+        max_length=64,
+        pattern=r"^(?:[0-9a-f]{7,64}|development|unknown)$",
+    )
+    device_class: Literal["mobile", "tablet", "desktop"]
+    total_ms: float = Field(ge=0, le=300_000)
+    api_wait_ms: float = Field(ge=0, le=300_000)
+    backend_total_ms: float = Field(ge=0, le=300_000)
+    render_ms: float = Field(ge=0, le=300_000)
+    request_count: int = Field(ge=0, le=10_000)
+
+
+class PageLoadPerformanceResponse(BaseModel):
+    sample_id: UUID
+    accepted: bool
+    flush_seconds: int = Field(ge=1)
+
+
+class HistoricalApiPerformance(BaseModel):
+    backend_build_sha: str
+    method: str
+    route: str
+    bucket_count: int = Field(ge=1)
+    request_count: int = Field(ge=1)
+    average_ms: float = Field(ge=0)
+    p95_ms: float = Field(ge=0)
+    max_ms: float = Field(ge=0)
+    error_percent: float = Field(ge=0, le=100)
+    total_duration_ms: float = Field(ge=0)
+
+
+class HistoricalPageLoadPerformance(BaseModel):
+    frontend_build_sha: str
+    backend_build_sha: str
+    view: PerformanceView
+    device_class: Literal["mobile", "tablet", "desktop"]
+    sample_count: int = Field(ge=1)
+    average_total_ms: float = Field(ge=0)
+    p95_total_ms: float = Field(ge=0)
+    average_api_wait_ms: float = Field(ge=0)
+    average_backend_ms: float = Field(ge=0)
+    average_render_ms: float = Field(ge=0)
+    average_request_count: float = Field(ge=0)
+
+
+class PerformanceHistoryResponse(BaseModel):
+    generated_at: datetime
+    window_hours: int = Field(ge=1)
+    retention_days: int = Field(ge=1)
+    flush_seconds: int = Field(ge=1)
+    minimum_sample_sessions: int = Field(ge=1)
+    observed_regular_session_dates: list[str]
+    sample_status: Literal["collecting", "stable"]
+    api_routes: list[HistoricalApiPerformance]
+    page_loads: list[HistoricalPageLoadPerformance]
+    privacy: dict[str, str]
 
 
 class OpenFinanceAccount(BaseModel):

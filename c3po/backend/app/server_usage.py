@@ -128,7 +128,10 @@ class ServerUsageService:
                 "disk": "Host filesystem usage from statvfs; history starts with the C3PO collector",
                 "smoothing": "Time-based rolling arithmetic mean over the preceding five minutes",
                 "retention": f"{self.settings.server_usage_retention_days} days in PostgreSQL",
-                "api": "In-process endpoint latency over a rolling 15-minute window",
+                "api": (
+                    "Live in-process latency over 15 minutes; fixed one-minute buckets and "
+                    f"page-load samples persist for {self.settings.performance_retention_days} days"
+                ),
             },
         )
 
