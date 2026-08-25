@@ -3989,11 +3989,11 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   });
   const todayKey = saoPauloDate.format(new Date());
   const todayTrades = r2d2?.trades.filter((trade) => saoPauloDate.format(new Date(trade.executed_at)) === todayKey) ?? [];
-  const todayPositiveTransactions = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
-  const todayNegativeTransactions = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
-  const todayClosedTransactions = todayPositiveTransactions + todayNegativeTransactions;
-  const todayPositiveShare = todayClosedTransactions > 0 ? todayPositiveTransactions / todayClosedTransactions * 100 : 0;
-  const todayNegativeShare = todayClosedTransactions > 0 ? todayNegativeTransactions / todayClosedTransactions * 100 : 0;
+  const todayPositiveSellLegs = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
+  const todayNegativeSellLegs = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
+  const todayRealizedSellLegs = todayPositiveSellLegs + todayNegativeSellLegs;
+  const todayPositiveSellShare = todayRealizedSellLegs > 0 ? todayPositiveSellLegs / todayRealizedSellLegs * 100 : 0;
+  const todayNegativeSellShare = todayRealizedSellLegs > 0 ? todayNegativeSellLegs / todayRealizedSellLegs * 100 : 0;
   const healthHeadline = health?.status === "healthy"
     ? "All services operational"
     : health?.status === "offline"
@@ -4023,8 +4023,8 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         </div>
         <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.accounting_nav_usd) : "—"} detail={`${liveOpenPositions} open positions`} tone="gold" />
         <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${dailyPnlDate ?? "No session"} · ${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}%` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
-        <FalconMetric label="Positive Transactions" value={`${todayPositiveTransactions}`} secondaryValue={`${todayPositiveShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="green" />
-        <FalconMetric label="Negative Transactions" value={`${todayNegativeTransactions}`} secondaryValue={`${todayNegativeShare.toFixed(1)}%`} detail={`of ${todayClosedTransactions} closed trades today`} tone="red" />
+        <FalconMetric label="Positive Sell Legs" value={`${todayPositiveSellLegs}`} secondaryValue={`${todayPositiveSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="green" />
+        <FalconMetric label="Negative Sell Legs" value={`${todayNegativeSellLegs}`} secondaryValue={`${todayNegativeSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="red" />
       </section>
 
       {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => { setError(""); void loadR2D2(); void loadIndices(); }}>Retry</button></div>}
