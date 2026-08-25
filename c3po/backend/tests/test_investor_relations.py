@@ -42,6 +42,37 @@ def test_link_collector_uses_nested_image_alt_text():
     assert parser.links == [("https://api.mziq.com/document", "Release de Resultados 2T26")]
 
 
+def test_generic_ri_page_links_are_labeled_collected_not_page_last_modified(tmp_path, monkeypatch):
+    """The RI page's HTTP Last-Modified header describes when the PAGE was
+    last edited, not when any individual linked document was published.
+    Every document found on the same page must be honestly labeled
+    'collected' (first-seen), never a falsely precise shared 'datetime'.
+    """
+    ir, _ = service(tmp_path)
+    company = {
+        "id": "company-1", "ri_url": "https://ri.example.com/investors",
+        "market": "B3", "company_name": "Example Co", "regulator_id": None,
+        "symbols": ["EXPL3"],
+    }
+    page_text = (
+        '<a href="https://ri.example.com/docs/press-release.pdf">Press Release</a>'
+        '<a href="https://ri.example.com/docs/financial-results.pdf">Financial Results</a>'
+    )
+    monkeypatch.setattr(
+        ir, "_fetch_ri_page",
+        lambda url: (page_text, {"last-modified": "Wed, 20 Aug 2026 12:00:00 GMT"}),
+    )
+    collected_at = datetime(2026, 8, 25, 9, 58, tzinfo=timezone.utc)
+
+    _, events = ir._collect_ri_company(company, collected_at)
+
+    assert len(events) == 2
+    assert {event["title"] for event in events} == {"Press Release", "Financial Results"}
+    for event in events:
+        assert event["published_time_precision"] == "collected"
+        assert event["published_at"] == collected_at
+
+
 def test_ri_navigation_pages_do_not_become_valuation_events():
     source = "https://ri.jhsf.com.br/informacoes-financeiras/central-de-resultados/"
     assert is_ri_navigation_link("Central de Resultados", source, source)

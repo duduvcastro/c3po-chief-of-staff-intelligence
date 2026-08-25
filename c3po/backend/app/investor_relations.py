@@ -9,7 +9,6 @@ import unicodedata
 import zipfile
 from datetime import date, datetime, time, timedelta, timezone
 from difflib import SequenceMatcher
-from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -864,7 +863,7 @@ class InvestorRelationsService:
         company: dict[str, Any],
         collected_at: datetime,
     ) -> tuple[int, list[dict[str, Any]]]:
-        page_text, response_headers = self._fetch_ri_page(str(company["ri_url"]))
+        page_text, _ = self._fetch_ri_page(str(company["ri_url"]))
         mziq_events = self._mziq_events(company, page_text, collected_at)
         if mziq_events is not None:
             return len(mziq_events), mziq_events
@@ -872,7 +871,6 @@ class InvestorRelationsService:
         parser = LinkCollector()
         parser.feed(page_text)
         base_host = urlparse(str(company["ri_url"])).netloc
-        published = self._last_modified(response_headers.get("last-modified")) or collected_at
         events: list[dict[str, Any]] = []
         read = 0
         for href, title in parser.links:
@@ -900,8 +898,14 @@ class InvestorRelationsService:
                 "form": "RI",
                 "title": title,
                 "summary": "Documento localizado na página oficial de Relações com Investidores da companhia.",
-                "published_at": published,
-                "published_time_precision": "datetime" if response_headers.get("last-modified") else "collected",
+                # The RI page's HTTP Last-Modified header describes when the
+                # PAGE was last edited, not when any individual linked
+                # document was published -- every link on the page would
+                # otherwise inherit one shared, falsely precise timestamp.
+                # collected_at (when we found the link) is the only value
+                # honestly attributable to each document here.
+                "published_at": collected_at,
+                "published_time_precision": "collected",
                 "reference_date": None,
                 "official_url": str(company["ri_url"]),
                 "document_url": absolute,
@@ -1471,16 +1475,6 @@ class InvestorRelationsService:
         if any(word in text for word in ("fato relevante", "material fact", "guidance", "aquisição", "acquisition", "merger")):
             return "Issuer Material Update", "high", True
         return "Issuer Update", "medium", False
-
-    @staticmethod
-    def _last_modified(value: str | None) -> datetime | None:
-        if not value:
-            return None
-        try:
-            parsed = parsedate_to_datetime(value)
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-        except (TypeError, ValueError):
-            return None
 
     def _source_health(self) -> list[InvestorRelationsSourceHealth]:
         health = self.database.ir_source_health()
