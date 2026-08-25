@@ -29,9 +29,10 @@ from .valuation_v3_inputs import (
 from .valuation_v3_macro import package_hash_is_valid, validate_us_curve_package
 
 
-MANIFEST_SCHEMA_VERSION = "VALUATION-V3-AB-MANIFEST-v1"
-REPORT_SCHEMA_VERSION = "VALUATION-V3-AB-REPORT-v1"
+MANIFEST_SCHEMA_VERSION = "VALUATION-V3-AB-MANIFEST-v2"
+REPORT_SCHEMA_VERSION = "VALUATION-V3-AB-REPORT-v2"
 AB_AS_OF = date(2026, 8, 24)
+AB_EVALUATION_DATE = date(2026, 8, 25)
 MARKETS = ("B3", "NASDAQ", "NYSE")
 EXPECTED_COUNTS = {"B3": 100, "NASDAQ": 295, "NYSE": 299}
 ENGINE_FILE_PATHS = {
@@ -181,6 +182,21 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 def canonical_sha256(value: Any) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def _jsonb_numeric_ready(value: Any) -> Any:
+    """Mirror JSONB's normalization of signed floating-point zero only."""
+    if isinstance(value, Mapping):
+        return {str(key): _jsonb_numeric_ready(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonb_numeric_ready(item) for item in value]
+    if isinstance(value, float) and value == 0.0:
+        return 0.0
+    return value
+
+
+def v2_output_sha256(value: Any) -> str:
+    return canonical_sha256(_jsonb_numeric_ready(value))
 
 
 def _without_hash(payload: Mapping[str, Any], field: str) -> dict[str, Any]:
@@ -354,11 +370,12 @@ def build_manifest(
         snapshot = loader(str(record["snapshot_id"]))
         if snapshot is None:
             raise ManifestValidationError("Frozen V2 shadow disappeared during manifest build")
-        shadow_output_hashes[str(record["market"])] = canonical_sha256(snapshot["outputs"])
+        shadow_output_hashes[str(record["market"])] = v2_output_sha256(snapshot["outputs"])
 
     payload: dict[str, Any] = {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "as_of": AB_AS_OF.isoformat(),
+        "evaluation_date": AB_EVALUATION_DATE.isoformat(),
         "created_at": _utc(created_at or datetime.now(timezone.utc)).isoformat(),
         "immutable": True,
         "provider_calls_authorized": False,
@@ -383,6 +400,8 @@ def validate_manifest(
         raise ManifestValidationError("Unsupported A/B manifest schema")
     if manifest.get("as_of") != AB_AS_OF.isoformat():
         raise ManifestValidationError("A/B manifest as_of mismatch")
+    if manifest.get("evaluation_date") != AB_EVALUATION_DATE.isoformat():
+        raise ManifestValidationError("A/B manifest evaluation date mismatch")
     if manifest.get("immutable") is not True:
         raise ManifestValidationError("A/B manifest must be immutable")
     if manifest.get("manifest_sha256") != manifest_hash(manifest):
@@ -662,11 +681,13 @@ def _v2_outputs_for_rate(
     market: str,
     context: Mapping[str, Any],
     risk_free_rate: float | None,
+    *,
+    evaluation_date: date,
 ) -> dict[str, Any]:
     engine = ValuationV2Engine(
         market="B3" if market == "B3" else "US",
         risk_free_rate=risk_free_rate,
-        today=AB_AS_OF,
+        today=evaluation_date,
     )
     results = _evaluate_market(engine, context, v3=False)
     _decorate_v2_results(results, context["rows"])
@@ -696,15 +717,19 @@ def reproduce_v2(
     market: str,
     context: Mapping[str, Any],
     accepted_outputs: Mapping[str, Any],
+    *,
+    evaluation_date: date,
 ) -> tuple[dict[str, Any], float | None]:
-    accepted_hash = canonical_sha256(accepted_outputs)
+    accepted_hash = v2_output_sha256(accepted_outputs)
     candidates = (
         _b3_rate_candidates(accepted_outputs)
         if market == "B3" else [None]
     )
     for rate in candidates:
-        reproduced = _v2_outputs_for_rate(market, context, rate)
-        if canonical_sha256(reproduced) == accepted_hash:
+        reproduced = _v2_outputs_for_rate(
+            market, context, rate, evaluation_date=evaluation_date
+        )
+        if v2_output_sha256(reproduced) == accepted_hash:
             return reproduced, rate if market == "B3" else US_RISK_FREE_FALLBACK
     raise V2ReproductionError(
         f"Frozen V2 output did not reproduce byte-for-byte for {market}"
@@ -887,6 +912,7 @@ def run_ab(
     if not re.fullmatch(r"[0-9a-f]{40}", harness_commit):
         raise ManifestValidationError("harness_commit must be a full lowercase Git SHA")
     loaded = validate_manifest(manifest, loader)
+    evaluation_date = date.fromisoformat(str(manifest["evaluation_date"]))
     contexts = {market: _market_context(market, loaded) for market in MARKETS}
 
     # This entire gate completes before any V3 engine is constructed.
@@ -899,8 +925,13 @@ def run_ab(
             raise V2ReproductionError(f"Frozen V2 shadow output missing for {market}")
         if len(contexts[market]["rows"]) != EXPECTED_COUNTS[market]:
             raise V2ReproductionError(f"Frozen universe count changed for {market}")
-        reproduced, rate = reproduce_v2(market, contexts[market], accepted)
-        reproduced_hash = canonical_sha256(reproduced)
+        reproduced, rate = reproduce_v2(
+            market,
+            contexts[market],
+            accepted,
+            evaluation_date=evaluation_date,
+        )
+        reproduced_hash = v2_output_sha256(reproduced)
         expected_hash = (manifest.get("accepted_v2_shadow_output_sha256") or {}).get(market)
         if reproduced_hash != expected_hash:
             raise V2ReproductionError(f"Manifest V2 baseline hash mismatch for {market}")
@@ -922,7 +953,8 @@ def run_ab(
         quality = ValuationV3Engine(
             market=engine_market,
             risk_free_rate=v2_rate,
-            today=AB_AS_OF,
+            today=evaluation_date,
+            macro_as_of=AB_AS_OF,
             enable_quality=True,
             enable_selic=False,
             enable_treasury=False,
@@ -934,7 +966,8 @@ def run_ab(
         quality_selic = ValuationV3Engine(
             market=engine_market,
             risk_free_rate=v2_rate,
-            today=AB_AS_OF,
+            today=evaluation_date,
+            macro_as_of=AB_AS_OF,
             selic_package=selic_package if market == "B3" else None,
             enable_quality=True,
             enable_selic=True,
@@ -947,7 +980,8 @@ def run_ab(
         full = ValuationV3Engine(
             market=engine_market,
             risk_free_rate=v2_rate,
-            today=AB_AS_OF,
+            today=evaluation_date,
+            macro_as_of=AB_AS_OF,
             us_curve_package=us_curve_package if market != "B3" else None,
             selic_package=selic_package if market == "B3" else None,
             enable_quality=True,
@@ -971,6 +1005,7 @@ def run_ab(
     report: dict[str, Any] = {
         "schema_version": REPORT_SCHEMA_VERSION,
         "as_of": AB_AS_OF.isoformat(),
+        "evaluation_date": evaluation_date.isoformat(),
         "generated_at": _utc(generated_at or datetime.now(timezone.utc)).isoformat(),
         "manifest_sha256": manifest["manifest_sha256"],
         "engine_commit": manifest["engine_commit"],

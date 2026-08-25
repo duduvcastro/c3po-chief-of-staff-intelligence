@@ -28,7 +28,7 @@ persiste em Postgres e nao altera worker, screener, One Pager ou R2D2.
      --selic-snapshot-id UUID_SELIC \
      --us-curve-snapshot-id UUID_CURVA \
      --engine-commit SHA_COMPLETO_DO_COMMIT_COM_OS_MOTORES \
-     --output /app/day-d-data/valuation-v3/ab-2026-08-24/manifest.json
+     --output /app/day-d-data/valuation-v3/ab-2026-08-24-v2/manifest.json
    ```
 
 6. Conferir e registrar o `manifest_sha256`. O manifest fixa, para cada
@@ -40,9 +40,9 @@ persiste em Postgres e nao altera worker, screener, One Pager ou R2D2.
 
    ```bash
    python -m app.valuation_v3_ab run \
-     --manifest /app/day-d-data/valuation-v3/ab-2026-08-24/manifest.json \
+     --manifest /app/day-d-data/valuation-v3/ab-2026-08-24-v2/manifest.json \
      --harness-commit SHA_COMPLETO_DO_HARNESS \
-     --output /app/day-d-data/valuation-v3/ab-2026-08-24/report.json
+     --output /app/day-d-data/valuation-v3/ab-2026-08-24-v2/report.json
    ```
 
 O gravador e imutavel: repetir bytes identicos e idempotente; tentar publicar
@@ -58,6 +58,17 @@ snapshot NASDAQ intraday enviesado. O input B3 de risk-free nao e persistido
 com toda a precisao no shadow antigo; por isso o harness procura, exclusivamente
 dentro do intervalo que arredonda para o valor registrado, uma taxa que
 reproduza o output inteiro byte a byte. A taxa encontrada fica no relatorio.
+
+O manifest distingue `as_of=2026-08-24`, que limita os dados observaveis, de
+`evaluation_date=2026-08-25`, a data UTC efetivamente usada pelos tres shadows
+pos-fechamento. V2 e todas as pernas V3 recebem a mesma data de avaliacao. A
+comparacao de output tambem espelha apenas a normalizacao numerica do JSONB:
+`-0.0` e `0.0` compartilham o mesmo hash. Nao existe epsilon nem tolerancia para
+qualquer outro valor.
+
+A primeira tentativa, no diretorio `ab-2026-08-24`, parou no gate B3 antes de
+construir V3 e nao produziu relatorio. Seu manifest imutavel permanece como
+evidencia; a retomada usa exclusivamente o diretorio versionado `-v2` acima.
 
 Se qualquer mercado falhar, nenhum `ValuationV3Engine` e construido e nenhum
 numero V3 e emitido.

@@ -455,6 +455,24 @@ def test_full_us_v3_requires_dated_curve_and_never_reports_fallback_constant():
     assert result["macro_inputs"]["us_curve_hash"] == _curve()["payload_sha256"]
 
 
+def test_macro_as_of_is_distinct_from_the_evaluation_date():
+    next_day = TODAY + timedelta(days=1)
+    with pytest.raises(ValuationV3InputError, match="as_of does not match"):
+        ValuationV3Engine(
+            market="US", today=next_day, us_curve_package=_curve()
+        )
+
+    engine = ValuationV3Engine(
+        market="US",
+        today=next_day,
+        macro_as_of=TODAY,
+        us_curve_package=_curve(),
+    )
+
+    assert engine.as_of == next_day
+    assert engine.macro_as_of == TODAY
+
+
 def test_higher_treasury_curve_does_not_raise_reverse_dcf_rim_or_ddm_targets():
     low = _us_engine(us_curve_package=_curve(0.03, 0.04), enable_quality=False)
     high = _us_engine(us_curve_package=_curve(0.07, 0.08), enable_quality=False)

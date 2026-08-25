@@ -65,6 +65,7 @@ class ValuationV3Engine(ValuationV2Engine):
         market: str,
         risk_free_rate: float | None = None,
         today: date | None = None,
+        macro_as_of: date | None = None,
         us_curve_package: dict[str, Any] | None = None,
         selic_package: dict[str, Any] | None = None,
         enable_quality: bool = True,
@@ -77,6 +78,7 @@ class ValuationV3Engine(ValuationV2Engine):
         self.enable_selic = enable_selic
         self.enable_treasury = enable_treasury
         self.as_of = today or datetime.now(timezone.utc).date()
+        self.macro_as_of = macro_as_of or self.as_of
         self.us_curve_package = us_curve_package
         self.selic_package = selic_package
 
@@ -85,7 +87,7 @@ class ValuationV3Engine(ValuationV2Engine):
                 raise ValuationV3InputError("Full US V3 requires the dated Treasury package")
             try:
                 risk_free_rate = validate_us_curve_package(
-                    us_curve_package, as_of=self.as_of
+                    us_curve_package, as_of=self.macro_as_of
                 )
             except Exception as exc:
                 raise ValuationV3InputError(str(exc)) from exc
@@ -98,6 +100,8 @@ class ValuationV3Engine(ValuationV2Engine):
                 or selic_package.get("source") != "Banco Central do Brasil SGS 432"
             ):
                 raise ValuationV3InputError("B3 Selic package metadata mismatch")
+            if selic_package.get("as_of") != self.macro_as_of.isoformat():
+                raise ValuationV3InputError("B3 Selic package as_of does not match the run")
 
         super().__init__(
             market=market,  # type: ignore[arg-type]

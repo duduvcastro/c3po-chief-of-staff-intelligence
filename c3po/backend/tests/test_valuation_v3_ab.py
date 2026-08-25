@@ -8,6 +8,7 @@ import pytest
 import app.valuation_v3_ab as ab_module
 from app.valuation_v3_ab import (
     AB_AS_OF,
+    AB_EVALUATION_DATE,
     FROZEN_SNAPSHOT_REFERENCES,
     ManifestValidationError,
     V2ReproductionError,
@@ -16,6 +17,7 @@ from app.valuation_v3_ab import (
     manifest_hash,
     run_ab,
     validate_manifest,
+    v2_output_sha256,
     write_immutable_json,
 )
 from app.valuation_v3_macro import canonical_payload_sha256
@@ -224,7 +226,10 @@ def _seed_accepted_v2(snapshots: dict[str, dict]) -> None:
     for market in ("B3", "NASDAQ", "NYSE"):
         context = ab_module._market_context(market, loaded)  # noqa: SLF001
         outputs = ab_module._v2_outputs_for_rate(  # noqa: SLF001
-            market, context, 0.12 if market == "B3" else None
+            market,
+            context,
+            0.12 if market == "B3" else None,
+            evaluation_date=AB_EVALUATION_DATE,
         )
         reference = next(
             item for item in FROZEN_SNAPSHOT_REFERENCES
@@ -246,6 +251,8 @@ def test_manifest_pins_every_snapshot_macro_hash_and_engine_file() -> None:
     loaded = validate_manifest(manifest, _loader(snapshots))
 
     assert manifest["manifest_sha256"] == manifest_hash(manifest)
+    assert manifest["as_of"] == "2026-08-24"
+    assert manifest["evaluation_date"] == "2026-08-25"
     assert len(manifest["snapshots"]) == 16
     assert len(loaded) == 16
     assert manifest["macro_packages"]["selic_macro"]["payload_sha256"] == _selic()[
@@ -291,6 +298,17 @@ def test_manifest_rejects_self_hash_snapshot_drift_and_latest_substitution() -> 
         us_curve_snapshot_id=CURVE_ID,
         engine_commit=ENGINE_COMMIT,
     )
+    manifest["evaluation_date"] = AB_AS_OF.isoformat()
+    manifest["manifest_sha256"] = manifest_hash(manifest)
+    with pytest.raises(ManifestValidationError, match="evaluation date mismatch"):
+        validate_manifest(manifest, _loader(snapshots))
+
+    manifest = build_manifest(
+        _loader(snapshots),
+        selic_snapshot_id=SELIC_ID,
+        us_curve_snapshot_id=CURVE_ID,
+        engine_commit=ENGINE_COMMIT,
+    )
     snapshots[FROZEN_SNAPSHOT_REFERENCES[0].snapshot_id]["outputs"]["rows"][0]["price"] = 101
     with pytest.raises(ManifestValidationError, match="snapshot hash mismatch"):
         validate_manifest(manifest, _loader(snapshots))
@@ -315,6 +333,8 @@ def test_ab_reproduces_v2_before_running_all_four_stages(monkeypatch) -> None:
     )
 
     assert report["v2_reproduction"]["passed"] is True
+    assert report["as_of"] == AB_AS_OF.isoformat()
+    assert report["evaluation_date"] == AB_EVALUATION_DATE.isoformat()
     assert set(report["stages"]) == {
         "v2", "v3_1_quality", "v3_1_plus_v3_2", "v3_full"
     }
@@ -356,7 +376,7 @@ def test_v2_mismatch_prevents_v3_construction(monkeypatch) -> None:
             record["snapshot_sha256"] = canonical_sha256(
                 ab_module._snapshot_payload(snapshots[b3_shadow.snapshot_id])  # noqa: SLF001
             )
-    manifest["accepted_v2_shadow_output_sha256"]["B3"] = canonical_sha256(
+    manifest["accepted_v2_shadow_output_sha256"]["B3"] = v2_output_sha256(
         snapshots[b3_shadow.snapshot_id]["outputs"]
     )
     manifest["manifest_sha256"] = manifest_hash(manifest)
@@ -368,6 +388,34 @@ def test_v2_mismatch_prevents_v3_construction(monkeypatch) -> None:
     monkeypatch.setattr(ab_module, "ValuationV3Engine", ForbiddenV3)
     with pytest.raises(V2ReproductionError, match="did not reproduce"):
         run_ab(manifest, _loader(snapshots), harness_commit=HARNESS_COMMIT)
+
+
+def test_reproduction_uses_the_frozen_evaluation_date() -> None:
+    snapshots = _frozen_snapshots()
+    loaded = {
+        (reference.role, reference.market): snapshots[reference.snapshot_id]
+        for reference in FROZEN_SNAPSHOT_REFERENCES
+    }
+    context = ab_module._market_context("NASDAQ", loaded)  # noqa: SLF001
+    accepted = ab_module._v2_outputs_for_rate(  # noqa: SLF001
+        "NASDAQ", context, None, evaluation_date=AB_EVALUATION_DATE
+    )
+
+    reproduced, _ = ab_module.reproduce_v2(
+        "NASDAQ", context, accepted, evaluation_date=AB_EVALUATION_DATE
+    )
+    assert v2_output_sha256(reproduced) == v2_output_sha256(accepted)
+    with pytest.raises(V2ReproductionError, match="did not reproduce"):
+        ab_module.reproduce_v2(
+            "NASDAQ", context, accepted, evaluation_date=AB_AS_OF
+        )
+
+
+def test_v2_output_hash_normalizes_only_jsonb_signed_zero() -> None:
+    assert v2_output_sha256({"value": -0.0}) == v2_output_sha256({"value": 0.0})
+    assert v2_output_sha256({"value": -0.0001}) != v2_output_sha256(
+        {"value": 0.0001}
+    )
 
 
 def test_immutable_writer_is_idempotent_only_for_identical_bytes(tmp_path: Path) -> None:
