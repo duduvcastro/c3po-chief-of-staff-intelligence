@@ -6,7 +6,6 @@ services:
     volumes:
       - ./outputs:/app/outputs
       - ./work/billfish_reports:/app/work/billfish_reports
-      - ./work/whatsapp_unread_today.json:/app/work/whatsapp_unread_today.json
       - ./whatsapp_session:/app/whatsapp_session
     restart: "no"
     command: ["sh", "work/cloud_run.sh", "--audit-only", "--no-send"]
@@ -17,7 +16,6 @@ services:
       - .env
     volumes:
       - ./outputs:/app/outputs
-      - ./work/whatsapp_unread_today.json:/app/work/whatsapp_unread_today.json
       - ./whatsapp_session:/app/whatsapp_session
     restart: "no"
     command: ["python", "work/whatsapp_web_capture.py", "login", "--timeout", "420"]
@@ -28,10 +26,9 @@ services:
       - .env
     volumes:
       - ./outputs:/app/outputs
-      - ./work/whatsapp_unread_today.json:/app/work/whatsapp_unread_today.json
       - ./whatsapp_session:/app/whatsapp_session
     restart: "no"
-    command: ["python", "work/whatsapp_web_capture.py", "capture", "--timeout", "90"]
+    command: ["python", "work/whatsapp_web_capture.py", "capture", "--timeout", "90", "--output", "outputs/whatsapp_unread_today.json"]
 
   pluggy-webhook:
     build: .
