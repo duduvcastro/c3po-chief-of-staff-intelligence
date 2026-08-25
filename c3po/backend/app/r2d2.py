@@ -26,6 +26,7 @@ from .r2d2_entry_score_adapter import ADAPTER_VERSION, R2D2EntryScoreAdapter
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
+    R2D2EpisodeStats,
     R2D2LearningCurvePoint,
     R2D2LearningState,
     R2D2LivePositionsResponse,
@@ -144,6 +145,87 @@ def _trade_is_strategy_excluded(trade: dict[str, Any]) -> bool:
     return _trade_is_corrected(trade) or (
         isinstance(snapshot, dict) and "operator_wind_down" in snapshot
     )
+
+
+def _episode_summary_from_trades(
+    trades: list[dict[str, Any]], session_date: date,
+) -> dict[str, Any]:
+    """Consolidate immutable ledger legs into strategy-eligible flat-to-flat episodes."""
+    open_episodes: dict[tuple[str, str], dict[str, Any]] = {}
+    positive = negative = flat = 0
+    ordered = sorted(
+        trades,
+        key=lambda item: (
+            item.get("executed_at") or datetime.min.replace(tzinfo=timezone.utc),
+            str(item.get("id") or ""),
+        ),
+    )
+    for trade in ordered:
+        side = str(trade.get("side") or "").upper()
+        if side not in {"BUY", "SELL"}:
+            continue
+        quantity = _float(trade.get("quantity"))
+        if quantity <= 0:
+            raise ValueError(f"R2D2 episode ledger has non-positive quantity at {trade.get('id')}")
+        key = (str(trade.get("market") or ""), str(trade.get("symbol") or ""))
+        snapshot = trade.get("decision_snapshot")
+        corrected = _trade_is_corrected(trade)
+        operator_wind_down = isinstance(snapshot, dict) and "operator_wind_down" in snapshot
+        strategy_excluded = corrected or operator_wind_down
+
+        if side == "BUY":
+            state = open_episodes.setdefault(key, {
+                "quantity": 0.0,
+                "realized_pnl_usd": 0.0,
+                "strategy_excluded": False,
+            })
+            state["quantity"] += quantity
+            state["strategy_excluded"] = bool(
+                state["strategy_excluded"] or strategy_excluded
+            )
+            continue
+
+        state = open_episodes.get(key)
+        if state is None:
+            if corrected:
+                continue
+            raise ValueError(f"R2D2 SELL begins an episode from flat at {trade.get('id')}")
+        if quantity > state["quantity"] + 1e-6:
+            raise ValueError(f"R2D2 SELL exceeds episode quantity at {trade.get('id')}")
+        state["quantity"] = max(0.0, state["quantity"] - quantity)
+        if not corrected:
+            state["realized_pnl_usd"] += _float(trade.get("realized_pnl_usd"))
+        state["strategy_excluded"] = bool(
+            state["strategy_excluded"] or strategy_excluded
+        )
+        if state["quantity"] > 1e-6:
+            continue
+
+        executed_at = trade.get("executed_at")
+        if (
+            not state["strategy_excluded"]
+            and isinstance(executed_at, datetime)
+            and executed_at.astimezone(SAO_PAULO).date() == session_date
+        ):
+            pnl = _float(state["realized_pnl_usd"])
+            if pnl > 0:
+                positive += 1
+            elif pnl < 0:
+                negative += 1
+            else:
+                flat += 1
+        del open_episodes[key]
+
+    decided = positive + negative
+    return {
+        "session_date": session_date.isoformat(),
+        "closed_episodes": decided + flat,
+        "decided_episodes": decided,
+        "positive_episodes": positive,
+        "negative_episodes": negative,
+        "flat_episodes": flat,
+        "win_rate_percent": round(positive / decided * 100, 2) if decided else 0.0,
+    }
 
 
 def _paper_exit_execution(*, market: str, price: float, quantity: float, fx: float) -> dict[str, float]:
@@ -1143,6 +1225,39 @@ class R2D2Repository:
             (int(value or 0) for value in (row or (0, 0, 0))),
         ))
 
+    def episode_summary(self, experiment_id: str, session_date: date) -> dict[str, Any]:
+        if not self.database.database_url:
+            trades = [
+                dict(item) for item in self.memory["trades"]
+                if item.get("experiment_id") == experiment_id
+            ]
+        else:
+            with self.database.connection() as connection:
+                rows = connection.execute(
+                    """WITH target_symbols AS (
+                           SELECT DISTINCT market, symbol
+                           FROM r2d2_trades
+                           WHERE experiment_id=%s AND side='SELL'
+                             AND (executed_at AT TIME ZONE 'America/Sao_Paulo')::date=%s
+                       )
+                       SELECT trade.id::text, trade.market, trade.symbol, trade.side,
+                              trade.quantity, trade.realized_pnl_usd,
+                              trade.decision_snapshot, trade.executed_at
+                       FROM r2d2_trades AS trade
+                       JOIN target_symbols AS target
+                         ON target.market=trade.market AND target.symbol=trade.symbol
+                       WHERE trade.experiment_id=%s
+                         AND (trade.executed_at AT TIME ZONE 'America/Sao_Paulo')::date <= %s
+                       ORDER BY trade.executed_at, trade.id""",
+                    (experiment_id, session_date, experiment_id, session_date),
+                ).fetchall()
+            keys = (
+                "id", "market", "symbol", "side", "quantity", "realized_pnl_usd",
+                "decision_snapshot", "executed_at",
+            )
+            trades = [dict(zip(keys, row)) for row in rows]
+        return _episode_summary_from_trades(trades, session_date)
+
     def daily_learning_curve(self, experiment_id: str) -> list[dict[str, Any]]:
         """One row per session day with at least one closed (SELL, realized)
         trade: how many closed positive vs negative -- the "Learning Curve"
@@ -1540,6 +1655,15 @@ class R2D2PaperService:
             market_value = _float(row["quantity"]) * display_price * _float(row["fx_to_usd"], 1)
             cost = _float(row["quantity"]) * _float(row["average_cost_usd"])
             pnl = market_value - cost
+            estimated_exit = _paper_exit_execution(
+                market=str(row["market"]),
+                price=display_price,
+                quantity=_float(row["quantity"]),
+                fx=_float(row["fx_to_usd"], 1),
+            )
+            estimated_exit_pnl = (
+                estimated_exit["gross_value_usd"] - estimated_exit["fees_usd"] - cost
+            )
             decision_state = str(strategy.get("decision_state") or "monitor")
             if quote_status == "live" and decision_state == "awaiting live quote":
                 decision_state = "live monitoring"
@@ -1549,6 +1673,12 @@ class R2D2PaperService:
                 quantity=_float(row["quantity"]), average_cost_local=_float(row["average_cost_local"]),
                 last_price_local=display_price, market_value_usd=round(market_value, 2),
                 unrealized_pnl_usd=round(pnl, 2), unrealized_return_percent=round(pnl / cost * 100, 6) if cost else 0,
+                mark_pnl_usd=round(pnl, 2),
+                mark_return_percent=round(pnl / cost * 100, 6) if cost else 0,
+                estimated_exit_pnl_usd=round(estimated_exit_pnl, 2),
+                estimated_exit_return_percent=(
+                    round(estimated_exit_pnl / cost * 100, 6) if cost else 0
+                ),
                 allocation_percent=round(market_value / nav * 100, 2) if nav else 0,
                 stop_price_local=_float(row["stop_price_local"]),
                 technical_score=_float(technical.get("score")),
@@ -1616,6 +1746,7 @@ class R2D2PaperService:
         positives = sum(_float(row["daily_return_percent"]) > 0 for row in closed)
         negatives = sum(_float(row["daily_return_percent"]) < 0 for row in closed)
         trade_summary = self.repo.trade_summary(experiment["id"])
+        today_episode_stats = self.repo.episode_summary(experiment["id"], local_date)
         learning_curve_rows = self.repo.daily_learning_curve(experiment["id"])
         stats = R2D2SummaryStats(
             closed_days=len(closed), positive_days=positives,
@@ -1694,6 +1825,7 @@ class R2D2PaperService:
             daily_pnl_usd=round(daily_pnl, 2), daily_return_percent=round(daily_return, 4),
             daily_pnl_date=daily_pnl_date,
             open_positions=len(positions), stats=stats,
+            today_episode_stats=R2D2EpisodeStats(**today_episode_stats),
             track_record=[R2D2TrackPoint(
                 session_date=row["session_date"].isoformat(), nav_usd=_float(row["accounting_nav_usd"]),
                 daily_pnl_usd=_float(row["daily_pnl_usd"]), daily_return_percent=_float(row["daily_return_percent"]),

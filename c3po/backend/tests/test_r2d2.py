@@ -8,7 +8,13 @@ import pytest
 
 from app.config import Settings
 from app.database import Database
-from app.r2d2 import SAO_PAULO, R2D2PaperService, R2D2Repository, _date_value
+from app.r2d2 import (
+    SAO_PAULO,
+    R2D2PaperService,
+    R2D2Repository,
+    _date_value,
+    _episode_summary_from_trades,
+)
 from app import r2d2 as r2d2_module
 from app import r2d2_entry_control
 from app.market_data.eodhd_stream import EodhdRealtimeStream, EodhdStreamQuote
@@ -903,6 +909,11 @@ def test_r2d2_dashboard_api_contract() -> None:
         "below_minus_half_percent_days", "total_transactions",
         "positive_transactions", "negative_transactions",
     }
+    assert set(payload["today_episode_stats"]) == {
+        "session_date", "closed_episodes", "decided_episodes",
+        "positive_episodes", "negative_episodes", "flat_episodes",
+        "win_rate_percent",
+    }
     assert payload["mandate"]["real_broker_execution"] is False
     assert payload["mandate"]["continuous_operation"] is True
     assert "end_date" not in payload
@@ -986,6 +997,10 @@ def test_r2d2_live_positions_uses_fresh_stream_marks_without_loading_history(
     assert position.market_value_usd == 1_050.0
     assert position.unrealized_pnl_usd == 50.0
     assert position.unrealized_return_percent == 5.0
+    assert position.mark_pnl_usd == 50.0
+    assert position.mark_return_percent == 5.0
+    assert position.estimated_exit_pnl_usd == 48.53
+    assert position.estimated_exit_return_percent == 4.853042
     assert position.quote_status == "live"
     assert position.quote_as_of == observed_at
     assert position.decision_state == "live monitoring"
@@ -995,6 +1010,74 @@ def test_r2d2_live_positions_uses_fresh_stream_marks_without_loading_history(
     assert position.technical_defense_reductions == 0
     assert position.technical_defense_drivers == ["price below VWAP", "price below EMA8"]
     assert position.technical_defense_reviewed_at == observed_at
+
+
+def test_r2d2_episode_summary_consolidates_partial_legs_and_exclusions() -> None:
+    session_date = date(2026, 8, 24)
+    start = datetime(2026, 8, 24, 13, 30, tzinfo=timezone.utc)
+    trades: list[dict[str, object]] = []
+
+    def leg(
+        identifier: str,
+        symbol: str,
+        side: str,
+        quantity: float,
+        minutes: int,
+        realized_pnl_usd: float | None = None,
+        decision_snapshot: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        return {
+            "id": identifier,
+            "market": "NASDAQ",
+            "symbol": symbol,
+            "side": side,
+            "quantity": quantity,
+            "realized_pnl_usd": realized_pnl_usd,
+            "decision_snapshot": decision_snapshot or {},
+            "executed_at": start + timedelta(minutes=minutes),
+        }
+
+    # One winning episode and one losing episode, each closed in two SELL legs.
+    trades.extend([
+        leg("a-buy", "A", "BUY", 10, 0),
+        leg("a-partial", "A", "SELL", 4, 10, 40),
+        leg("a-final", "A", "SELL", 6, 20, -10),
+        leg("b-buy", "B", "BUY", 8, 30),
+        leg("b-partial", "B", "SELL", 3, 40, 5),
+        leg("b-final", "B", "SELL", 5, 50, -15),
+        leg("flat-buy", "FLAT", "BUY", 2, 60),
+        leg("flat-sell", "FLAT", "SELL", 2, 70, 0),
+    ])
+    # Administrative liquidation closes inventory but is not a strategy episode.
+    trades.extend([
+        leg("wind-buy", "WIND", "BUY", 1, 80),
+        leg(
+            "wind-sell", "WIND", "SELL", 1, 90, 500,
+            {"operator_wind_down": {"operator": "Dudu"}},
+        ),
+    ])
+    # A corrected exit censors its episode without poisoning a later clean re-entry.
+    trades.extend([
+        leg("bad-buy", "BAD", "BUY", 1, 100),
+        leg(
+            "corrected", "BAD", "SELL", 1, 110, -999,
+            {"correction": {"operator": "Dudu"}},
+        ),
+        leg("bad-rebuy", "BAD", "BUY", 1, 120),
+        leg("bad-clean-sell", "BAD", "SELL", 1, 130, 20),
+    ])
+
+    summary = _episode_summary_from_trades(trades, session_date)
+
+    assert summary == {
+        "session_date": "2026-08-24",
+        "closed_episodes": 4,
+        "decided_episodes": 3,
+        "positive_episodes": 2,
+        "negative_episodes": 1,
+        "flat_episodes": 1,
+        "win_rate_percent": 66.67,
+    }
 
 
 def test_r2d2_live_positions_api_contract() -> None:
