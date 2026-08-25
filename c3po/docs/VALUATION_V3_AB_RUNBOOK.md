@@ -52,7 +52,9 @@ conteudo diferente no mesmo caminho falha.
 
 O harness reconstroi primeiro o output V2 integral dos tres mercados. O hash
 canonico precisa ser identico ao shadow aceito de 24/08 e as contagens
-precisam permanecer `100/219/298`. O input B3 de risk-free nao e persistido
+precisam permanecer `100/295/299`. A coorte US foi reconstruida depois do
+fechamento, apos a guarda de volume de sessao completa da #221 eliminar o
+snapshot NASDAQ intraday enviesado. O input B3 de risk-free nao e persistido
 com toda a precisao no shadow antigo; por isso o harness procura, exclusivamente
 dentro do intervalo que arredonda para o valor registrado, uma taxa que
 reproduza o output inteiro byte a byte. A taxa encontrada fica no relatorio.
