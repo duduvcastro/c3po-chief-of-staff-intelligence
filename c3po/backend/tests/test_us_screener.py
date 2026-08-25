@@ -58,6 +58,61 @@ def service() -> USScreeningService:
     return USScreeningService(settings, Database(settings), DummyRealtime(), DummyOnePagers())
 
 
+@pytest.mark.parametrize(
+    "now",
+    [
+        datetime(2026, 8, 24, 14, 22, tzinfo=timezone.utc),
+        datetime(2026, 8, 24, 20, 14, 59, tzinfo=timezone.utc),
+        datetime(2026, 1, 5, 15, 0, tzinfo=timezone.utc),
+    ],
+)
+def test_canonical_refresh_rejects_incomplete_us_session_volume(now: datetime) -> None:
+    with pytest.raises(RuntimeError, match="blocked until 16:15 ET"):
+        USScreeningService._require_completed_session_volume(now)
+
+
+@pytest.mark.parametrize(
+    "now",
+    [
+        datetime(2026, 8, 24, 20, 15, tzinfo=timezone.utc),
+        datetime(2026, 1, 5, 21, 15, tzinfo=timezone.utc),
+        datetime(2026, 8, 25, 4, 0, tzinfo=timezone.utc),
+        datetime(2026, 8, 23, 14, 22, tzinfo=timezone.utc),
+    ],
+)
+def test_canonical_refresh_allows_completed_or_inactive_us_sessions(now: datetime) -> None:
+    USScreeningService._require_completed_session_volume(now)
+
+
+def test_intraday_refresh_fails_before_provider_calls_and_preserves_snapshot() -> None:
+    class ExplodingRealtime(DummyRealtime):
+        def _us_symbol_catalog(self, now):
+            raise AssertionError("provider must not be called")
+
+    settings = Settings(eodhd_api_token="test", auth_cookie_secure=False)
+    database = Database(settings)
+    methodology_id = database.ensure_methodology_version("test", 1, {}, "test")
+    snapshot_id = database.save_analysis_snapshot(
+        "valuation_universe",
+        "NASDAQ_UNIVERSE",
+        methodology_id,
+        {},
+        {"rows": [], "universe_size": 0},
+        datetime(2026, 8, 23, 21, 0, tzinfo=timezone.utc),
+    )
+    screener = USScreeningService(
+        settings, database, ExplodingRealtime(), DummyOnePagers(),
+    )
+
+    with pytest.raises(RuntimeError, match="blocked until 16:15 ET"):
+        screener._build(
+            "NASDAQ", now=datetime(2026, 8, 24, 14, 22, tzinfo=timezone.utc),
+        )
+
+    latest = database.latest_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE")
+    assert latest and latest["id"] == snapshot_id
+
+
 def rising_history(days: int = 260):
     start = datetime(2025, 8, 1, tzinfo=timezone.utc)
     return [
