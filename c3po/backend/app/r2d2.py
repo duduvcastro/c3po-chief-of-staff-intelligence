@@ -22,6 +22,7 @@ from .market_data.realtime import RealtimeMarketsService
 from .market_data.us_screener import USScreeningService, clamp, normalized_percent
 from .one_pager import OnePagerService
 from . import r2d2_strategy
+from .r2d2_entry_score_adapter import ADAPTER_VERSION, R2D2EntryScoreAdapter
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
@@ -400,6 +401,8 @@ class R2D2Repository:
             "checkpoint_date": checkpoint, "methodology_version": METHODOLOGY_VERSION,
             "mandate": mandate, "entries_paused": False, "entries_paused_at": None,
             "entries_pause_operator": None, "entries_pause_reason": None,
+            "policy_epoch": None, "policy_epoch_started_at": None,
+            "entry_score_adapter_version": None, "entry_score_adapter_enabled_at": None,
             "created_at": now, "updated_at": now,
         }
         if not self.database.database_url:
@@ -411,6 +414,10 @@ class R2D2Repository:
             self.memory["experiment"].setdefault("entries_paused_at", None)
             self.memory["experiment"].setdefault("entries_pause_operator", None)
             self.memory["experiment"].setdefault("entries_pause_reason", None)
+            self.memory["experiment"].setdefault("policy_epoch", None)
+            self.memory["experiment"].setdefault("policy_epoch_started_at", None)
+            self.memory["experiment"].setdefault("entry_score_adapter_version", None)
+            self.memory["experiment"].setdefault("entry_score_adapter_enabled_at", None)
             return dict(self.memory["experiment"])
         with self.database.connection() as connection:
             row = connection.execute(
@@ -430,7 +437,9 @@ class R2D2Repository:
                 RETURNING id::text, code, status, base_currency, starting_capital, cash_balance,
                           start_date, checkpoint_date, methodology_version, mandate,
                           entries_paused, entries_paused_at, entries_pause_operator,
-                          entries_pause_reason, created_at, updated_at
+                          entries_pause_reason, policy_epoch, policy_epoch_started_at,
+                          entry_score_adapter_version, entry_score_adapter_enabled_at,
+                          created_at, updated_at
                 """,
                 (payload["id"], payload["code"], payload["status"], payload["starting_capital"],
                  payload["cash_balance"], start, checkpoint, checkpoint, METHODOLOGY_VERSION, json.dumps(mandate)),
@@ -443,7 +452,9 @@ class R2D2Repository:
         keys = ("id", "code", "status", "base_currency", "starting_capital", "cash_balance",
                 "start_date", "checkpoint_date", "methodology_version", "mandate",
                 "entries_paused", "entries_paused_at", "entries_pause_operator",
-                "entries_pause_reason", "created_at", "updated_at")
+                "entries_pause_reason", "policy_epoch", "policy_epoch_started_at",
+                "entry_score_adapter_version", "entry_score_adapter_enabled_at",
+                "created_at", "updated_at")
         return dict(zip(keys, row))
 
     def positions(self, experiment_id: str) -> list[dict[str, Any]]:
@@ -478,7 +489,9 @@ class R2D2Repository:
                 """SELECT id::text, code, status, base_currency, starting_capital, cash_balance,
                           start_date, checkpoint_date, methodology_version, mandate,
                           entries_paused, entries_paused_at, entries_pause_operator,
-                          entries_pause_reason, created_at, updated_at
+                          entries_pause_reason, policy_epoch, policy_epoch_started_at,
+                          entry_score_adapter_version, entry_score_adapter_enabled_at,
+                          created_at, updated_at
                    FROM r2d2_experiments WHERE code=%s""",
                 (code,),
             ).fetchone()
@@ -491,25 +504,49 @@ class R2D2Repository:
         paused: bool,
         operator: str,
         reason: str,
+        policy_epoch: str | None = None,
+        entry_score_adapter_version: str | None = None,
         changed_at: datetime | None = None,
     ) -> dict[str, Any]:
         operator = operator.strip()
         reason = reason.strip()
         if not operator or not reason:
             raise ValueError("operator and reason are required")
+        policy_epoch = policy_epoch.strip() if policy_epoch else None
+        entry_score_adapter_version = (
+            entry_score_adapter_version.strip() if entry_score_adapter_version else None
+        )
+        if paused and (policy_epoch or entry_score_adapter_version):
+            raise ValueError("policy_epoch and adapter version apply only to resume")
+        if not paused and (not policy_epoch or not entry_score_adapter_version):
+            raise ValueError("resume requires policy_epoch and entry_score_adapter_version")
         changed_at = changed_at or datetime.now(timezone.utc)
         current = self.experiment(code)
         if current is None:
             raise LookupError(f"R2D2 experiment not found: {code}")
         previous = bool(current.get("entries_paused"))
         if previous == paused:
+            if not paused and (
+                current.get("policy_epoch") != policy_epoch
+                or current.get("entry_score_adapter_version") != entry_score_adapter_version
+            ):
+                raise ValueError("entries are already active under a different or missing policy epoch")
             return current
+        if not paused and current.get("policy_epoch") == policy_epoch:
+            raise ValueError("resume requires a new policy_epoch")
         action = "r2d2.entries_paused" if paused else "r2d2.entries_resumed"
         detail = {
             "previous_entries_paused": previous,
             "entries_paused": paused,
             "reason": reason,
             "changed_at": changed_at.isoformat(),
+            "previous_policy_epoch": current.get("policy_epoch"),
+            "policy_epoch": policy_epoch if not paused else current.get("policy_epoch"),
+            "methodology_version": current.get("methodology_version"),
+            "entry_score_adapter_version": (
+                entry_score_adapter_version
+                if not paused else current.get("entry_score_adapter_version")
+            ),
         }
         if not self.database.database_url:
             self.memory["experiment"].update({
@@ -519,6 +556,13 @@ class R2D2Repository:
                 "entries_pause_reason": reason,
                 "updated_at": changed_at,
             })
+            if not paused:
+                self.memory["experiment"].update({
+                    "policy_epoch": policy_epoch,
+                    "policy_epoch_started_at": changed_at,
+                    "entry_score_adapter_version": entry_score_adapter_version,
+                    "entry_score_adapter_enabled_at": changed_at,
+                })
             self.database.record_audit_event(operator, action, "r2d2_experiment", code, detail)
             return dict(self.memory["experiment"])
         with self.database.connection() as connection:
@@ -526,13 +570,25 @@ class R2D2Repository:
                 """UPDATE r2d2_experiments
                    SET entries_paused=%s,
                        entries_paused_at=CASE WHEN %s THEN %s ELSE NULL END,
-                       entries_pause_operator=%s, entries_pause_reason=%s, updated_at=%s
+                       entries_pause_operator=%s, entries_pause_reason=%s,
+                       policy_epoch=CASE WHEN %s THEN policy_epoch ELSE %s END,
+                       policy_epoch_started_at=CASE WHEN %s THEN policy_epoch_started_at ELSE %s END,
+                       entry_score_adapter_version=CASE WHEN %s THEN entry_score_adapter_version ELSE %s END,
+                       entry_score_adapter_enabled_at=CASE WHEN %s THEN entry_score_adapter_enabled_at ELSE %s END,
+                       updated_at=%s
                    WHERE code=%s
                    RETURNING id::text, code, status, base_currency, starting_capital, cash_balance,
                              start_date, checkpoint_date, methodology_version, mandate,
                              entries_paused, entries_paused_at, entries_pause_operator,
-                             entries_pause_reason, created_at, updated_at""",
-                (paused, paused, changed_at, operator, reason, changed_at, code),
+                             entries_pause_reason, policy_epoch, policy_epoch_started_at,
+                             entry_score_adapter_version, entry_score_adapter_enabled_at,
+                             created_at, updated_at""",
+                (
+                    paused, paused, changed_at, operator, reason,
+                    paused, policy_epoch, paused, changed_at,
+                    paused, entry_score_adapter_version, paused, changed_at,
+                    changed_at, code,
+                ),
             ).fetchone()
             if row is None:
                 raise LookupError(f"R2D2 experiment not found: {code}")
@@ -1289,7 +1345,7 @@ class R2D2Repository:
         with self.database.connection() as connection:
             row = connection.execute(
                 """SELECT status, started_at, completed_at, scanned_count, signal_count,
-                          trade_count, error_summary FROM r2d2_cycles
+                          trade_count, error_summary, metadata FROM r2d2_cycles
                    WHERE experiment_id=%s
                      AND NOT (COALESCE(metadata, '{}'::jsonb) ? 'risk_monitor')
                    ORDER BY started_at DESC LIMIT 1""",
@@ -1298,7 +1354,7 @@ class R2D2Repository:
         if not row:
             return None
         return dict(zip(("status", "started_at", "completed_at", "scanned_count", "signal_count",
-                         "trade_count", "error_summary"), row))
+                         "trade_count", "error_summary", "metadata"), row))
 
 
 class R2D2PaperService:
@@ -1306,6 +1362,7 @@ class R2D2PaperService:
                  b3_screener: B3ScreenerService, one_pagers: OnePagerService) -> None:
         self.settings = settings
         self.repo = R2D2Repository(database)
+        self._entry_score_adapter = R2D2EntryScoreAdapter(database)
         self.realtime = realtime
         self.b3_screener = b3_screener
         self.one_pagers = one_pagers
@@ -1583,6 +1640,28 @@ class R2D2PaperService:
             reason=row["reason"], executed_at=row["executed_at"], quote_as_of=row["quote_as_of"],
         ) for row in self.repo.trades(experiment["id"])]
         last_cycle = self.repo.last_cycle(experiment["id"])
+        last_cycle_metadata = (last_cycle or {}).get("metadata") or {}
+        adapter_cycle = (
+            last_cycle_metadata.get("entry_score_adapter")
+            if isinstance(last_cycle_metadata, dict) else None
+        )
+        adapter_cycle = adapter_cycle if isinstance(adapter_cycle, dict) else {}
+        adapter_version = experiment.get("entry_score_adapter_version")
+        adapter_armed = bool(
+            self.settings.r2d2_entry_score_adapter_enabled or adapter_version
+        )
+        adapter_cycle_enabled = adapter_cycle.get("enabled")
+        adapter_enabled = (
+            adapter_armed
+            if adapter_cycle_enabled is None
+            else bool(adapter_cycle_enabled)
+        )
+        if not adapter_armed or adapter_cycle_enabled is False:
+            adapter_status = "disabled"
+        elif experiment.get("entries_paused"):
+            adapter_status = "armed"
+        else:
+            adapter_status = str(adapter_cycle.get("status") or "pending")
         today = datetime.now(SAO_PAULO).date()
         learning = self._learning_state or self._ensure_daily_learning(experiment, today)
         return R2D2DashboardResponse(
@@ -1591,6 +1670,17 @@ class R2D2PaperService:
             entries_paused_at=experiment.get("entries_paused_at"),
             entries_pause_operator=experiment.get("entries_pause_operator"),
             entries_pause_reason=experiment.get("entries_pause_reason"),
+            policy_epoch=experiment.get("policy_epoch"),
+            policy_epoch_started_at=experiment.get("policy_epoch_started_at"),
+            entry_score_adapter_enabled=adapter_enabled,
+            entry_score_adapter_version=(
+                adapter_version
+                or (ADAPTER_VERSION if self.settings.r2d2_entry_score_adapter_enabled else None)
+            ),
+            entry_score_adapter_status=adapter_status,
+            entry_score_adapter_last_error=(
+                str(adapter_cycle["error"]) if adapter_cycle.get("error") else None
+            ),
             methodology_version=experiment["methodology_version"], start_date=experiment["start_date"].isoformat(),
             checkpoint_date=experiment["checkpoint_date"].isoformat(),
             checkpoint_reached=today >= experiment["checkpoint_date"],
@@ -1767,7 +1857,19 @@ class R2D2PaperService:
             for candidate in candidates:
                 candidate["learning_version"] = int(learning["version"])
                 candidate["entry_policy"] = dict(self._active_policy)
+                candidate["policy_epoch"] = experiment.get("policy_epoch")
+                candidate["methodology_version"] = experiment.get("methodology_version")
             candidates.sort(key=lambda item: item["composite_score"], reverse=True)
+            adapter_metadata: dict[str, Any] = {
+                "enabled": bool(self.settings.r2d2_entry_score_adapter_enabled),
+                "version": ADAPTER_VERSION,
+                "status": "disabled",
+                "policy_epoch": experiment.get("policy_epoch"),
+                "attempted": 0,
+                "written": 0,
+                "failed": 0,
+            }
+            adapter_decision_at = datetime.now(timezone.utc)
             orders_today = sum(
                 row["executed_at"].astimezone(SAO_PAULO).date() == local_day
                 for row in self.repo.trades(experiment["id"], limit=500)
@@ -1819,6 +1921,44 @@ class R2D2PaperService:
                     trade_count += 1
                     orders_today += 1
                     positions = self.repo.positions(experiment["id"])
+            if self.settings.r2d2_entry_score_adapter_enabled:
+                evaluated_count = sum(
+                    candidate.get("technical_reviewed") is not False
+                    for candidate in candidates
+                )
+                try:
+                    adapter_metadata = self._entry_score_adapter.record_cycle(
+                        experiment_id=experiment["id"],
+                        cycle_id=cycle_id,
+                        policy_epoch=str(experiment.get("policy_epoch") or ""),
+                        candidates=candidates,
+                        decision_at=adapter_decision_at,
+                    )
+                except Exception as exc:
+                    logger.exception("R2D2 entry-score adapter degraded")
+                    adapter_error = str(exc)[:1000]
+                    adapter_metadata = {
+                        "enabled": True,
+                        "version": ADAPTER_VERSION,
+                        "status": "degraded",
+                        "policy_epoch": experiment.get("policy_epoch"),
+                        "attempted": evaluated_count,
+                        "written": 0,
+                        "failed": evaluated_count,
+                        "irrecoverable_gap": True,
+                        "error": adapter_error,
+                    }
+                    errors.append(f"entry_score_adapter: {adapter_error}")
+                    try:
+                        self.repo.database.record_audit_event(
+                            "r2d2-worker",
+                            "r2d2.entry_score_adapter_degraded",
+                            "r2d2_cycle",
+                            cycle_id,
+                            adapter_metadata,
+                        )
+                    except Exception:
+                        logger.exception("Could not persist entry-score adapter degradation audit")
             self._snapshot(experiment, local_day, now)
             self.repo.finish_cycle(cycle_id, "succeeded" if not errors else "partial", scanned, signals, trade_count,
                                    "; ".join(errors)[:1000] or None,
@@ -1826,6 +1966,7 @@ class R2D2PaperService:
                                        "scan_funnel": dict(self._us_scan_counts),
                                        "eodhd_usage": _estimate_eodhd_credits(self._eodhd_call_counts),
                                        "technical_review": dict(self._technical_review_stats),
+                                       "entry_score_adapter": adapter_metadata,
                                    })
         except Exception as exc:
             logger.exception("R2D2 cycle failed")
@@ -2703,6 +2844,8 @@ class R2D2PaperService:
                 "technical_validated": False, "day_change": row.change_percent,
                 "technical_reviewed": False,
                 "quote_status": row.status,
+                "raw_cash_volume_usd": row.cash_volume,
+                "spread_bps": getattr(row, "spread_bps", None),
                 "stop_price": row.price * (1 - self.settings.r2d2_max_position_loss_percent / 100),
                 "thesis": thesis,
                 "valuation_basis": basis_source,

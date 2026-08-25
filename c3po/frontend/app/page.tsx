@@ -235,6 +235,12 @@ interface R2D2DashboardData {
   entries_paused_at: string | null;
   entries_pause_operator: string | null;
   entries_pause_reason: string | null;
+  policy_epoch: string | null;
+  policy_epoch_started_at: string | null;
+  entry_score_adapter_enabled: boolean;
+  entry_score_adapter_version: string | null;
+  entry_score_adapter_status: string;
+  entry_score_adapter_last_error: string | null;
   methodology_version: string;
   start_date: string;
   checkpoint_date: string;
@@ -3297,6 +3303,7 @@ function R2D2RisingView() {
   const lifetimeClosedTrades = data.stats.positive_transactions + data.stats.negative_transactions;
   const lifetimePositiveShare = lifetimeClosedTrades > 0 ? data.stats.positive_transactions / lifetimeClosedTrades * 100 : 0;
   const lifetimeNegativeShare = lifetimeClosedTrades > 0 ? data.stats.negative_transactions / lifetimeClosedTrades * 100 : 0;
+  const entryAdapterStatus = data.entry_score_adapter_status || "disabled";
   const intelligenceLog = [
     ...todayTrades.map((trade) => ({
       id: `trade-${trade.id}`,
@@ -3335,6 +3342,15 @@ function R2D2RisingView() {
         ? "ENTRIES PAUSED · exits, risk monitor and EOD remain active"
         : `20-second risk monitor · one-minute opportunity scan · ${data.status}`,
       state: data.entries_paused || data.status === "paused" ? "pending" : "ready"
+    },
+    {
+      label: "Entry evidence",
+      detail: entryAdapterStatus === "degraded"
+        ? `DEGRADED · ${data.entry_score_adapter_last_error ?? "irrecoverable observation gap"}`
+        : `${entryAdapterStatus.toUpperCase()} · ${data.policy_epoch ?? "policy epoch pending"}`,
+      state: entryAdapterStatus === "healthy"
+        ? "ready"
+        : entryAdapterStatus === "degraded" ? "critical" : "pending"
     },
     { label: "Turnover policy", detail: "20-80 qualified orders/session · 120 hard cap · costs included", state: "ready" },
     { label: "Daily learning loop", detail: `Version ${data.learning.version} · ${data.learning.sample_days} sessions · ${data.learning.sample_trades} completed exits`, state: "ready" }
@@ -3807,7 +3823,7 @@ function R2D2RisingView() {
               <div key={check.label}>
                 <span className={`r2d2-gate-dot r2d2-gate-${check.state}`} />
                 <div><strong>{check.label}</strong><small>{check.detail}</small></div>
-                <b>{check.state === "ready" ? "READY" : "REVIEW"}</b>
+                <b>{check.state === "ready" ? "READY" : check.state === "critical" ? "DEGRADED" : "REVIEW"}</b>
               </div>
             ))}
           </div>
