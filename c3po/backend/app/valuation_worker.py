@@ -20,6 +20,7 @@ from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
 from .valuation_v2_peer_quality import ValuationV2PeerQualityService
 from .valuation_v2_shadow import ValuationV2ShadowService
+from .valuation_v3_shadow import ValuationV3ShadowService
 from .valuation_worker_contract import (
     VALUATION_WORKER_CANONICAL_PHASE,
     VALUATION_WORKER_PHASES,
@@ -246,6 +247,7 @@ def main() -> None:
         settings, database, market_data.http
     )
     v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
+    v3_shadow = ValuationV3ShadowService(database)
 
     offhours_phases = (
         OffhoursPhase(
@@ -260,6 +262,7 @@ def main() -> None:
             v2_peer_quality.last_refreshed_at,
             v2_peer_quality.refresh_all,
         ),
+        OffhoursPhase("v3_shadow", v3_shadow.last_run_at, v3_shadow.run_all),
     )
 
     while True:

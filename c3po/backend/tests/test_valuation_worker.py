@@ -9,7 +9,10 @@ from app.valuation_worker import (
     run_worker_iteration,
     start_of_today,
 )
-from app.valuation_worker_contract import VALUATION_WORKER_PHASES
+from app.valuation_worker_contract import (
+    VALUATION_WORKER_OFFHOURS_PHASES,
+    VALUATION_WORKER_PHASES,
+)
 
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
@@ -40,7 +43,7 @@ def test_canonical_failure_does_not_block_any_offhours_phase() -> None:
             lambda: None,
             lambda key=key: calls.append(key) or {key: 1},
         )
-        for key in ("chewie", "v2_data", "shadow", "peer_quality")
+        for key in VALUATION_WORKER_OFFHOURS_PHASES
     )
 
     result = run_worker_iteration(
@@ -52,11 +55,11 @@ def test_canonical_failure_does_not_block_any_offhours_phase() -> None:
     )
 
     assert result.canonical_status == "failed"
-    assert calls == ["chewie", "v2_data", "shadow", "peer_quality"]
+    assert calls == list(VALUATION_WORKER_OFFHOURS_PHASES)
     assert result.phase_statuses == {key: "succeeded" for key in calls}
     assert result.next_wake_at == now + timedelta(minutes=15)
     runs = list(database._ingestion_runs.values())
-    assert len(runs) == 5
+    assert len(runs) == 6
     assert runs[0]["status"] == "failed"
     assert runs[0]["error_summary"] == "RuntimeError: canonical unavailable"
     assert all(

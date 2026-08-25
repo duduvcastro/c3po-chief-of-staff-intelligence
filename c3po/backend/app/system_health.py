@@ -687,7 +687,7 @@ class SystemHealthService:
             detail = "Phase evidence · " + " · ".join(parts)
         else:
             status = "healthy"
-            detail = "Canonical and all four off-hours phases succeeded for the expected cycle"
+            detail = "Canonical and all five off-hours phases succeeded for the expected cycle"
 
         return IntegrationHealth(
             name="Valuation worker phases",
