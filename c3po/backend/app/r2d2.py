@@ -376,7 +376,10 @@ class R2D2Repository:
                 "minimum_hold_minutes": MIN_HOLD_MINUTES,
                 "rotation_hold_minutes": ROTATION_MIN_HOLD_MINUTES,
                 "reentry_cooldown_minutes": settings.r2d2_trade_cooldown_minutes,
-                "full_exit_reentry_policy": "blocked until the next Sao Paulo trading date",
+                "full_exit_reentry_policy": (
+                    "loss exits block same-symbol re-entry for the rest of the Sao Paulo "
+                    "session; profit exits remain subject only to the regular cooldown"
+                ),
                 "profit_trigger_percent": PROFIT_TRIGGER_PERCENT,
                 "simulated_round_trip_cost_percent": SIMULATED_ROUND_TRIP_COST_PERCENT,
                 "minimum_modeled_edge_percent": MIN_INTRADAY_EDGE_PERCENT,
@@ -2791,11 +2794,10 @@ class R2D2PaperService:
                     and item.get("quote_status") == "live"
                 )
                 item["technical_indicators"] = {**snapshot, "relative_strength": round(relative_strength, 3)}
-                stop_distance = min(
-                    item["price"] * self.settings.r2d2_max_position_loss_percent / 100,
-                    max(snapshot["atr"] * 0.45, item["price"] * 0.004),
+                item["stop_price"] = r2d2_strategy.entry_stop_quote_price(
+                    item["price"], snapshot["atr"],
+                    max_position_loss_percent=self.settings.r2d2_max_position_loss_percent,
                 )
-                item["stop_price"] = item["price"] - stop_distance
                 item["composite_score"] = self._composite(item)
             except Exception as exc:
                 item["technical_error"] = f"{type(exc).__name__}: {exc}"[:240]
@@ -3458,9 +3460,15 @@ class R2D2PaperService:
         fees = gross * fee_rate
         slippage = quantity * (fill - item["price"]) * fx
         average_cost_local = (gross + fees) / (quantity * fx)
+        technical_indicators = item.get("technical_indicators") or {}
+        execution_entry_stop = r2d2_strategy.entry_stop_quote_price(
+            item["price"],
+            _float(technical_indicators.get("atr")),
+            max_position_loss_percent=self.settings.r2d2_max_position_loss_percent,
+        )
         atr_percent = max(
             0.0,
-            _float((item.get("technical_indicators") or {}).get("atr_percent")),
+            _float(technical_indicators.get("atr_percent")),
         )
         effective_max_loss_percent = max(
             self.settings.r2d2_max_position_loss_percent,
@@ -3469,7 +3477,7 @@ class R2D2PaperService:
         item = {
             **item,
             "stop_price": max(
-                _float(item.get("stop_price")),
+                execution_entry_stop,
                 r2d2_strategy.hard_stop_quote_price(
                     average_cost_local, effective_max_loss_percent,
                     slippage_rate=slippage_rate, fee_rate=fee_rate,
