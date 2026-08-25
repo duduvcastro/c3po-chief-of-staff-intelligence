@@ -1,0 +1,178 @@
+name: Install R2D2 resume timer 2026-08-26
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/r2d2-resume-2026-08-26.sh
+      - ops/systemd/r2d2-resume-2026-08-26.service
+      - ops/systemd/r2d2-resume-2026-08-26.timer
+      - .github/workflows/install-r2d2-resume-2026-08-26.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-r2d2-resume-2026-08-26
+  cancel-in-progress: false
+
+jobs:
+  install-production-timer:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Check out scheduled revision
+        uses: actions/checkout@v6
+
+      - name: Configure deployment SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload timer assets
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          scp -i ~/.ssh/c3po_deploy \
+            scripts/r2d2-resume-2026-08-26.sh \
+            ops/systemd/r2d2-resume-2026-08-26.service \
+            ops/systemd/r2d2-resume-2026-08-26.timer \
+            "$USER@$HOST:/tmp/"
+
+      - name: Arm adapter and install one-shot timer
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          REVISION: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "REVISION='$REVISION' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          APP_DIR=/opt/chief-of-staff-digital
+          cd "$APP_DIR"
+
+          for attempt in $(seq 1 60); do
+            if [ "$(cat .deploy-version 2>/dev/null || true)" = "$REVISION" ]; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              echo "Production deploy did not reach revision $REVISION" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+          adapter_previous=$(sed -n 's/^C3PO_R2D2_ENTRY_SCORE_ADAPTER_ENABLED=//p' .env | tail -n 1)
+          case "$adapter_previous" in
+            true|false) ;;
+            *) adapter_previous=unset ;;
+          esac
+          if grep -q '^C3PO_R2D2_ENTRY_SCORE_ADAPTER_ENABLED=' .env; then
+            sed -i 's/^C3PO_R2D2_ENTRY_SCORE_ADAPTER_ENABLED=.*/C3PO_R2D2_ENTRY_SCORE_ADAPTER_ENABLED=true/' .env
+          else
+            printf '\nC3PO_R2D2_ENTRY_SCORE_ADAPTER_ENABLED=true\n' >> .env
+          fi
+
+          if ! docker compose --env-file .env -f c3po/compose.yml exec -T r2d2-worker \
+            python -c 'from app.config import Settings; assert Settings().r2d2_entry_score_adapter_enabled is True'; then
+            docker compose --env-file .env -f c3po/compose.yml \
+              up -d --no-deps --force-recreate r2d2-worker
+          fi
+          for attempt in $(seq 1 30); do
+            worker_id=$(docker compose --env-file .env -f c3po/compose.yml ps -q r2d2-worker)
+            if [ -n "$worker_id" ] && [ "$(docker inspect -f '{{.State.Status}}' "$worker_id")" = running ]; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo 'r2d2-worker did not return to running state' >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          docker compose --env-file .env -f c3po/compose.yml exec -T r2d2-worker \
+            python -c 'from app.config import Settings; assert Settings().r2d2_entry_score_adapter_enabled is True'
+
+          evidence_dir="$APP_DIR/outputs/evidence/r2d2-resume-2026-08-26"
+          mkdir -p "$evidence_dir"
+          reason='Six-hands evidence-collection resume on 26/08 under unchanged Policy A; EHC fill reconciled; entry score adapter active'
+          docker compose --env-file .env -f c3po/compose.yml run --rm -T api \
+            python -m app.r2d2_entry_control \
+            --resume \
+            --policy-epoch policy-a-resume-2026-08-26 \
+            --operator Dudu \
+            --reason "$reason" \
+            > "$evidence_dir/install-plan-preview.json"
+          python3 - "$evidence_dir/install-plan-preview.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              payload = json.load(source)
+          checks = {
+              "mode": payload.get("mode") == "plan",
+              "currently_paused": payload.get("current_entries_paused") is True,
+              "state_change_required": payload.get("state_change_required") is True,
+              "resume_ready": payload.get("resume_ready") is True,
+              "no_blocked_reasons": payload.get("blocked_reasons") == [],
+              "adapter_configured": payload.get("entry_score_adapter", {}).get("configured") is True,
+              "policy_epoch": payload.get("requested_policy_epoch") == "policy-a-resume-2026-08-26",
+          }
+          failed = sorted(name for name, passed in checks.items() if not passed)
+          if failed:
+              raise SystemExit("Install-time plan validation failed: " + ", ".join(failed))
+          PY
+
+          sudo install -m 0755 /tmp/r2d2-resume-2026-08-26.sh \
+            /usr/local/sbin/r2d2-resume-2026-08-26
+          sudo install -m 0644 /tmp/r2d2-resume-2026-08-26.service \
+            /etc/systemd/system/r2d2-resume-2026-08-26.service
+          sudo install -m 0644 /tmp/r2d2-resume-2026-08-26.timer \
+            /etc/systemd/system/r2d2-resume-2026-08-26.timer
+          sudo systemctl daemon-reload
+          systemd-analyze calendar '2026-08-26 13:30:00 UTC' --iterations=1
+          sudo systemctl enable --now r2d2-resume-2026-08-26.timer
+
+          timer_active=$(systemctl is-active r2d2-resume-2026-08-26.timer)
+          next_elapse=$(systemctl show r2d2-resume-2026-08-26.timer \
+            --property=NextElapseUSecRealtime --value)
+          [ "$timer_active" = active ]
+          printf '%s\n' "$next_elapse" | grep -q 'Wed 2026-08-26 13:30:00 UTC'
+
+          installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          plan_preview_sha256=$(sha256sum "$evidence_dir/install-plan-preview.json" | awk '{print $1}')
+          script_sha256=$(sha256sum /usr/local/sbin/r2d2-resume-2026-08-26 | awk '{print $1}')
+          service_sha256=$(sha256sum /etc/systemd/system/r2d2-resume-2026-08-26.service | awk '{print $1}')
+          timer_sha256=$(sha256sum /etc/systemd/system/r2d2-resume-2026-08-26.timer | awk '{print $1}')
+          python3 - "$evidence_dir/schedule.json" <<PY
+          import json
+          from pathlib import Path
+
+          payload = {
+              "installed_at": "$installed_at",
+              "deploy_revision": "$REVISION",
+              "timer_active": "$timer_active" == "active",
+              "next_elapse": "$next_elapse",
+              "entry_score_adapter_configured": True,
+              "entry_score_adapter_previous_value": "$adapter_previous" or None,
+              "install_plan_preview_sha256": "$plan_preview_sha256",
+              "script_sha256": "$script_sha256",
+              "service_sha256": "$service_sha256",
+              "timer_sha256": "$timer_sha256",
+          }
+          path = Path("$evidence_dir/schedule.json")
+          temporary = path.with_suffix(".json.tmp")
+          temporary.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+          temporary.replace(path)
+          PY
+
+          systemctl list-timers r2d2-resume-2026-08-26.timer --no-pager
+          REMOTE
