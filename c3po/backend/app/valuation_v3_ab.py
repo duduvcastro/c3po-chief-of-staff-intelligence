@@ -33,7 +33,7 @@ MANIFEST_SCHEMA_VERSION = "VALUATION-V3-AB-MANIFEST-v1"
 REPORT_SCHEMA_VERSION = "VALUATION-V3-AB-REPORT-v1"
 AB_AS_OF = date(2026, 8, 24)
 MARKETS = ("B3", "NASDAQ", "NYSE")
-EXPECTED_COUNTS = {"B3": 100, "NASDAQ": 219, "NYSE": 298}
+EXPECTED_COUNTS = {"B3": 100, "NASDAQ": 295, "NYSE": 299}
 ENGINE_FILE_PATHS = {
     "v2": Path(__file__).with_name("valuation_v2_engine.py"),
     "v3": Path(__file__).with_name("valuation_v3_engine.py"),
@@ -78,34 +78,34 @@ FROZEN_SNAPSHOT_REFERENCES = (
         "valuation_universe", "B3_UNIVERSE", _published("2026-08-24T14:21:19.551280"),
     ),
     FrozenSnapshotReference(
-        "universe", "NASDAQ", "23648729-1a0c-404d-9a8b-02f3151486dc",
-        "valuation_universe", "NASDAQ_UNIVERSE", _published("2026-08-24T14:22:26.804975"),
+        "universe", "NASDAQ", "de4062a9-dcd7-4d79-b660-6a49c84ecfcf",
+        "valuation_universe", "NASDAQ_UNIVERSE", _published("2026-08-25T02:29:58.195188"),
     ),
     FrozenSnapshotReference(
-        "universe", "NYSE", "50230542-e3ca-41f0-8d8b-ae2a720e9698",
-        "valuation_universe", "NYSE_UNIVERSE", _published("2026-08-24T14:24:35.879275"),
+        "universe", "NYSE", "bd9f5d91-635c-4c35-98f3-6d5208c88ee7",
+        "valuation_universe", "NYSE_UNIVERSE", _published("2026-08-25T02:32:31.046889"),
     ),
     FrozenSnapshotReference(
-        "v2_data", "B3", "e34863d9-1f43-4c03-b424-a72789b228aa",
-        "valuation_v2_data", "B3_V2_DATA", _published("2026-08-24T22:07:55.602340"),
+        "v2_data", "B3", "aa9ecf44-dd62-4bb6-a529-25baaaa3bddc",
+        "valuation_v2_data", "B3_V2_DATA", _published("2026-08-25T02:35:56.529195"),
     ),
     FrozenSnapshotReference(
-        "v2_data", "NASDAQ", "a06cd2a4-d9cd-4d42-9e17-6a5d039c2add",
-        "valuation_v2_data", "NASDAQ_V2_DATA", _published("2026-08-24T22:08:41.898935"),
+        "v2_data", "NASDAQ", "bdd5c12c-9fd0-4f76-b361-c06cd8058938",
+        "valuation_v2_data", "NASDAQ_V2_DATA", _published("2026-08-25T02:36:57.518558"),
     ),
     FrozenSnapshotReference(
-        "v2_data", "NYSE", "ab7cbff7-263b-4d02-a663-1f75394d4dc4",
-        "valuation_v2_data", "NYSE_V2_DATA", _published("2026-08-24T22:09:43.342217"),
+        "v2_data", "NYSE", "78117445-719f-44a5-a644-317f1e2b6d73",
+        "valuation_v2_data", "NYSE_V2_DATA", _published("2026-08-25T02:37:58.921266"),
     ),
     FrozenSnapshotReference(
-        "peer_quality", "B3", "2ce5521a-f7d3-47bb-b2aa-9614eb56d732",
+        "peer_quality", "B3", "9e651be9-847d-4d47-a384-f0caa0ce09d0",
         "valuation_v2_peer_quality", "B3_V2_PEER_QUALITY",
-        _published("2026-08-24T22:10:08.018267"),
+        _published("2026-08-25T02:39:50.607593"),
     ),
     FrozenSnapshotReference(
-        "peer_quality", "US", "ce5573df-0068-4c38-a716-918e288f1b17",
+        "peer_quality", "US", "777825de-7b7e-4ace-8f24-84d9d9a157c5",
         "valuation_v2_peer_quality", "US_V2_PEER_QUALITY",
-        _published("2026-08-24T22:12:03.871595"),
+        _published("2026-08-25T02:41:38.465991"),
     ),
     FrozenSnapshotReference(
         "chewie", "B3", "71507f75-d32c-4b9f-9000-95f8177d5823",
@@ -120,16 +120,16 @@ FROZEN_SNAPSHOT_REFERENCES = (
         "chewie_fundamentals", "NYSE_FUNDAMENTALS", _published("2026-08-24T22:07:34.054720"),
     ),
     FrozenSnapshotReference(
-        "v2_shadow", "B3", "d791cfad-cf57-4cd5-b8ae-0e36b2ae044e",
-        "valuation_v2_shadow", "B3_V2_SHADOW", _published("2026-08-24T22:09:44.257020"),
+        "v2_shadow", "B3", "b759d4b3-101c-4fa8-9e97-d79dcf5d87a6",
+        "valuation_v2_shadow", "B3_V2_SHADOW", _published("2026-08-25T02:38:51.814238"),
     ),
     FrozenSnapshotReference(
-        "v2_shadow", "NASDAQ", "5108788b-ccc8-45a2-a510-bfef11777323",
-        "valuation_v2_shadow", "NASDAQ_V2_SHADOW", _published("2026-08-24T22:09:44.772199"),
+        "v2_shadow", "NASDAQ", "cfd47f1b-6946-426e-a85e-34dfb0daef9b",
+        "valuation_v2_shadow", "NASDAQ_V2_SHADOW", _published("2026-08-25T02:38:52.413532"),
     ),
     FrozenSnapshotReference(
-        "v2_shadow", "NYSE", "ef06f13e-795d-4b26-a4ff-23b26236cee5",
-        "valuation_v2_shadow", "NYSE_V2_SHADOW", _published("2026-08-24T22:09:45.496865"),
+        "v2_shadow", "NYSE", "10ea1290-ed19-486f-af54-9c3bc104a3ce",
+        "valuation_v2_shadow", "NYSE_V2_SHADOW", _published("2026-08-25T02:38:53.045874"),
     ),
 )
 
