@@ -146,8 +146,9 @@ jobs:
           timer_active=$(systemctl is-active r2d2-resume-2026-08-26.timer)
           next_elapse=$(systemctl show r2d2-resume-2026-08-26.timer \
             --property=NextElapseUSecRealtime --value)
+          next_elapse_utc=$(date -u -d "$next_elapse" +%Y-%m-%dT%H:%M:%SZ)
           [ "$timer_active" = active ]
-          printf '%s\n' "$next_elapse" | grep -q 'Wed 2026-08-26 13:30:00 UTC'
+          [ "$next_elapse_utc" = 2026-08-26T13:30:00Z ]
 
           installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           plan_preview_sha256=$(sha256sum "$evidence_dir/install-plan-preview.json" | awk '{print $1}')
@@ -163,6 +164,7 @@ jobs:
               "deploy_revision": "$REVISION",
               "timer_active": "$timer_active" == "active",
               "next_elapse": "$next_elapse",
+              "next_elapse_utc": "$next_elapse_utc",
               "entry_score_adapter_configured": True,
               "entry_score_adapter_previous_value": "$adapter_previous" or None,
               "install_plan_preview_sha256": "$plan_preview_sha256",
