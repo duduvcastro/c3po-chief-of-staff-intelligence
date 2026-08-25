@@ -465,14 +465,14 @@ button { cursor: pointer; }
 .r2d2-counter-positive strong { color: #19764f; }
 .r2d2-counter-critical strong { color: #ae3029; }
 .r2d2-counter small { margin-top: 7px; color: #9098a3; font-size: 9px; }
-.r2d2-ledger-head { min-height: 38px; display: grid; grid-template-columns: 1.18fr .62fr .5fr .76fr .76fr .6fr .72fr .62fr .82fr; align-items: center; gap: 8px; padding: 0 16px; color: #89929d; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 8px; font-weight: 800; text-transform: uppercase; }
-.r2d2-ledger-row { min-height: 68px; display: grid; grid-template-columns: 1.18fr .62fr .5fr .76fr .76fr .6fr .72fr .62fr .82fr; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 10px; }
+.r2d2-ledger-head { min-height: 38px; display: grid; grid-template-columns: 1.1fr .55fr .46fr .7fr .73fr .73fr .55fr .66fr .58fr .9fr; align-items: center; gap: 8px; padding: 0 16px; color: #89929d; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.r2d2-ledger-row { min-height: 68px; display: grid; grid-template-columns: 1.1fr .55fr .46fr .7fr .73fr .73fr .55fr .66fr .58fr .9fr; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 10px; }
 .r2d2-ledger-row:last-child { border-bottom: 0; }
 .r2d2-ledger-row > div { min-width: 0; }
 .r2d2-ledger-row > div strong, .r2d2-ledger-row > div small { display: block; }
 .r2d2-ledger-row > div strong { color: #171c24; font-size: 12px; }
 .r2d2-ledger-row > div small { margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.r2d2-ledger-row .r2d2-defense-status { color: #a66b12; font-weight: 800; }
+.r2d2-ledger-row .r2d2-defense-status { overflow: visible; color: #a66b12; font-weight: 800; line-height: 1.35; white-space: normal; }
 .r2d2-asset-cell { display: flex; align-items: center; gap: 9px; }
 .r2d2-company-logo { width: 30px; height: 30px; display: grid; flex: 0 0 30px; place-items: center; overflow: hidden; color: #6e7783; background: #f5f7f9; border: 1px solid #e1e5e9; border-radius: 5px; font-size: 8px; font-weight: 850; }
 .r2d2-company-logo img { width: 100%; height: 100%; object-fit: contain; padding: 3px; }
@@ -948,7 +948,7 @@ button { cursor: pointer; }
 .falcon-flight-metric strong em { font-size: 13px; font-style: normal; }
 .falcon-flight-metric small { margin-top: 7px; color: #8c929b; font-size: 8px; white-space: nowrap; }
 .falcon-capcom-view { gap: 16px; }
-.falcon-capcom-metrics { min-width: 0; display: grid; grid-template-columns: minmax(230px, 1.25fr) repeat(4, minmax(150px, 1fr)); overflow: hidden; color: #f8f5e9; background: #111216; border: 1px solid #66531f; border-radius: var(--radius); }
+.falcon-capcom-metrics { min-width: 0; display: grid; grid-template-columns: minmax(220px, 1.2fr) repeat(5, minmax(132px, 1fr)); overflow: hidden; color: #f8f5e9; background: #111216; border: 1px solid #66531f; border-radius: var(--radius); }
 .falcon-capcom-identity { min-width: 0; min-height: 112px; display: flex; align-items: center; gap: 14px; padding: 16px 18px; background-image: linear-gradient(rgba(213, 169, 48, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(213, 169, 48, .07) 1px, transparent 1px); background-size: 44px 44px; }
 .falcon-capcom-identity > svg { flex: 0 0 auto; color: var(--gold-bright); }
 .falcon-capcom-identity > div { min-width: 0; display: flex; flex-direction: column; }
@@ -1935,7 +1935,8 @@ button { cursor: pointer; }
   .falcon-flight-deck { grid-template-columns: minmax(210px, 1.25fr) repeat(2, minmax(125px, .8fr)); }
   .falcon-capcom-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .falcon-capcom-identity { grid-column: 1 / -1; }
-  .falcon-capcom-metrics .falcon-flight-metric:nth-child(2), .falcon-capcom-metrics .falcon-flight-metric:nth-child(4) { border-left: 0; }
+  .falcon-capcom-metrics .falcon-flight-metric:nth-child(2), .falcon-capcom-metrics .falcon-flight-metric:nth-child(4), .falcon-capcom-metrics .falcon-flight-metric:nth-child(6) { border-left: 0; }
+  .falcon-capcom-metrics .falcon-flight-metric:nth-child(6) { grid-column: 1 / -1; }
   .falcon-capcom-metrics .falcon-flight-metric { border-top: 1px solid #343238; }
   .quality-banner.falcon-capcom-readiness-with-usage { grid-template-columns: 62px minmax(200px, .72fr) 1fr; }
   .falcon-capcom-readiness-with-usage .falcon-capcom-consumption { grid-column: 1 / -1; min-height: 82px; padding: 14px 0 0; border-top: 1px solid #3a3425; border-left: 0; }
@@ -2050,6 +2051,7 @@ button { cursor: pointer; }
   .r2d2-ledger-head { display: none; }
   .r2d2-ledger-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; padding: 14px 16px; }
   .r2d2-ledger-row > div:first-child { grid-column: 1 / -1; padding-bottom: 9px; border-bottom: 1px solid #eef0f2; }
+  .r2d2-ledger-row > [data-label]::before { display: block; margin-bottom: 4px; color: #89929d; content: attr(data-label); font-size: 7px; font-weight: 800; line-height: 1.1; text-transform: uppercase; }
   .r2d2-allocation-content { grid-template-columns: 220px minmax(0, 1fr); gap: 18px; padding: 20px; }
   .r2d2-allocation-legend { grid-template-columns: 1fr; }
   .r2d2-allocation-legend > div:nth-child(n) { border-top: 1px solid var(--line); border-left: 0; }

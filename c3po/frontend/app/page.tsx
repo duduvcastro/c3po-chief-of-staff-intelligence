@@ -270,6 +270,15 @@ interface R2D2DashboardData {
     positive_transactions: number;
     negative_transactions: number;
   };
+  today_episode_stats: {
+    session_date: string;
+    closed_episodes: number;
+    decided_episodes: number;
+    positive_episodes: number;
+    negative_episodes: number;
+    flat_episodes: number;
+    win_rate_percent: number;
+  };
   track_record: Array<{
     session_date: string;
     nav_usd: number;
@@ -295,6 +304,10 @@ interface R2D2DashboardData {
     market_value_usd: number;
     unrealized_pnl_usd: number;
     unrealized_return_percent: number;
+    mark_pnl_usd: number;
+    mark_return_percent: number;
+    estimated_exit_pnl_usd: number;
+    estimated_exit_return_percent: number;
     allocation_percent: number;
     stop_price_local: number;
     technical_score: number;
@@ -3285,6 +3298,15 @@ function R2D2RisingView() {
   const signedMoney = (value: number) => `${value >= 0 ? "+" : "-"}${money(Math.abs(value))}`;
   const signedPercent = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
   const signedPositionPercent = (returnPercent: number, pnlUsd: number) => `${pnlUsd >= 0 ? "+" : "-"}${formatPositionPercentMagnitude(returnPercent)}%`;
+  const defenseState = (position: R2D2DashboardData["positions"][number]) => {
+    const labels = position.technical_defense_reviews > 0
+      ? [`DEFENSE ARMED`, `STREAK ${position.technical_defense_reviews}`]
+      : [`DEFENSE ${position.technical_defense_severity.toUpperCase()}`];
+    if (position.technical_defense_reductions > 0) {
+      labels.push(`${position.technical_defense_reductions} CUT${position.technical_defense_reductions === 1 ? "" : "S"}`);
+    }
+    return labels.join(" · ");
+  };
   const positions = liveTelemetry?.positions ?? data.positions;
   const markedNav = liveTelemetry?.nav_usd ?? data.nav_usd;
   const cash = liveTelemetry?.cash_usd ?? data.cash_usd;
@@ -3328,7 +3350,7 @@ function R2D2RisingView() {
         name: position.name,
         market: position.market,
         rationale: `Motor state: ${position.decision_state || "monitoring"}. Technical score ${position.technical_score.toFixed(1)}; trend ${position.trend_state}; flow ${position.volume_state}.`,
-        detail: `Position ${signedPositionPercent(position.unrealized_return_percent, position.unrealized_pnl_usd)} · stop ${position.currency} ${position.stop_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · quote ${position.quote_status}.`,
+        detail: `Mark ${signedPositionPercent(position.mark_return_percent, position.mark_pnl_usd)} · net if closed ${signedPositionPercent(position.estimated_exit_return_percent, position.estimated_exit_pnl_usd)} · stop ${position.currency} ${position.stop_price_local.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
         tone: "monitor"
       }))
   ].sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
@@ -3505,9 +3527,9 @@ function R2D2RisingView() {
           <header className="panel-header r2d2-track-header">
             <div><LineChart size={18} /><h2>Track Record</h2></div>
             <div className="r2d2-track-totals">
-              <span className="r2d2-track-positive">Positive <strong>{data.stats.positive_transactions}</strong><em>{lifetimePositiveShare.toFixed(1)}%</em></span>
-              <span className="r2d2-track-negative">Negative <strong>{data.stats.negative_transactions}</strong><em>{lifetimeNegativeShare.toFixed(1)}%</em></span>
-              <small>{lifetimeClosedTrades} closed trades</small>
+              <span className="r2d2-track-positive">Positive legs <strong>{data.stats.positive_transactions}</strong><em>{lifetimePositiveShare.toFixed(1)}%</em></span>
+              <span className="r2d2-track-negative">Negative legs <strong>{data.stats.negative_transactions}</strong><em>{lifetimeNegativeShare.toFixed(1)}%</em></span>
+              <small>{lifetimeClosedTrades} closed sell legs</small>
             </div>
           </header>
           <div className="r2d2-chart" role="img" aria-label="R2D2 Rising paper portfolio track record">
@@ -3545,7 +3567,7 @@ function R2D2RisingView() {
       <section className="panel r2d2-ledger-panel">
         <PanelHeader title="Virtual Positions" icon={WalletCards} />
         <div className="r2d2-ledger-head">
-          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span>P&amp;L</span><span>Technical</span><span>Trend / Flow</span><span>Stop</span><span>Decision</span>
+          <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span title="Live quote versus average cost, including entry friction already paid">Price mark</span><span title="Estimated result after applying the same exit slippage and fee model used by a real SELL">Net if closed</span><span>Technical</span><span>Trend / Flow</span><span>Stop</span><span>Decision</span>
         </div>
         {positions.length ? positions.map((position) => (
           <div className="r2d2-ledger-row" key={`${position.market}-${position.symbol}`}>
@@ -3553,23 +3575,30 @@ function R2D2RisingView() {
               <div className="r2d2-company-logo"><CompanyLogo logoUrl={position.logo_url} symbol={position.symbol} /></div>
               <R2D2Ticker symbol={position.symbol} name={position.name} />
             </div>
-            <span className="r2d2-last-price">{formatCurrency(position.last_price_local, position.currency)}</span>
-            <span>{position.allocation_percent.toFixed(1)}%</span>
-            <strong className="r2d2-position-value">{moneyExact(position.market_value_usd)}</strong>
-            <div className="r2d2-live-pnl">
-              <strong className={position.unrealized_pnl_usd >= 0 ? "positive" : "negative"}>{signedPositionPercent(position.unrealized_return_percent, position.unrealized_pnl_usd)}</strong>
-              <span className={position.unrealized_pnl_usd >= 0 ? "positive" : "negative"}>
-                {`${position.unrealized_pnl_usd >= 0 ? "+" : "-"}${moneyExact(Math.abs(position.unrealized_pnl_usd))}`}
+            <span className="r2d2-last-price" data-label="Price">{formatCurrency(position.last_price_local, position.currency)}</span>
+            <span data-label="Allocation">{position.allocation_percent.toFixed(1)}%</span>
+            <strong className="r2d2-position-value" data-label="Position value">{moneyExact(position.market_value_usd)}</strong>
+            <div className="r2d2-live-pnl" data-label="Price mark">
+              <strong className={position.mark_pnl_usd >= 0 ? "positive" : "negative"}>{signedPositionPercent(position.mark_return_percent, position.mark_pnl_usd)}</strong>
+              <span className={position.mark_pnl_usd >= 0 ? "positive" : "negative"}>
+                {`${position.mark_pnl_usd >= 0 ? "+" : "-"}${moneyExact(Math.abs(position.mark_pnl_usd))}`}
               </span>
               <small className={position.quote_status === "live" ? "positive" : "muted"}>
                 {position.quote_status === "live" ? "LIVE" : "LAST MARK"}
                 {position.quote_as_of ? ` · ${new Date(position.quote_as_of).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}
               </small>
             </div>
-            <div><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
-            <div><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>
-            <span>{formatCurrency(position.stop_price_local, position.currency)}</span>
-            <div>
+            <div className="r2d2-live-pnl" data-label="Net if closed">
+              <strong className={position.estimated_exit_pnl_usd >= 0 ? "positive" : "negative"}>{signedPositionPercent(position.estimated_exit_return_percent, position.estimated_exit_pnl_usd)}</strong>
+              <span className={position.estimated_exit_pnl_usd >= 0 ? "positive" : "negative"}>
+                {`${position.estimated_exit_pnl_usd >= 0 ? "+" : "-"}${moneyExact(Math.abs(position.estimated_exit_pnl_usd))}`}
+              </span>
+              <small>EST. SELL FRICTION</small>
+            </div>
+            <div data-label="Technical"><strong>{position.technical_score.toFixed(0)}/100</strong><small>{position.data_status}</small></div>
+            <div data-label="Trend / flow"><strong>{position.trend_state}</strong><small>{position.volume_state}</small></div>
+            <span data-label="Stop">{formatCurrency(position.stop_price_local, position.currency)}</span>
+            <div data-label="Decision">
               <strong>{position.decision_state}</strong>
               <small>{position.quantity.toLocaleString("en-US", { maximumFractionDigits: 3 })} shares</small>
               {(position.technical_defense_reviews > 0 || position.technical_defense_reductions > 0 || position.technical_defense_severity !== "healthy") && (
@@ -3577,7 +3606,7 @@ function R2D2RisingView() {
                   className="r2d2-defense-status"
                   title={position.technical_defense_drivers.join("; ") || "Technical defense active"}
                 >
-                  {`DEF ${position.technical_defense_score.toFixed(0)}/100 · ${position.technical_defense_reviews} review${position.technical_defense_reviews === 1 ? "" : "s"} · ${position.technical_defense_reductions} cut${position.technical_defense_reductions === 1 ? "" : "s"}`}
+                  {defenseState(position)}
                 </small>
               )}
             </div>
@@ -4010,6 +4039,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   const todayRealizedSellLegs = todayPositiveSellLegs + todayNegativeSellLegs;
   const todayPositiveSellShare = todayRealizedSellLegs > 0 ? todayPositiveSellLegs / todayRealizedSellLegs * 100 : 0;
   const todayNegativeSellShare = todayRealizedSellLegs > 0 ? todayNegativeSellLegs / todayRealizedSellLegs * 100 : 0;
+  const todayEpisodes = r2d2?.today_episode_stats;
   const healthHeadline = health?.status === "healthy"
     ? "All services operational"
     : health?.status === "offline"
@@ -4041,6 +4071,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${dailyPnlDate ?? "No session"} · ${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}%` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
         <FalconMetric label="Positive Sell Legs" value={`${todayPositiveSellLegs}`} secondaryValue={`${todayPositiveSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="green" />
         <FalconMetric label="Negative Sell Legs" value={`${todayNegativeSellLegs}`} secondaryValue={`${todayNegativeSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="red" />
+        <FalconMetric label="Episode Win Rate" value={todayEpisodes ? `${todayEpisodes.positive_episodes}/${todayEpisodes.decided_episodes}` : "—"} secondaryValue={todayEpisodes ? `${todayEpisodes.win_rate_percent.toFixed(1)}%` : undefined} detail={todayEpisodes ? `${todayEpisodes.closed_episodes} closed episodes today${todayEpisodes.flat_episodes ? ` · ${todayEpisodes.flat_episodes} flat` : ""}` : "Waiting for R2D2"} tone={(todayEpisodes?.win_rate_percent ?? 0) >= 50 ? "green" : "red"} />
       </section>
 
       {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => { setError(""); void loadR2D2(); void loadIndices(); }}>Retry</button></div>}
@@ -4051,7 +4082,8 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
             {[0, 1].map((copy) => (
               <div className="falcon-portfolio-ticker-set" aria-hidden={copy === 1} key={copy}>
                 {livePositions.map((position) => {
-                  const isPositive = position.unrealized_pnl_usd >= 0;
+                  const isPositive = position.mark_pnl_usd >= 0;
+                  const isNetPositive = position.estimated_exit_pnl_usd >= 0;
                   const price = new Intl.NumberFormat(position.currency === "BRL" ? "pt-BR" : "en-US", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
@@ -4060,8 +4092,8 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
                     <div className="falcon-portfolio-ticker-item" key={`${copy}-${position.market}-${position.symbol}`}>
                       <div><strong>{position.symbol}</strong><span className={isPositive ? "ticker-price-up" : "ticker-price-down"}>{position.currency === "BRL" ? "R$ " : "$ "}{price}</span></div>
                       <p className={isPositive ? "ticker-change-up" : "ticker-change-down"}>
-                        {isPositive ? "+" : "-"}{formatPositionPercentMagnitude(position.unrealized_return_percent)}%
-                        <small>($ {usd(Math.abs(position.unrealized_pnl_usd)).replace("US$ ", "")})</small>
+                        MARK {isPositive ? "+" : "-"}{formatPositionPercentMagnitude(position.mark_return_percent)}%
+                        <small className={isNetPositive ? "ticker-change-up" : "ticker-change-down"}>NET {isNetPositive ? "+" : "-"}{formatPositionPercentMagnitude(position.estimated_exit_return_percent)}% · $ {usd(Math.abs(position.estimated_exit_pnl_usd)).replace("US$ ", "")}</small>
                       </p>
                     </div>
                   );

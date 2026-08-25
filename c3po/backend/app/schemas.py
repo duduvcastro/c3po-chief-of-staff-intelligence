@@ -655,6 +655,16 @@ class R2D2SummaryStats(BaseModel):
     negative_transactions: int = Field(default=0, ge=0)
 
 
+class R2D2EpisodeStats(BaseModel):
+    session_date: str
+    closed_episodes: int = Field(default=0, ge=0)
+    decided_episodes: int = Field(default=0, ge=0)
+    positive_episodes: int = Field(default=0, ge=0)
+    negative_episodes: int = Field(default=0, ge=0)
+    flat_episodes: int = Field(default=0, ge=0)
+    win_rate_percent: float = Field(default=0, ge=0, le=100)
+
+
 class R2D2TrackPoint(BaseModel):
     session_date: str
     nav_usd: float
@@ -682,6 +692,10 @@ class R2D2Position(BaseModel):
     market_value_usd: float
     unrealized_pnl_usd: float
     unrealized_return_percent: float
+    mark_pnl_usd: float
+    mark_return_percent: float
+    estimated_exit_pnl_usd: float
+    estimated_exit_return_percent: float
     allocation_percent: float
     stop_price_local: float
     technical_score: float = Field(default=0, ge=0, le=100)
@@ -784,6 +798,7 @@ class R2D2DashboardResponse(BaseModel):
     daily_pnl_date: str | None
     open_positions: int
     stats: R2D2SummaryStats
+    today_episode_stats: R2D2EpisodeStats
     track_record: list[R2D2TrackPoint]
     learning_curve: list[R2D2LearningCurvePoint]
     positions: list[R2D2Position]
