@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import math
 import statistics
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from threading import Lock, RLock
 from typing import Any, Literal, TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from ..config import Settings
 from ..database import Database
@@ -44,6 +45,9 @@ CALIBRATION_MIN_GLOBAL_SAMPLES = 40
 CALIBRATION_MIN_PROFILE_SAMPLES = 15
 CALIBRATION_FACTOR_LIMIT = 0.05
 PROVIDER_DELAY_MINUTES = 15
+NEW_YORK = ZoneInfo("America/New_York")
+US_REGULAR_OPEN_ET = time(9, 30)
+US_REGULAR_CLOSE_ET = time(16, 0)
 
 
 def number(value: Any) -> float | None:
@@ -202,11 +206,29 @@ class USScreeningService:
             return False
         return latest is not None and latest > self._peer_medians_at[market]
 
-    def _build(self, market: USMarket) -> list[dict[str, Any]]:
+    @staticmethod
+    def _require_completed_session_volume(now: datetime) -> None:
+        local = now.astimezone(NEW_YORK)
+        volume_complete_at = datetime.combine(
+            local.date(), US_REGULAR_CLOSE_ET, tzinfo=NEW_YORK,
+        ) + timedelta(minutes=PROVIDER_DELAY_MINUTES)
+        if (
+            local.weekday() < 5
+            and US_REGULAR_OPEN_ET <= local.time() < volume_complete_at.time()
+        ):
+            raise RuntimeError(
+                "US canonical valuation refresh is blocked until 16:15 ET: "
+                "intraday cumulative volume cannot satisfy a full-session liquidity gate"
+            )
+
+    def _build(
+        self, market: USMarket, *, now: datetime | None = None,
+    ) -> list[dict[str, Any]]:
         if not self.settings.eodhd_api_token:
             raise RuntimeError("EODHD credential is not configured")
+        now = now or datetime.now(timezone.utc)
+        self._require_completed_session_volume(now)
         self._load_calibration_factors(market)
-        now = datetime.now(timezone.utc)
         catalog = self.realtime._us_symbol_catalog(now)
         raw_quotes = self.realtime._us_bulk_quotes(now)
         quote_map = {
