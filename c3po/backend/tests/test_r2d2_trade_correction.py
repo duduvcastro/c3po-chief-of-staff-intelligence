@@ -82,6 +82,8 @@ def test_daily_learning_ignores_a_corrected_trades_phantom_loss() -> None:
     """
     service = _service()
     experiment = service.ensure_initialized()
+    service.repo.memory["learning"].clear()
+    service._ensure_daily_learning(experiment, date(2026, 8, 24))
     for offset in range(5):
         session_date = date(2026, 8, 18) + timedelta(days=offset)
         service.repo.memory["snapshots"][session_date] = {
