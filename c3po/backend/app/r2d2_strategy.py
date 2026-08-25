@@ -130,6 +130,22 @@ def hard_stop_quote_price(
     return average_cost * (1 - max_net_loss_percent / 100) / net_exit_factor
 
 
+def entry_stop_quote_price(
+    quote_price: float,
+    atr: float,
+    *,
+    max_position_loss_percent: float = DEFAULT_MAX_POSITION_LOSS_PERCENT,
+) -> float:
+    """Return the entry technical stop anchored to the execution-time quote."""
+    if quote_price <= 0:
+        return 0.0
+    stop_distance = min(
+        quote_price * max(0.0, max_position_loss_percent) / 100,
+        max(max(0.0, atr) * 0.45, quote_price * 0.004),
+    )
+    return quote_price - stop_distance
+
+
 def _float(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
