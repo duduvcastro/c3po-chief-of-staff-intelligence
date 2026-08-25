@@ -1,0 +1,15 @@
+[Unit]
+Description=One-shot audited R2D2 entry resume for 2026-08-26
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+ConditionPathExists=/opt/chief-of-staff-digital/.env
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/chief-of-staff-digital
+ExecStart=/usr/local/sbin/r2d2-resume-2026-08-26
+TimeoutStartSec=15min
+UMask=0077
+StandardOutput=journal
+StandardError=journal
