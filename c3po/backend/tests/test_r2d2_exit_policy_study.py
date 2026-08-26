@@ -26,6 +26,7 @@ from app.r2d2_exit_policy_engine import (
 from app.r2d2_exit_policy_study import (
     ExitPolicyStudyError,
     MinuteAggregateReader,
+    _frozen_ledger_input,
     build_report,
     canonical_sha256,
     require_off_hours,
@@ -367,6 +368,38 @@ def test_frozen_probe_decomposition_contract_is_pinned() -> None:
     assert frozen_probe["violation_episode_symbols"] == [
         "NASDAQ:LIFE", "NYSE:BVN", "NYSE:BVN", "NYSE:PJT",
     ]
+
+
+def test_frozen_rerun_filters_ledger_at_cutoff_and_verifies_hash() -> None:
+    before = _buy(fill_id="before", at=SESSION_OPEN)
+    after = _buy(fill_id="after", at=SESSION_OPEN + timedelta(days=1))
+    selected_without_hash, evidence_without_hash = _frozen_ledger_input(
+        [before, after],
+        cutoff_at=SESSION_OPEN,
+        expected_sha256=None,
+    )
+    expected_sha256 = evidence_without_hash["canonical_json_sha256"]
+
+    selected, evidence = _frozen_ledger_input(
+        [before, after],
+        cutoff_at=SESSION_OPEN,
+        expected_sha256=expected_sha256,
+    )
+
+    assert [fill.id for fill in selected_without_hash] == ["before"]
+    assert [fill.id for fill in selected] == ["before"]
+    assert evidence["frozen_hash_verified"] is True
+    assert evidence["expected_sha256"] == expected_sha256
+    assert evidence["input_cutoff_at"] == SESSION_OPEN
+
+
+def test_frozen_rerun_rejects_ledger_hash_drift() -> None:
+    with pytest.raises(ExitPolicyStudyError, match="frozen ledger hash mismatch"):
+        _frozen_ledger_input(
+            [_buy()],
+            cutoff_at=SESSION_OPEN,
+            expected_sha256="0" * 64,
+        )
 
 
 def test_take_profit_overlay_preserves_real_partial_before_anticipating_exit() -> None:
