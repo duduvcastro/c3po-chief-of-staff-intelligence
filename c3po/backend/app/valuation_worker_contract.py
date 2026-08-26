@@ -28,6 +28,10 @@ VALUATION_WORKER_PHASES: dict[str, dict[str, str]] = {
         "code": "valuation-worker-v3-shadow",
         "name": "Valuation V3 shadow cycle",
     },
+    "cash_yield": {
+        "code": "valuation-worker-r2d2-cash-yield",
+        "name": "R2D2 cash-yield accounting cycle",
+    },
 }
 
 VALUATION_WORKER_CANONICAL_PHASE = "canonical"
@@ -37,4 +41,5 @@ VALUATION_WORKER_OFFHOURS_PHASES = (
     "shadow",
     "peer_quality",
     "v3_shadow",
+    "cash_yield",
 )

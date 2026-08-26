@@ -59,7 +59,7 @@ def test_canonical_failure_does_not_block_any_offhours_phase() -> None:
     assert result.phase_statuses == {key: "succeeded" for key in calls}
     assert result.next_wake_at == now + timedelta(minutes=15)
     runs = list(database._ingestion_runs.values())
-    assert len(runs) == 6
+    assert len(runs) == 1 + len(VALUATION_WORKER_OFFHOURS_PHASES)
     assert runs[0]["status"] == "failed"
     assert runs[0]["error_summary"] == "RuntimeError: canonical unavailable"
     assert all(

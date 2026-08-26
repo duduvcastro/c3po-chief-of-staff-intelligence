@@ -945,9 +945,11 @@ button { cursor: pointer; }
 .falcon-flight-metric { display: flex; flex-direction: column; justify-content: center; border-left: 1px solid #343238; }
 .falcon-flight-metric span { color: #a2a7af; font-size: 8px; font-weight: 900; text-transform: uppercase; }
 .falcon-flight-metric strong { margin-top: 7px; font-size: 22px; line-height: 1; }
+.falcon-flight-metric strong.falcon-money-inline, .r2d2-money-inline { white-space: nowrap; }
+.falcon-flight-metric strong.falcon-money-inline { font-size: 19px; }
 .falcon-flight-metric strong em { font-size: 13px; font-style: normal; }
 .falcon-flight-metric small { margin-top: 7px; color: #8c929b; font-size: 8px; white-space: nowrap; }
-.falcon-capcom-view { gap: 16px; }
+.falcon-capcom-view { container-type: inline-size; gap: 16px; }
 .falcon-capcom-metrics { min-width: 0; display: grid; grid-template-columns: minmax(220px, 1.2fr) repeat(5, minmax(132px, 1fr)); overflow: hidden; color: #f8f5e9; background: #111216; border: 1px solid #66531f; border-radius: var(--radius); }
 .falcon-capcom-identity { min-width: 0; min-height: 112px; display: flex; align-items: center; gap: 14px; padding: 16px 18px; background-image: linear-gradient(rgba(213, 169, 48, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(213, 169, 48, .07) 1px, transparent 1px); background-size: 44px 44px; }
 .falcon-capcom-identity > svg { flex: 0 0 auto; color: var(--gold-bright); }
@@ -955,7 +957,18 @@ button { cursor: pointer; }
 .falcon-capcom-identity span { color: var(--gold-bright); font-size: 8px; font-weight: 900; text-transform: uppercase; }
 .falcon-capcom-identity strong { margin-top: 6px; overflow-wrap: anywhere; color: #fff; font-size: 13px; line-height: 1.15; }
 .falcon-capcom-identity small { margin-top: 6px; color: #8c929b; font-size: 8px; }
-.falcon-capcom-metrics .falcon-flight-metric { min-height: 112px; }
+.falcon-capcom-metrics .falcon-flight-metric { min-height: 126px; }
+.falcon-capcom-metrics .falcon-flight-metric small { line-height: 1.35; overflow-wrap: anywhere; white-space: normal; }
+
+@container (max-width: 1100px) {
+  .falcon-capcom-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .falcon-capcom-identity { grid-column: 1 / -1; }
+  .falcon-capcom-metrics .falcon-flight-metric:nth-child(2),
+  .falcon-capcom-metrics .falcon-flight-metric:nth-child(4),
+  .falcon-capcom-metrics .falcon-flight-metric:nth-child(6) { border-left: 0; }
+  .falcon-capcom-metrics .falcon-flight-metric:nth-child(6) { grid-column: 1 / -1; }
+  .falcon-capcom-metrics .falcon-flight-metric { border-top: 1px solid #343238; }
+}
 .falcon-portfolio-ticker { min-width: 0; overflow: hidden; color: #f5f5f3; background: #202020; border: 1px solid #3a3a3a; border-radius: var(--radius); }
 .falcon-portfolio-ticker-track { display: flex; width: max-content; animation: falcon-portfolio-scroll 36s linear infinite; will-change: transform; }
 .falcon-portfolio-ticker:hover .falcon-portfolio-ticker-track { animation-play-state: paused; }
@@ -2256,6 +2269,7 @@ button { cursor: pointer; }
   .falcon-capcom-identity strong { font-size: 15px; }
   .falcon-capcom-metrics .falcon-flight-metric { min-height: 91px; padding: 13px; }
   .falcon-flight-metric strong { font-size: 19px; }
+  .falcon-flight-metric strong.falcon-money-inline { font-size: 17px; }
   .falcon-flight-metric small { overflow: hidden; text-overflow: ellipsis; }
   .falcon-source-line { align-items: flex-start; flex-wrap: wrap; }
   .falcon-source-line small { width: 100%; margin-left: 20px; white-space: normal; }
