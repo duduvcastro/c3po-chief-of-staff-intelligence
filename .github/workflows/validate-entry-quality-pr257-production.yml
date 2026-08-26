@@ -1,0 +1,296 @@
+name: Validate ENTRY_QUALITY_STUDY PR 257 on production data
+
+# Temporary, PR-scoped bridge for factual validation before merge.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - c3po/backend/app/r2d2_entry_quality_engine.py
+      - c3po/backend/app/r2d2_entry_quality_study.py
+      - c3po/backend/app/r2d2_entry_route_probe.py
+      - c3po/backend/tests/test_r2d2_entry_quality_study.py
+      - c3po/backend/tests/test_r2d2_entry_route_probe.py
+      - c3po/docs/ENTRY_QUALITY_STUDY_V1_RUNNER_ATTESTATION_2.md
+      - .github/workflows/validate-entry-quality-pr257-production.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-entry-quality-pr257-production
+  cancel-in-progress: false
+
+jobs:
+  factual-read-only-validation:
+    if: github.event.pull_request.number == 257 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - name: Check out PR revision
+        uses: actions/checkout@v6
+
+      - name: Package runner source without deployment
+        run: |
+          tar -czf /tmp/entry-quality-pr257.tgz \
+            c3po/backend/app \
+            c3po/docs/ENTRY_QUALITY_STUDY_V1.md \
+            c3po/docs/ENTRY_QUALITY_STUDY_V1_RUNNER_ATTESTATION_1.md \
+            c3po/docs/ENTRY_QUALITY_STUDY_V1_RUNNER_ATTESTATION_2.md \
+            c3po/docs/ENTRY_QUALITY_STUDY_V1_POLICY_EPOCHS.json
+
+      - name: Configure production SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload isolated runner source
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          scp -i ~/.ssh/c3po_deploy /tmp/entry-quality-pr257.tgz \
+            "$USER@$HOST:/tmp/entry-quality-pr257-${GITHUB_RUN_ID}.tgz"
+
+      - name: Run factual dry-run and H3 layer-one probe
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          REVISION: ${{ github.event.pull_request.head.sha }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "RUN_ID='$GITHUB_RUN_ID' REVISION='$REVISION' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          APP_DIR=/opt/chief-of-staff-digital
+          SOURCE_ARCHIVE="/tmp/entry-quality-pr257-${RUN_ID}.tgz"
+          SOURCE_ROOT="/tmp/entry-quality-pr257-${RUN_ID}"
+          RELATIVE_OUTPUT="evidence/r2d2-entry-quality-study-v1/pr-257-dry-run/${RUN_ID}"
+          HOST_OUTPUT="/mnt/day-d-data/${RELATIVE_OUTPUT}"
+          CONTAINER_OUTPUT="/app/day-d-data/${RELATIVE_OUTPUT}"
+
+          if ! mountpoint -q /mnt/day-d-data; then
+            echo '/mnt/day-d-data is not mounted' >&2
+            exit 1
+          fi
+          free_bytes=$(df -B1 --output=avail /mnt/day-d-data | tail -n 1 | tr -d ' ')
+          if [ "$free_bytes" -lt 21474836480 ]; then
+            echo "Dedicated disk reserve is below 20 GiB: $free_bytes bytes" >&2
+            exit 1
+          fi
+          if [ -e "$HOST_OUTPUT" ]; then
+            echo "Immutable validation output already exists: $HOST_OUTPUT" >&2
+            exit 1
+          fi
+
+          rm -rf "$SOURCE_ROOT"
+          mkdir -p "$SOURCE_ROOT" "$HOST_OUTPUT"
+          tar -xzf "$SOURCE_ARCHIVE" -C "$SOURCE_ROOT"
+          cd "$APP_DIR"
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          source_mount=(
+            -v "$SOURCE_ROOT/c3po/backend/app:/app/app:ro"
+            -v "$SOURCE_ROOT/c3po/docs:/branch-docs:ro"
+          )
+
+          set +e
+          "${compose[@]}" run --rm -T "${source_mount[@]}" api \
+            python -m app.r2d2_entry_quality_study dry-run \
+            --spec /branch-docs/ENTRY_QUALITY_STUDY_V1.md \
+            --attestation /branch-docs/ENTRY_QUALITY_STUDY_V1_RUNNER_ATTESTATION_1.md \
+            --attestation-two /branch-docs/ENTRY_QUALITY_STUDY_V1_RUNNER_ATTESTATION_2.md \
+            --policy-epochs /branch-docs/ENTRY_QUALITY_STUDY_V1_POLICY_EPOCHS.json \
+            --output "$CONTAINER_OUTPUT/study" \
+            </dev/null > "$HOST_OUTPUT/dry-run-result.json"
+          study_exit_code=$?
+          set -e
+          if [ "$study_exit_code" -ne 0 ] && [ "$study_exit_code" -ne 2 ]; then
+            echo "Unexpected dry-run process exit: $study_exit_code" >&2
+            exit "$study_exit_code"
+          fi
+
+          "${compose[@]}" run --rm -T "${source_mount[@]}" api \
+            python -m app.r2d2_entry_route_probe \
+            --policy-epochs /branch-docs/ENTRY_QUALITY_STUDY_V1_POLICY_EPOCHS.json \
+            --output "$CONTAINER_OUTPUT/h3-entry-route-probe.json" \
+            </dev/null > "$HOST_OUTPUT/h3-result.json"
+
+          python3 - "$HOST_OUTPUT" "$REVISION" "$study_exit_code" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          revision = sys.argv[2]
+          study_exit_code = int(sys.argv[3])
+
+          def load(name):
+              return json.loads((root / name).read_text(encoding="utf-8"))
+
+          def canonical_sha(payload):
+              encoded = json.dumps(
+                  payload,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=True,
+                  allow_nan=False,
+              ).encode("utf-8")
+              return hashlib.sha256(encoded).hexdigest()
+
+          report = load("study/report.json")
+          manifest = load("study/manifest.json")
+          sums = load("study/SHA256SUMS.json")
+          probe = load("h3-entry-route-probe.json")
+          dry_run_result = load("dry-run-result.json")
+          h3_result = load("h3-result.json")
+          gate = report.get("entry_consistency_gate") or {}
+          g2 = gate.get("g2_market_compatibility") or {}
+          g3 = gate.get("g3_coverage_censorship") or {}
+          counts = g2.get("counts") or {}
+          unavailable_by_session = {
+              row.get("session_date"): row
+              for row in g3.get("bar_unavailable_by_session") or []
+          }
+
+          checks = {
+              "dry_run_exit_zero": study_exit_code == 0,
+              "dry_run": report.get("dry_run") is True,
+              "read_only": (report.get("governance") or {}).get("read_only") is True,
+              "no_external_api_calls": (manifest.get("external_api_calls") == 0),
+              "analysis_interpretable": report.get("analysis_interpretable") is True,
+              "classification": report.get("classification") == "INSUFFICIENT_SAMPLE",
+              "entry_gate_passed": gate.get("passed") is True,
+              "compatibility_decomposition": counts == {
+                  "contained": 296,
+                  "clock_extended": 32,
+                  "bar_unavailable": 26,
+                  "tolerance_band": 69,
+                  "violation": 3,
+              },
+              "numeric_violation_rate": abs(
+                  float(g3.get("violation_percent_of_constructed_entries") or 0)
+                  - (3 / 426 * 100)
+              ) < 1e-12,
+              "numeric_violation_symbols": {
+                  row.get("symbol") for row in g3.get("violations") or []
+              } == {"PNRG", "BVN", "DXST"},
+              "bar_unavailable_sessions": {
+                  key: row.get("bar_unavailable_count")
+                  for key, row in unavailable_by_session.items()
+                  if row.get("bar_unavailable_count")
+              } == {"2026-08-21": 2, "2026-08-24": 15, "2026-08-26": 9},
+              "bar_unavailable_review": (
+                  unavailable_by_session.get("2026-08-24", {}).get("status")
+                  == "REVIEW_REQUIRED"
+              ),
+              "report_self_hash": report.get("report_sha256") == canonical_sha({
+                  key: value for key, value in report.items() if key != "report_sha256"
+              }),
+              "manifest_self_hash": manifest.get("manifest_sha256") == canonical_sha({
+                  key: value for key, value in manifest.items() if key != "manifest_sha256"
+              }),
+              "report_file_hash": sums.get("report.json") == hashlib.sha256(
+                  (root / "study/report.json").read_bytes()
+              ).hexdigest(),
+              "manifest_file_hash": sums.get("manifest.json") == hashlib.sha256(
+                  (root / "study/manifest.json").read_bytes()
+              ).hexdigest(),
+              "m1_ucb": "p_hat_ucb_98_75" in (
+                  report.get("kill_criterion_m1_current_epoch") or {}
+              ),
+              "m1_conservative_ucb": "p_hat_cons_ucb_98_75" in (
+                  report.get("kill_criterion_m1_current_epoch") or {}
+              ),
+              "probe_read_only": (probe.get("governance") or {}).get("read_only") is True,
+              "probe_descriptive": (probe.get("governance") or {}).get("descriptive_only") is True,
+              "probe_self_hash": probe.get("report_sha256") == canonical_sha({
+                  key: value for key, value in probe.items() if key != "report_sha256"
+              }),
+              "dry_run_result_hash": dry_run_result.get("report_sha256") == report.get("report_sha256"),
+              "h3_result_hash": h3_result.get("report_sha256") == probe.get("report_sha256"),
+          }
+          failed = sorted(name for name, passed in checks.items() if not passed)
+          postflight = {
+              "schema_version": "ENTRY-QUALITY-PR257-POSTFLIGHT-v1",
+              "checked_at": datetime.now(timezone.utc).isoformat(),
+              "revision": revision,
+              "checks": checks,
+              "passed": not failed,
+              "failed_checks": failed,
+              "study": {
+                  "classification": report.get("classification"),
+                  "report_sha256": report.get("report_sha256"),
+                  "manifest_sha256": manifest.get("manifest_sha256"),
+                  "current_m1": report.get("kill_criterion_m1_current_epoch"),
+                  "entry_consistency_gate": gate,
+              },
+              "h3_probe": {
+                  "report_sha256": probe.get("report_sha256"),
+                  "organic_episode_count": (
+                      probe.get("construction") or {}
+                  ).get("organic_episode_count"),
+                  "group_count": len(probe.get("groups") or []),
+              },
+          }
+          (root / "postflight.json").write_text(
+              json.dumps(postflight, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          (
+            cd "$HOST_OUTPUT"
+            find . -type f ! -name SHA256SUMS -print0 \
+              | sort -z \
+              | xargs -0 sha256sum > SHA256SUMS
+          )
+          tar -C "$(dirname "$HOST_OUTPUT")" -czf \
+            "/tmp/entry-quality-pr257-evidence-${RUN_ID}.tgz" \
+            "$(basename "$HOST_OUTPUT")"
+          rm -rf "$SOURCE_ROOT" "$SOURCE_ARCHIVE"
+          REMOTE
+
+      - name: Download factual evidence
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          scp -i ~/.ssh/c3po_deploy \
+            "$USER@$HOST:/tmp/entry-quality-pr257-evidence-${GITHUB_RUN_ID}.tgz" \
+            /tmp/entry-quality-pr257-evidence.tgz
+          mkdir -p /tmp/entry-quality-pr257-evidence
+          tar -xzf /tmp/entry-quality-pr257-evidence.tgz \
+            -C /tmp/entry-quality-pr257-evidence
+
+      - name: Publish factual evidence artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: entry-quality-pr257-factual-${{ github.run_id }}
+          path: /tmp/entry-quality-pr257-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce factual postflight
+        run: |
+          postflight=$(find /tmp/entry-quality-pr257-evidence -name postflight.json -print -quit)
+          python3 - "$postflight" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              payload = json.load(source)
+          if payload.get("passed") is not True:
+              raise SystemExit(
+                  "Factual validation failed: "
+                  + ", ".join(payload.get("failed_checks") or [])
+              )
+          PY
