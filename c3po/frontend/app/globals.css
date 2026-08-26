@@ -383,6 +383,8 @@ button { cursor: pointer; }
 .r2d2-capital-band span { color: #8e9bad; font-size: 9px; font-weight: 800; text-transform: uppercase; }
 .r2d2-capital-band strong { margin-top: 6px; font-size: 20px; letter-spacing: 0; }
 .r2d2-capital-band small { margin-top: 5px; color: #737f8e; font-size: 9px; }
+.r2d2-capital-band .r2d2-nav-with-interest { color: var(--gold-bright); }
+.r2d2-capital-band .r2d2-accrued-interest { color: var(--green); }
 .r2d2-capital-band .r2d2-flat { color: #84b8ff; }
 .r2d2-capital-identity { flex-direction: row !important; align-items: center; justify-content: flex-start !important; gap: 13px; background: linear-gradient(105deg, rgba(32,75,137,.3), transparent 72%); }
 .r2d2-capital-identity img { width: 42px; height: 42px; }
