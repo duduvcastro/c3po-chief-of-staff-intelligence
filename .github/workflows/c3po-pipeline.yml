@@ -160,8 +160,8 @@ jobs:
             "$RELEASE_DIR/" "$APP_DIR/"
 
           cd "$APP_DIR"
-          docker compose --env-file .env -f c3po/compose.yml config --quiet
-          docker compose --env-file .env -f c3po/compose.yml up -d --build
+          C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml config --quiet
+          C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml up -d --build
 
           for attempt in $(seq 1 30); do
             web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)

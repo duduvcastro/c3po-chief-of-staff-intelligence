@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
+import asyncio
 import hashlib
 import ipaddress
 import re
@@ -12,7 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from .auth import AuthService, AuthenticationError, EmailDeliveryError, RateLimitError
-from .api_performance import api_performance
+from .api_performance import (
+    PerformanceObservabilityService,
+    api_performance,
+    run_performance_flush_loop,
+)
 from .chewie_fundamentals import ChewieFundamentalsService
 from .access_control import (
     ALL_CAPABILITIES,
@@ -84,6 +89,9 @@ from .schemas import (
     OnePagerReport,
     OnePagerRequest,
     OpenFinanceResponse,
+    PageLoadPerformanceRequest,
+    PageLoadPerformanceResponse,
+    PerformanceHistoryResponse,
     Provenance,
     RealtimeMarketResponse,
     RealtimePortfolioIntradayResponse,
@@ -137,6 +145,7 @@ b3_screener = B3ScreenerService(settings, database, market_data.http)
 investor_relations = InvestorRelationsService(settings, database)
 ir_valuation_processor = InvestorRelationsValuationProcessor(database, b3_screener)
 server_usage = ServerUsageService(settings, database)
+performance_observability = PerformanceObservabilityService(settings, database, api_performance)
 weather = WeatherService()
 news = NewsService()
 open_finance = OpenFinanceService(settings)
@@ -172,9 +181,15 @@ async def lifespan(_: FastAPI):
     ensure_builtin_official_fundamentals(database)
     r2d2.ensure_initialized()
     eodhd_stream.start()
+    performance_stop = asyncio.Event()
+    performance_task = asyncio.create_task(
+        run_performance_flush_loop(performance_observability, performance_stop)
+    )
     try:
         yield
     finally:
+        performance_stop.set()
+        await performance_task
         eodhd_stream.stop()
 
 
@@ -202,6 +217,18 @@ PUBLIC_AUTH_PATHS = {
     "/api/v1/auth/logout",
 }
 
+PERFORMANCE_TELEMETRY_ROUTES = {
+    "/api/v1/telemetry/page-load",
+    "/api/v1/server-usage/performance",
+}
+
+
+def _api_route_template(request: Request) -> str:
+    route = getattr(request.scope.get("route"), "path", None)
+    if isinstance(route, str) and route.startswith("/api/"):
+        return route
+    return "/api/{unmatched}"
+
 
 @app.middleware("http")
 async def measure_api_performance(request: Request, call_next):
@@ -209,8 +236,9 @@ async def measure_api_performance(request: Request, call_next):
     response = await call_next(request)
     if request.url.path.startswith("/api/"):
         duration_ms = (perf_counter() - started_at) * 1_000
-        route = getattr(request.scope.get("route"), "path", request.url.path)
-        api_performance.record(request.method, route, duration_ms, response.status_code)
+        route = _api_route_template(request)
+        if route not in PERFORMANCE_TELEMETRY_ROUTES:
+            api_performance.record(request.method, route, duration_ms, response.status_code)
         response.headers["Server-Timing"] = f"app;dur={duration_ms:.2f}"
         response.headers["X-Response-Time-Ms"] = f"{duration_ms:.2f}"
     return response
@@ -811,6 +839,29 @@ def consolidated_system_health() -> SystemHealthResponse:
 @app.get("/api/v1/server-usage", response_model=ServerUsageResponse)
 def server_usage_snapshot(hours: int = Query(default=24, ge=1, le=168)) -> ServerUsageResponse:
     return server_usage.snapshot(hours=hours)
+
+
+@app.get("/api/v1/server-usage/performance", response_model=PerformanceHistoryResponse)
+def performance_history(
+    hours: int = Query(default=168, ge=1, le=2_160),
+) -> PerformanceHistoryResponse:
+    return PerformanceHistoryResponse.model_validate(performance_observability.history(hours=hours))
+
+
+@app.post(
+    "/api/v1/telemetry/page-load",
+    response_model=PageLoadPerformanceResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def capture_page_load_performance(
+    payload: PageLoadPerformanceRequest,
+) -> PageLoadPerformanceResponse:
+    accepted = performance_observability.capture_page_load(payload.model_dump(mode="python"))
+    return PageLoadPerformanceResponse(
+        sample_id=payload.sample_id,
+        accepted=accepted,
+        flush_seconds=settings.performance_flush_seconds,
+    )
 
 
 @app.get("/api/v1/weather", response_model=WeatherResponse)
