@@ -232,16 +232,18 @@ def test_gate_measures_extended_only_bars_before_declaring_numeric_violation() -
 
 def test_factual_dry_run_gate_decomposition_is_pinned() -> None:
     session_contract = (
-        (date(2026, 8, 19), 100, 0, ("PNRG",)),
-        (date(2026, 8, 20), 90, 0, ()),
-        (date(2026, 8, 21), 121, 2, ("BVN",)),
-        (date(2026, 8, 24), 64, 15, ("DXST",)),
-        (date(2026, 8, 26), 51, 9, ()),
+        (date(2026, 8, 17), 15, 0, ()),
+        (date(2026, 8, 18), 51, 0, ()),
+        (date(2026, 8, 19), 59, 0, ("PNRG",)),
+        (date(2026, 8, 20), 65, 0, ()),
+        (date(2026, 8, 21), 121, 0, ("BVN",)),
+        (date(2026, 8, 24), 64, 6, ("DXST",)),
+        (date(2026, 8, 26), 51, 4, ()),
     )
     ordinary_classes = iter(
         ["contained"] * 296
         + ["clock_extended"] * 32
-        + ["tolerance_band"] * 69
+        + ["tolerance_band"] * 85
     )
     fills: list[LedgerFill] = []
     bars_by_symbol: dict[str, list[StudyBar]] = {}
@@ -291,8 +293,8 @@ def test_factual_dry_run_gate_decomposition_is_pinned() -> None:
     assert result["g2_market_compatibility"]["counts"] == {
         "contained": 296,
         "clock_extended": 32,
-        "bar_unavailable": 26,
-        "tolerance_band": 69,
+        "tolerance_band": 85,
+        "bar_unavailable": 10,
         "violation": 3,
     }
     censorship = result["g3_coverage_censorship"]
@@ -305,15 +307,15 @@ def test_factual_dry_run_gate_decomposition_is_pinned() -> None:
         "BVN",
         "DXST",
     }
-    assert censorship["bar_unavailable_entry_count"] == 26
+    assert censorship["bar_unavailable_entry_count"] == 10
     by_session = {
         row["session_date"]: row
         for row in censorship["bar_unavailable_by_session"]
     }
-    assert by_session["2026-08-21"]["bar_unavailable_count"] == 2
-    assert by_session["2026-08-24"]["bar_unavailable_count"] == 15
-    assert by_session["2026-08-24"]["status"] == "REVIEW_REQUIRED"
-    assert by_session["2026-08-26"]["bar_unavailable_count"] == 9
+    assert by_session["2026-08-21"]["bar_unavailable_count"] == 0
+    assert by_session["2026-08-24"]["bar_unavailable_count"] == 6
+    assert by_session["2026-08-24"]["status"] == "ACCEPTABLE"
+    assert by_session["2026-08-26"]["bar_unavailable_count"] == 4
     assert by_session["2026-08-26"]["status"] == "ACCEPTABLE"
 
 
