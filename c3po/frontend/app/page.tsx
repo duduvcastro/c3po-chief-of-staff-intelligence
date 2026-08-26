@@ -250,10 +250,20 @@ interface R2D2DashboardData {
   starting_capital_usd: number;
   nav_usd: number;
   accounting_nav_usd: number;
+  accounting_nav_ex_interest_usd: number;
+  accounting_total_nav_usd: number;
   cumulative_pnl_usd: number;
+  organic_daily_pnl_usd: number;
+  interest_income_session_usd: number;
+  interest_income_session_date: string | null;
+  interest_income_epoch_usd: number;
+  interest_income_status: "pending" | "posted";
+  interest_income_annual_rate: number | null;
+  interest_income_rate_date: string | null;
   cash_usd: number;
   gross_exposure_usd: number;
   total_return_percent: number;
+  accounting_total_return_percent: number;
   daily_pnl_usd: number;
   daily_return_percent: number;
   daily_pnl_date: string | null;
@@ -3509,8 +3519,8 @@ function R2D2RisingView() {
           </div>
         </div>
         <div><span>Starting capital</span><strong>{money(data.starting_capital_usd)}</strong><small>Virtual capital · paper only</small></div>
-        <div><span>Net asset value</span><strong>{money(data.accounting_nav_usd)}</strong><small>{signedPercent(data.total_return_percent)} since launch</small></div>
-        <div><span>Daily P&amp;L</span><strong className={data.daily_pnl_usd > 0 ? "r2d2-up" : data.daily_pnl_usd < 0 ? "r2d2-down" : "r2d2-flat"}>{signedMoney(data.daily_pnl_usd)}</strong><small>{signedPercent(data.daily_return_percent)}</small></div>
+        <div><span>Net asset value</span><strong className="r2d2-money-inline">{money(data.accounting_total_nav_usd ?? data.accounting_nav_usd)}</strong><small>Ex-interest {money(data.accounting_nav_ex_interest_usd ?? data.accounting_nav_usd)}</small></div>
+        <div><span>Daily trading P&amp;L</span><strong className={`${data.organic_daily_pnl_usd > 0 ? "r2d2-up" : data.organic_daily_pnl_usd < 0 ? "r2d2-down" : "r2d2-flat"} r2d2-money-inline`}>{signedMoney(data.organic_daily_pnl_usd ?? data.daily_pnl_usd)}</strong><small>{data.interest_income_status === "posted" ? `Prior-session cash yield ${signedMoney(data.interest_income_session_usd)}` : "Prior-session cash yield pending"}</small></div>
         <div><span>Open positions</span><strong>{openPositions}</strong><small>{money(cash)} cash · {cashPercent.toFixed(1)}%</small></div>
       </section>
 
@@ -4052,6 +4062,11 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         day: "2-digit", month: "2-digit", year: "numeric"
       })
     : null;
+  const cashYieldDate = r2d2?.interest_income_session_date
+    ? new Date(`${r2d2.interest_income_session_date}T12:00:00`).toLocaleDateString("pt-BR", {
+        day: "2-digit", month: "2-digit", year: "numeric"
+      })
+    : null;
   const livePositions = liveTelemetry?.positions ?? r2d2?.positions ?? [];
   const liveOpenPositions = liveTelemetry?.open_positions ?? r2d2?.open_positions ?? 0;
   const liveTelemetryTime = liveTelemetry?.generated_at
@@ -4067,8 +4082,8 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
           <MillenniumFalconIcon size={42} />
           <div><span>R2D2 live telemetry</span><strong title={r2d2?.methodology_version}>{r2d2?.methodology_version ?? "Connecting"}</strong><small>{liveTelemetryTime ? `POSITIONS LIVE · ${liveTelemetryTime}` : "POSITION FEED CONNECTING"}</small></div>
         </div>
-        <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.accounting_nav_usd) : "—"} detail={`${liveOpenPositions} open positions`} tone="gold" />
-        <FalconMetric label="Daily P&L" value={r2d2 ? signedUsd(r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${dailyPnlDate ?? "No session"} · ${r2d2.daily_return_percent >= 0 ? "+" : ""}${r2d2.daily_return_percent.toFixed(2)}%` : "Waiting for R2D2"} tone={(r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} />
+        <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.accounting_total_nav_usd ?? r2d2.accounting_nav_usd) : "—"} detail={r2d2 ? `Ex-interest ${usd(r2d2.accounting_nav_ex_interest_usd ?? r2d2.accounting_nav_usd)} · ${liveOpenPositions} open positions` : "Waiting for R2D2"} tone="gold" valueClassName="falcon-money-inline" />
+        <FalconMetric label="Daily trading P&L" value={r2d2 ? signedUsd(r2d2.organic_daily_pnl_usd ?? r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${dailyPnlDate ?? "No session"} trades · ${r2d2.interest_income_status === "posted" ? `Cash yield ${cashYieldDate} ${signedUsd(r2d2.interest_income_session_usd)}` : "Cash yield pending"}` : "Waiting for R2D2"} tone={(r2d2?.organic_daily_pnl_usd ?? r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} valueClassName="falcon-money-inline" />
         <FalconMetric label="Positive Sell Legs" value={`${todayPositiveSellLegs}`} secondaryValue={`${todayPositiveSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="green" />
         <FalconMetric label="Negative Sell Legs" value={`${todayNegativeSellLegs}`} secondaryValue={`${todayNegativeSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="red" />
         <FalconMetric label="Episode Win Rate" value={todayEpisodes ? `${todayEpisodes.positive_episodes}/${todayEpisodes.decided_episodes}` : "—"} secondaryValue={todayEpisodes ? `${todayEpisodes.win_rate_percent.toFixed(1)}%` : undefined} detail={todayEpisodes ? `${todayEpisodes.closed_episodes} closed episodes today${todayEpisodes.flat_episodes ? ` · ${todayEpisodes.flat_episodes} flat` : ""}` : "Waiting for R2D2"} tone={(todayEpisodes?.win_rate_percent ?? 0) >= 50 ? "green" : "red"} />
@@ -4133,8 +4148,8 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   );
 }
 
-function FalconMetric({ label, value, secondaryValue, detail, tone }: { label: string; value: string; secondaryValue?: string; detail: string; tone: "gold" | "blue" | "green" | "red" }) {
-  return <div className={`falcon-flight-metric falcon-flight-${tone}`}><span>{label}</span><strong>{value}{secondaryValue ? <em> · {secondaryValue}</em> : null}</strong><small>{detail}</small></div>;
+function FalconMetric({ label, value, secondaryValue, detail, tone, valueClassName }: { label: string; value: string; secondaryValue?: string; detail: string; tone: "gold" | "blue" | "green" | "red"; valueClassName?: string }) {
+  return <div className={`falcon-flight-metric falcon-flight-${tone}`}><span>{label}</span><strong className={valueClassName}>{value}{secondaryValue ? <em> · {secondaryValue}</em> : null}</strong><small title={detail}>{detail}</small></div>;
 }
 
 function MarketsView() {

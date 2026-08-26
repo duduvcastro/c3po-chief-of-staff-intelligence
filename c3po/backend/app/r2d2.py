@@ -1092,6 +1092,28 @@ class R2D2Repository:
                 "gross_exposure_usd", "open_positions", "is_final")
         return [dict(zip(keys, row)) for row in rows]
 
+    def cash_yield_entries(self, experiment_id: str) -> list[dict[str, Any]]:
+        if not self.database.database_url:
+            entries = getattr(self.database, "_r2d2_cash_yield_entries", [])
+            return [
+                dict(item) for item in sorted(entries, key=lambda item: item["session_date"])
+                if item["experiment_id"] == experiment_id
+            ]
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """SELECT session_date, interest_income_usd,
+                          annual_coupon_equivalent_rate, source_observation_date,
+                          source_payload_sha256, entry_sha256
+                   FROM r2d2_cash_yield_ledger
+                   WHERE experiment_id=%s ORDER BY session_date""",
+                (experiment_id,),
+            ).fetchall()
+        keys = (
+            "session_date", "interest_income_usd", "annual_coupon_equivalent_rate",
+            "source_observation_date", "source_payload_sha256", "entry_sha256",
+        )
+        return [dict(zip(keys, row)) for row in rows]
+
     def finalize_before(self, experiment_id: str, session_date: date) -> None:
         if not self.database.database_url:
             for key, item in self.memory["snapshots"].items():
@@ -1737,11 +1759,24 @@ class R2D2PaperService:
             through_date=local_date,
         )
         current = accounting_track[-1] if accounting_track else None
+        strategy_current = strategy_track[-1] if strategy_track else None
         daily_pnl = _float(current.get("daily_pnl_usd")) if current else 0.0
+        organic_daily_pnl = (
+            _float(strategy_current.get("daily_pnl_usd")) if strategy_current else 0.0
+        )
         daily_return = _float(current.get("daily_return_percent")) if current else 0.0
         daily_pnl_date = current["session_date"].isoformat() if current else None
         cumulative_pnl = sum(_float(row["daily_pnl_usd"]) for row in accounting_track)
         accounting_nav = starting_capital + cumulative_pnl
+        cash_yield_entries = self.repo.cash_yield_entries(experiment["id"])
+        interest_income_epoch = sum(
+            _float(row["interest_income_usd"]) for row in cash_yield_entries
+        )
+        latest_interest = cash_yield_entries[-1] if cash_yield_entries else None
+        interest_income_session = (
+            _float(latest_interest["interest_income_usd"]) if latest_interest else 0.0
+        )
+        accounting_total_nav = accounting_nav + interest_income_epoch
         closed = [row for row in strategy_track if row.get("is_final")]
         positives = sum(_float(row["daily_return_percent"]) > 0 for row in closed)
         negatives = sum(_float(row["daily_return_percent"]) < 0 for row in closed)
@@ -1818,10 +1853,31 @@ class R2D2PaperService:
             checkpoint_days=(experiment["checkpoint_date"] - experiment["start_date"]).days + 1,
             operating_days_elapsed=max(0, (today - experiment["start_date"]).days + 1),
             starting_capital_usd=starting_capital, nav_usd=round(nav, 2),
-            accounting_nav_usd=round(accounting_nav, 2), cumulative_pnl_usd=round(cumulative_pnl, 2),
+            accounting_nav_usd=round(accounting_nav, 2),
+            accounting_nav_ex_interest_usd=round(accounting_nav, 2),
+            accounting_total_nav_usd=round(accounting_total_nav, 2),
+            cumulative_pnl_usd=round(cumulative_pnl, 2),
+            organic_daily_pnl_usd=round(organic_daily_pnl, 2),
+            interest_income_session_usd=round(interest_income_session, 2),
+            interest_income_session_date=(
+                latest_interest["session_date"].isoformat() if latest_interest else None
+            ),
+            interest_income_epoch_usd=round(interest_income_epoch, 2),
+            interest_income_status="posted" if latest_interest else "pending",
+            interest_income_annual_rate=(
+                _float(latest_interest["annual_coupon_equivalent_rate"])
+                if latest_interest else None
+            ),
+            interest_income_rate_date=(
+                latest_interest["source_observation_date"].isoformat()
+                if latest_interest else None
+            ),
             cash_usd=round(cash, 2),
             gross_exposure_usd=round(exposure, 2),
             total_return_percent=round((accounting_nav / starting_capital - 1) * 100, 4),
+            accounting_total_return_percent=round(
+                (accounting_total_nav / starting_capital - 1) * 100, 4
+            ),
             daily_pnl_usd=round(daily_pnl, 2), daily_return_percent=round(daily_return, 4),
             daily_pnl_date=daily_pnl_date,
             open_positions=len(positions), stats=stats,

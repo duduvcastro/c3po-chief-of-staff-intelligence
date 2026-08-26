@@ -789,10 +789,20 @@ class R2D2DashboardResponse(BaseModel):
     starting_capital_usd: float
     nav_usd: float
     accounting_nav_usd: float
+    accounting_nav_ex_interest_usd: float = 0
+    accounting_total_nav_usd: float = 0
     cumulative_pnl_usd: float
+    organic_daily_pnl_usd: float = 0
+    interest_income_session_usd: float = 0
+    interest_income_session_date: str | None = None
+    interest_income_epoch_usd: float = 0
+    interest_income_status: Literal["pending", "posted"] = "pending"
+    interest_income_annual_rate: float | None = None
+    interest_income_rate_date: str | None = None
     cash_usd: float
     gross_exposure_usd: float
     total_return_percent: float
+    accounting_total_return_percent: float = 0
     daily_pnl_usd: float
     daily_return_percent: float
     daily_pnl_date: str | None

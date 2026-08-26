@@ -29,3 +29,19 @@ class JsonHttpClient:
                 if attempt < self.max_retries:
                     time.sleep(0.25 * (2 ** attempt))
         raise MarketDataRequestError(str(last_error) if last_error else "Market data request failed")
+
+    def get_text(self, url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> str:
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                if self.client:
+                    response = self.client.get(url, params=params, headers=headers, timeout=self.timeout)
+                else:
+                    response = httpx.get(url, params=params, headers=headers, timeout=self.timeout, follow_redirects=True)
+                response.raise_for_status()
+                return response.text
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt < self.max_retries:
+                    time.sleep(0.25 * (2 ** attempt))
+        raise MarketDataRequestError(str(last_error) if last_error else "Market data request failed")

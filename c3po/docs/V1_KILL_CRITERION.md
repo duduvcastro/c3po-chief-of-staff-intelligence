@@ -2,6 +2,8 @@
 
 **Objeto:** política A na época `policy-a-resume-2026-08-26` em diante. **Amostra:** episódios flat-to-flat da época; `correction` e `operator_wind_down` excluídos; parciais consolidadas por episódio. **Métricas:** sempre líquidas de custos; win rate por EPISÓDIO, nunca por SELL leg. **Nenhum ponto estimado, sozinho, decide nada — só cotas de confiança.**
 
+**EMENDA 1 — isolamento do accrual de caixa:** `interest_income` não é P&L orgânico para nenhum efeito de M2/M3.
+
 **Régua global:** dois critérios de morte × duas leituras decisórias (15ª e 20ª sessões) = quatro testes. Para erro global de 5% sobre qualquer `V1_REFUTED`, **M1 e M2 usam UCB unilateral de 98,75% em cada leitura** (Bonferroni 0,05/4; procedimento conjunto pré-registrado equivalente pode substituir se implementado). Leituras de 5 e 10 sessões são interinas, sem poder de veredito.
 
 **M1 — Edge de entrada ausente** (leituras decisórias): **reutiliza população, definição de `p(net₀±1R)`, tratamento de ambíguos/censurados e bootstrap de sessão congelados do `ENTRY_QUALITY_STUDY_V1`**. Dispara se UCB unilateral de 98,75% de `p` ≤ 50% sobre ≥ 15 sessões. Veredito: `V1_REFUTED`.

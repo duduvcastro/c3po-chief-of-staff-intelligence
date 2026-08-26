@@ -16,6 +16,7 @@ from .market_data.service import MarketDataService
 from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerService
 from .official_fundamentals import ensure_builtin_official_fundamentals
+from .r2d2_cash_yield import R2D2CashYieldService
 from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
 from .valuation_v2_peer_quality import ValuationV2PeerQualityService
@@ -248,6 +249,7 @@ def main() -> None:
     )
     v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
     v3_shadow = ValuationV3ShadowService(database)
+    cash_yield = R2D2CashYieldService(settings, database, market_data.http)
 
     offhours_phases = (
         OffhoursPhase(
@@ -263,6 +265,9 @@ def main() -> None:
             v2_peer_quality.refresh_all,
         ),
         OffhoursPhase("v3_shadow", v3_shadow.last_run_at, v3_shadow.run_all),
+        *((
+            OffhoursPhase("cash_yield", cash_yield.last_run_at, cash_yield.run_latest),
+        ) if settings.r2d2_cash_yield_accounting_enabled else ()),
     )
 
     while True:

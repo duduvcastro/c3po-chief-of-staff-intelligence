@@ -622,7 +622,11 @@ class SystemHealthService:
         ]
 
     def _valuation_worker_phase_health(self, now: datetime) -> IntegrationHealth:
-        definitions = VALUATION_WORKER_PHASES
+        definitions = {
+            phase: definition
+            for phase, definition in VALUATION_WORKER_PHASES.items()
+            if phase != "cash_yield" or self.settings.r2d2_cash_yield_accounting_enabled
+        }
         codes = [definition["code"] for definition in definitions.values()]
         try:
             states = self.database.ingestion_run_health(codes)
@@ -643,6 +647,7 @@ class SystemHealthService:
             **{
                 phase: offhours_due if local_now >= offhours_due else offhours_due - timedelta(days=1)
                 for phase in VALUATION_WORKER_OFFHOURS_PHASES
+                if phase in definitions
             },
         }
 
