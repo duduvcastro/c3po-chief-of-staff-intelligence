@@ -57,11 +57,52 @@ struct EventOccurrence: Codable, Hashable {
     }
 }
 
+struct EventSnapshotDelta {
+    let added: Set<EventOccurrence>
+    let removed: Set<EventOccurrence>
+
+    static func between(
+        previous: [EventOccurrence],
+        current: [EventOccurrence],
+        windowStart: Date,
+        windowEnd: Date
+    ) -> EventSnapshotDelta {
+        let previousInWindow = Set(previous.filter {
+            $0.startsAt >= windowStart && $0.startsAt < windowEnd
+        })
+        let currentSet = Set(current)
+        return EventSnapshotDelta(
+            added: currentSet.subtracting(previousInWindow),
+            removed: previousInWindow.subtracting(currentSet)
+        )
+    }
+}
+
 struct LocalItemBatch {
     let items: [LeahItem]
+    let eventItems: [LeahItem]
     let eventOccurrences: [EventOccurrence]
     let windowStart: Date
     let windowEnd: Date
+
+    func syncItems(includingAdded addedOccurrences: Set<EventOccurrence>) -> [LeahItem] {
+        var result = items
+        var included = Set(result.compactMap(Self.eventOccurrence))
+        for item in eventItems {
+            guard let occurrence = Self.eventOccurrence(item),
+                  addedOccurrences.contains(occurrence),
+                  included.insert(occurrence).inserted else { continue }
+            result.append(item)
+        }
+        return result
+    }
+
+    private static func eventOccurrence(_ item: LeahItem) -> EventOccurrence? {
+        guard item.kind == "event", let externalId = item.externalId, let startsAt = item.startsAt else {
+            return nil
+        }
+        return EventOccurrence(externalId: externalId, startsAt: startsAt)
+    }
 }
 
 struct SyncRequest: Codable {

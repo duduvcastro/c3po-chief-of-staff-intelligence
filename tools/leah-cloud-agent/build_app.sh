@@ -5,6 +5,7 @@ ROOT="${0:A:h}"
 OUTPUT="${ROOT}/dist/Leah Cloud Agent.app"
 
 cd "$ROOT"
+"$ROOT/test_sync.sh"
 swift build --disable-sandbox -c release
 rm -rf "$OUTPUT"
 mkdir -p "$OUTPUT/Contents/MacOS" "$OUTPUT/Contents/Resources"

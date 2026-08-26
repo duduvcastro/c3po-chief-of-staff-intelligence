@@ -17,4 +17,12 @@ Aplicativo macOS local que sincroniza EventKit (Calendário e Lembretes) com o e
 open "dist/Leah Cloud Agent.app"
 ```
 
+Para gerar o instalador publicado pela Leah Cloud:
+
+```bash
+./build_pkg.sh
+```
+
+O empacotamento usa uma área temporária fora de pastas gerenciadas pelo File Provider do macOS, remove atributos estendidos e verifica a assinatura do aplicativo antes de criar o `.pkg`.
+
 O aplicativo exige macOS 14 ou posterior. Na primeira execução, gere o código na aba Leah Cloud, informe-o no aplicativo e aprove as duas solicitações do macOS.
