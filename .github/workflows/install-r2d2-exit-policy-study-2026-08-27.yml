@@ -53,7 +53,10 @@ jobs:
           USER: ${{ secrets.C3PO_AWS_USER }}
           REVISION: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+          ssh -i ~/.ssh/c3po_deploy \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
+            "$USER@$HOST" \
             "cat > /tmp/install-r2d2-exit-policy-study-2026-08-27.sh && REVISION='$REVISION' bash /tmp/install-r2d2-exit-policy-study-2026-08-27.sh" <<'REMOTE'
           set -euo pipefail
 

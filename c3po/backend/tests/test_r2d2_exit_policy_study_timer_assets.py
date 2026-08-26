@@ -55,5 +55,7 @@ def test_installer_waits_for_deploy_and_validates_before_arming() -> None:
     assert f"EXPECTED_MINUTE_MANIFEST_SHA256={MINUTE_MANIFEST_SHA256}" in workflow
     assert 'plan.get("ledger_rows") == 783' in workflow
     assert 'plan.get("episodes") == 375' in workflow
+    assert "ServerAliveInterval=30" in workflow
+    assert "ServerAliveCountMax=20" in workflow
     assert 'systemctl enable --now r2d2-exit-policy-study-2026-08-27.timer' in workflow
     assert '[ "$next_elapse_utc" = 2026-08-27T03:15:00Z ]' in workflow
