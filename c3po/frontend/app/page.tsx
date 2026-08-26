@@ -5585,7 +5585,7 @@ function ChewieFundamentalsView() {
                 <tr>
                   <th>Company</th>
                   {activeGroup === "multiples" && <><th>P/E</th><th>Fwd P/E</th><th>EV/EBITDA</th><th>PEG</th><th>P/B</th><th>Div. yield</th></>}
-                  {activeGroup === "profitability" && <><th>EBITDA</th><th>ROE</th><th>ROA</th><th>Profit margin</th><th>Op. margin</th><th>EBITDA margin</th></>}
+                  {activeGroup === "profitability" && <><th>ROE</th><th>ROA</th><th>Profit margin</th><th>Op. margin</th><th>EBITDA</th><th>EBITDA margin</th></>}
                   {activeGroup === "leverage" && <><th>Debt/Equity</th><th>Net debt/EBITDA</th><th>Total cash</th><th>Total debt</th></>}
                   {activeGroup === "growth" && <><th>Revenue growth</th><th>Earnings growth</th></>}
                   <th>Market cap</th>
@@ -5614,11 +5614,11 @@ function ChewieFundamentalsView() {
                       <td>{formatPercent(item.multiples.dividend_yield_percent)}</td>
                     </>}
                     {activeGroup === "profitability" && <>
-                      <td>{formatCompactMoney(item.profitability.ebitda, activeMarket)}</td>
                       <td>{formatPercent(item.profitability.roe_percent)}</td>
                       <td>{formatPercent(item.profitability.roa_percent)}</td>
                       <td>{formatPercent(item.profitability.profit_margin_percent)}</td>
                       <td>{formatPercent(item.profitability.operating_margin_percent)}</td>
+                      <td>{formatCompactMoney(item.profitability.ebitda, activeMarket)}</td>
                       <td>{formatPercent(item.profitability.ebitda_margin_percent)}</td>
                     </>}
                     {activeGroup === "leverage" && <>
