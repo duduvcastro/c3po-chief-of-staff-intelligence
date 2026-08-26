@@ -48,6 +48,7 @@ ATTESTATION_SHA256 = "2319708dd4fff344f4536610b9588d242d157a5a464eb2120e6e710580
 REPORT_SCHEMA_VERSION = "ENTRY-QUALITY-STUDY-V1-REPORT-v1"
 MANIFEST_SCHEMA_VERSION = "ENTRY-QUALITY-STUDY-V1-MANIFEST-v1"
 POLICY_EPOCH_SCHEMA_VERSION = "ENTRY-QUALITY-STUDY-V1-POLICY-EPOCHS-v1"
+CURRENT_M1_POLICY_EPOCH = "policy-a-resume-2026-08-26"
 
 
 @dataclass(frozen=True, slots=True)
@@ -890,6 +891,19 @@ def build_report(
             "measurement_censoring": dict(sorted(measurement_censoring.items())),
         },
         "policy_epoch_results": epoch_reports,
+        "kill_criterion_m1_current_epoch": {
+            "policy_epoch": CURRENT_M1_POLICY_EPOCH,
+            "available": CURRENT_M1_POLICY_EPOCH in epoch_reports,
+            "classification": (
+                epoch_reports[CURRENT_M1_POLICY_EPOCH]["classification"]
+                if CURRENT_M1_POLICY_EPOCH in epoch_reports else "INSUFFICIENT_SAMPLE"
+            ),
+            "summary": (
+                epoch_reports[CURRENT_M1_POLICY_EPOCH]["overall"]
+                if CURRENT_M1_POLICY_EPOCH in epoch_reports else None
+            ),
+            "cross_epoch_pooling": False,
+        },
         "entry_measurements": [row.as_dict() for row in measurements],
         "limitations": [
             "All estimates are stratified by policy epoch; no cross-epoch decision estimator exists.",

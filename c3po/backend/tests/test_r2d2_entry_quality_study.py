@@ -388,6 +388,8 @@ def test_dry_run_builds_hashed_insufficient_sample_package(
     assert report["analysis_interpretable"] is True
     assert report["cohort"]["measured_entry_count"] == 1
     assert list(report["policy_epoch_results"]) == ["policy-a-resume-2026-08-26"]
+    assert report["kill_criterion_m1_current_epoch"]["available"] is True
+    assert report["kill_criterion_m1_current_epoch"]["cross_epoch_pooling"] is False
     assert report["report_sha256"] == canonical_sha256({
         key: value for key, value in report.items() if key != "report_sha256"
     })
