@@ -3,6 +3,7 @@ name: Validate ENTRY_QUALITY_STUDY PR 257 on production data
 # Temporary, PR-scoped bridge for factual validation before merge.
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
     paths:
@@ -23,7 +24,10 @@ concurrency:
 
 jobs:
   factual-read-only-validation:
-    if: github.event.pull_request.number == 257 && github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.number == 257 &&
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 45
@@ -63,7 +67,7 @@ jobs:
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
-          REVISION: ${{ github.event.pull_request.head.sha }}
+          REVISION: ${{ github.sha }}
         run: |
           ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
             "RUN_ID='$GITHUB_RUN_ID' REVISION='$REVISION' bash -s" <<'REMOTE'
