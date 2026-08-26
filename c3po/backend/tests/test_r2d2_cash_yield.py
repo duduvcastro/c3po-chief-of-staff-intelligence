@@ -169,6 +169,88 @@ def test_run_latest_catches_up_missing_sessions_oldest_first(monkeypatch) -> Non
     assert len(entries) == 2
 
 
+def test_run_through_posts_current_session_before_its_final_snapshot() -> None:
+    settings = _settings()
+    database = Database(settings)
+    paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
+    paper.ensure_initialized()
+    for session_date, cash_usd in (
+        (date(2026, 8, 21), 700_000),
+        (date(2026, 8, 24), 800_000),
+        (date(2026, 8, 25), 917_445.99),
+    ):
+        paper.repo.memory["snapshots"][session_date] = {
+            "session_date": session_date,
+            "cash_usd": cash_usd,
+            "nav_usd": 946_565.14,
+            "is_final": True,
+        }
+    http = FakeTreasuryHttp(_xml("2026-08-21", "2026-08-24", "2026-08-25", coupon_equivalent="3.81"))
+    service = R2D2CashYieldService(settings, database, http)  # type: ignore[arg-type]
+
+    result = service.run_through(date(2026, 8, 26))
+
+    entries = database._r2d2_cash_yield_entries  # type: ignore[attr-defined]
+    current = next(entry for entry in entries if entry["session_date"] == date(2026, 8, 26))
+    assert result["status"] == "posted"
+    assert result["session_date"] == "2026-08-26"
+    assert current["prior_session_date"] == date(2026, 8, 25)
+    assert current["base_cash_usd"] == pytest.approx(917_445.99)
+    assert current["calendar_days"] == 1
+    assert current["interest_income_usd"] == pytest.approx(917_445.99 * 0.0381 / 365)
+
+
+def test_run_through_skips_weekends_and_uses_friday_cash_for_monday() -> None:
+    settings = _settings()
+    database = Database(settings)
+    paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
+    paper.ensure_initialized()
+    paper.repo.memory["snapshots"][date(2026, 8, 21)] = {
+        "session_date": date(2026, 8, 21),
+        "cash_usd": 778_406.28,
+        "nav_usd": 1_000_000,
+        "is_final": True,
+    }
+    http = FakeTreasuryHttp(_xml("2026-08-21", coupon_equivalent="3.81"))
+    service = R2D2CashYieldService(settings, database, http)  # type: ignore[arg-type]
+
+    saturday = service.run_through(date(2026, 8, 22))
+    monday = service.run_through(date(2026, 8, 24))
+
+    entries = database._r2d2_cash_yield_entries  # type: ignore[attr-defined]
+    assert saturday["status"] == "skipped"
+    assert saturday["target_session"] == "2026-08-22"
+    assert saturday["reason"] == "target_is_not_a_us_equities_session"
+    assert [entry["session_date"] for entry in entries] == [date(2026, 8, 24)]
+    assert entries[0]["calendar_days"] == 3
+    assert entries[0]["base_cash_usd"] == pytest.approx(778_406.28)
+    assert entries[0]["interest_income_usd"] == pytest.approx(243.76, abs=0.01)
+
+
+def test_run_through_does_not_create_a_us_market_holiday_entry() -> None:
+    settings = _settings()
+    database = Database(settings)
+    paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
+    paper.ensure_initialized()
+    paper.repo.memory["snapshots"][date(2026, 9, 4)] = {
+        "session_date": date(2026, 9, 4),
+        "cash_usd": 800_000,
+        "nav_usd": 1_000_000,
+        "is_final": True,
+    }
+    service = R2D2CashYieldService(
+        settings,
+        database,
+        FakeTreasuryHttp(_xml("2026-09-04")),  # type: ignore[arg-type]
+    )
+
+    result = service.run_through(date(2026, 9, 7))
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "target_is_not_a_us_equities_session"
+    assert database._r2d2_cash_yield_entries == []  # type: ignore[attr-defined]
+
+
 def test_missing_rate_is_recorded_without_blocking_later_sessions(monkeypatch) -> None:
     class AfterAllRatesAreAvailable(datetime):
         @classmethod

@@ -45,6 +45,8 @@ class OffhoursPhase:
     key: str
     last_completed_at: Callable[[], datetime | None]
     operation: Callable[[], Any]
+    start_hour: int = OFFHOURS_START_HOUR
+    end_hour: int = OFFHOURS_END_HOUR
 
 
 @dataclass(frozen=True)
@@ -148,27 +150,22 @@ def run_worker_iteration(
             )
             wake_targets.append(now + CANONICAL_RETRY_DELAY)
 
-    offhours_due_at = start_of_today(now) + timedelta(hours=OFFHOURS_START_HOUR)
-    offhours_window_end = start_of_today(now) + timedelta(hours=OFFHOURS_END_HOUR)
-    due_phases = [
-        phase
-        for phase in offhours_phases
-        if _phase_is_due(phase.last_completed_at(), offhours_due_at)
-    ]
-
-    if now < offhours_due_at:
-        if due_phases:
-            wake_targets.append(offhours_due_at)
-            phase_statuses.update({phase.key: "pending" for phase in due_phases})
-    elif now < offhours_window_end:
-        retry_required = False
-        for phase in due_phases:
+    for phase in offhours_phases:
+        phase_due_at = start_of_today(now) + timedelta(hours=phase.start_hour)
+        phase_window_end = start_of_today(now) + timedelta(hours=phase.end_hour)
+        if not _phase_is_due(phase.last_completed_at(), phase_due_at):
+            continue
+        if now < phase_due_at:
+            wake_targets.append(phase_due_at)
+            phase_statuses[phase.key] = "pending"
+            continue
+        if now < phase_window_end:
             try:
                 result = _run_recorded_phase(
                     database,
                     phase.key,
                     phase.operation,
-                    scheduled_for=offhours_due_at,
+                    scheduled_for=phase_due_at,
                     canonical_status=canonical_status,
                 )
                 phase_statuses[phase.key] = "succeeded"
@@ -179,16 +176,15 @@ def run_worker_iteration(
                 )
             except Exception:
                 phase_statuses[phase.key] = "failed"
-                retry_required = True
                 logger.exception(
                     "%s failed; keeping prior evidence and retrying inside the window",
                     VALUATION_WORKER_PHASES[phase.key]["name"],
                 )
-        retry_at = now + OFFHOURS_RETRY_DELAY
-        if retry_required and retry_at < offhours_window_end:
-            wake_targets.append(retry_at)
-    else:
-        phase_statuses.update({phase.key: "outside_window" for phase in due_phases})
+                retry_at = now + OFFHOURS_RETRY_DELAY
+                if retry_at < phase_window_end:
+                    wake_targets.append(retry_at)
+            continue
+        phase_statuses[phase.key] = "outside_window"
 
     return WorkerIterationResult(
         next_wake_at=min(wake_targets),
@@ -266,7 +262,13 @@ def main() -> None:
         ),
         OffhoursPhase("v3_shadow", v3_shadow.last_run_at, v3_shadow.run_all),
         *((
-            OffhoursPhase("cash_yield", cash_yield.last_run_at, cash_yield.run_latest),
+            OffhoursPhase(
+                "cash_yield",
+                cash_yield.last_run_at,
+                lambda: cash_yield.run_through(datetime.now(SAO_PAULO).date()),
+                start_hour=6,
+                end_hour=10,
+            ),
         ) if settings.r2d2_cash_yield_accounting_enabled else ()),
     )
 
