@@ -478,19 +478,19 @@ def frozen_stretch_upper_quartile(rows: Sequence[EntryMeasurement]) -> float | N
     )
 
 
-def _bootstrap_by_session(
+def _bootstrap_estimates_by_session(
     rows: Sequence[EntryMeasurement],
     statistic: Callable[[Sequence[EntryMeasurement]], float | None],
     *,
     seed: int = BOOTSTRAP_SEED,
     iterations: int = BOOTSTRAP_ITERATIONS,
-) -> tuple[float | None, float | None]:
+) -> list[float]:
     by_session: dict[date, list[EntryMeasurement]] = defaultdict(list)
     for row in rows:
         by_session[row.session_date].append(row)
     sessions = sorted(by_session)
     if not sessions:
-        return None, None
+        return []
     randomizer = random.Random(seed)
     estimates: list[float] = []
     for _ in range(iterations):
@@ -500,6 +500,22 @@ def _bootstrap_by_session(
         value = statistic(sampled)
         if value is not None and math.isfinite(value):
             estimates.append(value)
+    return estimates
+
+
+def _bootstrap_by_session(
+    rows: Sequence[EntryMeasurement],
+    statistic: Callable[[Sequence[EntryMeasurement]], float | None],
+    *,
+    seed: int = BOOTSTRAP_SEED,
+    iterations: int = BOOTSTRAP_ITERATIONS,
+) -> tuple[float | None, float | None]:
+    estimates = _bootstrap_estimates_by_session(
+        rows,
+        statistic,
+        seed=seed,
+        iterations=iterations,
+    )
     return _percentile(estimates, 0.025), _percentile(estimates, 0.975)
 
 
@@ -518,6 +534,16 @@ def _barrier_probability(rows: Sequence[EntryMeasurement]) -> float | None:
     return upper / (upper + lower) if upper + lower else None
 
 
+def _barrier_probability_conservative(
+    rows: Sequence[EntryMeasurement],
+) -> float | None:
+    upper = sum(row.barrier_category == "upper_first" for row in rows)
+    lower = sum(row.barrier_category == "lower_first" for row in rows)
+    ambiguous = sum(row.barrier_category == "ambiguous_same_bar" for row in rows)
+    denominator = upper + lower + ambiguous
+    return upper / denominator if denominator else None
+
+
 def summarize_cell(rows: Sequence[EntryMeasurement]) -> dict[str, Any]:
     categories = {
         category: sum(row.barrier_category == category for row in rows)
@@ -531,7 +557,15 @@ def summarize_cell(rows: Sequence[EntryMeasurement]) -> dict[str, Any]:
         if row.primary_return_60m_percent is not None
     ]
     primary_ci = _bootstrap_by_session(rows, _mean_primary)
-    barrier_ci = _bootstrap_by_session(rows, _barrier_probability)
+    barrier_estimates = _bootstrap_estimates_by_session(rows, _barrier_probability)
+    barrier_conservative_estimates = _bootstrap_estimates_by_session(
+        rows,
+        _barrier_probability_conservative,
+    )
+    barrier_ci = (
+        _percentile(barrier_estimates, 0.025),
+        _percentile(barrier_estimates, 0.975),
+    )
     censorship_percent = categories["censored"] / len(rows) * 100.0 if rows else 0.0
     return {
         "entry_count": len(rows),
@@ -552,6 +586,11 @@ def summarize_cell(rows: Sequence[EntryMeasurement]) -> dict[str, Any]:
                 if conservative_denominator else None
             ),
             "bootstrap_ci95": list(barrier_ci),
+            "p_hat_ucb_98_75": _percentile(barrier_estimates, 0.9875),
+            "p_hat_cons_ucb_98_75": _percentile(
+                barrier_conservative_estimates,
+                0.9875,
+            ),
             "verdict_against_50_percent": (
                 "EDGE_ABOVE_REFERENCE"
                 if barrier_ci[0] is not None and barrier_ci[0] > 0.5

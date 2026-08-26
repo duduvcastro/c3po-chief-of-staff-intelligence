@@ -18,6 +18,7 @@ from app.r2d2_entry_quality_engine import (
 )
 from app.r2d2_entry_quality_study import (
     RawTradeMinuteReader,
+    _parser,
     _load_policy_epochs,
     build_report,
     write_report_package,
@@ -298,6 +299,31 @@ def test_censorship_review_and_existing_classes_are_explicit() -> None:
     assert quote_age_class(30.1) == "stale"
 
 
+def test_m1_barrier_summary_publishes_unilateral_98_75_ucbs() -> None:
+    rows = [
+        _measurement(0, hour=10, regime="trend_up", barrier="upper_first"),
+        _measurement(15, hour=10, regime="trend_up", barrier="lower_first"),
+        _measurement(30, hour=10, regime="trend_up", barrier="ambiguous_same_bar"),
+    ]
+
+    summary = summarize_cell(rows)
+
+    assert summary["barrier"]["p_hat_ucb_98_75"] == pytest.approx(0.5)
+    assert summary["barrier"]["p_hat_cons_ucb_98_75"] == pytest.approx(1 / 3)
+
+
+def test_dry_run_accepts_optional_evidence_output() -> None:
+    args = _parser().parse_args([
+        "dry-run",
+        "--policy-epochs",
+        "epochs.json",
+        "--output",
+        "evidence",
+    ])
+
+    assert args.output == Path("evidence")
+
+
 def test_policy_epoch_manifest_is_hashed_contiguous_and_exposes_unknown_origin() -> None:
     path = Path(__file__).resolve().parents[2] / "docs" / "ENTRY_QUALITY_STUDY_V1_POLICY_EPOCHS.json"
 
@@ -390,6 +416,8 @@ def test_dry_run_builds_hashed_insufficient_sample_package(
     assert list(report["policy_epoch_results"]) == ["policy-a-resume-2026-08-26"]
     assert report["kill_criterion_m1_current_epoch"]["available"] is True
     assert report["kill_criterion_m1_current_epoch"]["cross_epoch_pooling"] is False
+    assert "p_hat_ucb_98_75" in report["kill_criterion_m1_current_epoch"]
+    assert "p_hat_cons_ucb_98_75" in report["kill_criterion_m1_current_epoch"]
     assert report["report_sha256"] == canonical_sha256({
         key: value for key, value in report.items() if key != "report_sha256"
     })

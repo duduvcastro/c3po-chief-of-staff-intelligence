@@ -853,6 +853,14 @@ def build_report(
     }
     manifest["manifest_sha256"] = _report_hash(manifest, "manifest_sha256")
 
+    current_epoch_summary = (
+        epoch_reports[CURRENT_M1_POLICY_EPOCH]["overall"]
+        if CURRENT_M1_POLICY_EPOCH in epoch_reports else None
+    )
+    current_epoch_barrier = (
+        _json_mapping(current_epoch_summary.get("barrier"))
+        if current_epoch_summary is not None else {}
+    )
     report: dict[str, Any] = {
         "schema_version": REPORT_SCHEMA_VERSION,
         "generated_at": generated_at,
@@ -899,8 +907,11 @@ def build_report(
                 if CURRENT_M1_POLICY_EPOCH in epoch_reports else "INSUFFICIENT_SAMPLE"
             ),
             "summary": (
-                epoch_reports[CURRENT_M1_POLICY_EPOCH]["overall"]
-                if CURRENT_M1_POLICY_EPOCH in epoch_reports else None
+                current_epoch_summary
+            ),
+            "p_hat_ucb_98_75": current_epoch_barrier.get("p_hat_ucb_98_75"),
+            "p_hat_cons_ucb_98_75": current_epoch_barrier.get(
+                "p_hat_cons_ucb_98_75"
             ),
             "cross_epoch_pooling": False,
         },
@@ -947,8 +958,13 @@ def _parser() -> argparse.ArgumentParser:
         child.add_argument("--spec", type=Path)
         child.add_argument("--attestation", type=Path)
         child.add_argument("--policy-epochs", type=Path, required=True)
-        if command == "run":
-            child.add_argument("--output", type=Path, required=True)
+        if command in {"dry-run", "run"}:
+            child.add_argument(
+                "--output",
+                type=Path,
+                required=command == "run",
+                help="optional immutable evidence package for dry-run; required for run",
+            )
     return parser
 
 
@@ -973,15 +989,16 @@ def main(argv: list[str] | None = None) -> int:
         attestation_path=args.attestation,
         dry_run=args.command == "dry-run",
     )
-    if args.command == "run":
-        write_report_package(args.output, manifest, report)
+    output = getattr(args, "output", None)
+    if output is not None:
+        write_report_package(output, manifest, report)
     print(json.dumps({
         "command": args.command,
         "classification": report["classification"],
         "analysis_interpretable": report["analysis_interpretable"],
         "manifest_sha256": manifest["manifest_sha256"],
         "report_sha256": report["report_sha256"],
-        "output": str(args.output) if args.command == "run" else None,
+        "output": str(output) if output is not None else None,
     }, sort_keys=True))
     return 0 if report["analysis_interpretable"] else 2
 
