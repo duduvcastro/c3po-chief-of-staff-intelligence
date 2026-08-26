@@ -160,6 +160,43 @@ def test_alerts_include_cpu_and_disk_capacity_incidents() -> None:
     app_main.database._server_usage_samples.clear()
 
 
+def test_alerts_include_cash_yield_failure_and_recovery_events() -> None:
+    app_main.database._audit_events.clear()
+    app_main.database._alert_reads.clear()
+    app_main.database.record_audit_event(
+        actor="valuation-worker",
+        action="r2d2.cash_yield.failed",
+        subject_type="r2d2_cash_yield_session",
+        subject_id="2026-08-26",
+        detail={
+            "scheduled_for": "2026-08-26T06:00:00-03:00",
+            "error": "CashYieldDataError: Treasury observation missing",
+        },
+    )
+    app_main.database.record_audit_event(
+        actor="valuation-worker",
+        action="r2d2.cash_yield.recovered",
+        subject_type="r2d2_cash_yield_session",
+        subject_id="2026-08-26",
+        detail={"scheduled_for": "2026-08-26T06:00:00-03:00"},
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/alerts")
+
+    assert response.status_code == 200
+    alerts = [
+        item for item in response.json()["items"]
+        if item["source"] == "R2D2 Accounting Controls"
+    ]
+    assert {item["severity"] for item in alerts} == {"Critical", "Operational"}
+    failure = next(item for item in alerts if item["severity"] == "Critical")
+    recovery = next(item for item in alerts if item["severity"] == "Operational")
+    assert failure["metadata"]["Erro"] == "CashYieldDataError: Treasury observation missing"
+    assert recovery["metadata"]["Erro"] == "Nenhum; processamento recuperado"
+    app_main.database._audit_events.clear()
+
+
 def test_navigation_indicators_clear_feed_badges_when_opened() -> None:
     original_views = app_main.database._navigation_feed_views.copy()
     original_events = app_main.database._ir_events.copy()

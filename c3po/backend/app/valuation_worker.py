@@ -38,6 +38,9 @@ CANONICAL_RETRY_DELAY = timedelta(minutes=15)
 OFFHOURS_RETRY_DELAY = timedelta(minutes=30)
 OFFHOURS_START_HOUR = 1
 OFFHOURS_END_HOUR = 8
+CASH_YIELD_PHASE_KEY = "cash_yield"
+CASH_YIELD_FAILURE_ACTION = "r2d2.cash_yield.failed"
+CASH_YIELD_RECOVERY_ACTION = "r2d2.cash_yield.recovered"
 
 
 @dataclass(frozen=True)
@@ -80,6 +83,51 @@ def _result_item_count(result: Any) -> int:
     return 1
 
 
+def _cash_yield_event_exists(database: Database, action: str, subject_id: str) -> bool:
+    return any(
+        event.get("subject_id") == subject_id
+        for event in database.list_audit_events(action=action, limit=100)
+    )
+
+
+def _record_cash_yield_failure(
+    database: Database,
+    *,
+    scheduled_for: datetime,
+    error: Exception,
+) -> None:
+    subject_id = scheduled_for.date().isoformat()
+    if _cash_yield_event_exists(database, CASH_YIELD_FAILURE_ACTION, subject_id):
+        return
+    database.record_audit_event(
+        "valuation-worker",
+        CASH_YIELD_FAILURE_ACTION,
+        "r2d2_cash_yield_session",
+        subject_id,
+        {
+            "scheduled_for": scheduled_for.isoformat(),
+            "retry_interval_minutes": int(OFFHOURS_RETRY_DELAY.total_seconds() / 60),
+            "retry_window_end_hour_brt": 10,
+            "error": f"{type(error).__name__}: {error}"[:1000],
+        },
+    )
+
+
+def _record_cash_yield_recovery(database: Database, *, scheduled_for: datetime) -> None:
+    subject_id = scheduled_for.date().isoformat()
+    if not _cash_yield_event_exists(database, CASH_YIELD_FAILURE_ACTION, subject_id):
+        return
+    if _cash_yield_event_exists(database, CASH_YIELD_RECOVERY_ACTION, subject_id):
+        return
+    database.record_audit_event(
+        "valuation-worker",
+        CASH_YIELD_RECOVERY_ACTION,
+        "r2d2_cash_yield_session",
+        subject_id,
+        {"scheduled_for": scheduled_for.isoformat()},
+    )
+
+
 def _run_recorded_phase(
     database: Database,
     phase_key: str,
@@ -111,6 +159,12 @@ def _run_recorded_phase(
     except Exception as exc:
         error_summary = f"{type(exc).__name__}: {exc}"[:1000]
         database.finish_ingestion_run(run_id, "failed", 0, 0, error_summary)
+        if phase_key == CASH_YIELD_PHASE_KEY:
+            _record_cash_yield_failure(
+                database,
+                scheduled_for=scheduled_for,
+                error=exc,
+            )
         raise
     database.finish_ingestion_run(
         run_id,
@@ -118,6 +172,8 @@ def _run_recorded_phase(
         0,
         _result_item_count(result),
     )
+    if phase_key == CASH_YIELD_PHASE_KEY:
+        _record_cash_yield_recovery(database, scheduled_for=scheduled_for)
     return result
 
 
@@ -263,7 +319,7 @@ def main() -> None:
         OffhoursPhase("v3_shadow", v3_shadow.last_run_at, v3_shadow.run_all),
         *((
             OffhoursPhase(
-                "cash_yield",
+                CASH_YIELD_PHASE_KEY,
                 cash_yield.last_run_at,
                 lambda: cash_yield.run_through(datetime.now(SAO_PAULO).date()),
                 start_hour=6,

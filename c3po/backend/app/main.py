@@ -925,8 +925,38 @@ def build_alert_feed(email: str) -> dict:
                 },
             }
         )
+    cash_yield_alerts: list[dict] = []
+    cash_yield_actions = {
+        "r2d2.cash_yield.failed": {
+            "subject": "Cash Yield não processado",
+            "severity": "Critical",
+            "action": "A apropriação pré-abertura falhou. O servidor tentará novamente a cada 30 minutos até 10:00 BRT.",
+        },
+        "r2d2.cash_yield.recovered": {
+            "subject": "Cash Yield recuperado",
+            "severity": "Operational",
+            "action": "A apropriação foi concluída por um retry automático; confira o NAV contábil atualizado.",
+        },
+    }
+    for event_action, presentation in cash_yield_actions.items():
+        for event in database.list_audit_events(action=event_action, limit=50):
+            detail = event.get("detail") or {}
+            cash_yield_alerts.append({
+                "id": f"cash-yield:{event['id']}",
+                "subject": f"{presentation['subject']} · {event['subject_id']}",
+                "context": "R2D2 · accrual sintético de caixa às 06:00 BRT",
+                "action": presentation["action"],
+                "severity": presentation["severity"],
+                "occurred_at": event["occurred_at"],
+                "source": "R2D2 Accounting Controls",
+                "metadata": {
+                    "Sessão": event["subject_id"],
+                    "Agendado para": detail.get("scheduled_for") or "N/D",
+                    "Erro": detail.get("error") or "Nenhum; processamento recuperado",
+                },
+            })
     capacity_alerts = server_usage.capacity_alerts()
-    items = capacity_alerts + login_alerts + decision_alerts
+    items = capacity_alerts + login_alerts + decision_alerts + cash_yield_alerts
     items.sort(key=lambda item: item["occurred_at"], reverse=True)
     read_ids = database.alert_read_ids(email, [item["id"] for item in items])
     for item in items:

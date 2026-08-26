@@ -207,3 +207,43 @@ def test_cash_yield_phase_does_not_run_at_or_after_ten() -> None:
 
     assert calls == []
     assert result.phase_statuses == {"cash_yield": "outside_window"}
+
+
+def test_cash_yield_failure_alert_is_deduplicated_and_recovery_is_recorded() -> None:
+    database = _database()
+    attempts = 0
+
+    def recover_on_third_attempt() -> dict[str, str]:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise RuntimeError("Treasury feed unavailable")
+        return {"status": "posted"}
+
+    phase = OffhoursPhase(
+        "cash_yield",
+        lambda: None,
+        recover_on_third_attempt,
+        start_hour=6,
+        end_hour=10,
+    )
+    for now in (
+        datetime(2026, 8, 26, 6, 0, tzinfo=SAO_PAULO),
+        datetime(2026, 8, 26, 6, 30, tzinfo=SAO_PAULO),
+        datetime(2026, 8, 26, 7, 0, tzinfo=SAO_PAULO),
+    ):
+        run_worker_iteration(
+            database,
+            now=now,
+            canonical_due=False,
+            canonical_operation=lambda: None,
+            offhours_phases=(phase,),
+        )
+
+    failures = database.list_audit_events(action="r2d2.cash_yield.failed")
+    recoveries = database.list_audit_events(action="r2d2.cash_yield.recovered")
+    assert len(failures) == 1
+    assert failures[0]["subject_id"] == "2026-08-26"
+    assert failures[0]["detail"]["error"] == "RuntimeError: Treasury feed unavailable"
+    assert len(recoveries) == 1
+    assert recoveries[0]["subject_id"] == "2026-08-26"
