@@ -15,16 +15,18 @@ from app.r2d2_cash_yield import (
 )
 
 
-def _xml(observed: str, *, coupon_equivalent: str = "4.20", bank_discount: str = "4.10") -> str:
-    return f"""<?xml version="1.0"?>
-    <feed xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices"
-          xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata"
-          xmlns="http://www.w3.org/2005/Atom">
+def _xml(*observed_dates: str, coupon_equivalent: str = "4.20", bank_discount: str = "4.10") -> str:
+    entries = "".join(f"""
       <entry><content><m:properties>
         <d:INDEX_DATE>{observed}T00:00:00</d:INDEX_DATE>
         <d:ROUND_B1_CLOSE_13WK_2>{bank_discount}</d:ROUND_B1_CLOSE_13WK_2>
         <d:ROUND_B1_YIELD_13WK_2>{coupon_equivalent}</d:ROUND_B1_YIELD_13WK_2>
-      </m:properties></content></entry>
+      </m:properties></content></entry>""" for observed in observed_dates)
+    return f"""<?xml version="1.0"?>
+    <feed xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices"
+          xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata"
+          xmlns="http://www.w3.org/2005/Atom">
+      {entries}
     </feed>"""
 
 
@@ -115,5 +117,52 @@ def test_cash_yield_is_append_only_idempotent_and_does_not_change_operational_na
     assert dashboard.accounting_nav_ex_interest_usd == 1_000_000
     assert dashboard.accounting_total_nav_usd == pytest.approx(1_000_000 + expected_interest, abs=0.01)
     assert dashboard.interest_income_session_date == "2026-08-26"
+    assert dashboard.interest_income_epoch_start_date == "2026-08-26"
     assert dashboard.interest_income_rate_date == "2026-08-24"
     assert dashboard.interest_income_status == "posted"
+
+
+def test_run_latest_catches_up_missing_sessions_oldest_first(monkeypatch) -> None:
+    class AfterAllRatesAreAvailable(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+
+    monkeypatch.setattr("app.r2d2_cash_yield.datetime", AfterAllRatesAreAvailable)
+    settings = _settings()
+    database = Database(settings)
+    paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
+    paper.ensure_initialized()
+    for session_date, cash_usd in (
+        (date(2026, 8, 24), 900_000),
+        (date(2026, 8, 26), 850_000),
+        (date(2026, 8, 27), 800_000),
+    ):
+        paper.repo.memory["snapshots"][session_date] = {
+            "session_date": session_date,
+            "cash_usd": cash_usd,
+            "nav_usd": 1_000_000,
+            "is_final": True,
+        }
+    http = FakeTreasuryHttp(_xml("2026-08-24", "2026-08-26"))
+    service = R2D2CashYieldService(settings, database, http)  # type: ignore[arg-type]
+
+    result = service.run_latest()
+    repeated = service.run_latest()
+
+    entries = database._r2d2_cash_yield_entries  # type: ignore[attr-defined]
+    assert result["status"] == "posted"
+    assert result["posted_count"] == 2
+    assert result["posted_session_dates"] == ["2026-08-26", "2026-08-27"]
+    assert [entry["session_date"] for entry in entries] == [
+        date(2026, 8, 26),
+        date(2026, 8, 27),
+    ]
+    assert [entry["source_observation_date"] for entry in entries] == [
+        date(2026, 8, 24),
+        date(2026, 8, 26),
+    ]
+    assert len(http.calls) == 2
+    assert repeated["status"] == "idempotent"
+    assert len(entries) == 2

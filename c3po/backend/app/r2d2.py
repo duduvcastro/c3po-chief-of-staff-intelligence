@@ -23,6 +23,7 @@ from .market_data.us_screener import USScreeningService, clamp, normalized_perce
 from .one_pager import OnePagerService
 from . import r2d2_strategy
 from .r2d2_entry_score_adapter import ADAPTER_VERSION, R2D2EntryScoreAdapter
+from .r2d2_cash_yield import EPOCH_START_DATE as CASH_YIELD_EPOCH_START_DATE
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
@@ -1862,6 +1863,7 @@ class R2D2PaperService:
             interest_income_session_date=(
                 latest_interest["session_date"].isoformat() if latest_interest else None
             ),
+            interest_income_epoch_start_date=CASH_YIELD_EPOCH_START_DATE.isoformat(),
             interest_income_epoch_usd=round(interest_income_epoch, 2),
             interest_income_status="posted" if latest_interest else "pending",
             interest_income_annual_rate=(

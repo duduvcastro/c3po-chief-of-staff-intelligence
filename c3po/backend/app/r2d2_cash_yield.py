@@ -144,60 +144,72 @@ class R2D2CashYieldService:
 
     def run_latest(self) -> dict[str, Any]:
         experiment = self._experiment()
-        snapshots = self._final_snapshots(str(experiment["id"]))
+        experiment_id = str(experiment["id"])
+        snapshots = self._final_snapshots(experiment_id)
         eligible = [row for row in snapshots if row["session_date"] >= EPOCH_START_DATE]
         if not eligible:
             return self._record_run({"status": "pending", "reason": "no_final_epoch_session"})
-        current = eligible[-1]
-        prior = next(
-            (row for row in reversed(snapshots) if row["session_date"] < current["session_date"]),
-            None,
-        )
-        if prior is None:
-            return self._record_run({"status": "pending", "reason": "no_prior_final_session"})
-        existing = self._entry(str(experiment["id"]), current["session_date"])
-        if existing:
+        missing = [
+            row for row in eligible
+            if self._entry(experiment_id, row["session_date"]) is None
+        ]
+        if not missing:
+            current = eligible[-1]
+            existing = self._entry(experiment_id, current["session_date"])
             return self._record_run({
                 "status": "idempotent",
                 "session_date": current["session_date"].isoformat(),
                 "entry_sha256": existing["entry_sha256"],
             })
 
-        fetched_at = datetime.now(timezone.utc)
-        rate = self._refresh_rate(prior["session_date"], fetched_at=fetched_at)
-        base_cash = max(float(prior["cash_usd"]), 0.0)
-        factor = coupon_equivalent_factor(
-            float(rate["annual_rate"]), prior["session_date"], current["session_date"]
-        )
-        entry: dict[str, Any] = {
-            "id": str(uuid4()),
-            "experiment_id": str(experiment["id"]),
-            "session_date": current["session_date"],
-            "prior_session_date": prior["session_date"],
-            "base_cash_usd": round(base_cash, 6),
-            "annual_coupon_equivalent_rate": float(rate["annual_rate"]),
-            "calendar_days": (current["session_date"] - prior["session_date"]).days,
-            "daily_factor": factor,
-            "interest_income_usd": round(base_cash * factor, 6),
-            "source_name": SOURCE_NAME,
-            "source_series": SOURCE_SERIES,
-            "source_observation_date": prior["session_date"],
-            "source_available_at": datetime.fromisoformat(rate["available_at"]),
-            "source_fetched_at": datetime.fromisoformat(rate["fetched_at"]),
-            "source_payload_sha256": rate["payload_sha256"],
-            "backfilled_at": fetched_at if current["session_date"] < fetched_at.date() else None,
-        }
-        entry["entry_sha256"] = _canonical_sha256({
-            key: value.isoformat() if isinstance(value, (date, datetime)) else value
-            for key, value in entry.items()
-            if key != "id"
-        })
-        persisted = self._insert_entry(entry)
+        posted: list[dict[str, Any]] = []
+        for current in missing:
+            prior = next(
+                (row for row in reversed(snapshots) if row["session_date"] < current["session_date"]),
+                None,
+            )
+            if prior is None:
+                return self._record_run({"status": "pending", "reason": "no_prior_final_session"})
+
+            fetched_at = datetime.now(timezone.utc)
+            rate = self._refresh_rate(prior["session_date"], fetched_at=fetched_at)
+            base_cash = max(float(prior["cash_usd"]), 0.0)
+            factor = coupon_equivalent_factor(
+                float(rate["annual_rate"]), prior["session_date"], current["session_date"]
+            )
+            entry: dict[str, Any] = {
+                "id": str(uuid4()),
+                "experiment_id": experiment_id,
+                "session_date": current["session_date"],
+                "prior_session_date": prior["session_date"],
+                "base_cash_usd": round(base_cash, 6),
+                "annual_coupon_equivalent_rate": float(rate["annual_rate"]),
+                "calendar_days": (current["session_date"] - prior["session_date"]).days,
+                "daily_factor": factor,
+                "interest_income_usd": round(base_cash * factor, 6),
+                "source_name": SOURCE_NAME,
+                "source_series": SOURCE_SERIES,
+                "source_observation_date": prior["session_date"],
+                "source_available_at": datetime.fromisoformat(rate["available_at"]),
+                "source_fetched_at": datetime.fromisoformat(rate["fetched_at"]),
+                "source_payload_sha256": rate["payload_sha256"],
+                "backfilled_at": fetched_at if current["session_date"] < fetched_at.date() else None,
+            }
+            entry["entry_sha256"] = _canonical_sha256({
+                key: value.isoformat() if isinstance(value, (date, datetime)) else value
+                for key, value in entry.items()
+                if key != "id"
+            })
+            posted.append(self._insert_entry(entry))
+
+        latest = posted[-1]
         return self._record_run({
             "status": "posted",
-            "session_date": current["session_date"].isoformat(),
-            "interest_income_usd": persisted["interest_income_usd"],
-            "entry_sha256": persisted["entry_sha256"],
+            "session_date": latest["session_date"].isoformat(),
+            "interest_income_usd": latest["interest_income_usd"],
+            "entry_sha256": latest["entry_sha256"],
+            "posted_count": len(posted),
+            "posted_session_dates": [row["session_date"].isoformat() for row in posted],
         })
 
     def _refresh_rate(self, observation_date: date, *, fetched_at: datetime) -> dict[str, Any]:
