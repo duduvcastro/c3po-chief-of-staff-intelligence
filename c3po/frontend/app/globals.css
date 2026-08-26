@@ -489,6 +489,8 @@ button { cursor: pointer; }
 .r2d2-live-pnl { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; }
 .r2d2-live-pnl > span { margin-top: 2px; font-size: 9px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .r2d2-live-pnl small { letter-spacing: 0; font-size: 7px !important; font-weight: 800; }
+.r2d2-live-pnl .quote-freshness { width: 100%; display: grid; gap: 1px; overflow: visible; line-height: 1.2; white-space: normal; }
+.r2d2-live-pnl .quote-freshness > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quote-freshness-fresh { color: var(--green) !important; }
 .quote-freshness-aging { color: #a66b12 !important; }
 .quote-freshness-stale { color: var(--red) !important; }

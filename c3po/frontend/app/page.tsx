@@ -3683,9 +3683,13 @@ function R2D2RisingView() {
                 {`${position.mark_pnl_usd >= 0 ? "+" : "-"}${moneyExact(Math.abs(position.mark_pnl_usd))}`}
               </span>
               <small className={`quote-freshness quote-freshness-${position.quote_freshness ?? "unknown"}`}>
-                {(position.quote_freshness ?? "unknown").toUpperCase()}
-                {position.quote_as_of ? ` · QUOTE ${new Date(position.quote_as_of).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}
-                {typeof position.quote_age_seconds === "number" ? ` · AGE ${Math.round(position.quote_age_seconds)}s` : ""}
+                <span>
+                  {(position.quote_freshness ?? "unknown").toUpperCase()}
+                  {typeof position.quote_age_seconds === "number" ? ` · AGE ${Math.round(position.quote_age_seconds)}s` : ""}
+                </span>
+                {position.quote_as_of && (
+                  <span>QUOTE {new Date(position.quote_as_of).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                )}
               </small>
             </div>
             <div className="r2d2-live-pnl" data-label="Net if closed">
