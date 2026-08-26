@@ -69,7 +69,9 @@ jobs:
           USER: ${{ secrets.C3PO_AWS_USER }}
           REVISION: ${{ github.sha }}
         run: |
-          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+          ssh -i ~/.ssh/c3po_deploy \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$USER@$HOST" \
             "RUN_ID='$GITHUB_RUN_ID' REVISION='$REVISION' bash -s" <<'REMOTE'
           set -euo pipefail
 
