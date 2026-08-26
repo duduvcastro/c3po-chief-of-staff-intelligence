@@ -1146,7 +1146,8 @@ button { cursor: pointer; }
 .chewie-search-empty { padding: 14px; color: var(--muted); font-size: 11px; font-weight: 700; text-align: center; }
 .chewie-search-hit { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 14px; border-bottom: 1px solid #efece2; }
 .chewie-search-hit:last-child { border-bottom: 0; }
-.chewie-search-metrics { display: flex; gap: 14px; color: var(--muted); font-size: 9px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+.chewie-search-metrics { display: flex; flex-wrap: wrap; gap: 7px 14px; color: var(--muted); font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.chewie-search-metrics span { white-space: nowrap; }
 .chewie-search-metrics strong { margin-left: 4px; color: var(--ink); font-size: 11px; }
 .chewie-pdf-button { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 13px; border: 1px solid #b99838; border-radius: 5px; color: var(--gold-deep); background: var(--gold-soft); font-size: 10px; font-weight: 900; text-decoration: none; white-space: nowrap; }
 .chewie-pdf-button:hover { color: #fff; background: var(--gold-deep); }

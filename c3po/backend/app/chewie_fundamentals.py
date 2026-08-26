@@ -542,6 +542,7 @@ class ChewieFundamentalsService:
                 "dividend_yield_percent": _percent(row.get("dividend_yield")),
             },
             "profitability": {
+                "ebitda": ebitda,
                 "roe_percent": _percent(row.get("roe")),
                 "roa_percent": None,
                 "profit_margin_percent": _percent(row.get("profit_margin")),
@@ -602,6 +603,7 @@ class ChewieFundamentalsService:
                 ),
             },
             "profitability": {
+                "ebitda": ebitda,
                 "roe_percent": _number(row.get("roe_percent")) or _percent(fundamentals.get("returnOnEquity")),
                 "roa_percent": _percent(fundamentals.get("returnOnAssets")),
                 "profit_margin_percent": _percent(fundamentals.get("profitMargins")),

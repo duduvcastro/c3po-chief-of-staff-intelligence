@@ -427,6 +427,7 @@ class ChewieMultiples(BaseModel):
 
 
 class ChewieProfitability(BaseModel):
+    ebitda: float | None = None
     roe_percent: float | None = None
     roa_percent: float | None = None
     profit_margin_percent: float | None = None

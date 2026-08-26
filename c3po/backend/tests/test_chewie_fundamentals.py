@@ -187,11 +187,29 @@ def test_b3_snapshot_is_read_directly_from_the_brapi_backed_screener_universe_wi
     assert item["symbol"] == "PETR4"
     assert item["multiples"]["pe"] == 5.1
     assert item["multiples"]["ev_ebitda"] == 3.9
+    assert item["profitability"]["ebitda"] == 4e9
     assert item["profitability"]["roe_percent"] == 31.0
     assert item["multiples"]["dividend_yield_percent"] == 12.0
     assert item["sources"] == ["Brapi", "EODHD overlay"]
     assert item["leverage"]["total_cash"] == 5e9
     assert item["leverage"]["total_debt"] == 9e9
+
+
+def test_us_item_exposes_absolute_ebitda_from_existing_fundamentals_payload():
+    item = ChewieFundamentalsService._item(
+        "NASDAQ",
+        _us_stock_row("AAPL", 3e12),
+        {
+            "companyName": "Apple",
+            "ebitda": 130e9,
+            "ebitdaMargins": 0.33,
+            "totalCash": 60e9,
+            "totalDebt": 110e9,
+        },
+    )
+
+    assert item["profitability"]["ebitda"] == 130e9
+    assert item["profitability"]["ebitda_margin_percent"] == 33.0
 
 
 def test_b3_universe_never_includes_fractional_or_bdr_tickers():
