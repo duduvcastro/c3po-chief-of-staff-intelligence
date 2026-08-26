@@ -963,12 +963,20 @@ class ServerUsagePoint(BaseModel):
     collected_at: datetime
     cpu_percent: float | None = Field(default=None, ge=0, le=100)
     cpu_moving_average_5m: float | None = Field(default=None, ge=0, le=100)
+    cpu_steal_percent: float | None = Field(default=None, ge=0, le=100)
+    load_average_1m: float | None = Field(default=None, ge=0)
+    load_average_5m: float | None = Field(default=None, ge=0)
+    load_average_15m: float | None = Field(default=None, ge=0)
     disk_percent: float | None = Field(default=None, ge=0, le=100)
 
 
 class ServerUsageCurrent(BaseModel):
     cpu_percent: float | None = Field(default=None, ge=0, le=100)
     cpu_moving_average_5m: float | None = Field(default=None, ge=0, le=100)
+    cpu_steal_percent: float | None = Field(default=None, ge=0, le=100)
+    load_average_1m: float | None = Field(default=None, ge=0)
+    load_average_5m: float | None = Field(default=None, ge=0)
+    load_average_15m: float | None = Field(default=None, ge=0)
     disk_percent: float | None = Field(default=None, ge=0, le=100)
     disk_total_bytes: int | None = Field(default=None, ge=0)
     disk_used_bytes: int | None = Field(default=None, ge=0)
@@ -1065,6 +1073,22 @@ class HistoricalPageLoadPerformance(BaseModel):
     average_request_count: float = Field(ge=0)
 
 
+class HistoricalCapacityWindow(BaseModel):
+    window: Literal["us_regular_session", "valuation_off_hours"]
+    sample_count: int = Field(ge=1)
+    observed_dates: list[str]
+    cpu_average_percent: float | None = Field(default=None, ge=0, le=100)
+    cpu_p95_percent: float | None = Field(default=None, ge=0, le=100)
+    cpu_max_percent: float | None = Field(default=None, ge=0, le=100)
+    cpu_steal_average_percent: float | None = Field(default=None, ge=0, le=100)
+    cpu_steal_p95_percent: float | None = Field(default=None, ge=0, le=100)
+    cpu_steal_max_percent: float | None = Field(default=None, ge=0, le=100)
+    load_1m_average: float | None = Field(default=None, ge=0)
+    load_1m_p95: float | None = Field(default=None, ge=0)
+    load_1m_max: float | None = Field(default=None, ge=0)
+    load_1m_p95_per_vcpu: float | None = Field(default=None, ge=0)
+
+
 class PerformanceHistoryResponse(BaseModel):
     generated_at: datetime
     window_hours: int = Field(ge=1)
@@ -1075,6 +1099,8 @@ class PerformanceHistoryResponse(BaseModel):
     sample_status: Literal["collecting", "stable"]
     api_routes: list[HistoricalApiPerformance]
     page_loads: list[HistoricalPageLoadPerformance]
+    capacity_windows: list[HistoricalCapacityWindow] = Field(default_factory=list)
+    capacity_methodology: dict[str, str] = Field(default_factory=dict)
     privacy: dict[str, str]
 
 

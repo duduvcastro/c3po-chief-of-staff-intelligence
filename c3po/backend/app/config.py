@@ -131,9 +131,10 @@ class Settings(BaseSettings):
     server_usage_region: str = "São Paulo · sa-east-1"
     server_usage_cpu_count: int = 2
     server_usage_proc_stat_path: Path = Path("/proc/stat")
+    server_usage_proc_loadavg_path: Path = Path("/proc/loadavg")
     server_usage_disk_path: Path = Path("/")
     server_usage_interval_seconds: int = 60
-    server_usage_retention_days: int = 7
+    server_usage_retention_days: int = Field(default=90, ge=7, le=3_650)
     performance_flush_seconds: int = Field(default=60, ge=30, le=300)
     performance_retention_days: int = Field(default=90, ge=30, le=3_650)
     performance_minimum_sample_sessions: int = Field(default=5, ge=3, le=30)

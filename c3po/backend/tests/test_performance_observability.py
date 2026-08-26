@@ -132,6 +132,66 @@ def test_history_groups_by_view_and_build_and_waits_for_five_sessions() -> None:
     assert result["page_loads"][0]["sample_count"] == 5
 
 
+def test_history_compares_regular_session_and_off_hours_capacity() -> None:
+    settings = _settings(server_usage_cpu_count=2)
+    database = Database(settings)
+    service = PerformanceObservabilityService(settings, database, ApiPerformanceRegistry())
+    new_york = ZoneInfo("America/New_York")
+    sao_paulo = ZoneInfo("America/Sao_Paulo")
+    today = datetime.now(new_york).date()
+    while today.weekday() >= 5:
+        today -= timedelta(days=1)
+    regular_at = datetime.combine(today, datetime.min.time(), tzinfo=new_york).replace(
+        hour=10,
+        minute=30,
+    ).astimezone(timezone.utc)
+    off_hours_at = datetime.combine(
+        datetime.now(sao_paulo).date(),
+        datetime.min.time(),
+        tzinfo=sao_paulo,
+    ).replace(hour=2).astimezone(timezone.utc)
+    base = {
+        "server_id": settings.server_usage_server_id,
+        "server_name": settings.server_usage_server_name,
+        "region": settings.server_usage_region,
+        "disk_total_bytes": 1000,
+        "disk_used_bytes": 400,
+        "disk_free_bytes": 600,
+        "source": "test",
+    }
+    database.save_server_usage_samples([
+        {
+            **base,
+            "collected_at": regular_at,
+            "cpu_percent": 40.0,
+            "cpu_steal_percent": 2.0,
+            "load_average_1m": 1.5,
+            "load_average_5m": 1.0,
+            "load_average_15m": 0.8,
+        },
+        {
+            **base,
+            "collected_at": off_hours_at,
+            "cpu_percent": 80.0,
+            "cpu_steal_percent": 5.0,
+            "load_average_1m": 2.4,
+            "load_average_5m": 2.0,
+            "load_average_15m": 1.6,
+        },
+    ])
+
+    result = service.history(hours=24 * 10)
+    windows = {item["window"]: item for item in result["capacity_windows"]}
+
+    regular = windows["us_regular_session"]
+    assert regular["cpu_p95_percent"] == pytest.approx(40.0)
+    assert regular["cpu_steal_max_percent"] == pytest.approx(2.0)
+    assert regular["load_1m_p95_per_vcpu"] == pytest.approx(0.75)
+    off_hours = windows["valuation_off_hours"]
+    assert off_hours["cpu_p95_percent"] == pytest.approx(80.0)
+    assert off_hours["load_1m_p95_per_vcpu"] == pytest.approx(1.2)
+
+
 def test_route_identity_never_falls_back_to_resolved_path_or_query() -> None:
     matched = Request({
         "type": "http",

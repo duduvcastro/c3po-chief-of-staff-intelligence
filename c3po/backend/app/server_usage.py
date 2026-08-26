@@ -19,7 +19,7 @@ class ServerUsageCollector:
         self.settings = settings
         self.database = database
 
-    def cpu_ticks(self) -> tuple[int, int]:
+    def cpu_ticks(self) -> tuple[int, int, int]:
         line = self.settings.server_usage_proc_stat_path.read_text(encoding="utf-8").splitlines()[0]
         fields = line.split()
         if not fields or fields[0] != "cpu":
@@ -27,18 +27,35 @@ class ServerUsageCollector:
         values = [int(value) for value in fields[1:]]
         total = sum(values)
         idle = values[3] + (values[4] if len(values) > 4 else 0)
-        return total, idle
+        steal = values[7] if len(values) > 7 else 0
+        return total, idle, steal
+
+    def load_averages(self) -> tuple[float, float, float]:
+        fields = self.settings.server_usage_proc_loadavg_path.read_text(encoding="utf-8").split()
+        if len(fields) < 3:
+            raise RuntimeError("Host /proc/loadavg does not contain one, five and fifteen minute loads")
+        return float(fields[0]), float(fields[1]), float(fields[2])
 
     def disk_usage(self) -> tuple[int, int, int]:
         usage = shutil.disk_usage(self.settings.server_usage_disk_path)
         return usage.total, usage.used, usage.free
 
-    def sample(self, previous: tuple[int, int], current: tuple[int, int], *, collected_at: datetime | None = None) -> dict[str, Any]:
+    def sample(
+        self,
+        previous: tuple[int, int, int],
+        current: tuple[int, int, int],
+        *,
+        collected_at: datetime | None = None,
+    ) -> dict[str, Any]:
         total_delta = current[0] - previous[0]
         idle_delta = current[1] - previous[1]
+        steal_delta = current[2] - previous[2]
         cpu_percent = None
+        cpu_steal_percent = None
         if total_delta > 0:
             cpu_percent = max(0.0, min(100.0, (1 - idle_delta / total_delta) * 100))
+            cpu_steal_percent = max(0.0, min(100.0, steal_delta / total_delta * 100))
+        load_1m, load_5m, load_15m = self.load_averages()
         disk_total, disk_used, disk_free = self.disk_usage()
         return {
             "server_id": self.settings.server_usage_server_id,
@@ -46,6 +63,10 @@ class ServerUsageCollector:
             "region": self.settings.server_usage_region,
             "collected_at": collected_at or datetime.now(timezone.utc),
             "cpu_percent": round(cpu_percent, 3) if cpu_percent is not None else None,
+            "cpu_steal_percent": round(cpu_steal_percent, 3) if cpu_steal_percent is not None else None,
+            "load_average_1m": round(load_1m, 4),
+            "load_average_5m": round(load_5m, 4),
+            "load_average_15m": round(load_15m, 4),
             "disk_total_bytes": disk_total,
             "disk_used_bytes": disk_used,
             "disk_free_bytes": disk_free,
@@ -61,6 +82,7 @@ class ServerUsageCollector:
             try:
                 collected_at = datetime.strptime(row[2], "%Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)
                 cpu_percent = 100.0 - float(row[9])
+                cpu_steal_percent = float(row[8])
             except (ValueError, IndexError):
                 continue
             samples.append({
@@ -69,6 +91,10 @@ class ServerUsageCollector:
                 "region": self.settings.server_usage_region,
                 "collected_at": collected_at,
                 "cpu_percent": round(max(0.0, min(100.0, cpu_percent)), 3),
+                "cpu_steal_percent": round(max(0.0, min(100.0, cpu_steal_percent)), 3),
+                "load_average_1m": None,
+                "load_average_5m": None,
+                "load_average_15m": None,
                 "disk_total_bytes": None,
                 "disk_used_bytes": None,
                 "disk_free_bytes": None,
@@ -107,6 +133,10 @@ class ServerUsageService:
                 current=ServerUsageCurrent(
                     cpu_percent=latest_point.cpu_percent,
                     cpu_moving_average_5m=latest_point.cpu_moving_average_5m,
+                    cpu_steal_percent=latest_point.cpu_steal_percent,
+                    load_average_1m=latest_point.load_average_1m,
+                    load_average_5m=latest_point.load_average_5m,
+                    load_average_15m=latest_point.load_average_15m,
                     disk_percent=latest_point.disk_percent,
                     disk_total_bytes=latest.get("disk_total_bytes"),
                     disk_used_bytes=latest.get("disk_used_bytes"),
@@ -125,6 +155,8 @@ class ServerUsageService:
             api_window_minutes=api_performance.retention_minutes,
             methodology={
                 "cpu": "Host aggregate CPU from Linux /proc/stat; initial 24h backfill from sysstat",
+                "cpu_steal": "Hypervisor steal time from Linux /proc/stat over the same sampling delta",
+                "load": "One, five and fifteen minute runnable/uninterruptible task load from Linux /proc/loadavg",
                 "disk": "Host filesystem usage from statvfs; history starts with the C3PO collector",
                 "smoothing": "Time-based rolling arithmetic mean over the preceding five minutes",
                 "retention": f"{self.settings.server_usage_retention_days} days in PostgreSQL",
@@ -259,6 +291,14 @@ class ServerUsageService:
                 collected_at=collected_at,
                 cpu_percent=round(cpu, 2) if cpu is not None else None,
                 cpu_moving_average_5m=round(moving_average, 2) if moving_average is not None else None,
+                cpu_steal_percent=ServerUsageService._optional_float(sample.get("cpu_steal_percent"), 3),
+                load_average_1m=ServerUsageService._optional_float(sample.get("load_average_1m"), 4),
+                load_average_5m=ServerUsageService._optional_float(sample.get("load_average_5m"), 4),
+                load_average_15m=ServerUsageService._optional_float(sample.get("load_average_15m"), 4),
                 disk_percent=round(disk_percent, 2) if disk_percent is not None else None,
             ))
         return output
+
+    @staticmethod
+    def _optional_float(value: Any, digits: int) -> float | None:
+        return round(float(value), digits) if value is not None else None

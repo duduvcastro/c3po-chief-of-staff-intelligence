@@ -1383,6 +1383,10 @@ class Database:
             sample["region"],
             sample["collected_at"],
             sample.get("cpu_percent"),
+            sample.get("cpu_steal_percent"),
+            sample.get("load_average_1m"),
+            sample.get("load_average_5m"),
+            sample.get("load_average_15m"),
             sample.get("disk_total_bytes"),
             sample.get("disk_used_bytes"),
             sample.get("disk_free_bytes"),
@@ -1394,12 +1398,17 @@ class Database:
                     """
                     INSERT INTO server_usage_samples
                         (server_id, server_name, region, collected_at, cpu_percent,
+                         cpu_steal_percent, load_average_1m, load_average_5m, load_average_15m,
                          disk_total_bytes, disk_used_bytes, disk_free_bytes, source)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (server_id, collected_at) DO UPDATE
                     SET server_name = EXCLUDED.server_name,
                         region = EXCLUDED.region,
                         cpu_percent = COALESCE(EXCLUDED.cpu_percent, server_usage_samples.cpu_percent),
+                        cpu_steal_percent = COALESCE(EXCLUDED.cpu_steal_percent, server_usage_samples.cpu_steal_percent),
+                        load_average_1m = COALESCE(EXCLUDED.load_average_1m, server_usage_samples.load_average_1m),
+                        load_average_5m = COALESCE(EXCLUDED.load_average_5m, server_usage_samples.load_average_5m),
+                        load_average_15m = COALESCE(EXCLUDED.load_average_15m, server_usage_samples.load_average_15m),
                         disk_total_bytes = COALESCE(EXCLUDED.disk_total_bytes, server_usage_samples.disk_total_bytes),
                         disk_used_bytes = COALESCE(EXCLUDED.disk_used_bytes, server_usage_samples.disk_used_bytes),
                         disk_free_bytes = COALESCE(EXCLUDED.disk_free_bytes, server_usage_samples.disk_free_bytes),
@@ -1422,6 +1431,7 @@ class Database:
             ]
         query = """
             SELECT server_id, server_name, region, collected_at, cpu_percent,
+                   cpu_steal_percent, load_average_1m, load_average_5m, load_average_15m,
                    disk_total_bytes, disk_used_bytes, disk_free_bytes, source
             FROM server_usage_samples
             WHERE collected_at >= %s
@@ -1435,6 +1445,7 @@ class Database:
             rows = connection.execute(query, params).fetchall()
         keys = (
             "server_id", "server_name", "region", "collected_at", "cpu_percent",
+            "cpu_steal_percent", "load_average_1m", "load_average_5m", "load_average_15m",
             "disk_total_bytes", "disk_used_bytes", "disk_free_bytes", "source",
         )
         return [dict(zip(keys, row)) for row in rows]

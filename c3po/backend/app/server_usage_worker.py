@@ -31,8 +31,10 @@ def run_worker() -> None:
         )
         previous = current
         logger.info(
-            "Server usage: cpu=%.2f%% disk=%.2f%%",
+            "Server usage: cpu=%.2f%% steal=%.2f%% load1=%.2f disk=%.2f%%",
             sample["cpu_percent"] or 0.0,
+            sample["cpu_steal_percent"] or 0.0,
+            sample["load_average_1m"],
             sample["disk_used_bytes"] / sample["disk_total_bytes"] * 100,
         )
 
