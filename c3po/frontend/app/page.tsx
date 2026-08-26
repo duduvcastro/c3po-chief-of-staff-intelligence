@@ -256,6 +256,7 @@ interface R2D2DashboardData {
   organic_daily_pnl_usd: number;
   interest_income_session_usd: number;
   interest_income_session_date: string | null;
+  interest_income_epoch_start_date: string;
   interest_income_epoch_usd: number;
   interest_income_status: "pending" | "posted";
   interest_income_annual_rate: number | null;
@@ -3329,6 +3330,14 @@ function R2D2RisingView() {
     day: "2-digit"
   }).format(new Date(value));
   const todayKey = saoPauloDateKey(new Date());
+  const cashYieldEpochDate = new Date(`${data.interest_income_epoch_start_date}T12:00:00`).toLocaleDateString("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "numeric"
+  });
+  const cashYieldCaption = data.interest_income_status === "posted"
+    ? `Prior-session cash yield ${signedMoney(data.interest_income_session_usd)}`
+    : todayKey < data.interest_income_epoch_start_date
+      ? `Cash yield starts ${cashYieldEpochDate}`
+      : "Prior-session cash yield pending";
   const todayTrades = data.trades.filter((trade) => saoPauloDateKey(trade.executed_at) === todayKey);
   const todayPositiveTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
   const todayNegativeTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
@@ -3520,7 +3529,7 @@ function R2D2RisingView() {
         </div>
         <div><span>Starting capital</span><strong>{money(data.starting_capital_usd)}</strong><small>Virtual capital · paper only</small></div>
         <div><span>Net asset value</span><strong className="r2d2-money-inline">{money(data.accounting_total_nav_usd ?? data.accounting_nav_usd)}</strong><small>Ex-interest {money(data.accounting_nav_ex_interest_usd ?? data.accounting_nav_usd)}</small></div>
-        <div><span>Daily trading P&amp;L</span><strong className={`${data.organic_daily_pnl_usd > 0 ? "r2d2-up" : data.organic_daily_pnl_usd < 0 ? "r2d2-down" : "r2d2-flat"} r2d2-money-inline`}>{signedMoney(data.organic_daily_pnl_usd ?? data.daily_pnl_usd)}</strong><small>{data.interest_income_status === "posted" ? `Prior-session cash yield ${signedMoney(data.interest_income_session_usd)}` : "Prior-session cash yield pending"}</small></div>
+        <div><span>Daily trading P&amp;L</span><strong className={`${data.organic_daily_pnl_usd > 0 ? "r2d2-up" : data.organic_daily_pnl_usd < 0 ? "r2d2-down" : "r2d2-flat"} r2d2-money-inline`}>{signedMoney(data.organic_daily_pnl_usd ?? data.daily_pnl_usd)}</strong><small>{cashYieldCaption}</small></div>
         <div><span>Open positions</span><strong>{openPositions}</strong><small>{money(cash)} cash · {cashPercent.toFixed(1)}%</small></div>
       </section>
 
@@ -4067,6 +4076,16 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         day: "2-digit", month: "2-digit", year: "numeric"
       })
     : null;
+  const cashYieldEpochDate = r2d2?.interest_income_epoch_start_date
+    ? new Date(`${r2d2.interest_income_epoch_start_date}T12:00:00`).toLocaleDateString("pt-BR", {
+        day: "2-digit", month: "2-digit", year: "numeric"
+      })
+    : null;
+  const cashYieldDetail = r2d2?.interest_income_status === "posted"
+    ? `Cash yield ${cashYieldDate} ${signedUsd(r2d2.interest_income_session_usd)}`
+    : r2d2 && todayKey < r2d2.interest_income_epoch_start_date
+      ? `Cash yield starts ${cashYieldEpochDate}`
+      : "Cash yield pending";
   const livePositions = liveTelemetry?.positions ?? r2d2?.positions ?? [];
   const liveOpenPositions = liveTelemetry?.open_positions ?? r2d2?.open_positions ?? 0;
   const liveTelemetryTime = liveTelemetry?.generated_at
@@ -4083,7 +4102,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
           <div><span>R2D2 live telemetry</span><strong title={r2d2?.methodology_version}>{r2d2?.methodology_version ?? "Connecting"}</strong><small>{liveTelemetryTime ? `POSITIONS LIVE · ${liveTelemetryTime}` : "POSITION FEED CONNECTING"}</small></div>
         </div>
         <FalconMetric label="Net Asset Value" value={r2d2 ? usd(r2d2.accounting_total_nav_usd ?? r2d2.accounting_nav_usd) : "—"} detail={r2d2 ? `Ex-interest ${usd(r2d2.accounting_nav_ex_interest_usd ?? r2d2.accounting_nav_usd)} · ${liveOpenPositions} open positions` : "Waiting for R2D2"} tone="gold" valueClassName="falcon-money-inline" />
-        <FalconMetric label="Daily trading P&L" value={r2d2 ? signedUsd(r2d2.organic_daily_pnl_usd ?? r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${dailyPnlDate ?? "No session"} trades · ${r2d2.interest_income_status === "posted" ? `Cash yield ${cashYieldDate} ${signedUsd(r2d2.interest_income_session_usd)}` : "Cash yield pending"}` : "Waiting for R2D2"} tone={(r2d2?.organic_daily_pnl_usd ?? r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} valueClassName="falcon-money-inline" />
+        <FalconMetric label="Daily trading P&L" value={r2d2 ? signedUsd(r2d2.organic_daily_pnl_usd ?? r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${dailyPnlDate ?? "No session"} trades · ${cashYieldDetail}` : "Waiting for R2D2"} tone={(r2d2?.organic_daily_pnl_usd ?? r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} valueClassName="falcon-money-inline" />
         <FalconMetric label="Positive Sell Legs" value={`${todayPositiveSellLegs}`} secondaryValue={`${todayPositiveSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="green" />
         <FalconMetric label="Negative Sell Legs" value={`${todayNegativeSellLegs}`} secondaryValue={`${todayNegativeSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="red" />
         <FalconMetric label="Episode Win Rate" value={todayEpisodes ? `${todayEpisodes.positive_episodes}/${todayEpisodes.decided_episodes}` : "—"} secondaryValue={todayEpisodes ? `${todayEpisodes.win_rate_percent.toFixed(1)}%` : undefined} detail={todayEpisodes ? `${todayEpisodes.closed_episodes} closed episodes today${todayEpisodes.flat_episodes ? ` · ${todayEpisodes.flat_episodes} flat` : ""}` : "Waiting for R2D2"} tone={(todayEpisodes?.win_rate_percent ?? 0) >= 50 ? "green" : "red"} />

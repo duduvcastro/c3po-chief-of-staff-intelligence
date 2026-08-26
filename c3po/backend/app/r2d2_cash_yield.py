@@ -13,9 +13,9 @@ from .database import Database
 from .market_data.http import JsonHttpClient
 
 
-SCHEMA_VERSION = "R2D2-CASH-YIELD-v1"
+SCHEMA_VERSION = "R2D2-CASH-YIELD-v2"
 METHODOLOGY_KEY = "r2d2_cash_yield_accounting"
-METHODOLOGY_VERSION = 1
+METHODOLOGY_VERSION = 2
 RATE_ANALYSIS_TYPE = "r2d2_cash_yield_rate"
 RATE_ENTITY_KEY = "US_TBILL_13_WEEK_COUPON_EQUIVALENT"
 RUN_ANALYSIS_TYPE = "r2d2_cash_yield_run"
@@ -25,9 +25,6 @@ SOURCE_SERIES = "Daily Treasury Bill Rates / 13-week Coupon Equivalent"
 TREASURY_XML_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
 )
-EPOCH_START_DATE = date(2026, 8, 26)
-
-
 class CashYieldDataError(RuntimeError):
     pass
 
@@ -138,76 +135,133 @@ class R2D2CashYieldService:
             database._r2d2_cash_yield_entries = []  # type: ignore[attr-defined]
 
     def last_run_at(self) -> datetime | None:
-        return self.database.latest_analysis_snapshot_published_at(
-            RUN_ANALYSIS_TYPE, RUN_ENTITY_KEY
-        )
+        latest = self.database.latest_analysis_snapshot(RUN_ANALYSIS_TYPE, RUN_ENTITY_KEY)
+        if not latest or (latest.get("outputs") or {}).get("status") == "partial":
+            return None
+        return latest["published_at"]
 
     def run_latest(self) -> dict[str, Any]:
         experiment = self._experiment()
-        snapshots = self._final_snapshots(str(experiment["id"]))
-        eligible = [row for row in snapshots if row["session_date"] >= EPOCH_START_DATE]
+        experiment_id = str(experiment["id"])
+        snapshots = self._final_snapshots(experiment_id)
+        eligible = [
+            row for row in snapshots
+            if row["session_date"] >= experiment["start_date"]
+        ]
         if not eligible:
-            return self._record_run({"status": "pending", "reason": "no_final_epoch_session"})
-        current = eligible[-1]
-        prior = next(
-            (row for row in reversed(snapshots) if row["session_date"] < current["session_date"]),
-            None,
-        )
-        if prior is None:
+            return self._record_run({"status": "pending", "reason": "no_final_experiment_session"})
+        accruable = eligible[1:]
+        if not accruable:
             return self._record_run({"status": "pending", "reason": "no_prior_final_session"})
-        existing = self._entry(str(experiment["id"]), current["session_date"])
-        if existing:
+        missing = [
+            row for row in accruable
+            if self._entry(experiment_id, row["session_date"]) is None
+        ]
+        if not missing:
+            current = accruable[-1]
+            existing = self._entry(experiment_id, current["session_date"])
             return self._record_run({
                 "status": "idempotent",
                 "session_date": current["session_date"].isoformat(),
                 "entry_sha256": existing["entry_sha256"],
             })
 
-        fetched_at = datetime.now(timezone.utc)
-        rate = self._refresh_rate(prior["session_date"], fetched_at=fetched_at)
-        base_cash = max(float(prior["cash_usd"]), 0.0)
-        factor = coupon_equivalent_factor(
-            float(rate["annual_rate"]), prior["session_date"], current["session_date"]
-        )
-        entry: dict[str, Any] = {
-            "id": str(uuid4()),
-            "experiment_id": str(experiment["id"]),
-            "session_date": current["session_date"],
-            "prior_session_date": prior["session_date"],
-            "base_cash_usd": round(base_cash, 6),
-            "annual_coupon_equivalent_rate": float(rate["annual_rate"]),
-            "calendar_days": (current["session_date"] - prior["session_date"]).days,
-            "daily_factor": factor,
-            "interest_income_usd": round(base_cash * factor, 6),
-            "source_name": SOURCE_NAME,
-            "source_series": SOURCE_SERIES,
-            "source_observation_date": prior["session_date"],
-            "source_available_at": datetime.fromisoformat(rate["available_at"]),
-            "source_fetched_at": datetime.fromisoformat(rate["fetched_at"]),
-            "source_payload_sha256": rate["payload_sha256"],
-            "backfilled_at": fetched_at if current["session_date"] < fetched_at.date() else None,
-        }
-        entry["entry_sha256"] = _canonical_sha256({
-            key: value.isoformat() if isinstance(value, (date, datetime)) else value
-            for key, value in entry.items()
-            if key != "id"
-        })
-        persisted = self._insert_entry(entry)
+        posted: list[dict[str, Any]] = []
+        pending: list[dict[str, str]] = []
+        xml_by_year: dict[int, str] = {}
+        for current in missing:
+            prior = next(
+                (row for row in reversed(eligible) if row["session_date"] < current["session_date"]),
+                None,
+            )
+            if prior is None:
+                return self._record_run({"status": "pending", "reason": "no_prior_final_session"})
+
+            fetched_at = datetime.now(timezone.utc)
+            year = prior["session_date"].year
+            if year not in xml_by_year:
+                xml_by_year[year] = self.http.get_text(
+                    TREASURY_XML_URL,
+                    params={
+                        "data": "daily_treasury_bill_rates",
+                        "field_tdr_date_value": str(year),
+                    },
+                )
+            try:
+                rate = self._refresh_rate(
+                    prior["session_date"],
+                    fetched_at=fetched_at,
+                    xml_text=xml_by_year[year],
+                )
+            except CashYieldDataError as exc:
+                pending.append({
+                    "session_date": current["session_date"].isoformat(),
+                    "source_observation_date": prior["session_date"].isoformat(),
+                    "reason": str(exc),
+                })
+                continue
+            base_cash = max(float(prior["cash_usd"]), 0.0)
+            factor = coupon_equivalent_factor(
+                float(rate["annual_rate"]), prior["session_date"], current["session_date"]
+            )
+            entry: dict[str, Any] = {
+                "id": str(uuid4()),
+                "experiment_id": experiment_id,
+                "session_date": current["session_date"],
+                "prior_session_date": prior["session_date"],
+                "base_cash_usd": round(base_cash, 6),
+                "annual_coupon_equivalent_rate": float(rate["annual_rate"]),
+                "calendar_days": (current["session_date"] - prior["session_date"]).days,
+                "daily_factor": factor,
+                "interest_income_usd": round(base_cash * factor, 6),
+                "source_name": SOURCE_NAME,
+                "source_series": SOURCE_SERIES,
+                "source_observation_date": prior["session_date"],
+                "source_available_at": datetime.fromisoformat(rate["available_at"]),
+                "source_fetched_at": datetime.fromisoformat(rate["fetched_at"]),
+                "source_payload_sha256": rate["payload_sha256"],
+                "backfilled_at": fetched_at if current["session_date"] < fetched_at.date() else None,
+            }
+            entry["entry_sha256"] = _canonical_sha256({
+                key: value.isoformat() if isinstance(value, (date, datetime)) else value
+                for key, value in entry.items()
+                if key != "id"
+            })
+            posted.append(self._insert_entry(entry))
+
+        if pending:
+            self._record_run({
+                "status": "partial",
+                "posted_count": len(posted),
+                "posted_session_dates": [row["session_date"].isoformat() for row in posted],
+                "pending_count": len(pending),
+                "pending_sessions": pending,
+            })
+            raise CashYieldDataError(
+                "Cash-yield sessions remain pending: "
+                + ", ".join(row["session_date"] for row in pending)
+            )
+
+        latest_session = accruable[-1]["session_date"]
+        latest = self._entry(experiment_id, latest_session)
+        if latest is None:
+            raise CashYieldDataError("Latest cash-yield session was not persisted")
         return self._record_run({
             "status": "posted",
-            "session_date": current["session_date"].isoformat(),
-            "interest_income_usd": persisted["interest_income_usd"],
-            "entry_sha256": persisted["entry_sha256"],
+            "session_date": latest_session.isoformat(),
+            "interest_income_usd": latest["interest_income_usd"],
+            "entry_sha256": latest["entry_sha256"],
+            "posted_count": len(posted),
+            "posted_session_dates": [row["session_date"].isoformat() for row in posted],
         })
 
-    def _refresh_rate(self, observation_date: date, *, fetched_at: datetime) -> dict[str, Any]:
-        xml_text = self.http.get_text(
-            TREASURY_XML_URL,
-            params={
-                "data": "daily_treasury_bill_rates",
-                "field_tdr_date_value": str(observation_date.year),
-            },
-        )
+    def _refresh_rate(
+        self,
+        observation_date: date,
+        *,
+        fetched_at: datetime,
+        xml_text: str,
+    ) -> dict[str, Any]:
         package = parse_treasury_bill_xml(
             xml_text, observation_date=observation_date, fetched_at=fetched_at
         )
@@ -258,11 +312,11 @@ class R2D2CashYieldService:
         else:
             with self.database.connection() as connection:
                 row = connection.execute(
-                    "SELECT id::text, code FROM r2d2_experiments WHERE code=%s",
+                    "SELECT id::text, code, start_date FROM r2d2_experiments WHERE code=%s",
                     (self.settings.r2d2_experiment_code,),
                 ).fetchone()
             if row:
-                return {"id": row[0], "code": row[1]}
+                return {"id": row[0], "code": row[1], "start_date": row[2]}
         raise CashYieldDataError("R2D2 experiment is not initialized")
 
     def _final_snapshots(self, experiment_id: str) -> list[dict[str, Any]]:

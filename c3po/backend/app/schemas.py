@@ -796,6 +796,7 @@ class R2D2DashboardResponse(BaseModel):
     organic_daily_pnl_usd: float = 0
     interest_income_session_usd: float = 0
     interest_income_session_date: str | None = None
+    interest_income_epoch_start_date: str
     interest_income_epoch_usd: float = 0
     interest_income_status: Literal["pending", "posted"] = "pending"
     interest_income_annual_rate: float | None = None

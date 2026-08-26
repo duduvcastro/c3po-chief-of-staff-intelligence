@@ -1862,6 +1862,7 @@ class R2D2PaperService:
             interest_income_session_date=(
                 latest_interest["session_date"].isoformat() if latest_interest else None
             ),
+            interest_income_epoch_start_date=experiment["start_date"].isoformat(),
             interest_income_epoch_usd=round(interest_income_epoch, 2),
             interest_income_status="posted" if latest_interest else "pending",
             interest_income_annual_rate=(
