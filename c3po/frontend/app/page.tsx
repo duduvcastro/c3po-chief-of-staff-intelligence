@@ -3527,8 +3527,8 @@ function R2D2RisingView() {
             <small>{data.entries_paused ? `${data.entries_pause_reason ?? "New entries are blocked"} · exits and protection remain active` : `From ${data.start_date} · ${data.checkpoint_days}-day checkpoint ${data.checkpoint_date}${data.checkpoint_reached ? " reached" : ""}`}</small>
           </div>
         </div>
-        <div><span>Starting capital</span><strong>{money(data.starting_capital_usd)}</strong><small>Virtual capital · paper only</small></div>
-        <div><span>Net asset value</span><strong className="r2d2-money-inline">{money(data.accounting_total_nav_usd ?? data.accounting_nav_usd)}</strong><small>Ex-interest {money(data.accounting_nav_ex_interest_usd ?? data.accounting_nav_usd)}</small></div>
+        <div><span>Net asset value with interest</span><strong className="r2d2-nav-with-interest r2d2-money-inline">{money(data.accounting_total_nav_usd ?? data.accounting_nav_usd)}</strong><small>Ex-interest {money(data.accounting_nav_ex_interest_usd ?? data.accounting_nav_usd)}</small></div>
+        <div><span>Accrued interest</span><strong className="r2d2-accrued-interest r2d2-money-inline">{moneyExact(data.interest_income_epoch_usd ?? 0)}</strong><small>{cashYieldCaption}</small></div>
         <div><span>Daily trading P&amp;L</span><strong className={`${data.organic_daily_pnl_usd > 0 ? "r2d2-up" : data.organic_daily_pnl_usd < 0 ? "r2d2-down" : "r2d2-flat"} r2d2-money-inline`}>{signedMoney(data.organic_daily_pnl_usd ?? data.daily_pnl_usd)}</strong><small>{cashYieldCaption}</small></div>
         <div><span>Open positions</span><strong>{openPositions}</strong><small>{money(cash)} cash · {cashPercent.toFixed(1)}%</small></div>
       </section>
