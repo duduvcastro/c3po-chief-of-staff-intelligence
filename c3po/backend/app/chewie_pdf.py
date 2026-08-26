@@ -75,12 +75,13 @@ class ChewieFundamentalsPdfRenderer:
         ], accent=GOLD)
 
         self._metric_box(pdf, left_x, 212, col_w, 128, "Rentabilidade", [
+            ("EBITDA", self._compact_money(item["profitability"]["ebitda"], payload["currency"])),
             ("ROE", self._percent(item["profitability"]["roe_percent"])),
             ("ROA", self._percent(item["profitability"]["roa_percent"])),
             ("Margem líquida", self._percent(item["profitability"]["profit_margin_percent"])),
             ("Margem operacional", self._percent(item["profitability"]["operating_margin_percent"])),
             ("Margem EBITDA", self._percent(item["profitability"]["ebitda_margin_percent"])),
-        ], accent=GREEN)
+        ], accent=GREEN, row_step=15.5)
 
         self._metric_box(pdf, left_x, 91, col_w, 111, "Endividamento & liquidez", [
             ("Dívida / patrimônio", self._multiple(item["leverage"]["debt_to_equity"])),
@@ -155,7 +156,7 @@ class ChewieFundamentalsPdfRenderer:
 
     def _metric_box(
         self, pdf: canvas.Canvas, x: float, y: float, w: float, h: float,
-        title: str, rows: list[tuple[str, str]], *, accent=GOLD,
+        title: str, rows: list[tuple[str, str]], *, accent=GOLD, row_step: float = 18,
     ) -> None:
         self._rounded_box(pdf, x, y, w, h)
         self._section_title(pdf, title, x + 11, y + h - 20, w - 22, accent=accent)
@@ -170,7 +171,7 @@ class ChewieFundamentalsPdfRenderer:
             pdf.setFillColor(RED if value.startswith("-") else INK)
             pdf.setFont("Helvetica-Bold", 7.2)
             pdf.drawRightString(x + w - 12, row_y, value)
-            row_y -= 18
+            row_y -= row_step
 
     def _consensus_box(self, pdf: canvas.Canvas, x: float, y: float, w: float, h: float, payload: dict[str, Any]) -> None:
         fundamentals = payload["fundamentals"]
