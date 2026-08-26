@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from app.r2d2_entry_quality_study import PolicyEpoch
-from app.r2d2_entry_route_probe import build_probe_report
+from app.r2d2_entry_route_probe import build_probe_report, main
 from app.r2d2_exit_policy_engine import LedgerFill
 from app.r2d2_exit_policy_study import canonical_sha256
 
@@ -124,3 +124,43 @@ def test_probe_keeps_open_episode_without_inventing_outcome() -> None:
     assert group["loser_count"] == 0
     assert group["net_realized_pnl_usd"] == 0.0
     assert report["episode_rows"][0]["net_realized_pnl_usd"] is None
+
+
+def test_probe_cli_passes_full_settings_to_database(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import app.r2d2_entry_route_probe as probe_module
+
+    settings = type("SettingsStub", (), {"r2d2_experiment_code": "R2D2"})()
+    observed = []
+
+    class DatabaseStub:
+        def __init__(self, received) -> None:
+            observed.append(received)
+
+    class ReaderStub:
+        def __init__(self, _database) -> None:
+            pass
+
+        def read(self, _code):
+            return {"id": "exp", "code": "R2D2", "status": "running"}, []
+
+    epoch = _epoch()
+    monkeypatch.setattr(probe_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(probe_module, "Database", DatabaseStub)
+    monkeypatch.setattr(probe_module, "LedgerReader", ReaderStub)
+    monkeypatch.setattr(
+        probe_module,
+        "_load_policy_epochs",
+        lambda _path: ([epoch], {"sha256": "epochs"}),
+    )
+
+    output = tmp_path / "probe.json"
+    assert main([
+        "--policy-epochs",
+        str(tmp_path / "epochs.json"),
+        "--output",
+        str(output),
+    ]) == 0
+    assert observed == [settings]

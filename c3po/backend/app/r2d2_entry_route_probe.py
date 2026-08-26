@@ -242,7 +242,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     settings = get_settings()
-    database = Database(settings.database_url)
+    database = Database(settings)
     experiment, fills = LedgerReader(database).read(settings.r2d2_experiment_code)
     epochs, evidence = _load_policy_epochs(args.policy_epochs)
     report = build_probe_report(
