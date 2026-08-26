@@ -334,6 +334,8 @@ interface R2D2DashboardData {
     technical_defense_reviewed_at: string | null;
     quote_status: string;
     quote_as_of: string | null;
+    quote_age_seconds: number | null;
+    quote_freshness: "fresh" | "aging" | "stale" | "unknown";
     technical_as_of: string | null;
     opened_at: string;
     updated_at: string;
@@ -787,6 +789,9 @@ interface RealtimePortfolioItem extends RealtimeMarketLeader {
   source: string;
   delay_minutes: number;
   status: LiveMarketStatus;
+  reference_status: "validated" | "unvalidated" | "not_applicable";
+  reference_close: number | null;
+  reference_as_of: string | null;
 }
 
 interface RealtimePortfolioResponse {
@@ -3319,6 +3324,7 @@ function R2D2RisingView() {
     return labels.join(" · ");
   };
   const positions = liveTelemetry?.positions ?? data.positions;
+  const positionFeedUpdatedAt = liveTelemetry?.generated_at ?? data.generated_at;
   const markedNav = liveTelemetry?.nav_usd ?? data.nav_usd;
   const cash = liveTelemetry?.cash_usd ?? data.cash_usd;
   const openPositions = liveTelemetry?.open_positions ?? data.open_positions;
@@ -3589,6 +3595,7 @@ function R2D2RisingView() {
 
       <section className="panel r2d2-ledger-panel">
         <PanelHeader title="Virtual Positions" icon={WalletCards} />
+        <div className="r2d2-ledger-updated">API UPDATED {new Date(positionFeedUpdatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</div>
         <div className="r2d2-ledger-head">
           <span>Asset</span><span>Price</span><span>Allocation</span><span>Position value</span><span title="Live quote versus average cost, including entry friction already paid">Price mark</span><span title="Estimated result after applying the same exit slippage and fee model used by a real SELL">Net if closed</span><span>Technical</span><span>Trend / Flow</span><span>Stop</span><span>Decision</span>
         </div>
@@ -3606,9 +3613,10 @@ function R2D2RisingView() {
               <span className={position.mark_pnl_usd >= 0 ? "positive" : "negative"}>
                 {`${position.mark_pnl_usd >= 0 ? "+" : "-"}${moneyExact(Math.abs(position.mark_pnl_usd))}`}
               </span>
-              <small className={position.quote_status === "live" ? "positive" : "muted"}>
-                {position.quote_status === "live" ? "LIVE" : "LAST MARK"}
-                {position.quote_as_of ? ` · ${new Date(position.quote_as_of).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}
+              <small className={`quote-freshness quote-freshness-${position.quote_freshness ?? "unknown"}`}>
+                {(position.quote_freshness ?? "unknown").toUpperCase()}
+                {position.quote_as_of ? ` · QUOTE ${new Date(position.quote_as_of).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}
+                {typeof position.quote_age_seconds === "number" ? ` · AGE ${Math.round(position.quote_age_seconds)}s` : ""}
               </small>
             </div>
             <div className="r2d2-live-pnl" data-label="Net if closed">
@@ -4812,6 +4820,8 @@ function MyRealtimePortfolio({
               <strong className="realtime-portfolio-price">{item.status === "stale" ? "N/D" : formatCurrency(item.price, item.currency)}</strong>
               {item.status === "stale" ? (
                 <span className="realtime-portfolio-change">N/D</span>
+              ) : item.reference_status === "unvalidated" ? (
+                <span className="realtime-portfolio-change realtime-portfolio-reference-missing">referência não validada</span>
               ) : (
                 <span className={`realtime-portfolio-change ${item.change_percent >= 0 ? "change-up" : "change-down"}`}>
                   <DirectionIcon direction={item.change_percent >= 0 ? "up" : "down"} size={13} />{formatPercent(item.change_percent, 2)}

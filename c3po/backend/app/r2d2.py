@@ -267,6 +267,19 @@ def _date_value(value: Any) -> date:
     return date.fromisoformat(str(value).strip().split()[0])
 
 
+def _quote_freshness(now: datetime, quote_as_of: datetime | None) -> tuple[float | None, str]:
+    if quote_as_of is None:
+        return None, "unknown"
+    age_seconds = max(0.0, (now - quote_as_of).total_seconds())
+    if age_seconds <= 5:
+        freshness = "fresh"
+    elif age_seconds <= 30:
+        freshness = "aging"
+    else:
+        freshness = "stale"
+    return round(age_seconds, 3), freshness
+
+
 def _listing_history_verdict(
     history: list[dict[str, Any]],
     *,
@@ -1726,6 +1739,7 @@ class R2D2PaperService:
             decision_state = str(strategy.get("decision_state") or "monitor")
             if quote_status == "live" and decision_state == "awaiting live quote":
                 decision_state = "live monitoring"
+            quote_age_seconds, quote_freshness = _quote_freshness(now, quote_as_of)
             position_models.append(R2D2Position(
                 market=row["market"], symbol=row["symbol"], name=row["name"], logo_url=logo_url,
                 currency=row["currency"],
@@ -1753,6 +1767,8 @@ class R2D2PaperService:
                 technical_defense_reviewed_at=strategy.get("last_review_at"),
                 quote_status=quote_status,
                 quote_as_of=quote_as_of,
+                quote_age_seconds=quote_age_seconds,
+                quote_freshness=quote_freshness,
                 technical_as_of=technical.get("as_of"),
                 opened_at=row["opened_at"], updated_at=row["updated_at"],
             ))

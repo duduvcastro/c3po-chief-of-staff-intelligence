@@ -15,6 +15,7 @@ from app.r2d2 import (
     _date_value,
     _episode_summary_from_trades,
     _listing_history_verdict,
+    _quote_freshness,
 )
 from app import r2d2 as r2d2_module
 from app import r2d2_entry_control
@@ -39,6 +40,16 @@ def _service() -> R2D2PaperService:
 
 def test_r2d2_start_date_accepts_compose_timestamp() -> None:
     assert _date_value("2026-08-17 00:00:00 +0000 UTC").isoformat() == "2026-08-17"
+
+
+def test_quote_freshness_has_explicit_fresh_aging_and_stale_boundaries() -> None:
+    now = datetime(2026, 8, 26, 14, 0, tzinfo=timezone.utc)
+
+    assert _quote_freshness(now, now - timedelta(seconds=5)) == (5.0, "fresh")
+    assert _quote_freshness(now, now - timedelta(seconds=6)) == (6.0, "aging")
+    assert _quote_freshness(now, now - timedelta(seconds=30)) == (30.0, "aging")
+    assert _quote_freshness(now, now - timedelta(seconds=31)) == (31.0, "stale")
+    assert _quote_freshness(now, None) == (None, "unknown")
 
 
 def test_listing_history_verdict_accepts_twenty_current_listing_sessions() -> None:
@@ -1090,6 +1101,9 @@ def test_r2d2_live_positions_uses_fresh_stream_marks_without_loading_history(
     assert position.estimated_exit_return_percent == 4.853042
     assert position.quote_status == "live"
     assert position.quote_as_of == observed_at
+    assert position.quote_age_seconds is not None
+    assert position.quote_age_seconds < 5
+    assert position.quote_freshness == "fresh"
     assert position.decision_state == "live monitoring"
     assert position.technical_defense_score == 55.0
     assert position.technical_defense_severity == "reduce"

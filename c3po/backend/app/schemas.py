@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -587,6 +587,9 @@ class RealtimePortfolioItem(RealtimeMarketLeader):
     source: str
     delay_minutes: int
     status: Literal["live", "delayed", "closed", "stale"]
+    reference_status: Literal["validated", "unvalidated", "not_applicable"] = "not_applicable"
+    reference_close: float | None = None
+    reference_as_of: date | None = None
 
 
 class RealtimePortfolioIntradayPoint(BaseModel):
@@ -712,6 +715,8 @@ class R2D2Position(BaseModel):
     technical_defense_reviewed_at: datetime | None = None
     quote_status: str = "stored"
     quote_as_of: datetime | None = None
+    quote_age_seconds: float | None = Field(default=None, ge=0)
+    quote_freshness: Literal["fresh", "aging", "stale", "unknown"] = "unknown"
     technical_as_of: datetime | None = None
     opened_at: datetime
     updated_at: datetime

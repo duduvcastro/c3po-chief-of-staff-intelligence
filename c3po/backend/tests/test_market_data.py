@@ -1349,6 +1349,44 @@ def test_realtime_portfolio_replaces_ancient_bulk_quote_with_direct_quote() -> N
     assert any("/api/real-time/SPCX.US" in call["url"] for call in http.calls)
 
 
+def test_realtime_portfolio_validates_previous_close_against_completed_daily_bar() -> None:
+    now = datetime(2026, 8, 26, 15, tzinfo=timezone.utc)
+    http = RoutingStubHttp({
+        "/api/eod/SPCX.US": [
+            {"date": "2026-08-24", "close": 135.0},
+            {"date": "2026-08-25", "close": 137.95},
+        ],
+    })
+    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+    service._us_previous_close["SPCX"] = 137.95
+
+    assert service._us_reference_status("SPCX", now) == (
+        "validated",
+        137.95,
+        date(2026, 8, 25),
+    )
+
+
+def test_realtime_portfolio_hides_change_when_previous_close_is_recycled() -> None:
+    now = datetime(2026, 8, 26, 15, tzinfo=timezone.utc)
+    http = RoutingStubHttp({
+        "/api/eod/SPCX.US": [
+            {"date": "2026-08-24", "close": 135.0},
+            {"date": "2026-08-25", "close": 137.95},
+        ],
+    })
+    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+    service._us_previous_close["SPCX"] = 21.9457
+
+    assert service._us_reference_status("SPCX", now) == (
+        "unvalidated",
+        137.95,
+        date(2026, 8, 25),
+    )
+
+
 def test_realtime_portfolio_accepts_otc_common_stock() -> None:
     timestamp = 1786720920
     catalog = [
