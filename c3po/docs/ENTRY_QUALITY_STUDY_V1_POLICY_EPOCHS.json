@@ -1,0 +1,500 @@
+{
+  "schema_version": "ENTRY-QUALITY-STUDY-V1-POLICY-EPOCHS-v1",
+  "generated_at": "2026-08-26T00:00:00Z",
+  "derivation": {
+    "first_epoch": "explicitly unresolved because ledger activity predates repository initialization",
+    "audited_epoch_boundary": "successful workflow_run.updated_at, except the resumed epoch which uses its audit-event changed_at",
+    "policy_code_hash": "sha256 over path-delimited bytes of r2d2.py, r2d2_strategy.py, config.py and market_data/eodhd_stream.py at deployed_commit",
+    "intraday_2026_08_20_condensed": false,
+    "equivalent_deploys_collapsed": true,
+    "collapse_rule": "consecutive successful deploys with identical policy_code_sha256 remain one policy epoch"
+  },
+  "epochs": [
+    {
+      "policy_epoch": "policy-a-pre-repository-unversioned",
+      "effective_from": "2026-08-17T18:07:17.998805Z",
+      "effective_to": "2026-08-17T21:12:59Z",
+      "deployed_commit": null,
+      "code_provenance_status": "UNRESOLVED_PRE_REPOSITORY",
+      "policy_code_sha256": null,
+      "workflow_run_id": null,
+      "effective_from_evidence": "first organic ledger BUY; production code predates repository initialization",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260817211259-b991ebd6",
+      "effective_from": "2026-08-17T21:12:59Z",
+      "effective_to": "2026-08-17T21:31:40Z",
+      "deployed_commit": "b991ebd6bee2192835862ee3c9ca80cba4136ee2",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "cc33d3581dcb22f5beae88564526f3c0705e80682979e2a949bf107e1fff24de",
+      "workflow_run_id": 32069041295,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260817213140-a1125bbe",
+      "effective_from": "2026-08-17T21:31:40Z",
+      "effective_to": "2026-08-17T21:34:04Z",
+      "deployed_commit": "a1125bbe7058e0d18c7f5b28607c7a7122f49351",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "d83a5abfdea0184da83d53eee3f22c7475d414f8ca42354df474b003f4de7085",
+      "workflow_run_id": 32071442372,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260817213404-71d72003",
+      "effective_from": "2026-08-17T21:34:04Z",
+      "effective_to": "2026-08-17T23:22:39Z",
+      "deployed_commit": "71d72003140c013f47855f9e2cc58ab003623b24",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "e471f12b5a0918a9341fde2359a6799c5571e451ba60201430b3b66f0602ee11",
+      "workflow_run_id": 32071463615,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260817232239-0d69862c",
+      "effective_from": "2026-08-17T23:22:39Z",
+      "effective_to": "2026-08-18T13:58:58Z",
+      "deployed_commit": "0d69862cc278af86446883098be311ea1a1250da",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "3c73bfec5e325031474bdcee646ff90ad4258b9a65d491271f527e01aaf279ae",
+      "workflow_run_id": 32080040709,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260818135858-ed660c26",
+      "effective_from": "2026-08-18T13:58:58Z",
+      "effective_to": "2026-08-18T14:10:51Z",
+      "deployed_commit": "ed660c2687aa5857929d4ba1372deb8cff642fa1",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "b036794ef154d970cd9349a43589638e8051f4f47b27634c419506220f86d488",
+      "workflow_run_id": 32145399431,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260818141051-a767a621",
+      "effective_from": "2026-08-18T14:10:51Z",
+      "effective_to": "2026-08-18T14:16:47Z",
+      "deployed_commit": "a767a6216d35498155538bd9c3112ea42684280b",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "53aa824635bbf6db69c97bb2ffde2481dd7480a593bffd442a95c1f7f57424df",
+      "workflow_run_id": 32146607178,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260818141647-3f7a2347",
+      "effective_from": "2026-08-18T14:16:47Z",
+      "effective_to": "2026-08-18T14:51:17Z",
+      "deployed_commit": "3f7a23476349dca88322fe1059f8943ab558c7d8",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "07c3d11cf96089864cf658e8dc09befe425d8460424c271a747ca2201d874cfb",
+      "workflow_run_id": 32147215314,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260818145117-8f1e4fc8",
+      "effective_from": "2026-08-18T14:51:17Z",
+      "effective_to": "2026-08-18T15:42:02Z",
+      "deployed_commit": "8f1e4fc86b9bd83db85295f71d7fa46f9cf5c63e",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "9074a1e3563f0663ee829b9712495b39a0d88581562e1c5313ccfd523f04e4dc",
+      "workflow_run_id": 32150734890,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260818154202-c9068a57",
+      "effective_from": "2026-08-18T15:42:02Z",
+      "effective_to": "2026-08-18T16:19:50Z",
+      "deployed_commit": "c9068a5702bc3a1123da837bb1e716d326089a46",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "49a7575aea24d5cf92e0a9cd0acdd38b9b3e9591b555540d12646fc063ba56d9",
+      "workflow_run_id": 32155888282,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": [
+        {
+          "deployed_commit": "7b3841e55abe6ac1762561dec620a6e2768179dc",
+          "workflow_run_id": 32159279827,
+          "effective_from": "2026-08-18T16:16:31Z"
+        }
+      ]
+    },
+    {
+      "policy_epoch": "policy-a-20260818161950-03e58f5e",
+      "effective_from": "2026-08-18T16:19:50Z",
+      "effective_to": "2026-08-18T16:38:54Z",
+      "deployed_commit": "03e58f5e3f6fe1be472327bee1d9b207eb02f5db",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "2126b0bc3b57564e568dc7c753ab299c17f22ce567bc19f83e43f6e2ab224533",
+      "workflow_run_id": 32159302193,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260818163854-30bdc9f6",
+      "effective_from": "2026-08-18T16:38:54Z",
+      "effective_to": "2026-08-18T22:02:10Z",
+      "deployed_commit": "30bdc9f61a3e83f5f0277439811f381c6522633b",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "6f6706ff6941a46ef21562d305bec216d897475863f39482e6f450439191f5dd",
+      "workflow_run_id": 32161296799,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260818220210-8c20adcd",
+      "effective_from": "2026-08-18T22:02:10Z",
+      "effective_to": "2026-08-19T19:16:41Z",
+      "deployed_commit": "8c20adcdcdf00f3655c1622140980c2da0e44257",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "c2227074e9f3094e996bcc540e83391f45c1d36eecc225ca834b575a1f08ac54",
+      "workflow_run_id": 32190662598,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260819191641-7a68a663",
+      "effective_from": "2026-08-19T19:16:41Z",
+      "effective_to": "2026-08-19T19:31:22Z",
+      "deployed_commit": "7a68a663b0b947d8eee17c516b4fb12dab4959d1",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "9c16b4312d0ed18548efb4d5a25c21b9c6b55f8d4c6d0ca60c682cea2ff3759d",
+      "workflow_run_id": 32291995902,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260819193122-91acbc4e",
+      "effective_from": "2026-08-19T19:31:22Z",
+      "effective_to": "2026-08-20T03:32:55Z",
+      "deployed_commit": "91acbc4ec76fececcf37a6a3338f39e6be13d688",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "0f3015bc49fbbcb03195621d767226c8aa6a0d7da97518426bb7656cb6eee10f",
+      "workflow_run_id": 32293274977,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820033255-a2ca75f5",
+      "effective_from": "2026-08-20T03:32:55Z",
+      "effective_to": "2026-08-20T15:17:36Z",
+      "deployed_commit": "a2ca75f5420abc16f8628bf5f193dadbf2a72390",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "a8b34281f08ab0cf5f7b452a3afe4a9e398a9377fa745d7120787733f919b0d1",
+      "workflow_run_id": 32328543718,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820151736-c7ca12f5",
+      "effective_from": "2026-08-20T15:17:36Z",
+      "effective_to": "2026-08-20T15:43:15Z",
+      "deployed_commit": "c7ca12f51e43b492bf501ec218d3615721f6661a",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "220c8f6b1a878b2c7232681dd7971433413e48f0b521ef8409b1f955203f035b",
+      "workflow_run_id": 32385089772,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820154315-6cd319a2",
+      "effective_from": "2026-08-20T15:43:15Z",
+      "effective_to": "2026-08-20T15:47:41Z",
+      "deployed_commit": "6cd319a27ae9bae7f6a4d3f03d58592e9c5059db",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "64a62c8e8ad2d7932ecd4941df9a699267f3d7eccc989fd24a1d8b256bd7dab2",
+      "workflow_run_id": 32387641280,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820154741-f7f9761f",
+      "effective_from": "2026-08-20T15:47:41Z",
+      "effective_to": "2026-08-20T16:28:28Z",
+      "deployed_commit": "f7f9761fdca89fc5a99d6eefbe0a7a5a518030c6",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "f0e1015db820d35f034ad8be9a248afd87bd7b01be2916b0f896ae0abf1880b6",
+      "workflow_run_id": 32388093695,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820162828-1fc50b65",
+      "effective_from": "2026-08-20T16:28:28Z",
+      "effective_to": "2026-08-20T16:33:50Z",
+      "deployed_commit": "1fc50b65d6ad98b94cf8a60bdca1327ddf812f46",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "d1abf514843c6a1f443d2015d45c2ecaf17303a5193e670f5fee46b3814ab8ae",
+      "workflow_run_id": 32392036023,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820163350-145e89a9",
+      "effective_from": "2026-08-20T16:33:50Z",
+      "effective_to": "2026-08-20T16:48:37Z",
+      "deployed_commit": "145e89a92b6aa4ea1648dc5795dbb9524184cdd9",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "882b9a499824be2eedfc77acfa7cf45122cfd39575b32206ec0f49bf6af1536d",
+      "workflow_run_id": 32392532104,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820164837-148c94bf",
+      "effective_from": "2026-08-20T16:48:37Z",
+      "effective_to": "2026-08-20T17:23:10Z",
+      "deployed_commit": "148c94bf2a8814aeadf6e35b043d5f71802f3aa9",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "18103f249ddfdb821b68e779f45d9c1f8cccf6c8ceaaf10d8bd297956b20bce0",
+      "workflow_run_id": 32393944789,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820172310-86d0c6da",
+      "effective_from": "2026-08-20T17:23:10Z",
+      "effective_to": "2026-08-20T17:55:40Z",
+      "deployed_commit": "86d0c6da490c92ed97e964e9e8a5fc3b9db729d9",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "e9c0bb51f1535d2b94f5b9e25676ca19a839efaaebbf1ef7e45a4a7c92fa9a0b",
+      "workflow_run_id": 32397150427,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820175540-84f75280",
+      "effective_from": "2026-08-20T17:55:40Z",
+      "effective_to": "2026-08-20T18:17:43Z",
+      "deployed_commit": "84f752800a5ec6592d92d857a5e414429cb0fa97",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "d64481906c4e18a7b85889370983eba57c0489a6c033d1833a24afa3557598a9",
+      "workflow_run_id": 32400172649,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820181743-bc79ca19",
+      "effective_from": "2026-08-20T18:17:43Z",
+      "effective_to": "2026-08-20T18:54:31Z",
+      "deployed_commit": "bc79ca195c19bee9b9ef18c3098d28ae6c149597",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "2160d52482c6d77e4d8c7ee880555662e7f7dcadcadeb780be2242e8ba5a15db",
+      "workflow_run_id": 32402246057,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820185431-b754714d",
+      "effective_from": "2026-08-20T18:54:31Z",
+      "effective_to": "2026-08-20T18:57:33Z",
+      "deployed_commit": "b754714d5b9d38a8fe175410c477ce01bdf8847b",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "4651b09b8b48f87aa041234f4dcfb1690f27d2b5f5dce49d9e94762a6d62c348",
+      "workflow_run_id": 32405589250,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820185733-c57e7e8b",
+      "effective_from": "2026-08-20T18:57:33Z",
+      "effective_to": "2026-08-20T19:29:12Z",
+      "deployed_commit": "c57e7e8bc5065048fc5efccfd4600c29fcbfa658",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "aafba8e52ad5d9ebd644b8a84c8cfe10094e3078e98f00be0825d0fc56901f38",
+      "workflow_run_id": 32405893462,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820192912-63651bcb",
+      "effective_from": "2026-08-20T19:29:12Z",
+      "effective_to": "2026-08-20T19:51:19Z",
+      "deployed_commit": "63651bcbf4d5c8d3de40d0840f7c448aa5753f9e",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "acf560508f30b0c8097bcd440f3c6e33ef80f341d6f59bea23cd6896aa3fafb1",
+      "workflow_run_id": 32408758714,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820195119-883f9e2b",
+      "effective_from": "2026-08-20T19:51:19Z",
+      "effective_to": "2026-08-20T20:22:28Z",
+      "deployed_commit": "883f9e2b61000b0c2c19d0defedb373b74d5c3d9",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "a34b0bf278ffa0aaae139ca8fe1a193043841ea37db7fd06c233b3bebc4e0d13",
+      "workflow_run_id": 32410787799,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": [
+        {
+          "deployed_commit": "0ede8f2a2a4a158edc1e70efd7526641573e87c5",
+          "workflow_run_id": 32411619622,
+          "effective_from": "2026-08-20T20:00:43Z"
+        }
+      ]
+    },
+    {
+      "policy_epoch": "policy-a-20260820202228-2c987f38",
+      "effective_from": "2026-08-20T20:22:28Z",
+      "effective_to": "2026-08-20T20:32:40Z",
+      "deployed_commit": "2c987f38406e42898e316517c68783ef8863fb76",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "8bd09cf01b614a9139558419c03059d32060bf94923d8710117a63daeb5c1661",
+      "workflow_run_id": 32413500819,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820203240-5cebe4b6",
+      "effective_from": "2026-08-20T20:32:40Z",
+      "effective_to": "2026-08-20T23:25:14Z",
+      "deployed_commit": "5cebe4b67d31a5ea01878f2f206a7cab781f70e9",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "c414d81223a5b29b05968bb212820e0dce492b6e596024a826f7ce0c6b68d8d3",
+      "workflow_run_id": 32414318874,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820232514-f80f87f9",
+      "effective_from": "2026-08-20T23:25:14Z",
+      "effective_to": "2026-08-20T23:37:46Z",
+      "deployed_commit": "f80f87f9ecd64f79caac76bdaa33d766c29b169e",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "11b2c3b96bf3446e4a1b799f83bf4ed8e7b06937959536a89fe3c51b2ec3b4c2",
+      "workflow_run_id": 32428461180,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260820233746-c9889b17",
+      "effective_from": "2026-08-20T23:37:46Z",
+      "effective_to": "2026-08-21T00:32:13Z",
+      "deployed_commit": "c9889b17634c10d9d012229593e92845054cadb0",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "66b475d610a3818184428eabe615437ec414ebc1a5eb04a921e85268e7428e68",
+      "workflow_run_id": 32429201279,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260821003213-0f79355b",
+      "effective_from": "2026-08-21T00:32:13Z",
+      "effective_to": "2026-08-21T00:37:44Z",
+      "deployed_commit": "0f79355b1174c5ab6fe9158c631441ca2349e34c",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "d8e7e3f3de3e2bc678bcbcdf44dc5a033afffa71c97c9ec457ffd185345bbe83",
+      "workflow_run_id": 32433160406,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260821003744-2201a62e",
+      "effective_from": "2026-08-21T00:37:44Z",
+      "effective_to": "2026-08-21T04:32:03Z",
+      "deployed_commit": "2201a62ea0af1098ec972915d598f17c48fb56d3",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "6a7681b9b2a87d25df904e2fa13e9ea2bc72a93f0840d6f930f1c9a53a5eccf8",
+      "workflow_run_id": 32433605230,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260821043203-8688b4c2",
+      "effective_from": "2026-08-21T04:32:03Z",
+      "effective_to": "2026-08-21T15:25:06Z",
+      "deployed_commit": "8688b4c246ec19498bbd3adcb2536e904957f981",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "80e73c7f063870ed719ddcdfc39728818a092883e67cfd86a8673c597e177a99",
+      "workflow_run_id": 32447201373,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260821152506-53d8cbe8",
+      "effective_from": "2026-08-21T15:25:06Z",
+      "effective_to": "2026-08-21T16:34:58Z",
+      "deployed_commit": "53d8cbe8cf2e6cdf03e6587de28e3bd6b7567c8b",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "ca31305dc7f70ec0ea14f36528cc1db2b19d9e815dc793926a4ba011f7b9c62a",
+      "workflow_run_id": 32497309709,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260821163458-4001a5a9",
+      "effective_from": "2026-08-21T16:34:58Z",
+      "effective_to": "2026-08-21T20:17:50Z",
+      "deployed_commit": "4001a5a98ab6abc31d4a658ae8930eddf9b89548",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "aaf04b340ffb7e52fd3430d73f373801e60e0564f8404d93470b09a2c6c2e9a5",
+      "workflow_run_id": 32503515743,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260821201750-761ae739",
+      "effective_from": "2026-08-21T20:17:50Z",
+      "effective_to": "2026-08-21T20:52:23Z",
+      "deployed_commit": "761ae739de033bfe0ff30d95ae0602953ba546fe",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "5a4a24058a95b78e5e0d80c2f136be2e459280d44f48e21041f0c1ca5bde396a",
+      "workflow_run_id": 32522705479,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260821205223-634fa1ae",
+      "effective_from": "2026-08-21T20:52:23Z",
+      "effective_to": "2026-08-21T20:54:45Z",
+      "deployed_commit": "634fa1ae83c928604508633b159eb59b4560d185",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "e46c134a9da6efde1eddc1d6388ce5ad5bb723c4323f13dfa60339fe5ef5fc5b",
+      "workflow_run_id": 32525625238,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260821205445-6df21388",
+      "effective_from": "2026-08-21T20:54:45Z",
+      "effective_to": "2026-08-21T21:07:54Z",
+      "deployed_commit": "6df21388a2278ce2e57c83aed5680f4b3b5ffd7b",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "492b50a9286622ffdcc9531456d86e51d17a5c23aba3cc0e7a7d30b08067be32",
+      "workflow_run_id": 32525818846,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-20260821210754-f5c6b357",
+      "effective_from": "2026-08-21T21:07:54Z",
+      "effective_to": "2026-08-26T13:30:24.983322Z",
+      "deployed_commit": "f5c6b3570c030f5868f21beb541917b40001ef02",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "ec3880f47a7d65133d1ea97e1214862d7a16df74c26ad1688d407e8c57b1a404",
+      "workflow_run_id": 32526895613,
+      "effective_from_evidence": "successful GitHub Actions workflow_run.updated_at (conservative code-effective boundary)",
+      "equivalent_deploys": []
+    },
+    {
+      "policy_epoch": "policy-a-resume-2026-08-26",
+      "effective_from": "2026-08-26T13:30:24.983322Z",
+      "effective_to": null,
+      "deployed_commit": "7530e6d4b7697d522b2864abadad83ced17f6f97",
+      "code_provenance_status": "AUDITED_DEPLOY",
+      "policy_code_sha256": "c9a219e1d0f5e7106bab285e6f85c43a14520e9a4935f1aab4bff58daad1b0fc",
+      "workflow_run_id": 32811358877,
+      "effective_from_evidence": "r2d2.entries_resumed.changed_at; code previously deployed by successful workflow",
+      "equivalent_deploys": []
+    }
+  ],
+  "manifest_sha256": "7c26c7e4ad011f74e752e00fce711451744d838d4d2923a86808fe12c1954dea"
+}
