@@ -6,11 +6,12 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .chewie_fundamentals import ChewieFundamentalsService
-from .config import get_settings
+from .config import Settings, get_settings
 from .database import Database
 from .investor_relations import InvestorRelationsService
 from .market_data.b3_screener import B3ScreenerService
 from .market_data.eodhd_stream import EodhdRealtimeStream
+from .market_data.http import JsonHttpClient
 from .market_data.realtime import RealtimeMarketsService
 from .market_data.service import MarketDataService
 from .market_data.us_screener import USScreeningService
@@ -65,6 +66,13 @@ def start_of_today(now: datetime) -> datetime:
 
 def next_midnight(now: datetime) -> datetime:
     return start_of_today(now) + timedelta(days=1)
+
+
+def _cash_yield_http_client(settings: Settings) -> JsonHttpClient:
+    return JsonHttpClient(
+        timeout=settings.r2d2_cash_yield_http_timeout_seconds,
+        max_retries=settings.market_data_max_retries,
+    )
 
 
 def _phase_is_due(last_completed_at: datetime | None, due_at: datetime) -> bool:
@@ -301,7 +309,11 @@ def main() -> None:
     )
     v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
     v3_shadow = ValuationV3ShadowService(database)
-    cash_yield = R2D2CashYieldService(settings, database, market_data.http)
+    cash_yield = R2D2CashYieldService(
+        settings,
+        database,
+        _cash_yield_http_client(settings),
+    )
 
     offhours_phases = (
         OffhoursPhase(
