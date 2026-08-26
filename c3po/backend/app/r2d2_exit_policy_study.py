@@ -337,6 +337,30 @@ def _ledger_evidence(fills: Sequence[LedgerFill]) -> dict[str, Any]:
     }
 
 
+def _frozen_ledger_input(
+    fills: Sequence[LedgerFill],
+    *,
+    cutoff_at: datetime | None,
+    expected_sha256: str | None,
+) -> tuple[list[LedgerFill], dict[str, Any]]:
+    selected = [
+        fill for fill in fills
+        if cutoff_at is None or fill.executed_at <= cutoff_at
+    ]
+    evidence = _ledger_evidence(selected)
+    if cutoff_at is not None:
+        evidence["filter"] = f"executed_at <= {cutoff_at.isoformat()}"
+        evidence["input_cutoff_at"] = cutoff_at
+    if expected_sha256 is not None and evidence["canonical_json_sha256"] != expected_sha256:
+        raise ExitPolicyStudyError(
+            "frozen ledger hash mismatch: "
+            f"expected {expected_sha256}, observed {evidence['canonical_json_sha256']}"
+        )
+    evidence["expected_sha256"] = expected_sha256
+    evidence["frozen_hash_verified"] = expected_sha256 is not None
+    return selected, evidence
+
+
 def _base_cohort(episodes: Sequence[Episode], latest_bar_session: date) -> tuple[list[Episode], dict[str, int]]:
     counts: dict[str, int] = {
         "open": 0,
@@ -501,6 +525,9 @@ def build_report(
     spec_path: Path | None = None,
     amendment_path: Path | None = None,
     deliverable_path: Path | None = None,
+    input_cutoff_at: datetime | None = None,
+    expected_ledger_sha256: str | None = None,
+    expected_minute_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     generated_at = (generated_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     c3po_root = Path(__file__).resolve().parents[2]
@@ -520,7 +547,12 @@ def build_report(
         "approved Deliverable 0",
     )
     database = Database(settings)
-    experiment, fills = LedgerReader(database).read(settings.r2d2_experiment_code)
+    experiment, all_fills = LedgerReader(database).read(settings.r2d2_experiment_code)
+    fills, ledger_evidence = _frozen_ledger_input(
+        all_fills,
+        cutoff_at=input_cutoff_at,
+        expected_sha256=expected_ledger_sha256,
+    )
     if str(experiment.get("methodology_version")) != FROZEN_METHODOLOGY:
         raise ExitPolicyStudyError(
             "experiment methodology does not match the frozen policy: "
@@ -534,6 +566,15 @@ def build_report(
         if episode.market in {"NASDAQ", "NYSE"}
     }
     bars, bar_evidence = aggregate_reader.read(sources, symbols)
+    minute_manifest_sha256 = canonical_sha256(bar_evidence)
+    if (
+        expected_minute_manifest_sha256 is not None
+        and minute_manifest_sha256 != expected_minute_manifest_sha256
+    ):
+        raise ExitPolicyStudyError(
+            "frozen minute manifest hash mismatch: "
+            f"expected {expected_minute_manifest_sha256}, observed {minute_manifest_sha256}"
+        )
     latest_bar_session = max(session for session, _path in sources)
     base_cohort, base_censoring = _base_cohort(episodes, latest_bar_session)
     covered_cohort, coverage_censoring = _coverage_cohort(base_cohort, bars)
@@ -630,9 +671,13 @@ def build_report(
             "start_date": experiment["start_date"],
         },
         "inputs": {
-            "ledger": _ledger_evidence(fills),
+            "ledger": ledger_evidence,
             "minute_aggregates": bar_evidence,
-            "minute_aggregate_manifest_sha256": canonical_sha256(bar_evidence),
+            "minute_aggregate_manifest_sha256": minute_manifest_sha256,
+            "expected_minute_aggregate_manifest_sha256": expected_minute_manifest_sha256,
+            "minute_aggregate_manifest_hash_verified": (
+                expected_minute_manifest_sha256 is not None
+            ),
             "last_bar_session": latest_bar_session,
         },
         "cohort": {
@@ -676,6 +721,9 @@ def build_plan(
     spec_path: Path | None = None,
     amendment_path: Path | None = None,
     deliverable_path: Path | None = None,
+    input_cutoff_at: datetime | None = None,
+    expected_ledger_sha256: str | None = None,
+    expected_minute_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     c3po_root = Path(__file__).resolve().parents[2]
     spec = require_frozen_document(
@@ -694,7 +742,12 @@ def build_plan(
         "approved Deliverable 0",
     )
     database = Database(settings)
-    experiment, fills = LedgerReader(database).read(settings.r2d2_experiment_code)
+    experiment, all_fills = LedgerReader(database).read(settings.r2d2_experiment_code)
+    fills, ledger_evidence = _frozen_ledger_input(
+        all_fills,
+        cutoff_at=input_cutoff_at,
+        expected_sha256=expected_ledger_sha256,
+    )
     episodes, construction = build_episodes(fills)
     sources = MinuteAggregateReader(settings.day_d_dataset_root).selected_sources(episodes)
     return {
@@ -711,6 +764,11 @@ def build_plan(
         "episode_construction": construction,
         "minute_sources": [str(path) for _session, path in sources],
         "minute_source_count": len(sources),
+        "frozen_input_contract": {
+            "ledger": ledger_evidence,
+            "expected_minute_aggregate_manifest_sha256": expected_minute_manifest_sha256,
+            "minute_manifest_verified_during_run": expected_minute_manifest_sha256 is not None,
+        },
         "bootstrap_seed": BOOTSTRAP_SEED,
         "bootstrap_iterations": BOOTSTRAP_ITERATIONS,
         "run_window": "00:00-08:00 America/Sao_Paulo",
@@ -738,6 +796,9 @@ def _parser() -> argparse.ArgumentParser:
         child.add_argument("--spec", type=Path)
         child.add_argument("--amendment-one", type=Path)
         child.add_argument("--deliverable-zero", type=Path)
+        child.add_argument("--input-cutoff-at", type=_aware)
+        child.add_argument("--expected-ledger-sha256")
+        child.add_argument("--expected-minute-manifest-sha256")
         if command == "run":
             child.add_argument("--output", type=Path, required=True)
     return parser
@@ -752,6 +813,9 @@ def main(argv: list[str] | None = None) -> int:
             spec_path=args.spec,
             amendment_path=args.amendment_one,
             deliverable_path=args.deliverable_zero,
+            input_cutoff_at=args.input_cutoff_at,
+            expected_ledger_sha256=args.expected_ledger_sha256,
+            expected_minute_manifest_sha256=args.expected_minute_manifest_sha256,
         )
         print(json.dumps(_json_ready(payload), sort_keys=True, indent=2))
         return 0
@@ -763,6 +827,9 @@ def main(argv: list[str] | None = None) -> int:
         spec_path=args.spec,
         amendment_path=args.amendment_one,
         deliverable_path=args.deliverable_zero,
+        input_cutoff_at=args.input_cutoff_at,
+        expected_ledger_sha256=args.expected_ledger_sha256,
+        expected_minute_manifest_sha256=args.expected_minute_manifest_sha256,
     )
     write_immutable_json(args.output, payload)
     print(json.dumps({
