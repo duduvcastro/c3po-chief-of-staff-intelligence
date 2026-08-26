@@ -1,5 +1,7 @@
 name: Validate ENTRY_QUALITY_STUDY PR 257 on production data
 
+# Temporary, PR-scoped bridge for factual validation before merge.
+
 on:
   pull_request:
     branches: [main]
