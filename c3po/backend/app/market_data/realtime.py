@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import re
 from threading import RLock
 from typing import Any
@@ -36,6 +36,7 @@ CACHE_SECONDS = 55
 SYMBOL_CATALOG_SECONDS = 24 * 60 * 60
 MAX_STREAM_PRICE_DEVIATION = 0.35
 DIRECT_QUOTE_FALLBACK_AGE = timedelta(days=30)
+NEW_YORK = ZoneInfo("America/New_York")
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,7 @@ class RealtimeMarketsService:
         self._b3_quotes: tuple[datetime, list[RealtimeMarketLeader]] | None = None
         self._us_previous_close: dict[str, float] = {}
         self._portfolio_quotes: dict[str, tuple[datetime, RealtimeMarketLeader]] = {}
+        self._us_reference_cache: dict[str, tuple[datetime, float | None, date | None]] = {}
         self._intraday_series: dict[str, tuple[datetime, RealtimePortfolioIntradayResponse]] = {}
         self._instrument_intraday_series: dict[str, tuple[datetime, InstrumentIntradayResponse]] = {}
 
@@ -150,6 +152,8 @@ class RealtimeMarketsService:
             except Exception as exc:
                 errors.append(f"{market}: {type(exc).__name__}")
 
+        self._prime_us_reference_cache(us_symbols, now)
+
         items: list[RealtimePortfolioItem] = []
         for entry in entries:
             market = entry["market"]
@@ -164,10 +168,21 @@ class RealtimeMarketsService:
             source = "Brapi Pro" if market == "B3" else (
                 "EODHD Real-Time WebSocket" if quote_row.status == "live" else "EODHD Bulk Live US"
             )
+            reference_status = "not_applicable"
+            reference_close = None
+            reference_as_of = None
+            if market != "B3":
+                reference_status, reference_close, reference_as_of = self._us_reference_status(
+                    quote_row.symbol,
+                    now,
+                )
             items.append(RealtimePortfolioItem(
                 **quote_row.model_dump(),
                 market=market,
                 source=source,
+                reference_status=reference_status,
+                reference_close=reference_close,
+                reference_as_of=reference_as_of,
             ))
         sources = sorted({item.source for item in items})
         return RealtimePortfolioResponse(
@@ -178,6 +193,63 @@ class RealtimeMarketsService:
             sources=sources,
             errors=errors,
         )
+
+    def _us_reference_status(
+        self,
+        symbol: str,
+        now: datetime,
+    ) -> tuple[str, float | None, date | None]:
+        cached = self._us_reference_cache.get(symbol)
+        if not cached or now >= cached[0]:
+            self._prime_us_reference_cache([symbol], now)
+            cached = self._us_reference_cache.get(symbol)
+        reference_close = cached[1] if cached else None
+        reference_as_of = cached[2] if cached else None
+
+        provider_reference = self._us_previous_close.get(symbol)
+        if reference_close is None or provider_reference is None:
+            return "unvalidated", reference_close, reference_as_of
+        tolerance = max(0.02, abs(reference_close) * 0.002)
+        status = "validated" if abs(provider_reference - reference_close) <= tolerance else "unvalidated"
+        return status, reference_close, reference_as_of
+
+    def _prime_us_reference_cache(self, symbols: list[str], now: datetime) -> None:
+        missing = sorted({
+            symbol
+            for symbol in symbols
+            if not self._us_reference_cache.get(symbol)
+            or now >= self._us_reference_cache[symbol][0]
+        })
+        if not missing:
+            return
+        session_date = now.astimezone(NEW_YORK).date()
+        try:
+            client = EodhdClient(
+                self.settings.eodhd_base_url,
+                self.settings.eodhd_api_token,
+                self.http,
+            )
+            histories = client.histories(missing, exchange="US", days=120, workers=12)
+        except Exception:
+            histories = {}
+        for symbol in missing:
+            completed = sorted(
+                (
+                    row for row in histories.get(symbol, [])
+                    if str(row.get("date") or "")[:10] < session_date.isoformat()
+                ),
+                key=lambda row: str(row.get("date") or ""),
+            )
+            reference_close = number(completed[-1].get("close")) if completed else None
+            try:
+                reference_as_of = (
+                    date.fromisoformat(str(completed[-1].get("date"))[:10])
+                    if completed else None
+                )
+            except ValueError:
+                reference_as_of = None
+            ttl = timedelta(hours=4) if reference_close is not None else timedelta(minutes=15)
+            self._us_reference_cache[symbol] = (now + ttl, reference_close, reference_as_of)
 
     def portfolio_intraday(self, symbol: str) -> RealtimePortfolioIntradayResponse:
         normalized = self._normalize_portfolio_symbol(symbol)

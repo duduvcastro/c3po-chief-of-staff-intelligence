@@ -468,6 +468,7 @@ button { cursor: pointer; }
 .r2d2-counter-critical strong { color: #ae3029; }
 .r2d2-counter small { margin-top: 7px; color: #9098a3; font-size: 9px; }
 .r2d2-ledger-head { min-height: 38px; display: grid; grid-template-columns: 1.1fr .55fr .46fr .7fr .73fr .73fr .55fr .66fr .58fr .9fr; align-items: center; gap: 8px; padding: 0 16px; color: #89929d; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.r2d2-ledger-updated { padding: 5px 16px; color: #7f8995; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 7px; font-weight: 800; text-align: right; }
 .r2d2-ledger-row { min-height: 68px; display: grid; grid-template-columns: 1.1fr .55fr .46fr .7fr .73fr .73fr .55fr .66fr .58fr .9fr; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 10px; }
 .r2d2-ledger-row:last-child { border-bottom: 0; }
 .r2d2-ledger-row > div { min-width: 0; }
@@ -488,6 +489,10 @@ button { cursor: pointer; }
 .r2d2-live-pnl { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; }
 .r2d2-live-pnl > span { margin-top: 2px; font-size: 9px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .r2d2-live-pnl small { letter-spacing: 0; font-size: 7px !important; font-weight: 800; }
+.quote-freshness-fresh { color: var(--green) !important; }
+.quote-freshness-aging { color: #a66b12 !important; }
+.quote-freshness-stale { color: var(--red) !important; }
+.quote-freshness-unknown { color: var(--muted) !important; }
 .r2d2-ledger-empty { min-height: 116px; display: flex; align-items: center; justify-content: center; gap: 13px; color: #8f99a5; text-align: left; }
 .r2d2-ledger-empty svg { color: #b88917; }
 .r2d2-ledger-empty strong, .r2d2-ledger-empty span { display: block; }
@@ -785,6 +790,7 @@ button { cursor: pointer; }
 .realtime-portfolio-head { min-height: 34px; color: #858e98; background: #fdfdfc; border-bottom: 1px solid #e8eaec; font-size: 8px; font-weight: 900; text-transform: uppercase; }
 .realtime-portfolio-row { min-height: 67px; border-bottom: 1px solid #eceef0; font-size: 10px; }
 .realtime-portfolio-row:last-child { border-bottom: 0; }
+.realtime-portfolio-reference-missing { color: #a66b12; font-size: 8px; font-weight: 800; line-height: 1.25; }
 .realtime-portfolio-company { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .realtime-portfolio-company-logo { flex: 0 0 auto; width: 28px; height: 28px; display: grid; place-items: center; overflow: hidden; border: 1px solid #e0e3e6; border-radius: 5px; background: #fff; }
 .realtime-portfolio-company-logo img { display: block; width: 20px; height: 20px; object-fit: contain; }
