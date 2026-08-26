@@ -7965,6 +7965,34 @@ function LoadingState() {
   return <div className="loading-grid">{Array.from({ length: 8 }).map((_, index) => <div className="loading-block" key={index} />)}</div>;
 }
 
+async function readLoginResponse(response: Response, fallbackMessage: string) {
+  const contentType = response.headers.get("content-type") ?? "";
+  const payload = contentType.includes("application/json")
+    ? await response.json().catch(() => null)
+    : null;
+  if (!response.ok) {
+    const serviceRestarting = response.status === 502 || response.status === 503 || response.status === 504;
+    throw new Error(payload?.detail ?? (serviceRestarting
+      ? "O serviço de acesso está reiniciando. Aguarde alguns segundos e tente novamente."
+      : fallbackMessage));
+  }
+  if (!payload) throw new Error(fallbackMessage);
+  return payload;
+}
+
+function friendlyLoginError(error: unknown, fallbackMessage: string) {
+  if (!(error instanceof Error)) return fallbackMessage;
+  const normalized = error.message.toLowerCase();
+  if (
+    normalized.includes("failed to fetch")
+    || normalized.includes("load failed")
+    || normalized.includes("did not match the expected pattern")
+  ) {
+    return "O serviço de acesso está reiniciando. Aguarde alguns segundos e tente novamente.";
+  }
+  return error.message || fallbackMessage;
+}
+
 function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -7984,13 +8012,12 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, delivery_method: deliveryMethod })
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail ?? "Não foi possível enviar o código.");
+      const payload = await readLoginResponse(response, "Não foi possível enviar o código.");
       setChallengeId(payload.challenge_id);
       setRequestedDelivery(deliveryMethod);
       setMessage(`O código vale por ${Math.round(payload.expires_in_seconds / 60)} minutos.`);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Não foi possível enviar o código.");
+      setError(friendlyLoginError(requestError, "Não foi possível enviar o código."));
     } finally {
       setLoading(false);
     }
@@ -8012,11 +8039,10 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           max_touch_points: navigator.maxTouchPoints || 0
         })
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail ?? "Código inválido ou expirado.");
+      await readLoginResponse(response, "Código inválido ou expirado.");
       onAuthenticated();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Código inválido ou expirado.");
+      setError(friendlyLoginError(requestError, "Código inválido ou expirado."));
     } finally {
       setLoading(false);
     }
