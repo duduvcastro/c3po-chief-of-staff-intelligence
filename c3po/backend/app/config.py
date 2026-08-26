@@ -113,6 +113,7 @@ class Settings(BaseSettings):
     anthropic_usage_workspace_ids: str = ""
     market_data_timeout_seconds: float = 15.0
     market_data_max_retries: int = 2
+    r2d2_cash_yield_http_timeout_seconds: float = 45.0
     one_pager_output_dir: Path = DEFAULT_ONE_PAGER_OUTPUT_DIR
     investor_relations_output_dir: Path = DEFAULT_ONE_PAGER_OUTPUT_DIR.parent / "investor-relations"
     cvm_data_base_url: str = "https://dados.cvm.gov.br/dados"

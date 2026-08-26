@@ -5,6 +5,7 @@ from app.config import Settings
 from app.database import Database
 from app.valuation_worker import (
     OffhoursPhase,
+    _cash_yield_http_client,
     next_midnight,
     run_worker_iteration,
     start_of_today,
@@ -23,6 +24,20 @@ def test_worker_uses_sao_paulo_midnight() -> None:
 
     assert start_of_today(now) == datetime(2026, 8, 6, 0, 0, tzinfo=SAO_PAULO)
     assert next_midnight(now) == datetime(2026, 8, 7, 0, 0, tzinfo=SAO_PAULO)
+
+
+def test_cash_yield_uses_a_dedicated_slow_feed_timeout() -> None:
+    settings = Settings(
+        market_data_timeout_seconds=15.0,
+        market_data_max_retries=2,
+        r2d2_cash_yield_http_timeout_seconds=45.0,
+    )
+
+    client = _cash_yield_http_client(settings)
+
+    assert client.timeout == 45.0
+    assert client.max_retries == 2
+    assert client.timeout != settings.market_data_timeout_seconds
 
 
 def _database() -> Database:
