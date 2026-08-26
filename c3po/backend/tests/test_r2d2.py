@@ -14,6 +14,7 @@ from app.r2d2 import (
     R2D2Repository,
     _date_value,
     _episode_summary_from_trades,
+    _listing_history_verdict,
     _quote_freshness,
 )
 from app import r2d2 as r2d2_module
@@ -49,6 +50,92 @@ def test_quote_freshness_has_explicit_fresh_aging_and_stale_boundaries() -> None
     assert _quote_freshness(now, now - timedelta(seconds=30)) == (30.0, "aging")
     assert _quote_freshness(now, now - timedelta(seconds=31)) == (31.0, "stale")
     assert _quote_freshness(now, None) == (None, "unknown")
+
+
+def test_listing_history_verdict_accepts_twenty_current_listing_sessions() -> None:
+    history = [
+        {"date": (date(2026, 7, 1) + timedelta(days=index)).isoformat()}
+        for index in range(20)
+    ]
+
+    assert _listing_history_verdict(history, as_of=date(2026, 8, 1)) == (
+        True,
+        "eligible",
+        20,
+        date(2026, 7, 20),
+    )
+
+
+def test_listing_history_verdict_quarantines_a_new_post_gap_listing() -> None:
+    history = [
+        {"date": "2023-05-01"},
+        {"date": "2023-05-02"},
+        *[
+            {"date": (date(2026, 8, 1) + timedelta(days=index)).isoformat()}
+            for index in range(19)
+        ],
+    ]
+
+    assert _listing_history_verdict(history, as_of=date(2026, 8, 26)) == (
+        False,
+        "new_listing_insufficient_history",
+        19,
+        date(2026, 8, 19),
+    )
+
+
+def test_listing_history_verdict_quarantines_stale_or_missing_history() -> None:
+    assert _listing_history_verdict(
+        [{"date": "2023-05-01"}],
+        as_of=date(2026, 8, 26),
+    ) == (False, "listing_history_stale", 0, date(2023, 5, 1))
+    assert _listing_history_verdict([], as_of=date(2026, 8, 26)) == (
+        False,
+        "listing_history_missing",
+        0,
+        None,
+    )
+
+
+def test_listing_guard_does_not_cache_a_failed_history_fetch_for_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings()
+    settings.eodhd_api_token = "configured"
+    service = R2D2PaperService(settings, Database(settings), None, None, None)  # type: ignore[arg-type]
+    service.one_pagers = SimpleNamespace(market_data=SimpleNamespace(http=None))  # type: ignore[assignment]
+    session_date = datetime.now(SAO_PAULO).date()
+    calls = {"count": 0}
+
+    class StubEodhdClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def histories(self, symbols: list[str], **kwargs: object) -> dict[str, list[dict[str, str]]]:
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return {}
+            return {"NEWCO": [
+                {"date": (session_date - timedelta(days=index + 1)).isoformat()}
+                for index in range(25)
+            ]}
+
+    monkeypatch.setattr(r2d2_module, "EodhdClient", StubEodhdClient)
+
+    first, first_stats = service._apply_us_listing_history_guard(
+        [{"market": "NASDAQ", "symbol": "NEWCO"}],
+    )
+    assert first == []
+    assert first_stats["listing_history_quarantined_count"] == 1
+    assert first_stats["listing_history_quarantine_reasons"] == {"listing_history_missing": 1}
+    assert "NEWCO" not in service._us_listing_history
+
+    second, second_stats = service._apply_us_listing_history_guard(
+        [{"market": "NASDAQ", "symbol": "NEWCO"}],
+    )
+    assert [item["symbol"] for item in second] == ["NEWCO"]
+    assert second_stats["listing_history_quarantined_count"] == 0
+    assert calls["count"] == 2
 
 
 def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() -> None:

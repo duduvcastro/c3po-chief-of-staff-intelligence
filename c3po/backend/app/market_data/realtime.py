@@ -72,6 +72,7 @@ class RealtimeMarketsService:
         self._us_catalog: tuple[datetime, dict[str, dict[str, Any]]] | None = None
         self._b3_quotes: tuple[datetime, list[RealtimeMarketLeader]] | None = None
         self._us_previous_close: dict[str, float] = {}
+        self._us_quote_quarantine: dict[str, dict[str, Any]] = {}
         self._portfolio_quotes: dict[str, tuple[datetime, RealtimeMarketLeader]] = {}
         self._us_reference_cache: dict[str, tuple[datetime, float | None, date | None]] = {}
         self._intraday_series: dict[str, tuple[datetime, RealtimePortfolioIntradayResponse]] = {}
@@ -1262,7 +1263,27 @@ class RealtimeMarketsService:
             f"{self.settings.eodhd_base_url.rstrip('/')}/api/real-time/AAPL.US",
             params={"ex": "US", "api_token": self.settings.eodhd_api_token, "fmt": "json"},
         )
-        rows = payload if isinstance(payload, list) else payload.get("data", [])
+        raw_rows = payload if isinstance(payload, list) else payload.get("data", [])
+        by_symbol: dict[str, list[dict[str, Any]]] = {}
+        for raw in raw_rows:
+            if not isinstance(raw, dict):
+                continue
+            symbol = self._us_symbol(raw.get("code") or raw.get("Code"))
+            if symbol:
+                by_symbol.setdefault(symbol, []).append(raw)
+
+        # EODHD can return two distinct listing identities under the same raw
+        # ticker. Never let response order choose which one feeds R2D2.
+        self._us_quote_quarantine = {
+            symbol: {
+                "reason": "duplicate_raw_ticker",
+                "row_count": len(matches),
+                "timestamps": [number(row.get("timestamp")) for row in matches],
+            }
+            for symbol, matches in by_symbol.items()
+            if len(matches) != 1
+        }
+        rows = [matches[0] for matches in by_symbol.values() if len(matches) == 1]
         self._us_quotes = (now + timedelta(seconds=CACHE_SECONDS), rows)
         return rows
 

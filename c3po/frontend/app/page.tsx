@@ -4821,7 +4821,7 @@ function MyRealtimePortfolio({
               {item.status === "stale" ? (
                 <span className="realtime-portfolio-change">N/D</span>
               ) : item.reference_status === "unvalidated" ? (
-                <span className="realtime-portfolio-change realtime-portfolio-reference-missing">novo listing — sem referência</span>
+                <span className="realtime-portfolio-change realtime-portfolio-reference-missing">referência não validada</span>
               ) : (
                 <span className={`realtime-portfolio-change ${item.change_percent >= 0 ? "change-up" : "change-down"}`}>
                   <DirectionIcon direction={item.change_percent >= 0 ? "up" : "down"} size={13} />{formatPercent(item.change_percent, 2)}

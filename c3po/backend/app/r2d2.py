@@ -41,6 +41,8 @@ SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
 METHODOLOGY_VERSION = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
+US_LISTING_GAP_DAYS = 90
+US_LISTING_MIN_SESSIONS = 20
 MIN_HOLD_MINUTES = 5
 ROTATION_MIN_HOLD_MINUTES = 10
 ROTATION_SCORE_GAP = 6.0
@@ -276,6 +278,40 @@ def _quote_freshness(now: datetime, quote_as_of: datetime | None) -> tuple[float
     else:
         freshness = "stale"
     return round(age_seconds, 3), freshness
+
+
+def _listing_history_verdict(
+    history: list[dict[str, Any]],
+    *,
+    as_of: date,
+) -> tuple[bool, str, int, date | None]:
+    dates: list[date] = []
+    for row in history:
+        try:
+            bar_date = date.fromisoformat(str(row.get("date") or "")[:10])
+        except ValueError:
+            continue
+        if bar_date < as_of:
+            dates.append(bar_date)
+    dates = sorted(set(dates))
+    if not dates:
+        return False, "listing_history_missing", 0, None
+    if (as_of - dates[-1]).days > US_LISTING_GAP_DAYS:
+        return False, "listing_history_stale", 0, dates[-1]
+
+    segment_start = 0
+    for index in range(1, len(dates)):
+        if (dates[index] - dates[index - 1]).days > US_LISTING_GAP_DAYS:
+            segment_start = index
+    current_listing_dates = dates[segment_start:]
+    if len(current_listing_dates) < US_LISTING_MIN_SESSIONS:
+        return (
+            False,
+            "new_listing_insufficient_history",
+            len(current_listing_dates),
+            dates[-1],
+        )
+    return True, "eligible", len(current_listing_dates), dates[-1]
 
 
 def _realized_daily_track(
@@ -1518,6 +1554,7 @@ class R2D2PaperService:
         self.one_pagers = one_pagers
         self._us_basis: dict[str, tuple[date, dict[str, Any], float]] = {}
         self._us_backfill_attempted: dict[str, date] = {}
+        self._us_listing_history: dict[str, tuple[date, bool, str, int, date | None]] = {}
         self._us_scan_counts: dict[str, dict[str, int]] = {}
         self._intraday_cache: dict[tuple[str, str], tuple[datetime, list[dict[str, Any]]]] = {}
         self._fx_cache: tuple[datetime, float] | None = None
@@ -3110,6 +3147,7 @@ class R2D2PaperService:
                 item["technical_reviewed"] = False
             dropped = {id(item) for item in overflow}
             selected = [item for item in selected if id(item) not in dropped]
+        selected, listing_stats = self._apply_us_listing_history_guard(selected)
         stream = getattr(self.realtime, "stream", None)
         if stream:
             stream.set_group(
@@ -3160,7 +3198,85 @@ class R2D2PaperService:
             "subscribed_count": len(us_selected),
             "live_usable_count": live_usable,
             "live_usable_percent": round(live_usable / len(us_selected) * 100, 2) if us_selected else 0.0,
+            **listing_stats,
             **rotation_stats,
+        }
+
+    def _apply_us_listing_history_guard(
+        self,
+        selected: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        us_items = [item for item in selected if item["market"] in ACTIVE_MARKETS]
+        if not us_items or not self.settings.eodhd_api_token:
+            return selected, {
+                "listing_history_checked_count": 0,
+                "listing_history_quarantined_count": 0,
+            }
+
+        session_date = datetime.now(SAO_PAULO).date()
+        missing = sorted({
+            item["symbol"]
+            for item in us_items
+            if self._us_listing_history.get(item["symbol"], (None,))[0] != session_date
+        })
+        histories: dict[str, list[dict[str, Any]]] = {}
+        if missing:
+            client = EodhdClient(
+                self.settings.eodhd_base_url,
+                self.settings.eodhd_api_token,
+                self.one_pagers.market_data.http,
+            )
+            histories = client.histories(missing, exchange="US", days=730, workers=8)
+            self._eodhd_call_counts["listing_history_symbols"] = (
+                self._eodhd_call_counts.get("listing_history_symbols", 0) + len(missing)
+            )
+        for symbol in missing:
+            eligible, reason, sessions, last_bar = _listing_history_verdict(
+                histories.get(symbol, []),
+                as_of=session_date,
+            )
+            if reason == "listing_history_missing":
+                # An empty history is indistinguishable from a transient fetch
+                # failure: quarantine this scan only and retry on the next one,
+                # instead of locking the symbol out for the whole session.
+                self._us_listing_history.pop(symbol, None)
+                continue
+            self._us_listing_history[symbol] = (
+                session_date,
+                eligible,
+                reason,
+                sessions,
+                last_bar,
+            )
+
+        allowed: list[dict[str, Any]] = []
+        quarantined = 0
+        reasons: dict[str, int] = {}
+        for item in selected:
+            if item["market"] not in ACTIVE_MARKETS:
+                allowed.append(item)
+                continue
+            _, eligible, reason, sessions, last_bar = self._us_listing_history.get(
+                item["symbol"],
+                (session_date, False, "listing_history_missing", 0, None),
+            )
+            item["listing_history"] = {
+                "status": reason,
+                "current_listing_sessions": sessions,
+                "last_completed_bar": last_bar.isoformat() if last_bar else None,
+            }
+            if eligible:
+                allowed.append(item)
+                continue
+            quarantined += 1
+            reasons[reason] = reasons.get(reason, 0) + 1
+            item["technical_validated"] = False
+            item["technical_error"] = f"listing_quarantine:{reason}"
+
+        return allowed, {
+            "listing_history_checked_count": len(us_items),
+            "listing_history_quarantined_count": quarantined,
+            "listing_history_quarantine_reasons": reasons,
         }
 
     def _fmp_prefilter_ws_candidates(
