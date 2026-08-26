@@ -14,6 +14,7 @@ from app.r2d2 import (
     R2D2Repository,
     _date_value,
     _episode_summary_from_trades,
+    _listing_history_verdict,
 )
 from app import r2d2 as r2d2_module
 from app import r2d2_entry_control
@@ -38,6 +39,51 @@ def _service() -> R2D2PaperService:
 
 def test_r2d2_start_date_accepts_compose_timestamp() -> None:
     assert _date_value("2026-08-17 00:00:00 +0000 UTC").isoformat() == "2026-08-17"
+
+
+def test_listing_history_verdict_accepts_twenty_current_listing_sessions() -> None:
+    history = [
+        {"date": (date(2026, 7, 1) + timedelta(days=index)).isoformat()}
+        for index in range(20)
+    ]
+
+    assert _listing_history_verdict(history, as_of=date(2026, 8, 1)) == (
+        True,
+        "eligible",
+        20,
+        date(2026, 7, 20),
+    )
+
+
+def test_listing_history_verdict_quarantines_a_new_post_gap_listing() -> None:
+    history = [
+        {"date": "2023-05-01"},
+        {"date": "2023-05-02"},
+        *[
+            {"date": (date(2026, 8, 1) + timedelta(days=index)).isoformat()}
+            for index in range(19)
+        ],
+    ]
+
+    assert _listing_history_verdict(history, as_of=date(2026, 8, 26)) == (
+        False,
+        "new_listing_insufficient_history",
+        19,
+        date(2026, 8, 19),
+    )
+
+
+def test_listing_history_verdict_quarantines_stale_or_missing_history() -> None:
+    assert _listing_history_verdict(
+        [{"date": "2023-05-01"}],
+        as_of=date(2026, 8, 26),
+    ) == (False, "listing_history_stale", 0, date(2023, 5, 1))
+    assert _listing_history_verdict([], as_of=date(2026, 8, 26)) == (
+        False,
+        "listing_history_missing",
+        0,
+        None,
+    )
 
 
 def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() -> None:
