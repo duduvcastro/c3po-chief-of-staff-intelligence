@@ -4,6 +4,7 @@ import csv
 import gzip
 import hashlib
 import json
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from app.r2d2_exit_policy_engine import (
     PolicyOutcome,
     StudyBar,
     build_episodes,
+    classify_market_compatibility,
     paired_session_bootstrap,
     reconcile_binding_gate,
     simulate_mechanical,
@@ -44,6 +46,7 @@ def _buy(
     quantity: float = 10.0,
     symbol: str = "TEST",
     snapshot: dict | None = None,
+    quote_as_of: datetime | None = None,
 ) -> LedgerFill:
     fill = signal * 1.001
     gross = quantity * fill
@@ -65,7 +68,7 @@ def _buy(
         reason="entry",
         decision_snapshot=snapshot or {"stop_price": 99.0},
         executed_at=at,
-        quote_as_of=at,
+        quote_as_of=quote_as_of or at,
     )
 
 
@@ -79,6 +82,7 @@ def _sell(
     symbol: str = "TEST",
     reason: str = "exit",
     snapshot: dict | None = None,
+    quote_as_of: datetime | None = None,
 ) -> LedgerFill:
     fill = signal * 0.999
     gross = quantity * fill
@@ -101,7 +105,7 @@ def _sell(
         reason=reason,
         decision_snapshot=snapshot or {},
         executed_at=at,
-        quote_as_of=at,
+        quote_as_of=quote_as_of or at,
     )
 
 
@@ -204,7 +208,80 @@ def test_binding_gate_reconciles_money_and_accepts_one_minute_boundary() -> None
     assert gate["timestamp_boundary_tolerance_minutes"] == 1
 
 
-def test_binding_gate_fails_closed_on_a_fill_outside_ohlc() -> None:
+def test_market_compatibility_uses_signal_and_classifies_in_amendment_order() -> None:
+    contained = _buy(signal=100.0)
+    clock_extended = _buy(
+        fill_id="clock",
+        at=SESSION_OPEN + timedelta(minutes=10),
+        signal=100.0,
+    )
+    tolerance = _buy(fill_id="tolerance", signal=100.0)
+    violation = _buy(fill_id="violation", signal=100.0)
+
+    contained_bar = _bar(0, open_=100.0, high=100.05, low=99.95, close=100.0)
+    clock_bar = _bar(5, open_=100.0, high=100.05, low=99.95, close=100.0)
+    tolerance_bar = _bar(0, open_=100.25, high=100.3, low=100.2, close=100.25)
+    violation_bar = _bar(0, open_=100.35, high=100.4, low=100.3, close=100.35)
+
+    assert classify_market_compatibility(
+        contained, {contained_bar.start_at: contained_bar},
+    )["classification"] == "contained"
+    assert classify_market_compatibility(
+        clock_extended, {clock_bar.start_at: clock_bar},
+    )["classification"] == "clock_extended"
+    assert classify_market_compatibility(
+        tolerance, {tolerance_bar.start_at: tolerance_bar},
+    )["classification"] == "tolerance_band"
+    assert classify_market_compatibility(
+        violation, {violation_bar.start_at: violation_bar},
+    )["classification"] == "violation"
+
+
+def test_legacy_decomposition_uses_execution_window_not_quote_window() -> None:
+    fill = _buy(
+        at=SESSION_OPEN,
+        quote_as_of=SESSION_OPEN + timedelta(minutes=3),
+        signal=100.0,
+    )
+    execution_bar = _bar(0, open_=99.2, high=99.5, low=99.0, close=99.3)
+    quote_bar = _bar(3, open_=100.1, high=100.2, low=99.9, close=100.1)
+
+    result = classify_market_compatibility(
+        fill,
+        {
+            execution_bar.start_at: execution_bar,
+            quote_bar.start_at: quote_bar,
+        },
+    )
+
+    assert result["classification"] == "contained"
+    assert result["legacy_fill_contained"] is False
+
+
+def test_g1_money_reconciliation_remains_exact_and_binding() -> None:
+    buy = _buy()
+    bad_buy = replace(buy, fees_usd=buy.fees_usd + 0.01)
+    average_cost = (bad_buy.gross_value_usd + bad_buy.fees_usd) / bad_buy.quantity
+    sell = _sell(
+        average_cost=average_cost,
+        fill_id="sell",
+        at=SESSION_OPEN + timedelta(minutes=1),
+        signal=100.5,
+        quantity=10,
+    )
+    episode = _episode([bad_buy, sell])
+    bars = [
+        _bar(0, open_=100.0, high=100.2, low=99.9, close=100.1),
+        _bar(1, open_=100.4, high=100.6, low=100.3, close=100.5),
+    ]
+
+    with pytest.raises(ConsistencyGateError) as raised:
+        reconcile_binding_gate([episode], {"TEST": bars})
+
+    assert any(item["gate"] == "fees_usd" for item in raised.value.failures)
+
+
+def test_binding_gate_censors_violation_at_five_percent_without_blocking() -> None:
     buy = _buy()
     average_cost = (buy.gross_value_usd + buy.fees_usd) / buy.quantity
     sell = _sell(
@@ -217,13 +294,79 @@ def test_binding_gate_fails_closed_on_a_fill_outside_ohlc() -> None:
     episode = _episode([buy, sell])
     bars = [
         _bar(0, open_=99.0, high=99.5, low=98.5, close=99.1),
-        _bar(1, open_=100.3, high=100.6, low=100.2, close=100.4),
+        _bar(1, open_=100.5, high=100.6, low=100.5, close=100.55),
+    ]
+
+    gate = reconcile_binding_gate(
+        [episode],
+        {"TEST": bars},
+        constructed_episode_count=20,
+    )
+
+    compatibility = gate["market_compatibility"]
+    assert gate["passed"] is True
+    assert compatibility["coverage_censored_episode_ids"] == [episode.id]
+    assert compatibility["coverage_censored_percent"] == pytest.approx(5.0)
+    assert compatibility["threshold_passed"] is True
+
+
+def test_binding_gate_fails_closed_above_violation_episode_limit() -> None:
+    buy = _buy()
+    average_cost = (buy.gross_value_usd + buy.fees_usd) / buy.quantity
+    sell = _sell(
+        average_cost=average_cost,
+        fill_id="sell",
+        at=SESSION_OPEN + timedelta(minutes=1),
+        signal=100.5,
+        quantity=10,
+    )
+    episode = _episode([buy, sell])
+    bars = [
+        _bar(0, open_=99.0, high=99.5, low=98.5, close=99.1),
+        _bar(1, open_=100.5, high=100.6, low=100.5, close=100.55),
     ]
 
     with pytest.raises(ConsistencyGateError) as raised:
-        reconcile_binding_gate([episode], {"TEST": bars})
+        reconcile_binding_gate(
+            [episode],
+            {"TEST": bars},
+            constructed_episode_count=19,
+        )
 
-    assert any(item["gate"] == "ohlc_compatibility" for item in raised.value.failures)
+    assert raised.value.gate_payload["market_compatibility"]["threshold_passed"] is False
+    assert any(
+        item["gate"] == "market_compatibility_violation_rate"
+        for item in raised.value.failures
+    )
+
+
+def test_frozen_probe_decomposition_contract_is_pinned() -> None:
+    frozen_probe = {
+        "gate_analysis_sha256": (
+            "864b494e4f3798504e46aeef7da19e45690c7656676fa6ce6e96ca481e9c124c"
+        ),
+        "residual_probe_sha256": (
+            "a104292b552f8631df9bcfbc2c727ac605222703be0ba2f1b434be382a898cf7"
+        ),
+        "original_failure_decomposition": {
+            "synthetic_fill_vs_signal": 278,
+            "clock_extended": 35,
+            "tolerance_band": 89,
+            "violation": 4,
+        },
+        "violation_episode_symbols": ["NASDAQ:LIFE", "NYSE:BVN", "NYSE:BVN", "NYSE:PJT"],
+    }
+
+    assert sum(frozen_probe["original_failure_decomposition"].values()) == 406
+    assert frozen_probe["original_failure_decomposition"] == {
+        "synthetic_fill_vs_signal": 278,
+        "clock_extended": 35,
+        "tolerance_band": 89,
+        "violation": 4,
+    }
+    assert frozen_probe["violation_episode_symbols"] == [
+        "NASDAQ:LIFE", "NYSE:BVN", "NYSE:BVN", "NYSE:PJT",
+    ]
 
 
 def test_take_profit_overlay_preserves_real_partial_before_anticipating_exit() -> None:
@@ -426,10 +569,17 @@ def test_report_is_self_hashed_and_keeps_panel_ii_nonbinding(
     from app import r2d2_exit_policy_study as study
 
     spec = tmp_path / "spec.md"
+    amendment = tmp_path / "amendment.md"
     deliverable = tmp_path / "deliverable.md"
     spec.write_bytes(b"frozen spec\n")
+    amendment.write_bytes(b"signed amendment\n")
     deliverable.write_bytes(b"approved deliverable\n")
     monkeypatch.setattr(study, "SPEC_SHA256", hashlib.sha256(spec.read_bytes()).hexdigest())
+    monkeypatch.setattr(
+        study,
+        "AMENDMENT_ONE_SHA256",
+        hashlib.sha256(amendment.read_bytes()).hexdigest(),
+    )
     monkeypatch.setattr(
         study,
         "DELIVERABLE_ZERO_SHA256",
@@ -489,6 +639,7 @@ def test_report_is_self_hashed_and_keeps_panel_ii_nonbinding(
         settings=settings,
         generated_at=datetime(2026, 8, 26, 5, tzinfo=UTC),
         spec_path=spec,
+        amendment_path=amendment,
         deliverable_path=deliverable,
     )
 

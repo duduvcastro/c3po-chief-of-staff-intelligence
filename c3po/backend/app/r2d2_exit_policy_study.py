@@ -38,10 +38,11 @@ from .r2d2_exit_policy_engine import (
 NEW_YORK = ZoneInfo("America/New_York")
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 SPEC_SHA256 = "21882372220d55aa01c0a23b9288d75788d25b1187c01b4954e0c500ec0216a2"
+AMENDMENT_ONE_SHA256 = "3001ed9eba15d684f7dcd74d91a940e7603ae4d5a342b53655b2fd1e9250bfc8"
 DELIVERABLE_ZERO_SHA256 = "ae83428ac0444329efc7405e06078c144b575a0909699e15b16ce5a26de20098"
 FROZEN_POLICY_COMMIT = "39ff427fd2f1fa0f42141776921a63651508495f"
 FROZEN_METHODOLOGY = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
-REPORT_SCHEMA_VERSION = "EXIT-POLICY-STUDY-V1.1-REPORT-v1"
+REPORT_SCHEMA_VERSION = "EXIT-POLICY-STUDY-V1.1-REPORT-v2"
 TERMINAL_SESSIONS = 10
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -498,6 +499,7 @@ def build_report(
     settings: Settings,
     generated_at: datetime | None = None,
     spec_path: Path | None = None,
+    amendment_path: Path | None = None,
     deliverable_path: Path | None = None,
 ) -> dict[str, Any]:
     generated_at = (generated_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -506,6 +508,11 @@ def build_report(
         spec_path or c3po_root / "docs" / "EXIT_POLICY_STUDY_V1_1.md",
         SPEC_SHA256,
         "frozen EXIT_POLICY_STUDY_V1.1 spec",
+    )
+    amendment = require_frozen_document(
+        amendment_path or c3po_root / "docs" / "EXIT_POLICY_STUDY_V1_1_AMENDMENT_1.md",
+        AMENDMENT_ONE_SHA256,
+        "signed EXIT_POLICY_STUDY_V1.1 Amendment 1",
     )
     deliverable = require_frozen_document(
         deliverable_path or c3po_root / "docs" / "EXIT_POLICY_STUDY_V1_1_DELIVERABLE_0.md",
@@ -540,14 +547,29 @@ def build_report(
     analysis_interpretable = False
     gate_failures: list[dict[str, Any]] = []
     try:
-        common_gate = reconcile_binding_gate(covered_cohort, bars)
-        panel_i, panel_i_cohort, panel_i_censoring = _run_panel_i(
+        common_gate = reconcile_binding_gate(
             covered_cohort,
+            bars,
+            constructed_episode_count=len(episodes),
+        )
+        violation_episode_ids = set(
+            common_gate["market_compatibility"]["coverage_censored_episode_ids"]
+        )
+        analysis_cohort = [
+            episode for episode in covered_cohort
+            if episode.id not in violation_episode_ids
+        ]
+        coverage_censoring = {
+            **coverage_censoring,
+            "market_compatibility_violation": len(violation_episode_ids),
+        }
+        panel_i, panel_i_cohort, panel_i_censoring = _run_panel_i(
+            analysis_cohort,
             bars,
             float(experiment["starting_capital"]),
         )
         panel_ii, panel_ii_censoring = _run_panel_ii(
-            covered_cohort,
+            analysis_cohort,
             bars,
             float(experiment["starting_capital"]),
         )
@@ -565,12 +587,12 @@ def build_report(
         analysis_interpretable = True
     except ConsistencyGateError as exc:
         gate_failures = exc.failures
-        common_gate = {
+        common_gate = exc.gate_payload or {
             "passed": False,
             "failures": gate_failures,
-            "failure_count": len(gate_failures),
-            "rule": "stop analysis; do not interpret either panel",
         }
+        common_gate["failure_count"] = len(gate_failures)
+        common_gate["rule"] = "stop analysis; do not interpret either panel"
 
     report: dict[str, Any] = {
         "schema_version": REPORT_SCHEMA_VERSION,
@@ -589,6 +611,7 @@ def build_report(
         },
         "frozen_contract": {
             "spec": spec,
+            "amendment_one": amendment,
             "deliverable_zero": deliverable,
             "policy_commit": FROZEN_POLICY_COMMIT,
             "methodology": FROZEN_METHODOLOGY,
@@ -618,6 +641,14 @@ def build_report(
             "base_eligible_episode_count": len(base_cohort),
             "base_censoring": base_censoring,
             "data_covered_episode_count": len(covered_cohort),
+            "market_compatible_episode_count": (
+                len(covered_cohort)
+                - int(
+                    (common_gate or {}).get("market_compatibility", {}).get(
+                        "coverage_censored_episode_count", 0,
+                    )
+                )
+            ),
             "coverage_censoring": coverage_censoring,
             "panel_i_censoring": panel_i_censoring,
             "panel_ii_censoring": panel_ii_censoring,
@@ -643,6 +674,7 @@ def build_plan(
     *,
     settings: Settings,
     spec_path: Path | None = None,
+    amendment_path: Path | None = None,
     deliverable_path: Path | None = None,
 ) -> dict[str, Any]:
     c3po_root = Path(__file__).resolve().parents[2]
@@ -650,6 +682,11 @@ def build_plan(
         spec_path or c3po_root / "docs" / "EXIT_POLICY_STUDY_V1_1.md",
         SPEC_SHA256,
         "frozen EXIT_POLICY_STUDY_V1.1 spec",
+    )
+    amendment = require_frozen_document(
+        amendment_path or c3po_root / "docs" / "EXIT_POLICY_STUDY_V1_1_AMENDMENT_1.md",
+        AMENDMENT_ONE_SHA256,
+        "signed EXIT_POLICY_STUDY_V1.1 Amendment 1",
     )
     deliverable = require_frozen_document(
         deliverable_path or c3po_root / "docs" / "EXIT_POLICY_STUDY_V1_1_DELIVERABLE_0.md",
@@ -666,6 +703,7 @@ def build_plan(
         "external_api_calls": 0,
         "report_written": False,
         "spec": spec,
+        "amendment_one": amendment,
         "deliverable_zero": deliverable,
         "experiment_id": str(experiment["id"]),
         "ledger_rows": len(fills),
@@ -698,6 +736,7 @@ def _parser() -> argparse.ArgumentParser:
     for command in ("plan", "run"):
         child = subparsers.add_parser(command)
         child.add_argument("--spec", type=Path)
+        child.add_argument("--amendment-one", type=Path)
         child.add_argument("--deliverable-zero", type=Path)
         if command == "run":
             child.add_argument("--output", type=Path, required=True)
@@ -711,6 +750,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = build_plan(
             settings=settings,
             spec_path=args.spec,
+            amendment_path=args.amendment_one,
             deliverable_path=args.deliverable_zero,
         )
         print(json.dumps(_json_ready(payload), sort_keys=True, indent=2))
@@ -721,6 +761,7 @@ def main(argv: list[str] | None = None) -> int:
         settings=settings,
         generated_at=now,
         spec_path=args.spec,
+        amendment_path=args.amendment_one,
         deliverable_path=args.deliverable_zero,
     )
     write_immutable_json(args.output, payload)

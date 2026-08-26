@@ -18,6 +18,15 @@ SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 CENT_TOLERANCE_USD = 0.005
 QUANTITY_TOLERANCE = 1e-7
 OHLC_BOUNDARY_TOLERANCE_MINUTES = 1
+OHLC_CLOCK_EXTENDED_BACKWARD_MINUTES = 10
+OHLC_COMPATIBILITY_TOLERANCE_BPS = 25.0
+OHLC_VIOLATION_EPISODE_LIMIT_PERCENT = 5.0
+MARKET_COMPATIBILITY_CLASSES = (
+    "contained",
+    "clock_extended",
+    "tolerance_band",
+    "violation",
+)
 BOOTSTRAP_SEED = 20260824
 BOOTSTRAP_ITERATIONS = 10_000
 PANEL_I_POLICIES = ("A", "B", "B_PRIME", "C", "C_PRIME")
@@ -29,8 +38,14 @@ class ExitPolicyStudyError(RuntimeError):
 
 
 class ConsistencyGateError(ExitPolicyStudyError):
-    def __init__(self, failures: Sequence[Mapping[str, Any]]) -> None:
+    def __init__(
+        self,
+        failures: Sequence[Mapping[str, Any]],
+        *,
+        gate_payload: Mapping[str, Any] | None = None,
+    ) -> None:
         self.failures = [dict(item) for item in failures]
+        self.gate_payload = dict(gate_payload or {})
         super().__init__(f"binding consistency gate failed with {len(self.failures)} finding(s)")
 
 
@@ -275,29 +290,138 @@ def _bars_by_minute(bars: Sequence[StudyBar]) -> dict[datetime, StudyBar]:
     return {bar.start_at.astimezone(timezone.utc): bar for bar in bars}
 
 
-def _bar_candidates(at: datetime) -> tuple[datetime, ...]:
+def _bar_candidates(
+    at: datetime,
+    offsets: Sequence[int] = (0, -OHLC_BOUNDARY_TOLERANCE_MINUTES, OHLC_BOUNDARY_TOLERANCE_MINUTES),
+) -> tuple[datetime, ...]:
     minute = at.astimezone(timezone.utc).replace(second=0, microsecond=0)
-    return tuple(
-        minute + timedelta(minutes=offset)
-        for offset in (0, -OHLC_BOUNDARY_TOLERANCE_MINUTES, OHLC_BOUNDARY_TOLERANCE_MINUTES)
+    return tuple(minute + timedelta(minutes=offset) for offset in offsets)
+
+
+def _candidate_bar_rows(
+    fill: LedgerFill,
+    bars: Mapping[datetime, StudyBar],
+    *,
+    extended: bool,
+) -> list[tuple[str, int, StudyBar]]:
+    if extended:
+        anchors = (("quote_as_of", fill.quote_as_of),)
+        offsets = tuple(range(0, -OHLC_CLOCK_EXTENDED_BACKWARD_MINUTES - 1, -1)) + (1,)
+    else:
+        anchors = (
+            ("executed_at", fill.executed_at),
+            ("quote_as_of", fill.quote_as_of),
+        )
+        offsets = (0, -OHLC_BOUNDARY_TOLERANCE_MINUTES, OHLC_BOUNDARY_TOLERANCE_MINUTES)
+    rows: list[tuple[str, int, StudyBar]] = []
+    seen: set[datetime] = set()
+    for anchor, at in anchors:
+        for offset, minute in zip(offsets, _bar_candidates(at, offsets), strict=True):
+            if minute in seen:
+                continue
+            seen.add(minute)
+            bar = bars.get(minute)
+            if bar is not None:
+                rows.append((anchor, offset, bar))
+    return rows
+
+
+def _price_contained(price: float, bar: StudyBar) -> bool:
+    return bar.low <= price <= bar.high
+
+
+def _breach_bps(price: float, bar: StudyBar) -> float:
+    if _price_contained(price, bar):
+        return 0.0
+    nearest_edge = bar.low if price < bar.low else bar.high
+    return abs(price - nearest_edge) / price * 10_000.0
+
+
+def classify_market_compatibility(
+    fill: LedgerFill,
+    bars: Mapping[datetime, StudyBar],
+) -> dict[str, Any]:
+    original = _candidate_bar_rows(fill, bars, extended=False)
+    legacy_fill_contained = any(
+        anchor == "executed_at" and _price_contained(fill.fill_price_local, bar)
+        for anchor, _offset, bar in original
     )
+    for anchor, offset, bar in original:
+        if _price_contained(fill.signal_price_local, bar):
+            return {
+                "classification": "contained",
+                "legacy_fill_contained": legacy_fill_contained,
+                "matched_anchor": anchor,
+                "matched_offset_minutes": offset,
+                "matched_bar_start_at": bar.start_at.isoformat(),
+                "breach_bps": 0.0,
+            }
 
+    for anchor, offset, bar in _candidate_bar_rows(fill, bars, extended=True):
+        if _price_contained(fill.signal_price_local, bar):
+            return {
+                "classification": "clock_extended",
+                "legacy_fill_contained": legacy_fill_contained,
+                "matched_anchor": anchor,
+                "matched_offset_minutes": offset,
+                "matched_bar_start_at": bar.start_at.isoformat(),
+                "breach_bps": 0.0,
+            }
 
-def _compatible_bar(fill: LedgerFill, bars: Mapping[datetime, StudyBar]) -> StudyBar | None:
-    for minute in _bar_candidates(fill.executed_at):
-        bar = bars.get(minute)
-        if bar and bar.low <= fill.fill_price_local <= bar.high:
-            return bar
-    return None
+    nearest = min(
+        original,
+        key=lambda row: _breach_bps(fill.signal_price_local, row[2]),
+        default=None,
+    )
+    if nearest is not None:
+        anchor, offset, bar = nearest
+        breach = _breach_bps(fill.signal_price_local, bar)
+        classification = (
+            "tolerance_band"
+            if breach <= OHLC_COMPATIBILITY_TOLERANCE_BPS
+            else "violation"
+        )
+        return {
+            "classification": classification,
+            "legacy_fill_contained": legacy_fill_contained,
+            "matched_anchor": anchor,
+            "matched_offset_minutes": offset,
+            "matched_bar_start_at": bar.start_at.isoformat(),
+            "reference_low": bar.low,
+            "reference_high": bar.high,
+            "breach_bps": breach,
+        }
+    return {
+        "classification": "violation",
+        "legacy_fill_contained": legacy_fill_contained,
+        "matched_anchor": None,
+        "matched_offset_minutes": None,
+        "matched_bar_start_at": None,
+        "breach_bps": None,
+    }
 
 
 def reconcile_binding_gate(
     episodes: Sequence[Episode],
     bars_by_symbol: Mapping[str, Sequence[StudyBar]],
+    *,
+    constructed_episode_count: int | None = None,
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
     checked_fills = 0
     checked_episodes = 0
+    compatibility_counts = {name: 0 for name in MARKET_COMPATIBILITY_CLASSES}
+    compatibility_by_session: dict[str, dict[str, int]] = defaultdict(
+        lambda: {name: 0 for name in MARKET_COMPATIBILITY_CLASSES}
+    )
+    original_failure_decomposition = {
+        "synthetic_fill_vs_signal": 0,
+        "clock_extended": 0,
+        "tolerance_band": 0,
+        "violation": 0,
+    }
+    violation_fills: list[dict[str, Any]] = []
+    violation_episode_ids: set[str] = set()
     for episode in episodes:
         if not episode.closed or episode.strategy_excluded:
             continue
@@ -352,13 +476,35 @@ def reconcile_binding_gate(
                         "observed": fill.realized_pnl_usd,
                         "expected": realized,
                     })
-            if _compatible_bar(fill, minute_bars) is None:
-                failures.append({
+            compatibility = classify_market_compatibility(fill, minute_bars)
+            classification = str(compatibility["classification"])
+            compatibility_counts[classification] += 1
+            session_date = fill.executed_at.astimezone(NEW_YORK).date().isoformat()
+            compatibility_by_session[session_date][classification] += 1
+            if not compatibility["legacy_fill_contained"]:
+                decomposition_class = (
+                    "synthetic_fill_vs_signal"
+                    if classification == "contained"
+                    else classification
+                )
+                original_failure_decomposition[decomposition_class] += 1
+            if classification == "violation":
+                violation_episode_ids.add(episode.id)
+                violation_fills.append({
                     "episode_id": episode.id,
                     "fill_id": fill.id,
-                    "gate": "ohlc_compatibility",
-                    "fill_price_local": fill.fill_price_local,
+                    "market": fill.market,
+                    "symbol": fill.symbol,
+                    "side": fill.side,
+                    "signal_price_local": fill.signal_price_local,
                     "executed_at": fill.executed_at.isoformat(),
+                    "quote_as_of": fill.quote_as_of.isoformat(),
+                    "breach_bps": compatibility["breach_bps"],
+                    "reference_low": compatibility.get("reference_low"),
+                    "reference_high": compatibility.get("reference_high"),
+                    "matched_anchor": compatibility["matched_anchor"],
+                    "matched_offset_minutes": compatibility["matched_offset_minutes"],
+                    "matched_bar_start_at": compatibility["matched_bar_start_at"],
                 })
         if state.quantity > QUANTITY_TOLERANCE:
             failures.append({
@@ -366,6 +512,19 @@ def reconcile_binding_gate(
                 "gate": "flat_to_flat_quantity",
                 "remaining_quantity": state.quantity,
             })
+    denominator = constructed_episode_count if constructed_episode_count is not None else len(episodes)
+    violation_rate_percent = (
+        len(violation_episode_ids) / denominator * 100.0 if denominator else 0.0
+    )
+    threshold_passed = violation_rate_percent <= OHLC_VIOLATION_EPISODE_LIMIT_PERCENT
+    if not threshold_passed:
+        failures.append({
+            "gate": "market_compatibility_violation_rate",
+            "violation_episode_count": len(violation_episode_ids),
+            "constructed_episode_count": denominator,
+            "observed_percent": violation_rate_percent,
+            "maximum_percent": OHLC_VIOLATION_EPISODE_LIMIT_PERCENT,
+        })
     payload = {
         "passed": not failures,
         "checked_episodes": checked_episodes,
@@ -373,10 +532,30 @@ def reconcile_binding_gate(
         "money_tolerance_usd": CENT_TOLERANCE_USD,
         "fill_price_tolerance_local": 1e-7,
         "timestamp_boundary_tolerance_minutes": OHLC_BOUNDARY_TOLERANCE_MINUTES,
+        "market_compatibility": {
+            "price_field": "signal_price_local",
+            "class_order": list(MARKET_COMPATIBILITY_CLASSES),
+            "counts": compatibility_counts,
+            "counts_by_session": {
+                session: compatibility_by_session[session]
+                for session in sorted(compatibility_by_session)
+            },
+            "original_failure_decomposition": original_failure_decomposition,
+            "original_window_minutes": [-1, 0, 1],
+            "clock_extended_window_minutes": [-10, 1],
+            "tolerance_band_bps": OHLC_COMPATIBILITY_TOLERANCE_BPS,
+            "violation_fills": violation_fills,
+            "coverage_censored_episode_ids": sorted(violation_episode_ids),
+            "coverage_censored_episode_count": len(violation_episode_ids),
+            "constructed_episode_count": denominator,
+            "coverage_censored_percent": violation_rate_percent,
+            "maximum_coverage_censored_percent": OHLC_VIOLATION_EPISODE_LIMIT_PERCENT,
+            "threshold_passed": threshold_passed,
+        },
         "failures": failures,
     }
     if failures:
-        raise ConsistencyGateError(failures)
+        raise ConsistencyGateError(failures, gate_payload=payload)
     return payload
 
 
