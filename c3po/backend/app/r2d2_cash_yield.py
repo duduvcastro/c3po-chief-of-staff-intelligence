@@ -13,9 +13,9 @@ from .database import Database
 from .market_data.http import JsonHttpClient
 
 
-SCHEMA_VERSION = "R2D2-CASH-YIELD-v1"
+SCHEMA_VERSION = "R2D2-CASH-YIELD-v2"
 METHODOLOGY_KEY = "r2d2_cash_yield_accounting"
-METHODOLOGY_VERSION = 1
+METHODOLOGY_VERSION = 2
 RATE_ANALYSIS_TYPE = "r2d2_cash_yield_rate"
 RATE_ENTITY_KEY = "US_TBILL_13_WEEK_COUPON_EQUIVALENT"
 RUN_ANALYSIS_TYPE = "r2d2_cash_yield_run"
@@ -25,9 +25,6 @@ SOURCE_SERIES = "Daily Treasury Bill Rates / 13-week Coupon Equivalent"
 TREASURY_XML_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
 )
-EPOCH_START_DATE = date(2026, 8, 26)
-
-
 class CashYieldDataError(RuntimeError):
     pass
 
@@ -146,15 +143,21 @@ class R2D2CashYieldService:
         experiment = self._experiment()
         experiment_id = str(experiment["id"])
         snapshots = self._final_snapshots(experiment_id)
-        eligible = [row for row in snapshots if row["session_date"] >= EPOCH_START_DATE]
+        eligible = [
+            row for row in snapshots
+            if row["session_date"] >= experiment["start_date"]
+        ]
         if not eligible:
-            return self._record_run({"status": "pending", "reason": "no_final_epoch_session"})
+            return self._record_run({"status": "pending", "reason": "no_final_experiment_session"})
+        accruable = eligible[1:]
+        if not accruable:
+            return self._record_run({"status": "pending", "reason": "no_prior_final_session"})
         missing = [
-            row for row in eligible
+            row for row in accruable
             if self._entry(experiment_id, row["session_date"]) is None
         ]
         if not missing:
-            current = eligible[-1]
+            current = accruable[-1]
             existing = self._entry(experiment_id, current["session_date"])
             return self._record_run({
                 "status": "idempotent",
@@ -165,7 +168,7 @@ class R2D2CashYieldService:
         posted: list[dict[str, Any]] = []
         for current in missing:
             prior = next(
-                (row for row in reversed(snapshots) if row["session_date"] < current["session_date"]),
+                (row for row in reversed(eligible) if row["session_date"] < current["session_date"]),
                 None,
             )
             if prior is None:
@@ -270,11 +273,11 @@ class R2D2CashYieldService:
         else:
             with self.database.connection() as connection:
                 row = connection.execute(
-                    "SELECT id::text, code FROM r2d2_experiments WHERE code=%s",
+                    "SELECT id::text, code, start_date FROM r2d2_experiments WHERE code=%s",
                     (self.settings.r2d2_experiment_code,),
                 ).fetchone()
             if row:
-                return {"id": row[0], "code": row[1]}
+                return {"id": row[0], "code": row[1], "start_date": row[2]}
         raise CashYieldDataError("R2D2 experiment is not initialized")
 
     def _final_snapshots(self, experiment_id: str) -> list[dict[str, Any]]:

@@ -91,23 +91,23 @@ def test_cash_yield_is_append_only_idempotent_and_does_not_change_operational_na
     database = Database(settings)
     paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
     experiment = paper.ensure_initialized()
-    paper.repo.memory["snapshots"][date(2026, 8, 24)] = {
-        "session_date": date(2026, 8, 24), "cash_usd": 900_000,
+    paper.repo.memory["snapshots"][date(2026, 8, 17)] = {
+        "session_date": date(2026, 8, 17), "cash_usd": 900_000,
         "nav_usd": 1_000_000, "is_final": True,
     }
-    paper.repo.memory["snapshots"][date(2026, 8, 26)] = {
-        "session_date": date(2026, 8, 26), "cash_usd": 900_000,
+    paper.repo.memory["snapshots"][date(2026, 8, 18)] = {
+        "session_date": date(2026, 8, 18), "cash_usd": 900_000,
         "nav_usd": 1_000_000, "is_final": True,
     }
     service = R2D2CashYieldService(
-        settings, database, FakeTreasuryHttp(_xml("2026-08-24"))  # type: ignore[arg-type]
+        settings, database, FakeTreasuryHttp(_xml("2026-08-17"))  # type: ignore[arg-type]
     )
 
     first = service.run_latest()
     second = service.run_latest()
     dashboard = paper.dashboard()
 
-    expected_interest = 900_000 * 0.042 * 2 / 365
+    expected_interest = 900_000 * 0.042 / 365
     assert first["status"] == "posted"
     assert first["interest_income_usd"] == pytest.approx(expected_interest, abs=1e-6)
     assert second["status"] == "idempotent"
@@ -116,9 +116,10 @@ def test_cash_yield_is_append_only_idempotent_and_does_not_change_operational_na
     assert dashboard.nav_usd == 1_000_000
     assert dashboard.accounting_nav_ex_interest_usd == 1_000_000
     assert dashboard.accounting_total_nav_usd == pytest.approx(1_000_000 + expected_interest, abs=0.01)
-    assert dashboard.interest_income_session_date == "2026-08-26"
-    assert dashboard.interest_income_epoch_start_date == "2026-08-26"
-    assert dashboard.interest_income_rate_date == "2026-08-24"
+    assert database._r2d2_cash_yield_entries[0]["session_date"] == date(2026, 8, 18)  # type: ignore[attr-defined]
+    assert dashboard.interest_income_session_date == "2026-08-18"
+    assert dashboard.interest_income_epoch_start_date == "2026-08-17"
+    assert dashboard.interest_income_rate_date == "2026-08-17"
     assert dashboard.interest_income_status == "posted"
 
 
@@ -135,9 +136,9 @@ def test_run_latest_catches_up_missing_sessions_oldest_first(monkeypatch) -> Non
     paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
     paper.ensure_initialized()
     for session_date, cash_usd in (
-        (date(2026, 8, 24), 900_000),
-        (date(2026, 8, 26), 850_000),
-        (date(2026, 8, 27), 800_000),
+        (date(2026, 8, 17), 900_000),
+        (date(2026, 8, 18), 850_000),
+        (date(2026, 8, 19), 800_000),
     ):
         paper.repo.memory["snapshots"][session_date] = {
             "session_date": session_date,
@@ -145,7 +146,7 @@ def test_run_latest_catches_up_missing_sessions_oldest_first(monkeypatch) -> Non
             "nav_usd": 1_000_000,
             "is_final": True,
         }
-    http = FakeTreasuryHttp(_xml("2026-08-24", "2026-08-26"))
+    http = FakeTreasuryHttp(_xml("2026-08-17", "2026-08-18"))
     service = R2D2CashYieldService(settings, database, http)  # type: ignore[arg-type]
 
     result = service.run_latest()
@@ -154,14 +155,14 @@ def test_run_latest_catches_up_missing_sessions_oldest_first(monkeypatch) -> Non
     entries = database._r2d2_cash_yield_entries  # type: ignore[attr-defined]
     assert result["status"] == "posted"
     assert result["posted_count"] == 2
-    assert result["posted_session_dates"] == ["2026-08-26", "2026-08-27"]
+    assert result["posted_session_dates"] == ["2026-08-18", "2026-08-19"]
     assert [entry["session_date"] for entry in entries] == [
-        date(2026, 8, 26),
-        date(2026, 8, 27),
+        date(2026, 8, 18),
+        date(2026, 8, 19),
     ]
     assert [entry["source_observation_date"] for entry in entries] == [
-        date(2026, 8, 24),
-        date(2026, 8, 26),
+        date(2026, 8, 17),
+        date(2026, 8, 18),
     ]
     assert len(http.calls) == 2
     assert repeated["status"] == "idempotent"
