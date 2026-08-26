@@ -14,7 +14,8 @@ from .r2d2_exit_policy_engine import (
     BOOTSTRAP_ITERATIONS,
     BOOTSTRAP_SEED,
     CENT_TOLERANCE_USD,
-    MARKET_COMPATIBILITY_CLASSES,
+    OHLC_BOUNDARY_TOLERANCE_MINUTES,
+    OHLC_CLOCK_EXTENDED_BACKWARD_MINUTES,
     OHLC_VIOLATION_EPISODE_LIMIT_PERCENT,
     LedgerFill,
     StudyBar,
@@ -36,6 +37,13 @@ BARRIER_CATEGORIES = (
 MIN_HYPOTHESIS_SESSIONS = 15
 MIN_HYPOTHESIS_EPISODES_PER_CELL = 30
 CENSORSHIP_REVIEW_PERCENT = 20.0
+ENTRY_MARKET_COMPATIBILITY_CLASSES = (
+    "contained",
+    "clock_extended",
+    "bar_unavailable",
+    "tolerance_band",
+    "violation",
+)
 
 
 class EntryQualityStudyError(RuntimeError):
@@ -363,10 +371,38 @@ def reconcile_entry_gate(
     constructed_entry_count: int | None = None,
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
-    compatibility_counts = {name: 0 for name in MARKET_COMPATIBILITY_CLASSES}
+    compatibility_counts = {
+        name: 0 for name in ENTRY_MARKET_COMPATIBILITY_CLASSES
+    }
     violation_ids: set[str] = set()
     violation_rows: list[dict[str, Any]] = []
-    compatibility_unavailable = 0
+    unavailable_ids: set[str] = set()
+    unavailable_rows: list[dict[str, Any]] = []
+    entry_count_by_session: dict[str, int] = defaultdict(int)
+    unavailable_count_by_session: dict[str, int] = defaultdict(int)
+
+    def candidate_bar_exists(
+        fill: LedgerFill,
+        bars: Mapping[datetime, StudyBar],
+    ) -> bool:
+        original_offsets = (
+            0,
+            -OHLC_BOUNDARY_TOLERANCE_MINUTES,
+            OHLC_BOUNDARY_TOLERANCE_MINUTES,
+        )
+        candidate_minutes = {
+            anchor.astimezone(timezone.utc).replace(second=0, microsecond=0)
+            + timedelta(minutes=offset)
+            for anchor in (fill.executed_at, fill.quote_as_of)
+            for offset in original_offsets
+        }
+        candidate_minutes.update({
+            fill.quote_as_of.astimezone(timezone.utc).replace(second=0, microsecond=0)
+            + timedelta(minutes=offset)
+            for offset in range(-OHLC_CLOCK_EXTENDED_BACKWARD_MINUTES, 2)
+        })
+        return any(minute in bars for minute in candidate_minutes)
+
     for fill in entries:
         if fill.side != "BUY":
             raise EntryQualityStudyError("entry gate accepts BUY rows only")
@@ -400,13 +436,26 @@ def reconcile_entry_gate(
                 "expected": expected_fill,
             })
         session = fill.executed_at.astimezone(NEW_YORK).date()
+        session_key = session.isoformat()
+        entry_count_by_session[session_key] += 1
         minute_bars = {
             bar.start_at.astimezone(timezone.utc): bar
             for bar in bars_by_symbol.get(fill.symbol, ())
             if bar.session_date == session
         }
-        if not minute_bars:
-            compatibility_unavailable += 1
+        if not minute_bars or not candidate_bar_exists(fill, minute_bars):
+            compatibility_counts["bar_unavailable"] += 1
+            unavailable_ids.add(fill.id)
+            unavailable_count_by_session[session_key] += 1
+            unavailable_rows.append({
+                "entry_id": fill.id,
+                "market": fill.market,
+                "symbol": fill.symbol,
+                "session_date": session_key,
+                "executed_at": fill.executed_at.isoformat(),
+                "quote_as_of": fill.quote_as_of.isoformat(),
+                "reason": "no bar in original or extended compatibility windows",
+            })
             continue
         compatibility = classify_market_compatibility(fill, minute_bars)
         classification = str(compatibility["classification"])
@@ -427,6 +476,26 @@ def reconcile_entry_gate(
             })
     denominator = constructed_entry_count if constructed_entry_count is not None else len(entries)
     violation_percent = len(violation_ids) / denominator * 100.0 if denominator else 0.0
+    unavailable_percent = len(unavailable_ids) / denominator * 100.0 if denominator else 0.0
+    censored_ids = violation_ids | unavailable_ids
+    coverage_by_session: list[dict[str, Any]] = []
+    for session_key, session_entry_count in sorted(entry_count_by_session.items()):
+        unavailable_count = unavailable_count_by_session.get(session_key, 0)
+        percent = (
+            unavailable_count / session_entry_count * 100.0
+            if session_entry_count else 0.0
+        )
+        coverage_by_session.append({
+            "session_date": session_key,
+            "constructed_entry_count": session_entry_count,
+            "bar_unavailable_count": unavailable_count,
+            "bar_unavailable_percent": percent,
+            "status": (
+                "REVIEW_REQUIRED"
+                if percent > CENSORSHIP_REVIEW_PERCENT
+                else "ACCEPTABLE"
+            ),
+        })
     threshold_passed = violation_percent <= OHLC_VIOLATION_EPISODE_LIMIT_PERCENT
     if not threshold_passed:
         failures.append({
@@ -446,18 +515,32 @@ def reconcile_entry_gate(
             "fill_price_absolute_tolerance": 1e-7,
         },
         "g2_market_compatibility": {
-            "classes_in_precedence_order": list(MARKET_COMPATIBILITY_CLASSES),
+            "classes_in_precedence_order": list(ENTRY_MARKET_COMPATIBILITY_CLASSES),
             "counts": compatibility_counts,
-            "unavailable_entry_count": compatibility_unavailable,
+            "bar_unavailable_outside_numeric_violation_ceiling": True,
         },
         "g3_coverage_censorship": {
-            "censored_entry_ids": sorted(violation_ids),
-            "censored_entry_count": len(violation_ids),
+            "censored_entry_ids": sorted(censored_ids),
+            "censored_entry_count": len(censored_ids),
+            "censored_percent_of_constructed_entries": (
+                len(censored_ids) / denominator * 100.0 if denominator else 0.0
+            ),
             "constructed_entry_count_denominator": denominator,
-            "censored_percent_of_constructed_entries": violation_percent,
+            "violation_entry_ids": sorted(violation_ids),
+            "violation_entry_count": len(violation_ids),
+            "violation_percent_of_constructed_entries": violation_percent,
+            "bar_unavailable_entry_ids": sorted(unavailable_ids),
+            "bar_unavailable_entry_count": len(unavailable_ids),
+            "bar_unavailable_percent_of_constructed_entries": unavailable_percent,
             "maximum_percent": OHLC_VIOLATION_EPISODE_LIMIT_PERCENT,
             "threshold_passed": threshold_passed,
             "violations": violation_rows,
+            "bar_unavailable": unavailable_rows,
+            "bar_unavailable_review_threshold_percent": CENSORSHIP_REVIEW_PERCENT,
+            "bar_unavailable_by_session": coverage_by_session,
+            "bar_unavailable_review_required": any(
+                row["status"] == "REVIEW_REQUIRED" for row in coverage_by_session
+            ),
         },
         "failures": failures,
     }

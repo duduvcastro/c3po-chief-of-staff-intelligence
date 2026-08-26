@@ -45,6 +45,7 @@ from .r2d2_exit_policy_study import (
 
 SPEC_SHA256 = "63cdb045a69dfe31246e82fa64e00dd1f9e0357897259a0d420ad81d0957a41e"
 ATTESTATION_SHA256 = "2319708dd4fff344f4536610b9588d242d157a5a464eb2120e6e71058016d355"
+ATTESTATION_TWO_SHA256 = "c5cd8f88632bd9c80ab593ec1e60ba9bdecaee6eaf7c54c41cf1c37df0a11c8b"
 REPORT_SCHEMA_VERSION = "ENTRY-QUALITY-STUDY-V1-REPORT-v1"
 MANIFEST_SCHEMA_VERSION = "ENTRY-QUALITY-STUDY-V1-MANIFEST-v1"
 POLICY_EPOCH_SCHEMA_VERSION = "ENTRY-QUALITY-STUDY-V1-POLICY-EPOCHS-v1"
@@ -700,6 +701,7 @@ def _build_inputs(
     policy_epochs_path: Path,
     spec_path: Path | None,
     attestation_path: Path | None,
+    attestation_two_path: Path | None,
 ) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[2]
     spec = require_frozen_document(
@@ -711,6 +713,12 @@ def _build_inputs(
         attestation_path or root / "docs" / "ENTRY_QUALITY_STUDY_V1_RUNNER_ATTESTATION_1.md",
         ATTESTATION_SHA256,
         "signed entry-study runner attestation",
+    )
+    attestation_two = require_frozen_document(
+        attestation_two_path
+        or root / "docs" / "ENTRY_QUALITY_STUDY_V1_RUNNER_ATTESTATION_2.md",
+        ATTESTATION_TWO_SHA256,
+        "signed entry-study runner attestation 2",
     )
     epochs, epoch_evidence = _load_policy_epochs(policy_epochs_path)
     database = Database(settings)
@@ -728,6 +736,7 @@ def _build_inputs(
     return {
         "spec": spec,
         "attestation": attestation,
+        "attestation_two": attestation_two,
         "policy_epochs": epoch_evidence,
         "experiment": experiment,
         "records": records,
@@ -745,12 +754,14 @@ def build_plan(
     policy_epochs_path: Path,
     spec_path: Path | None = None,
     attestation_path: Path | None = None,
+    attestation_two_path: Path | None = None,
 ) -> dict[str, Any]:
     inputs = _build_inputs(
         settings=settings,
         policy_epochs_path=policy_epochs_path,
         spec_path=spec_path,
         attestation_path=attestation_path,
+        attestation_two_path=attestation_two_path,
     )
     return {
         "command": "plan",
@@ -778,6 +789,7 @@ def build_report(
     generated_at: datetime | None = None,
     spec_path: Path | None = None,
     attestation_path: Path | None = None,
+    attestation_two_path: Path | None = None,
     dry_run: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     generated_at = (generated_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -786,10 +798,14 @@ def build_report(
         policy_epochs_path=policy_epochs_path,
         spec_path=spec_path,
         attestation_path=attestation_path,
+        attestation_two_path=attestation_two_path,
     )
     records: list[EntryRecord] = inputs["records"]
     gate = inputs["entry_gate"]
-    violation_ids = set(gate["g3_coverage_censorship"]["censored_entry_ids"])
+    gate_censorship = gate["g3_coverage_censorship"]
+    violation_ids = set(gate_censorship["violation_entry_ids"])
+    unavailable_ids = set(gate_censorship["bar_unavailable_entry_ids"])
+    censored_ids = violation_ids | unavailable_ids
     measurements: list[EntryMeasurement] = []
     measurement_censoring: dict[str, int] = defaultdict(int)
     if gate["passed"]:
@@ -797,6 +813,9 @@ def build_report(
             fill = record.fill
             if fill.id in violation_ids:
                 measurement_censoring["market_compatibility_violation"] += 1
+                continue
+            if fill.id in unavailable_ids:
+                measurement_censoring["bar_unavailable"] += 1
                 continue
             try:
                 measurements.append(measure_entry(
@@ -836,6 +855,7 @@ def build_report(
         "frozen_contract": {
             "spec": inputs["spec"],
             "runner_attestation": inputs["attestation"],
+            "runner_attestation_2": inputs["attestation_two"],
             "policy_epochs": inputs["policy_epochs"],
             "bootstrap_seed": BOOTSTRAP_SEED,
             "bootstrap_iterations": BOOTSTRAP_ITERATIONS,
@@ -894,7 +914,9 @@ def build_report(
         "entry_consistency_gate": gate,
         "cohort": {
             "constructed_entry_count": len(records),
-            "market_compatibility_censored_count": len(violation_ids),
+            "market_compatibility_censored_count": len(censored_ids),
+            "numeric_violation_censored_count": len(violation_ids),
+            "bar_unavailable_censored_count": len(unavailable_ids),
             "measured_entry_count": len(measurements),
             "measurement_censoring": dict(sorted(measurement_censoring.items())),
         },
@@ -957,6 +979,7 @@ def _parser() -> argparse.ArgumentParser:
         child = subparsers.add_parser(command)
         child.add_argument("--spec", type=Path)
         child.add_argument("--attestation", type=Path)
+        child.add_argument("--attestation-two", type=Path)
         child.add_argument("--policy-epochs", type=Path, required=True)
         if command in {"dry-run", "run"}:
             child.add_argument(
@@ -977,6 +1000,7 @@ def main(argv: list[str] | None = None) -> int:
             policy_epochs_path=args.policy_epochs,
             spec_path=args.spec,
             attestation_path=args.attestation,
+            attestation_two_path=args.attestation_two,
         )
         print(json.dumps(payload, sort_keys=True, indent=2, default=str))
         return 0
@@ -987,6 +1011,7 @@ def main(argv: list[str] | None = None) -> int:
         policy_epochs_path=args.policy_epochs,
         spec_path=args.spec,
         attestation_path=args.attestation,
+        attestation_two_path=args.attestation_two,
         dry_run=args.command == "dry-run",
     )
     output = getattr(args, "output", None)

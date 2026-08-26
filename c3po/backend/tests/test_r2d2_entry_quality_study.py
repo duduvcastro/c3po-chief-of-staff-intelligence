@@ -177,6 +177,7 @@ def test_gate_keeps_ledger_exact_and_censors_market_violation_first() -> None:
     assert passing["g1_ledger_and_friction"]["passed"] is True
     assert passing["g2_market_compatibility"]["counts"]["violation"] == 1
     assert passing["g3_coverage_censorship"]["censored_entry_ids"] == ["buy"]
+    assert passing["g3_coverage_censorship"]["violation_entry_ids"] == ["buy"]
     assert passing["g3_coverage_censorship"]["censored_percent_of_constructed_entries"] == 1.0
     assert passing["passed"] is True
 
@@ -187,6 +188,107 @@ def test_gate_keeps_ledger_exact_and_censors_market_violation_first() -> None:
     bad_fill = replace(fill, gross_value_usd=fill.gross_value_usd + 0.01)
     exact = reconcile_entry_gate([bad_fill], {"TEST": [_bar(0)]})
     assert exact["g1_ledger_and_friction"]["passed"] is False
+
+
+def test_gate_censors_bar_unavailable_outside_numeric_violation_ceiling() -> None:
+    result = reconcile_entry_gate([_buy()], {"TEST": []})
+
+    assert result["passed"] is True
+    assert result["g2_market_compatibility"]["counts"]["bar_unavailable"] == 1
+    censorship = result["g3_coverage_censorship"]
+    assert censorship["violation_entry_count"] == 0
+    assert censorship["bar_unavailable_entry_ids"] == ["buy"]
+    assert censorship["censored_entry_ids"] == ["buy"]
+    assert censorship["threshold_passed"] is True
+    assert censorship["bar_unavailable_review_required"] is True
+    assert censorship["bar_unavailable_by_session"][0]["status"] == "REVIEW_REQUIRED"
+
+
+def test_factual_dry_run_gate_decomposition_is_pinned() -> None:
+    session_contract = (
+        (date(2026, 8, 19), 100, 0, ("PNRG",)),
+        (date(2026, 8, 20), 90, 0, ()),
+        (date(2026, 8, 21), 121, 2, ("BVN",)),
+        (date(2026, 8, 24), 64, 15, ("DXST",)),
+        (date(2026, 8, 26), 51, 9, ()),
+    )
+    ordinary_classes = iter(
+        ["contained"] * 296
+        + ["clock_extended"] * 32
+        + ["tolerance_band"] * 69
+    )
+    fills: list[LedgerFill] = []
+    bars_by_symbol: dict[str, list[StudyBar]] = {}
+    index = 0
+
+    def append_case(session: date, classification: str, symbol: str | None = None) -> None:
+        nonlocal index
+        at = datetime(session.year, session.month, session.day, 13, 30, 10, tzinfo=UTC)
+        symbol = symbol or f"S{index:04d}"
+        fill = _buy(fill_id=f"entry-{index:04d}", at=at, symbol=symbol)
+        start = at.replace(second=0, microsecond=0)
+        if classification == "contained":
+            bars = [_bar(0, symbol=symbol, start=start)]
+        elif classification == "clock_extended":
+            bars = [_bar(-2, symbol=symbol, start=start)]
+        elif classification == "tolerance_band":
+            bars = [
+                _bar(0, high=99.8, low=99.0, open_=99.5, close=99.5,
+                     symbol=symbol, start=start)
+            ]
+        elif classification == "violation":
+            bars = [
+                _bar(0, high=99.5, low=99.0, open_=99.25, close=99.25,
+                     symbol=symbol, start=start)
+            ]
+        else:
+            bars = []
+        fills.append(fill)
+        bars_by_symbol[symbol] = bars
+        index += 1
+
+    for session, total, unavailable, violations in session_contract:
+        for symbol in violations:
+            append_case(session, "violation", symbol)
+        for _ in range(unavailable):
+            append_case(session, "bar_unavailable")
+        for _ in range(total - unavailable - len(violations)):
+            append_case(session, next(ordinary_classes))
+
+    result = reconcile_entry_gate(
+        fills,
+        bars_by_symbol,
+        constructed_entry_count=426,
+    )
+
+    assert result["passed"] is True
+    assert result["g2_market_compatibility"]["counts"] == {
+        "contained": 296,
+        "clock_extended": 32,
+        "bar_unavailable": 26,
+        "tolerance_band": 69,
+        "violation": 3,
+    }
+    censorship = result["g3_coverage_censorship"]
+    assert censorship["violation_entry_count"] == 3
+    assert censorship["violation_percent_of_constructed_entries"] == pytest.approx(
+        3 / 426 * 100
+    )
+    assert {row["symbol"] for row in censorship["violations"]} == {
+        "PNRG",
+        "BVN",
+        "DXST",
+    }
+    assert censorship["bar_unavailable_entry_count"] == 26
+    by_session = {
+        row["session_date"]: row
+        for row in censorship["bar_unavailable_by_session"]
+    }
+    assert by_session["2026-08-21"]["bar_unavailable_count"] == 2
+    assert by_session["2026-08-24"]["bar_unavailable_count"] == 15
+    assert by_session["2026-08-24"]["status"] == "REVIEW_REQUIRED"
+    assert by_session["2026-08-26"]["bar_unavailable_count"] == 9
+    assert by_session["2026-08-26"]["status"] == "ACCEPTABLE"
 
 
 def test_raw_reader_streams_trade_rows_excludes_dark_pool_and_orders_ticks(
