@@ -3219,6 +3219,12 @@ class R2D2PaperService:
                 histories.get(symbol, []),
                 as_of=session_date,
             )
+            if reason == "listing_history_missing":
+                # An empty history is indistinguishable from a transient fetch
+                # failure: quarantine this scan only and retry on the next one,
+                # instead of locking the symbol out for the whole session.
+                self._us_listing_history.pop(symbol, None)
+                continue
             self._us_listing_history[symbol] = (
                 session_date,
                 eligible,
@@ -3234,7 +3240,10 @@ class R2D2PaperService:
             if item["market"] not in ACTIVE_MARKETS:
                 allowed.append(item)
                 continue
-            _, eligible, reason, sessions, last_bar = self._us_listing_history[item["symbol"]]
+            _, eligible, reason, sessions, last_bar = self._us_listing_history.get(
+                item["symbol"],
+                (session_date, False, "listing_history_missing", 0, None),
+            )
             item["listing_history"] = {
                 "status": reason,
                 "current_listing_sessions": sessions,

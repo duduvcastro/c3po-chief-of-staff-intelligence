@@ -86,6 +86,47 @@ def test_listing_history_verdict_quarantines_stale_or_missing_history() -> None:
     )
 
 
+def test_listing_guard_does_not_cache_a_failed_history_fetch_for_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _settings()
+    settings.eodhd_api_token = "configured"
+    service = R2D2PaperService(settings, Database(settings), None, None, None)  # type: ignore[arg-type]
+    service.one_pagers = SimpleNamespace(market_data=SimpleNamespace(http=None))  # type: ignore[assignment]
+    session_date = datetime.now(SAO_PAULO).date()
+    calls = {"count": 0}
+
+    class StubEodhdClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def histories(self, symbols: list[str], **kwargs: object) -> dict[str, list[dict[str, str]]]:
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return {}
+            return {"NEWCO": [
+                {"date": (session_date - timedelta(days=index + 1)).isoformat()}
+                for index in range(25)
+            ]}
+
+    monkeypatch.setattr(r2d2_module, "EodhdClient", StubEodhdClient)
+
+    first, first_stats = service._apply_us_listing_history_guard(
+        [{"market": "NASDAQ", "symbol": "NEWCO"}],
+    )
+    assert first == []
+    assert first_stats["listing_history_quarantined_count"] == 1
+    assert first_stats["listing_history_quarantine_reasons"] == {"listing_history_missing": 1}
+    assert "NEWCO" not in service._us_listing_history
+
+    second, second_stats = service._apply_us_listing_history_guard(
+        [{"market": "NASDAQ", "symbol": "NEWCO"}],
+    )
+    assert [item["symbol"] for item in second] == ["NEWCO"]
+    assert second_stats["listing_history_quarantined_count"] == 0
+    assert calls["count"] == 2
+
+
 def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() -> None:
     service = _service()
     experiment = service.ensure_initialized()
