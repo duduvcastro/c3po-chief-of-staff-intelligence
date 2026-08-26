@@ -642,12 +642,16 @@ class SystemHealthService:
         midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
         offhours_due = midnight.replace(hour=1)
         window_end = midnight.replace(hour=8)
+        phase_due_at = {
+            phase: midnight.replace(hour=6) if phase == "cash_yield" else offhours_due
+            for phase in VALUATION_WORKER_OFFHOURS_PHASES
+            if phase in definitions
+        }
         expected_at = {
             VALUATION_WORKER_CANONICAL_PHASE: midnight,
             **{
-                phase: offhours_due if local_now >= offhours_due else offhours_due - timedelta(days=1)
-                for phase in VALUATION_WORKER_OFFHOURS_PHASES
-                if phase in definitions
+                phase: due_at if local_now >= due_at else due_at - timedelta(days=1)
+                for phase, due_at in phase_due_at.items()
             },
         }
 
@@ -683,7 +687,8 @@ class SystemHealthService:
             status = "offline"
             detail = "Failed · " + " · ".join(failed)
         elif running or pending:
-            status = "attention" if local_now < window_end else "offline"
+            latest_window_end = midnight.replace(hour=10) if "cash_yield" in definitions else window_end
+            status = "attention" if local_now < latest_window_end else "offline"
             parts = []
             if running:
                 parts.append("running: " + ", ".join(running))
@@ -692,7 +697,7 @@ class SystemHealthService:
             detail = "Phase evidence · " + " · ".join(parts)
         else:
             status = "healthy"
-            detail = "Canonical and all five off-hours phases succeeded for the expected cycle"
+            detail = "Canonical and all configured phases succeeded for the expected cycle"
 
         return IntegrationHealth(
             name="Valuation worker phases",

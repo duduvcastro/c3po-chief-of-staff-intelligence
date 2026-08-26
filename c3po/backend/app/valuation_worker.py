@@ -38,6 +38,9 @@ CANONICAL_RETRY_DELAY = timedelta(minutes=15)
 OFFHOURS_RETRY_DELAY = timedelta(minutes=30)
 OFFHOURS_START_HOUR = 1
 OFFHOURS_END_HOUR = 8
+CASH_YIELD_PHASE_KEY = "cash_yield"
+CASH_YIELD_FAILURE_ACTION = "r2d2.cash_yield.failed"
+CASH_YIELD_RECOVERY_ACTION = "r2d2.cash_yield.recovered"
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,8 @@ class OffhoursPhase:
     key: str
     last_completed_at: Callable[[], datetime | None]
     operation: Callable[[], Any]
+    start_hour: int = OFFHOURS_START_HOUR
+    end_hour: int = OFFHOURS_END_HOUR
 
 
 @dataclass(frozen=True)
@@ -78,6 +83,51 @@ def _result_item_count(result: Any) -> int:
     return 1
 
 
+def _cash_yield_event_exists(database: Database, action: str, subject_id: str) -> bool:
+    return any(
+        event.get("subject_id") == subject_id
+        for event in database.list_audit_events(action=action, limit=100)
+    )
+
+
+def _record_cash_yield_failure(
+    database: Database,
+    *,
+    scheduled_for: datetime,
+    error: Exception,
+) -> None:
+    subject_id = scheduled_for.date().isoformat()
+    if _cash_yield_event_exists(database, CASH_YIELD_FAILURE_ACTION, subject_id):
+        return
+    database.record_audit_event(
+        "valuation-worker",
+        CASH_YIELD_FAILURE_ACTION,
+        "r2d2_cash_yield_session",
+        subject_id,
+        {
+            "scheduled_for": scheduled_for.isoformat(),
+            "retry_interval_minutes": int(OFFHOURS_RETRY_DELAY.total_seconds() / 60),
+            "retry_window_end_hour_brt": 10,
+            "error": f"{type(error).__name__}: {error}"[:1000],
+        },
+    )
+
+
+def _record_cash_yield_recovery(database: Database, *, scheduled_for: datetime) -> None:
+    subject_id = scheduled_for.date().isoformat()
+    if not _cash_yield_event_exists(database, CASH_YIELD_FAILURE_ACTION, subject_id):
+        return
+    if _cash_yield_event_exists(database, CASH_YIELD_RECOVERY_ACTION, subject_id):
+        return
+    database.record_audit_event(
+        "valuation-worker",
+        CASH_YIELD_RECOVERY_ACTION,
+        "r2d2_cash_yield_session",
+        subject_id,
+        {"scheduled_for": scheduled_for.isoformat()},
+    )
+
+
 def _run_recorded_phase(
     database: Database,
     phase_key: str,
@@ -109,6 +159,12 @@ def _run_recorded_phase(
     except Exception as exc:
         error_summary = f"{type(exc).__name__}: {exc}"[:1000]
         database.finish_ingestion_run(run_id, "failed", 0, 0, error_summary)
+        if phase_key == CASH_YIELD_PHASE_KEY:
+            _record_cash_yield_failure(
+                database,
+                scheduled_for=scheduled_for,
+                error=exc,
+            )
         raise
     database.finish_ingestion_run(
         run_id,
@@ -116,6 +172,8 @@ def _run_recorded_phase(
         0,
         _result_item_count(result),
     )
+    if phase_key == CASH_YIELD_PHASE_KEY:
+        _record_cash_yield_recovery(database, scheduled_for=scheduled_for)
     return result
 
 
@@ -148,27 +206,22 @@ def run_worker_iteration(
             )
             wake_targets.append(now + CANONICAL_RETRY_DELAY)
 
-    offhours_due_at = start_of_today(now) + timedelta(hours=OFFHOURS_START_HOUR)
-    offhours_window_end = start_of_today(now) + timedelta(hours=OFFHOURS_END_HOUR)
-    due_phases = [
-        phase
-        for phase in offhours_phases
-        if _phase_is_due(phase.last_completed_at(), offhours_due_at)
-    ]
-
-    if now < offhours_due_at:
-        if due_phases:
-            wake_targets.append(offhours_due_at)
-            phase_statuses.update({phase.key: "pending" for phase in due_phases})
-    elif now < offhours_window_end:
-        retry_required = False
-        for phase in due_phases:
+    for phase in offhours_phases:
+        phase_due_at = start_of_today(now) + timedelta(hours=phase.start_hour)
+        phase_window_end = start_of_today(now) + timedelta(hours=phase.end_hour)
+        if not _phase_is_due(phase.last_completed_at(), phase_due_at):
+            continue
+        if now < phase_due_at:
+            wake_targets.append(phase_due_at)
+            phase_statuses[phase.key] = "pending"
+            continue
+        if now < phase_window_end:
             try:
                 result = _run_recorded_phase(
                     database,
                     phase.key,
                     phase.operation,
-                    scheduled_for=offhours_due_at,
+                    scheduled_for=phase_due_at,
                     canonical_status=canonical_status,
                 )
                 phase_statuses[phase.key] = "succeeded"
@@ -179,16 +232,15 @@ def run_worker_iteration(
                 )
             except Exception:
                 phase_statuses[phase.key] = "failed"
-                retry_required = True
                 logger.exception(
                     "%s failed; keeping prior evidence and retrying inside the window",
                     VALUATION_WORKER_PHASES[phase.key]["name"],
                 )
-        retry_at = now + OFFHOURS_RETRY_DELAY
-        if retry_required and retry_at < offhours_window_end:
-            wake_targets.append(retry_at)
-    else:
-        phase_statuses.update({phase.key: "outside_window" for phase in due_phases})
+                retry_at = now + OFFHOURS_RETRY_DELAY
+                if retry_at < phase_window_end:
+                    wake_targets.append(retry_at)
+            continue
+        phase_statuses[phase.key] = "outside_window"
 
     return WorkerIterationResult(
         next_wake_at=min(wake_targets),
@@ -266,7 +318,13 @@ def main() -> None:
         ),
         OffhoursPhase("v3_shadow", v3_shadow.last_run_at, v3_shadow.run_all),
         *((
-            OffhoursPhase("cash_yield", cash_yield.last_run_at, cash_yield.run_latest),
+            OffhoursPhase(
+                CASH_YIELD_PHASE_KEY,
+                cash_yield.last_run_at,
+                lambda: cash_yield.run_through(datetime.now(SAO_PAULO).date()),
+                start_hour=6,
+                end_hour=10,
+            ),
         ) if settings.r2d2_cash_yield_accounting_enabled else ()),
     )
 

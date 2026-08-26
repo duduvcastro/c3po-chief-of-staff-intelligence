@@ -8,6 +8,8 @@ from typing import Any
 from uuid import uuid4
 from xml.etree import ElementTree
 
+import exchange_calendars as xcals
+
 from .config import Settings
 from .database import Database
 from .market_data.http import JsonHttpClient
@@ -25,6 +27,8 @@ SOURCE_SERIES = "Daily Treasury Bill Rates / 13-week Coupon Equivalent"
 TREASURY_XML_URL = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
 )
+
+
 class CashYieldDataError(RuntimeError):
     pass
 
@@ -150,9 +154,34 @@ class R2D2CashYieldService:
         ]
         if not eligible:
             return self._record_run({"status": "pending", "reason": "no_final_experiment_session"})
-        accruable = eligible[1:]
-        if not accruable:
+        return self.run_through(eligible[-1]["session_date"])
+
+    def run_through(self, target_session: date) -> dict[str, Any]:
+        calendar = xcals.get_calendar("XNYS")
+        if not calendar.is_session(target_session):
+            return self._record_run({
+                "status": "skipped",
+                "target_session": target_session.isoformat(),
+                "reason": "target_is_not_a_us_equities_session",
+            })
+
+        experiment = self._experiment()
+        experiment_id = str(experiment["id"])
+        snapshots = self._final_snapshots(experiment_id)
+        eligible = [
+            row for row in snapshots
+            if row["session_date"] >= experiment["start_date"]
+            and row["session_date"] < target_session
+        ]
+        if not eligible:
             return self._record_run({"status": "pending", "reason": "no_prior_final_session"})
+
+        snapshots_by_date = {row["session_date"]: row for row in eligible}
+        first_target = calendar.next_session(eligible[0]["session_date"]).date()
+        accruable = [
+            {"session_date": value.date()}
+            for value in calendar.sessions_in_range(first_target, target_session)
+        ]
         missing = [
             row for row in accruable
             if self._entry(experiment_id, row["session_date"]) is None
@@ -170,12 +199,15 @@ class R2D2CashYieldService:
         pending: list[dict[str, str]] = []
         xml_by_year: dict[int, str] = {}
         for current in missing:
-            prior = next(
-                (row for row in reversed(eligible) if row["session_date"] < current["session_date"]),
-                None,
-            )
+            prior_session = calendar.previous_session(current["session_date"]).date()
+            prior = snapshots_by_date.get(prior_session)
             if prior is None:
-                return self._record_run({"status": "pending", "reason": "no_prior_final_session"})
+                pending.append({
+                    "session_date": current["session_date"].isoformat(),
+                    "source_observation_date": prior_session.isoformat(),
+                    "reason": "prior_final_session_snapshot_missing",
+                })
+                continue
 
             fetched_at = datetime.now(timezone.utc)
             year = prior["session_date"].year
