@@ -15,8 +15,13 @@ from zoneinfo import ZoneInfo
 from .config import Settings, get_settings
 from .database import Database
 from .r2d2_exit_policy_engine import (
+    AMENDMENT_1_SHA256,
     BOOTSTRAP_ITERATIONS,
     BOOTSTRAP_SEED,
+    CLOCK_EXTENDED_BACKWARD_MINUTES,
+    CLOCK_EXTENDED_FORWARD_MINUTES,
+    SYSTEMIC_VIOLATION_EPISODE_CAP_RATIO,
+    TOLERANCE_BAND_BPS,
     PANEL_I_POLICIES,
     PANEL_II_POLICIES,
     ConsistencyGateError,
@@ -41,7 +46,7 @@ SPEC_SHA256 = "21882372220d55aa01c0a23b9288d75788d25b1187c01b4954e0c500ec0216a2"
 DELIVERABLE_ZERO_SHA256 = "ae83428ac0444329efc7405e06078c144b575a0909699e15b16ce5a26de20098"
 FROZEN_POLICY_COMMIT = "39ff427fd2f1fa0f42141776921a63651508495f"
 FROZEN_METHODOLOGY = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
-REPORT_SCHEMA_VERSION = "EXIT-POLICY-STUDY-V1.1-REPORT-v1"
+REPORT_SCHEMA_VERSION = "EXIT-POLICY-STUDY-V1.1-REPORT-v2"
 TERMINAL_SESSIONS = 10
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -539,15 +544,28 @@ def build_report(
     panel_ii_censoring: dict[str, int] = {}
     analysis_interpretable = False
     gate_failures: list[dict[str, Any]] = []
+    censored_episode_ids: list[str] = []
+    analysis_cohort = list(covered_cohort)
     try:
-        common_gate = reconcile_binding_gate(covered_cohort, bars)
-        panel_i, panel_i_cohort, panel_i_censoring = _run_panel_i(
+        common_gate = reconcile_binding_gate(
             covered_cohort,
+            bars,
+            constructed_episode_count=len(episodes),
+        )
+        censored_episode_ids = list(
+            common_gate["market_compatibility"]["censored_episode_ids"]
+        )
+        censored = set(censored_episode_ids)
+        analysis_cohort = [
+            episode for episode in covered_cohort if episode.id not in censored
+        ]
+        panel_i, panel_i_cohort, panel_i_censoring = _run_panel_i(
+            analysis_cohort,
             bars,
             float(experiment["starting_capital"]),
         )
         panel_ii, panel_ii_censoring = _run_panel_ii(
-            covered_cohort,
+            analysis_cohort,
             bars,
             float(experiment["starting_capital"]),
         )
@@ -599,6 +617,15 @@ def build_report(
             "terminal_horizon_sessions": TERMINAL_SESSIONS,
             "intrabar_precedence": ["gap_at_open", "stop", "take_profit", "positive_eod"],
             "activation_delay": "breakeven/trailing armed on bar N apply from bar N+1",
+            "amendment_1": {
+                "sha256": AMENDMENT_1_SHA256,
+                "clock_extended_window_minutes": [
+                    -CLOCK_EXTENDED_BACKWARD_MINUTES,
+                    CLOCK_EXTENDED_FORWARD_MINUTES,
+                ],
+                "tolerance_band_bps": TOLERANCE_BAND_BPS,
+                "systemic_violation_episode_cap_ratio": SYSTEMIC_VIOLATION_EPISODE_CAP_RATIO,
+            },
         },
         "experiment": {
             "id": str(experiment["id"]),
@@ -619,6 +646,11 @@ def build_report(
             "base_censoring": base_censoring,
             "data_covered_episode_count": len(covered_cohort),
             "coverage_censoring": coverage_censoring,
+            "market_compatibility_censoring": {
+                "violation_episode_count": len(censored_episode_ids),
+                "censored_episode_ids": censored_episode_ids,
+            },
+            "analysis_cohort_episode_count": len(analysis_cohort),
             "panel_i_censoring": panel_i_censoring,
             "panel_ii_censoring": panel_ii_censoring,
             "common_cohort_within_each_panel": True,

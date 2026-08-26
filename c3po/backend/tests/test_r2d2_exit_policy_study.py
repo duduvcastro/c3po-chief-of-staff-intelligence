@@ -4,6 +4,7 @@ import csv
 import gzip
 import hashlib
 import json
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -204,7 +205,7 @@ def test_binding_gate_reconciles_money_and_accepts_one_minute_boundary() -> None
     assert gate["timestamp_boundary_tolerance_minutes"] == 1
 
 
-def test_binding_gate_fails_closed_on_a_fill_outside_ohlc() -> None:
+def test_binding_gate_classifies_small_cross_provider_breach_as_tolerance_band() -> None:
     buy = _buy()
     average_cost = (buy.gross_value_usd + buy.fees_usd) / buy.quantity
     sell = _sell(
@@ -220,10 +221,118 @@ def test_binding_gate_fails_closed_on_a_fill_outside_ohlc() -> None:
         _bar(1, open_=100.3, high=100.6, low=100.2, close=100.4),
     ]
 
+    gate = reconcile_binding_gate([episode], {"TEST": bars})
+
+    assert gate["passed"] is True
+    assert gate["market_compatibility"]["counts"] == {
+        "contained": 1,
+        "clock_extended": 0,
+        "tolerance_band": 1,
+        "violation": 0,
+    }
+    assert gate["market_compatibility"]["censored_episode_ids"] == []
+    assert gate["amendment_1"]["tolerance_band_bps"] == 25.0
+
+
+def test_binding_gate_classifies_stale_capture_as_clock_extended() -> None:
+    buy = _buy(at=SESSION_OPEN + timedelta(minutes=10))
+    average_cost = (buy.gross_value_usd + buy.fees_usd) / buy.quantity
+    sell = _sell(
+        average_cost=average_cost,
+        fill_id="sell",
+        at=SESSION_OPEN + timedelta(minutes=12),
+        signal=100.5,
+        quantity=10,
+    )
+    episode = _episode([buy, sell])
+    bars = [
+        _bar(3, open_=100.0, high=100.2, low=99.8, close=100.0),
+        _bar(9, open_=101.2, high=101.5, low=101.0, close=101.3),
+        _bar(10, open_=101.2, high=101.5, low=101.0, close=101.3),
+        _bar(11, open_=101.2, high=101.5, low=101.0, close=101.3),
+        _bar(12, open_=100.4, high=100.8, low=100.2, close=100.6),
+    ]
+
+    gate = reconcile_binding_gate([episode], {"TEST": bars})
+
+    assert gate["passed"] is True
+    assert gate["market_compatibility"]["counts"]["clock_extended"] == 1
+    assert gate["market_compatibility"]["counts"]["contained"] == 1
+
+
+def test_binding_gate_censors_violation_episodes_without_blocking_under_cap() -> None:
+    buy = _buy()
+    average_cost = (buy.gross_value_usd + buy.fees_usd) / buy.quantity
+    sell = _sell(
+        average_cost=average_cost,
+        fill_id="sell",
+        at=SESSION_OPEN + timedelta(minutes=1),
+        signal=101.35,
+        quantity=10,
+    )
+    episode = _episode([buy, sell])
+    bars = [
+        _bar(0, open_=101.2, high=101.5, low=101.0, close=101.3),
+        _bar(1, open_=101.2, high=101.5, low=101.0, close=101.3),
+    ]
+
+    gate = reconcile_binding_gate(
+        [episode],
+        {"TEST": bars},
+        constructed_episode_count=100,
+    )
+
+    assert gate["passed"] is True
+    assert gate["market_compatibility"]["counts"]["violation"] == 1
+    assert gate["market_compatibility"]["censored_episode_ids"] == [episode.id]
+    violation = gate["market_compatibility"]["violations"][0]
+    assert violation["gate"] == "market_compatibility_violation"
+    assert violation["breach_bps"] > 25.0
+
+
+def test_binding_gate_blocks_when_violations_exceed_systemic_cap() -> None:
+    buy = _buy()
+    average_cost = (buy.gross_value_usd + buy.fees_usd) / buy.quantity
+    sell = _sell(
+        average_cost=average_cost,
+        fill_id="sell",
+        at=SESSION_OPEN + timedelta(minutes=1),
+        signal=101.35,
+        quantity=10,
+    )
+    episode = _episode([buy, sell])
+    bars = [
+        _bar(0, open_=101.2, high=101.5, low=101.0, close=101.3),
+        _bar(1, open_=101.2, high=101.5, low=101.0, close=101.3),
+    ]
+
+    with pytest.raises(ConsistencyGateError) as raised:
+        reconcile_binding_gate([episode], {"TEST": bars}, constructed_episode_count=1)
+
+    assert any(item["gate"] == "systemic_violation_cap" for item in raised.value.failures)
+
+
+def test_binding_gate_still_blocks_hard_on_ledger_money_mismatch() -> None:
+    buy = _buy()
+    average_cost = (buy.gross_value_usd + buy.fees_usd) / buy.quantity
+    sell = _sell(
+        average_cost=average_cost,
+        fill_id="sell",
+        at=SESSION_OPEN + timedelta(minutes=1),
+        signal=100.5,
+        quantity=10,
+    )
+    tampered = replace(sell, fees_usd=sell.fees_usd + 0.10)
+    episode = _episode([buy, tampered])
+    bars = [
+        _bar(0, open_=100.0, high=100.2, low=99.9, close=100.1),
+        _bar(1, open_=100.3, high=100.6, low=100.2, close=100.4),
+    ]
+
     with pytest.raises(ConsistencyGateError) as raised:
         reconcile_binding_gate([episode], {"TEST": bars})
 
-    assert any(item["gate"] == "ohlc_compatibility" for item in raised.value.failures)
+    assert any(item["gate"] == "fees_usd" for item in raised.value.failures)
 
 
 def test_take_profit_overlay_preserves_real_partial_before_anticipating_exit() -> None:

@@ -18,6 +18,15 @@ SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 CENT_TOLERANCE_USD = 0.005
 QUANTITY_TOLERANCE = 1e-7
 OHLC_BOUNDARY_TOLERANCE_MINUTES = 1
+# EXIT_POLICY_STUDY_V1_1 EMENDA 1: cross-provider market compatibility replaces
+# exact containment. Ledger/friction reconciliation (G1) stays exact; the signal
+# price is classified against Massive bars (G2); violations censor their episode
+# nominally under a systemic cap (G3). Constants are frozen by the amendment.
+AMENDMENT_1_SHA256 = "4f82a1b1461fe970a6afee5c5f48b0e000de24c5897b14741352d2b3abbe3926"
+CLOCK_EXTENDED_BACKWARD_MINUTES = 10
+CLOCK_EXTENDED_FORWARD_MINUTES = 1
+TOLERANCE_BAND_BPS = 25.0
+SYSTEMIC_VIOLATION_EPISODE_CAP_RATIO = 0.05
 BOOTSTRAP_SEED = 20260824
 BOOTSTRAP_ITERATIONS = 10_000
 PANEL_I_POLICIES = ("A", "B", "B_PRIME", "C", "C_PRIME")
@@ -283,21 +292,66 @@ def _bar_candidates(at: datetime) -> tuple[datetime, ...]:
     )
 
 
-def _compatible_bar(fill: LedgerFill, bars: Mapping[datetime, StudyBar]) -> StudyBar | None:
-    for minute in _bar_candidates(fill.executed_at):
+def _original_window_minutes(fill: LedgerFill) -> tuple[datetime, ...]:
+    minutes: list[datetime] = []
+    for anchor in (fill.executed_at, fill.quote_as_of):
+        for minute in _bar_candidates(anchor):
+            if minute not in minutes:
+                minutes.append(minute)
+    return tuple(minutes)
+
+
+def _breach_bps(price: float, bar: StudyBar) -> float:
+    if price < bar.low:
+        return (bar.low - price) / bar.low * 10_000
+    if price > bar.high:
+        return (price - bar.high) / bar.high * 10_000
+    return 0.0
+
+
+def _classify_market_compatibility(
+    fill: LedgerFill,
+    bars: Mapping[datetime, StudyBar],
+) -> tuple[str, float | None]:
+    signal = fill.signal_price_local
+    breaches: list[float] = []
+    for minute in _original_window_minutes(fill):
         bar = bars.get(minute)
-        if bar and bar.low <= fill.fill_price_local <= bar.high:
-            return bar
-    return None
+        if bar is None:
+            continue
+        breach = _breach_bps(signal, bar)
+        if breach == 0.0:
+            return "contained", 0.0
+        breaches.append(breach)
+    nearest = min(breaches) if breaches else None
+    anchor = fill.quote_as_of.astimezone(timezone.utc).replace(second=0, microsecond=0)
+    for offset in range(-CLOCK_EXTENDED_BACKWARD_MINUTES, CLOCK_EXTENDED_FORWARD_MINUTES + 1):
+        bar = bars.get(anchor + timedelta(minutes=offset))
+        if bar and bar.low <= signal <= bar.high:
+            return "clock_extended", nearest
+    if nearest is not None and nearest <= TOLERANCE_BAND_BPS:
+        return "tolerance_band", nearest
+    return "violation", nearest
 
 
 def reconcile_binding_gate(
     episodes: Sequence[Episode],
     bars_by_symbol: Mapping[str, Sequence[StudyBar]],
+    *,
+    constructed_episode_count: int | None = None,
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
     checked_fills = 0
     checked_episodes = 0
+    compatibility_counts = {
+        "contained": 0,
+        "clock_extended": 0,
+        "tolerance_band": 0,
+        "violation": 0,
+    }
+    compatibility_by_session: dict[str, dict[str, int]] = {}
+    violations: list[dict[str, Any]] = []
+    violation_episode_ids: set[str] = set()
     for episode in episodes:
         if not episode.closed or episode.strategy_excluded:
             continue
@@ -352,12 +406,24 @@ def reconcile_binding_gate(
                         "observed": fill.realized_pnl_usd,
                         "expected": realized,
                     })
-            if _compatible_bar(fill, minute_bars) is None:
-                failures.append({
+            compatibility_class, breach_bps = _classify_market_compatibility(fill, minute_bars)
+            compatibility_counts[compatibility_class] += 1
+            session_key = fill.executed_at.astimezone(NEW_YORK).date().isoformat()
+            session_counts = compatibility_by_session.setdefault(session_key, {
+                "contained": 0,
+                "clock_extended": 0,
+                "tolerance_band": 0,
+                "violation": 0,
+            })
+            session_counts[compatibility_class] += 1
+            if compatibility_class == "violation":
+                violation_episode_ids.add(episode.id)
+                violations.append({
                     "episode_id": episode.id,
                     "fill_id": fill.id,
-                    "gate": "ohlc_compatibility",
-                    "fill_price_local": fill.fill_price_local,
+                    "gate": "market_compatibility_violation",
+                    "signal_price_local": fill.signal_price_local,
+                    "breach_bps": breach_bps,
                     "executed_at": fill.executed_at.isoformat(),
                 })
         if state.quantity > QUANTITY_TOLERANCE:
@@ -366,6 +432,19 @@ def reconcile_binding_gate(
                 "gate": "flat_to_flat_quantity",
                 "remaining_quantity": state.quantity,
             })
+    cap_denominator = (
+        constructed_episode_count
+        if constructed_episode_count is not None
+        else len(episodes)
+    )
+    violation_episode_cap = SYSTEMIC_VIOLATION_EPISODE_CAP_RATIO * cap_denominator
+    if len(violation_episode_ids) > violation_episode_cap:
+        failures.append({
+            "gate": "systemic_violation_cap",
+            "violation_episode_count": len(violation_episode_ids),
+            "constructed_episode_count": cap_denominator,
+            "cap_ratio": SYSTEMIC_VIOLATION_EPISODE_CAP_RATIO,
+        })
     payload = {
         "passed": not failures,
         "checked_episodes": checked_episodes,
@@ -374,6 +453,21 @@ def reconcile_binding_gate(
         "fill_price_tolerance_local": 1e-7,
         "timestamp_boundary_tolerance_minutes": OHLC_BOUNDARY_TOLERANCE_MINUTES,
         "failures": failures,
+        "amendment_1": {
+            "sha256": AMENDMENT_1_SHA256,
+            "clock_extended_window_minutes": [
+                -CLOCK_EXTENDED_BACKWARD_MINUTES,
+                CLOCK_EXTENDED_FORWARD_MINUTES,
+            ],
+            "tolerance_band_bps": TOLERANCE_BAND_BPS,
+            "systemic_violation_episode_cap_ratio": SYSTEMIC_VIOLATION_EPISODE_CAP_RATIO,
+        },
+        "market_compatibility": {
+            "counts": compatibility_counts,
+            "by_session": dict(sorted(compatibility_by_session.items())),
+            "violations": violations,
+            "censored_episode_ids": sorted(violation_episode_ids),
+        },
     }
     if failures:
         raise ConsistencyGateError(failures)
