@@ -164,6 +164,63 @@ def test_run_latest_catches_up_missing_sessions_oldest_first(monkeypatch) -> Non
         date(2026, 8, 17),
         date(2026, 8, 18),
     ]
-    assert len(http.calls) == 2
+    assert len(http.calls) == 1
     assert repeated["status"] == "idempotent"
     assert len(entries) == 2
+
+
+def test_missing_rate_is_recorded_without_blocking_later_sessions(monkeypatch) -> None:
+    class AfterAllRatesAreAvailable(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+
+    monkeypatch.setattr("app.r2d2_cash_yield.datetime", AfterAllRatesAreAvailable)
+    settings = _settings()
+    database = Database(settings)
+    paper = R2D2PaperService(settings, database, None, None, None)  # type: ignore[arg-type]
+    paper.ensure_initialized()
+    for session_date in (
+        date(2026, 8, 17),
+        date(2026, 8, 18),
+        date(2026, 8, 19),
+        date(2026, 8, 20),
+    ):
+        paper.repo.memory["snapshots"][session_date] = {
+            "session_date": session_date,
+            "cash_usd": 800_000,
+            "nav_usd": 1_000_000,
+            "is_final": True,
+        }
+    http = FakeTreasuryHttp(_xml("2026-08-17", "2026-08-19"))
+    service = R2D2CashYieldService(settings, database, http)  # type: ignore[arg-type]
+
+    with pytest.raises(CashYieldDataError, match="2026-08-19"):
+        service.run_latest()
+
+    entries = database._r2d2_cash_yield_entries  # type: ignore[attr-defined]
+    latest_run = database.latest_analysis_snapshot("r2d2_cash_yield_run", "R2D2_CASH_YIELD")
+    assert [entry["session_date"] for entry in entries] == [
+        date(2026, 8, 18),
+        date(2026, 8, 20),
+    ]
+    assert len(http.calls) == 1
+    assert latest_run is not None
+    assert latest_run["outputs"]["status"] == "partial"
+    assert latest_run["outputs"]["pending_sessions"] == [{
+        "session_date": "2026-08-19",
+        "source_observation_date": "2026-08-18",
+        "reason": "Expected one Treasury observation for 2026-08-18, found 0",
+    }]
+    assert service.last_run_at() is None
+
+    http.payload = _xml("2026-08-17", "2026-08-18", "2026-08-19")
+    completed = service.run_latest()
+    assert completed["status"] == "posted"
+    assert completed["session_date"] == "2026-08-20"
+    assert sorted(entry["session_date"] for entry in entries) == [
+        date(2026, 8, 18),
+        date(2026, 8, 19),
+        date(2026, 8, 20),
+    ]

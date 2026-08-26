@@ -6,6 +6,8 @@
 
 **Backfill:** o runner percorre todas as sessoes finais elegiveis sem lancamento, da mais antiga para a mais recente. Cada lancamento continua novo, append-only, idempotente, causal e identificado por hash. Nenhum snapshot antigo e reescrito.
 
+**Substituicao expressa:** esta emenda substitui exclusivamente a clausula **"Backfill e validade temporal"** da V1 para o accrual sintetico de caixa. A regra geral registrada naquela clausula permanece como precedente obrigatorio para futuros congelamentos e nao e revogada.
+
 **Isolamento preservado:** `interest_income` permanece fora de NAV operacional, sizing, risco, entradas, learning loop, estudos, expectancia, M2 e M3. A mudanca afeta somente `ACCOUNTING TOTAL` e sua exibicao.
 
 **Versao:** metodologia `r2d2_cash_yield_accounting` v2 e schema `R2D2-CASH-YIELD-v2`.

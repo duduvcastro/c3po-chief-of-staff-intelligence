@@ -135,9 +135,10 @@ class R2D2CashYieldService:
             database._r2d2_cash_yield_entries = []  # type: ignore[attr-defined]
 
     def last_run_at(self) -> datetime | None:
-        return self.database.latest_analysis_snapshot_published_at(
-            RUN_ANALYSIS_TYPE, RUN_ENTITY_KEY
-        )
+        latest = self.database.latest_analysis_snapshot(RUN_ANALYSIS_TYPE, RUN_ENTITY_KEY)
+        if not latest or (latest.get("outputs") or {}).get("status") == "partial":
+            return None
+        return latest["published_at"]
 
     def run_latest(self) -> dict[str, Any]:
         experiment = self._experiment()
@@ -166,6 +167,8 @@ class R2D2CashYieldService:
             })
 
         posted: list[dict[str, Any]] = []
+        pending: list[dict[str, str]] = []
+        xml_by_year: dict[int, str] = {}
         for current in missing:
             prior = next(
                 (row for row in reversed(eligible) if row["session_date"] < current["session_date"]),
@@ -175,7 +178,28 @@ class R2D2CashYieldService:
                 return self._record_run({"status": "pending", "reason": "no_prior_final_session"})
 
             fetched_at = datetime.now(timezone.utc)
-            rate = self._refresh_rate(prior["session_date"], fetched_at=fetched_at)
+            year = prior["session_date"].year
+            if year not in xml_by_year:
+                xml_by_year[year] = self.http.get_text(
+                    TREASURY_XML_URL,
+                    params={
+                        "data": "daily_treasury_bill_rates",
+                        "field_tdr_date_value": str(year),
+                    },
+                )
+            try:
+                rate = self._refresh_rate(
+                    prior["session_date"],
+                    fetched_at=fetched_at,
+                    xml_text=xml_by_year[year],
+                )
+            except CashYieldDataError as exc:
+                pending.append({
+                    "session_date": current["session_date"].isoformat(),
+                    "source_observation_date": prior["session_date"].isoformat(),
+                    "reason": str(exc),
+                })
+                continue
             base_cash = max(float(prior["cash_usd"]), 0.0)
             factor = coupon_equivalent_factor(
                 float(rate["annual_rate"]), prior["session_date"], current["session_date"]
@@ -205,24 +229,39 @@ class R2D2CashYieldService:
             })
             posted.append(self._insert_entry(entry))
 
-        latest = posted[-1]
+        if pending:
+            self._record_run({
+                "status": "partial",
+                "posted_count": len(posted),
+                "posted_session_dates": [row["session_date"].isoformat() for row in posted],
+                "pending_count": len(pending),
+                "pending_sessions": pending,
+            })
+            raise CashYieldDataError(
+                "Cash-yield sessions remain pending: "
+                + ", ".join(row["session_date"] for row in pending)
+            )
+
+        latest_session = accruable[-1]["session_date"]
+        latest = self._entry(experiment_id, latest_session)
+        if latest is None:
+            raise CashYieldDataError("Latest cash-yield session was not persisted")
         return self._record_run({
             "status": "posted",
-            "session_date": latest["session_date"].isoformat(),
+            "session_date": latest_session.isoformat(),
             "interest_income_usd": latest["interest_income_usd"],
             "entry_sha256": latest["entry_sha256"],
             "posted_count": len(posted),
             "posted_session_dates": [row["session_date"].isoformat() for row in posted],
         })
 
-    def _refresh_rate(self, observation_date: date, *, fetched_at: datetime) -> dict[str, Any]:
-        xml_text = self.http.get_text(
-            TREASURY_XML_URL,
-            params={
-                "data": "daily_treasury_bill_rates",
-                "field_tdr_date_value": str(observation_date.year),
-            },
-        )
+    def _refresh_rate(
+        self,
+        observation_date: date,
+        *,
+        fetched_at: datetime,
+        xml_text: str,
+    ) -> dict[str, Any]:
         package = parse_treasury_bill_xml(
             xml_text, observation_date=observation_date, fetched_at=fetched_at
         )
