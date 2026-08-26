@@ -1007,6 +1007,36 @@ def test_realtime_us_investable_universe_includes_nasdaq_and_nyse_arca_etfs() ->
     assert {item.symbol for item in nyse} == {"IBM", "VOO"}
 
 
+def test_realtime_us_quarantines_duplicate_raw_ticker_identities() -> None:
+    timestamp = 1787757780
+    catalog = [
+        {"Code": "SPCX", "Name": "SpaceX", "Exchange": "NASDAQ", "Type": "Common Stock", "Currency": "USD"},
+        {"Code": "MSFT", "Name": "Microsoft", "Exchange": "NASDAQ", "Type": "Common Stock", "Currency": "USD"},
+    ]
+    quotes = [
+        {"code": "SPCX.US", "timestamp": timestamp, "close": 135.98, "previousClose": 137.95, "change_p": -1.43, "volume": 24_046_587},
+        {"code": "SPCX.US", "timestamp": 1775482140, "close": 21.98, "previousClose": 21.9457, "change_p": 4.78, "volume": 0},
+        {"code": "MSFT.US", "timestamp": timestamp, "close": 500.0, "previousClose": 495.0, "change_p": 1.01, "volume": 1_000_000},
+    ]
+    http = RoutingStubHttp({
+        "/api/exchange-symbol-list/US": catalog,
+        "/api/real-time/AAPL.US": quotes,
+    })
+    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    rows = service._us_investable_rows("NASDAQ", datetime.fromtimestamp(timestamp, tz=timezone.utc))
+
+    assert [item.symbol for item in rows] == ["MSFT"]
+    assert service._us_quote_quarantine == {
+        "SPCX": {
+            "reason": "duplicate_raw_ticker",
+            "row_count": 2,
+            "timestamps": [1787757780.0, 1775482140.0],
+        }
+    }
+
+
 def test_realtime_us_overlays_visible_rows_with_websocket_trade() -> None:
     timestamp = 1785859200
     catalog = [{"Code": "MSFT", "Name": "Microsoft", "Exchange": "NASDAQ", "Type": "Common Stock", "Currency": "USD"}]
