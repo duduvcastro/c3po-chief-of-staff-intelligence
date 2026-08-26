@@ -4117,7 +4117,6 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
               <div className="falcon-portfolio-ticker-set" aria-hidden={copy === 1} key={copy}>
                 {livePositions.map((position) => {
                   const isPositive = position.mark_pnl_usd >= 0;
-                  const isNetPositive = position.estimated_exit_pnl_usd >= 0;
                   const price = new Intl.NumberFormat(position.currency === "BRL" ? "pt-BR" : "en-US", {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
@@ -4126,8 +4125,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
                     <div className="falcon-portfolio-ticker-item" key={`${copy}-${position.market}-${position.symbol}`}>
                       <div><strong>{position.symbol}</strong><span className={isPositive ? "ticker-price-up" : "ticker-price-down"}>{position.currency === "BRL" ? "R$ " : "$ "}{price}</span></div>
                       <p className={isPositive ? "ticker-change-up" : "ticker-change-down"}>
-                        MARK {isPositive ? "+" : "-"}{formatPositionPercentMagnitude(position.mark_return_percent)}%
-                        <small className={isNetPositive ? "ticker-change-up" : "ticker-change-down"}>NET {isNetPositive ? "+" : "-"}{formatPositionPercentMagnitude(position.estimated_exit_return_percent)}% · $ {usd(Math.abs(position.estimated_exit_pnl_usd)).replace("US$ ", "")}</small>
+                        {isPositive ? "+" : "-"}{formatPositionPercentMagnitude(position.mark_return_percent)}%
                       </p>
                     </div>
                   );
