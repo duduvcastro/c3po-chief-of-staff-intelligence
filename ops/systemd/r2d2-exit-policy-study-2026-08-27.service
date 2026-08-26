@@ -1,0 +1,19 @@
+[Unit]
+Description=One-shot audited R2D2 exit-policy study rerun for 2026-08-27
+After=docker.service local-fs.target
+Requires=docker.service
+RequiresMountsFor=/mnt/day-d-data
+ConditionPathExists=/opt/chief-of-staff-digital/.env
+ConditionPathExists=/mnt/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27/plan.json
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/chief-of-staff-digital
+ExecStart=/usr/local/sbin/r2d2-exit-policy-study-2026-08-27
+TimeoutStartSec=7h30min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+UMask=0077
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,200 @@
+name: Install EXIT_POLICY_STUDY rerun timer 2026-08-27
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/r2d2-exit-policy-study-2026-08-27.sh
+      - ops/systemd/r2d2-exit-policy-study-2026-08-27.service
+      - ops/systemd/r2d2-exit-policy-study-2026-08-27.timer
+      - .github/workflows/install-r2d2-exit-policy-study-2026-08-27.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-r2d2-exit-policy-study-2026-08-27
+  cancel-in-progress: false
+
+jobs:
+  install-production-timer:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Check out scheduled revision
+        uses: actions/checkout@v6
+
+      - name: Configure deployment SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload timer assets
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          scp -i ~/.ssh/c3po_deploy \
+            scripts/r2d2-exit-policy-study-2026-08-27.sh \
+            ops/systemd/r2d2-exit-policy-study-2026-08-27.service \
+            ops/systemd/r2d2-exit-policy-study-2026-08-27.timer \
+            "$USER@$HOST:/tmp/"
+
+      - name: Validate frozen plan and install one-shot timer
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          REVISION: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "cat > /tmp/install-r2d2-exit-policy-study-2026-08-27.sh && REVISION='$REVISION' bash /tmp/install-r2d2-exit-policy-study-2026-08-27.sh" <<'REMOTE'
+          set -euo pipefail
+
+          APP_DIR=/opt/chief-of-staff-digital
+          RUN_DIR=/mnt/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27
+          SPEC=/legacy/c3po/docs/EXIT_POLICY_STUDY_V1_1.md
+          AMENDMENT=/legacy/c3po/docs/EXIT_POLICY_STUDY_V1_1_AMENDMENT_1.md
+          DELIVERABLE=/legacy/c3po/docs/EXIT_POLICY_STUDY_V1_1_DELIVERABLE_0.md
+          INPUT_CUTOFF_AT=2026-08-25T13:30:15.948946+00:00
+          EXPECTED_LEDGER_SHA256=51f616bc377329f242d5340eae25b24cecf5be7532f9a89e4e45ec5d67dbb316
+          EXPECTED_MINUTE_MANIFEST_SHA256=c615d27f297ed80f030c1c95318401d197a58b0d2f906f41746666e62539ba9f
+
+          cd "$APP_DIR"
+          for attempt in $(seq 1 120); do
+            if [ "$(cat .deploy-version 2>/dev/null || true)" = "$REVISION" ]; then
+              break
+            fi
+            if [ "$attempt" -eq 120 ]; then
+              echo "Production deploy did not reach revision $REVISION" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+          if ! mountpoint -q /mnt/day-d-data; then
+            echo '/mnt/day-d-data is not mounted' >&2
+            exit 1
+          fi
+          free_bytes=$(df -B1 --output=avail /mnt/day-d-data | tail -n 1 | tr -d ' ')
+          if [ "$free_bytes" -lt 21474836480 ]; then
+            echo "Dedicated disk reserve is below 20 GiB: $free_bytes bytes" >&2
+            exit 1
+          fi
+
+          mkdir -p "$RUN_DIR"
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          plan_tmp="$RUN_DIR/plan.json.installing"
+          "${compose[@]}" run --rm -T api python -m app.r2d2_exit_policy_study plan \
+            --spec "$SPEC" \
+            --amendment-one "$AMENDMENT" \
+            --deliverable-zero "$DELIVERABLE" \
+            --input-cutoff-at "$INPUT_CUTOFF_AT" \
+            --expected-ledger-sha256 "$EXPECTED_LEDGER_SHA256" \
+            --expected-minute-manifest-sha256 "$EXPECTED_MINUTE_MANIFEST_SHA256" \
+            </dev/null > "$plan_tmp"
+
+          python3 - "$plan_tmp" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              plan = json.load(source)
+          ledger = (plan.get("frozen_input_contract") or {}).get("ledger") or {}
+          checks = {
+              "command": plan.get("command") == "plan",
+              "read_only": plan.get("read_only") is True,
+              "zero_external_api_calls": plan.get("external_api_calls") == 0,
+              "no_report_written": plan.get("report_written") is False,
+              "spec_hash": (plan.get("spec") or {}).get("sha256") == "21882372220d55aa01c0a23b9288d75788d25b1187c01b4954e0c500ec0216a2",
+              "amendment_hash": (plan.get("amendment_one") or {}).get("sha256") == "3001ed9eba15d684f7dcd74d91a940e7603ae4d5a342b53655b2fd1e9250bfc8",
+              "deliverable_hash": (plan.get("deliverable_zero") or {}).get("sha256") == "ae83428ac0444329efc7405e06078c144b575a0909699e15b16ce5a26de20098",
+              "ledger_rows": plan.get("ledger_rows") == 783 and ledger.get("row_count") == 783,
+              "episodes": plan.get("episodes") == 375,
+              "ledger_cutoff": ledger.get("input_cutoff_at") == "2026-08-25T13:30:15.948946+00:00",
+              "ledger_last_row": ledger.get("last_executed_at") == "2026-08-25T13:30:15.948946+00:00",
+              "ledger_hash": ledger.get("canonical_json_sha256") == "51f616bc377329f242d5340eae25b24cecf5be7532f9a89e4e45ec5d67dbb316",
+              "ledger_hash_verified": ledger.get("frozen_hash_verified") is True,
+              "minute_manifest_expected": (plan.get("frozen_input_contract") or {}).get("expected_minute_aggregate_manifest_sha256") == "c615d27f297ed80f030c1c95318401d197a58b0d2f906f41746666e62539ba9f",
+              "minute_manifest_deferred_to_run": (plan.get("frozen_input_contract") or {}).get("minute_manifest_verified_during_run") is True,
+              "bootstrap_seed": plan.get("bootstrap_seed") == 20260824,
+              "bootstrap_iterations": plan.get("bootstrap_iterations") == 10000,
+          }
+          failed = sorted(name for name, passed in checks.items() if not passed)
+          if failed:
+              raise SystemExit("Install-time frozen plan validation failed: " + ", ".join(failed))
+          PY
+
+          if [ -e "$RUN_DIR/plan.json" ]; then
+            cmp "$RUN_DIR/plan.json" "$plan_tmp"
+            rm "$plan_tmp"
+          else
+            mv "$plan_tmp" "$RUN_DIR/plan.json"
+            chmod 0444 "$RUN_DIR/plan.json"
+          fi
+
+          sudo install -m 0755 /tmp/r2d2-exit-policy-study-2026-08-27.sh \
+            /usr/local/sbin/r2d2-exit-policy-study-2026-08-27
+          sudo install -m 0644 /tmp/r2d2-exit-policy-study-2026-08-27.service \
+            /etc/systemd/system/r2d2-exit-policy-study-2026-08-27.service
+          sudo install -m 0644 /tmp/r2d2-exit-policy-study-2026-08-27.timer \
+            /etc/systemd/system/r2d2-exit-policy-study-2026-08-27.timer
+          sudo systemctl daemon-reload
+          systemd-analyze calendar '2026-08-27 03:15:00 UTC' --iterations=1
+          sudo systemctl enable --now r2d2-exit-policy-study-2026-08-27.timer
+
+          timer_active=$(systemctl is-active r2d2-exit-policy-study-2026-08-27.timer)
+          next_elapse=$(systemctl show r2d2-exit-policy-study-2026-08-27.timer \
+            --property=NextElapseUSecRealtime --value)
+          next_elapse_utc=$(date -u -d "$next_elapse" +%Y-%m-%dT%H:%M:%SZ)
+          [ "$timer_active" = active ]
+          [ "$next_elapse_utc" = 2026-08-27T03:15:00Z ]
+
+          installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          plan_sha256=$(sha256sum "$RUN_DIR/plan.json" | awk '{print $1}')
+          script_sha256=$(sha256sum /usr/local/sbin/r2d2-exit-policy-study-2026-08-27 | awk '{print $1}')
+          service_sha256=$(sha256sum /etc/systemd/system/r2d2-exit-policy-study-2026-08-27.service | awk '{print $1}')
+          timer_sha256=$(sha256sum /etc/systemd/system/r2d2-exit-policy-study-2026-08-27.timer | awk '{print $1}')
+          python3 - "$RUN_DIR/schedule.json" <<PY
+          import json
+          from pathlib import Path
+
+          payload = {
+              "installed_at": "$installed_at",
+              "deploy_revision": "$REVISION",
+              "timer_active": "$timer_active" == "active",
+              "next_elapse": "$next_elapse",
+              "next_elapse_utc": "$next_elapse_utc",
+              "input_cutoff_at": "$INPUT_CUTOFF_AT",
+              "expected_ledger_rows": 783,
+              "expected_ledger_sha256": "$EXPECTED_LEDGER_SHA256",
+              "expected_minute_manifest_sha256": "$EXPECTED_MINUTE_MANIFEST_SHA256",
+              "plan_sha256": "$plan_sha256",
+              "script_sha256": "$script_sha256",
+              "service_sha256": "$service_sha256",
+              "timer_sha256": "$timer_sha256",
+          }
+          path = Path("$RUN_DIR/schedule.json")
+          if path.exists():
+              existing = json.loads(path.read_text(encoding="utf-8"))
+              stable = {
+                  key: payload[key]
+                  for key in payload
+                  if key not in {"installed_at"}
+              }
+              if any(existing.get(key) != value for key, value in stable.items()):
+                  raise SystemExit("Existing schedule evidence conflicts with this install")
+          else:
+              temporary = path.with_suffix(".json.tmp")
+              temporary.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+              temporary.replace(path)
+          PY
+
+          systemctl list-timers r2d2-exit-policy-study-2026-08-27.timer --no-pager
+          REMOTE

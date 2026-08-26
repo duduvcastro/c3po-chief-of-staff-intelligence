@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule the frozen-input R2D2 exit-policy study rerun for 2026-08-27 00:15 BRT
+
+[Timer]
+OnCalendar=2026-08-27 03:15:00 UTC
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=true
+Unit=r2d2-exit-policy-study-2026-08-27.service
+
+[Install]
+WantedBy=timers.target
