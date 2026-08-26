@@ -204,6 +204,32 @@ def test_gate_censors_bar_unavailable_outside_numeric_violation_ceiling() -> Non
     assert censorship["bar_unavailable_by_session"][0]["status"] == "REVIEW_REQUIRED"
 
 
+def test_gate_measures_extended_only_bars_before_declaring_numeric_violation() -> None:
+    tolerance = _buy(fill_id="tolerance", symbol="TOL")
+    violation = _buy(fill_id="violation", symbol="BAD")
+    result = reconcile_entry_gate(
+        [tolerance, violation],
+        {
+            "TOL": [
+                _bar(-2, high=99.8, low=99.0, open_=99.5, close=99.5, symbol="TOL")
+            ],
+            "BAD": [
+                _bar(-2, high=99.5, low=99.0, open_=99.25, close=99.25, symbol="BAD")
+            ],
+        },
+        constructed_entry_count=100,
+    )
+
+    assert result["g2_market_compatibility"]["counts"]["tolerance_band"] == 1
+    assert result["g2_market_compatibility"]["counts"]["violation"] == 1
+    assert result["g2_market_compatibility"]["counts"]["bar_unavailable"] == 0
+    row = result["g3_coverage_censorship"]["violations"][0]
+    assert row["entry_id"] == "violation"
+    assert row["breach_bps"] == pytest.approx(50.0)
+    assert row["matched_anchor"] == "quote_as_of_extended"
+    assert row["matched_offset_minutes"] == -2
+
+
 def test_factual_dry_run_gate_decomposition_is_pinned() -> None:
     session_contract = (
         (date(2026, 8, 19), 100, 0, ("PNRG",)),

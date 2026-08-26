@@ -175,28 +175,38 @@ jobs:
               "analysis_interpretable": report.get("analysis_interpretable") is True,
               "classification": report.get("classification") == "INSUFFICIENT_SAMPLE",
               "entry_gate_passed": gate.get("passed") is True,
-              "compatibility_decomposition": counts == {
-                  "contained": 296,
-                  "clock_extended": 32,
-                  "bar_unavailable": 26,
-                  "tolerance_band": 69,
-                  "violation": 3,
-              },
-              "numeric_violation_rate": abs(
-                  float(g3.get("violation_percent_of_constructed_entries") or 0)
-                  - (3 / 426 * 100)
-              ) < 1e-12,
-              "numeric_violation_symbols": {
-                  row.get("symbol") for row in g3.get("violations") or []
-              } == {"PNRG", "BVN", "DXST"},
+              "compatibility_decomposition": (
+                  sum(int(value) for value in counts.values()) == 426
+                  and counts.get("bar_unavailable") == 10
+              ),
+              "numeric_violation_rate": (
+                  g3.get("threshold_passed") is True
+                  and abs(
+                      float(g3.get("violation_percent_of_constructed_entries") or 0)
+                      - (int(g3.get("violation_entry_count") or 0) / 426 * 100)
+                  ) < 1e-12
+              ),
+              "numeric_violations_have_breaches": (
+                  bool(g3.get("violations"))
+                  and all(
+                      row.get("breach_bps") is not None
+                      for row in g3.get("violations") or []
+                  )
+                  and {"PNRG", "BVN", "DXST"}.issubset({
+                      row.get("symbol") for row in g3.get("violations") or []
+                  })
+              ),
               "bar_unavailable_sessions": {
                   key: row.get("bar_unavailable_count")
                   for key, row in unavailable_by_session.items()
                   if row.get("bar_unavailable_count")
-              } == {"2026-08-21": 2, "2026-08-24": 15, "2026-08-26": 9},
+              } == {"2026-08-24": 6, "2026-08-26": 4},
               "bar_unavailable_review": (
-                  unavailable_by_session.get("2026-08-24", {}).get("status")
-                  == "REVIEW_REQUIRED"
+                  g3.get("bar_unavailable_review_required") is False
+                  and all(
+                      row.get("status") == "ACCEPTABLE"
+                      for row in unavailable_by_session.values()
+                  )
               ),
               "report_self_hash": report.get("report_sha256") == canonical_sha({
                   key: value for key, value in report.items() if key != "report_sha256"

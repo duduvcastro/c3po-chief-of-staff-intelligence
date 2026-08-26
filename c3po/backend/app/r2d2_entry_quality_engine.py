@@ -16,6 +16,7 @@ from .r2d2_exit_policy_engine import (
     CENT_TOLERANCE_USD,
     OHLC_BOUNDARY_TOLERANCE_MINUTES,
     OHLC_CLOCK_EXTENDED_BACKWARD_MINUTES,
+    OHLC_COMPATIBILITY_TOLERANCE_BPS,
     OHLC_VIOLATION_EPISODE_LIMIT_PERCENT,
     LedgerFill,
     StudyBar,
@@ -40,8 +41,8 @@ CENSORSHIP_REVIEW_PERCENT = 20.0
 ENTRY_MARKET_COMPATIBILITY_CLASSES = (
     "contained",
     "clock_extended",
-    "bar_unavailable",
     "tolerance_band",
+    "bar_unavailable",
     "violation",
 )
 
@@ -381,27 +382,44 @@ def reconcile_entry_gate(
     entry_count_by_session: dict[str, int] = defaultdict(int)
     unavailable_count_by_session: dict[str, int] = defaultdict(int)
 
-    def candidate_bar_exists(
+    def candidate_bar_rows(
         fill: LedgerFill,
         bars: Mapping[datetime, StudyBar],
-    ) -> bool:
-        original_offsets = (
-            0,
-            -OHLC_BOUNDARY_TOLERANCE_MINUTES,
-            OHLC_BOUNDARY_TOLERANCE_MINUTES,
+    ) -> list[tuple[str, int, StudyBar]]:
+        rows: list[tuple[str, int, StudyBar]] = []
+        seen: set[datetime] = set()
+        candidates = (
+            (
+                "executed_at",
+                fill.executed_at,
+                (0, -OHLC_BOUNDARY_TOLERANCE_MINUTES, OHLC_BOUNDARY_TOLERANCE_MINUTES),
+            ),
+            (
+                "quote_as_of",
+                fill.quote_as_of,
+                (0, -OHLC_BOUNDARY_TOLERANCE_MINUTES, OHLC_BOUNDARY_TOLERANCE_MINUTES),
+            ),
+            (
+                "quote_as_of_extended",
+                fill.quote_as_of,
+                tuple(range(0, -OHLC_CLOCK_EXTENDED_BACKWARD_MINUTES - 1, -1)) + (1,),
+            ),
         )
-        candidate_minutes = {
-            anchor.astimezone(timezone.utc).replace(second=0, microsecond=0)
-            + timedelta(minutes=offset)
-            for anchor in (fill.executed_at, fill.quote_as_of)
-            for offset in original_offsets
-        }
-        candidate_minutes.update({
-            fill.quote_as_of.astimezone(timezone.utc).replace(second=0, microsecond=0)
-            + timedelta(minutes=offset)
-            for offset in range(-OHLC_CLOCK_EXTENDED_BACKWARD_MINUTES, 2)
-        })
-        return any(minute in bars for minute in candidate_minutes)
+        for anchor, at, offsets in candidates:
+            minute = at.astimezone(timezone.utc).replace(second=0, microsecond=0)
+            for offset in offsets:
+                candidate = minute + timedelta(minutes=offset)
+                if candidate in seen:
+                    continue
+                seen.add(candidate)
+                bar = bars.get(candidate)
+                if bar is not None:
+                    rows.append((anchor, offset, bar))
+        return rows
+
+    def breach_bps(price: float, bar: StudyBar) -> float:
+        nearest_edge = bar.low if price < bar.low else bar.high
+        return abs(price - nearest_edge) / price * 10_000.0
 
     for fill in entries:
         if fill.side != "BUY":
@@ -443,7 +461,8 @@ def reconcile_entry_gate(
             for bar in bars_by_symbol.get(fill.symbol, ())
             if bar.session_date == session
         }
-        if not minute_bars or not candidate_bar_exists(fill, minute_bars):
+        candidate_rows = candidate_bar_rows(fill, minute_bars)
+        if not candidate_rows:
             compatibility_counts["bar_unavailable"] += 1
             unavailable_ids.add(fill.id)
             unavailable_count_by_session[session_key] += 1
@@ -459,6 +478,27 @@ def reconcile_entry_gate(
             continue
         compatibility = classify_market_compatibility(fill, minute_bars)
         classification = str(compatibility["classification"])
+        if classification == "violation" and compatibility.get("breach_bps") is None:
+            anchor, offset, bar = min(
+                candidate_rows,
+                key=lambda row: breach_bps(fill.signal_price_local, row[2]),
+            )
+            breach = breach_bps(fill.signal_price_local, bar)
+            classification = (
+                "tolerance_band"
+                if breach <= OHLC_COMPATIBILITY_TOLERANCE_BPS
+                else "violation"
+            )
+            compatibility = {
+                **compatibility,
+                "classification": classification,
+                "matched_anchor": anchor,
+                "matched_offset_minutes": offset,
+                "matched_bar_start_at": bar.start_at.isoformat(),
+                "reference_low": bar.low,
+                "reference_high": bar.high,
+                "breach_bps": breach,
+            }
         compatibility_counts[classification] += 1
         if classification == "violation":
             violation_ids.add(fill.id)
