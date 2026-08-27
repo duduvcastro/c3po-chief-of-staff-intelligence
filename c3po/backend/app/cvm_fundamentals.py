@@ -152,7 +152,7 @@ def _read_statement(
     period_field: str,
     include_prior_comparative: bool = False,
     require_year_to_date: bool = False,
-) -> dict[str, dict[str, dict[str, float | None]]]:
+) -> dict[str, dict[str, dict[str, float]]]:
     if filename not in archive.namelist():
         return {}
     selected: dict[tuple[str, str, str], tuple[int, float]] = {}
@@ -205,7 +205,7 @@ def _read_share_capital(
     archive: zipfile.ZipFile,
     filename: str,
     issuers: dict[str, dict[str, Any]],
-) -> dict[str, dict[str, dict[str, float]]]:
+) -> dict[str, dict[str, dict[str, float | None]]]:
     if filename not in archive.namelist():
         return {}
     selected: dict[tuple[str, str], tuple[int, dict[str, float | None]]] = {}
