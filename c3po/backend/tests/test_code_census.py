@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from types import SimpleNamespace
+
+from app.code_census import (
+    CENSUS_METHODOLOGY,
+    CodeCensusService,
+    measure_repository,
+)
+from app.config import Settings
+
+
+def _write(root: Path, relative: str, lines: int) -> None:
+    target = root / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("x\n" * lines, encoding="utf-8")
+
+
+def _repo(tmp_path: Path) -> Path:
+    _write(tmp_path, "c3po/backend/app/r2d2.py", 100)
+    _write(tmp_path, "c3po/backend/app/code_census.py", 20)
+    _write(tmp_path, "c3po/backend/tests/test_r2d2.py", 40)
+    _write(tmp_path, "work/morning_summary.py", 30)
+    _write(tmp_path, "c3po/frontend/app/page.tsx", 50)
+    _write(tmp_path, "c3po/frontend/app/globals.css", 10)
+    _write(tmp_path, "c3po/db/031_code_census.sql", 5)
+    _write(tmp_path, ".github/workflows/pipeline.yml", 8)
+    _write(tmp_path, "scripts/rerun.sh", 4)
+    _write(tmp_path, "c3po/docs/SPEC.md", 25)
+    # noise that must never count
+    _write(tmp_path, "c3po/frontend/node_modules/x/index.js", 9_999)
+    _write(tmp_path, "c3po/backend/.venv/lib/junk.py", 9_999)
+    _write(tmp_path, "outputs/evidence/run.log", 123)
+    return tmp_path
+
+
+def test_measure_repository_counts_frozen_layers_and_excludes_vendored_trees(
+    tmp_path: Path,
+) -> None:
+    measurement = measure_repository(_repo(tmp_path))
+
+    assert measurement is not None
+    assert measurement["methodology"] == CENSUS_METHODOLOGY
+    assert measurement["layers"] == {
+        "backend_app": {"lines": 120, "files": 2},
+        "tests": {"lines": 40, "files": 1},
+        "other_python": {"lines": 30, "files": 1},
+        "frontend": {"lines": 60, "files": 2},
+        "ops": {"lines": 12, "files": 2},
+        "sql": {"lines": 5, "files": 1},
+    }
+    assert measurement["total_lines"] == 267
+    assert measurement["total_files"] == 9
+    assert measurement["docs_lines"] == 25
+    assert measurement["docs_files"] == 1
+
+
+def test_measure_repository_refuses_a_directory_that_is_not_the_checkout(
+    tmp_path: Path,
+) -> None:
+    assert measure_repository(tmp_path) is None
+
+
+class _FakeConnection:
+    def __init__(self, log: list[tuple[str, tuple]]) -> None:
+        self._log = log
+
+    def execute(self, sql: str, params: tuple = ()) -> SimpleNamespace:
+        self._log.append((sql, params))
+        return SimpleNamespace(rowcount=1, fetchall=lambda: [])
+
+    def commit(self) -> None:
+        pass
+
+
+class _FakeDatabase:
+    def __init__(self) -> None:
+        self.executed: list[tuple[str, tuple]] = []
+
+    @contextmanager
+    def connection(self):
+        yield _FakeConnection(self.executed)
+
+
+def test_daily_census_waits_for_two_am_brt_and_runs_once_per_session(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(database_url="", auth_cookie_secure=False)
+    database = _FakeDatabase()
+    service = CodeCensusService(settings, database)  # type: ignore[arg-type]
+    root = _repo(tmp_path)
+
+    before_window = datetime(2026, 8, 27, 4, 30, tzinfo=timezone.utc)  # 01:30 BRT
+    assert service.run_daily_if_due(root, now=before_window) is False
+    assert database.executed == []
+
+    in_window = datetime(2026, 8, 27, 5, 1, tzinfo=timezone.utc)  # 02:01 BRT
+    assert service.run_daily_if_due(root, now=in_window) is True
+    assert len(database.executed) == 1
+    sql, params = database.executed[0]
+    assert "INSERT INTO code_census_daily" in sql
+    assert "ON CONFLICT (session_date) DO NOTHING" in sql
+    assert params[0].isoformat() == "2026-08-27"
+    assert params[3] == 267
+
+    later_same_session = datetime(2026, 8, 27, 9, 0, tzinfo=timezone.utc)
+    assert service.run_daily_if_due(root, now=later_same_session) is False
+    assert len(database.executed) == 1
