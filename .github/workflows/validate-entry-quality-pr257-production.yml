@@ -35,7 +35,9 @@ jobs:
           ROOT="/tmp/tape-probe-plan-${SOURCE_RUN_ID}"
           test -d "$ROOT"
           find "$ROOT" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
-          tar -C "$ROOT" -czf "/tmp/tape-probe-plan-recovered-${TARGET_RUN_ID}.tgz" .
+          (cd "$ROOT" && sha256sum frozen-prefix-recovery.json plan.error.txt plan.json > SHA256SUMS)
+          tar -C "$ROOT" -czf "/tmp/tape-probe-plan-recovered-${TARGET_RUN_ID}.tgz" \
+            frozen-prefix-recovery.json plan.error.txt plan.json SHA256SUMS
           test -s "/tmp/tape-probe-plan-recovered-${TARGET_RUN_ID}.tgz"
           REMOTE
 
