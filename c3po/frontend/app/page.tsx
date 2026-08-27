@@ -395,12 +395,20 @@ interface ServerUsagePoint {
   collected_at: string;
   cpu_percent: number | null;
   cpu_moving_average_5m: number | null;
+  cpu_steal_percent: number | null;
+  load_average_1m: number | null;
+  load_average_5m: number | null;
+  load_average_15m: number | null;
   disk_percent: number | null;
 }
 
 interface ServerUsageCurrent {
   cpu_percent: number | null;
   cpu_moving_average_5m: number | null;
+  cpu_steal_percent: number | null;
+  load_average_1m: number | null;
+  load_average_5m: number | null;
+  load_average_15m: number | null;
   disk_percent: number | null;
   disk_total_bytes: number | null;
   disk_used_bytes: number | null;
@@ -479,6 +487,22 @@ interface PerformanceHistoryResponse {
     average_render_ms: number;
     average_request_count: number;
   }[];
+  capacity_windows: {
+    window: "us_regular_session" | "valuation_off_hours";
+    sample_count: number;
+    observed_dates: string[];
+    cpu_average_percent: number | null;
+    cpu_p95_percent: number | null;
+    cpu_max_percent: number | null;
+    cpu_steal_average_percent: number | null;
+    cpu_steal_p95_percent: number | null;
+    cpu_steal_max_percent: number | null;
+    load_1m_average: number | null;
+    load_1m_p95: number | null;
+    load_1m_max: number | null;
+    load_1m_p95_per_vcpu: number | null;
+  }[];
+  capacity_methodology: Record<string, string>;
 }
 
 interface PageLoadTracker {

@@ -17,6 +17,7 @@ from .database import Database
 
 logger = logging.getLogger(__name__)
 NEW_YORK = ZoneInfo("America/New_York")
+SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 
 
 def _safe_build_sha(value: str) -> str:
@@ -267,6 +268,7 @@ class PerformanceObservabilityService:
         since = now - timedelta(hours=hours)
         api_rows = self.database.list_api_performance_buckets(since)
         page_rows = self.database.list_page_load_performance_samples(since)
+        capacity_rows = self.database.list_server_usage_samples(since)
 
         api_grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
         for row in api_rows:
@@ -339,12 +341,72 @@ class PerformanceObservabilityService:
             "sample_status": "stable" if len(session_dates) >= minimum_sessions else "collecting",
             "api_routes": api_summaries,
             "page_loads": page_summaries,
+            "capacity_windows": self._capacity_windows(capacity_rows),
+            "capacity_methodology": {
+                "us_regular_session": "Weekdays from 09:30 through 16:00 America/New_York",
+                "valuation_off_hours": "Every day from 01:00 through 08:00 America/Sao_Paulo",
+                "load_normalization": f"One-minute load p95 divided by {self.settings.server_usage_cpu_count} vCPU",
+                "decision_gate": f"Collect at least {minimum_sessions} US regular sessions before sizing infrastructure",
+            },
             "privacy": {
                 "route_identity": "FastAPI route template only",
                 "page_identity": "view key, build hashes and viewport class only",
                 "excluded": "resolved paths, query strings, symbols, tickers, user and session identifiers",
             },
         }
+
+    def _capacity_windows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        grouped: dict[str, list[tuple[dict[str, Any], str]]] = {
+            "us_regular_session": [],
+            "valuation_off_hours": [],
+        }
+        for row in rows:
+            collected_at = row["collected_at"]
+            new_york = collected_at.astimezone(NEW_YORK)
+            sao_paulo = collected_at.astimezone(SAO_PAULO)
+            new_york_time = new_york.time().replace(tzinfo=None)
+            sao_paulo_time = sao_paulo.time().replace(tzinfo=None)
+            if new_york.weekday() < 5 and time(9, 30) <= new_york_time <= time(16, 0):
+                grouped["us_regular_session"].append((row, new_york.date().isoformat()))
+            if time(1, 0) <= sao_paulo_time <= time(8, 0):
+                grouped["valuation_off_hours"].append((row, sao_paulo.date().isoformat()))
+
+        summaries: list[dict[str, Any]] = []
+        for window, dated_rows in grouped.items():
+            if not dated_rows:
+                continue
+            window_rows = [row for row, _ in dated_rows]
+            cpu = self._numeric_values(window_rows, "cpu_percent")
+            steal = self._numeric_values(window_rows, "cpu_steal_percent")
+            load = self._numeric_values(window_rows, "load_average_1m")
+            load_p95 = _percentile(load, 0.95) if load else None
+            summaries.append({
+                "window": window,
+                "sample_count": len(window_rows),
+                "observed_dates": sorted({date for _, date in dated_rows}),
+                "cpu_average_percent": self._average(cpu),
+                "cpu_p95_percent": round(_percentile(cpu, 0.95), 3) if cpu else None,
+                "cpu_max_percent": round(max(cpu), 3) if cpu else None,
+                "cpu_steal_average_percent": self._average(steal),
+                "cpu_steal_p95_percent": round(_percentile(steal, 0.95), 3) if steal else None,
+                "cpu_steal_max_percent": round(max(steal), 3) if steal else None,
+                "load_1m_average": self._average(load, digits=4),
+                "load_1m_p95": round(load_p95, 4) if load_p95 is not None else None,
+                "load_1m_max": round(max(load), 4) if load else None,
+                "load_1m_p95_per_vcpu": (
+                    round(load_p95 / self.settings.server_usage_cpu_count, 4)
+                    if load_p95 is not None else None
+                ),
+            })
+        return summaries
+
+    @staticmethod
+    def _numeric_values(rows: list[dict[str, Any]], key: str) -> list[float]:
+        return [float(row[key]) for row in rows if row.get(key) is not None]
+
+    @staticmethod
+    def _average(values: list[float], *, digits: int = 3) -> float | None:
+        return round(sum(values) / len(values), digits) if values else None
 
 
 async def run_performance_flush_loop(
