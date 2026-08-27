@@ -548,6 +548,30 @@ def test_dry_run_builds_hashed_insufficient_sample_package(
     assert report["kill_criterion_m1_current_epoch"]["cross_epoch_pooling"] is False
     assert "p_hat_ucb_98_75" in report["kill_criterion_m1_current_epoch"]
     assert "p_hat_cons_ucb_98_75" in report["kill_criterion_m1_current_epoch"]
+    candidates = report["ledger_candidate_lines"]
+    assert [row["finding_type"] for row in candidates] == [
+        "entry_consistency_gate",
+        "kill_criterion_m1_current_epoch",
+        "H3_canonical_composite_separation",
+    ]
+    assert candidates[0]["evidence"]["section_sha256"] == canonical_sha256(
+        report["entry_consistency_gate"]
+    )
+    assert candidates[1]["evidence"]["section_sha256"] == canonical_sha256(
+        report["kill_criterion_m1_current_epoch"]
+    )
+    h3 = report["policy_epoch_results"][
+        "policy-a-resume-2026-08-26"
+    ]["hypotheses"]["H3"]
+    assert candidates[2]["evidence"]["section_sha256"] == canonical_sha256(h3)
+    for candidate in candidates:
+        assert candidate["governance"]["automatic_draft"] is True
+        assert candidate["governance"]["ledger_admission_authorized"] is False
+        unsigned = {
+            key: value for key, value in candidate.items()
+            if key != "candidate_sha256"
+        }
+        assert candidate["candidate_sha256"] == canonical_sha256(unsigned)
     assert report["report_sha256"] == canonical_sha256({
         key: value for key, value in report.items() if key != "report_sha256"
     })

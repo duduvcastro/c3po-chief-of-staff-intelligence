@@ -37,6 +37,7 @@ from .r2d2_exit_policy_study import (
     MinuteAggregateReader,
     _ledger_fill,
     canonical_sha256,
+    ledger_candidate_line,
     require_frozen_document,
     sha256_file,
     write_immutable_json,
@@ -695,6 +696,90 @@ def _epoch_reports(rows: Sequence[EntryMeasurement]) -> dict[str, Any]:
     return output
 
 
+def _entry_ledger_candidate_lines(
+    *,
+    gate: Mapping[str, Any],
+    current_epoch: Mapping[str, Any],
+    current_epoch_results: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    gate_passed = bool(gate.get("passed"))
+    censorship = _json_mapping(gate.get("g3_coverage_censorship"))
+    lines = [
+        ledger_candidate_line(
+            runner="ENTRY_QUALITY_STUDY_V1",
+            finding_type="entry_consistency_gate",
+            fact={
+                "passed": gate_passed,
+                "violation_entry_count": censorship.get("violation_entry_count", 0),
+                "bar_unavailable_entry_count": censorship.get(
+                    "bar_unavailable_entry_count", 0
+                ),
+                "bar_unavailable_review_required": censorship.get(
+                    "bar_unavailable_review_required", False
+                ),
+            },
+            evidence_path="entry_consistency_gate",
+            evidence_payload=gate,
+            implication=(
+                "Entry gate passed; outcome evidence may be reviewed, but this draft does "
+                "not authorize a consumer or strategy change."
+                if gate_passed
+                else "Entry gate failed; do not interpret outcomes and investigate the named "
+                "failures."
+            ),
+        ),
+        ledger_candidate_line(
+            runner="ENTRY_QUALITY_STUDY_V1",
+            finding_type="kill_criterion_m1_current_epoch",
+            fact={
+                "policy_epoch": current_epoch.get("policy_epoch"),
+                "available": current_epoch.get("available"),
+                "classification": current_epoch.get("classification"),
+                "p_hat_ucb_98_75": current_epoch.get("p_hat_ucb_98_75"),
+                "p_hat_cons_ucb_98_75": current_epoch.get(
+                    "p_hat_cons_ucb_98_75"
+                ),
+                "cross_epoch_pooling": current_epoch.get("cross_epoch_pooling"),
+            },
+            evidence_path="kill_criterion_m1_current_epoch",
+            evidence_payload=current_epoch,
+            implication=(
+                "Wait for the preregistered sample floor before a decision reading."
+                if current_epoch.get("classification") == "INSUFFICIENT_SAMPLE"
+                else "Review M1 at the next authorized decision reading using the frozen "
+                "98.75% one-sided bounds."
+            ),
+        ),
+    ]
+    hypotheses = _json_mapping((current_epoch_results or {}).get("hypotheses"))
+    h3 = _json_mapping(hypotheses.get("H3"))
+    if h3:
+        lines.append(ledger_candidate_line(
+            runner="ENTRY_QUALITY_STUDY_V1",
+            finding_type="H3_canonical_composite_separation",
+            fact={
+                "status": h3.get("status"),
+                "observed_session_count": h3.get("observed_session_count"),
+                "required_session_count": h3.get("required_session_count"),
+                "required_decided_entries_per_cell": h3.get(
+                    "required_decided_entries_per_cell"
+                ),
+                "insufficient_cells": h3.get("insufficient_cells", []),
+                "cells": h3.get("cells", {}),
+            },
+            evidence_path=(
+                "policy_epoch_results."
+                f"{CURRENT_M1_POLICY_EPOCH}.hypotheses.H3"
+            ),
+            evidence_payload=h3,
+            implication=(
+                "Carry the canonical-composite separation result into the mandatory V3 gate "
+                "ledger reading; insufficient sample remains a wait state, not a conclusion."
+            ),
+        ))
+    return lines
+
+
 def _build_inputs(
     *,
     settings: Settings,
@@ -947,6 +1032,11 @@ def build_report(
             "Fewer than 15 sessions or 30 decided entries per compared cell is INSUFFICIENT_SAMPLE.",
         ],
     }
+    report["ledger_candidate_lines"] = _entry_ledger_candidate_lines(
+        gate=gate,
+        current_epoch=report["kill_criterion_m1_current_epoch"],
+        current_epoch_results=epoch_reports.get(CURRENT_M1_POLICY_EPOCH),
+    )
     report["report_sha256"] = _report_hash(report, "report_sha256")
     return manifest, report
 
