@@ -1,0 +1,100 @@
+name: Validate ENTRY_QUALITY_STUDY PR 257 on production data
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-postgres-backup:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Configure production SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Audit host and offsite object storage read-only
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/chief-of-staff-digital
+
+          echo '=== deploy ==='
+          cat .deploy-version
+          echo '=== matching systemd timers ==='
+          systemctl list-timers --all --no-pager --no-legend \
+            | grep -Ei 'backup|postgres|pg[-_]?dump|database[-_]?dump' || true
+          echo '=== matching systemd units ==='
+          find /etc/systemd/system -maxdepth 2 -type f \
+            \( -iname '*backup*' -o -iname '*postgres*' -o -iname '*dump*' \) -print || true
+          echo '=== user crontab ==='
+          crontab -l 2>/dev/null || true
+          echo '=== root crontab ==='
+          sudo crontab -l 2>/dev/null || true
+          echo '=== matching host artifacts ==='
+          find /opt/chief-of-staff-digital /mnt/day-d-data -maxdepth 6 \
+            \( -iname '*.dump' -o -iname '*.sql' -o -iname '*.sql.gz' -o -iname '*postgres*backup*' \) \
+            -print 2>/dev/null | head -n 200 || true
+          echo '=== database size ==='
+          docker compose --env-file .env -f c3po/compose.yml exec -T db \
+            psql -U c3po -d c3po -Atc \
+            "select pg_database_size(current_database()), pg_size_pretty(pg_database_size(current_database()));"
+          echo '=== backblaze inventory ==='
+          docker compose --env-file .env -f c3po/compose.yml run --rm -T api python - <<'PY'
+          import json
+          import boto3
+          from app.config import Settings
+
+          settings = Settings()
+          configured = all([
+              settings.day_d_b2_key_id,
+              settings.day_d_b2_application_key,
+              settings.day_d_b2_bucket,
+          ])
+          result = {
+              "configured": configured,
+              "bucket_configured": bool(settings.day_d_b2_bucket),
+              "postgres_like_objects": [],
+              "postgres_like_object_count": 0,
+          }
+          if configured:
+              client = boto3.client(
+                  "s3",
+                  endpoint_url=settings.day_d_b2_endpoint,
+                  region_name=settings.day_d_b2_region,
+                  aws_access_key_id=settings.day_d_b2_key_id,
+                  aws_secret_access_key=settings.day_d_b2_application_key,
+              )
+              paginator = client.get_paginator("list_objects_v2")
+              matches = []
+              try:
+                  for page in paginator.paginate(Bucket=settings.day_d_b2_bucket):
+                      for item in page.get("Contents", []):
+                          key = str(item.get("Key") or "")
+                          folded = key.lower()
+                          if any(token in folded for token in ("postgres", "pg_dump", "database-backup", ".sql", ".dump")):
+                              matches.append({
+                                  "key": key,
+                                  "size": int(item.get("Size") or 0),
+                                  "last_modified": str(item.get("LastModified") or ""),
+                              })
+              except Exception as exc:
+                  result["list_error"] = f"{type(exc).__name__}: {exc}"
+              result["postgres_like_objects"] = matches[:100]
+              result["postgres_like_object_count"] = len(matches)
+          print(json.dumps(result, sort_keys=True))
+          PY
+          REMOTE
