@@ -8,6 +8,7 @@ from .investor_relations import InvestorRelationsService
 from .ir_valuation import InvestorRelationsValuationProcessor
 from .market_data.b3_screener import B3ScreenerService
 from .market_data.service import MarketDataService
+from .observability import init_sentry
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -16,6 +17,7 @@ logger = logging.getLogger("c3po.ir_worker")
 
 def main() -> None:
     settings = get_settings()
+    init_sentry(settings, service_name="investor-relations-worker")
     database = Database(settings)
     database.initialize()
     service = InvestorRelationsService(settings, database)

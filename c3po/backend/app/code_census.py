@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from .config import Settings
 from .database import Database
+from .observability import HealthcheckPing
 
 
 logger = logging.getLogger("c3po.code_census")
@@ -139,6 +140,7 @@ class CodeCensusService:
         self.settings = settings
         self.database = database
         self._last_attempted_session: date | None = None
+        self.healthcheck = HealthcheckPing(settings.healthcheck_code_census_url)
 
     def run_daily_if_due(self, root: Path, now: datetime | None = None) -> bool:
         """Idempotent daily census at/after 02:00 America/Sao_Paulo."""
@@ -149,9 +151,15 @@ class CodeCensusService:
         if self._last_attempted_session == session:
             return False
         self._last_attempted_session = session
-        measurement = measure_repository(root)
+        self.healthcheck.ping("start")
+        try:
+            measurement = measure_repository(root)
+        except Exception:
+            self.healthcheck.ping("fail")
+            raise
         if measurement is None:
             logger.warning("Code census skipped: %s is not a repository checkout", root)
+            self.healthcheck.ping("fail")
             return False
         if measurement["unreadable_files"] or measurement["unreadable_directories"]:
             # A partial walk must never be recorded as a complete census.
@@ -161,26 +169,31 @@ class CodeCensusService:
                 measurement["unreadable_directories"],
                 root,
             )
+            self.healthcheck.ping("fail")
             return False
-        with self.database.connection() as connection:
-            inserted = connection.execute(
-                """INSERT INTO code_census_daily
-                   (session_date, methodology, layers, total_lines, total_files,
-                    docs_lines, docs_files, generated_at)
-                   VALUES (%s,%s,%s::jsonb,%s,%s,%s,%s,%s)
-                   ON CONFLICT (session_date) DO NOTHING""",
-                (
-                    session,
-                    measurement["methodology"],
-                    json.dumps(measurement["layers"]),
-                    measurement["total_lines"],
-                    measurement["total_files"],
-                    measurement["docs_lines"],
-                    measurement["docs_files"],
-                    datetime.now(timezone.utc),
-                ),
-            ).rowcount
-            connection.commit()
+        try:
+            with self.database.connection() as connection:
+                inserted = connection.execute(
+                    """INSERT INTO code_census_daily
+                       (session_date, methodology, layers, total_lines, total_files,
+                        docs_lines, docs_files, generated_at)
+                       VALUES (%s,%s,%s::jsonb,%s,%s,%s,%s,%s)
+                       ON CONFLICT (session_date) DO NOTHING""",
+                    (
+                        session,
+                        measurement["methodology"],
+                        json.dumps(measurement["layers"]),
+                        measurement["total_lines"],
+                        measurement["total_files"],
+                        measurement["docs_lines"],
+                        measurement["docs_files"],
+                        datetime.now(timezone.utc),
+                    ),
+                ).rowcount
+                connection.commit()
+        except Exception:
+            self.healthcheck.ping("fail")
+            raise
         if inserted:
             logger.info(
                 "Code census %s: %s lines / %s files (+%s doc lines)",
@@ -189,6 +202,7 @@ class CodeCensusService:
                 measurement["total_files"],
                 measurement["docs_lines"],
             )
+        self.healthcheck.ping("success")
         return bool(inserted)
 
     def snapshot(self, days: int = 30) -> dict[str, Any]:

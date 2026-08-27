@@ -17,6 +17,7 @@ from .market_data.service import MarketDataService
 from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerService
 from .official_fundamentals import ensure_builtin_official_fundamentals
+from .observability import HealthcheckPing, init_sentry
 from .r2d2_cash_yield import R2D2CashYieldService
 from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
@@ -192,12 +193,27 @@ def run_worker_iteration(
     canonical_due: bool,
     canonical_operation: Callable[[], Any],
     offhours_phases: tuple[OffhoursPhase, ...],
+    healthchecks: dict[str, HealthcheckPing] | None = None,
 ) -> WorkerIterationResult:
     canonical_status = "current"
     phase_statuses: dict[str, str] = {}
     wake_targets = [next_midnight(now)]
+    healthchecks = healthchecks or {}
+    worker_healthcheck = healthchecks.get("valuation")
+    cash_yield_healthcheck = healthchecks.get(CASH_YIELD_PHASE_KEY)
+    attempted_work = False
+    failed_work = False
+
+    def start_worker_healthcheck() -> None:
+        nonlocal attempted_work
+        if attempted_work:
+            return
+        attempted_work = True
+        if worker_healthcheck:
+            worker_healthcheck.ping("start")
 
     if canonical_due:
+        start_worker_healthcheck()
         try:
             _run_recorded_phase(
                 database,
@@ -209,6 +225,7 @@ def run_worker_iteration(
             canonical_status = "succeeded"
         except Exception:
             canonical_status = "failed"
+            failed_work = True
             logger.exception(
                 "Nightly valuation cycle failed; off-hours phases remain independent"
             )
@@ -224,6 +241,9 @@ def run_worker_iteration(
             phase_statuses[phase.key] = "pending"
             continue
         if now < phase_window_end:
+            start_worker_healthcheck()
+            if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
+                cash_yield_healthcheck.ping("start")
             try:
                 result = _run_recorded_phase(
                     database,
@@ -238,8 +258,13 @@ def run_worker_iteration(
                     VALUATION_WORKER_PHASES[phase.key]["name"],
                     result,
                 )
+                if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
+                    cash_yield_healthcheck.ping("success")
             except Exception:
                 phase_statuses[phase.key] = "failed"
+                failed_work = True
+                if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
+                    cash_yield_healthcheck.ping("fail")
                 logger.exception(
                     "%s failed; keeping prior evidence and retrying inside the window",
                     VALUATION_WORKER_PHASES[phase.key]["name"],
@@ -249,6 +274,9 @@ def run_worker_iteration(
                     wake_targets.append(retry_at)
             continue
         phase_statuses[phase.key] = "outside_window"
+
+    if attempted_work and worker_healthcheck:
+        worker_healthcheck.ping("fail" if failed_work else "success")
 
     return WorkerIterationResult(
         next_wake_at=min(wake_targets),
@@ -281,6 +309,7 @@ def run_nightly(
 
 def main() -> None:
     settings = get_settings()
+    init_sentry(settings, service_name="valuation-worker")
     database = Database(settings)
     database.initialize()
     ensure_builtin_official_fundamentals(database)
@@ -314,6 +343,10 @@ def main() -> None:
         database,
         _cash_yield_http_client(settings),
     )
+    healthchecks = {
+        "valuation": HealthcheckPing(settings.healthcheck_valuation_worker_url),
+        CASH_YIELD_PHASE_KEY: HealthcheckPing(settings.healthcheck_cash_yield_url),
+    }
 
     offhours_phases = (
         OffhoursPhase(
@@ -377,6 +410,7 @@ def main() -> None:
                 us_screener,
             ),
             offhours_phases=offhours_phases,
+            healthchecks=healthchecks,
         )
 
         now = datetime.now(SAO_PAULO)

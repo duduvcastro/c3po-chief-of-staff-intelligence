@@ -9,6 +9,7 @@ from pathlib import Path
 from .code_census import CodeCensusService
 from .config import get_settings
 from .database import Database
+from .observability import init_sentry
 from .server_usage import ServerUsageCollector
 
 
@@ -18,6 +19,7 @@ logger = logging.getLogger("c3po.server_usage_worker")
 
 def run_worker() -> None:
     settings = get_settings()
+    init_sentry(settings, service_name="server-usage-worker")
     database = Database(settings)
     database.initialize()
     collector = ServerUsageCollector(settings, database)
@@ -45,6 +47,7 @@ def run_worker() -> None:
 
 def import_sadf(path: Path) -> None:
     settings = get_settings()
+    init_sentry(settings, service_name="server-usage-worker")
     database = Database(settings)
     database.initialize()
     count = ServerUsageCollector(settings, database).import_sadf(path.read_text(encoding="utf-8"))

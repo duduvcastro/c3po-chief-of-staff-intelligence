@@ -1,0 +1,11 @@
+[Unit]
+Description=Run C3PO offsite PostgreSQL backup daily at 04:00 BRT
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 America/Sao_Paulo
+Persistent=true
+AccuracySec=1min
+Unit=c3po-postgres-backup.service
+
+[Install]
+WantedBy=timers.target

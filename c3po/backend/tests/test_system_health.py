@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
+import shutil
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from app.config import Settings
@@ -189,6 +191,68 @@ def _external_get(url: str, **_kwargs):
     return _ExternalResponse(cloudflare="robots.txt" in url, usage="/api/user/" in url)
 
 
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+
+def _seal_result(path: Path, payload: dict) -> None:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    sealed = {**payload, "self_sha256": hashlib.sha256(canonical).hexdigest()}
+    _write_json(path, sealed)
+
+
+def _write_resilience_evidence(root: Path, now: datetime) -> None:
+    backup_root = root / "outputs/evidence/postgres-backup/2026-08-27/20260827T070000Z"
+    upload = {
+        "schema": "C3PO_POSTGRES_BACKUP_UPLOAD-v1",
+        "session_date": "2026-08-27",
+        "uploaded_at": now.isoformat(),
+        "file_size": 1234,
+        "file_sha256": "a" * 64,
+        "bucket": "c3po-postgres-test",
+        "region": "us-east-1",
+        "endpoint_configured": False,
+        "uploads": [{"key": "c3po-postgres/daily/2026-08-27/a.dump", "version_id": "v1"}],
+    }
+    result = {
+        "schema": "C3PO_POSTGRES_BACKUP_RESULT-v1",
+        "status": "succeeded",
+        "completed_at": now.isoformat(),
+        "dump_sha256": upload["file_sha256"],
+        "upload_count": 1,
+        "uploads": upload["uploads"],
+    }
+    _write_json(backup_root / "upload.json", upload)
+    _seal_result(backup_root / "result.json", result)
+    (backup_root / "SHA256SUMS").write_text(
+        "".join(
+            f"{hashlib.sha256((backup_root / name).read_bytes()).hexdigest()}  {name}\n"
+            for name in ("upload.json", "result.json")
+        ),
+        encoding="utf-8",
+    )
+
+    restore_root = root / "outputs/evidence/postgres-restore-drill/2026-08-27/12345"
+    restore = {
+        "schema": "C3PO_POSTGRES_RESTORE_DRILL-v1",
+        "status": "succeeded",
+        "completed_at": now.isoformat(),
+        "backup_session_date": "2026-08-27",
+        "object_key": upload["uploads"][0]["key"],
+        "backup_sha256": upload["file_sha256"],
+        "backup_size_bytes": 1234,
+        "pg_restore_list_valid": True,
+        "restored_public_table_count": 100,
+        "critical_tables_present": 5,
+    }
+    _seal_result(restore_root / "result.json", restore)
+    (restore_root / "SHA256SUMS").write_text(
+        f"{hashlib.sha256((restore_root / 'result.json').read_bytes()).hexdigest()}  result.json\n",
+        encoding="utf-8",
+    )
+
+
 class _BackblazeClient:
     def __init__(self, *, error: Exception | None = None) -> None:
         self.error = error
@@ -213,8 +277,12 @@ def _service(
     valuation_phase_states: dict[str, dict] | None = None,
 ) -> SystemHealthService:
     now = datetime.now(timezone.utc)
+    temporary_directory = TemporaryDirectory(prefix="c3po-system-health-")
+    legacy_root = Path(temporary_directory.name)
+    _write_resilience_evidence(legacy_root, now)
     settings = Settings(
         database_url="postgresql://configured",
+        legacy_root=legacy_root,
         exchange_server="east.EXCH025.serverdata.net",
         exchange_user="eu@eduardocastro.com.br",
         exchange_app_password="configured",
@@ -226,11 +294,21 @@ def _service(
         day_d_b2_key_id="configured-key-id",
         day_d_b2_application_key="configured-application-key",
         day_d_b2_bucket="c3po-day-d-cold-test",
+        sentry_dsn="https://public@example.ingest.sentry.io/123",
+        healthcheck_valuation_worker_url="https://hc-ping.com/valuation",
+        healthcheck_cash_yield_url="https://hc-ping.com/cash-yield",
+        healthcheck_code_census_url="https://hc-ping.com/code-census",
+        healthcheck_postgres_backup_url="https://hc-ping.com/postgres-backup",
+        healthcheck_postgres_restore_configured=True,
+        postgres_backup_bucket="c3po-postgres-test",
+        postgres_backup_region="us-east-1",
+        postgres_backup_access_key_id="configured-writer",
+        postgres_backup_secret_access_key="configured-secret",
         day_d_dataset_root=day_d_root,
         server_usage_disk_warning_percent=70,
         server_usage_cpu_peak_warning_percent=85,
     )
-    return SystemHealthService(
+    service = SystemHealthService(
         settings,
         _Database(
             now,
@@ -248,6 +326,8 @@ def _service(
         backblaze_client=_BackblazeClient(),
         disk_usage=lambda _path: SimpleNamespace(free=int(day_d_free_gib * 1024**3)),
     )
+    service._test_temporary_directory = temporary_directory
+    return service
 
 
 def test_consolidated_health_covers_every_operational_area() -> None:
@@ -258,7 +338,7 @@ def test_consolidated_health_covers_every_operational_area() -> None:
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "AWS scheduler", "Valuation worker phases", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve", "B2 zero-cap evidence",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Healthchecks.io", "Sentry", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Valuation worker phases", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve", "B2 zero-cap evidence",
     }
     assert "WhatsApp capture" not in {item.name for group in response.groups for item in group.items}
 
@@ -270,6 +350,79 @@ def test_resource_pressure_marks_aws_and_overall_health_for_review() -> None:
     assert aws.status == "attention"
     assert response.status == "attention"
     assert response.quality < 100
+
+
+def test_resilience_services_are_monitored_with_distinct_evidence() -> None:
+    response = _service().snapshot(force=True)
+
+    items = {item.name: item for group in response.groups for item in group.items}
+    assert items["Healthchecks.io"].status == "healthy"
+    assert "5/5 dead-man checks armed" in items["Healthchecks.io"].detail
+    assert items["Sentry"].status == "healthy"
+    assert "DSN loaded" in items["Sentry"].detail
+    assert items["PostgreSQL offsite backup"].status == "healthy"
+    assert "Immutable S3 upload evidenced" in items["PostgreSQL offsite backup"].detail
+    assert "restore drill verified" in items["PostgreSQL offsite backup"].detail
+
+
+def test_healthchecks_is_offline_until_all_five_checks_are_armed() -> None:
+    service = _service()
+    service.settings.healthcheck_postgres_restore_configured = False
+
+    item = service._healthchecks_health(datetime.now(timezone.utc))
+
+    assert item.status == "offline"
+    assert "4/5 checks armed" in item.detail
+
+
+def test_sentry_is_offline_without_an_official_dsn() -> None:
+    service = _service()
+    service.settings.sentry_dsn = "https://example.invalid/123"
+
+    item = service._sentry_health(datetime.now(timezone.utc))
+
+    assert item.status == "offline"
+    assert "not configured" in item.detail
+
+
+def test_postgres_backup_is_attention_before_first_sealed_upload() -> None:
+    service = _service()
+    evidence_root = service.settings.legacy_root / "outputs/evidence/postgres-backup"
+    shutil.rmtree(evidence_root)
+
+    item = service._postgres_backup_health(datetime.now(timezone.utc))
+
+    assert item.status == "attention"
+    assert "first sealed upload pending" in item.detail
+
+
+def test_postgres_backup_fails_closed_on_a_tampered_result() -> None:
+    service = _service()
+    result_path = next(
+        (service.settings.legacy_root / "outputs/evidence/postgres-backup").glob("*/*/result.json")
+    )
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    payload["upload_count"] = 2
+    _write_json(result_path, payload)
+
+    item = service._postgres_backup_health(datetime.now(timezone.utc))
+
+    assert item.status == "offline"
+    assert "invalid" in item.detail
+
+
+def test_postgres_backup_fails_closed_when_latest_attempt_has_no_result() -> None:
+    service = _service()
+    failed_run = (
+        service.settings.legacy_root
+        / "outputs/evidence/postgres-backup/2026-08-28/20260828T070000Z"
+    )
+    _write_json(failed_run / "preflight.json", {"status": "started"})
+
+    item = service._postgres_backup_health(datetime.now(timezone.utc))
+
+    assert item.status == "offline"
+    assert "did not produce a sealed result" in item.detail
 
 
 def test_day_d_and_valuation_controls_are_visible_and_healthy() -> None:
@@ -430,8 +583,8 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     assert usage.status == "attention"
     assert response.status == "attention"
     assert response.quality == 97
-    assert response.healthy_count == 28
-    assert response.total_count == 29
+    assert response.healthy_count == 31
+    assert response.total_count == 32
 
 
 def test_finnhub_is_monitored_in_market_quotes() -> None:

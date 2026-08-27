@@ -1,0 +1,177 @@
+name: Monthly PostgreSQL offsite restore drill
+
+on:
+  schedule:
+    - cron: "0 10 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restore-drill:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.C3PO_POSTGRES_RESTORE_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.C3PO_POSTGRES_RESTORE_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.C3PO_POSTGRES_BACKUP_REGION }}
+      BACKUP_BUCKET: ${{ secrets.C3PO_POSTGRES_BACKUP_BUCKET }}
+      HEALTHCHECK_URL: ${{ secrets.C3PO_HEALTHCHECK_POSTGRES_RESTORE_URL }}
+    steps:
+      - name: Start dead-man check
+        run: |
+          curl --silent --show-error --fail --max-time 10 \
+            "${HEALTHCHECK_URL%/}/start" >/dev/null 2>&1 || true
+
+      - name: Configure production SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Resolve latest immutable backup key
+        id: backup
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            'find /opt/chief-of-staff-digital/outputs/evidence/postgres-backup -name upload.json -type f -printf "%T@ %p\n" | sort -n | tail -n 1 | cut -d" " -f2-' \
+            > /tmp/latest-upload-path
+          upload_path=$(cat /tmp/latest-upload-path)
+          [ -n "$upload_path" ] || { echo 'no backup evidence exists' >&2; exit 1; }
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" "cat '$upload_path'" > /tmp/upload.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          upload = json.loads(Path("/tmp/upload.json").read_text(encoding="utf-8"))
+          daily = next(
+              item for item in upload["uploads"] if "/daily/" in item["key"]
+          )
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"key={daily['key']}\n")
+              output.write(f"sha256={upload['file_sha256']}\n")
+              output.write(f"session_date={upload['session_date']}\n")
+          PY
+
+      - name: Download and verify offsite bytes
+        run: |
+          aws s3api get-object \
+            --bucket "$BACKUP_BUCKET" \
+            --key "${{ steps.backup.outputs.key }}" \
+            /tmp/backup.dump >/tmp/get-object.json
+          actual=$(sha256sum /tmp/backup.dump | awk '{print $1}')
+          [ "$actual" = "${{ steps.backup.outputs.sha256 }}" ]
+          stat -c %s /tmp/backup.dump > /tmp/backup-size
+
+      - name: Restore into an isolated PostgreSQL container
+        run: |
+          docker run -d --name c3po-postgres-restore-drill \
+            -e POSTGRES_PASSWORD=restore-only \
+            -e POSTGRES_DB=c3po_restore \
+            postgres:16-alpine
+          for _ in $(seq 1 60); do
+            docker exec c3po-postgres-restore-drill \
+              pg_isready -U postgres -d c3po_restore >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker cp /tmp/backup.dump c3po-postgres-restore-drill:/tmp/backup.dump
+          docker exec c3po-postgres-restore-drill \
+            pg_restore --list /tmp/backup.dump > /tmp/pg-restore-list
+          [ -s /tmp/pg-restore-list ]
+          docker exec c3po-postgres-restore-drill \
+            pg_restore -U postgres -d c3po_restore --no-owner --no-privileges \
+              /tmp/backup.dump
+          docker exec c3po-postgres-restore-drill \
+            psql -U postgres -d c3po_restore -Atc \
+              "select count(*) from pg_tables where schemaname='public';" \
+            > /tmp/table-count
+          docker exec c3po-postgres-restore-drill \
+            psql -U postgres -d c3po_restore -Atc \
+              "select count(*) from (values
+                (to_regclass('public.analysis_snapshots')),
+                (to_regclass('public.r2d2_experiments')),
+                (to_regclass('public.r2d2_trades')),
+                (to_regclass('public.r2d2_entry_score_observations')),
+                (to_regclass('public.r2d2_cash_yield_ledger'))
+              ) as critical(name) where name is not null;" \
+            > /tmp/critical-table-count
+          [ "$(cat /tmp/table-count)" -gt 0 ]
+          [ "$(cat /tmp/critical-table-count)" -eq 5 ]
+
+      - name: Seal drill evidence
+        id: evidence
+        run: |
+          evidence=/tmp/postgres-restore-drill
+          mkdir -p "$evidence"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path("/tmp/postgres-restore-drill")
+          result = {
+              "schema": "C3PO_POSTGRES_RESTORE_DRILL-v1",
+              "status": "succeeded",
+              "completed_at": datetime.now(timezone.utc).isoformat(),
+              "backup_session_date": "${{ steps.backup.outputs.session_date }}",
+              "object_key": "${{ steps.backup.outputs.key }}",
+              "backup_sha256": "${{ steps.backup.outputs.sha256 }}",
+              "backup_size_bytes": int(Path("/tmp/backup-size").read_text()),
+              "pg_restore_list_valid": True,
+              "pg_restore_list_line_count": sum(
+                  1 for line in Path("/tmp/pg-restore-list").read_text().splitlines()
+                  if line and not line.startswith(";")
+              ),
+              "restored_public_table_count": int(Path("/tmp/table-count").read_text()),
+              "critical_tables_present": int(Path("/tmp/critical-table-count").read_text()),
+          }
+          canonical = json.dumps(result, sort_keys=True, separators=(",", ":")).encode()
+          result["self_sha256"] = hashlib.sha256(canonical).hexdigest()
+          (root / "result.json").write_text(
+              json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+          (cd "$evidence" && sha256sum result.json >SHA256SUMS)
+          echo "path=$evidence" >> "$GITHUB_OUTPUT"
+
+      - name: Copy evidence back to the production evidence tree
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          destination="/opt/chief-of-staff-digital/outputs/evidence/postgres-restore-drill/$(date -u +%F)/${GITHUB_RUN_ID}"
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" "mkdir -p '$destination'"
+          scp -i ~/.ssh/c3po_deploy \
+            /tmp/postgres-restore-drill/result.json \
+            /tmp/postgres-restore-drill/SHA256SUMS \
+            "$USER@$HOST:$destination/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: postgres-restore-drill-${{ github.run_id }}
+          path: /tmp/postgres-restore-drill
+          if-no-files-found: error
+
+      - name: Complete dead-man check
+        if: success()
+        run: |
+          curl --silent --show-error --fail --max-time 10 \
+            "${HEALTHCHECK_URL%/}" >/dev/null 2>&1 || true
+
+      - name: Fail dead-man check
+        if: failure()
+        run: |
+          curl --silent --show-error --fail --max-time 10 \
+            "${HEALTHCHECK_URL%/}/fail" >/dev/null 2>&1 || true

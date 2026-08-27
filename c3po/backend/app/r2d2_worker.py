@@ -17,6 +17,7 @@ from .microstructure_capture import AppendOnlyRawStreamCapture, CompositeRawStre
 from .microstructure_processor import MicrostructureProcessor
 from .microstructure_telemetry import MicrostructureResourceTelemetry
 from .one_pager import OnePagerService
+from .observability import init_sentry
 from .r2d2 import R2D2PaperService
 
 
@@ -74,6 +75,7 @@ def _fast_risk_watcher_loop(service: R2D2PaperService, stop: Event, interval_sec
 
 def main() -> None:
     settings = get_settings()
+    init_sentry(settings, service_name="r2d2-worker")
     database = Database(settings)
     database.initialize()
     market_data = MarketDataService(settings, database)
