@@ -1,6 +1,6 @@
 name: Validate ENTRY_QUALITY_STUDY PR 257 on production data
 
-# Temporary branch-only read-only follow-up for cash and frozen source diagnostics.
+# Temporary branch-only reconstruction of the signed plan from frozen RAW bytes.
 
 on:
   workflow_dispatch:
@@ -9,10 +9,10 @@ permissions:
   contents: read
 
 jobs:
-  factual-follow-up:
+  frozen-plan:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Configure production SSH key
         env:
@@ -25,126 +25,96 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Read cash ledger and current frozen-source bytes
+      - name: Reconstruct frozen prefix and run plan only
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
-          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
-          set -euo pipefail
+          ssh -i ~/.ssh/c3po_deploy \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$USER@$HOST" "RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -u
           APP_DIR=/opt/chief-of-staff-digital
-          OUT="/tmp/overnight-follow-up-${RUN_ID}"
-          mkdir -p "$OUT"
-          cd "$APP_DIR"
-          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          SOURCE_ROOT=/tmp/overnight-audit-33064012836
+          INPUT="$SOURCE_ROOT/inputs"
+          RAW_RELATIVE=provider=eodhd/microstructure/raw/session_date=2026-08-26/feed=trade-part-00001.ndjson
+          RAW_SOURCE="/mnt/day-d-data/$RAW_RELATIVE"
+          EXPECTED_SIZE=67073447
+          EXPECTED_SHA=b202c4d3a6e99a9136d6a02b76e585d4ea83ba6cff56aea86a1c5875c48af2fc
+          ROOT="/tmp/tape-probe-plan-${RUN_ID}"
+          FROZEN="$ROOT/frozen-raw26.ndjson"
+          mkdir -p "$ROOT"
 
-          "${compose[@]}" run --rm -T api python - <<'PY' > "$OUT/cash-yield.json"
-          import json
-
-          from app.config import get_settings
-          from app.database import Database
-          from app.r2d2_cash_yield import RUN_ANALYSIS_TYPE, RUN_ENTITY_KEY
-
-          settings = get_settings()
-          database = Database(settings)
-          with database.connection() as connection:
-              experiment = connection.execute(
-                  "SELECT id::text, code, start_date FROM r2d2_experiments WHERE code=%s",
-                  (settings.r2d2_experiment_code,),
-              ).fetchone()
-              rows = connection.execute(
-                  """SELECT session_date, prior_session_date, base_cash_usd,
-                            annual_coupon_equivalent_rate, calendar_days, daily_factor,
-                            interest_income_usd, source_observation_date, source_available_at,
-                            source_fetched_at, source_payload_sha256, entry_sha256, backfilled_at
-                     FROM r2d2_cash_yield_ledger
-                     WHERE experiment_id=%s ORDER BY session_date""",
-                  (experiment[0],),
-              ).fetchall()
-          keys = (
-              "session_date", "prior_session_date", "base_cash_usd",
-              "annual_coupon_equivalent_rate", "calendar_days", "daily_factor",
-              "interest_income_usd", "source_observation_date", "source_available_at",
-              "source_fetched_at", "source_payload_sha256", "entry_sha256", "backfilled_at",
-          )
-          entries = [dict(zip(keys, row)) for row in rows]
-          latest = database.latest_analysis_snapshot(RUN_ANALYSIS_TYPE, RUN_ENTITY_KEY)
-          payload = {
-              "experiment": {
-                  "id": experiment[0], "code": experiment[1], "start_date": experiment[2],
-              },
-              "entry_count": len(entries),
-              "session_dates": [row["session_date"] for row in entries],
-              "interest_income_total_usd": sum(float(row["interest_income_usd"]) for row in entries),
-              "entries": entries,
-              "latest_run": latest,
-          }
-          print(json.dumps(payload, sort_keys=True, indent=2, default=str))
-          PY
-
-          python3 - <<'PY' > "$OUT/entry-price-sources-current.json"
-          import hashlib
+          head -c "$EXPECTED_SIZE" "$RAW_SOURCE" > "$FROZEN"
+          prefix_sha=$(sha256sum "$FROZEN" | awk '{print $1}')
+          current_sha=$(sha256sum "$RAW_SOURCE" | awk '{print $1}')
+          current_size=$(stat -c %s "$RAW_SOURCE")
+          prefix_ok=false
+          if [ "$prefix_sha" = "$EXPECTED_SHA" ]; then
+            prefix_ok=true
+          fi
+          python3 - "$ROOT/frozen-prefix-recovery.json" <<PY
           import json
           from pathlib import Path
-
-          root = Path("/mnt/day-d-data")
-          expected = [
-              ("provider=massive/dataset=minute_aggregates/session_date=2026-08-17/source.csv.gz", 27682206, "cbf540f80ac12f1c313e7d63b9deadf400d81a221d20d5c2a474a7926f11f17c"),
-              ("provider=massive/dataset=minute_aggregates/session_date=2026-08-18/source.csv.gz", 27557649, "b667f0ac89431d3c6d14c19d03f39b4d614ada2db7269d51c0fb25cb0b1c8c1f"),
-              ("provider=massive/dataset=minute_aggregates/session_date=2026-08-19/source.csv.gz", 28879665, "ddb2fd8794ac38534a31d2bfb21ba553d110e0749562dfbe2e9965facfd7044d"),
-              ("provider=massive/dataset=minute_aggregates/session_date=2026-08-20/source.csv.gz", 28019112, "276e13233b9b36b0ee2bde00491a4b33e6ec67a75773e1a7c452921ad62d2703"),
-              ("provider=massive/dataset=minute_aggregates/session_date=2026-08-21/source.csv.gz", 27336179, "5ba68255eb8b6b6ac73d2912dad4eb3f21bc886f2fb5e72427ee7981ff38ef17"),
-              ("provider=eodhd/microstructure/raw/session_date=2026-08-24/feed=trade-part-00001.ndjson", 88661964, "2fb125c134afff86c1fc9727a42f8f64ebbcbaa4db09b74c5279b4cbed12b2d9"),
-              ("provider=eodhd/microstructure/raw/session_date=2026-08-26/feed=trade-part-00001.ndjson", 67073447, "b202c4d3a6e99a9136d6a02b76e585d4ea83ba6cff56aea86a1c5875c48af2fc"),
-          ]
-          rows = []
-          for relative, expected_size, expected_sha in expected:
-              path = root / relative
-              if not path.is_file():
-                  rows.append({"path": relative, "missing": True})
-                  continue
-              digest = hashlib.sha256()
-              with path.open("rb") as handle:
-                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                      digest.update(chunk)
-              observed_sha = digest.hexdigest()
-              observed_size = path.stat().st_size
-              rows.append({
-                  "path": relative,
-                  "expected_size_bytes": expected_size,
-                  "observed_size_bytes": observed_size,
-                  "expected_sha256": expected_sha,
-                  "observed_sha256": observed_sha,
-                  "size_matches": observed_size == expected_size,
-                  "sha256_matches": observed_sha == expected_sha,
-              })
-          print(json.dumps({
-              "all_match": all(row.get("sha256_matches") for row in rows),
-              "sources": rows,
-          }, sort_keys=True, indent=2))
+          payload = {
+              "method": "read-only exact-byte prefix mounted only inside the plan container",
+              "source_path": "$RAW_SOURCE",
+              "source_observed_size_bytes": int("$current_size"),
+              "source_observed_sha256": "$current_sha",
+              "frozen_prefix_size_bytes": int("$EXPECTED_SIZE"),
+              "frozen_prefix_expected_sha256": "$EXPECTED_SHA",
+              "frozen_prefix_observed_sha256": "$prefix_sha",
+              "frozen_prefix_verified": "$prefix_ok" == "true",
+              "production_source_modified": False,
+              "external_api_calls": 0,
+          }
+          Path("$ROOT/frozen-prefix-recovery.json").write_text(
+              json.dumps(payload, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
           PY
 
-          (cd "$OUT" && sha256sum cash-yield.json entry-price-sources-current.json > SHA256SUMS)
-          tar -C "$OUT" -czf "/tmp/overnight-follow-up-${RUN_ID}.tgz" .
+          plan_exit=98
+          if [ "$prefix_ok" = true ]; then
+            cd "$APP_DIR" || exit 1
+            compose=(docker compose --env-file .env -f c3po/compose.yml)
+            "${compose[@]}" run --rm -T \
+              -v "$INPUT:/probe-input:ro" \
+              -v "$FROZEN:/app/day-d-data/$RAW_RELATIVE:ro" \
+              api python -m app.microstructure_tape_probe plan \
+              --exit-report /app/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27/report.json \
+              --entry-report /probe-input/entry-report.json \
+              --entry-manifest /probe-input/entry-manifest.json \
+              --spec /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1.md \
+              --amendment /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1.md \
+              --dudu-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_DUDU.md \
+              --codex-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_CODEX.md \
+              > "$ROOT/plan.json" 2> "$ROOT/plan.error.txt"
+            plan_exit=$?
+          else
+            printf '%s\n' 'Frozen RAW prefix hash did not match the signed input.' > "$ROOT/plan.error.txt"
+          fi
+          printf '%s\n' "$plan_exit" > "$ROOT/plan.exit-code.txt"
+          (cd "$ROOT" && sha256sum frozen-prefix-recovery.json plan.error.txt plan.exit-code.txt $(test -f plan.json && printf plan.json) > SHA256SUMS)
+          tar -C "$ROOT" -czf "/tmp/tape-probe-plan-${RUN_ID}.tgz" .
           REMOTE
 
-      - name: Download and verify follow-up
+      - name: Download and verify frozen plan package
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
-          mkdir -p /tmp/overnight-follow-up
+          mkdir -p /tmp/tape-probe-plan
           scp -i ~/.ssh/c3po_deploy \
-            "$USER@$HOST:/tmp/overnight-follow-up-${GITHUB_RUN_ID}.tgz" \
-            /tmp/overnight-follow-up.tgz
-          tar -xzf /tmp/overnight-follow-up.tgz -C /tmp/overnight-follow-up
-          (cd /tmp/overnight-follow-up && sha256sum -c SHA256SUMS)
+            "$USER@$HOST:/tmp/tape-probe-plan-${GITHUB_RUN_ID}.tgz" \
+            /tmp/tape-probe-plan.tgz
+          tar -xzf /tmp/tape-probe-plan.tgz -C /tmp/tape-probe-plan
+          (cd /tmp/tape-probe-plan && sha256sum -c SHA256SUMS)
 
-      - name: Publish factual follow-up artifact
+      - name: Publish frozen plan artifact
         uses: actions/upload-artifact@v4
         with:
-          name: overnight-follow-up-2026-08-27-${{ github.run_id }}
-          path: /tmp/overnight-follow-up
+          name: tape-probe-plan-2026-08-27-${{ github.run_id }}
+          path: /tmp/tape-probe-plan
           if-no-files-found: error
           retention-days: 30
