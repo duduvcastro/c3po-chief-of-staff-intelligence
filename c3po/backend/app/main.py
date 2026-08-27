@@ -846,7 +846,7 @@ def server_usage_snapshot(hours: int = Query(default=24, ge=1, le=168)) -> Serve
 
 
 @app.get("/api/v1/code-census")
-def code_census_snapshot(days: int = Query(default=30, ge=2, le=365)) -> dict:
+def code_census_snapshot(days: int | None = Query(default=None, ge=2, le=365)) -> dict:
     return code_census.snapshot(days=days)
 
 

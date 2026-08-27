@@ -205,15 +205,17 @@ class CodeCensusService:
         self.healthcheck.ping("success")
         return bool(inserted)
 
-    def snapshot(self, days: int = 30) -> dict[str, Any]:
-        with self.database.connection() as connection:
-            rows = connection.execute(
-                """SELECT session_date, methodology, layers, total_lines, total_files,
+    def snapshot(self, days: int | None = None) -> dict[str, Any]:
+        query = """SELECT session_date, methodology, layers, total_lines, total_files,
                           docs_lines, docs_files, generated_at
                    FROM code_census_daily
-                   ORDER BY session_date DESC LIMIT %s""",
-                (max(2, days),),
-            ).fetchall()
+                   ORDER BY session_date DESC"""
+        params: tuple[int, ...] = ()
+        if days is not None:
+            query += " LIMIT %s"
+            params = (max(2, days),)
+        with self.database.connection() as connection:
+            rows = connection.execute(query, params).fetchall()
         series = [
             {
                 "session_date": row[0].isoformat(),

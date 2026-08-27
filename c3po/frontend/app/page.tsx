@@ -7450,7 +7450,7 @@ function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformance
 
   const loadCodeCensus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/api/v1/code-census?days=30`, {
+      const response = await fetch(`${API_URL}/api/v1/code-census`, {
         cache: "no-store",
         credentials: "include"
       });
@@ -7700,7 +7700,9 @@ function CodeCensusSection({ data }: { data: CodeCensusSnapshot | null }) {
     );
   }
 
-  const series = data.series.length > 0 ? [...data.series].reverse() : [data.latest];
+  const series = data.series.length > 0
+    ? [...data.series].sort((left, right) => left.session_date.localeCompare(right.session_date))
+    : [data.latest];
   const totals = series.map((item) => item.total_lines);
   const rawMin = Math.min(...totals);
   const rawMax = Math.max(...totals);
@@ -7726,7 +7728,7 @@ function CodeCensusSection({ data }: { data: CodeCensusSnapshot | null }) {
     <section className="server-code-census">
       <header className="server-code-census-head">
         <div><Cpu size={18} /><div><span>CODE CENSUS</span><strong>{data.latest.total_lines.toLocaleString("pt-BR")} lines</strong></div></div>
-        <small>{data.series.length} daily snapshot{data.series.length === 1 ? "" : "s"} · 30-day history</small>
+        <small>{series.length} daily snapshot{series.length === 1 ? "" : "s"} · continuous history</small>
       </header>
       <div className="code-census-table">
         {(data.layer_order ?? []).map((layer) => {
@@ -7754,7 +7756,7 @@ function CodeCensusSection({ data }: { data: CodeCensusSnapshot | null }) {
         </div>
       </div>
       <div className="code-census-history">
-        <header><div><span>CODE GROWTH</span><strong>Daily total</strong></div><small>{dateLabel(series[0].session_date)} – {dateLabel(series[series.length - 1].session_date)}</small></header>
+        <header><div><span>CODE GROWTH</span><strong>Daily total</strong></div><small>Since {dateLabel(series[0].session_date)} · ongoing</small></header>
         <svg viewBox={`0 0 ${CODE_CENSUS_CHART.width} ${CODE_CENSUS_CHART.height}`} role="img" aria-label={`Code Census daily history with ${series.length} observations`}>
           {guideValues.map((value) => (
             <line className="code-census-chart-grid" key={value} x1={CODE_CENSUS_CHART.left} x2={CODE_CENSUS_CHART.width - CODE_CENSUS_CHART.right} y1={y(value)} y2={y(value)} />
