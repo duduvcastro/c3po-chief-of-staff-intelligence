@@ -1,6 +1,6 @@
 name: Validate ENTRY_QUALITY_STUDY PR 257 on production data
 
-# Temporary branch-only recovery of the completed read-only audit package.
+# Temporary branch-only read-only follow-up for cash and frozen source diagnostics.
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  recover-factual-audit:
+  factual-follow-up:
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 15
@@ -25,86 +25,126 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Package the completed audit with privileged evidence reads
+      - name: Read cash ledger and current frozen-source bytes
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
-          SOURCE_RUN_ID: 33064012836
         run: |
           ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "SOURCE_RUN_ID='$SOURCE_RUN_ID' TARGET_RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+            "RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
           set -euo pipefail
-          SOURCE_ROOT="/tmp/overnight-audit-${SOURCE_RUN_ID}"
-          OUT="$SOURCE_ROOT/evidence"
-          EXIT_SOURCE=/mnt/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27
-          test -d "$OUT"
+          APP_DIR=/opt/chief-of-staff-digital
+          OUT="/tmp/overnight-follow-up-${RUN_ID}"
+          mkdir -p "$OUT"
+          cd "$APP_DIR"
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
 
-          sudo rm -rf "$OUT/exit-policy-study"
-          sudo cp -a "$EXIT_SOURCE" "$OUT/exit-policy-study"
-          sudo chown -R "$(id -u):$(id -g)" "$OUT/exit-policy-study"
-
-          python3 - "$OUT" <<'PY' > "$OUT/exit-policy-summary.json"
-          import hashlib
+          "${compose[@]}" run --rm -T api python - <<'PY' > "$OUT/cash-yield.json"
           import json
-          import subprocess
-          import sys
-          from pathlib import Path
 
-          root = Path(sys.argv[1])
-          study = root / "exit-policy-study"
-          checked = subprocess.run(
-              ["sha256sum", "-c", "SHA256SUMS"],
-              cwd=study,
-              text=True,
-              capture_output=True,
+          from app.config import get_settings
+          from app.database import Database
+          from app.r2d2_cash_yield import RUN_ANALYSIS_TYPE, RUN_ENTITY_KEY
+
+          settings = get_settings()
+          database = Database(settings)
+          with database.connection() as connection:
+              experiment = connection.execute(
+                  "SELECT id::text, code, start_date FROM r2d2_experiments WHERE code=%s",
+                  (settings.r2d2_experiment_code,),
+              ).fetchone()
+              rows = connection.execute(
+                  """SELECT session_date, prior_session_date, base_cash_usd,
+                            annual_coupon_equivalent_rate, calendar_days, daily_factor,
+                            interest_income_usd, source_observation_date, source_available_at,
+                            source_fetched_at, source_payload_sha256, entry_sha256, backfilled_at
+                     FROM r2d2_cash_yield_ledger
+                     WHERE experiment_id=%s ORDER BY session_date""",
+                  (experiment[0],),
+              ).fetchall()
+          keys = (
+              "session_date", "prior_session_date", "base_cash_usd",
+              "annual_coupon_equivalent_rate", "calendar_days", "daily_factor",
+              "interest_income_usd", "source_observation_date", "source_available_at",
+              "source_fetched_at", "source_payload_sha256", "entry_sha256", "backfilled_at",
           )
-          report = json.loads((study / "report.json").read_text(encoding="utf-8"))
-          encoded = json.dumps(
-              {key: value for key, value in report.items() if key != "report_sha256"},
-              sort_keys=True,
-              separators=(",", ":"),
-              ensure_ascii=True,
-              allow_nan=False,
-          ).encode("utf-8")
-          observed = hashlib.sha256(encoded).hexdigest()
+          entries = [dict(zip(keys, row)) for row in rows]
+          latest = database.latest_analysis_snapshot(RUN_ANALYSIS_TYPE, RUN_ENTITY_KEY)
           payload = {
-              "source_present": True,
-              "sha256sums_passed": checked.returncode == 0,
-              "sha256sums_output": (checked.stdout + checked.stderr).strip(),
-              "report_sha256": report.get("report_sha256"),
-              "report_self_hash_observed": observed,
-              "report_self_hash_passed": report.get("report_sha256") == observed,
-              "result": json.loads((study / "result.json").read_text(encoding="utf-8")),
-              "postflight": json.loads((study / "postflight.json").read_text(encoding="utf-8")),
+              "experiment": {
+                  "id": experiment[0], "code": experiment[1], "start_date": experiment[2],
+              },
+              "entry_count": len(entries),
+              "session_dates": [row["session_date"] for row in entries],
+              "interest_income_total_usd": sum(float(row["interest_income_usd"]) for row in entries),
+              "entries": entries,
+              "latest_run": latest,
           }
-          print(json.dumps(payload, sort_keys=True, indent=2))
+          print(json.dumps(payload, sort_keys=True, indent=2, default=str))
           PY
 
-          (
-            cd "$OUT"
-            find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
-          )
-          tar -C "$SOURCE_ROOT" -czf "/tmp/overnight-audit-${TARGET_RUN_ID}.tgz" evidence
-          test -s "/tmp/overnight-audit-${TARGET_RUN_ID}.tgz"
-          ls -lh "/tmp/overnight-audit-${TARGET_RUN_ID}.tgz"
+          python3 - <<'PY' > "$OUT/entry-price-sources-current.json"
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path("/mnt/day-d-data")
+          expected = [
+              ("provider=massive/dataset=minute_aggregates/session_date=2026-08-17/source.csv.gz", 27682206, "cbf540f80ac12f1c313e7d63b9deadf400d81a221d20d5c2a474a7926f11f17c"),
+              ("provider=massive/dataset=minute_aggregates/session_date=2026-08-18/source.csv.gz", 27557649, "b667f0ac89431d3c6d14c19d03f39b4d614ada2db7269d51c0fb25cb0b1c8c1f"),
+              ("provider=massive/dataset=minute_aggregates/session_date=2026-08-19/source.csv.gz", 28879665, "ddb2fd8794ac38534a31d2bfb21ba553d110e0749562dfbe2e9965facfd7044d"),
+              ("provider=massive/dataset=minute_aggregates/session_date=2026-08-20/source.csv.gz", 28019112, "276e13233b9b36b0ee2bde00491a4b33e6ec67a75773e1a7c452921ad62d2703"),
+              ("provider=massive/dataset=minute_aggregates/session_date=2026-08-21/source.csv.gz", 27336179, "5ba68255eb8b6b6ac73d2912dad4eb3f21bc886f2fb5e72427ee7981ff38ef17"),
+              ("provider=eodhd/microstructure/raw/session_date=2026-08-24/feed=trade-part-00001.ndjson", 88661964, "2fb125c134afff86c1fc9727a42f8f64ebbcbaa4db09b74c5279b4cbed12b2d9"),
+              ("provider=eodhd/microstructure/raw/session_date=2026-08-26/feed=trade-part-00001.ndjson", 67073447, "b202c4d3a6e99a9136d6a02b76e585d4ea83ba6cff56aea86a1c5875c48af2fc"),
+          ]
+          rows = []
+          for relative, expected_size, expected_sha in expected:
+              path = root / relative
+              if not path.is_file():
+                  rows.append({"path": relative, "missing": True})
+                  continue
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              observed_sha = digest.hexdigest()
+              observed_size = path.stat().st_size
+              rows.append({
+                  "path": relative,
+                  "expected_size_bytes": expected_size,
+                  "observed_size_bytes": observed_size,
+                  "expected_sha256": expected_sha,
+                  "observed_sha256": observed_sha,
+                  "size_matches": observed_size == expected_size,
+                  "sha256_matches": observed_sha == expected_sha,
+              })
+          print(json.dumps({
+              "all_match": all(row.get("sha256_matches") for row in rows),
+              "sources": rows,
+          }, sort_keys=True, indent=2))
+          PY
+
+          (cd "$OUT" && sha256sum cash-yield.json entry-price-sources-current.json > SHA256SUMS)
+          tar -C "$OUT" -czf "/tmp/overnight-follow-up-${RUN_ID}.tgz" .
           REMOTE
 
-      - name: Download and verify factual audit package
+      - name: Download and verify follow-up
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
+          mkdir -p /tmp/overnight-follow-up
           scp -i ~/.ssh/c3po_deploy \
-            "$USER@$HOST:/tmp/overnight-audit-${GITHUB_RUN_ID}.tgz" \
-            /tmp/overnight-audit.tgz
-          mkdir -p /tmp/overnight-audit
-          tar -xzf /tmp/overnight-audit.tgz -C /tmp/overnight-audit
-          (cd /tmp/overnight-audit/evidence && sha256sum -c SHA256SUMS)
+            "$USER@$HOST:/tmp/overnight-follow-up-${GITHUB_RUN_ID}.tgz" \
+            /tmp/overnight-follow-up.tgz
+          tar -xzf /tmp/overnight-follow-up.tgz -C /tmp/overnight-follow-up
+          (cd /tmp/overnight-follow-up && sha256sum -c SHA256SUMS)
 
-      - name: Publish factual audit artifact
+      - name: Publish factual follow-up artifact
         uses: actions/upload-artifact@v4
         with:
-          name: overnight-audit-2026-08-27-${{ github.run_id }}
-          path: /tmp/overnight-audit/evidence
+          name: overnight-follow-up-2026-08-27-${{ github.run_id }}
+          path: /tmp/overnight-follow-up
           if-no-files-found: error
           retention-days: 30
