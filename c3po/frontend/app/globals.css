@@ -1547,12 +1547,34 @@ button { cursor: pointer; }
 .api-usage-critical .api-usage-meter span { background: var(--red); }
 .api-usage-critical header strong { color: var(--red); }
 .api-usage-empty { padding: 18px 16px; color: var(--muted); font-size: 10px; }
-.code-census-table { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 14px 16px; }
+.server-code-census { min-width: 0; border-bottom: 1px solid var(--line); background: #fff; }
+.server-code-census-head { min-height: 62px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 20px; border-bottom: 1px solid var(--line); }
+.server-code-census-head > div { display: flex; align-items: center; gap: 10px; }
+.server-code-census-head > div > svg { color: var(--gold); }
+.server-code-census-head span { display: block; color: var(--gold-deep); font-size: 9px; font-weight: 900; }
+.server-code-census-head strong { display: block; margin-top: 4px; font-size: 16px; }
+.server-code-census-head small { color: var(--muted); font-size: 9px; }
+.server-code-census-empty { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 20px; color: var(--muted); }
+.server-code-census-empty > div { display: flex; align-items: center; gap: 9px; color: var(--ink); }
+.server-code-census-empty > div svg { color: var(--gold); }
+.server-code-census-empty span { font-size: 9px; }
+.code-census-table { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 14px 16px; }
 .code-census-table > div { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; }
 .code-census-table > div > span { font-size: 8px; font-weight: 800; text-transform: uppercase; color: #89929d; }
 .code-census-table > div > strong { font-size: 15px; font-variant-numeric: tabular-nums; }
 .code-census-table > div > small { font-size: 8px; color: #9098a3; }
 .code-census-total { background: var(--gold-soft); }
+.code-census-history { margin: 0 16px 12px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fbfbfa; }
+.code-census-history > header { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+.code-census-history > header span { display: block; color: var(--gold-deep); font-size: 8px; font-weight: 900; }
+.code-census-history > header strong { display: block; margin-top: 2px; font-size: 11px; }
+.code-census-history > header small { color: var(--muted); font-size: 8px; }
+.code-census-history svg { width: 100%; height: auto; aspect-ratio: 1000 / 150; display: block; }
+.code-census-chart-grid { stroke: #e1e4e7; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.code-census-chart-line { fill: none; stroke: var(--gold); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.code-census-chart-point { fill: var(--gold); stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.code-census-chart-date { fill: #89919b; font-size: 9px; font-weight: 700; }
+.code-census-chart-value { fill: var(--gold-deep); font-size: 11px; font-weight: 900; }
 .code-census-footnote { display: block; padding: 0 16px 12px; color: #8f99a5; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
 @media (max-width: 900px) { .code-census-table { grid-template-columns: repeat(2, 1fr); } }
 .system-health-group-grid { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: start; }
@@ -1589,6 +1611,7 @@ button { cursor: pointer; }
 .server-usage-metrics strong { display: block; margin-top: 8px; font-size: 25px; line-height: 1; }
 .server-usage-metrics small { margin-top: 7px; overflow: hidden; color: #8c949e; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .server-api-performance { border-bottom: 1px solid var(--line); background: #fff; }
+.server-infrastructure-load { border-bottom: 1px solid var(--line); background: #fff; }
 .server-api-performance > header { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 20px; border-bottom: 1px solid var(--line); }
 .server-api-performance > header span { display: block; color: var(--gold-deep); font-size: 9px; font-weight: 900; }
 .server-api-performance > header strong { display: block; margin-top: 4px; font-size: 15px; }
@@ -2428,6 +2451,12 @@ button { cursor: pointer; }
   .server-usage-actions { width: 100%; justify-content: space-between; }
   .server-usage-metrics > div { min-height: 92px; padding: 12px; }
   .server-usage-metrics strong { font-size: 20px; }
+  .server-code-census-head { min-height: 72px; align-items: flex-start; flex-direction: column; justify-content: center; gap: 5px; padding: 10px 14px; }
+  .code-census-table { gap: 7px; padding: 10px; }
+  .code-census-table > div { min-width: 0; padding: 9px; }
+  .code-census-history { margin: 0 10px 10px; }
+  .code-census-history > header { padding: 8px 10px; }
+  .code-census-history svg { min-height: 116px; }
   .server-chart-head { align-items: flex-start; flex-direction: column; padding: 16px 14px 8px; }
   .server-chart-legend { gap: 11px; }
   .server-chart-wrap { padding: 0 4px 5px; }
