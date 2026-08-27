@@ -61,7 +61,9 @@ jobs:
           scp -i ~/.ssh/c3po_deploy \
             "$USER@$HOST:/tmp/microstructure-tape-probe-recovery-33068944847.tgz.sha256" \
             /tmp/microstructure-tape-probe-recovery/package.tgz.sha256
-          (cd /tmp/microstructure-tape-probe-recovery && sha256sum -c package.tgz.sha256)
+          expected=$(awk '{print $1}' /tmp/microstructure-tape-probe-recovery/package.tgz.sha256)
+          actual=$(sha256sum /tmp/microstructure-tape-probe-recovery/package.tgz | awk '{print $1}')
+          test "$actual" = "$expected"
           mkdir -p /tmp/microstructure-tape-probe-recovery/recovered
           tar -xzf /tmp/microstructure-tape-probe-recovery/package.tgz \
             -C /tmp/microstructure-tape-probe-recovery/recovered
