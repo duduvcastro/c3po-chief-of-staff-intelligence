@@ -7411,6 +7411,7 @@ function formatPerformanceDuration(value: number | null) {
 function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformanceStats }) {
   const [data, setData] = useState<ServerUsageResponse | null>(null);
   const [performanceHistory, setPerformanceHistory] = useState<PerformanceHistoryResponse | null>(null);
+  const [codeCensus, setCodeCensus] = useState<CodeCensusSnapshot | null>(null);
   const [selectedServerId, setSelectedServerId] = useState("");
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -7447,6 +7448,18 @@ function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformance
     }
   }, []);
 
+  const loadCodeCensus = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/code-census?days=30`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      if (response.ok) setCodeCensus(await response.json());
+    } catch {
+      // Keep infrastructure telemetry available if the census endpoint is unavailable.
+    }
+  }, []);
+
   useEffect(() => {
     load();
     const timer = window.setInterval(() => load(true), 60_000);
@@ -7458,6 +7471,12 @@ function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformance
     const timer = window.setInterval(loadPerformanceHistory, 15 * 60_000);
     return () => window.clearInterval(timer);
   }, [loadPerformanceHistory]);
+
+  useEffect(() => {
+    void loadCodeCensus();
+    const timer = window.setInterval(loadCodeCensus, 15 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [loadCodeCensus]);
 
   const server = data?.servers.find((item) => item.server_id === selectedServerId) ?? data?.servers[0];
   const pageLoadAverageMs = pageLoadStats.count ? pageLoadStats.totalMs / pageLoadStats.count : null;
@@ -7532,6 +7551,65 @@ function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformance
           <div><span><PanelsTopLeft size={15} />Render & UI</span><strong>{formatPerformanceDuration(renderAverageMs)}</strong><small>Total minus active API wait</small></div>
         </div>
 
+        <CodeCensusSection data={codeCensus} />
+
+        <section className="server-infrastructure-load">
+          <div className="server-chart-head">
+            <div><span>INFRASTRUCTURE LOAD</span><strong>Last 24 hours</strong></div>
+            <div className="server-chart-legend"><span><i className="cpu" />CPU · MA 5 min</span><span><i className="disk" />Disk used</span></div>
+          </div>
+
+          <div className="server-chart-wrap">
+            <svg
+              className="server-chart"
+              viewBox={`0 0 ${SERVER_CHART.width} ${SERVER_CHART.height}`}
+              role="img"
+              aria-label="CPU moving average and disk usage over the last 24 hours"
+              onPointerMove={(event) => {
+                if (!points.length) return;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const relative = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+                setHoveredIndex(Math.round(relative * (points.length - 1)));
+              }}
+              onPointerLeave={() => setHoveredIndex(null)}
+            >
+              {[0, 25, 50, 75, 100].map((value) => (
+                <g key={value}>
+                  <line className="server-chart-grid" x1={SERVER_CHART.left} x2={SERVER_CHART.width - SERVER_CHART.right} y1={serverChartY(value)} y2={serverChartY(value)} />
+                  <text className="server-chart-y-label" x={SERVER_CHART.left - 12} y={serverChartY(value) + 4} textAnchor="end">{value}%</text>
+                </g>
+              ))}
+              {timeMarkers.map((index) => (
+                <text className="server-chart-x-label" key={`${points[index].collected_at}-${index}`} x={serverChartX(index, points.length)} y={SERVER_CHART.height - 10} textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}>{formatServerTime(points[index].collected_at)}</text>
+              ))}
+              {cpuSegments.map((path, index) => <path className="server-chart-line server-chart-line-cpu" d={path} key={`cpu-${index}`} />)}
+              {diskSegments.map((path, index) => <path className="server-chart-line server-chart-line-disk" d={path} key={`disk-${index}`} />)}
+              {latestDiskIndex >= 0 && points[latestDiskIndex].disk_percent !== null && (
+                <circle className="server-chart-point disk" cx={serverChartX(latestDiskIndex, points.length)} cy={serverChartY(points[latestDiskIndex].disk_percent as number)} r="4" />
+              )}
+              {hovered && hoveredIndex !== null && (
+                <g>
+                  <line className="server-chart-cursor" x1={serverChartX(hoveredIndex, points.length)} x2={serverChartX(hoveredIndex, points.length)} y1={SERVER_CHART.top} y2={SERVER_CHART.height - SERVER_CHART.bottom} />
+                  {hovered.cpu_moving_average_5m !== null && <circle className="server-chart-point cpu" cx={serverChartX(hoveredIndex, points.length)} cy={serverChartY(hovered.cpu_moving_average_5m)} r="5" />}
+                  {hovered.disk_percent !== null && <circle className="server-chart-point disk" cx={serverChartX(hoveredIndex, points.length)} cy={serverChartY(hovered.disk_percent)} r="5" />}
+                </g>
+              )}
+            </svg>
+            {hovered && hoveredIndex !== null && (
+              <div className="server-chart-tooltip" style={{ left: `${Math.max(8, Math.min(82, hoveredIndex / Math.max(1, points.length - 1) * 100))}%` }}>
+                <span>{formatServerTime(hovered.collected_at)}</span>
+                <strong>CPU {hovered.cpu_moving_average_5m === null ? "N/D" : `${hovered.cpu_moving_average_5m.toFixed(1).replace(".", ",")}%`}</strong>
+                <strong>Disk {hovered.disk_percent === null ? "collecting" : `${hovered.disk_percent.toFixed(1).replace(".", ",")}%`}</strong>
+              </div>
+            )}
+          </div>
+
+          <footer className="server-usage-foot">
+            <span><ShieldCheck size={15} />{points.length.toLocaleString("pt-BR")} samples · 60-second refresh</span>
+            <small>Last sample {formatDate(server.current.collected_at ?? undefined)}</small>
+          </footer>
+        </section>
+
         <section className="server-api-performance">
           <header>
             <div><span>API PERFORMANCE</span><strong>Slowest endpoints</strong></div>
@@ -7574,60 +7652,6 @@ function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformance
           </div>
         </section>
 
-        <div className="server-chart-head">
-          <div><span>INFRASTRUCTURE LOAD</span><strong>Last 24 hours</strong></div>
-          <div className="server-chart-legend"><span><i className="cpu" />CPU · MA 5 min</span><span><i className="disk" />Disk used</span></div>
-        </div>
-
-        <div className="server-chart-wrap">
-          <svg
-            className="server-chart"
-            viewBox={`0 0 ${SERVER_CHART.width} ${SERVER_CHART.height}`}
-            role="img"
-            aria-label="CPU moving average and disk usage over the last 24 hours"
-            onPointerMove={(event) => {
-              if (!points.length) return;
-              const bounds = event.currentTarget.getBoundingClientRect();
-              const relative = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
-              setHoveredIndex(Math.round(relative * (points.length - 1)));
-            }}
-            onPointerLeave={() => setHoveredIndex(null)}
-          >
-            {[0, 25, 50, 75, 100].map((value) => (
-              <g key={value}>
-                <line className="server-chart-grid" x1={SERVER_CHART.left} x2={SERVER_CHART.width - SERVER_CHART.right} y1={serverChartY(value)} y2={serverChartY(value)} />
-                <text className="server-chart-y-label" x={SERVER_CHART.left - 12} y={serverChartY(value) + 4} textAnchor="end">{value}%</text>
-              </g>
-            ))}
-            {timeMarkers.map((index) => (
-              <text className="server-chart-x-label" key={`${points[index].collected_at}-${index}`} x={serverChartX(index, points.length)} y={SERVER_CHART.height - 10} textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}>{formatServerTime(points[index].collected_at)}</text>
-            ))}
-            {cpuSegments.map((path, index) => <path className="server-chart-line server-chart-line-cpu" d={path} key={`cpu-${index}`} />)}
-            {diskSegments.map((path, index) => <path className="server-chart-line server-chart-line-disk" d={path} key={`disk-${index}`} />)}
-            {latestDiskIndex >= 0 && points[latestDiskIndex].disk_percent !== null && (
-              <circle className="server-chart-point disk" cx={serverChartX(latestDiskIndex, points.length)} cy={serverChartY(points[latestDiskIndex].disk_percent as number)} r="4" />
-            )}
-            {hovered && hoveredIndex !== null && (
-              <g>
-                <line className="server-chart-cursor" x1={serverChartX(hoveredIndex, points.length)} x2={serverChartX(hoveredIndex, points.length)} y1={SERVER_CHART.top} y2={SERVER_CHART.height - SERVER_CHART.bottom} />
-                {hovered.cpu_moving_average_5m !== null && <circle className="server-chart-point cpu" cx={serverChartX(hoveredIndex, points.length)} cy={serverChartY(hovered.cpu_moving_average_5m)} r="5" />}
-                {hovered.disk_percent !== null && <circle className="server-chart-point disk" cx={serverChartX(hoveredIndex, points.length)} cy={serverChartY(hovered.disk_percent)} r="5" />}
-              </g>
-            )}
-          </svg>
-          {hovered && hoveredIndex !== null && (
-            <div className="server-chart-tooltip" style={{ left: `${Math.max(8, Math.min(82, hoveredIndex / Math.max(1, points.length - 1) * 100))}%` }}>
-              <span>{formatServerTime(hovered.collected_at)}</span>
-              <strong>CPU {hovered.cpu_moving_average_5m === null ? "N/D" : `${hovered.cpu_moving_average_5m.toFixed(1).replace(".", ",")}%`}</strong>
-              <strong>Disk {hovered.disk_percent === null ? "collecting" : `${hovered.disk_percent.toFixed(1).replace(".", ",")}%`}</strong>
-            </div>
-          )}
-        </div>
-
-        <footer className="server-usage-foot">
-          <span><ShieldCheck size={15} />{points.length.toLocaleString("pt-BR")} samples · 60-second refresh</span>
-          <small>Last sample {formatDate(server.current.collected_at ?? undefined)}</small>
-        </footer>
       </section>
     </div>
   );
@@ -7664,23 +7688,90 @@ const CODE_CENSUS_LAYER_LABELS: Record<string, string> = {
   sql: "SQL"
 };
 
+const CODE_CENSUS_CHART = { width: 1000, height: 150, left: 22, right: 96, top: 18, bottom: 28 };
+
+function CodeCensusSection({ data }: { data: CodeCensusSnapshot | null }) {
+  if (!data?.latest) {
+    return (
+      <section className="server-code-census server-code-census-empty">
+        <div><Cpu size={18} /><strong>Code Census</strong></div>
+        <span>Collecting the first daily census.</span>
+      </section>
+    );
+  }
+
+  const series = data.series.length > 0 ? [...data.series].reverse() : [data.latest];
+  const totals = series.map((item) => item.total_lines);
+  const rawMin = Math.min(...totals);
+  const rawMax = Math.max(...totals);
+  const padding = Math.max(1, Math.round((rawMax - rawMin) * 0.15));
+  const chartMin = rawMin - padding;
+  const chartMax = rawMax + padding;
+  const chartRange = Math.max(1, chartMax - chartMin);
+  const x = (index: number) => {
+    const usable = CODE_CENSUS_CHART.width - CODE_CENSUS_CHART.left - CODE_CENSUS_CHART.right;
+    return series.length <= 1
+      ? CODE_CENSUS_CHART.left + usable / 2
+      : CODE_CENSUS_CHART.left + index / (series.length - 1) * usable;
+  };
+  const y = (value: number) => {
+    const usable = CODE_CENSUS_CHART.height - CODE_CENSUS_CHART.top - CODE_CENSUS_CHART.bottom;
+    return CODE_CENSUS_CHART.top + (chartMax - value) / chartRange * usable;
+  };
+  const path = series.map((item, index) => `${index ? "L" : "M"}${x(index).toFixed(2)},${y(item.total_lines).toFixed(2)}`).join(" ");
+  const guideValues = [rawMax, Math.round((rawMax + rawMin) / 2), rawMin];
+  const dateLabel = (value: string) => new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`));
+
+  return (
+    <section className="server-code-census">
+      <header className="server-code-census-head">
+        <div><Cpu size={18} /><div><span>CODE CENSUS</span><strong>{data.latest.total_lines.toLocaleString("pt-BR")} lines</strong></div></div>
+        <small>{data.series.length} daily snapshot{data.series.length === 1 ? "" : "s"} · 30-day history</small>
+      </header>
+      <div className="code-census-table">
+        {(data.layer_order ?? []).map((layer) => {
+          const row = data.latest?.layers?.[layer];
+          if (!row) return null;
+          const previousRow = data.delta_comparable ? data.previous?.layers?.[layer] : undefined;
+          const delta = previousRow ? row.lines - previousRow.lines : null;
+          return (
+            <div key={layer}>
+              <span>{CODE_CENSUS_LAYER_LABELS[layer] ?? layer}</span>
+              <strong>{row.lines.toLocaleString("pt-BR")}</strong>
+              <small>{row.files.toLocaleString("pt-BR")} files{delta !== null && delta !== 0 ? ` · ${delta > 0 ? "+" : ""}${delta.toLocaleString("pt-BR")} vs prior day` : ""}</small>
+            </div>
+          );
+        })}
+        <div className="code-census-total">
+          <span>Total code</span>
+          <strong>{data.latest.total_lines.toLocaleString("pt-BR")}</strong>
+          <small>{data.latest.total_files.toLocaleString("pt-BR")} files{data.total_delta_vs_previous ? ` · ${data.total_delta_vs_previous > 0 ? "+" : ""}${data.total_delta_vs_previous.toLocaleString("pt-BR")} vs prior day` : ""}</small>
+        </div>
+        <div>
+          <span>Docs (markdown)</span>
+          <strong>{data.latest.docs_lines.toLocaleString("pt-BR")}</strong>
+          <small>{data.latest.docs_files.toLocaleString("pt-BR")} files · outside the code total</small>
+        </div>
+      </div>
+      <div className="code-census-history">
+        <header><div><span>CODE GROWTH</span><strong>Daily total</strong></div><small>{dateLabel(series[0].session_date)} – {dateLabel(series[series.length - 1].session_date)}</small></header>
+        <svg viewBox={`0 0 ${CODE_CENSUS_CHART.width} ${CODE_CENSUS_CHART.height}`} role="img" aria-label={`Code Census daily history with ${series.length} observations`}>
+          {guideValues.map((value) => (
+            <line className="code-census-chart-grid" key={value} x1={CODE_CENSUS_CHART.left} x2={CODE_CENSUS_CHART.width - CODE_CENSUS_CHART.right} y1={y(value)} y2={y(value)} />
+          ))}
+          {series.length > 1 && <path className="code-census-chart-line" d={path} />}
+          {series.map((item, index) => <circle className="code-census-chart-point" cx={x(index)} cy={y(item.total_lines)} key={item.session_date} r={index === series.length - 1 ? 5 : 3} />)}
+          <text className="code-census-chart-date" x={x(0)} y={CODE_CENSUS_CHART.height - 7} textAnchor={series.length === 1 ? "middle" : "start"}>{dateLabel(series[0].session_date)}</text>
+          {series.length > 1 && <text className="code-census-chart-date" x={x(series.length - 1)} y={CODE_CENSUS_CHART.height - 7} textAnchor="end">{dateLabel(series[series.length - 1].session_date)}</text>}
+          <text className="code-census-chart-value" x={CODE_CENSUS_CHART.width - 10} y={y(series[series.length - 1].total_lines) + 4} textAnchor="end">{series[series.length - 1].total_lines.toLocaleString("pt-BR")}</text>
+        </svg>
+      </div>
+      <small className="code-census-footnote">Counted daily at 02:00 BRT from the deployed checkout · {data.latest.session_date} · {data.latest.methodology}</small>
+    </section>
+  );
+}
+
 function HealthView({ data }: { data: SystemHealthData | null }) {
-  const [codeCensus, setCodeCensus] = useState<CodeCensusSnapshot | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/v1/code-census`, { credentials: "include" });
-        if (!response.ok) return;
-        const payload = await response.json() as CodeCensusSnapshot;
-        if (!cancelled) setCodeCensus(payload);
-      } catch {
-        // the census panel simply stays hidden when the endpoint is unreachable
-      }
-    };
-    void load();
-    return () => { cancelled = true; };
-  }, []);
   if (!data) return <LoadingState />;
   const apiUsage = data.api_usage ?? [];
   const groupIcons: Record<SystemHealthGroupKey, ComponentType<{ size?: number }>> = {
@@ -7761,37 +7852,6 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
           </div>
         ) : <div className="api-usage-empty">No provider exposes an official usage counter right now.</div>}
       </section>
-      {codeCensus?.latest ? (
-        <section className="panel code-census-panel">
-          <PanelHeader title={`Code Census · ${codeCensus.latest.total_lines.toLocaleString("pt-BR")} lines`} icon={Cpu} />
-          <div className="code-census-table">
-            {(codeCensus.layer_order ?? []).map((layer) => {
-              const row = codeCensus.latest?.layers?.[layer];
-              if (!row) return null;
-              const previousRow = codeCensus.delta_comparable ? codeCensus.previous?.layers?.[layer] : undefined;
-              const delta = previousRow ? row.lines - previousRow.lines : null;
-              return (
-                <div key={layer}>
-                  <span>{CODE_CENSUS_LAYER_LABELS[layer] ?? layer}</span>
-                  <strong>{row.lines.toLocaleString("pt-BR")}</strong>
-                  <small>{row.files.toLocaleString("pt-BR")} files{delta !== null && delta !== 0 ? ` · ${delta > 0 ? "+" : ""}${delta.toLocaleString("pt-BR")} vs prior day` : ""}</small>
-                </div>
-              );
-            })}
-            <div className="code-census-total">
-              <span>Total code</span>
-              <strong>{codeCensus.latest.total_lines.toLocaleString("pt-BR")}</strong>
-              <small>{codeCensus.latest.total_files.toLocaleString("pt-BR")} files{codeCensus.total_delta_vs_previous ? ` · ${codeCensus.total_delta_vs_previous > 0 ? "+" : ""}${codeCensus.total_delta_vs_previous.toLocaleString("pt-BR")} vs prior day` : ""}</small>
-            </div>
-            <div>
-              <span>Docs (markdown)</span>
-              <strong>{codeCensus.latest.docs_lines.toLocaleString("pt-BR")}</strong>
-              <small>{codeCensus.latest.docs_files.toLocaleString("pt-BR")} files · outside the code total</small>
-            </div>
-          </div>
-          <small className="code-census-footnote">Counted daily at 02:00 BRT from the deployed checkout · {codeCensus.latest.session_date} · {codeCensus.latest.methodology}</small>
-        </section>
-      ) : null}
       <div className="system-health-group-grid">
         {orderedGroups.filter((group) => group.key !== "aws").map(renderHealthGroup)}
       </div>
