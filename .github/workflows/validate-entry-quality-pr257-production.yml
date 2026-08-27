@@ -48,10 +48,6 @@ jobs:
           find /opt/chief-of-staff-digital /mnt/day-d-data -maxdepth 6 \
             \( -iname '*.dump' -o -iname '*.sql' -o -iname '*.sql.gz' -o -iname '*postgres*backup*' \) \
             -print 2>/dev/null | head -n 200 || true
-          echo '=== database size ==='
-          docker compose --env-file .env -f c3po/compose.yml exec -T db \
-            psql -U c3po -d c3po -Atc \
-            "select pg_database_size(current_database()), pg_size_pretty(pg_database_size(current_database()));"
           echo '=== backblaze inventory ==='
           docker compose --env-file .env -f c3po/compose.yml run --rm -T api python - <<'PY'
           import json
@@ -97,4 +93,9 @@ jobs:
               result["postgres_like_object_count"] = len(matches)
           print(json.dumps(result, sort_keys=True))
           PY
+          echo '=== database size ==='
+          docker compose --env-file .env -f c3po/compose.yml exec -T db \
+            psql -U c3po -d c3po -Atc \
+            "select pg_database_size(current_database()), pg_size_pretty(pg_database_size(current_database()));" \
+            </dev/null
           REMOTE
