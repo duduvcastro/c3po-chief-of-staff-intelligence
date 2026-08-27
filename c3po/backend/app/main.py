@@ -49,6 +49,7 @@ from .server_usage import ServerUsageService
 from .system_health import SystemHealthService
 from .weather import WeatherLocationNotFound, WeatherRequestError, WeatherService
 from .news import NewsService
+from .observability import init_sentry
 from .schemas import (
     AccessPermission,
     AccessCapability,
@@ -135,6 +136,7 @@ def _current_summary_context(now: datetime | None = None) -> tuple[str, str, str
 
 
 settings = get_settings()
+init_sentry(settings, service_name="api")
 database = Database(settings)
 legacy = LegacySummaryReader(settings.legacy_root)
 auth_service = AuthService(settings, database)

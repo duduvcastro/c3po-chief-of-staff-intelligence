@@ -11,3 +11,4 @@ cryptography>=45,<47
 qrcode>=8,<9
 boto3>=1.40,<2
 exchange-calendars>=4.13,<5
+sentry-sdk[fastapi]>=2.35,<3

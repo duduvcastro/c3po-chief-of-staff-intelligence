@@ -94,6 +94,8 @@ def test_daily_census_waits_for_two_am_brt_and_runs_once_per_session(
     settings = Settings(database_url="", auth_cookie_secure=False)
     database = _FakeDatabase()
     service = CodeCensusService(settings, database)  # type: ignore[arg-type]
+    ping_statuses: list[str] = []
+    service.healthcheck.ping = lambda status="success": ping_statuses.append(status) or True  # type: ignore[method-assign]
     root = _repo(tmp_path)
 
     before_window = datetime(2026, 8, 27, 4, 30, tzinfo=timezone.utc)  # 01:30 BRT
@@ -102,6 +104,7 @@ def test_daily_census_waits_for_two_am_brt_and_runs_once_per_session(
 
     in_window = datetime(2026, 8, 27, 5, 1, tzinfo=timezone.utc)  # 02:01 BRT
     assert service.run_daily_if_due(root, now=in_window) is True
+    assert ping_statuses == ["start", "success"]
     assert len(database.executed) == 1
     sql, params = database.executed[0]
     assert "INSERT INTO code_census_daily" in sql
@@ -137,9 +140,12 @@ def test_census_refuses_to_record_a_partial_walk_as_complete(
         Settings(database_url="", auth_cookie_secure=False),
         database,  # type: ignore[arg-type]
     )
+    ping_statuses: list[str] = []
+    service.healthcheck.ping = lambda status="success": ping_statuses.append(status) or True  # type: ignore[method-assign]
     in_window = datetime(2026, 8, 27, 5, 1, tzinfo=timezone.utc)
     assert service.run_daily_if_due(root, now=in_window) is False
     assert database.executed == []
+    assert ping_statuses == ["start", "fail"]
 
 
 class _SeriesDatabase:

@@ -1,0 +1,159 @@
+name: Install RESILIENCE_OPS_V1 in production
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Deployed commit or ref containing the audited implementation
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  install-production-controls:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Configure production SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Build sealed environment fragment
+        env:
+          C3PO_SENTRY_DSN: ${{ secrets.C3PO_SENTRY_DSN }}
+          C3PO_HEALTHCHECK_VALUATION_WORKER_URL: ${{ secrets.C3PO_HEALTHCHECK_VALUATION_WORKER_URL }}
+          C3PO_HEALTHCHECK_CASH_YIELD_URL: ${{ secrets.C3PO_HEALTHCHECK_CASH_YIELD_URL }}
+          C3PO_HEALTHCHECK_CODE_CENSUS_URL: ${{ secrets.C3PO_HEALTHCHECK_CODE_CENSUS_URL }}
+          C3PO_HEALTHCHECK_POSTGRES_BACKUP_URL: ${{ secrets.C3PO_HEALTHCHECK_POSTGRES_BACKUP_URL }}
+          C3PO_POSTGRES_BACKUP_BUCKET: ${{ secrets.C3PO_POSTGRES_BACKUP_BUCKET }}
+          C3PO_POSTGRES_BACKUP_REGION: ${{ secrets.C3PO_POSTGRES_BACKUP_REGION }}
+          C3PO_POSTGRES_BACKUP_ENDPOINT: ${{ secrets.C3PO_POSTGRES_BACKUP_ENDPOINT }}
+          C3PO_POSTGRES_BACKUP_ACCESS_KEY_ID: ${{ secrets.C3PO_POSTGRES_BACKUP_ACCESS_KEY_ID }}
+          C3PO_POSTGRES_BACKUP_SECRET_ACCESS_KEY: ${{ secrets.C3PO_POSTGRES_BACKUP_SECRET_ACCESS_KEY }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          required = (
+              "C3PO_SENTRY_DSN",
+              "C3PO_HEALTHCHECK_VALUATION_WORKER_URL",
+              "C3PO_HEALTHCHECK_CASH_YIELD_URL",
+              "C3PO_HEALTHCHECK_CODE_CENSUS_URL",
+              "C3PO_HEALTHCHECK_POSTGRES_BACKUP_URL",
+              "C3PO_POSTGRES_BACKUP_BUCKET",
+              "C3PO_POSTGRES_BACKUP_REGION",
+              "C3PO_POSTGRES_BACKUP_ACCESS_KEY_ID",
+              "C3PO_POSTGRES_BACKUP_SECRET_ACCESS_KEY",
+          )
+          payload = {key: os.environ.get(key, "") for key in required}
+          payload["C3PO_POSTGRES_BACKUP_ENDPOINT"] = os.environ.get(
+              "C3PO_POSTGRES_BACKUP_ENDPOINT", ""
+          )
+          payload["C3PO_POSTGRES_BACKUP_PREFIX"] = "c3po-postgres"
+          missing = sorted(key for key in required if not payload[key])
+          if missing:
+              raise SystemExit(f"missing production secret(s): {', '.join(missing)}")
+          target = Path("/tmp/resilience-ops-env.json")
+          target.write_text(json.dumps(payload), encoding="utf-8")
+          target.chmod(0o600)
+          PY
+
+      - name: Transfer audited assets
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          scp -i ~/.ssh/c3po_deploy \
+            scripts/c3po-postgres-backup.sh \
+            ops/systemd/c3po-postgres-backup.service \
+            ops/systemd/c3po-postgres-backup.timer \
+            /tmp/resilience-ops-env.json \
+            "$USER@$HOST:/tmp/"
+
+      - name: Install controls and activate observability
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          actual_sha=$(git rev-parse HEAD)
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "EXPECTED_SHA='$actual_sha' bash -s" <<'REMOTE'
+          set -euo pipefail
+          BASE=/opt/chief-of-staff-digital
+          cd "$BASE"
+
+          for _ in $(seq 1 60); do
+            deployed=$(cat .deploy-version 2>/dev/null || true)
+            [ "$deployed" = "$EXPECTED_SHA" ] && break
+            sleep 20
+          done
+          deployed=$(cat .deploy-version 2>/dev/null || true)
+          [ "$deployed" = "$EXPECTED_SHA" ] || {
+            printf 'production deploy is %s; expected %s\n' "$deployed" "$EXPECTED_SHA" >&2
+            exit 1
+          }
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          source = Path("/tmp/resilience-ops-env.json")
+          target = Path("/opt/chief-of-staff-digital/.env")
+          updates = json.loads(source.read_text(encoding="utf-8"))
+          lines = target.read_text(encoding="utf-8").splitlines()
+          positions = {}
+          for index, line in enumerate(lines):
+              if "=" in line and not line.lstrip().startswith("#"):
+                  positions[line.split("=", 1)[0]] = index
+          for key, value in updates.items():
+              rendered = f"{key}={value}"
+              if key in positions:
+                  lines[positions[key]] = rendered
+              else:
+                  lines.append(rendered)
+          temporary = target.with_suffix(".tmp-resilience-ops")
+          temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          os.chmod(temporary, 0o600)
+          os.replace(temporary, target)
+          source.unlink()
+          PY
+
+          bash -n /tmp/c3po-postgres-backup.sh
+          sudo install -m 0750 /tmp/c3po-postgres-backup.sh \
+            /usr/local/sbin/c3po-postgres-backup
+          sudo install -m 0644 /tmp/c3po-postgres-backup.service \
+            /etc/systemd/system/c3po-postgres-backup.service
+          sudo install -m 0644 /tmp/c3po-postgres-backup.timer \
+            /etc/systemd/system/c3po-postgres-backup.timer
+          sudo systemd-analyze verify \
+            /etc/systemd/system/c3po-postgres-backup.service \
+            /etc/systemd/system/c3po-postgres-backup.timer
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now c3po-postgres-backup.timer
+
+          docker compose --env-file .env -f c3po/compose.yml up -d --force-recreate \
+            api investor-relations-worker valuation-worker server-usage-worker r2d2-worker
+
+          systemctl is-enabled c3po-postgres-backup.timer
+          systemctl is-active c3po-postgres-backup.timer
+          systemctl list-timers c3po-postgres-backup.timer --no-pager
+          docker compose --env-file .env -f c3po/compose.yml ps
+          REMOTE

@@ -262,3 +262,64 @@ def test_cash_yield_failure_alert_is_deduplicated_and_recovery_is_recorded() -> 
     assert failures[0]["detail"]["error"] == "RuntimeError: Treasury feed unavailable"
     assert len(recoveries) == 1
     assert recoveries[0]["subject_id"] == "2026-08-26"
+
+
+class _PingRecorder:
+    def __init__(self) -> None:
+        self.statuses: list[str] = []
+
+    def ping(self, status: str = "success") -> bool:
+        self.statuses.append(status)
+        return True
+
+
+def test_dead_man_pings_worker_and_cash_yield_without_changing_result() -> None:
+    database = _database()
+    worker = _PingRecorder()
+    cash = _PingRecorder()
+    phase = OffhoursPhase(
+        "cash_yield",
+        lambda: None,
+        lambda: {"status": "posted"},
+        start_hour=6,
+        end_hour=10,
+    )
+
+    result = run_worker_iteration(
+        database,
+        now=datetime(2026, 8, 26, 6, 0, tzinfo=SAO_PAULO),
+        canonical_due=False,
+        canonical_operation=lambda: None,
+        offhours_phases=(phase,),
+        healthchecks={"valuation": worker, "cash_yield": cash},  # type: ignore[dict-item]
+    )
+
+    assert result.phase_statuses == {"cash_yield": "succeeded"}
+    assert worker.statuses == ["start", "success"]
+    assert cash.statuses == ["start", "success"]
+
+
+def test_dead_man_failure_ping_never_suppresses_retry() -> None:
+    database = _database()
+    worker = _PingRecorder()
+    cash = _PingRecorder()
+
+    def fail() -> None:
+        raise RuntimeError("feed unavailable")
+
+    now = datetime(2026, 8, 26, 6, 0, tzinfo=SAO_PAULO)
+    result = run_worker_iteration(
+        database,
+        now=now,
+        canonical_due=False,
+        canonical_operation=lambda: None,
+        offhours_phases=(
+            OffhoursPhase("cash_yield", lambda: None, fail, start_hour=6, end_hour=10),
+        ),
+        healthchecks={"valuation": worker, "cash_yield": cash},  # type: ignore[dict-item]
+    )
+
+    assert result.phase_statuses == {"cash_yield": "failed"}
+    assert result.next_wake_at == now + timedelta(minutes=30)
+    assert worker.statuses == ["start", "fail"]
+    assert cash.statuses == ["start", "fail"]

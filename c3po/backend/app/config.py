@@ -43,6 +43,18 @@ class Settings(BaseSettings):
     github_repository: str = "duduvcastro/c3po-chief-of-staff-intelligence"
     deploy_version_file: Path = DEFAULT_LEGACY_ROOT / ".deploy-version"
     build_sha: str = "development"
+    sentry_dsn: str = ""
+    sentry_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    healthcheck_valuation_worker_url: str = ""
+    healthcheck_cash_yield_url: str = ""
+    healthcheck_code_census_url: str = ""
+    healthcheck_postgres_backup_url: str = ""
+    postgres_backup_bucket: str = ""
+    postgres_backup_region: str = "us-east-1"
+    postgres_backup_endpoint: str = ""
+    postgres_backup_access_key_id: str = ""
+    postgres_backup_secret_access_key: str = ""
+    postgres_backup_prefix: str = "c3po-postgres"
     exchange_server: str = Field(default="", validation_alias=AliasChoices("C3PO_EXCHANGE_SERVER", "EXCHANGE_SERVER"))
     exchange_user: str = Field(default="", validation_alias=AliasChoices("C3PO_EXCHANGE_USER", "EXCHANGE_USER"))
     exchange_app_password: str = Field(default="", validation_alias=AliasChoices("C3PO_EXCHANGE_APP_PASSWORD", "EXCHANGE_APP_PASSWORD"))
