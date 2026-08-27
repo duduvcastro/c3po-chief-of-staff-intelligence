@@ -25,8 +25,9 @@ def test_backup_validates_before_content_addressed_upload_and_cleans_dump() -> N
     script = SCRIPT.read_text(encoding="utf-8")
 
     assert "pg_dump -U c3po -d c3po --format=custom" in script
-    assert "pg_restore --list -" in script
-    assert script.index("pg_restore --list -") < script.index("app.postgres_backup_upload")
+    assert "pg_restore --list" in script
+    assert "pg_restore --list -" not in script
+    assert script.index("pg_restore --list") < script.index("app.postgres_backup_upload")
     assert "dump_sha256=$(sha256sum" in script
     assert 'rm -f "$DUMP_PATH"' in script
     assert "C3PO_HEALTHCHECK_POSTGRES_BACKUP_URL" in script

@@ -140,7 +140,7 @@ jobs:
           PY
 
           bash -n /tmp/c3po-postgres-backup.sh
-          sudo install -m 0750 /tmp/c3po-postgres-backup.sh \
+          sudo install -o root -g ubuntu -m 0750 /tmp/c3po-postgres-backup.sh \
             /usr/local/sbin/c3po-postgres-backup
           sudo install -m 0644 /tmp/c3po-postgres-backup.service \
             /etc/systemd/system/c3po-postgres-backup.service
