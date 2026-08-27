@@ -1,4 +1,4 @@
-name: Execute MICROSTRUCTURE_TAPE_PROBE_V1 from frozen plan
+name: Recover MICROSTRUCTURE_TAPE_PROBE_V1 factual run
 
 on:
   workflow_dispatch:
@@ -7,10 +7,10 @@ permissions:
   contents: read
 
 jobs:
-  execute:
+  recover:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - name: Configure production SSH key
         env:
@@ -23,105 +23,55 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Execute the collection once and preserve every factual byte
+      - name: Package existing factual bytes without provider calls
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
-          ssh -i ~/.ssh/c3po_deploy \
-            -o ServerAliveInterval=30 -o ServerAliveCountMax=60 \
-            "$USER@$HOST" "RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' <<'REMOTE'
           set -u
-          APP_DIR=/opt/chief-of-staff-digital
-          SOURCE_ROOT=/tmp/overnight-audit-33064012836
-          INPUT="$SOURCE_ROOT/inputs"
-          PLAN_ROOT=/tmp/microstructure-tape-probe-v1-33068944847
-          PLAN="$PLAN_ROOT/plan.json"
-          FROZEN="$PLAN_ROOT/frozen-raw26.ndjson"
-          RAW_RELATIVE=provider=eodhd/microstructure/raw/session_date=2026-08-26/feed=trade-part-00001.ndjson
-          EXPECTED_PLAN_SHA=c15dcfc3f7b9babacdbd95bc3f83952de26349780ca74c3469fcb84418e73b96
-          EXPECTED_RAW_SHA=b202c4d3a6e99a9136d6a02b76e585d4ea83ba6cff56aea86a1c5875c48af2fc
-          ROOT="/tmp/microstructure-tape-probe-execute-${RUN_ID}"
-          OUTPUT_HOST="/mnt/day-d-data/evidence/microstructure-tape-probe-v1/2026-08-27/run-${RUN_ID}"
-          OUTPUT_CONTAINER="/app/day-d-data/evidence/microstructure-tape-probe-v1/2026-08-27/run-${RUN_ID}"
-          RECOVERY="/tmp/microstructure-tape-probe-package-${RUN_ID}"
-          PACKAGE="/tmp/microstructure-tape-probe-package-${RUN_ID}.tgz"
-          mkdir -p "$ROOT" "$RECOVERY/control" "$RECOVERY/evidence"
-
-          if [ "$(sha256sum "$PLAN" | awk '{print $1}')" != "$EXPECTED_PLAN_SHA" ]; then
-            printf 'frozen plan sha mismatch\n' > "$ROOT/preflight.error.txt"
-            printf '90\n' > "$ROOT/run.exit-code.txt"
-          elif [ "$(sha256sum "$FROZEN" | awk '{print $1}')" != "$EXPECTED_RAW_SHA" ]; then
-            printf 'frozen raw sha mismatch\n' > "$ROOT/preflight.error.txt"
-            printf '91\n' > "$ROOT/run.exit-code.txt"
-          elif ! python3 - "$PLAN" <<'PY'
-          import json
-          import sys
-          payload = json.load(open(sys.argv[1]))
-          raise SystemExit(0 if payload.get("execution_ready") is True and not payload.get("execution_blockers") else 1)
-          PY
-          then
-            printf 'frozen plan is not execution-ready\n' > "$ROOT/preflight.error.txt"
-            printf '92\n' > "$ROOT/run.exit-code.txt"
-          else
-            cd "$APP_DIR"
-            compose=(docker compose --env-file .env -f c3po/compose.yml)
-            common=(
-              -v "$INPUT:/probe-input:ro"
-              -v "$FROZEN:/app/day-d-data/$RAW_RELATIVE:ro"
-              api python -m app.microstructure_tape_probe
-            )
-            args=(
-              --exit-report /app/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27/report.json
-              --entry-report /probe-input/entry-report.json
-              --entry-manifest /probe-input/entry-manifest.json
-              --spec /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1.md
-              --amendment /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1.md
-              --dudu-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_DUDU.md
-              --codex-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_CODEX.md
-            )
-            "${compose[@]}" run --rm -T "${common[@]}" run "${args[@]}" \
-              --output "$OUTPUT_CONTAINER" \
-              > "$ROOT/run.stdout.json" 2> "$ROOT/run.stderr.txt"
-            printf '%s\n' "$?" > "$ROOT/run.exit-code.txt"
+          SOURCE_RUN=33069776868
+          ROOT="/tmp/microstructure-tape-probe-execute-${SOURCE_RUN}"
+          EVIDENCE="/mnt/day-d-data/evidence/microstructure-tape-probe-v1/2026-08-27/run-${SOURCE_RUN}"
+          RECOVERY="/tmp/microstructure-tape-probe-recovery-${SOURCE_RUN}"
+          PACKAGE="/tmp/microstructure-tape-probe-recovery-${SOURCE_RUN}.tgz"
+          rm -rf "$RECOVERY"
+          mkdir -p "$RECOVERY/control" "$RECOVERY/evidence"
+          if [ -d "$ROOT" ]; then
+            cp -a "$ROOT"/. "$RECOVERY/control"/
           fi
-
-          cp -a "$PLAN" "$ROOT/frozen-plan.json"
-          cp -a "$ROOT"/. "$RECOVERY/control"/
-          if [ -d "$OUTPUT_HOST" ]; then
-            cp -a "$OUTPUT_HOST"/. "$RECOVERY/evidence"/
+          if [ -d "$EVIDENCE" ]; then
+            cp -a "$EVIDENCE"/. "$RECOVERY/evidence"/
           fi
-          (
-            cd "$RECOVERY"
-            find control evidence -type f -print0 | sort -z | xargs -0 sha256sum > ALL_SHA256SUMS
-          )
+          find "$RECOVERY" -type f ! -name ALL_SHA256SUMS -print0 \
+            | sort -z | xargs -0 sha256sum > "$RECOVERY/ALL_SHA256SUMS"
           tar -C "$RECOVERY" -czf "$PACKAGE" .
           sha256sum "$PACKAGE" > "${PACKAGE}.sha256"
           REMOTE
 
-      - name: Download and verify factual package
+      - name: Download recovered factual bytes
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
-          mkdir -p /tmp/microstructure-tape-probe-package/recovered
+          mkdir -p /tmp/microstructure-tape-probe-recovery
           scp -i ~/.ssh/c3po_deploy \
-            "$USER@$HOST:/tmp/microstructure-tape-probe-package-${GITHUB_RUN_ID}.tgz" \
-            /tmp/microstructure-tape-probe-package/package.tgz
+            "$USER@$HOST:/tmp/microstructure-tape-probe-recovery-33069776868.tgz" \
+            /tmp/microstructure-tape-probe-recovery/package.tgz
           scp -i ~/.ssh/c3po_deploy \
-            "$USER@$HOST:/tmp/microstructure-tape-probe-package-${GITHUB_RUN_ID}.tgz.sha256" \
-            /tmp/microstructure-tape-probe-package/package.tgz.sha256
-          expected=$(awk '{print $1}' /tmp/microstructure-tape-probe-package/package.tgz.sha256)
-          actual=$(sha256sum /tmp/microstructure-tape-probe-package/package.tgz | awk '{print $1}')
+            "$USER@$HOST:/tmp/microstructure-tape-probe-recovery-33069776868.tgz.sha256" \
+            /tmp/microstructure-tape-probe-recovery/package.tgz.sha256
+          expected=$(awk '{print $1}' /tmp/microstructure-tape-probe-recovery/package.tgz.sha256)
+          actual=$(sha256sum /tmp/microstructure-tape-probe-recovery/package.tgz | awk '{print $1}')
           test "$actual" = "$expected"
-          tar -xzf /tmp/microstructure-tape-probe-package/package.tgz \
-            -C /tmp/microstructure-tape-probe-package/recovered
-          (cd /tmp/microstructure-tape-probe-package/recovered && sha256sum -c ALL_SHA256SUMS)
+          mkdir -p /tmp/microstructure-tape-probe-recovery/recovered
+          tar -xzf /tmp/microstructure-tape-probe-recovery/package.tgz \
+            -C /tmp/microstructure-tape-probe-recovery/recovered
 
-      - name: Publish immutable factual package
+      - name: Publish recovered factual bytes
         uses: actions/upload-artifact@v4
         with:
-          name: microstructure-tape-probe-v1-2026-08-27-${{ github.run_id }}
-          path: /tmp/microstructure-tape-probe-package
+          name: microstructure-tape-probe-recovery-33069776868
+          path: /tmp/microstructure-tape-probe-recovery
           if-no-files-found: error
           retention-days: 30
