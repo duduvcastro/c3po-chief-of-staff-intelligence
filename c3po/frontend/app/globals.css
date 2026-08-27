@@ -938,6 +938,8 @@ button { cursor: pointer; }
 .service-logo-backblaze { border-color: #d0021b; background: #fff; }
 .service-logo-backblaze img { padding: 4px; }
 .service-logo-massive { border-color: #1a5cff; background: #1a5cff; }
+.service-logo-healthchecks { border-color: #083b0b; background: #003b05; }
+.service-logo-sentry { border-color: #76518d; background: #76518d; }
 .service-logo-issuer { border-color: #c4a040; background: #fff8df; color: #735813; }
 .service-logo-summary { border-color: #d4b760; background: #15140f; color: #efbd35; }
 .service-logo-pdf { background: #c63232; }

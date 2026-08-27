@@ -7900,6 +7900,8 @@ type ServiceLogoKind =
   | "fmp"
   | "backblaze"
   | "massive"
+  | "healthchecks"
+  | "sentry"
   | "openai"
   | "anthropic"
   | "cvm"
@@ -7927,6 +7929,8 @@ function serviceLogoKind(name: string, groupKey: SystemHealthGroupKey): ServiceL
   if (normalized.includes("fmp") || normalized.includes("financial modeling")) return "fmp";
   if (normalized.includes("backblaze") || normalized.includes("b2")) return "backblaze";
   if (normalized.includes("massive")) return "massive";
+  if (normalized.includes("healthchecks")) return "healthchecks";
+  if (normalized === "sentry") return "sentry";
   if (normalized.includes("openai") || normalized.includes("codex")) return "openai";
   if (normalized.includes("anthropic") || normalized.includes("claude")) return "anthropic";
   if (normalized.includes("cvm")) return "cvm";
@@ -7952,6 +7956,8 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
     sec: "/sec-mark.gif",
     backblaze: "/backblaze-mark.svg",
     massive: "/massive-mark.svg",
+    healthchecks: "/healthchecks-mark.png",
+    sentry: "/sentry-mark.webp",
   };
   const officialAsset = officialAssets[kind];
   if (officialAsset) {
