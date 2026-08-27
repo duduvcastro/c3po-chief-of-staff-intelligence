@@ -15,6 +15,8 @@ def test_resilience_installer_is_manual_production_and_secret_driven() -> None:
 
     assert "workflow_dispatch" in parsed[True]
     assert "schedule" not in parsed[True]
+    assert "push" not in parsed[True]
+    assert "pull_request" not in parsed[True]
     assert "environment: production" in workflow
     assert "C3PO_POSTGRES_BACKUP_SECRET_ACCESS_KEY" in workflow
     assert "C3PO_SENTRY_DSN" in workflow

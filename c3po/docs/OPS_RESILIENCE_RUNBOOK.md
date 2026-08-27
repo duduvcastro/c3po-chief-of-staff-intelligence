@@ -79,8 +79,19 @@ payloads:
 - monthly PostgreSQL restore drill.
 
 Each integration sends `/start`, base success, or `/fail`. A ping failure is
-logged but never changes the monitored job result. Grace periods are configured
-in the Healthchecks console and recorded in the deployment evidence.
+logged but never changes the monitored job result. The schedules and grace
+periods configured in the Healthchecks console are:
+
+| Check | Schedule | Grace period |
+| --- | --- | --- |
+| Valuation worker | daily | 2 hours |
+| Cash yield | daily | 4 hours |
+| Code census | daily | 1 hour |
+| PostgreSQL backup | daily | 2 hours |
+| Restore drill | `0 10 1 * *` UTC | 2 hours |
+
+Any console change to these values must update this runbook and the deployment
+evidence in the same audited change.
 
 ## Sentry
 
