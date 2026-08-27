@@ -190,6 +190,7 @@ class ChewieFundamentalsService:
         BDR wrappers are excluded upstream) with an official CVM/EODHD
         overlay. No separate listing or fundamentals fetch is needed."""
         universe_rows = self._universe_stocks("B3")
+        universe_rows, schema_backfill = self._backfill_b3_profitability_schema(universe_rows)
         items = [self._item_from_b3_universe_row(row) for row in universe_rows]
         methodology_id = self.database.ensure_methodology_version(
             METHODOLOGY_KEY,
@@ -201,11 +202,73 @@ class ChewieFundamentalsService:
             ANALYSIS_TYPE,
             "B3_FUNDAMENTALS",
             methodology_id,
-            {"market": "B3", "universe_size": len(items), "refreshed": len(items)},
+            {
+                "market": "B3",
+                "universe_size": len(items),
+                "refreshed": len(items),
+                "profitability_schema_backfill": schema_backfill,
+            },
             {"items": items, "universe_size": len(items), "source": "Brapi Pro + EODHD overlay"},
             datetime.now(timezone.utc),
         )
         return {"universe": len(items), "covered": len(items), "refreshed": len(items)}
+
+    def _backfill_b3_profitability_schema(
+        self,
+        universe_rows: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], dict[str, int | bool]]:
+        """Hydrate snapshots written before ROA/operating-margin were mapped.
+
+        A current screener row always carries both keys, even when the provider
+        has no value. Missing keys therefore identify schema lag without
+        confusing a genuinely unavailable metric with stale data. The repair
+        writes only the Chewie display snapshot; the valuation universe remains
+        immutable and will naturally carry the fields after its next cycle.
+        """
+        legacy_symbols = [
+            str(row.get("symbol") or "")
+            for row in universe_rows
+            if row.get("symbol")
+            and "roa" not in row
+            and "operating_margin" not in row
+        ]
+        if not legacy_symbols:
+            return universe_rows, {
+                "required": False,
+                "requested_symbols": 0,
+                "provider_rows": 0,
+                "hydrated_rows": 0,
+            }
+
+        fundamentals = self.client.fundamentals(legacy_symbols, exchange="SA", workers=10)
+        if not fundamentals:
+            raise RuntimeError(
+                "B3 profitability schema backfill returned no EODHD fundamentals; "
+                "the previous Chewie snapshot was preserved"
+            )
+
+        hydrated_rows: list[dict[str, Any]] = []
+        hydrated_count = 0
+        legacy_set = set(legacy_symbols)
+        for row in universe_rows:
+            symbol = str(row.get("symbol") or "")
+            if symbol not in legacy_set:
+                hydrated_rows.append(row)
+                continue
+            updated = dict(row)
+            overlay = fundamentals.get(symbol) or {}
+            updated["roa"] = _number(overlay.get("returnOnAssets"))
+            updated["operating_margin"] = _number(overlay.get("operatingMargins"))
+            if overlay:
+                hydrated_count += 1
+            hydrated_rows.append(updated)
+
+        return hydrated_rows, {
+            "required": True,
+            "requested_symbols": len(legacy_symbols),
+            "provider_rows": len(fundamentals),
+            "hydrated_rows": hydrated_count,
+        }
 
     def refresh_all(self, *, budget: int | None = None) -> dict[str, dict[str, int]]:
         total = DEFAULT_DAILY_SYMBOL_BUDGET if budget is None else max(0, int(budget))

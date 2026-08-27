@@ -208,6 +208,62 @@ def test_b3_profitability_preserves_missing_provider_metrics_as_not_available():
     assert item["profitability"]["operating_margin_percent"] is None
 
 
+def test_b3_refresh_backfills_profitability_only_for_legacy_universe_schema():
+    settings = get_settings()
+    database = Database(settings)
+    legacy = _b3_row("PETR4", 4e11)
+    legacy.pop("roa")
+    legacy.pop("operating_margin")
+    _seed_universe(database, "B3", [legacy])
+    http = StubHttp({
+        "fundamentals/": _eodhd_payload(
+            "PETR4",
+            "Petrobras",
+            Highlights={
+                "ReturnOnAssetsTTM": 0.074,
+                "OperatingMarginTTM": 0.318,
+            },
+        ),
+    })
+    service = ChewieFundamentalsService(settings, database, http)  # type: ignore[arg-type]
+
+    service.refresh_daily("B3")
+
+    item = service.rows("B3")["items"][0]
+    assert item["profitability"]["roa_percent"] == 7.4
+    assert item["profitability"]["operating_margin_percent"] == 31.8
+    assert len(http.calls) == 1
+    universe = database.latest_analysis_snapshot("valuation_universe", "B3_UNIVERSE")
+    assert "roa" not in universe["outputs"]["rows"][0]
+    assert "operating_margin" not in universe["outputs"]["rows"][0]
+    chewie = database.latest_analysis_snapshot("chewie_fundamentals", "B3_FUNDAMENTALS")
+    assert chewie["inputs"]["profitability_schema_backfill"] == {
+        "required": True,
+        "requested_symbols": 1,
+        "provider_rows": 1,
+        "hydrated_rows": 1,
+    }
+
+
+def test_b3_legacy_profitability_backfill_fails_closed_when_provider_is_empty():
+    settings = get_settings()
+    database = Database(settings)
+    legacy = _b3_row("PETR4", 4e11)
+    legacy.pop("roa")
+    legacy.pop("operating_margin")
+    _seed_universe(database, "B3", [legacy])
+    service = ChewieFundamentalsService(settings, database, StubHttp({}))  # type: ignore[arg-type]
+
+    try:
+        service.refresh_daily("B3")
+    except RuntimeError as exc:
+        assert "previous Chewie snapshot was preserved" in str(exc)
+    else:
+        raise AssertionError("legacy schema refresh must fail closed without provider data")
+
+    assert database.latest_analysis_snapshot("chewie_fundamentals", "B3_FUNDAMENTALS") is None
+
+
 def test_us_item_exposes_absolute_ebitda_from_existing_fundamentals_payload():
     item = ChewieFundamentalsService._item(
         "NASDAQ",
