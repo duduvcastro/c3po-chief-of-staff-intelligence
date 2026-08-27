@@ -1,7 +1,5 @@
 name: Validate ENTRY_QUALITY_STUDY PR 257 on production data
 
-# Temporary branch-only reconstruction of the signed plan from frozen RAW bytes.
-
 on:
   workflow_dispatch:
 
@@ -9,10 +7,10 @@ permissions:
   contents: read
 
 jobs:
-  frozen-plan:
+  recover-frozen-plan:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Configure production SSH key
         env:
@@ -25,88 +23,30 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Reconstruct frozen prefix and run plan only
+      - name: Package completed frozen plan
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
+          SOURCE_RUN_ID: 33064943925
         run: |
-          ssh -i ~/.ssh/c3po_deploy \
-            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-            "$USER@$HOST" "RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
-          set -u
-          APP_DIR=/opt/chief-of-staff-digital
-          SOURCE_ROOT=/tmp/overnight-audit-33064012836
-          INPUT="$SOURCE_ROOT/inputs"
-          RAW_RELATIVE=provider=eodhd/microstructure/raw/session_date=2026-08-26/feed=trade-part-00001.ndjson
-          RAW_SOURCE="/mnt/day-d-data/$RAW_RELATIVE"
-          EXPECTED_SIZE=67073447
-          EXPECTED_SHA=b202c4d3a6e99a9136d6a02b76e585d4ea83ba6cff56aea86a1c5875c48af2fc
-          ROOT="/tmp/tape-probe-plan-${RUN_ID}"
-          FROZEN="$ROOT/frozen-raw26.ndjson"
-          mkdir -p "$ROOT"
-
-          head -c "$EXPECTED_SIZE" "$RAW_SOURCE" > "$FROZEN"
-          prefix_sha=$(sha256sum "$FROZEN" | awk '{print $1}')
-          current_sha=$(sha256sum "$RAW_SOURCE" | awk '{print $1}')
-          current_size=$(stat -c %s "$RAW_SOURCE")
-          prefix_ok=false
-          if [ "$prefix_sha" = "$EXPECTED_SHA" ]; then
-            prefix_ok=true
-          fi
-          python3 - "$ROOT/frozen-prefix-recovery.json" <<PY
-          import json
-          from pathlib import Path
-          payload = {
-              "method": "read-only exact-byte prefix mounted only inside the plan container",
-              "source_path": "$RAW_SOURCE",
-              "source_observed_size_bytes": int("$current_size"),
-              "source_observed_sha256": "$current_sha",
-              "frozen_prefix_size_bytes": int("$EXPECTED_SIZE"),
-              "frozen_prefix_expected_sha256": "$EXPECTED_SHA",
-              "frozen_prefix_observed_sha256": "$prefix_sha",
-              "frozen_prefix_verified": "$prefix_ok" == "true",
-              "production_source_modified": False,
-              "external_api_calls": 0,
-          }
-          Path("$ROOT/frozen-prefix-recovery.json").write_text(
-              json.dumps(payload, sort_keys=True, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          PY
-
-          plan_exit=98
-          if [ "$prefix_ok" = true ]; then
-            cd "$APP_DIR" || exit 1
-            compose=(docker compose --env-file .env -f c3po/compose.yml)
-            "${compose[@]}" run --rm -T \
-              -v "$INPUT:/probe-input:ro" \
-              -v "$FROZEN:/app/day-d-data/$RAW_RELATIVE:ro" \
-              api python -m app.microstructure_tape_probe plan \
-              --exit-report /app/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27/report.json \
-              --entry-report /probe-input/entry-report.json \
-              --entry-manifest /probe-input/entry-manifest.json \
-              --spec /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1.md \
-              --amendment /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1.md \
-              --dudu-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_DUDU.md \
-              --codex-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_CODEX.md \
-              > "$ROOT/plan.json" 2> "$ROOT/plan.error.txt"
-            plan_exit=$?
-          else
-            printf '%s\n' 'Frozen RAW prefix hash did not match the signed input.' > "$ROOT/plan.error.txt"
-          fi
-          printf '%s\n' "$plan_exit" > "$ROOT/plan.exit-code.txt"
-          (cd "$ROOT" && sha256sum frozen-prefix-recovery.json plan.error.txt plan.exit-code.txt $(test -f plan.json && printf plan.json) > SHA256SUMS)
-          tar -C "$ROOT" -czf "/tmp/tape-probe-plan-${RUN_ID}.tgz" .
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "SOURCE_RUN_ID='$SOURCE_RUN_ID' TARGET_RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="/tmp/tape-probe-plan-${SOURCE_RUN_ID}"
+          test -d "$ROOT"
+          find "$ROOT" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          tar -C "$ROOT" -czf "/tmp/tape-probe-plan-recovered-${TARGET_RUN_ID}.tgz" .
+          test -s "/tmp/tape-probe-plan-recovered-${TARGET_RUN_ID}.tgz"
           REMOTE
 
-      - name: Download and verify frozen plan package
+      - name: Download and verify frozen plan
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
           mkdir -p /tmp/tape-probe-plan
           scp -i ~/.ssh/c3po_deploy \
-            "$USER@$HOST:/tmp/tape-probe-plan-${GITHUB_RUN_ID}.tgz" \
+            "$USER@$HOST:/tmp/tape-probe-plan-recovered-${GITHUB_RUN_ID}.tgz" \
             /tmp/tape-probe-plan.tgz
           tar -xzf /tmp/tape-probe-plan.tgz -C /tmp/tape-probe-plan
           (cd /tmp/tape-probe-plan && sha256sum -c SHA256SUMS)
