@@ -47,13 +47,14 @@ jobs:
           mkdir -p "$ROOT"
           test -d "$INPUT"
           test ! -e "$OUTPUT_HOST"
-          test "$(cd "$APP_DIR" && git rev-parse HEAD)" = bf248feea54f0577950d5dcb36b55d1dbbf22f0b
+          cd "$APP_DIR"
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          deployed_sha=$("${compose[@]}" exec -T api printenv C3PO_BUILD_SHA)
+          test "$deployed_sha" = bf248feea54f0577950d5dcb36b55d1dbbf22f0b
 
           head -c "$EXPECTED_SIZE" "$RAW_SOURCE" > "$FROZEN"
           test "$(sha256sum "$FROZEN" | awk '{print $1}')" = "$EXPECTED_SHA"
 
-          cd "$APP_DIR"
-          compose=(docker compose --env-file .env -f c3po/compose.yml)
           common=(
             -v "$INPUT:/probe-input:ro"
             -v "$FROZEN:/app/day-d-data/$RAW_RELATIVE:ro"
