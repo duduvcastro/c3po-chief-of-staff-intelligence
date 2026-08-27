@@ -48,6 +48,8 @@ def extract_itr_official_fundamentals(
             issuers,
             DRE_ACCOUNTS,
             period_field="DT_FIM_EXERC",
+            include_prior_comparative=True,
+            require_year_to_date=True,
         )
         bpa = _read_statement(
             archive,
@@ -128,6 +130,8 @@ def _read_statement(
     accounts: dict[str, str],
     *,
     period_field: str,
+    include_prior_comparative: bool = False,
+    require_year_to_date: bool = False,
 ) -> dict[str, dict[str, dict[str, float]]]:
     if filename not in archive.namelist():
         return {}
@@ -139,9 +143,15 @@ def _read_statement(
             account = str(row.get("CD_CONTA") or "")
             if tax_id not in issuers or account not in accounts:
                 continue
-            if _fold(row.get("ORDEM_EXERC")) != "ULTIMO":
+            allowed_orders = {"ULTIMO", "PENULTIMO"} if include_prior_comparative else {"ULTIMO"}
+            if _fold(row.get("ORDEM_EXERC")) not in allowed_orders:
                 continue
             period = str(row.get(period_field) or row.get("DT_REFER") or "")[:10]
+            if require_year_to_date and not _is_year_to_date_row(
+                row.get("DT_INI_EXERC"),
+                period,
+            ):
+                continue
             value = _scaled_value(row.get("VL_CONTA"), row.get("ESCALA_MOEDA"))
             if not period or value is None:
                 continue
@@ -154,6 +164,21 @@ def _read_statement(
     for (tax_id, period, field), (_, value) in selected.items():
         output[tax_id][period][field] = value
     return {tax_id: dict(periods) for tax_id, periods in output.items()}
+
+
+def _is_year_to_date_row(start_value: Any, end_value: Any) -> bool:
+    """Select the cumulative DRE row that can be safely quarterized.
+
+    CVM ITR files publish both year-to-date and standalone-quarter rows with
+    the same account and end date. Mixing the standalone row into a cumulative
+    series would subtract the prior quarter twice.
+    """
+    try:
+        start = date.fromisoformat(str(start_value or "")[:10])
+        end = date.fromisoformat(str(end_value or "")[:10])
+    except ValueError:
+        return False
+    return start == date(end.year, 1, 1) and start <= end
 
 
 def _read_share_capital(
