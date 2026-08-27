@@ -36,6 +36,15 @@ jobs:
           printf '%s\n' '=== temporary packages ==='
           find /tmp -maxdepth 3 \( -type f -o -type d \) \
             -iname '*tape-probe*' -printf '%p %s bytes\n' 2>/dev/null | sort || true
+          printf '%s\n' '=== source run contents ==='
+          ROOT=/tmp/microstructure-tape-probe-v1-33067984482
+          find "$ROOT" -maxdepth 2 -type f -printf '%p %s bytes\n' 2>/dev/null | sort || true
+          for file in plan.error.txt run.exit-code.txt run.stdout.json run.stderr.txt validation.json; do
+            if [ -f "$ROOT/$file" ]; then
+              printf '%s\n' "--- $file ---"
+              sed -n '1,160p' "$ROOT/$file"
+            fi
+          done
           printf '%s\n' '=== home packages ==='
           find "$HOME" -maxdepth 2 -type f -iname '*tape-probe*' \
             -printf '%p %s bytes\n' 2>/dev/null | sort || true
