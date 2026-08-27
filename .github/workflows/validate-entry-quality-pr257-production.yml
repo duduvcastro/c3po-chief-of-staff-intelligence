@@ -23,29 +23,28 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Inventory factual outputs without calling providers
+      - name: Diagnose preconditions without calling providers
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
           ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' <<'REMOTE'
           set -u
-          printf '%s\n' '=== evidence directories ==='
-          find /mnt/day-d-data/evidence/microstructure-tape-probe-v1 \
-            -maxdepth 5 -type f -printf '%p %s bytes\n' 2>/dev/null | sort || true
-          printf '%s\n' '=== temporary packages ==='
-          find /tmp -maxdepth 3 \( -type f -o -type d \) \
-            -iname '*tape-probe*' -printf '%p %s bytes\n' 2>/dev/null | sort || true
-          printf '%s\n' '=== source run contents ==='
-          ROOT=/tmp/microstructure-tape-probe-v1-33067984482
-          find "$ROOT" -maxdepth 2 -type f -printf '%p %s bytes\n' 2>/dev/null | sort || true
-          for file in plan.error.txt run.exit-code.txt run.stdout.json run.stderr.txt validation.json; do
-            if [ -f "$ROOT/$file" ]; then
-              printf '%s\n' "--- $file ---"
-              sed -n '1,160p' "$ROOT/$file"
-            fi
-          done
-          printf '%s\n' '=== home packages ==='
-          find "$HOME" -maxdepth 2 -type f -iname '*tape-probe*' \
-            -printf '%p %s bytes\n' 2>/dev/null | sort || true
+          APP_DIR=/opt/chief-of-staff-digital
+          SOURCE_ROOT=/tmp/overnight-audit-33064012836
+          INPUT="$SOURCE_ROOT/inputs"
+          RAW=/mnt/day-d-data/provider=eodhd/microstructure/raw/session_date=2026-08-26/feed=trade-part-00001.ndjson
+
+          printf 'app_dir='; test -d "$APP_DIR" && echo present || echo missing
+          printf 'input_dir='; test -d "$INPUT" && echo present || echo missing
+          find "$INPUT" -maxdepth 1 -type f -printf 'input_file=%f size=%s\n' 2>/dev/null | sort || true
+          printf 'exit_report='; test -f /mnt/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27/report.json && echo present || echo missing
+          printf 'raw_source='; test -f "$RAW" && stat -c 'present size=%s' "$RAW" || echo missing
+          printf 'source_root_mode='; stat -c '%a %U:%G' "$SOURCE_ROOT" 2>/dev/null || echo missing
+          printf 'empty_run_root_mode='; stat -c '%a %U:%G' /tmp/microstructure-tape-probe-v1-33067984482 2>/dev/null || echo missing
+
+          cd "$APP_DIR" || exit 0
+          printf 'deployed_sha='; docker compose --env-file .env -f c3po/compose.yml exec -T api printenv C3PO_BUILD_SHA 2>&1 || true
+          printf 'api_runner_module='; docker compose --env-file .env -f c3po/compose.yml exec -T api \
+            python -c 'import app.microstructure_tape_probe; print("present")' 2>&1 || true
           REMOTE
