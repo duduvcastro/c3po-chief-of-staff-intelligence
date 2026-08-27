@@ -1,4 +1,4 @@
-name: Recover completed MICROSTRUCTURE_TAPE_PROBE_V1 evidence
+name: Inventory completed MICROSTRUCTURE_TAPE_PROBE_V1 evidence
 
 on:
   workflow_dispatch:
@@ -7,10 +7,10 @@ permissions:
   contents: read
 
 jobs:
-  recover-evidence:
+  inventory:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Configure production SSH key
         env:
@@ -23,105 +23,20 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Validate and package the already completed run
+      - name: Inventory factual outputs without calling providers
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
-          SOURCE_RUN_ID: "33067984482"
         run: |
-          ssh -i ~/.ssh/c3po_deploy \
-            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-            "$USER@$HOST" \
-            "SOURCE_RUN_ID='$SOURCE_RUN_ID' TARGET_RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
-          set -euo pipefail
-          OUTPUT="/mnt/day-d-data/evidence/microstructure-tape-probe-v1/2026-08-27/run-${SOURCE_RUN_ID}"
-          ROOT="/tmp/microstructure-tape-probe-recovery-${TARGET_RUN_ID}"
-          PACKAGE="$HOME/microstructure-tape-probe-recovery-${TARGET_RUN_ID}.tgz"
-          mkdir -p "$ROOT"
-          test -f "$OUTPUT/manifest.json"
-          test -f "$OUTPUT/report.json"
-          test -f "$OUTPUT/SHA256SUMS.json"
-          test -f "$OUTPUT/raw/massive-trades.ndjson.gz"
-
-          python3 - "$OUTPUT" "$ROOT/validation.json" <<'PY'
-          import hashlib
-          import json
-          import sys
-          from pathlib import Path
-
-          output = Path(sys.argv[1])
-          target = Path(sys.argv[2])
-
-          def canonical_sha(payload):
-              return hashlib.sha256(
-                  json.dumps(
-                      payload,
-                      sort_keys=True,
-                      separators=(",", ":"),
-                      ensure_ascii=True,
-                      default=str,
-                  ).encode()
-              ).hexdigest()
-
-          def verify_self_hash(path, field):
-              payload = json.loads(path.read_text())
-              claimed = payload.pop(field)
-              actual = canonical_sha(payload)
-              if claimed != actual:
-                  raise SystemExit(f"self-hash mismatch for {path.name}")
-              return claimed
-
-          sums = json.loads((output / "SHA256SUMS.json").read_text())
-          checked = {}
-          for relative, expected in sums.items():
-              actual = hashlib.sha256((output / relative).read_bytes()).hexdigest()
-              if actual != expected:
-                  raise SystemExit(f"sha256 mismatch for {relative}: {actual} != {expected}")
-              checked[relative] = actual
-          report = json.loads((output / "report.json").read_text())
-          result = {
-              "source_run_id": "33067984482",
-              "files": checked,
-              "manifest_self_hash_verified": True,
-              "report_self_hash_verified": True,
-              "manifest_sha256": verify_self_hash(output / "manifest.json", "manifest_sha256"),
-              "report_sha256": verify_self_hash(output / "report.json", "report_sha256"),
-              "status": report.get("status"),
-              "analysis_interpretable": report.get("analysis_interpretable"),
-              "classification_counts": report.get("classification_counts"),
-              "classification_counts_by_study": report.get("classification_counts_by_study"),
-              "classification_counts_by_session": report.get("classification_counts_by_session"),
-              "sample": report.get("sample"),
-              "entitlement_proof": report.get("entitlement_proof"),
-              "preregistered_reading": report.get("preregistered_reading"),
-          }
-          target.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n")
-          PY
-
-          tar -C "$OUTPUT" -czf "$ROOT/evidence.tgz" .
-          sha256sum "$ROOT/evidence.tgz" > "$ROOT/evidence.tgz.sha256"
-          tar -C "$ROOT" -czf "$PACKAGE" validation.json evidence.tgz evidence.tgz.sha256
-          test -s "$PACKAGE"
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -u
+          printf '%s\n' '=== evidence directories ==='
+          find /mnt/day-d-data/evidence/microstructure-tape-probe-v1 \
+            -maxdepth 5 -type f -printf '%p %s bytes\n' 2>/dev/null | sort || true
+          printf '%s\n' '=== temporary packages ==='
+          find /tmp -maxdepth 3 \( -type f -o -type d \) \
+            -iname '*tape-probe*' -printf '%p %s bytes\n' 2>/dev/null | sort || true
+          printf '%s\n' '=== home packages ==='
+          find "$HOME" -maxdepth 2 -type f -iname '*tape-probe*' \
+            -printf '%p %s bytes\n' 2>/dev/null | sort || true
           REMOTE
-
-      - name: Download and verify the recovered bytes
-        env:
-          HOST: ${{ secrets.C3PO_AWS_HOST }}
-          USER: ${{ secrets.C3PO_AWS_USER }}
-        run: |
-          ROOT=/tmp/microstructure-tape-probe-v1
-          mkdir -p "$ROOT/evidence"
-          scp -i ~/.ssh/c3po_deploy \
-            "$USER@$HOST:microstructure-tape-probe-recovery-${GITHUB_RUN_ID}.tgz" \
-            "$ROOT/package.tgz"
-          tar -xzf "$ROOT/package.tgz" -C "$ROOT"
-          (cd "$ROOT" && sha256sum -c evidence.tgz.sha256)
-          tar -xzf "$ROOT/evidence.tgz" -C "$ROOT/evidence"
-
-      - name: Publish immutable evidence artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: microstructure-tape-probe-v1-2026-08-27-${{ github.run_id }}
-          path: /tmp/microstructure-tape-probe-v1
-          if-no-files-found: error
-          retention-days: 30
