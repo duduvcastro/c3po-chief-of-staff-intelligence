@@ -39,6 +39,7 @@ jobs:
           C3PO_HEALTHCHECK_CASH_YIELD_URL: ${{ secrets.C3PO_HEALTHCHECK_CASH_YIELD_URL }}
           C3PO_HEALTHCHECK_CODE_CENSUS_URL: ${{ secrets.C3PO_HEALTHCHECK_CODE_CENSUS_URL }}
           C3PO_HEALTHCHECK_POSTGRES_BACKUP_URL: ${{ secrets.C3PO_HEALTHCHECK_POSTGRES_BACKUP_URL }}
+          C3PO_HEALTHCHECK_POSTGRES_RESTORE_URL: ${{ secrets.C3PO_HEALTHCHECK_POSTGRES_RESTORE_URL }}
           C3PO_POSTGRES_BACKUP_BUCKET: ${{ secrets.C3PO_POSTGRES_BACKUP_BUCKET }}
           C3PO_POSTGRES_BACKUP_REGION: ${{ secrets.C3PO_POSTGRES_BACKUP_REGION }}
           C3PO_POSTGRES_BACKUP_ENDPOINT: ${{ secrets.C3PO_POSTGRES_BACKUP_ENDPOINT }}
@@ -50,7 +51,7 @@ jobs:
           import os
           from pathlib import Path
 
-          required = (
+          server_values = (
               "C3PO_SENTRY_DSN",
               "C3PO_HEALTHCHECK_VALUATION_WORKER_URL",
               "C3PO_HEALTHCHECK_CASH_YIELD_URL",
@@ -61,12 +62,14 @@ jobs:
               "C3PO_POSTGRES_BACKUP_ACCESS_KEY_ID",
               "C3PO_POSTGRES_BACKUP_SECRET_ACCESS_KEY",
           )
-          payload = {key: os.environ.get(key, "") for key in required}
+          required = (*server_values, "C3PO_HEALTHCHECK_POSTGRES_RESTORE_URL")
+          payload = {key: os.environ.get(key, "") for key in server_values}
+          payload["C3PO_HEALTHCHECK_POSTGRES_RESTORE_CONFIGURED"] = "true"
           payload["C3PO_POSTGRES_BACKUP_ENDPOINT"] = os.environ.get(
               "C3PO_POSTGRES_BACKUP_ENDPOINT", ""
           )
           payload["C3PO_POSTGRES_BACKUP_PREFIX"] = "c3po-postgres"
-          missing = sorted(key for key in required if not payload[key])
+          missing = sorted(key for key in required if not os.environ.get(key, ""))
           if missing:
               raise SystemExit(f"missing production secret(s): {', '.join(missing)}")
           target = Path("/tmp/resilience-ops-env.json")

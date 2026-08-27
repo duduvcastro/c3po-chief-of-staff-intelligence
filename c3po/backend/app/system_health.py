@@ -7,11 +7,13 @@ from pathlib import Path
 import re
 import shutil
 from typing import Any, Callable
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import httpx
 
 from .config import Settings
+from .observability import HealthcheckPing
 from .schemas import AiUsageMetric, ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
 from .valuation_worker_contract import (
     VALUATION_WORKER_CANONICAL_PHASE,
@@ -390,8 +392,81 @@ class SystemHealthService:
             self._github_health(now),
             self._intermedia_health(now),
             self._backblaze_health(now),
+            self._healthchecks_health(now),
+            self._sentry_health(now),
             self._open_meteo_health(now),
         ]
+
+    def _healthchecks_health(self, now: datetime) -> IntegrationHealth:
+        configured_checks = (
+            self.settings.healthcheck_valuation_worker_url,
+            self.settings.healthcheck_cash_yield_url,
+            self.settings.healthcheck_code_census_url,
+            self.settings.healthcheck_postgres_backup_url,
+        )
+        configured_count = sum(
+            HealthcheckPing(url).configured for url in configured_checks
+        ) + int(self.settings.healthcheck_postgres_restore_configured)
+        if configured_count < 5:
+            return IntegrationHealth(
+                name="Healthchecks.io",
+                status="offline",
+                detail=f"Dead-man monitoring incomplete · {configured_count}/5 checks armed",
+                last_update=self._format_time(now),
+            )
+        try:
+            response = self.external_get(
+                "https://healthchecks.io/",
+                timeout=self.settings.system_health_external_timeout_seconds,
+                follow_redirects=True,
+                headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
+            )
+            status = "healthy" if response.status_code < 400 else "attention" if response.status_code < 500 else "offline"
+            return IntegrationHealth(
+                name="Healthchecks.io",
+                status=status,
+                detail=f"5/5 dead-man checks armed · SaaS HTTP {response.status_code}",
+                last_update=self._format_time(now),
+            )
+        except Exception as exc:
+            return self._offline_item("Healthchecks.io", exc, now)
+
+    def _sentry_health(self, now: datetime) -> IntegrationHealth:
+        dsn = self.settings.sentry_dsn.strip()
+        parsed = urlsplit(dsn)
+        if (
+            not dsn
+            or parsed.scheme != "https"
+            or not (parsed.hostname or "").lower().endswith(".sentry.io")
+        ):
+            return IntegrationHealth(
+                name="Sentry",
+                status="offline",
+                detail="Official SaaS DSN is not configured",
+                last_update=self._format_time(now),
+            )
+        try:
+            response = self.external_get(
+                "https://status.sentry.io/api/v2/status.json",
+                timeout=self.settings.system_health_external_timeout_seconds,
+                follow_redirects=True,
+                headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
+            )
+            indicator = str((response.json().get("status") or {}).get("indicator") or "unknown")
+            if response.status_code >= 500 or indicator in {"major", "critical"}:
+                status = "offline"
+            elif response.status_code >= 400 or indicator not in {"none", "unknown"}:
+                status = "attention"
+            else:
+                status = "healthy"
+            return IntegrationHealth(
+                name="Sentry",
+                status=status,
+                detail=f"DSN loaded · PII disabled · SaaS status {indicator}",
+                last_update=self._format_time(now),
+            )
+        except Exception as exc:
+            return self._offline_item("Sentry", exc, now)
 
     def _backblaze_health(self, now: datetime) -> IntegrationHealth:
         if not all((
@@ -580,17 +655,18 @@ class SystemHealthService:
         return items
 
     def _aws_health(self, now: datetime) -> list[IntegrationHealth]:
+        backup = self._postgres_backup_health(now)
         try:
             servers = self.server_usage.snapshot(hours=1).servers
         except Exception as exc:
-            return [self._offline_item("AWS Lightsail", exc, now)]
+            return [self._offline_item("AWS Lightsail", exc, now), backup]
         if not servers:
             return [IntegrationHealth(
                 name="AWS Lightsail",
                 status="offline",
                 detail="No recent server telemetry",
                 last_update=self._format_time(now),
-            )]
+            ), backup]
 
         items: list[IntegrationHealth] = []
         for server in servers:
@@ -611,7 +687,135 @@ class SystemHealthService:
                 detail=" · ".join(detail_parts),
                 last_update=self._format_time(server.current.collected_at) if server.current.collected_at else "No recent sample",
             ))
-        return items
+        return [*items, backup]
+
+    def _postgres_backup_health(self, now: datetime) -> IntegrationHealth:
+        if not all((
+            self.settings.postgres_backup_bucket,
+            self.settings.postgres_backup_region,
+            self.settings.postgres_backup_access_key_id,
+            self.settings.postgres_backup_secret_access_key,
+        )):
+            return IntegrationHealth(
+                name="PostgreSQL offsite backup",
+                status="offline",
+                detail="S3 writer or bucket is not configured",
+                last_update=self._format_time(now),
+            )
+
+        evidence_root = self.settings.legacy_root / "outputs" / "evidence"
+        backup_root = evidence_root / "postgres-backup"
+        try:
+            run_directories = [path for path in backup_root.glob("*/*") if path.is_dir()]
+            latest_run = max(run_directories, key=lambda path: path.stat().st_mtime) if run_directories else None
+        except OSError as exc:
+            return self._offline_item("PostgreSQL offsite backup", exc, now)
+        if latest_run is None:
+            return IntegrationHealth(
+                name="PostgreSQL offsite backup",
+                status="attention",
+                detail="Private versioned S3 bucket configured · first sealed upload pending",
+                last_update=self._format_time(now),
+            )
+        result_path = latest_run / "result.json"
+        if not result_path.is_file():
+            return IntegrationHealth(
+                name="PostgreSQL offsite backup",
+                status="offline",
+                detail="Latest backup attempt did not produce a sealed result",
+                last_update=self._format_time(
+                    datetime.fromtimestamp(latest_run.stat().st_mtime, tz=timezone.utc)
+                ),
+            )
+
+        try:
+            result = self._verified_result_evidence(
+                result_path,
+                schema="C3PO_POSTGRES_BACKUP_RESULT-v1",
+            )
+            upload_path = result_path.with_name("upload.json")
+            self._require_sha256s_entry(upload_path)
+            upload = self._read_evidence(upload_path)
+            uploads = upload.get("uploads")
+            if (
+                upload.get("schema") != "C3PO_POSTGRES_BACKUP_UPLOAD-v1"
+                or upload.get("bucket") != self.settings.postgres_backup_bucket
+                or upload.get("region") != self.settings.postgres_backup_region
+                or upload.get("file_sha256") != result.get("dump_sha256")
+                or not isinstance(uploads, list)
+                or len(uploads) != int(result.get("upload_count") or 0)
+                or result.get("uploads") != uploads
+                or not uploads
+                or any(
+                    not isinstance(item, dict)
+                    or not str(item.get("key") or "").startswith(
+                        f"{self.settings.postgres_backup_prefix.strip('/')}/"
+                    )
+                    for item in uploads
+                )
+            ):
+                raise ValueError("backup upload evidence does not reconcile")
+            completed_at = self._payload_time(result, "completed_at")
+            if completed_at is None:
+                raise ValueError("backup completion time is missing")
+            if completed_at.astimezone(timezone.utc) > now + timedelta(minutes=5):
+                raise ValueError("backup completion time is in the future")
+        except Exception as exc:
+            return IntegrationHealth(
+                name="PostgreSQL offsite backup",
+                status="offline",
+                detail=f"Latest backup evidence is invalid · {self._safe_error(exc)}",
+                last_update=self._format_time(now),
+            )
+
+        age_hours = max(0.0, (now - completed_at.astimezone(timezone.utc)).total_seconds() / 3600)
+        if age_hours > 54:
+            status = "offline"
+        elif age_hours > 30:
+            status = "attention"
+        else:
+            status = "healthy"
+
+        restore_detail = "restore drill pending"
+        try:
+            restore_paths = list((evidence_root / "postgres-restore-drill").glob("*/*/result.json"))
+            restore_path = max(restore_paths, key=lambda path: path.stat().st_mtime) if restore_paths else None
+        except OSError as exc:
+            restore_detail = f"restore drill evidence unavailable · {self._safe_error(exc)}"
+            restore_path = None
+            status = "attention" if status == "healthy" else status
+        if restore_path is not None:
+            try:
+                restore = self._verified_result_evidence(
+                    restore_path,
+                    schema="C3PO_POSTGRES_RESTORE_DRILL-v1",
+                )
+                restored_at = self._payload_time(restore, "completed_at")
+                if restored_at is None:
+                    raise ValueError("restore drill completion time is missing")
+                if restored_at.astimezone(timezone.utc) > now + timedelta(minutes=5):
+                    raise ValueError("restore drill completion time is in the future")
+                restore_age_days = max(0.0, (now - restored_at.astimezone(timezone.utc)).total_seconds() / 86400)
+                if restore_age_days <= 35:
+                    restore_detail = "restore drill verified"
+                else:
+                    restore_detail = f"restore drill stale ({restore_age_days:.0f}d)"
+                    status = "attention" if status == "healthy" else status
+            except Exception as exc:
+                restore_detail = f"restore drill invalid · {self._safe_error(exc)}"
+                status = "attention" if status == "healthy" else status
+        elif status == "healthy":
+            status = "attention"
+
+        return IntegrationHealth(
+            name="PostgreSQL offsite backup",
+            status=status,
+            detail=(
+                f"Immutable S3 upload evidenced · {len(uploads)} object(s) · "
+                f"{restore_detail}"
+            ),
+            last_update=self._format_time(completed_at),
+        )
 
     def _day_d_and_valuation_health(self, now: datetime) -> list[IntegrationHealth]:
         return [
@@ -932,6 +1136,43 @@ class SystemHealthService:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
         return digest.hexdigest()
+
+    def _verified_result_evidence(
+        self,
+        path: Path,
+        *,
+        schema: str,
+    ) -> dict[str, Any]:
+        self._require_sha256s_entry(path)
+        payload = self._read_evidence(path)
+        if payload.get("schema") != schema or payload.get("status") != "succeeded":
+            raise ValueError(f"unexpected evidence contract: {path.name}")
+        declared_self_hash = str(payload.get("self_sha256") or "")
+        canonical_payload = dict(payload)
+        canonical_payload.pop("self_sha256", None)
+        canonical = json.dumps(
+            canonical_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        actual_self_hash = hashlib.sha256(canonical).hexdigest()
+        if not declared_self_hash or declared_self_hash != actual_self_hash:
+            raise ValueError(f"self-hash mismatch: {path.name}")
+        return payload
+
+    def _require_sha256s_entry(self, path: Path) -> None:
+        sums_path = path.with_name("SHA256SUMS")
+        expected: str | None = None
+        for line in sums_path.read_text(encoding="utf-8").splitlines():
+            fields = line.strip().split(maxsplit=1)
+            if len(fields) != 2:
+                continue
+            filename = fields[1].lstrip("*")
+            if filename == path.name:
+                expected = fields[0]
+                break
+        if expected is None or expected != self._sha256_file(path):
+            raise ValueError(f"SHA256SUMS mismatch: {path.name}")
 
     @staticmethod
     def _evidence_time(payload: dict[str, Any]) -> datetime | None:

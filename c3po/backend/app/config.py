@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     healthcheck_cash_yield_url: str = ""
     healthcheck_code_census_url: str = ""
     healthcheck_postgres_backup_url: str = ""
+    healthcheck_postgres_restore_configured: bool = False
     postgres_backup_bucket: str = ""
     postgres_backup_region: str = "us-east-1"
     postgres_backup_endpoint: str = ""

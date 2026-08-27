@@ -95,6 +95,28 @@ Sentry Developer is default-off when `C3PO_SENTRY_DSN` is empty. When enabled:
 
 API and worker containers must be recreated after the DSN is installed.
 
+## Storm Troops controls
+
+Storm Troops exposes the three resilience services without treating mere
+configuration as operational evidence:
+
+- `PostgreSQL offsite backup` is healthy only when the latest daily package has
+  a valid `SHA256SUMS`, a valid report self-hash, a reconciled upload to the
+  configured S3 bucket, is at most 30 hours old, and a successful restore drill
+  is at most 35 days old. It becomes attention during the documented grace
+  windows and offline for invalid or materially stale evidence. The API never
+  tries to list or read S3 with the intentionally write-only host credential.
+- `Healthchecks.io` requires all five dead-man checks to be configured and the
+  SaaS endpoint to be reachable. Ping URLs are never displayed, logged, or used
+  by the dashboard probe because probing them would fabricate job success.
+- `Sentry` requires an official `sentry.io` DSN and a reachable SaaS status
+  endpoint. The card proves configuration and provider availability; error
+  delivery remains observable in the Sentry project and its alert policy.
+
+The monthly restore check URL remains only in the GitHub `production`
+environment. The production host stores a boolean attestation that the fifth
+check was present during the audited installer run, never the secret ping URL.
+
 ## Deployment order
 
 1. Create the S3 bucket, lifecycle, writer, and restore-reader credentials.
