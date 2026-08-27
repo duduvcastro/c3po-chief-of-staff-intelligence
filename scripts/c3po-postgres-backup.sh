@@ -77,7 +77,7 @@ cd "$BASE"
     --no-owner --no-privileges >"$DUMP_PATH"
 
 test -s "$DUMP_PATH"
-"${COMPOSE[@]}" exec -T db pg_restore --list - \
+"${COMPOSE[@]}" exec -T db pg_restore --list \
   <"$DUMP_PATH" >/dev/null
 
 dump_sha256=$(sha256sum "$DUMP_PATH" | awk '{print $1}')
@@ -98,6 +98,7 @@ path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="
 PY
 
 "${COMPOSE[@]}" run --rm -T \
+  --user "$(id -u):$(id -g)" \
   -v "$TEMP_DIR:/backup:ro" \
   -v "$EVIDENCE_DIR:/evidence" \
   api python -m app.postgres_backup_upload \
