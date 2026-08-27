@@ -1,4 +1,4 @@
-name: Run MICROSTRUCTURE_TAPE_PROBE_V1 once
+name: Inspect MICROSTRUCTURE_TAPE_PROBE_V1 blocked run
 
 on:
   workflow_dispatch:
@@ -7,10 +7,10 @@ permissions:
   contents: read
 
 jobs:
-  run-probe:
+  inspect:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - name: Configure production SSH key
         env:
@@ -23,158 +23,27 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Execute the audited Massive collection once
+      - name: Inspect blocked run without calling providers
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
-          ssh -i ~/.ssh/c3po_deploy \
-            -o ServerAliveInterval=30 -o ServerAliveCountMax=60 \
-            "$USER@$HOST" "RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
-          set -euo pipefail
-          APP_DIR=/opt/chief-of-staff-digital
-          SOURCE_ROOT=/tmp/overnight-audit-33064012836
-          INPUT="$SOURCE_ROOT/inputs"
-          RAW_RELATIVE=provider=eodhd/microstructure/raw/session_date=2026-08-26/feed=trade-part-00001.ndjson
-          RAW_SOURCE="/mnt/day-d-data/$RAW_RELATIVE"
-          EXPECTED_SIZE=67073447
-          EXPECTED_SHA=b202c4d3a6e99a9136d6a02b76e585d4ea83ba6cff56aea86a1c5875c48af2fc
-          EXPECTED_RUNNER_SHA=6c1cc1abc9d8781147e0ec216d2c69705b44b46ad5f271b3339a357bcadd63ec
-          EXPECTED_PLAN_SHA=c15dcfc3f7b9babacdbd95bc3f83952de26349780ca74c3469fcb84418e73b96
-          ROOT="/tmp/microstructure-tape-probe-v1-${RUN_ID}"
-          FROZEN="$ROOT/frozen-raw26.ndjson"
-          OUTPUT_HOST="/mnt/day-d-data/evidence/microstructure-tape-probe-v1/2026-08-27/run-${RUN_ID}"
-          OUTPUT_CONTAINER="/app/day-d-data/evidence/microstructure-tape-probe-v1/2026-08-27/run-${RUN_ID}"
-          mkdir -p "$ROOT"
-          test -d "$INPUT"
-          test ! -e "$OUTPUT_HOST"
-          cd "$APP_DIR"
-          compose=(docker compose --env-file .env -f c3po/compose.yml)
-          runner_sha=$("${compose[@]}" exec -T api sha256sum /app/app/microstructure_tape_probe.py | awk '{print $1}')
-          test "$runner_sha" = "$EXPECTED_RUNNER_SHA"
-
-          head -c "$EXPECTED_SIZE" "$RAW_SOURCE" > "$FROZEN"
-          test "$(sha256sum "$FROZEN" | awk '{print $1}')" = "$EXPECTED_SHA"
-
-          common=(
-            -v "$INPUT:/probe-input:ro"
-            -v "$FROZEN:/app/day-d-data/$RAW_RELATIVE:ro"
-            api python -m app.microstructure_tape_probe
-          )
-          args=(
-            --exit-report /app/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27/report.json
-            --entry-report /probe-input/entry-report.json
-            --entry-manifest /probe-input/entry-manifest.json
-            --spec /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1.md
-            --amendment /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1.md
-            --dudu-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_DUDU.md
-            --codex-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_CODEX.md
-          )
-
-          "${compose[@]}" run --rm -T "${common[@]}" plan "${args[@]}" \
-            > "$ROOT/plan.json" 2> "$ROOT/plan.error.txt"
-          plan_sha=$(sha256sum "$ROOT/plan.json" | awk '{print $1}')
-          test "$plan_sha" = "$EXPECTED_PLAN_SHA"
-
-          set +e
-          "${compose[@]}" run --rm -T "${common[@]}" run "${args[@]}" \
-            --output "$OUTPUT_CONTAINER" \
-            > "$ROOT/run.stdout.json" 2> "$ROOT/run.stderr.txt"
-          run_exit=$?
-          set -e
-          printf '%s\n' "$run_exit" > "$ROOT/run.exit-code.txt"
-
-          test -f "$OUTPUT_HOST/manifest.json"
-          test -f "$OUTPUT_HOST/report.json"
-          test -f "$OUTPUT_HOST/SHA256SUMS.json"
-          test -f "$OUTPUT_HOST/raw/massive-trades.ndjson.gz"
-          python3 - "$OUTPUT_HOST" "$ROOT/validation.json" <<'PY'
-          import hashlib
-          import json
-          import sys
-          from pathlib import Path
-
-          output = Path(sys.argv[1])
-          target = Path(sys.argv[2])
-
-          def canonical_sha(payload):
-              return hashlib.sha256(
-                  json.dumps(
-                      payload,
-                      sort_keys=True,
-                      separators=(",", ":"),
-                      ensure_ascii=True,
-                      default=str,
-                  ).encode()
-              ).hexdigest()
-
-          def self_hash(payload, field):
-              clone = dict(payload)
-              claimed = clone.pop(field)
-              return claimed, canonical_sha(clone)
-
-          sums = json.loads((output / "SHA256SUMS.json").read_text())
-          checked = {}
-          for relative, expected in sums.items():
-              actual = hashlib.sha256((output / relative).read_bytes()).hexdigest()
-              if actual != expected:
-                  raise SystemExit(f"sha256 mismatch for {relative}: {actual} != {expected}")
-              checked[relative] = actual
-          manifest = json.loads((output / "manifest.json").read_text())
-          report = json.loads((output / "report.json").read_text())
-          manifest_claimed, manifest_actual = self_hash(manifest, "manifest_sha256")
-          report_claimed, report_actual = self_hash(report, "report_sha256")
-          if manifest_claimed != manifest_actual:
-              raise SystemExit("manifest self-hash mismatch")
-          if report_claimed != report_actual:
-              raise SystemExit("report self-hash mismatch")
-          result = {
-              "files": checked,
-              "manifest_self_hash_verified": True,
-              "report_self_hash_verified": True,
-              "status": report.get("status"),
-              "analysis_interpretable": report.get("analysis_interpretable"),
-              "classification_counts": report.get("classification_counts"),
-              "sample": report.get("sample"),
-              "entitlement_proof": report.get("entitlement_proof"),
-              "preregistered_reading": report.get("preregistered_reading"),
-              "report_sha256": report_claimed,
-              "manifest_sha256": manifest_claimed,
-          }
-          target.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n")
-          PY
-
-          (cd "$ROOT" && sha256sum plan.json plan.error.txt run.stdout.json run.stderr.txt \
-            run.exit-code.txt validation.json > SHA256SUMS)
-          tar -C "$OUTPUT_HOST" -czf "$ROOT/evidence.tgz" .
-          sha256sum "$ROOT/evidence.tgz" > "$ROOT/evidence.tgz.sha256"
-          tar -C "$ROOT" -czf "/tmp/microstructure-tape-probe-v1-${RUN_ID}.tgz" \
-            plan.json plan.error.txt run.stdout.json run.stderr.txt run.exit-code.txt \
-            validation.json SHA256SUMS evidence.tgz evidence.tgz.sha256
-          test "$run_exit" -eq 0
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' <<'REMOTE'
+          ROOT=/tmp/microstructure-tape-probe-v1-33068820893
+          printf 'root='; stat -c '%a %U:%G' "$ROOT" 2>/dev/null || echo missing
+          find "$ROOT" -maxdepth 2 -type f -printf 'file=%f size=%s sha=%p\n' 2>/dev/null | sort || true
+          for file in plan.json plan.error.txt run.stdout.json run.stderr.txt run.exit-code.txt validation.json; do
+            if [ -f "$ROOT/$file" ]; then
+              printf '%s\n' "--- $file ---"
+              if [ "$file" = plan.json ]; then
+                sha256sum "$ROOT/$file"
+              fi
+              sed -n '1,240p' "$ROOT/$file"
+            fi
+          done
+          find /mnt/day-d-data/evidence/microstructure-tape-probe-v1/2026-08-27 \
+            -maxdepth 4 -type f -printf 'evidence=%p size=%s\n' 2>/dev/null | sort || true
+          cd /opt/chief-of-staff-digital || exit 0
+          docker compose --env-file .env -f c3po/compose.yml exec -T api \
+            sh -lc 'pwd; find / -path "*/app/microstructure_tape_probe.py" -type f -exec sha256sum {} \; 2>/dev/null' || true
           REMOTE
-
-      - name: Download and verify the complete package
-        env:
-          HOST: ${{ secrets.C3PO_AWS_HOST }}
-          USER: ${{ secrets.C3PO_AWS_USER }}
-        run: |
-          mkdir -p /tmp/microstructure-tape-probe-v1
-          scp -i ~/.ssh/c3po_deploy \
-            "$USER@$HOST:/tmp/microstructure-tape-probe-v1-${GITHUB_RUN_ID}.tgz" \
-            /tmp/microstructure-tape-probe-v1/package.tgz
-          tar -xzf /tmp/microstructure-tape-probe-v1/package.tgz \
-            -C /tmp/microstructure-tape-probe-v1
-          (cd /tmp/microstructure-tape-probe-v1 && sha256sum -c SHA256SUMS)
-          (cd /tmp/microstructure-tape-probe-v1 && sha256sum -c evidence.tgz.sha256)
-          mkdir -p /tmp/microstructure-tape-probe-v1/evidence
-          tar -xzf /tmp/microstructure-tape-probe-v1/evidence.tgz \
-            -C /tmp/microstructure-tape-probe-v1/evidence
-
-      - name: Publish immutable evidence artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: microstructure-tape-probe-v1-2026-08-27-${{ github.run_id }}
-          path: /tmp/microstructure-tape-probe-v1
-          if-no-files-found: error
-          retention-days: 30
