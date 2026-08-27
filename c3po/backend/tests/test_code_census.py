@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+from app import code_census as code_census_module
 from app.code_census import (
     CENSUS_METHODOLOGY,
     CodeCensusService,
@@ -109,3 +112,85 @@ def test_daily_census_waits_for_two_am_brt_and_runs_once_per_session(
     later_same_session = datetime(2026, 8, 27, 9, 0, tzinfo=timezone.utc)
     assert service.run_daily_if_due(root, now=later_same_session) is False
     assert len(database.executed) == 1
+
+
+def test_census_refuses_to_record_a_partial_walk_as_complete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _repo(tmp_path)
+    real_count = code_census_module._count_lines
+
+    def failing_count(path: Path) -> int | None:
+        if path.name == "r2d2.py":
+            raise OSError("simulated unreadable file")
+        return real_count(path)
+
+    monkeypatch.setattr(code_census_module, "_count_lines", failing_count)
+
+    measurement = measure_repository(root)
+    assert measurement is not None
+    assert measurement["unreadable_files"] == 1
+
+    database = _FakeDatabase()
+    service = CodeCensusService(
+        Settings(database_url="", auth_cookie_secure=False),
+        database,  # type: ignore[arg-type]
+    )
+    in_window = datetime(2026, 8, 27, 5, 1, tzinfo=timezone.utc)
+    assert service.run_daily_if_due(root, now=in_window) is False
+    assert database.executed == []
+
+
+class _SeriesDatabase:
+    def __init__(self, rows: list[tuple]) -> None:
+        self._rows = rows
+
+    @contextmanager
+    def connection(self):
+        rows = self._rows
+        yield SimpleNamespace(
+            execute=lambda sql, params=(): SimpleNamespace(
+                rowcount=0,
+                fetchall=lambda: rows,
+            ),
+            commit=lambda: None,
+        )
+
+
+def _series_row(session: str, methodology: str, total: int) -> tuple:
+    generated = datetime(2026, 8, 27, 5, 0, tzinfo=timezone.utc)
+    return (
+        datetime.fromisoformat(session).date(),
+        methodology,
+        {"backend_app": {"lines": total, "files": 1}},
+        total,
+        1,
+        0,
+        0,
+        generated,
+    )
+
+
+def test_snapshot_never_compares_totals_across_methodology_changes() -> None:
+    settings = Settings(database_url="", auth_cookie_secure=False)
+
+    changed = CodeCensusService(
+        settings,
+        _SeriesDatabase([  # type: ignore[arg-type]
+            _series_row("2026-08-28", "raw-line-count-frozen-globs-v2", 110_000),
+            _series_row("2026-08-27", CENSUS_METHODOLOGY, 107_033),
+        ]),
+    ).snapshot()
+    assert changed["delta_comparable"] is False
+    assert changed["total_delta_vs_previous"] is None
+
+    stable = CodeCensusService(
+        settings,
+        _SeriesDatabase([  # type: ignore[arg-type]
+            _series_row("2026-08-28", CENSUS_METHODOLOGY, 107_500),
+            _series_row("2026-08-27", CENSUS_METHODOLOGY, 107_033),
+        ]),
+    ).snapshot()
+    assert stable["delta_comparable"] is True
+    assert stable["total_delta_vs_previous"] == 467

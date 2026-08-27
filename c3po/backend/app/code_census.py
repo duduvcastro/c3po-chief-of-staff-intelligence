@@ -76,10 +76,8 @@ def _classify(relative: Path) -> str | None:
 
 
 def _count_lines(path: Path) -> int | None:
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return None
+    """Line count for a text file; None means binary-by-design, never an error."""
+    data = path.read_bytes()
     if b"\x00" in data[:1024]:
         return None
     if not data:
@@ -94,12 +92,15 @@ def measure_repository(root: Path) -> dict[str, Any] | None:
     layers: dict[str, dict[str, int]] = {
         name: {"lines": 0, "files": 0} for name in (*LAYER_ORDER, "docs_markdown")
     }
+    unreadable_files = 0
+    unreadable_directories = 0
     stack = [root]
     while stack:
         directory = stack.pop()
         try:
             entries = sorted(directory.iterdir())
         except OSError:
+            unreadable_directories += 1
             continue
         for entry in entries:
             if entry.is_symlink():
@@ -111,7 +112,11 @@ def measure_repository(root: Path) -> dict[str, Any] | None:
             layer = _classify(entry.relative_to(root))
             if layer is None:
                 continue
-            lines = _count_lines(entry)
+            try:
+                lines = _count_lines(entry)
+            except OSError:
+                unreadable_files += 1
+                continue
             if lines is None:
                 continue
             layers[layer]["lines"] += lines
@@ -124,6 +129,8 @@ def measure_repository(root: Path) -> dict[str, Any] | None:
         "total_files": sum(item["files"] for item in layers.values()),
         "docs_lines": docs["lines"],
         "docs_files": docs["files"],
+        "unreadable_files": unreadable_files,
+        "unreadable_directories": unreadable_directories,
     }
 
 
@@ -145,6 +152,15 @@ class CodeCensusService:
         measurement = measure_repository(root)
         if measurement is None:
             logger.warning("Code census skipped: %s is not a repository checkout", root)
+            return False
+        if measurement["unreadable_files"] or measurement["unreadable_directories"]:
+            # A partial walk must never be recorded as a complete census.
+            logger.warning(
+                "Code census refused: %s unreadable file(s) and %s unreadable directory(ies) under %s",
+                measurement["unreadable_files"],
+                measurement["unreadable_directories"],
+                root,
+            )
             return False
         with self.database.connection() as connection:
             inserted = connection.execute(
@@ -199,12 +215,18 @@ class CodeCensusService:
         ]
         latest = series[0] if series else None
         previous = series[1] if len(series) > 1 else None
+        # A methodology change resets the comparison baseline: deltas across
+        # different rulers would fabricate growth or shrinkage.
+        delta_comparable = bool(
+            latest and previous and latest["methodology"] == previous["methodology"]
+        )
         return {
             "latest": latest,
             "previous": previous,
+            "delta_comparable": delta_comparable,
             "total_delta_vs_previous": (
                 latest["total_lines"] - previous["total_lines"]
-                if latest and previous else None
+                if delta_comparable else None
             ),
             "layer_order": list(LAYER_ORDER),
             "series": list(reversed(series)),

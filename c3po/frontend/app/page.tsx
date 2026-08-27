@@ -7649,6 +7649,7 @@ interface CodeCensusRow {
 interface CodeCensusSnapshot {
   latest: CodeCensusRow | null;
   previous: CodeCensusRow | null;
+  delta_comparable: boolean;
   total_delta_vs_previous: number | null;
   layer_order: string[];
   series: CodeCensusRow[];
@@ -7767,7 +7768,7 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
             {(codeCensus.layer_order ?? []).map((layer) => {
               const row = codeCensus.latest?.layers?.[layer];
               if (!row) return null;
-              const previousRow = codeCensus.previous?.layers?.[layer];
+              const previousRow = codeCensus.delta_comparable ? codeCensus.previous?.layers?.[layer] : undefined;
               const delta = previousRow ? row.lines - previousRow.lines : null;
               return (
                 <div key={layer}>
