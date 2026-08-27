@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class AgentModel: ObservableObject {
     private static let syncSchemaVersion = 3
-    private static let eventSnapshotVersion = 1
+    private static let eventSnapshotVersion = 2
     @Published var server = UserDefaults.standard.string(forKey: "server") ?? "https://c3po.eduardocastro.com.br"
     @Published var pairingCode = ""
     @Published var status = "Aguardando pareamento"
@@ -73,17 +73,19 @@ final class AgentModel: ObservableObject {
                 ? UserDefaults.standard.object(forKey: "localCursor") as? Date
                 : nil
             let batch = await eventKit.localItems(modifiedAfter: localCursor)
-            var localItems = batch.items
             let storedEventSnapshotVersion = UserDefaults.standard.integer(forKey: "eventSnapshotVersion")
             let previousOccurrences = storedEventSnapshotVersion == Self.eventSnapshotVersion
                 ? loadEventSnapshot()
                 : []
-            let currentOccurrences = Set(batch.eventOccurrences)
-            let comparablePreviousOccurrences = previousOccurrences.filter {
-                $0.startsAt >= batch.windowStart && $0.startsAt < batch.windowEnd
-            }
+            let eventDelta = EventSnapshotDelta.between(
+                previous: previousOccurrences,
+                current: batch.eventOccurrences,
+                windowStart: batch.windowStart,
+                windowEnd: batch.windowEnd
+            )
+            var localItems = batch.syncItems(includingAdded: eventDelta.added)
             let removedOccurrences = calendarAuthorized
-                ? Set(comparablePreviousOccurrences).subtracting(currentOccurrences)
+                ? eventDelta.removed
                 : []
             localItems += removedOccurrences.map { occurrence in
                 LeahItem(

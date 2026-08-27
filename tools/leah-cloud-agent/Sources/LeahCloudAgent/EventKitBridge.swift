@@ -20,6 +20,7 @@ final class EventKitBridge {
 
     func localItems(modifiedAfter: Date?) async -> LocalItemBatch {
         var result: [LeahItem] = []
+        var eventItems: [LeahItem] = []
         var eventOccurrences: [EventOccurrence] = []
         let start = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
         let end = Calendar.current.date(byAdding: .day, value: 365, to: Date())!
@@ -29,26 +30,27 @@ final class EventKitBridge {
             eventOccurrences = events.map {
                 EventOccurrence(externalId: $0.calendarItemIdentifier, startsAt: $0.startDate)
             }
-            result += events
-                .filter { modifiedAfter == nil || ($0.lastModifiedDate ?? .distantPast) > modifiedAfter! }
-                .map { event in
-                    LeahItem(
-                        id: nil,
-                        kind: "event",
-                        externalId: event.calendarItemIdentifier,
-                        containerId: event.calendar.calendarIdentifier,
-                        title: event.title ?? "Sem título",
-                        notes: event.notes ?? "",
-                        startsAt: event.startDate,
-                        endsAt: event.endDate,
-                        dueAt: nil,
-                        isAllDay: event.isAllDay,
-                        isCompleted: false,
-                        source: "icloud",
-                        sourceModifiedAt: event.lastModifiedDate,
-                        deletedAt: nil
-                    )
-                }
+            eventItems = events.map { event in
+                LeahItem(
+                    id: nil,
+                    kind: "event",
+                    externalId: event.calendarItemIdentifier,
+                    containerId: event.calendar.calendarIdentifier,
+                    title: event.title ?? "Sem título",
+                    notes: event.notes ?? "",
+                    startsAt: event.startDate,
+                    endsAt: event.endDate,
+                    dueAt: nil,
+                    isAllDay: event.isAllDay,
+                    isCompleted: false,
+                    source: "icloud",
+                    sourceModifiedAt: event.lastModifiedDate,
+                    deletedAt: nil
+                )
+            }
+            result += eventItems.filter { item in
+                modifiedAfter == nil || (item.sourceModifiedAt ?? .distantPast) > modifiedAfter!
+            }
         }
         if remindersAuthorized {
             let reminders = await withCheckedContinuation { continuation in
@@ -79,6 +81,7 @@ final class EventKitBridge {
         }
         return LocalItemBatch(
             items: result,
+            eventItems: eventItems,
             eventOccurrences: eventOccurrences,
             windowStart: start,
             windowEnd: end
