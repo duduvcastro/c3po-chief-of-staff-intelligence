@@ -151,15 +151,18 @@ def test_census_refuses_to_record_a_partial_walk_as_complete(
 class _SeriesDatabase:
     def __init__(self, rows: list[tuple]) -> None:
         self._rows = rows
+        self.executed: list[tuple[str, tuple]] = []
 
     @contextmanager
     def connection(self):
         rows = self._rows
+
+        def execute(sql: str, params: tuple = ()) -> SimpleNamespace:
+            self.executed.append((sql, params))
+            return SimpleNamespace(rowcount=0, fetchall=lambda: rows)
+
         yield SimpleNamespace(
-            execute=lambda sql, params=(): SimpleNamespace(
-                rowcount=0,
-                fetchall=lambda: rows,
-            ),
+            execute=execute,
             commit=lambda: None,
         )
 
@@ -200,3 +203,28 @@ def test_snapshot_never_compares_totals_across_methodology_changes() -> None:
     ).snapshot()
     assert stable["delta_comparable"] is True
     assert stable["total_delta_vs_previous"] == 467
+
+
+def test_snapshot_returns_complete_history_in_chronological_order_by_default() -> None:
+    database = _SeriesDatabase(
+        [
+            _series_row("2026-08-28", CENSUS_METHODOLOGY, 107_500),
+            _series_row("2026-08-27", CENSUS_METHODOLOGY, 107_033),
+            _series_row("2026-08-26", CENSUS_METHODOLOGY, 106_500),
+        ]
+    )
+    service = CodeCensusService(
+        Settings(database_url="", auth_cookie_secure=False),
+        database,  # type: ignore[arg-type]
+    )
+
+    snapshot = service.snapshot()
+
+    assert [row["session_date"] for row in snapshot["series"]] == [
+        "2026-08-26",
+        "2026-08-27",
+        "2026-08-28",
+    ]
+    sql, params = database.executed[0]
+    assert "LIMIT" not in sql
+    assert params == ()
