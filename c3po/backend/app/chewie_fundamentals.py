@@ -18,13 +18,15 @@ ChewieMarket = Literal["B3", "NASDAQ", "NYSE"]
 
 ANALYSIS_TYPE = "chewie_fundamentals"
 METHODOLOGY_KEY = "chewie_fundamentals_daily"
-METHODOLOGY_VERSION = 2
+METHODOLOGY_VERSION = 3
 TOP_DISPLAY = 30
 SEARCH_LIMIT = 12
 ADHOC_CACHE_HOURS = 24
 LISTING_CACHE_HOURS = 20
 DEFAULT_DAILY_SYMBOL_BUDGET = 2_500
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,11}$")
+COMPANY_EV_BASIS = "company-level official composition"
+PROVIDER_EV_BASIS = "per-class provider convention"
 
 _UNIVERSE_SNAPSHOT_KEY: dict[ChewieMarket, str] = {
     "B3": "B3_UNIVERSE",
@@ -191,12 +193,19 @@ class ChewieFundamentalsService:
         overlay. No separate listing or fundamentals fetch is needed."""
         universe_rows = self._universe_stocks("B3")
         universe_rows, schema_backfill = self._backfill_b3_profitability_schema(universe_rows)
-        items = [self._item_from_b3_universe_row(row) for row in universe_rows]
+        items = self._b3_items_from_universe_rows(universe_rows)
         methodology_id = self.database.ensure_methodology_version(
             METHODOLOGY_KEY,
             METHODOLOGY_VERSION,
-            {"cadence": "daily", "scope": "B3 tracked universe (Brapi-sourced), display-only"},
-            "Daily B3 fundamentals snapshot sourced from the Brapi-backed screener universe.",
+            {
+                "cadence": "daily",
+                "scope": "B3 tracked universe (Brapi-sourced), display-only",
+                "ev_ebitda": (
+                    "Issuer-level EV from official CVM share composition and balance inputs; "
+                    "per-class provider multiple retained and labeled when inputs are incomplete"
+                ),
+            },
+            "Daily B3 fundamentals snapshot with conservative company-level EV reconciliation.",
         )
         self.database.save_analysis_snapshot(
             ANALYSIS_TYPE,
@@ -208,7 +217,7 @@ class ChewieFundamentalsService:
                 "refreshed": len(items),
                 "profitability_schema_backfill": schema_backfill,
             },
-            {"items": items, "universe_size": len(items), "source": "Brapi Pro + EODHD overlay"},
+            {"items": items, "universe_size": len(items), "source": "Brapi Pro + EODHD/CVM overlay"},
             datetime.now(timezone.utc),
         )
         return {"universe": len(items), "covered": len(items), "refreshed": len(items)}
@@ -360,15 +369,23 @@ class ChewieFundamentalsService:
         if not fundamentals:
             return None
         price = self._latest_price(market, clean)
+        universe_rows = self._universe_stocks(market)
+        if market == "B3":
+            universe_rows = self._reconcile_b3_company_ev(universe_rows)
         universe_row = next(
-            (row for row in self._universe_stocks(market) if str(row.get("symbol")) == clean),
+            (row for row in universe_rows if str(row.get("symbol")) == clean),
             {},
+        )
+        item = (
+            self._item_from_b3_universe_row(universe_row)
+            if market == "B3" and universe_row
+            else self._item(market, universe_row or {"symbol": clean}, fundamentals)
         )
         return {
             "market": market,
             "symbol": clean,
             "fundamentals": fundamentals,
-            "item": self._item(market, universe_row or {"symbol": clean}, fundamentals),
+            "item": item,
             "price": price,
             "currency": "BRL" if market == "B3" else "USD",
             "fmp_consensus": self._fmp_consensus(market, clean),
@@ -480,11 +497,14 @@ class ChewieFundamentalsService:
                 if datetime.now(timezone.utc) - cached_at < timedelta(minutes=30):
                     return payload
         stocks = self._universe_stocks(market)
-        selected = stocks[:TOP_DISPLAY]
         if market == "B3":
-            items = [self._item_from_b3_universe_row(row) for row in selected]
-            source = "Brapi Pro + EODHD overlay"
+            items = [
+                self._item_from_b3_universe_row(row)
+                for row in self._reconcile_b3_company_ev(stocks)[:TOP_DISPLAY]
+            ]
+            source = "Brapi Pro + EODHD/CVM overlay"
         else:
+            selected = stocks[:TOP_DISPLAY]
             symbols = [str(row["symbol"]) for row in selected]
             fundamentals_by_symbol = (
                 self.client.fundamentals(symbols, exchange=_PROVIDER_EXCHANGE[market], workers=10)
@@ -575,6 +595,99 @@ class ChewieFundamentalsService:
             "as_of": getattr(quote, "as_of", None),
         }
 
+    @classmethod
+    def _b3_items_from_universe_rows(cls, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [cls._item_from_b3_universe_row(row) for row in cls._reconcile_b3_company_ev(rows)]
+
+    @staticmethod
+    def _reconcile_b3_company_ev(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Reconcile display-only EV/EBITDA across an issuer's share classes.
+
+        The screener keeps using its original per-ticker fields. Chewie upgrades
+        the display only when the CVM composition, every required listed class,
+        official balance inputs and TTM EBITDA are all present and coherent.
+        """
+        reconciled: list[dict[str, Any]] = []
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for source in rows:
+            row = dict(source)
+            row["chewie_ev_ebitda"] = _number(source.get("ev_ebitda"))
+            row["ev_basis"] = PROVIDER_EV_BASIS
+            reconciled.append(row)
+            inputs = source.get("chewie_company_ev_inputs")
+            tax_id = str(inputs.get("tax_id") or "").strip() if isinstance(inputs, dict) else ""
+            if tax_id:
+                groups.setdefault(tax_id, []).append(row)
+
+        for issuer_rows in groups.values():
+            inputs_by_row = [row.get("chewie_company_ev_inputs") for row in issuer_rows]
+            if not all(isinstance(inputs, dict) for inputs in inputs_by_row):
+                continue
+            inputs = inputs_by_row[0]
+            if not isinstance(inputs, dict):
+                continue
+            composition = inputs.get("share_composition")
+            if not isinstance(composition, dict) or any(
+                row_inputs.get("share_composition") != composition
+                for row_inputs in inputs_by_row
+                if isinstance(row_inputs, dict)
+            ):
+                continue
+
+            ordinary = _number(composition.get("ordinary"))
+            preferred = _number(composition.get("preferred"))
+            total = _number(composition.get("total"))
+            if ordinary is None or preferred is None or total is None or total <= 0:
+                continue
+            if abs((ordinary + preferred) - total) > max(1.0, total * 1e-8):
+                continue
+
+            prices: dict[str, list[float]] = {"ordinary": [], "preferred": []}
+            for row in issuer_rows:
+                share_class = ChewieFundamentalsService._b3_share_class(str(row.get("symbol") or ""))
+                price = _number(row.get("price"))
+                if share_class and price is not None and price > 0:
+                    prices[share_class].append(price)
+            if (ordinary > 0 and len(prices["ordinary"]) != 1) or (
+                preferred > 0 and len(prices["preferred"]) != 1
+            ):
+                continue
+
+            total_cash = _number(inputs.get("total_cash"))
+            total_debt = _number(inputs.get("total_debt"))
+            ebitda_ttm = _number(inputs.get("ebitda_ttm"))
+            if total_cash is None or total_debt is None or ebitda_ttm is None or ebitda_ttm <= 0:
+                continue
+            if any(
+                not isinstance(row_inputs, dict)
+                or _number(row_inputs.get("total_cash")) != total_cash
+                or _number(row_inputs.get("total_debt")) != total_debt
+                or _number(row_inputs.get("ebitda_ttm")) != ebitda_ttm
+                for row_inputs in inputs_by_row
+            ):
+                continue
+
+            company_market_cap = (
+                ordinary * (prices["ordinary"][0] if ordinary > 0 else 0.0)
+                + preferred * (prices["preferred"][0] if preferred > 0 else 0.0)
+            )
+            enterprise_value = company_market_cap + total_debt - total_cash
+            if enterprise_value <= 0:
+                continue
+            company_multiple = round(enterprise_value / ebitda_ttm, 4)
+            for row in issuer_rows:
+                row["chewie_ev_ebitda"] = company_multiple
+                row["ev_basis"] = COMPANY_EV_BASIS
+        return reconciled
+
+    @staticmethod
+    def _b3_share_class(symbol: str) -> str | None:
+        if symbol.endswith("3"):
+            return "ordinary"
+        if symbol.endswith(("4", "5", "6")):
+            return "preferred"
+        return None
+
     @staticmethod
     def _item_from_b3_universe_row(row: dict[str, Any]) -> dict[str, Any]:
         """Shape a B3 screener universe row (Brapi-primary, EODHD/CVM overlay
@@ -587,6 +700,9 @@ class ChewieFundamentalsService:
         sources = ["Brapi"]
         if int(row.get("data_source_count") or 1) >= 2:
             sources.append("EODHD overlay")
+        ev_basis = str(row.get("ev_basis") or PROVIDER_EV_BASIS)
+        if ev_basis == COMPANY_EV_BASIS:
+            sources.append("CVM official composition")
         return {
             "market": "B3",
             "symbol": str(row.get("symbol")),
@@ -599,7 +715,12 @@ class ChewieFundamentalsService:
             "multiples": {
                 "pe": _number(row.get("pe")),
                 "forward_pe": _number(row.get("forward_pe")),
-                "ev_ebitda": _number(row.get("ev_ebitda")),
+                "ev_ebitda": (
+                    _number(row.get("chewie_ev_ebitda"))
+                    if "chewie_ev_ebitda" in row
+                    else _number(row.get("ev_ebitda"))
+                ),
+                "ev_basis": ev_basis,
                 "peg": _number(row.get("peg")),
                 "price_to_book": _number(row.get("price_to_book")),
                 "dividend_yield_percent": _percent(row.get("dividend_yield")),
@@ -658,6 +779,7 @@ class ChewieFundamentalsService:
                 "pe": _number(row.get("pe")) or _number(fundamentals.get("trailingPE")),
                 "forward_pe": _number(row.get("forward_pe")) or _number(fundamentals.get("forwardPE")),
                 "ev_ebitda": _number(row.get("ev_ebitda")) or _number(fundamentals.get("enterpriseToEbitda")),
+                "ev_basis": PROVIDER_EV_BASIS if market == "B3" else None,
                 "peg": _number(row.get("peg")) or _number(fundamentals.get("pegRatio")),
                 "price_to_book": _number(row.get("price_to_book")) or _number(fundamentals.get("priceToBook")),
                 "dividend_yield_percent": (

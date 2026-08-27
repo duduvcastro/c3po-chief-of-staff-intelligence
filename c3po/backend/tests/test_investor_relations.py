@@ -333,14 +333,17 @@ def test_cvm_itr_extraction_quarterizes_ytd_and_scales_thousands():
     ]
     bpa_rows = [
         "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;BPA;REAL;MIL;ÚLTIMO;2026-06-30;2026-06-30;1.01.01;Caixa;40;S",
+        "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;BPA;REAL;MIL;ÚLTIMO;2026-06-30;2026-06-30;1.01.02;Aplicacoes;10;S",
     ]
     bpp_rows = [
+        "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;BPP;REAL;MIL;ÚLTIMO;2026-06-30;2026-06-30;2.01.04;Divida CP;15;S",
+        "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;BPP;REAL;MIL;ÚLTIMO;2026-06-30;2026-06-30;2.02.01;Divida LP;25;S",
         "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;BPP;REAL;MIL;ÚLTIMO;2026-06-30;2026-06-30;2.03;PL;80;S",
     ]
     capital = (
         "CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;QT_ACAO_ORDIN_CAP_INTEGR;QT_ACAO_PREF_CAP_INTEGR;"
         "QT_ACAO_TOTAL_CAP_INTEGR;QT_ACAO_ORDIN_TESOURO;QT_ACAO_PREF_TESOURO;QT_ACAO_TOTAL_TESOURO\n"
-        "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;100;0;100;5;0;5\n"
+        "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;100;50;150;5;10;15\n"
     )
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -351,7 +354,7 @@ def test_cvm_itr_extraction_quarterizes_ytd_and_scales_thousands():
 
     rows = extract_itr_official_fundamentals(
         buffer.getvalue(), year=2026,
-        issuers={"00.000.000/0001-00": {"symbols": ["TEST3"], "company_name": "TESTE S.A."}},
+        issuers={"00.000.000/0001-00": {"symbols": ["TEST3", "TEST4"], "company_name": "TESTE S.A."}},
         source_url="https://dados.cvm.gov.br/",
     )
 
@@ -368,7 +371,20 @@ def test_cvm_itr_extraction_quarterizes_ytd_and_scales_thousands():
         ("2025-06-30", 120_000),
         ("2025-03-31", 80_000),
     ]
-    assert rows[0]["sharesOutstanding"] == 95
+    assert {row["symbol"] for row in rows} == {"TEST3", "TEST4"}
+    assert all(row["sharesOutstanding"] == 135 for row in rows)
+    assert rows[0]["official_metrics"]["cvmTaxId"] == "00.000.000/0001-00"
+    assert rows[0]["official_metrics"]["shareCapitalComposition"] == {
+        "asOf": "2026-06-30",
+        "ordinary": 95.0,
+        "preferred": 40.0,
+        "total": 135.0,
+    }
+    assert rows[0]["official_metrics"]["companyEvBalance"] == {
+        "asOf": "2026-06-30",
+        "totalCash": 50_000.0,
+        "totalDebt": 40_000.0,
+    }
 
 
 def test_mziq_categories_support_push_based_templates(tmp_path):

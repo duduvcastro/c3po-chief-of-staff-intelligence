@@ -422,6 +422,10 @@ class ChewieMultiples(BaseModel):
     pe: float | None = None
     forward_pe: float | None = None
     ev_ebitda: float | None = None
+    ev_basis: Literal[
+        "company-level official composition",
+        "per-class provider convention",
+    ] | None = None
     peg: float | None = None
     price_to_book: float | None = None
     dividend_yield_percent: float | None = None

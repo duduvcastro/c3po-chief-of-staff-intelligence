@@ -92,12 +92,25 @@ def extract_itr_official_fundamentals(
         short_term = _number(balance.pop("shortTermInvestments", None))
         current_debt = _number(balance.pop("currentDebt", None))
         long_term_debt = _number(balance.pop("longTermDebt", None))
+        company_ev_balance = None
+        if (
+            cash is not None
+            and short_term is not None
+            and current_debt is not None
+            and long_term_debt is not None
+        ):
+            company_ev_balance = {
+                "asOf": latest_period,
+                "totalCash": cash + short_term,
+                "totalDebt": current_debt + long_term_debt,
+            }
         if cash is not None:
             balance["cash"] = cash
             balance["cashAndShortTermInvestments"] = cash + (short_term or 0.0)
         if current_debt is not None or long_term_debt is not None:
             balance["shortLongTermDebtTotal"] = (current_debt or 0.0) + (long_term_debt or 0.0)
-        share_count = shares.get(tax_id, {}).get(latest_period)
+        share_composition = shares.get(tax_id, {}).get(latest_period)
+        share_count = _number((share_composition or {}).get("total"))
         published_at = issuer.get("published_at") or datetime.now(timezone.utc)
         for symbol in symbols:
             payload: dict[str, Any] = {
@@ -115,6 +128,13 @@ def extract_itr_official_fundamentals(
                 "official_metrics": {
                     "cvmRegulatorId": issuer.get("regulator_id"),
                     "cvmCompanyName": issuer.get("company_name"),
+                    "cvmTaxId": tax_id,
+                    "shareCapitalComposition": (
+                        {"asOf": latest_period, **share_composition}
+                        if share_composition
+                        else None
+                    ),
+                    "companyEvBalance": company_ev_balance,
                 },
             }
             if share_count and share_count > 0:
@@ -132,7 +152,7 @@ def _read_statement(
     period_field: str,
     include_prior_comparative: bool = False,
     require_year_to_date: bool = False,
-) -> dict[str, dict[str, dict[str, float]]]:
+) -> dict[str, dict[str, dict[str, float | None]]]:
     if filename not in archive.namelist():
         return {}
     selected: dict[tuple[str, str, str], tuple[int, float]] = {}
@@ -185,10 +205,10 @@ def _read_share_capital(
     archive: zipfile.ZipFile,
     filename: str,
     issuers: dict[str, dict[str, Any]],
-) -> dict[str, dict[str, float]]:
+) -> dict[str, dict[str, dict[str, float]]]:
     if filename not in archive.namelist():
         return {}
-    selected: dict[tuple[str, str], tuple[int, float]] = {}
+    selected: dict[tuple[str, str], tuple[int, dict[str, float | None]]] = {}
     with archive.open(filename) as raw:
         reader = csv.DictReader(io.TextIOWrapper(raw, encoding="latin-1", newline=""), delimiter=";")
         for row in reader:
@@ -196,19 +216,43 @@ def _read_share_capital(
             if tax_id not in issuers:
                 continue
             period = str(row.get("DT_REFER") or "")[:10]
-            total = _number(row.get("QT_ACAO_TOTAL_CAP_INTEGR"))
-            treasury = _number(row.get("QT_ACAO_TOTAL_TESOURO")) or 0.0
+            ordinary = _net_share_count(
+                row.get("QT_ACAO_ORDIN_CAP_INTEGR"),
+                row.get("QT_ACAO_ORDIN_TESOURO"),
+            )
+            preferred = _net_share_count(
+                row.get("QT_ACAO_PREF_CAP_INTEGR"),
+                row.get("QT_ACAO_PREF_TESOURO"),
+            )
+            total = _net_share_count(
+                row.get("QT_ACAO_TOTAL_CAP_INTEGR"),
+                row.get("QT_ACAO_TOTAL_TESOURO"),
+            )
             if not period or total is None:
                 continue
             version = _integer(row.get("VERSAO"))
             key = (tax_id, period)
             prior = selected.get(key)
             if prior is None or version >= prior[0]:
-                selected[key] = (version, max(total - treasury, 0.0))
-    output: dict[str, dict[str, float]] = defaultdict(dict)
+                selected[key] = (
+                    version,
+                    {
+                        "ordinary": ordinary,
+                        "preferred": preferred,
+                        "total": total,
+                    },
+                )
+    output: dict[str, dict[str, dict[str, float | None]]] = defaultdict(dict)
     for (tax_id, period), (_, value) in selected.items():
         output[tax_id][period] = value
     return dict(output)
+
+
+def _net_share_count(issued: Any, treasury: Any) -> float | None:
+    issued_count = _number(issued)
+    if issued_count is None:
+        return None
+    return max(issued_count - (_number(treasury) or 0.0), 0.0)
 
 
 def _quarterize_income(rows: dict[str, dict[str, float]]) -> list[dict[str, Any]]:
