@@ -1042,6 +1042,16 @@ class B3ScreenerService:
             finance = financial.get(symbol, {})
             eod = eodhd.get(symbol, {})
             official_fundamentals = bool(eod.get("officialFundamentals"))
+            official_metrics = (
+                eod.get("officialMetrics")
+                if isinstance(eod.get("officialMetrics"), dict)
+                else {}
+            )
+            official_company_balance = (
+                official_metrics.get("companyEvBalance")
+                if isinstance(official_metrics.get("companyEvBalance"), dict)
+                else {}
+            )
             price = positive(quote.price)
             reported_shares_hint = (
                 positive(stat.get("sharesOutstanding"))
@@ -1224,6 +1234,20 @@ class B3ScreenerService:
                 "source_agreement_percent": source_agreement,
                 "source_comparison_count": comparison_count,
                 "fundamentals_as_of": eod.get("financialsAsOf") or eod.get("updated_at"),
+                # Display-only payload. Chewie may reconcile issuer-level EV
+                # across share classes; valuation and ranking ignore this key.
+                "chewie_company_ev_inputs": {
+                    "tax_id": official_metrics.get("cvmTaxId"),
+                    "share_composition": official_metrics.get("shareCapitalComposition"),
+                    "total_cash": number(official_company_balance.get("totalCash")),
+                    "total_debt": number(official_company_balance.get("totalDebt")),
+                    "ebitda_ttm": number(eod.get("ebitda")),
+                    "official_as_of": (
+                        eod.get("officialFundamentals", {}).get("asOf")
+                        if isinstance(eod.get("officialFundamentals"), dict)
+                        else None
+                    ),
+                },
                 **cycle_metrics,
                 **(ir_freshness := self._ir_freshness(
                     eod.get("financialsAsOf") or eod.get("updated_at"),

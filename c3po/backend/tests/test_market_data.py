@@ -110,6 +110,36 @@ def test_on_demand_valuation_is_not_blocked_by_screening_quality_gate() -> None:
         enforce_screening_gates=False,
         enforce_quality_gate=False,
     )
+    official = service._prepare_rows(
+        catalog,
+        {"TEST3": quote},
+        statistics,
+        financial,
+        history,
+        macro,
+        eodhd={"TEST3": {
+            **statistics["TEST3"],
+            **financial["TEST3"],
+            "financialsAsOf": "2026-06-30",
+            "officialFundamentals": {"asOf": "2026-06-30"},
+            "officialMetrics": {
+                "cvmTaxId": "00.000.000/0001-00",
+                "shareCapitalComposition": {
+                    "asOf": "2026-06-30",
+                    "ordinary": 100_000_000.0,
+                    "preferred": 0.0,
+                    "total": 100_000_000.0,
+                },
+                "companyEvBalance": {
+                    "asOf": "2026-06-30",
+                    "totalCash": 150_000_000.0,
+                    "totalDebt": 300_000_000.0,
+                },
+            },
+        }},
+        enforce_screening_gates=False,
+        enforce_quality_gate=False,
+    )
 
     assert screened == []
     assert len(on_demand) == 1
@@ -120,6 +150,19 @@ def test_on_demand_valuation_is_not_blocked_by_screening_quality_gate() -> None:
     assert on_demand[0]["our_tp"] > 0
     assert on_demand[0]["buy_in"] > 0
     assert on_demand[0]["internal_method_count"] >= 3
+    assert official[0]["chewie_company_ev_inputs"] == {
+        "tax_id": "00.000.000/0001-00",
+        "share_composition": {
+            "asOf": "2026-06-30",
+            "ordinary": 100_000_000.0,
+            "preferred": 0.0,
+            "total": 100_000_000.0,
+        },
+        "total_cash": 150_000_000.0,
+        "total_debt": 300_000_000.0,
+        "ebitda_ttm": 180_000_000.0,
+        "official_as_of": "2026-06-30",
+    }
 
 
 def test_on_demand_valuation_does_not_require_screening_liquidity_or_history() -> None:

@@ -743,7 +743,7 @@ interface ChewieFundamentalsItem {
   refreshed_at: string | null;
   sources: string[];
   from_universe: boolean;
-  multiples: { pe: number | null; forward_pe: number | null; ev_ebitda: number | null; peg: number | null; price_to_book: number | null; dividend_yield_percent: number | null };
+  multiples: { pe: number | null; forward_pe: number | null; ev_ebitda: number | null; ev_basis: "company-level official composition" | "per-class provider convention" | null; peg: number | null; price_to_book: number | null; dividend_yield_percent: number | null };
   profitability: { ebitda: number | null; roe_percent: number | null; roa_percent: number | null; profit_margin_percent: number | null; operating_margin_percent: number | null; ebitda_margin_percent: number | null };
   leverage: { debt_to_equity: number | null; net_debt_to_ebitda: number | null; total_cash: number | null; total_debt: number | null };
   growth: { revenue_growth_percent: number | null; earnings_growth_percent: number | null };
@@ -5745,7 +5745,7 @@ function ChewieFundamentalsView() {
                     {activeGroup === "multiples" && <>
                       <td>{formatMultiple(item.multiples.pe)}</td>
                       <td>{formatMultiple(item.multiples.forward_pe)}</td>
-                      <td>{formatMultiple(item.multiples.ev_ebitda)}</td>
+                      <td title={item.multiples.ev_basis ?? undefined}>{formatMultiple(item.multiples.ev_ebitda)}</td>
                       <td>{formatMultiple(item.multiples.peg)}</td>
                       <td>{formatMultiple(item.multiples.price_to_book)}</td>
                       <td>{formatPercent(item.multiples.dividend_yield_percent)}</td>

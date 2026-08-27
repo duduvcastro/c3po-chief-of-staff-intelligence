@@ -189,6 +189,7 @@ def test_b3_snapshot_is_read_directly_from_the_brapi_backed_screener_universe_wi
     assert item["symbol"] == "PETR4"
     assert item["multiples"]["pe"] == 5.1
     assert item["multiples"]["ev_ebitda"] == 3.9
+    assert item["multiples"]["ev_basis"] == "per-class provider convention"
     assert item["profitability"]["ebitda"] == 4e9
     assert item["profitability"]["roe_percent"] == 31.0
     assert item["profitability"]["roa_percent"] == 9.0
@@ -197,6 +198,80 @@ def test_b3_snapshot_is_read_directly_from_the_brapi_backed_screener_universe_wi
     assert item["sources"] == ["Brapi", "EODHD overlay"]
     assert item["leverage"]["total_cash"] == 5e9
     assert item["leverage"]["total_debt"] == 9e9
+
+
+def test_b3_company_level_ev_ebitda_is_identical_across_share_classes():
+    settings = get_settings()
+    database = Database(settings)
+    company_inputs = {
+        "tax_id": "33.000.167/0001-01",
+        "share_composition": {
+            "asOf": "2026-06-30",
+            "ordinary": 1_000.0,
+            "preferred": 2_000.0,
+            "total": 3_000.0,
+        },
+        "total_cash": 1_000.0,
+        "total_debt": 5_000.0,
+        "ebitda_ttm": 7_000.0,
+        "official_as_of": "2026-06-30",
+    }
+    _seed_universe(database, "B3", [
+        _b3_row(
+            "PETR3",
+            30_000.0,
+            price=30.0,
+            ev_ebitda=7.4,
+            chewie_company_ev_inputs=dict(company_inputs),
+        ),
+        _b3_row(
+            "PETR4",
+            50_000.0,
+            price=25.0,
+            ev_ebitda=7.2,
+            chewie_company_ev_inputs=dict(company_inputs),
+        ),
+    ])
+    service = ChewieFundamentalsService(settings, database, StubHttp({}))  # type: ignore[arg-type]
+
+    service.refresh_daily("B3")
+
+    items = {item["symbol"]: item for item in service.rows("B3")["items"]}
+    # Market cap = 30*1,000 + 25*2,000; EV adds 5,000 debt and removes 1,000 cash.
+    assert items["PETR3"]["multiples"]["ev_ebitda"] == 12.0
+    assert items["PETR4"]["multiples"]["ev_ebitda"] == 12.0
+    assert items["PETR3"]["multiples"]["ev_basis"] == "company-level official composition"
+    assert items["PETR4"]["multiples"]["ev_basis"] == "company-level official composition"
+    assert "CVM official composition" in items["PETR3"]["sources"]
+
+
+def test_b3_company_level_ev_ebitda_falls_back_when_a_required_class_is_missing():
+    row = _b3_row(
+        "PETR3",
+        30_000.0,
+        price=30.0,
+        ev_ebitda=7.4,
+        chewie_company_ev_inputs={
+            "tax_id": "33.000.167/0001-01",
+            "share_composition": {
+                "asOf": "2026-06-30",
+                "ordinary": 1_000.0,
+                "preferred": 2_000.0,
+                "total": 3_000.0,
+            },
+            "total_cash": 1_000.0,
+            "total_debt": 5_000.0,
+            "ebitda_ttm": 7_000.0,
+        },
+    )
+
+    reconciled = ChewieFundamentalsService._reconcile_b3_company_ev([row])[0]
+    item = ChewieFundamentalsService._item_from_b3_universe_row(reconciled)
+
+    assert row["ev_ebitda"] == 7.4
+    assert "chewie_ev_ebitda" not in row
+    assert item["multiples"]["ev_ebitda"] == 7.4
+    assert item["multiples"]["ev_basis"] == "per-class provider convention"
 
 
 def test_b3_profitability_preserves_missing_provider_metrics_as_not_available():
