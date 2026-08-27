@@ -3905,9 +3905,9 @@ function R2D2RisingView() {
             )}
           </div>
           {learningCurve.length ? (
-            <aside className="r2d2-learning-median-card" aria-label="Mediana de operações positivas">
+            <aside className="r2d2-learning-median-card" aria-label="Mediana de conversão">
               <div>
-                <span>Mediana positiva</span>
+                <span>Mediana de conversão</span>
                 <strong>{learningPositiveMedian.toFixed(1)}%</strong>
                 <small>{learningCurve.length} dias operados</small>
               </div>
