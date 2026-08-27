@@ -321,10 +321,15 @@ def test_cvm_itr_extraction_quarterizes_ytd_and_scales_thousands():
         return header + "\n".join(rows) + "\n"
 
     dre_rows = [
+        "00.000.000/0001-00;2026-03-31;1;TESTE S.A.;1;DRE;REAL;MIL;PENÚLTIMO;2025-01-01;2025-03-31;3.01;Receita;80;S",
         "00.000.000/0001-00;2026-03-31;1;TESTE S.A.;1;DRE;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.01;Receita;100;S",
+        "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;DRE;REAL;MIL;PENÚLTIMO;2025-01-01;2025-06-30;3.01;Receita;200;S",
+        "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;DRE;REAL;MIL;PENÚLTIMO;2025-04-01;2025-06-30;3.01;Receita;120;S",
         "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;DRE;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.01;Receita;260;S",
+        "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;DRE;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.01;Receita;160;S",
         "00.000.000/0001-00;2026-03-31;1;TESTE S.A.;1;DRE;REAL;MIL;ÚLTIMO;2026-01-01;2026-03-31;3.11.01;Lucro;20;S",
         "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;DRE;REAL;MIL;ÚLTIMO;2026-01-01;2026-06-30;3.11.01;Lucro;55;S",
+        "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;DRE;REAL;MIL;ÚLTIMO;2026-04-01;2026-06-30;3.11.01;Lucro;35;S",
     ]
     bpa_rows = [
         "00.000.000/0001-00;2026-06-30;1;TESTE S.A.;1;BPA;REAL;MIL;ÚLTIMO;2026-06-30;2026-06-30;1.01.01;Caixa;40;S",
@@ -353,6 +358,16 @@ def test_cvm_itr_extraction_quarterizes_ytd_and_scales_thousands():
     assert rows[0]["as_of"] == "2026-06-30"
     assert rows[0]["quarterlyIncome"][0]["totalRevenue"] == 160_000
     assert rows[0]["quarterlyIncome"][0]["netIncome"] == 35_000
+    assert [
+        (item["date"], item.get("totalRevenue"))
+        for item in rows[0]["quarterlyIncome"]
+        if item.get("totalRevenue") is not None
+    ] == [
+        ("2026-06-30", 160_000),
+        ("2026-03-31", 100_000),
+        ("2025-06-30", 120_000),
+        ("2025-03-31", 80_000),
+    ]
     assert rows[0]["sharesOutstanding"] == 95
 
 

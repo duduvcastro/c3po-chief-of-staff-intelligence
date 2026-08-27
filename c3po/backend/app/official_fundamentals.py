@@ -10,7 +10,7 @@ from .database import Database
 
 ANALYSIS_TYPE = "official_fundamentals"
 METHODOLOGY_KEY = "official_fundamentals_overlay"
-METHODOLOGY_VERSION = 1
+METHODOLOGY_VERSION = 2
 
 UNIP6_2T26_RELEASE_URL = (
     "https://api.mziq.com/mzfilemanager/v2/d/"
@@ -110,6 +110,7 @@ def ensure_builtin_official_fundamentals(database: Database) -> int:
         {
             "priority": "Official RI/CVM statements override stale provider periods",
             "scope": "Reported historical fundamentals only; consensus and estimates remain provider data",
+            "cvm_income_periods": "Year-to-date ITR rows are quarterized; official prior-year comparatives are retained",
         },
         "Audited overlay of official issuer filings over delayed third-party fundamentals.",
     )
@@ -146,6 +147,7 @@ def save_official_fundamentals(database: Database, payloads: list[dict[str, Any]
         {
             "priority": "Official RI/CVM statements override stale provider periods",
             "scope": "Reported historical fundamentals only; consensus and estimates remain provider data",
+            "cvm_income_periods": "Year-to-date ITR rows are quarterized; official prior-year comparatives are retained",
         },
         "Audited overlay of official issuer filings over delayed third-party fundamentals.",
     )
