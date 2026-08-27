@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .code_census import CodeCensusService
 from .config import get_settings
 from .database import Database
 from .server_usage import ServerUsageCollector
@@ -20,9 +21,14 @@ def run_worker() -> None:
     database = Database(settings)
     database.initialize()
     collector = ServerUsageCollector(settings, database)
+    code_census = CodeCensusService(settings, database)
     previous = collector.cpu_ticks()
     while True:
         time.sleep(max(15, settings.server_usage_interval_seconds))
+        try:
+            code_census.run_daily_if_due(Path(settings.server_usage_disk_path))
+        except Exception:
+            logger.exception("Daily code census failed; next attempt tomorrow")
         current = collector.cpu_ticks()
         sample = collector.sample(previous, current)
         database.save_server_usage_samples([sample])

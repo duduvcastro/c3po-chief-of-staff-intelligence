@@ -7633,7 +7633,54 @@ function ServerUsageView({ pageLoadStats }: { pageLoadStats: PageLoadPerformance
   );
 }
 
+interface CodeCensusLayer { lines: number; files: number }
+
+interface CodeCensusRow {
+  session_date: string;
+  methodology: string;
+  layers: Record<string, CodeCensusLayer>;
+  total_lines: number;
+  total_files: number;
+  docs_lines: number;
+  docs_files: number;
+  generated_at: string;
+}
+
+interface CodeCensusSnapshot {
+  latest: CodeCensusRow | null;
+  previous: CodeCensusRow | null;
+  delta_comparable: boolean;
+  total_delta_vs_previous: number | null;
+  layer_order: string[];
+  series: CodeCensusRow[];
+}
+
+const CODE_CENSUS_LAYER_LABELS: Record<string, string> = {
+  backend_app: "Backend (app)",
+  tests: "Tests",
+  other_python: "Other Python",
+  frontend: "Frontend",
+  ops: "Ops",
+  sql: "SQL"
+};
+
 function HealthView({ data }: { data: SystemHealthData | null }) {
+  const [codeCensus, setCodeCensus] = useState<CodeCensusSnapshot | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/v1/code-census`, { credentials: "include" });
+        if (!response.ok) return;
+        const payload = await response.json() as CodeCensusSnapshot;
+        if (!cancelled) setCodeCensus(payload);
+      } catch {
+        // the census panel simply stays hidden when the endpoint is unreachable
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, []);
   if (!data) return <LoadingState />;
   const apiUsage = data.api_usage ?? [];
   const groupIcons: Record<SystemHealthGroupKey, ComponentType<{ size?: number }>> = {
@@ -7714,6 +7761,37 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
           </div>
         ) : <div className="api-usage-empty">No provider exposes an official usage counter right now.</div>}
       </section>
+      {codeCensus?.latest ? (
+        <section className="panel code-census-panel">
+          <PanelHeader title={`Code Census · ${codeCensus.latest.total_lines.toLocaleString("pt-BR")} lines`} icon={Cpu} />
+          <div className="code-census-table">
+            {(codeCensus.layer_order ?? []).map((layer) => {
+              const row = codeCensus.latest?.layers?.[layer];
+              if (!row) return null;
+              const previousRow = codeCensus.delta_comparable ? codeCensus.previous?.layers?.[layer] : undefined;
+              const delta = previousRow ? row.lines - previousRow.lines : null;
+              return (
+                <div key={layer}>
+                  <span>{CODE_CENSUS_LAYER_LABELS[layer] ?? layer}</span>
+                  <strong>{row.lines.toLocaleString("pt-BR")}</strong>
+                  <small>{row.files.toLocaleString("pt-BR")} files{delta !== null && delta !== 0 ? ` · ${delta > 0 ? "+" : ""}${delta.toLocaleString("pt-BR")} vs prior day` : ""}</small>
+                </div>
+              );
+            })}
+            <div className="code-census-total">
+              <span>Total code</span>
+              <strong>{codeCensus.latest.total_lines.toLocaleString("pt-BR")}</strong>
+              <small>{codeCensus.latest.total_files.toLocaleString("pt-BR")} files{codeCensus.total_delta_vs_previous ? ` · ${codeCensus.total_delta_vs_previous > 0 ? "+" : ""}${codeCensus.total_delta_vs_previous.toLocaleString("pt-BR")} vs prior day` : ""}</small>
+            </div>
+            <div>
+              <span>Docs (markdown)</span>
+              <strong>{codeCensus.latest.docs_lines.toLocaleString("pt-BR")}</strong>
+              <small>{codeCensus.latest.docs_files.toLocaleString("pt-BR")} files · outside the code total</small>
+            </div>
+          </div>
+          <small className="code-census-footnote">Counted daily at 02:00 BRT from the deployed checkout · {codeCensus.latest.session_date} · {codeCensus.latest.methodology}</small>
+        </section>
+      ) : null}
       <div className="system-health-group-grid">
         {orderedGroups.filter((group) => group.key !== "aws").map(renderHealthGroup)}
       </div>

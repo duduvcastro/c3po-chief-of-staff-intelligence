@@ -1547,6 +1547,14 @@ button { cursor: pointer; }
 .api-usage-critical .api-usage-meter span { background: var(--red); }
 .api-usage-critical header strong { color: var(--red); }
 .api-usage-empty { padding: 18px 16px; color: var(--muted); font-size: 10px; }
+.code-census-table { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 14px 16px; }
+.code-census-table > div { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; }
+.code-census-table > div > span { font-size: 8px; font-weight: 800; text-transform: uppercase; color: #89929d; }
+.code-census-table > div > strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.code-census-table > div > small { font-size: 8px; color: #9098a3; }
+.code-census-total { background: var(--gold-soft); }
+.code-census-footnote { display: block; padding: 0 16px 12px; color: #8f99a5; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+@media (max-width: 900px) { .code-census-table { grid-template-columns: repeat(2, 1fr); } }
 .system-health-group-grid { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: start; }
 .system-health-group { min-width: 0; }
 .system-health-group-aws { order: -1; border-color: rgba(183, 135, 28, .42); }

@@ -44,6 +44,7 @@ from .one_pager import OnePagerGenerationError, OnePagerService
 from .r2d2 import R2D2PaperService
 from .open_finance import OpenFinanceService, PluggyRequestError
 from .official_fundamentals import ensure_builtin_official_fundamentals
+from .code_census import CodeCensusService
 from .server_usage import ServerUsageService
 from .system_health import SystemHealthService
 from .weather import WeatherLocationNotFound, WeatherRequestError, WeatherService
@@ -145,6 +146,7 @@ b3_screener = B3ScreenerService(settings, database, market_data.http)
 investor_relations = InvestorRelationsService(settings, database)
 ir_valuation_processor = InvestorRelationsValuationProcessor(database, b3_screener)
 server_usage = ServerUsageService(settings, database)
+code_census = CodeCensusService(settings, database)
 performance_observability = PerformanceObservabilityService(settings, database, api_performance)
 weather = WeatherService()
 news = NewsService()
@@ -839,6 +841,11 @@ def consolidated_system_health() -> SystemHealthResponse:
 @app.get("/api/v1/server-usage", response_model=ServerUsageResponse)
 def server_usage_snapshot(hours: int = Query(default=24, ge=1, le=168)) -> ServerUsageResponse:
     return server_usage.snapshot(hours=hours)
+
+
+@app.get("/api/v1/code-census")
+def code_census_snapshot(days: int = Query(default=30, ge=2, le=365)) -> dict:
+    return code_census.snapshot(days=days)
 
 
 @app.get("/api/v1/server-usage/performance", response_model=PerformanceHistoryResponse)
