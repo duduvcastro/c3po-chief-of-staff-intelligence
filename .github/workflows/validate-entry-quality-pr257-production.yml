@@ -1,0 +1,313 @@
+name: Validate ENTRY_QUALITY_STUDY PR 257 on production data
+
+# Temporary branch-only bridge reused for a one-time, read-only overnight audit.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: audit-overnight-2026-08-27-production
+  cancel-in-progress: false
+
+jobs:
+  factual-read-only-audit:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - name: Check out deployed source
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Download frozen entry-study evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: entry-quality-pr257-factual-33022905030
+          path: /tmp/entry-quality-pr257
+          github-token: ${{ github.token }}
+          run-id: 33022905030
+
+      - name: Prepare frozen tape-probe inputs
+        run: |
+          set -euo pipefail
+          report=$(find /tmp/entry-quality-pr257 -path '*/study/report.json' -print -quit)
+          manifest=$(find /tmp/entry-quality-pr257 -path '*/study/manifest.json' -print -quit)
+          test -n "$report"
+          test -n "$manifest"
+          install -d /tmp/tape-probe-inputs
+          cp "$report" /tmp/tape-probe-inputs/entry-report.json
+          cp "$manifest" /tmp/tape-probe-inputs/entry-manifest.json
+          sha256sum /tmp/tape-probe-inputs/*
+
+      - name: Configure production SSH key
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_deploy
+          chmod 600 ~/.ssh/c3po_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload frozen entry-study inputs
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "rm -rf /tmp/overnight-audit-${GITHUB_RUN_ID} && mkdir -p /tmp/overnight-audit-${GITHUB_RUN_ID}/inputs"
+          scp -i ~/.ssh/c3po_deploy /tmp/tape-probe-inputs/* \
+            "$USER@$HOST:/tmp/overnight-audit-${GITHUB_RUN_ID}/inputs/"
+
+      - name: Collect overnight evidence and run read-only plan
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          EXPECTED_DEPLOY_REVISION: bf248feea54f0577950d5dcb36b55d1dbbf22f0b
+        run: |
+          ssh -i ~/.ssh/c3po_deploy \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$USER@$HOST" \
+            "RUN_ID='$GITHUB_RUN_ID' EXPECTED_DEPLOY_REVISION='$EXPECTED_DEPLOY_REVISION' bash -s" <<'REMOTE'
+          set -u
+
+          APP_DIR=/opt/chief-of-staff-digital
+          EXIT_SOURCE=/mnt/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27
+          ROOT="/tmp/overnight-audit-${RUN_ID}"
+          OUT="$ROOT/evidence"
+          INPUT="$ROOT/inputs"
+          mkdir -p "$OUT"
+
+          cd "$APP_DIR" || exit 1
+          cat .deploy-version > "$OUT/deploy-version.txt" 2>&1 || true
+          if [ "$(cat .deploy-version 2>/dev/null || true)" != "$EXPECTED_DEPLOY_REVISION" ]; then
+            printf '%s\n' "expected=$EXPECTED_DEPLOY_REVISION observed=$(cat .deploy-version 2>/dev/null || true)" \
+              > "$OUT/deploy-version-mismatch.txt"
+          fi
+
+          systemctl show r2d2-exit-policy-study-2026-08-27.timer \
+            --property=LoadState,ActiveState,SubState,Result,LastTriggerUSec,NextElapseUSecRealtime \
+            > "$OUT/exit-policy-timer-status.txt" 2>&1 || true
+          systemctl show r2d2-exit-policy-study-2026-08-27.service \
+            --property=LoadState,ActiveState,SubState,Result,ExecMainStatus,ExecMainStartTimestamp,ExecMainExitTimestamp \
+            > "$OUT/exit-policy-service-status.txt" 2>&1 || true
+          journalctl -u r2d2-exit-policy-study-2026-08-27.service --no-pager \
+            > "$OUT/exit-policy-journal.txt" 2>&1 || true
+
+          if [ -d "$EXIT_SOURCE" ]; then
+            cp -a "$EXIT_SOURCE" "$OUT/exit-policy-study"
+          else
+            printf '%s\n' "$EXIT_SOURCE is missing" > "$OUT/exit-policy-study-missing.txt"
+          fi
+
+          python3 - "$OUT" <<'PY' > "$OUT/exit-policy-summary.json"
+          import hashlib
+          import json
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          study = root / "exit-policy-study"
+          payload = {
+              "source_present": study.is_dir(),
+              "sha256sums_passed": False,
+              "report_self_hash_passed": False,
+          }
+          try:
+              if (study / "SHA256SUMS").is_file():
+                  checked = subprocess.run(
+                      ["sha256sum", "-c", "SHA256SUMS"],
+                      cwd=study,
+                      text=True,
+                      capture_output=True,
+                  )
+                  payload["sha256sums_passed"] = checked.returncode == 0
+                  payload["sha256sums_output"] = (checked.stdout + checked.stderr).strip()
+              report = json.loads((study / "report.json").read_text(encoding="utf-8"))
+              claimed = report.get("report_sha256")
+              encoded = json.dumps(
+                  {key: value for key, value in report.items() if key != "report_sha256"},
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=True,
+                  allow_nan=False,
+              ).encode("utf-8")
+              observed = hashlib.sha256(encoded).hexdigest()
+              payload["report_sha256"] = claimed
+              payload["report_self_hash_observed"] = observed
+              payload["report_self_hash_passed"] = claimed == observed
+              postflight = json.loads((study / "postflight.json").read_text(encoding="utf-8"))
+              result = json.loads((study / "result.json").read_text(encoding="utf-8"))
+              payload["result"] = result
+              payload["postflight"] = postflight
+          except Exception as exc:
+              payload["error"] = f"{type(exc).__name__}: {exc}"
+          print(json.dumps(payload, sort_keys=True, indent=2))
+          PY
+
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+
+          if ! "${compose[@]}" run --rm -T api python - <<'PY' > "$OUT/cash-yield.json" 2> "$OUT/cash-yield.error.txt"
+          import json
+          from datetime import date, datetime
+
+          from app.config import get_settings
+          from app.database import Database
+          from app.r2d2_cash_yield import RUN_ANALYSIS_TYPE, RUN_ENTITY_KEY
+
+          settings = get_settings()
+          database = Database(settings)
+          with database.connection() as connection:
+              experiment = connection.execute(
+                  "SELECT id::text, code, start_date FROM r2d2_experiments WHERE code=%s",
+                  (settings.r2d2_experiment_code,),
+              ).fetchone()
+              rows = connection.execute(
+                  """SELECT session_date, prior_session_date, base_cash_usd,
+                            annual_coupon_equivalent_rate, calendar_days, daily_factor,
+                            interest_income_usd, source_observation_date, source_available_at,
+                            source_fetched_at, source_payload_sha256, entry_sha256, backfilled_at
+                     FROM r2d2_cash_yield_ledger
+                     WHERE experiment_id=%s ORDER BY session_date""",
+                  (experiment[0],),
+              ).fetchall()
+          keys = (
+              "session_date", "prior_session_date", "base_cash_usd",
+              "annual_coupon_equivalent_rate", "calendar_days", "daily_factor",
+              "interest_income_usd", "source_observation_date", "source_available_at",
+              "source_fetched_at", "source_payload_sha256", "entry_sha256", "backfilled_at",
+          )
+          entries = [dict(zip(keys, row)) for row in rows]
+          latest = database.latest_analysis_snapshot(RUN_ANALYSIS_TYPE, RUN_ENTITY_KEY)
+
+          def ready(value):
+              if isinstance(value, (date, datetime)):
+                  return value.isoformat()
+              return value
+
+          payload = {
+              "experiment": {
+                  "id": experiment[0], "code": experiment[1], "start_date": experiment[2],
+              },
+              "entry_count": len(entries),
+              "session_dates": [row["session_date"] for row in entries],
+              "interest_income_total_usd": sum(float(row["interest_income_usd"]) for row in entries),
+              "entries": entries,
+              "latest_run": latest,
+          }
+          print(json.dumps(payload, sort_keys=True, indent=2, default=ready))
+          PY
+          then
+            python3 - "$OUT/cash-yield.error.txt" <<'PY' > "$OUT/cash-yield.json"
+          import json, pathlib, sys
+          print(json.dumps({"error": pathlib.Path(sys.argv[1]).read_text(errors="replace")}, indent=2))
+          PY
+          fi
+
+          if ! "${compose[@]}" run --rm -T api python - <<'PY' > "$OUT/valuation-v3-shadow.json" 2> "$OUT/valuation-v3-shadow.error.txt"
+          import json
+          from datetime import date, datetime
+
+          from app.config import get_settings
+          from app.database import Database
+          from app.valuation_v3_shadow import ANALYSIS_TYPE, MARKETS
+
+          database = Database(get_settings())
+          snapshots = database.latest_analysis_snapshots(
+              ANALYSIS_TYPE, [f"{market}_V3_SHADOW" for market in MARKETS]
+          )
+          markets = {}
+          for market in MARKETS:
+              snapshot = snapshots.get(f"{market}_V3_SHADOW")
+              if snapshot is None:
+                  markets[market] = {"missing": True}
+                  continue
+              outputs = snapshot.get("outputs") or {}
+              run = outputs.get("run") or {}
+              summary = outputs.get("summary") or {}
+              results = outputs.get("results") or {}
+              markets[market] = {
+                  "snapshot_id": snapshot.get("id"),
+                  "published_at": snapshot.get("published_at"),
+                  "status": run.get("status"),
+                  "cycle_id": run.get("cycle_id"),
+                  "evaluation_date": run.get("evaluation_date"),
+                  "operational_streak": run.get("operational_streak"),
+                  "soak_eligible": run.get("soak_eligible"),
+                  "result_count": len(results),
+                  "not_evaluated": summary.get("not_evaluated"),
+                  "universe_rows": summary.get("universe_rows"),
+                  "asset_count_status": summary.get("asset_count_status"),
+                  "source_manifest_sha256": outputs.get("source_manifest_sha256"),
+              }
+          cycle_ids = {row.get("cycle_id") for row in markets.values() if not row.get("missing")}
+          payload = {
+              "analysis_type": ANALYSIS_TYPE,
+              "markets": markets,
+              "all_markets_present": all(not markets[market].get("missing") for market in MARKETS),
+              "single_cycle": len(cycle_ids) == 1,
+          }
+          print(json.dumps(
+              payload, sort_keys=True, indent=2,
+              default=lambda value: value.isoformat() if isinstance(value, (date, datetime)) else str(value),
+          ))
+          PY
+          then
+            python3 - "$OUT/valuation-v3-shadow.error.txt" <<'PY' > "$OUT/valuation-v3-shadow.json"
+          import json, pathlib, sys
+          print(json.dumps({"error": pathlib.Path(sys.argv[1]).read_text(errors="replace")}, indent=2))
+          PY
+          fi
+
+          plan_exit=99
+          if [ -s "$EXIT_SOURCE/report.json" ] && [ -s "$INPUT/entry-report.json" ] && [ -s "$INPUT/entry-manifest.json" ]; then
+            "${compose[@]}" run --rm -T \
+              -v "$INPUT:/probe-input:ro" \
+              api python -m app.microstructure_tape_probe plan \
+              --exit-report /app/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27/report.json \
+              --entry-report /probe-input/entry-report.json \
+              --entry-manifest /probe-input/entry-manifest.json \
+              --spec /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1.md \
+              --amendment /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1.md \
+              --dudu-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_DUDU.md \
+              --codex-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_CODEX.md \
+              > "$OUT/tape-probe-plan.json" 2> "$OUT/tape-probe-plan.error.txt"
+            plan_exit=$?
+          else
+            printf '%s\n' 'Required frozen report inputs are missing.' > "$OUT/tape-probe-plan.error.txt"
+          fi
+          printf '%s\n' "$plan_exit" > "$OUT/tape-probe-plan.exit-code.txt"
+
+          (
+            cd "$OUT" || exit 1
+            find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+          )
+          tar -C "$ROOT" -czf "/tmp/overnight-audit-${RUN_ID}.tgz" evidence
+          REMOTE
+
+      - name: Download factual audit package
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          scp -i ~/.ssh/c3po_deploy \
+            "$USER@$HOST:/tmp/overnight-audit-${GITHUB_RUN_ID}.tgz" \
+            /tmp/overnight-audit.tgz
+          mkdir -p /tmp/overnight-audit
+          tar -xzf /tmp/overnight-audit.tgz -C /tmp/overnight-audit
+          (cd /tmp/overnight-audit/evidence && sha256sum -c SHA256SUMS)
+
+      - name: Publish factual audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: overnight-audit-2026-08-27-${{ github.run_id }}
+          path: /tmp/overnight-audit/evidence
+          if-no-files-found: error
+          retention-days: 30
