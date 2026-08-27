@@ -1,4 +1,4 @@
-name: Run MICROSTRUCTURE_TAPE_PROBE_V1 once
+name: Recover completed MICROSTRUCTURE_TAPE_PROBE_V1 evidence
 
 on:
   workflow_dispatch:
@@ -7,10 +7,10 @@ permissions:
   contents: read
 
 jobs:
-  run-probe:
+  recover-evidence:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - name: Configure production SSH key
         env:
@@ -23,71 +23,27 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Execute the audited Massive collection once
+      - name: Validate and package the already completed run
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
+          SOURCE_RUN_ID: "33067984482"
         run: |
           ssh -i ~/.ssh/c3po_deploy \
-            -o ServerAliveInterval=30 -o ServerAliveCountMax=60 \
-            "$USER@$HOST" "RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$USER@$HOST" \
+            "SOURCE_RUN_ID='$SOURCE_RUN_ID' TARGET_RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
           set -euo pipefail
-          APP_DIR=/opt/chief-of-staff-digital
-          SOURCE_ROOT=/tmp/overnight-audit-33064012836
-          INPUT="$SOURCE_ROOT/inputs"
-          RAW_RELATIVE=provider=eodhd/microstructure/raw/session_date=2026-08-26/feed=trade-part-00001.ndjson
-          RAW_SOURCE="/mnt/day-d-data/$RAW_RELATIVE"
-          EXPECTED_SIZE=67073447
-          EXPECTED_SHA=b202c4d3a6e99a9136d6a02b76e585d4ea83ba6cff56aea86a1c5875c48af2fc
-          EXPECTED_PLAN_SHA=c15dcfc3f7b9babacdbd95bc3f83952de26349780ca74c3469fcb84418e73b96
-          ROOT="/tmp/microstructure-tape-probe-v1-${RUN_ID}"
-          FROZEN="$ROOT/frozen-raw26.ndjson"
-          OUTPUT_HOST="/mnt/day-d-data/evidence/microstructure-tape-probe-v1/2026-08-27/run-${RUN_ID}"
-          OUTPUT_CONTAINER="/app/day-d-data/evidence/microstructure-tape-probe-v1/2026-08-27/run-${RUN_ID}"
+          OUTPUT="/mnt/day-d-data/evidence/microstructure-tape-probe-v1/2026-08-27/run-${SOURCE_RUN_ID}"
+          ROOT="/tmp/microstructure-tape-probe-recovery-${TARGET_RUN_ID}"
+          PACKAGE="$HOME/microstructure-tape-probe-recovery-${TARGET_RUN_ID}.tgz"
           mkdir -p "$ROOT"
-          test -d "$INPUT"
-          test ! -e "$OUTPUT_HOST"
-          cd "$APP_DIR"
-          compose=(docker compose --env-file .env -f c3po/compose.yml)
-          deployed_sha=$("${compose[@]}" exec -T api printenv C3PO_BUILD_SHA)
-          test "$deployed_sha" = bf248feea54f0577950d5dcb36b55d1dbbf22f0b
+          test -f "$OUTPUT/manifest.json"
+          test -f "$OUTPUT/report.json"
+          test -f "$OUTPUT/SHA256SUMS.json"
+          test -f "$OUTPUT/raw/massive-trades.ndjson.gz"
 
-          head -c "$EXPECTED_SIZE" "$RAW_SOURCE" > "$FROZEN"
-          test "$(sha256sum "$FROZEN" | awk '{print $1}')" = "$EXPECTED_SHA"
-
-          common=(
-            -v "$INPUT:/probe-input:ro"
-            -v "$FROZEN:/app/day-d-data/$RAW_RELATIVE:ro"
-            api python -m app.microstructure_tape_probe
-          )
-          args=(
-            --exit-report /app/day-d-data/evidence/r2d2-exit-policy-study-v1-1/2026-08-27/report.json
-            --entry-report /probe-input/entry-report.json
-            --entry-manifest /probe-input/entry-manifest.json
-            --spec /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1.md
-            --amendment /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1.md
-            --dudu-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_DUDU.md
-            --codex-attestation /legacy/c3po/docs/MICROSTRUCTURE_TAPE_PROBE_V1_AMENDMENT_1_ATTESTATION_CODEX.md
-          )
-
-          "${compose[@]}" run --rm -T "${common[@]}" plan "${args[@]}" \
-            > "$ROOT/plan.json" 2> "$ROOT/plan.error.txt"
-          plan_sha=$(sha256sum "$ROOT/plan.json" | awk '{print $1}')
-          test "$plan_sha" = "$EXPECTED_PLAN_SHA"
-
-          set +e
-          "${compose[@]}" run --rm -T "${common[@]}" run "${args[@]}" \
-            --output "$OUTPUT_CONTAINER" \
-            > "$ROOT/run.stdout.json" 2> "$ROOT/run.stderr.txt"
-          run_exit=$?
-          set -e
-          printf '%s\n' "$run_exit" > "$ROOT/run.exit-code.txt"
-
-          test -f "$OUTPUT_HOST/manifest.json"
-          test -f "$OUTPUT_HOST/report.json"
-          test -f "$OUTPUT_HOST/SHA256SUMS.json"
-          test -f "$OUTPUT_HOST/raw/massive-trades.ndjson.gz"
-          python3 - "$OUTPUT_HOST" "$ROOT/validation.json" <<'PY'
+          python3 - "$OUTPUT" "$ROOT/validation.json" <<'PY'
           import hashlib
           import json
           import sys
@@ -107,10 +63,13 @@ jobs:
                   ).encode()
               ).hexdigest()
 
-          def self_hash(payload, field):
-              clone = dict(payload)
-              claimed = clone.pop(field)
-              return claimed, canonical_sha(clone)
+          def verify_self_hash(path, field):
+              payload = json.loads(path.read_text())
+              claimed = payload.pop(field)
+              actual = canonical_sha(payload)
+              if claimed != actual:
+                  raise SystemExit(f"self-hash mismatch for {path.name}")
+              return claimed
 
           sums = json.loads((output / "SHA256SUMS.json").read_text())
           checked = {}
@@ -119,56 +78,45 @@ jobs:
               if actual != expected:
                   raise SystemExit(f"sha256 mismatch for {relative}: {actual} != {expected}")
               checked[relative] = actual
-          manifest = json.loads((output / "manifest.json").read_text())
           report = json.loads((output / "report.json").read_text())
-          manifest_claimed, manifest_actual = self_hash(manifest, "manifest_sha256")
-          report_claimed, report_actual = self_hash(report, "report_sha256")
-          if manifest_claimed != manifest_actual:
-              raise SystemExit("manifest self-hash mismatch")
-          if report_claimed != report_actual:
-              raise SystemExit("report self-hash mismatch")
           result = {
+              "source_run_id": "33067984482",
               "files": checked,
               "manifest_self_hash_verified": True,
               "report_self_hash_verified": True,
+              "manifest_sha256": verify_self_hash(output / "manifest.json", "manifest_sha256"),
+              "report_sha256": verify_self_hash(output / "report.json", "report_sha256"),
               "status": report.get("status"),
               "analysis_interpretable": report.get("analysis_interpretable"),
               "classification_counts": report.get("classification_counts"),
+              "classification_counts_by_study": report.get("classification_counts_by_study"),
+              "classification_counts_by_session": report.get("classification_counts_by_session"),
               "sample": report.get("sample"),
               "entitlement_proof": report.get("entitlement_proof"),
               "preregistered_reading": report.get("preregistered_reading"),
-              "report_sha256": report_claimed,
-              "manifest_sha256": manifest_claimed,
           }
           target.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n")
           PY
 
-          (cd "$ROOT" && sha256sum plan.json plan.error.txt run.stdout.json run.stderr.txt \
-            run.exit-code.txt validation.json > SHA256SUMS)
-          tar -C "$OUTPUT_HOST" -czf "$ROOT/evidence.tgz" .
+          tar -C "$OUTPUT" -czf "$ROOT/evidence.tgz" .
           sha256sum "$ROOT/evidence.tgz" > "$ROOT/evidence.tgz.sha256"
-          tar -C "$ROOT" -czf "/tmp/microstructure-tape-probe-v1-${RUN_ID}.tgz" \
-            plan.json plan.error.txt run.stdout.json run.stderr.txt run.exit-code.txt \
-            validation.json SHA256SUMS evidence.tgz evidence.tgz.sha256
-          test "$run_exit" -eq 0
+          tar -C "$ROOT" -czf "$PACKAGE" validation.json evidence.tgz evidence.tgz.sha256
+          test -s "$PACKAGE"
           REMOTE
 
-      - name: Download and verify the complete package
+      - name: Download and verify the recovered bytes
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
-          mkdir -p /tmp/microstructure-tape-probe-v1
+          ROOT=/tmp/microstructure-tape-probe-v1
+          mkdir -p "$ROOT/evidence"
           scp -i ~/.ssh/c3po_deploy \
-            "$USER@$HOST:/tmp/microstructure-tape-probe-v1-${GITHUB_RUN_ID}.tgz" \
-            /tmp/microstructure-tape-probe-v1/package.tgz
-          tar -xzf /tmp/microstructure-tape-probe-v1/package.tgz \
-            -C /tmp/microstructure-tape-probe-v1
-          (cd /tmp/microstructure-tape-probe-v1 && sha256sum -c SHA256SUMS)
-          (cd /tmp/microstructure-tape-probe-v1 && sha256sum -c evidence.tgz.sha256)
-          mkdir -p /tmp/microstructure-tape-probe-v1/evidence
-          tar -xzf /tmp/microstructure-tape-probe-v1/evidence.tgz \
-            -C /tmp/microstructure-tape-probe-v1/evidence
+            "$USER@$HOST:microstructure-tape-probe-recovery-${GITHUB_RUN_ID}.tgz" \
+            "$ROOT/package.tgz"
+          tar -xzf "$ROOT/package.tgz" -C "$ROOT"
+          (cd "$ROOT" && sha256sum -c evidence.tgz.sha256)
+          tar -xzf "$ROOT/evidence.tgz" -C "$ROOT/evidence"
 
       - name: Publish immutable evidence artifact
         uses: actions/upload-artifact@v4
