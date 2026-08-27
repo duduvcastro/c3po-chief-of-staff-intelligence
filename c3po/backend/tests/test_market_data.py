@@ -73,7 +73,9 @@ def test_on_demand_valuation_is_not_blocked_by_screening_quality_gate() -> None:
     }}
     financial = {"TEST3": {
         "returnOnEquity": 0.05,
+        "returnOnAssets": 0.03,
         "profitMargins": 0.12,
+        "operatingMargins": 0.10,
         "earningsGrowthAnnual": 0.08,
         "freeCashflow": 90_000_000,
         "operatingCashflow": 120_000_000,
@@ -112,6 +114,8 @@ def test_on_demand_valuation_is_not_blocked_by_screening_quality_gate() -> None:
     assert screened == []
     assert len(on_demand) == 1
     assert on_demand[0]["fundamental_quality_status"] == "review_required"
+    assert on_demand[0]["roa"] == 0.03
+    assert on_demand[0]["operating_margin"] == 0.10
     assert "ROE below the screening quality threshold" in on_demand[0]["fundamental_quality_reasons"]
     assert on_demand[0]["our_tp"] > 0
     assert on_demand[0]["buy_in"] > 0
@@ -449,6 +453,8 @@ def test_eodhd_normalizes_b3_fundamentals() -> None:
             "WallStreetTargetPrice": 45.0,
             "PEGRatio": 1.2,
             "RevenueTTM": 450_000_000_000,
+            "ReturnOnAssetsTTM": 0.093,
+            "OperatingMarginTTM": 0.214,
         },
         "Valuation": {"TrailingPE": 7.5, "ForwardPE": 6.8, "EnterpriseValueEbitda": 4.2},
         "Earnings": {"Trend": {"Annual": {"2027": {"earningsEstimateNumberOfAnalysts": 14}}}},
@@ -459,6 +465,8 @@ def test_eodhd_normalizes_b3_fundamentals() -> None:
 
     assert result["provider_symbol"] == "PETR4"
     assert result["forwardPE"] == 6.8
+    assert result["returnOnAssets"] == 0.093
+    assert result["operatingMargins"] == 0.214
     assert result["targetMeanPrice"] == 45.0
     assert result["numberOfAnalystOpinions"] == 14
 

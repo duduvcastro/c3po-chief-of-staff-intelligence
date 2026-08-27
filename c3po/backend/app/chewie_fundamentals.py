@@ -544,9 +544,9 @@ class ChewieFundamentalsService:
             "profitability": {
                 "ebitda": ebitda,
                 "roe_percent": _percent(row.get("roe")),
-                "roa_percent": None,
+                "roa_percent": _percent(row.get("roa")),
                 "profit_margin_percent": _percent(row.get("profit_margin")),
-                "operating_margin_percent": None,
+                "operating_margin_percent": _percent(row.get("operating_margin")),
                 "ebitda_margin_percent": _percent(row.get("ebitda_margin")),
             },
             "leverage": {
