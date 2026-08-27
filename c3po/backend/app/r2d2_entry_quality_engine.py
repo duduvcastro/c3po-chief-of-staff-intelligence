@@ -365,6 +365,88 @@ def measure_entry(
     )
 
 
+def _entry_candidate_bar_rows(
+    fill: LedgerFill,
+    bars: Mapping[datetime, StudyBar],
+) -> list[tuple[str, int, StudyBar]]:
+    rows: list[tuple[str, int, StudyBar]] = []
+    seen: set[datetime] = set()
+    candidates = (
+        (
+            "executed_at",
+            fill.executed_at,
+            (0, -OHLC_BOUNDARY_TOLERANCE_MINUTES, OHLC_BOUNDARY_TOLERANCE_MINUTES),
+        ),
+        (
+            "quote_as_of",
+            fill.quote_as_of,
+            (0, -OHLC_BOUNDARY_TOLERANCE_MINUTES, OHLC_BOUNDARY_TOLERANCE_MINUTES),
+        ),
+        (
+            "quote_as_of_extended",
+            fill.quote_as_of,
+            tuple(range(0, -OHLC_CLOCK_EXTENDED_BACKWARD_MINUTES - 1, -1)) + (1,),
+        ),
+    )
+    for anchor, at, offsets in candidates:
+        minute = at.astimezone(timezone.utc).replace(second=0, microsecond=0)
+        for offset in offsets:
+            candidate = minute + timedelta(minutes=offset)
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            bar = bars.get(candidate)
+            if bar is not None:
+                rows.append((anchor, offset, bar))
+    return rows
+
+
+def _entry_breach_bps(price: float, bar: StudyBar) -> float:
+    nearest_edge = bar.low if price < bar.low else bar.high
+    return abs(price - nearest_edge) / price * 10_000.0
+
+
+def classify_entry_market_compatibility(
+    fill: LedgerFill,
+    bars: Mapping[datetime, StudyBar],
+) -> dict[str, Any]:
+    """Apply the signed entry-study compatibility semantics to one BUY."""
+    candidate_rows = _entry_candidate_bar_rows(fill, bars)
+    if not candidate_rows:
+        return {
+            "classification": "bar_unavailable",
+            "matched_anchor": None,
+            "matched_offset_minutes": None,
+            "matched_bar_start_at": None,
+            "breach_bps": None,
+        }
+    compatibility = classify_market_compatibility(fill, bars)
+    if (
+        compatibility["classification"] == "violation"
+        and compatibility.get("breach_bps") is None
+    ):
+        anchor, offset, bar = min(
+            candidate_rows,
+            key=lambda row: _entry_breach_bps(fill.signal_price_local, row[2]),
+        )
+        breach = _entry_breach_bps(fill.signal_price_local, bar)
+        return {
+            **compatibility,
+            "classification": (
+                "tolerance_band"
+                if breach <= OHLC_COMPATIBILITY_TOLERANCE_BPS
+                else "violation"
+            ),
+            "matched_anchor": anchor,
+            "matched_offset_minutes": offset,
+            "matched_bar_start_at": bar.start_at.isoformat(),
+            "reference_low": bar.low,
+            "reference_high": bar.high,
+            "breach_bps": breach,
+        }
+    return compatibility
+
+
 def reconcile_entry_gate(
     entries: Sequence[LedgerFill],
     bars_by_symbol: Mapping[str, Sequence[StudyBar]],
@@ -381,45 +463,6 @@ def reconcile_entry_gate(
     unavailable_rows: list[dict[str, Any]] = []
     entry_count_by_session: dict[str, int] = defaultdict(int)
     unavailable_count_by_session: dict[str, int] = defaultdict(int)
-
-    def candidate_bar_rows(
-        fill: LedgerFill,
-        bars: Mapping[datetime, StudyBar],
-    ) -> list[tuple[str, int, StudyBar]]:
-        rows: list[tuple[str, int, StudyBar]] = []
-        seen: set[datetime] = set()
-        candidates = (
-            (
-                "executed_at",
-                fill.executed_at,
-                (0, -OHLC_BOUNDARY_TOLERANCE_MINUTES, OHLC_BOUNDARY_TOLERANCE_MINUTES),
-            ),
-            (
-                "quote_as_of",
-                fill.quote_as_of,
-                (0, -OHLC_BOUNDARY_TOLERANCE_MINUTES, OHLC_BOUNDARY_TOLERANCE_MINUTES),
-            ),
-            (
-                "quote_as_of_extended",
-                fill.quote_as_of,
-                tuple(range(0, -OHLC_CLOCK_EXTENDED_BACKWARD_MINUTES - 1, -1)) + (1,),
-            ),
-        )
-        for anchor, at, offsets in candidates:
-            minute = at.astimezone(timezone.utc).replace(second=0, microsecond=0)
-            for offset in offsets:
-                candidate = minute + timedelta(minutes=offset)
-                if candidate in seen:
-                    continue
-                seen.add(candidate)
-                bar = bars.get(candidate)
-                if bar is not None:
-                    rows.append((anchor, offset, bar))
-        return rows
-
-    def breach_bps(price: float, bar: StudyBar) -> float:
-        nearest_edge = bar.low if price < bar.low else bar.high
-        return abs(price - nearest_edge) / price * 10_000.0
 
     for fill in entries:
         if fill.side != "BUY":
@@ -461,8 +504,8 @@ def reconcile_entry_gate(
             for bar in bars_by_symbol.get(fill.symbol, ())
             if bar.session_date == session
         }
-        candidate_rows = candidate_bar_rows(fill, minute_bars)
-        if not candidate_rows:
+        compatibility = classify_entry_market_compatibility(fill, minute_bars)
+        if compatibility["classification"] == "bar_unavailable":
             compatibility_counts["bar_unavailable"] += 1
             unavailable_ids.add(fill.id)
             unavailable_count_by_session[session_key] += 1
@@ -476,29 +519,7 @@ def reconcile_entry_gate(
                 "reason": "no bar in original or extended compatibility windows",
             })
             continue
-        compatibility = classify_market_compatibility(fill, minute_bars)
         classification = str(compatibility["classification"])
-        if classification == "violation" and compatibility.get("breach_bps") is None:
-            anchor, offset, bar = min(
-                candidate_rows,
-                key=lambda row: breach_bps(fill.signal_price_local, row[2]),
-            )
-            breach = breach_bps(fill.signal_price_local, bar)
-            classification = (
-                "tolerance_band"
-                if breach <= OHLC_COMPATIBILITY_TOLERANCE_BPS
-                else "violation"
-            )
-            compatibility = {
-                **compatibility,
-                "classification": classification,
-                "matched_anchor": anchor,
-                "matched_offset_minutes": offset,
-                "matched_bar_start_at": bar.start_at.isoformat(),
-                "reference_low": bar.low,
-                "reference_high": bar.high,
-                "breach_bps": breach,
-            }
         compatibility_counts[classification] += 1
         if classification == "violation":
             violation_ids.add(fill.id)

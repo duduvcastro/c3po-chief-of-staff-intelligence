@@ -74,6 +74,68 @@ def test_massive_trades_preserve_participant_and_sip_timestamps_across_pages() -
     )
 
 
+def test_massive_bounded_trade_window_preserves_raw_rows() -> None:
+    raw = {
+        "id": "t1",
+        "participant_timestamp": 1_777_300_800_000_000_000,
+        "sip_timestamp": 1_777_300_800_001_000_000,
+        "price": 100.0,
+        "size": 2,
+        "conditions": [2],
+    }
+    http = FakeHttp([{"results": [raw]}])
+    client = MassiveClient(
+        "https://api.massive.com",
+        "secret-token",
+        http,  # type: ignore[arg-type]
+        historical_access_authorized=True,
+    )
+    start = datetime(2026, 4, 28, 14, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 4, 28, 14, 10, tzinfo=timezone.utc)
+
+    assert list(client.iter_raw_trades_between("AAPL", start_at=start, end_at=end)) == [raw]
+    assert http.calls == [(
+        "https://api.massive.com/v3/trades/AAPL",
+        {
+            "timestamp.gte": 1_777_384_800_000_000_000,
+            "timestamp.lt": 1_777_385_400_000_000_000,
+            "order": "asc",
+            "sort": "timestamp",
+            "limit": 50_000,
+            "apiKey": "secret-token",
+        },
+    )]
+
+
+def test_massive_trade_conditions_use_stocks_trade_filter() -> None:
+    payload = {
+        "id": 2,
+        "asset_class": "stocks",
+        "data_types": ["trade"],
+        "update_rules": {"consolidated": {"updates_high_low": False}},
+    }
+    http = FakeHttp([{"results": [payload]}])
+    client = MassiveClient(
+        "https://api.massive.com",
+        "secret-token",
+        http,  # type: ignore[arg-type]
+        historical_access_authorized=True,
+    )
+
+    assert client.trade_conditions() == [payload]
+    assert http.calls == [(
+        "https://api.massive.com/v3/reference/conditions",
+        {
+            "asset_class": "stocks",
+            "data_type": "trade",
+            "order": "asc",
+            "sort": "id",
+            "limit": 1_000,
+            "apiKey": "secret-token",
+        },
+    )]
+
+
 def test_massive_quotes_drop_incomplete_or_noncausal_bbo_rows() -> None:
     http = FakeHttp([{
         "results": [

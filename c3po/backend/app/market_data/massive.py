@@ -50,6 +50,53 @@ class MassiveClient:
             if normalized is not None:
                 yield normalized
 
+    def iter_raw_trades_between(
+        self,
+        symbol: str,
+        *,
+        start_at: datetime,
+        end_at: datetime,
+        limit: int = 50_000,
+    ) -> Iterator[dict[str, Any]]:
+        """Return provider rows for one bounded historical window."""
+        self._require_historical_access()
+        params = self._window_params(start_at, end_at, limit=limit)
+        yield from self._iter_results(
+            f"/v3/trades/{self._symbol(symbol)}",
+            params=params,
+        )
+
+    def iter_trades_between(
+        self,
+        symbol: str,
+        *,
+        start_at: datetime,
+        end_at: datetime,
+        limit: int = 50_000,
+    ) -> Iterator[dict[str, Any]]:
+        for row in self.iter_raw_trades_between(
+            symbol,
+            start_at=start_at,
+            end_at=end_at,
+            limit=limit,
+        ):
+            normalized = self._normalize_trade(symbol, row)
+            if normalized is not None:
+                yield normalized
+
+    def trade_conditions(self) -> list[dict[str, Any]]:
+        self._require_historical_access()
+        return list(self._iter_results(
+            "/v3/reference/conditions",
+            params={
+                "asset_class": "stocks",
+                "data_type": "trade",
+                "order": "asc",
+                "sort": "id",
+                "limit": 1_000,
+            },
+        ))
+
     def iter_quotes(self, symbol: str, *, session_date: date) -> Iterator[dict[str, Any]]:
         self._require_historical_access()
         params = self._session_params(session_date)
@@ -165,6 +212,29 @@ class MassiveClient:
             "order": "asc",
             "sort": "timestamp",
             "limit": 50_000,
+        }
+
+    @staticmethod
+    def _window_params(
+        start_at: datetime,
+        end_at: datetime,
+        *,
+        limit: int,
+    ) -> dict[str, Any]:
+        if start_at.tzinfo is None or end_at.tzinfo is None:
+            raise ValueError("Massive trade-window timestamps must be timezone-aware")
+        start = start_at.astimezone(timezone.utc)
+        end = end_at.astimezone(timezone.utc)
+        if end <= start:
+            raise ValueError("Massive trade-window end must be after start")
+        if not 1 <= limit <= 50_000:
+            raise ValueError("Massive trade-window limit must be between 1 and 50000")
+        return {
+            "timestamp.gte": int(start.timestamp() * 1_000_000_000),
+            "timestamp.lt": int(end.timestamp() * 1_000_000_000),
+            "order": "asc",
+            "sort": "timestamp",
+            "limit": limit,
         }
 
     @staticmethod
