@@ -26,6 +26,7 @@ from app.r2d2_exit_policy_engine import (
 from app.r2d2_exit_policy_study import (
     ExitPolicyStudyError,
     MinuteAggregateReader,
+    V3_EVIDENCE_LEDGER_SHA256,
     _frozen_ledger_input,
     build_report,
     canonical_sha256,
@@ -683,5 +684,30 @@ def test_report_is_self_hashed_and_keeps_panel_ii_nonbinding(
     }
     assert report["panel_ii"] is None
     assert report["governance"]["strategy_change_authorized"] is False
+    candidates = report["ledger_candidate_lines"]
+    assert [row["finding_type"] for row in candidates] == [
+        "binding_consistency_gate",
+        "panel_i",
+    ]
+    assert candidates[0]["evidence"]["section_sha256"] == canonical_sha256(
+        report["binding_consistency_gate"]
+    )
+    assert candidates[1]["evidence"]["section_sha256"] == canonical_sha256(
+        report["panel_i"]
+    )
+    for candidate in candidates:
+        assert candidate["ledger_contract_sha256"] == V3_EVIDENCE_LEDGER_SHA256
+        assert candidate["governance"]["ledger_admission_authorized"] is False
+        unsigned = {
+            key: value for key, value in candidate.items()
+            if key != "candidate_sha256"
+        }
+        assert candidate["candidate_sha256"] == canonical_sha256(unsigned)
     without_hash = {key: value for key, value in report.items() if key != "report_sha256"}
     assert report["report_sha256"] == canonical_sha256(without_hash)
+
+
+def test_v3_evidence_ledger_contract_hash_is_pinned() -> None:
+    ledger = Path(__file__).resolve().parents[2] / "docs" / "V3_EVIDENCE_LEDGER.md"
+
+    assert hashlib.sha256(ledger.read_bytes()).hexdigest() == V3_EVIDENCE_LEDGER_SHA256
