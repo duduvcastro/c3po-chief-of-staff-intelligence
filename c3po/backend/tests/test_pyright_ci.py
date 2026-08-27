@@ -15,6 +15,7 @@ def test_pyright_checks_new_modules_and_pins_the_ci_version() -> None:
     )
 
     assert config["include"] == ["app"]
+    assert len(config["exclude"]) <= 42
     assert config["pythonVersion"] == "3.12"
     assert config["typeCheckingMode"] == "standard"
     assert "PYRIGHT_VERSION: \"1.1.411\"" in pipeline
