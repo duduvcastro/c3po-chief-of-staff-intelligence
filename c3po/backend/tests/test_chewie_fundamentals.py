@@ -109,7 +109,9 @@ def _b3_row(symbol: str, market_cap: float, **overrides) -> dict:
         "peg": 1.1,
         "price_to_book": 1.3,
         "roe": 0.22,
+        "roa": 0.09,
         "profit_margin": 0.15,
+        "operating_margin": 0.19,
         "ebitda_margin": 0.28,
         "debt_to_equity": 0.9,
         "revenue_growth": 0.07,
@@ -189,10 +191,21 @@ def test_b3_snapshot_is_read_directly_from_the_brapi_backed_screener_universe_wi
     assert item["multiples"]["ev_ebitda"] == 3.9
     assert item["profitability"]["ebitda"] == 4e9
     assert item["profitability"]["roe_percent"] == 31.0
+    assert item["profitability"]["roa_percent"] == 9.0
+    assert item["profitability"]["operating_margin_percent"] == 19.0
     assert item["multiples"]["dividend_yield_percent"] == 12.0
     assert item["sources"] == ["Brapi", "EODHD overlay"]
     assert item["leverage"]["total_cash"] == 5e9
     assert item["leverage"]["total_debt"] == 9e9
+
+
+def test_b3_profitability_preserves_missing_provider_metrics_as_not_available():
+    item = ChewieFundamentalsService._item_from_b3_universe_row(
+        _b3_row("BANK3", 8e10, roa=None, operating_margin=None)
+    )
+
+    assert item["profitability"]["roa_percent"] is None
+    assert item["profitability"]["operating_margin_percent"] is None
 
 
 def test_us_item_exposes_absolute_ebitda_from_existing_fundamentals_payload():

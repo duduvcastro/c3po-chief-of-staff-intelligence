@@ -1096,7 +1096,9 @@ class B3ScreenerService:
             ev_ebitda = eodhd_ev_ebitda if official_fundamentals and eodhd_ev_ebitda else eodhd_ev_ebitda or brapi_ev_ebitda
             peg = self._valid_multiple(eod.get("pegRatio"), 0.10, 10.0) or self._valid_multiple(stat.get("pegRatio"), 0.10, 10.0)
             roe = number(eod.get("returnOnEquity")) if official_fundamentals else number(finance.get("returnOnEquity")) or number(eod.get("returnOnEquity"))
+            roa = number(eod.get("returnOnAssets")) if official_fundamentals else number(finance.get("returnOnAssets")) or number(eod.get("returnOnAssets"))
             profit_margin = number(eod.get("profitMargins")) if official_fundamentals else number(finance.get("profitMargins")) or number(stat.get("profitMargins")) or number(eod.get("profitMargins"))
+            operating_margin = number(eod.get("operatingMargins")) if official_fundamentals else number(finance.get("operatingMargins")) or number(eod.get("operatingMargins"))
             revenue_growth = number(eod.get("revenueGrowthAnnual")) if official_fundamentals else number(eod.get("revenueGrowthAnnual")) or number(finance.get("revenueGrowthAnnual")) or number(finance.get("revenueGrowth"))
             earnings_growth = number(eod.get("earningsGrowthAnnual")) if official_fundamentals else number(eod.get("earningsGrowthAnnual")) or number(finance.get("earningsGrowthAnnual")) or number(finance.get("earningsGrowth")) or number(stat.get("earningsQuarterlyGrowth"))
             implied_shares = market_cap / price
@@ -1198,7 +1200,9 @@ class B3ScreenerService:
                 "dividend_yield": dividend_yield,
                 "debt_to_equity": positive(eod.get("debtToEquity")) if official_fundamentals else positive(finance.get("debtToEquity")) or positive(eod.get("debtToEquity")),
                 "roe": roe,
+                "roa": roa,
                 "profit_margin": profit_margin,
+                "operating_margin": operating_margin,
                 "ebitda_margin": number(eod.get("ebitdaMargins")) if official_fundamentals else number(finance.get("ebitdaMargins")) or number(eod.get("ebitdaMargins")),
                 "revenue_growth": revenue_growth,
                 "earnings_growth": earnings_growth,
