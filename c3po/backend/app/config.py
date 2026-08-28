@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     build_sha: str = "development"
     sentry_dsn: str = ""
     sentry_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    push_vapid_private_key: str = ""
+    push_vapid_public_key: str = ""
+    push_vapid_subject: str = "mailto:eu@eduardocastro.com.br"
+    push_timeout_seconds: float = Field(default=3.0, ge=1.0, le=10.0)
     healthcheck_valuation_worker_url: str = ""
     healthcheck_cash_yield_url: str = ""
     healthcheck_code_census_url: str = ""

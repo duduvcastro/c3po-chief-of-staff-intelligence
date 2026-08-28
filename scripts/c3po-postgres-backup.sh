@@ -39,12 +39,22 @@ ping_healthcheck() {
     "${healthcheck_url%/}${suffix}" >/dev/null 2>&1 || true
 }
 
+notify_backup_failure() {
+  "${COMPOSE[@]}" run --rm -T api python -m app.push_notifications emit \
+    --category job_failure \
+    --title "Backup do PostgreSQL falhou" \
+    --body "O backup offsite não foi concluído. Verifique o Storm Troops." \
+    --deep-link "/?view=health" \
+    --event-key "postgres-backup-failure:$SESSION_DATE" >/dev/null 2>&1 || true
+}
+
 cleanup() {
   local exit_code=$?
   rm -f "$DUMP_PATH"
   rmdir "$TEMP_DIR" 2>/dev/null || true
   if [ "$exit_code" -ne 0 ]; then
     ping_healthcheck fail
+    notify_backup_failure
   fi
   exit "$exit_code"
 }

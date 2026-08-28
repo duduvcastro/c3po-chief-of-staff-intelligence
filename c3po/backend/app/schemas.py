@@ -13,6 +13,50 @@ class Provenance(BaseModel):
     status: Literal["fresh", "stale", "unavailable"]
 
 
+PushCategory = Literal[
+    "kill_criterion",
+    "job_failure",
+    "governance_critical",
+    "mesa_reading",
+    "disk_threshold",
+]
+
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str = Field(min_length=16, max_length=512)
+    auth: str = Field(min_length=8, max_length=256)
+
+
+class PushSubscribeRequest(BaseModel):
+    endpoint: str = Field(min_length=12, max_length=2_048)
+    keys: PushSubscriptionKeys
+    categories: list[PushCategory] = Field(default_factory=list, max_length=5)
+
+
+class PushUnsubscribeRequest(BaseModel):
+    endpoint: str = Field(min_length=12, max_length=2_048)
+
+
+class PushStatusResponse(BaseModel):
+    configured: bool
+    vapid_public_key: str | None = None
+    active_subscription_count: int = 0
+    categories: list[str] = Field(default_factory=list)
+
+
+class PushMutationResponse(BaseModel):
+    active: bool
+    categories: list[str] = Field(default_factory=list)
+
+
+class PushTestResponse(BaseModel):
+    configured: bool
+    attempted: int = 0
+    sent: int = 0
+    failed: int = 0
+    expired: int = 0
+
+
 class LeahDevice(BaseModel):
     id: str
     name: str
