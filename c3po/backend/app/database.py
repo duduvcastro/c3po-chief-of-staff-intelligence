@@ -35,6 +35,7 @@ class Database:
         self._server_usage_samples: list[dict[str, Any]] = []
         self._api_performance_buckets: list[dict[str, Any]] = []
         self._page_load_performance_samples: list[dict[str, Any]] = []
+        self._governance_vulnerability_reports: dict[date, dict[str, Any]] = {}
         self._realtime_portfolio: dict[str, dict[str, Any]] = {}
         self._ir_companies: dict[tuple[str, str], dict[str, Any]] = {}
         self._ir_security_map: dict[tuple[str, str], str] = {}
@@ -89,6 +90,52 @@ class Database:
             )
             connection.commit()
         return payload["id"]
+
+    def save_governance_vulnerability_report(self, report: dict[str, Any]) -> bool:
+        session_date = date.fromisoformat(str(report["session_date"]))
+        if not self.database_url:
+            if session_date in self._governance_vulnerability_reports:
+                return False
+            self._governance_vulnerability_reports[session_date] = dict(report)
+            return True
+
+        with self.connection() as connection:
+            inserted = connection.execute(
+                """INSERT INTO governance_vulnerability_daily
+                   (session_date, schema_id, repository, branch, baseline_sha256,
+                    status, report, report_sha256, generated_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)
+                   ON CONFLICT (session_date) DO NOTHING""",
+                (
+                    session_date,
+                    report["schema"],
+                    report["repository"],
+                    report["branch"],
+                    report["baseline"]["sha256"],
+                    report["status"],
+                    json.dumps(report),
+                    report["report_sha256"],
+                    datetime.fromisoformat(str(report["generated_at"])),
+                ),
+            ).rowcount
+            connection.commit()
+        return bool(inserted)
+
+    def latest_governance_vulnerability_report(self) -> dict[str, Any] | None:
+        if not self.database_url:
+            if not self._governance_vulnerability_reports:
+                return None
+            latest = max(self._governance_vulnerability_reports)
+            return dict(self._governance_vulnerability_reports[latest])
+
+        with self.connection() as connection:
+            row = connection.execute(
+                """SELECT report
+                   FROM governance_vulnerability_daily
+                   ORDER BY session_date DESC
+                   LIMIT 1"""
+            ).fetchone()
+        return dict(row[0]) if row else None
 
     def create_leah_pairing(self, payload: dict[str, Any]) -> None:
         if not self.database_url:

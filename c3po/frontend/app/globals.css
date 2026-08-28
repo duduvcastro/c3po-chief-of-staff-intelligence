@@ -1586,6 +1586,31 @@ button { cursor: pointer; }
 .health-list-horizontal { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); }
 .health-list-horizontal .health-row { min-width: 0; grid-template-columns: 22px 36px minmax(0, 1fr); padding: 0 14px; border-bottom: 0; border-right: 1px solid var(--line); }
 .health-list-horizontal .health-row:last-child { border-right: 0; }
+.governance-health-card { grid-column: 1 / -1; min-width: 0; border-bottom: 1px solid var(--line); background: #fbfbfa; }
+.governance-health-card > header { min-height: 62px; display: grid; grid-template-columns: 22px 36px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px solid #e8eaed; }
+.governance-health-card > header > div strong { display: block; font-size: 11px; }
+.governance-health-card > header > div span { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
+.governance-health-card > header > small { color: #8b939d; font-size: 8px; font-weight: 800; }
+.governance-health-body { display: grid; grid-template-columns: minmax(190px, .6fr) minmax(0, 2.4fr); }
+.governance-dependabot { padding: 15px 16px; border-right: 1px solid var(--line); }
+.governance-dependabot > div span { display: block; color: var(--muted); font-size: 8px; font-weight: 900; }
+.governance-dependabot > div strong { display: block; margin-top: 6px; font-size: 25px; line-height: 1; }
+.governance-dependabot dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 14px 0 0; }
+.governance-severity { min-width: 0; padding-right: 8px; border-right: 1px solid var(--line); }
+.governance-severity:last-child { padding-right: 0; border-right: 0; }
+.governance-severity dt { overflow: hidden; color: #8a929c; font-size: 7px; font-weight: 900; text-overflow: ellipsis; text-transform: uppercase; }
+.governance-severity dd { margin: 4px 0 0; font-size: 12px; font-weight: 900; }
+.governance-severity-critical dd, .governance-severity-high dd { color: var(--red); }
+.governance-severity-medium dd { color: var(--amber); }
+.governance-contract { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.governance-contract-row { min-width: 0; min-height: 62px; padding: 12px 13px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.governance-contract-row:nth-child(4n) { border-right: 0; }
+.governance-contract-row span { display: block; overflow: hidden; color: var(--muted); font-size: 8px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.governance-contract-row strong { display: block; margin-top: 6px; color: var(--green); font-size: 11px; }
+.governance-contract-attention strong { color: var(--amber); }
+.governance-contract-offline strong { color: var(--red); }
+.governance-contract-row small { display: block; margin-top: 5px; color: #8a929c; font-size: 7px; line-height: 1.35; }
+.governance-health-card > footer { padding: 7px 14px; color: #8b939d; font-size: 7px; font-weight: 800; text-transform: uppercase; }
 .server-usage-view { min-width: 0; }
 .server-usage-console { min-width: 0; overflow: visible; }
 .server-usage-head { min-height: 70px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 18px; border-bottom: 1px solid var(--line); background: #fbfbfa; }
@@ -2083,6 +2108,13 @@ button { cursor: pointer; }
   .health-list-horizontal { grid-template-columns: 1fr; }
   .health-list-horizontal .health-row { border-right: 0; border-bottom: 1px solid var(--line); }
   .health-list-horizontal .health-row:last-child { border-bottom: 0; }
+  .governance-health-card > header { grid-template-columns: 22px 36px minmax(0, 1fr); }
+  .governance-health-card > header > small { display: none; }
+  .governance-health-body { grid-template-columns: 1fr; }
+  .governance-dependabot { border-right: 0; border-bottom: 1px solid var(--line); }
+  .governance-contract { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .governance-contract-row:nth-child(4n) { border-right: 1px solid var(--line); }
+  .governance-contract-row:nth-child(2n) { border-right: 0; }
   .sidebar { position: fixed; left: 0; transform: translateX(-102%); width: 270px; transition: transform .2s ease; box-shadow: 14px 0 36px rgba(0,0,0,.22); }
   .sidebar-open { transform: translateX(0); }
   .sidebar-close { display: grid !important; border-color: rgba(255,255,255,.15); background: transparent; color: #fff; grid-column: 3; }

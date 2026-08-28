@@ -195,6 +195,7 @@ class IntegrationHealth(BaseModel):
     status: Literal["healthy", "attention", "offline"]
     detail: str
     last_update: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ApiUsageMetric(BaseModel):

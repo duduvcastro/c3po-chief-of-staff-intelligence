@@ -194,6 +194,7 @@ interface Integration {
   status: "healthy" | "attention" | "offline";
   detail: string;
   last_update: string;
+  metadata?: Record<string, unknown>;
 }
 
 type SystemHealthGroupKey = "apis" | "external_services" | "open_finance" | "aws" | "controls" | "quotes" | "official_sources" | "automations";
@@ -8020,6 +8021,9 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
 }
 
 function HealthRow({ item, groupKey = "apis" }: { item: Integration; groupKey?: SystemHealthGroupKey }) {
+  if (item.metadata?.kind === "governance_vulnerabilities") {
+    return <GovernanceVulnerabilityRow item={item} />;
+  }
   const statusLabel = item.status === "healthy" ? "Operational" : item.status === "attention" ? "Needs attention" : "Offline";
   return (
     <div className="health-row">
@@ -8029,6 +8033,63 @@ function HealthRow({ item, groupKey = "apis" }: { item: Integration; groupKey?: 
       <ServiceLogo name={item.name} groupKey={groupKey} />
       <div><strong>{item.name}</strong><span>{item.detail}</span></div>
     </div>
+  );
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function governanceValueLabel(key: string, value: unknown): string {
+  if (key === "required_status_checks" && Array.isArray(value)) return `${value.length} checks`;
+  if (key === "allow_force_pushes" || key === "allow_deletions") return value === false ? "Blocked" : "Allowed";
+  if (typeof value === "boolean") return value ? "ON" : "OFF";
+  return String(value ?? "Unknown");
+}
+
+function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
+  const metadata = item.metadata ?? {};
+  const dependabot = objectValue(metadata.dependabot);
+  const severities = objectValue(dependabot.by_severity);
+  const checks = Array.isArray(metadata.governance_checks)
+    ? metadata.governance_checks.map(objectValue)
+    : [];
+  const statusLabel = item.status === "healthy" ? "Operational" : item.status === "attention" ? "Needs attention" : "Offline";
+  return (
+    <article className={`governance-health-card governance-health-${item.status}`}>
+      <header>
+        <span className={`health-status-mark health-status-${item.status}`} aria-label={statusLabel} title={statusLabel}>
+          {item.status === "healthy" ? <Check size={15} strokeWidth={3} /> : item.status === "offline" ? <span aria-hidden="true">×</span> : null}
+        </span>
+        <ServiceLogo name="GitHub governance" groupKey="controls" />
+        <div><strong>{item.name}</strong><span>{item.detail}</span></div>
+        <small>{item.last_update}</small>
+      </header>
+      <div className="governance-health-body">
+        <section className="governance-dependabot">
+          <div><span>DEPENDABOT OPEN</span><strong>{Number(dependabot.open_total ?? 0).toLocaleString("pt-BR")}</strong></div>
+          <dl>
+            {(["critical", "high", "medium", "low"] as const).map((severity) => (
+              <div className={`governance-severity governance-severity-${severity}`} key={severity}>
+                <dt>{severity}</dt><dd>{Number(severities[severity] ?? 0)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+        <section className="governance-contract">
+          {checks.map((check) => (
+            <div className={`governance-contract-row governance-contract-${String(check.status ?? "offline")}`} key={String(check.key)}>
+              <span>{String(check.label ?? check.key)}</span>
+              <strong>{governanceValueLabel(String(check.key), check.actual)}</strong>
+              {check.reason ? <small>{String(check.reason)}</small> : null}
+            </div>
+          ))}
+        </section>
+      </div>
+      <footer>Baseline {String(metadata.baseline_sha256 ?? "").slice(0, 12)} · generated {String(metadata.generated_at ?? item.last_update)}</footer>
+    </article>
   );
 }
 

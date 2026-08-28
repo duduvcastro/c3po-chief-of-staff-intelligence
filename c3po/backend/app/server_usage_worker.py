@@ -9,6 +9,7 @@ from pathlib import Path
 from .code_census import CodeCensusService
 from .config import get_settings
 from .database import Database
+from .governance_vulnerability import GovernanceVulnerabilityService
 from .observability import init_sentry
 from .server_usage import ServerUsageCollector
 
@@ -24,6 +25,7 @@ def run_worker() -> None:
     database.initialize()
     collector = ServerUsageCollector(settings, database)
     code_census = CodeCensusService(settings, database)
+    governance_vulnerability = GovernanceVulnerabilityService(settings, database)
     previous = collector.cpu_ticks()
     while True:
         time.sleep(max(15, settings.server_usage_interval_seconds))
@@ -31,6 +33,14 @@ def run_worker() -> None:
             code_census.run_daily_if_due(Path(settings.server_usage_disk_path))
         except Exception:
             logger.exception("Daily code census failed; next attempt tomorrow")
+        try:
+            governance_vulnerability.run_daily_if_due(
+                Path(settings.server_usage_disk_path)
+            )
+        except Exception:
+            logger.exception(
+                "Daily governance and vulnerability check failed; retry remains fail-closed"
+            )
         current = collector.cpu_ticks()
         sample = collector.sample(previous, current)
         database.save_server_usage_samples([sample])

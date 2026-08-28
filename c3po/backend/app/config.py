@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     system_health_external_timeout_seconds: float = 6.0
     github_api_url: str = "https://api.github.com"
     github_repository: str = "duduvcastro/c3po-chief-of-staff-intelligence"
+    github_governance_token: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "C3PO_GITHUB_GOVERNANCE_TOKEN",
+            "C3PO_GITHUB_TOKEN",
+        ),
+    )
     deploy_version_file: Path = DEFAULT_LEGACY_ROOT / ".deploy-version"
     build_sha: str = "development"
     sentry_dsn: str = ""
@@ -49,6 +56,7 @@ class Settings(BaseSettings):
     healthcheck_cash_yield_url: str = ""
     healthcheck_code_census_url: str = ""
     healthcheck_postgres_backup_url: str = ""
+    healthcheck_governance_url: str = ""
     healthcheck_postgres_restore_configured: bool = False
     postgres_backup_bucket: str = ""
     postgres_backup_region: str = "us-east-1"
