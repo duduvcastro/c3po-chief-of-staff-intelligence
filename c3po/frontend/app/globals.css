@@ -2600,3 +2600,9 @@ button { cursor: pointer; }
   .leah-event-editor footer > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .leah-event-editor footer button { justify-content: center; }
 }
+
+/* PWA standalone (C3PO_MOBILE_PWA_V1): keep content clear of the notch and
+   home indicator without touching the browser-tab layout. */
+@media (display-mode: standalone) {
+  body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+}
