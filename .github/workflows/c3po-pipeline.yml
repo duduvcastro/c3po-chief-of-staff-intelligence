@@ -231,7 +231,9 @@ jobs:
           C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml config --quiet
           C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml up -d --build
 
-          for attempt in $(seq 1 30); do
+          # Each service initializes the idempotent schema under one advisory lock.
+          # Allow a cold, serialized startup to finish before declaring the deploy bad.
+          for attempt in $(seq 1 90); do
             web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
             api_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/health || true)
             if [ "$web_code" = "200" ] && { [ "$api_code" = "200" ] || [ "$api_code" = "401" ]; }; then
