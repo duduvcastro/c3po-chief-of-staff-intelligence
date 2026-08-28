@@ -6,6 +6,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 INSTALLER = ROOT / ".github" / "workflows" / "install-resilience-ops-v1.yml"
 RESTORE = ROOT / ".github" / "workflows" / "postgres-backup-restore-drill.yml"
+PIPELINE = ROOT / ".github" / "workflows" / "c3po-pipeline.yml"
+COMPOSE = ROOT / "c3po" / "compose.yml"
 BACKUP_SCRIPT = ROOT / "scripts" / "c3po-postgres-backup.sh"
 
 
@@ -60,3 +62,21 @@ def test_backup_validates_the_dump_from_stdin_without_a_literal_dash() -> None:
     assert 'exec -T db pg_restore --list \\\n  <"$DUMP_PATH"' in script
     assert "pg_restore --list -" not in script
     assert '--user "$(id -u):$(id -g)"' in script
+
+
+def test_governance_worker_has_database_and_external_networks() -> None:
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+
+    assert compose["services"]["server-usage-worker"]["networks"] == [
+        "c3po_internal",
+        "legacy_proxy",
+    ]
+    assert compose["networks"]["c3po_internal"]["internal"] is True
+    assert compose["networks"]["legacy_proxy"]["external"] is True
+
+
+def test_production_health_gate_allows_serialized_schema_startup() -> None:
+    workflow = PIPELINE.read_text(encoding="utf-8")
+
+    assert "for attempt in $(seq 1 90)" in workflow
+    assert "for attempt in $(seq 1 30)" not in workflow
