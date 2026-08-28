@@ -486,6 +486,18 @@ def test_governance_card_exposes_counts_contract_and_hash_metadata() -> None:
     assert item.metadata["governance_checks"][0]["label"] == "Branch protection"
 
 
+def test_governance_card_describes_the_daily_window_without_claiming_fixed_schedule() -> None:
+    service = _service()
+    service.database.latest_governance_vulnerability_report = lambda: None  # type: ignore[method-assign]
+
+    item = service._governance_vulnerability_health(datetime.now(timezone.utc))
+
+    assert item.status == "attention"
+    assert item.detail == (
+        "Primeiro atestado diário pendente · diário a partir de 02:15 BRT"
+    )
+
+
 def test_valuation_worker_phase_failure_is_persistently_visible() -> None:
     now = datetime.now(timezone.utc)
     states = {
