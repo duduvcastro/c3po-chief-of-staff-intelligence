@@ -41,6 +41,7 @@ from .market_data.eodhd_stream import EodhdRealtimeStream
 from .market_data.http import MarketDataRequestError
 from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerGenerationError, OnePagerService
+from .push_notifications import PushNotificationService
 from .r2d2 import R2D2PaperService
 from .open_finance import OpenFinanceService, PluggyRequestError
 from .official_fundamentals import ensure_builtin_official_fundamentals
@@ -94,6 +95,11 @@ from .schemas import (
     PageLoadPerformanceRequest,
     PageLoadPerformanceResponse,
     PerformanceHistoryResponse,
+    PushMutationResponse,
+    PushStatusResponse,
+    PushSubscribeRequest,
+    PushTestResponse,
+    PushUnsubscribeRequest,
     Provenance,
     RealtimeMarketResponse,
     RealtimePortfolioIntradayResponse,
@@ -173,6 +179,7 @@ one_pagers.set_us_screener(us_screener)
 chewie_fundamentals = ChewieFundamentalsService(settings, database, market_data.http)
 r2d2 = R2D2PaperService(settings, database, realtime_markets, b3_screener, one_pagers)
 leah_cloud = LeahCloudService(settings, database)
+push_notifications = PushNotificationService(settings, database)
 SESSION_COOKIE = "c3po_session"
 
 
@@ -608,6 +615,64 @@ def logout(request: Request, response: Response) -> AuthSessionResponse:
     auth_service.logout(request.cookies.get(SESSION_COOKIE))
     response.delete_cookie(SESSION_COOKIE, path="/", secure=settings.auth_cookie_secure, httponly=True, samesite="strict")
     return AuthSessionResponse(authenticated=False)
+
+
+@app.get("/api/v1/push/status", response_model=PushStatusResponse)
+def push_status(request: Request) -> PushStatusResponse:
+    actor = current_access_actor(request)
+    return PushStatusResponse(**push_notifications.status(actor["email"]))
+
+
+@app.post("/api/v1/push/subscribe", response_model=PushMutationResponse)
+def subscribe_push(
+    payload: PushSubscribeRequest,
+    request: Request,
+) -> PushMutationResponse:
+    actor = current_access_actor(request)
+    try:
+        result = push_notifications.subscribe(
+            user_email=actor["email"],
+            endpoint=payload.endpoint,
+            p256dh=payload.keys.p256dh,
+            auth_key=payload.keys.auth,
+            categories=list(payload.categories),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    return PushMutationResponse(**result)
+
+
+@app.post("/api/v1/push/unsubscribe", response_model=PushMutationResponse)
+def unsubscribe_push(
+    payload: PushUnsubscribeRequest,
+    request: Request,
+) -> PushMutationResponse:
+    actor = current_access_actor(request)
+    try:
+        result = push_notifications.unsubscribe(
+            user_email=actor["email"],
+            endpoint=payload.endpoint,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return PushMutationResponse(**result)
+
+
+@app.post("/api/v1/push/test", response_model=PushTestResponse)
+def test_push(request: Request) -> PushTestResponse:
+    actor = require_owner(request)
+    return PushTestResponse(**push_notifications.send_test(actor["email"]))
 
 
 @app.get("/api/v1/admin/access-users", response_model=AccessUserListResponse)

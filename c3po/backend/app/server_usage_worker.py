@@ -11,6 +11,7 @@ from .config import get_settings
 from .database import Database
 from .governance_vulnerability import GovernanceVulnerabilityService
 from .observability import init_sentry
+from .push_notifications import PushNotificationService
 from .server_usage import ServerUsageCollector
 
 
@@ -23,9 +24,14 @@ def run_worker() -> None:
     init_sentry(settings, service_name="server-usage-worker")
     database = Database(settings)
     database.initialize()
+    push_notifications = PushNotificationService(settings, database)
     collector = ServerUsageCollector(settings, database)
-    code_census = CodeCensusService(settings, database)
-    governance_vulnerability = GovernanceVulnerabilityService(settings, database)
+    code_census = CodeCensusService(settings, database, push_notifications)
+    governance_vulnerability = GovernanceVulnerabilityService(
+        settings,
+        database,
+        push_notifications=push_notifications,
+    )
     previous = collector.cpu_ticks()
     while True:
         time.sleep(max(15, settings.server_usage_interval_seconds))

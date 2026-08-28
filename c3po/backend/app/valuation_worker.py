@@ -19,6 +19,7 @@ from .one_pager import OnePagerService
 from .official_fundamentals import ensure_builtin_official_fundamentals
 from .observability import HealthcheckPing, init_sentry
 from .r2d2_cash_yield import R2D2CashYieldService
+from .push_notifications import PushNotificationService
 from .valuation_policy import METHODOLOGY_VERSION
 from .valuation_v2_data import ValuationV2DataService
 from .valuation_v2_peer_quality import ValuationV2PeerQualityService
@@ -194,6 +195,7 @@ def run_worker_iteration(
     canonical_operation: Callable[[], Any],
     offhours_phases: tuple[OffhoursPhase, ...],
     healthchecks: dict[str, HealthcheckPing] | None = None,
+    push_notifications: PushNotificationService | None = None,
 ) -> WorkerIterationResult:
     canonical_status = "current"
     phase_statuses: dict[str, str] = {}
@@ -223,12 +225,20 @@ def run_worker_iteration(
                 canonical_status="running",
             )
             canonical_status = "succeeded"
-        except Exception:
+        except Exception as exc:
             canonical_status = "failed"
             failed_work = True
             logger.exception(
                 "Nightly valuation cycle failed; off-hours phases remain independent"
             )
+            if push_notifications:
+                push_notifications.notify(
+                    category="job_failure",
+                    title="Valuation worker failed",
+                    body=f"{type(exc).__name__}: canonical valuation phase failed",
+                    deep_link="/?view=health",
+                    event_key=f"valuation-canonical-failure:{start_of_today(now).date()}",
+                )
             wake_targets.append(now + CANONICAL_RETRY_DELAY)
 
     for phase in offhours_phases:
@@ -260,7 +270,7 @@ def run_worker_iteration(
                 )
                 if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
                     cash_yield_healthcheck.ping("success")
-            except Exception:
+            except Exception as exc:
                 phase_statuses[phase.key] = "failed"
                 failed_work = True
                 if phase.key == CASH_YIELD_PHASE_KEY and cash_yield_healthcheck:
@@ -269,6 +279,14 @@ def run_worker_iteration(
                     "%s failed; keeping prior evidence and retrying inside the window",
                     VALUATION_WORKER_PHASES[phase.key]["name"],
                 )
+                if push_notifications:
+                    push_notifications.notify(
+                        category="job_failure",
+                        title=f"{VALUATION_WORKER_PHASES[phase.key]['name']} failed",
+                        body=f"{type(exc).__name__}: off-hours phase will retry",
+                        deep_link="/?view=health",
+                        event_key=f"valuation-phase-failure:{phase.key}:{phase_due_at.date()}",
+                    )
                 retry_at = now + OFFHOURS_RETRY_DELAY
                 if retry_at < phase_window_end:
                     wake_targets.append(retry_at)
@@ -312,6 +330,7 @@ def main() -> None:
     init_sentry(settings, service_name="valuation-worker")
     database = Database(settings)
     database.initialize()
+    push_notifications = PushNotificationService(settings, database)
     ensure_builtin_official_fundamentals(database)
     investor_relations = InvestorRelationsService(settings, database)
     market_data = MarketDataService(settings, database)
@@ -411,6 +430,7 @@ def main() -> None:
             ),
             offhours_phases=offhours_phases,
             healthchecks=healthchecks,
+            push_notifications=push_notifications,
         )
 
         now = datetime.now(SAO_PAULO)

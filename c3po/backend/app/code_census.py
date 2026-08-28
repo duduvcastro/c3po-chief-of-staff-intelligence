@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from .config import Settings
 from .database import Database
 from .observability import HealthcheckPing
+from .push_notifications import PushNotificationService
 
 
 logger = logging.getLogger("c3po.code_census")
@@ -136,11 +137,27 @@ def measure_repository(root: Path) -> dict[str, Any] | None:
 
 
 class CodeCensusService:
-    def __init__(self, settings: Settings, database: Database) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        database: Database,
+        push_notifications: PushNotificationService | None = None,
+    ) -> None:
         self.settings = settings
         self.database = database
         self._last_attempted_session: date | None = None
         self.healthcheck = HealthcheckPing(settings.healthcheck_code_census_url)
+        self.push_notifications = push_notifications
+
+    def _notify_failure(self, session: date, reason: str) -> None:
+        if self.push_notifications:
+            self.push_notifications.notify(
+                category="job_failure",
+                title="Code census failed",
+                body=reason,
+                deep_link="/?view=serverusage",
+                event_key=f"code-census-failure:{session}",
+            )
 
     def run_daily_if_due(self, root: Path, now: datetime | None = None) -> bool:
         """Idempotent daily census at/after 02:00 America/Sao_Paulo."""
@@ -154,12 +171,14 @@ class CodeCensusService:
         self.healthcheck.ping("start")
         try:
             measurement = measure_repository(root)
-        except Exception:
+        except Exception as exc:
             self.healthcheck.ping("fail")
+            self._notify_failure(session, f"{type(exc).__name__}: repository scan failed")
             raise
         if measurement is None:
             logger.warning("Code census skipped: %s is not a repository checkout", root)
             self.healthcheck.ping("fail")
+            self._notify_failure(session, "Repository checkout is unavailable")
             return False
         if measurement["unreadable_files"] or measurement["unreadable_directories"]:
             # A partial walk must never be recorded as a complete census.
@@ -170,6 +189,7 @@ class CodeCensusService:
                 root,
             )
             self.healthcheck.ping("fail")
+            self._notify_failure(session, "Repository scan found unreadable paths")
             return False
         try:
             with self.database.connection() as connection:
@@ -191,8 +211,9 @@ class CodeCensusService:
                     ),
                 ).rowcount
                 connection.commit()
-        except Exception:
+        except Exception as exc:
             self.healthcheck.ping("fail")
+            self._notify_failure(session, f"{type(exc).__name__}: census persistence failed")
             raise
         if inserted:
             logger.info(

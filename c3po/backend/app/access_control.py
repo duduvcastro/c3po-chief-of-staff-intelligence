@@ -53,6 +53,8 @@ def required_capability(path: str, method: str) -> str | None:
     if normalized_method == "POST" and path in {
         "/api/v1/alerts/read",
         "/api/v1/navigation-seen",
+        "/api/v1/push/subscribe",
+        "/api/v1/push/unsubscribe",
         "/api/v1/telemetry/page-load",
     }:
         return "read"

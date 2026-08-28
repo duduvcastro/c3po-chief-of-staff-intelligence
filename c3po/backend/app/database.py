@@ -36,6 +36,9 @@ class Database:
         self._api_performance_buckets: list[dict[str, Any]] = []
         self._page_load_performance_samples: list[dict[str, Any]] = []
         self._governance_vulnerability_reports: dict[date, dict[str, Any]] = {}
+        self._push_subscriptions: list[dict[str, Any]] = []
+        self._push_notification_events: dict[str, dict[str, Any]] = {}
+        self._push_delivery_events: list[dict[str, Any]] = []
         self._realtime_portfolio: dict[str, dict[str, Any]] = {}
         self._ir_companies: dict[tuple[str, str], dict[str, Any]] = {}
         self._ir_security_map: dict[tuple[str, str], str] = {}
@@ -136,6 +139,186 @@ class Database:
                    LIMIT 1"""
             ).fetchone()
         return dict(row[0]) if row else None
+
+    def save_push_subscription(
+        self,
+        *,
+        user_email: str,
+        endpoint: str,
+        p256dh: str,
+        auth_key: str,
+        categories: list[str],
+        at: datetime,
+    ) -> dict[str, Any]:
+        subscription = {
+            "id": str(uuid4()),
+            "user_email": user_email,
+            "endpoint": endpoint,
+            "p256dh": p256dh,
+            "auth_key": auth_key,
+            "categories": sorted(set(categories)),
+            "created_at": at,
+            "revoked_at": None,
+        }
+        if not self.database_url:
+            with self._auth_lock:
+                for existing in self._push_subscriptions:
+                    if existing["endpoint"] == endpoint and not existing.get("revoked_at"):
+                        existing["revoked_at"] = at
+                self._push_subscriptions.append(subscription.copy())
+            return subscription
+
+        with self.connection() as connection:
+            connection.execute(
+                "UPDATE push_subscriptions SET revoked_at = %s WHERE endpoint = %s AND revoked_at IS NULL",
+                (at, endpoint),
+            )
+            row = connection.execute(
+                """INSERT INTO push_subscriptions
+                   (id, user_email, endpoint, p256dh, auth_key, categories, created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)
+                   RETURNING id, user_email, endpoint, p256dh, auth_key, categories,
+                             created_at, revoked_at""",
+                (
+                    subscription["id"], user_email, endpoint, p256dh, auth_key,
+                    subscription["categories"], at,
+                ),
+            ).fetchone()
+            connection.commit()
+        return dict(zip(subscription, row))
+
+    def revoke_push_subscription(
+        self,
+        *,
+        user_email: str,
+        endpoint: str,
+        at: datetime,
+    ) -> bool:
+        if not self.database_url:
+            changed = False
+            with self._auth_lock:
+                for item in self._push_subscriptions:
+                    if (
+                        item["user_email"] == user_email
+                        and item["endpoint"] == endpoint
+                        and not item.get("revoked_at")
+                    ):
+                        item["revoked_at"] = at
+                        changed = True
+            return changed
+        with self.connection() as connection:
+            changed = connection.execute(
+                """UPDATE push_subscriptions SET revoked_at = %s
+                   WHERE user_email = %s AND endpoint = %s AND revoked_at IS NULL""",
+                (at, user_email, endpoint),
+            ).rowcount
+            connection.commit()
+        return bool(changed)
+
+    def list_active_push_subscriptions(
+        self,
+        *,
+        category: str | None = None,
+        user_email: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not self.database_url:
+            with self._auth_lock:
+                return [
+                    item.copy()
+                    for item in self._push_subscriptions
+                    if not item.get("revoked_at")
+                    and (user_email is None or item["user_email"] == user_email)
+                    and (category is None or category in item["categories"])
+                ]
+        clauses = ["revoked_at IS NULL"]
+        params: list[Any] = []
+        if user_email is not None:
+            clauses.append("user_email = %s")
+            params.append(user_email)
+        if category is not None:
+            clauses.append("%s = ANY(categories)")
+            params.append(category)
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""SELECT id, user_email, endpoint, p256dh, auth_key, categories,
+                            created_at, revoked_at
+                    FROM push_subscriptions
+                    WHERE {' AND '.join(clauses)}
+                    ORDER BY created_at""",
+                tuple(params),
+            ).fetchall()
+        keys = (
+            "id", "user_email", "endpoint", "p256dh", "auth_key", "categories",
+            "created_at", "revoked_at",
+        )
+        return [dict(zip(keys, row)) for row in rows]
+
+    def claim_push_notification_event(
+        self,
+        *,
+        event_key: str,
+        category: str,
+        title: str,
+        body: str,
+        deep_link: str,
+        at: datetime,
+    ) -> bool:
+        if not self.database_url:
+            with self._auth_lock:
+                if event_key in self._push_notification_events:
+                    return False
+                self._push_notification_events[event_key] = {
+                    "category": category,
+                    "title": title,
+                    "body": body,
+                    "deep_link": deep_link,
+                    "created_at": at,
+                }
+                return True
+        with self.connection() as connection:
+            inserted = connection.execute(
+                """INSERT INTO push_notification_events
+                   (event_key, category, title, body, deep_link, created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (event_key) DO NOTHING""",
+                (event_key, category, title, body, deep_link, at),
+            ).rowcount
+            connection.commit()
+        return bool(inserted)
+
+    def record_push_delivery(
+        self,
+        *,
+        event_key: str | None,
+        subscription_id: str,
+        category: str,
+        delivery_status: str,
+        response_status: int | None,
+        error_class: str | None,
+        attempted_at: datetime,
+    ) -> None:
+        payload = {
+            "id": str(uuid4()),
+            "event_key": event_key,
+            "subscription_id": subscription_id,
+            "category": category,
+            "status": delivery_status,
+            "response_status": response_status,
+            "error_class": error_class,
+            "attempted_at": attempted_at,
+        }
+        if not self.database_url:
+            self._push_delivery_events.append(payload)
+            return
+        with self.connection() as connection:
+            connection.execute(
+                """INSERT INTO push_delivery_events
+                   (id, event_key, subscription_id, category, status,
+                    response_status, error_class, attempted_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                tuple(payload.values()),
+            )
+            connection.commit()
 
     def create_leah_pairing(self, payload: dict[str, Any]) -> None:
         if not self.database_url:

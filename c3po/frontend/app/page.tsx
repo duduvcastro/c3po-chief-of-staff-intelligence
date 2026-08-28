@@ -2181,6 +2181,195 @@ function CompanyLogo({ logoUrl, symbol, market }: { logoUrl?: string | null; sym
     : <span>{symbol.slice(0, 2)}</span>;
 }
 
+const pushCategoryOptions = [
+  { key: "kill_criterion", label: "Kill criterion", detail: "Pausa ou veredito formal da estratégia" },
+  { key: "job_failure", label: "Falha de job crítico", detail: "Backup, cash yield, estudos e workers" },
+  { key: "governance_critical", label: "Governança crítica", detail: "Vulnerabilidade high/critical ou drift" },
+  { key: "mesa_reading", label: "Leitura da mesa", detail: "Novo relatório decisório publicado" }
+] as const;
+
+type PushCategoryKey = typeof pushCategoryOptions[number]["key"];
+
+interface PushStatusPayload {
+  configured: boolean;
+  vapid_public_key: string | null;
+  active_subscription_count: number;
+  categories: PushCategoryKey[];
+}
+
+function decodeVapidPublicKey(value: string) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const binary = window.atob((value + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function PushNotificationPanel({ isAdmin }: { isAdmin: boolean }) {
+  const [installed, setInstalled] = useState(false);
+  const [supported, setSupported] = useState(true);
+  const [configured, setConfigured] = useState(false);
+  const [publicKey, setPublicKey] = useState("");
+  const [active, setActive] = useState(false);
+  const [categories, setCategories] = useState<PushCategoryKey[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches
+      || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
+    setInstalled(standalone);
+    if (!standalone) return;
+    const available = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+    setSupported(available);
+    if (!available) return;
+    fetch(`${API_URL}/api/v1/push/status`, { cache: "no-store", credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Não foi possível consultar os alertas");
+        return response.json() as Promise<PushStatusPayload>;
+      })
+      .then(async (status) => {
+        setConfigured(status.configured);
+        setPublicKey(status.vapid_public_key || "");
+        setCategories(status.categories || []);
+        const registration = await navigator.serviceWorker.getRegistration("/push-sw.js");
+        const subscription = await registration?.pushManager.getSubscription();
+        setActive(Boolean(subscription));
+      })
+      .catch((reason: Error) => setError(reason.message));
+  }, []);
+
+  async function persistSubscription(subscription: PushSubscription, selected: PushCategoryKey[]) {
+    const json = subscription.toJSON();
+    const response = await fetch(`${API_URL}/api/v1/push/subscribe`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        endpoint: subscription.endpoint,
+        keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
+        categories: selected
+      })
+    });
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.detail || "Não foi possível salvar os alertas");
+  }
+
+  async function activate() {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      if (!configured || !publicKey) throw new Error("Alertas ainda não estão configurados no servidor");
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") throw new Error("Permissão de notificações não concedida");
+      const registration = await navigator.serviceWorker.register("/push-sw.js", { scope: "/" });
+      const existing = await registration.pushManager.getSubscription();
+      const subscription = existing || await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: decodeVapidPublicKey(publicKey)
+      });
+      await persistSubscription(subscription, categories);
+      setActive(true);
+      setMessage("Alertas ativos neste aparelho");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Falha ao ativar alertas");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleCategory(category: PushCategoryKey) {
+    const selected = categories.includes(category)
+      ? categories.filter((item) => item !== category)
+      : [...categories, category];
+    setCategories(selected);
+    if (!active) return;
+    setBusy(true);
+    setError("");
+    try {
+      const registration = await navigator.serviceWorker.getRegistration("/push-sw.js");
+      const subscription = await registration?.pushManager.getSubscription();
+      if (!subscription) throw new Error("Assinatura deste aparelho não encontrada");
+      await persistSubscription(subscription, selected);
+      setMessage("Preferências atualizadas");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Falha ao atualizar alertas");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deactivate() {
+    setBusy(true);
+    setError("");
+    try {
+      const registration = await navigator.serviceWorker.getRegistration("/push-sw.js");
+      const subscription = await registration?.pushManager.getSubscription();
+      if (subscription) {
+        await fetch(`${API_URL}/api/v1/push/unsubscribe`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: subscription.endpoint })
+        });
+        await subscription.unsubscribe();
+      }
+      setActive(false);
+      setMessage("Alertas desativados neste aparelho");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Falha ao desativar alertas");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendTest() {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/push/test`, { method: "POST", credentials: "include" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Falha no teste");
+      setMessage(result.sent > 0 ? "Notificação de teste enviada" : "Nenhuma assinatura recebeu o teste");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Falha ao enviar teste");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!installed) return null;
+
+  return (
+    <section className="profile-panel-section profile-push">
+      <div className="profile-panel-section-title"><Bell size={15} /><span>Alertas no aparelho</span></div>
+      {!supported ? (
+        <p className="profile-push-note">Este navegador não oferece Web Push para a PWA.</p>
+      ) : (
+        <>
+          <div className="profile-push-status">
+            <div><i className={active ? "profile-push-dot-active" : ""} /><span><strong>{active ? "Ativos" : "Desativados"}</strong><small>Somente alertas operacionais escolhidos</small></span></div>
+            <button type="button" onClick={() => void (active ? deactivate() : activate())} disabled={busy || !configured}>
+              {active ? "Desativar" : "Ativar alertas"}
+            </button>
+          </div>
+          <div className="profile-push-categories">
+            {pushCategoryOptions.map((option) => (
+              <label key={option.key}>
+                <span><strong>{option.label}</strong><small>{option.detail}</small></span>
+                <input type="checkbox" checked={categories.includes(option.key)} onChange={() => void toggleCategory(option.key)} disabled={busy} />
+              </label>
+            ))}
+          </div>
+          {isAdmin && active && <button className="profile-push-test" type="button" onClick={() => void sendTest()} disabled={busy}>Enviar notificação de teste</button>}
+          {message && <p className="profile-push-message">{message}</p>}
+          {error && <p className="profile-totp-error">{error}</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
 function ProfilePanel({
   session,
   items,
@@ -2254,6 +2443,7 @@ function ProfilePanel({
         </section>
 
         <TotpSecurityPanel initiallyEnabled={session.totp_enabled} />
+        <PushNotificationPanel isAdmin={session.is_admin} />
 
         <div className="profile-panel-actions">
           <button type="button" onClick={() => { onClose(); onLogout(); }}>

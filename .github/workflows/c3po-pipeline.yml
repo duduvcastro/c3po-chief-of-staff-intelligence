@@ -198,6 +198,25 @@ jobs:
             /tmp/c3po-release.tar.gz \
             "$USER@$HOST:/tmp/c3po-release-${{ steps.revision.outputs.sha }}.tar.gz"
 
+      - name: Stage push notification configuration
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          PUSH_PRIVATE: ${{ secrets.C3PO_PUSH_VAPID_PRIVATE_KEY }}
+          PUSH_PUBLIC: ${{ secrets.C3PO_PUSH_VAPID_PUBLIC_KEY }}
+        run: |
+          test -n "$PUSH_PRIVATE"
+          test -n "$PUSH_PUBLIC"
+          umask 077
+          {
+            printf 'C3PO_PUSH_VAPID_PRIVATE_KEY=%s\n' "$PUSH_PRIVATE"
+            printf 'C3PO_PUSH_VAPID_PUBLIC_KEY=%s\n' "$PUSH_PUBLIC"
+          } > /tmp/c3po-push.env
+          scp -i ~/.ssh/c3po_deploy \
+            /tmp/c3po-push.env \
+            "$USER@$HOST:/tmp/c3po-push-${{ steps.revision.outputs.sha }}.env"
+          rm -f /tmp/c3po-push.env
+
       - name: Deploy and verify
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
@@ -211,6 +230,7 @@ jobs:
           APP_DIR=/opt/chief-of-staff-digital
           ARCHIVE="/tmp/c3po-release-${REVISION}.tar.gz"
           RELEASE_DIR="/tmp/c3po-release-${REVISION}"
+          PUSH_ENV="/tmp/c3po-push-${REVISION}.env"
 
           rm -rf "$RELEASE_DIR"
           mkdir -p "$RELEASE_DIR"
@@ -226,6 +246,35 @@ jobs:
             --exclude='c3po/data/' \
             --exclude='whatsapp_session/' \
             "$RELEASE_DIR/" "$APP_DIR/"
+
+          python3 - "$APP_DIR/.env" "$PUSH_ENV" <<'PY'
+          import pathlib
+          import sys
+
+          target = pathlib.Path(sys.argv[1])
+          staged = pathlib.Path(sys.argv[2])
+          updates = dict(
+              line.split("=", 1)
+              for line in staged.read_text(encoding="utf-8").splitlines()
+              if line and "=" in line
+          )
+          existing = target.read_text(encoding="utf-8").splitlines()
+          output = []
+          seen = set()
+          for line in existing:
+              key = line.split("=", 1)[0] if "=" in line else ""
+              if key in updates:
+                  output.append(f"{key}={updates[key]}")
+                  seen.add(key)
+              else:
+                  output.append(line)
+          for key, value in updates.items():
+              if key not in seen:
+                  output.append(f"{key}={value}")
+          target.write_text("\n".join(output) + "\n", encoding="utf-8")
+          target.chmod(0o600)
+          staged.unlink()
+          PY
 
           cd "$APP_DIR"
           C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml config --quiet
