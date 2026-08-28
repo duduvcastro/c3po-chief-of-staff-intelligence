@@ -1,0 +1,20 @@
+title = "C3PO secret scan"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Template env files carry intentionally empty keys; audited 28/08/2026 by Fable."
+paths = [
+  '''\.env\.example$''',
+]
+# Named-constant assignments like METHODOLOGY_KEY = "valuation_v2_shadow" are
+# identifiers, not credentials. The value must be strictly lowercase snake_case
+# (or an UPPER_SNAKE entity id) so that any real key material - which carries
+# mixed case or long entropy - still trips the scanner.
+regexTarget = "line"
+regexes = [
+  '''^\s*[A-Z][A-Z0-9_]*_KEY(:\s*[A-Za-z\[\]"' ]+)?\s*=\s*"[a-z0-9_]{1,64}"\s*$''',
+  '''^\s*[A-Z][A-Z0-9_]*_KEY(:\s*[A-Za-z\[\]"' ]+)?\s*=\s*"[A-Z0-9_]{1,64}"\s*$''',
+  '''^\s*[A-Z][A-Z0-9_]*_KEY\s*=\s*[A-Z][A-Za-z0-9_.]{1,80}$''',
+]

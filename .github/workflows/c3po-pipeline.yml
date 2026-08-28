@@ -39,6 +39,27 @@ jobs:
       - name: Reject credentials and private runtime data
         run: python3 .github/scripts/check_sensitive_files.py
 
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_LINUX_X64_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
+
+      - name: Install pinned gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_LINUX_X64_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+
+      - name: Scan the working tree for secret material
+        run: ./gitleaks dir . --no-banner --redact --config .gitleaks.toml
+
   backend-tests:
     name: Backend tests
     runs-on: ubuntu-latest
@@ -127,7 +148,7 @@ jobs:
 
   deploy-production:
     name: Deploy production
-    needs: [sensitive-files, backend-tests, python-type-check, frontend-build]
+    needs: [sensitive-files, secret-scan, backend-tests, python-type-check, frontend-build]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: production
