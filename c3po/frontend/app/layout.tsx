@@ -1,9 +1,29 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#181713"
+};
 
 export const metadata: Metadata = {
   title: "C3PO | Chief of Staff Intelligence",
   description: "Private executive and financial intelligence workspace",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "C3PO",
+    statusBarStyle: "black-translucent"
+  },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" }
+    ],
+    apple: "/apple-touch-icon.png"
+  },
   robots: {
     index: false,
     follow: false,
