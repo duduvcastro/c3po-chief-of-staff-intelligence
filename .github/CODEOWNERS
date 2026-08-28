@@ -1,0 +1,5 @@
+# Six-hands governance: every path requires the repository owner's review.
+# Today the three hands (Dudu, Fable, Codex) operate through this account, so
+# GitHub cannot yet enforce cross-review; splitting into per-hand machine users
+# is the phase-2 upgrade that makes the audit rite mechanically mandatory.
+* @duduvcastro
