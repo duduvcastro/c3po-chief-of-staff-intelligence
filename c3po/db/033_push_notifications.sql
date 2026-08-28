@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
             'kill_criterion',
             'job_failure',
             'governance_critical',
-            'mesa_reading'
+            'mesa_reading',
+            'disk_threshold'
         ]::TEXT[]
     )
 );

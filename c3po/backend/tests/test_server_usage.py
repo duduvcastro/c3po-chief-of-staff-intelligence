@@ -5,7 +5,9 @@ import pytest
 from app.config import Settings
 from app.database import Database
 from app.api_performance import ApiPerformanceRegistry, api_performance
+from app.push_notifications import PushNotificationService
 from app.server_usage import ServerUsageCollector, ServerUsageService
+from app.server_usage_worker import notify_disk_threshold
 
 
 def test_collector_reads_host_cpu_and_calculates_delta(tmp_path) -> None:
@@ -112,3 +114,38 @@ def test_server_usage_snapshot_includes_api_performance() -> None:
 
     matching = [item for item in response.api_endpoints if item.route == "/api/v1/test-performance"]
     assert matching[0].average_ms == 42
+
+
+def test_disk_threshold_push_is_strictly_above_80_percent_and_daily_idempotent() -> None:
+    settings = Settings(
+        database_url="",
+        push_vapid_private_key="private-vapid-key",
+        push_vapid_public_key="public-vapid-key",
+    )
+    database = Database(settings)
+    calls: list[dict] = []
+    service = PushNotificationService(
+        settings,
+        database,
+        sender=lambda **kwargs: calls.append(kwargs),
+    )
+    service.subscribe(
+        user_email="owner@example.com",
+        endpoint="https://push.example/disk",
+        p256dh="p256dh-value-long-enough",
+        auth_key="auth-value-long-enough",
+        categories=["disk_threshold"],
+    )
+    base = {
+        "server_id": "lightsail-sa-east-1",
+        "collected_at": datetime(2026, 8, 28, 15, 0, tzinfo=timezone.utc),
+        "disk_total_bytes": 1_000,
+    }
+
+    assert notify_disk_threshold(service, {**base, "disk_used_bytes": 800}) is None
+    first = notify_disk_threshold(service, {**base, "disk_used_bytes": 801})
+    duplicate = notify_disk_threshold(service, {**base, "disk_used_bytes": 900})
+
+    assert first is not None and first["sent"] == 1
+    assert duplicate is not None and duplicate["attempted"] == 0
+    assert len(calls) == 1

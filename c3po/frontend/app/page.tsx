@@ -2185,7 +2185,8 @@ const pushCategoryOptions = [
   { key: "kill_criterion", label: "Kill criterion", detail: "Pausa ou veredito formal da estratégia" },
   { key: "job_failure", label: "Falha de job crítico", detail: "Backup, cash yield, estudos e workers" },
   { key: "governance_critical", label: "Governança crítica", detail: "Vulnerabilidade high/critical ou drift" },
-  { key: "mesa_reading", label: "Leitura da mesa", detail: "Novo relatório decisório publicado" }
+  { key: "mesa_reading", label: "Leitura da mesa", detail: "Novo relatório decisório publicado" },
+  { key: "disk_threshold", label: "Disco acima de 80%", detail: "Capacidade do host requer atenção" }
 ] as const;
 
 type PushCategoryKey = typeof pushCategoryOptions[number]["key"];

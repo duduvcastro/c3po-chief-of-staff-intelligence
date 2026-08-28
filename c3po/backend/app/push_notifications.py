@@ -20,6 +20,7 @@ PUSH_CATEGORIES = (
     "job_failure",
     "governance_critical",
     "mesa_reading",
+    "disk_threshold",
 )
 TEST_CATEGORY = "test"
 
