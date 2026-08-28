@@ -18,7 +18,7 @@ pkgbuild \
   --component "$STAGE/$APP_NAME" \
   --install-location /Applications \
   --identifier br.com.eduardocastro.leah-cloud-agent \
-  --version 1.0.1 \
+  --version 1.0.2 \
   "$PACKAGE"
 mv "$PACKAGE" "$OUTPUT"
 shasum -a 256 "$OUTPUT"

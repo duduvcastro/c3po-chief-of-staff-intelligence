@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -82,6 +83,48 @@ def test_web_item_round_trip_reaches_agent_and_agent_adds_external_id() -> None:
     )
     stored = database.get_leah_item("eduardo@example.com", created["id"])
     assert stored and stored["external_id"] == "eventkit-42"
+
+
+def test_web_delete_reaches_agent_as_tombstone_with_eventkit_identity() -> None:
+    settings = Settings(auth_secret="a-secure-test-secret-with-more-than-32-characters")
+    database = Database(settings)
+    service = LeahCloudService(settings, database)
+    pairing = service.create_pairing("eduardo@example.com")
+    device = service.pair_device(pairing["code"], "Mac Eduardo", "macOS")["device"]
+    starts_at = datetime(2026, 8, 28, 15, 0, tzinfo=timezone.utc)
+    created = database.upsert_leah_item(
+        {
+            "owner_email": "eduardo@example.com",
+            "kind": "event",
+            "external_id": "eventkit-calendar-item-42",
+            "container_id": "icloud-calendar-1",
+            "title": "Evento removido no Leah",
+            "starts_at": starts_at,
+            "ends_at": starts_at + timedelta(hours=1),
+            "source": "icloud",
+        }
+    )
+    cursor = service.sync(device, {"items": []})["cursor"]
+
+    assert database.delete_leah_item("eduardo@example.com", created["id"], cursor + timedelta(seconds=1))
+    pulled = service.sync(device, {"cursor": cursor, "items": []})["items"]
+
+    assert len(pulled) == 1
+    assert pulled[0]["source"] == "c3po"
+    assert pulled[0]["deleted_at"] is not None
+    assert pulled[0]["external_id"] == "eventkit-calendar-item-42"
+    assert pulled[0]["starts_at"] == starts_at
+
+
+def test_eventkit_delete_uses_the_calendar_item_identifier_lookup() -> None:
+    agent_root = Path(__file__).resolve().parents[3] / "tools/leah-cloud-agent/Sources/LeahCloudAgent"
+    source = (agent_root / "EventKitBridge.swift").read_text()
+    model_source = (agent_root / "AgentModel.swift").read_text()
+
+    assert "store.calendarItem(withIdentifier: identifier) as? EKEvent" in source
+    assert "try store.remove(existingEvent, span: .thisEvent, commit: true)" in source
+    assert "private static let syncSchemaVersion = 4" in model_source
+    assert "let cursor = storedSchemaVersion == Self.syncSchemaVersion" in model_source
 
 
 def test_recurring_event_occurrences_with_same_external_id_are_preserved() -> None:

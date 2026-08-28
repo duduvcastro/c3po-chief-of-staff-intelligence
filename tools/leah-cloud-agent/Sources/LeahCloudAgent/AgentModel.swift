@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 final class AgentModel: ObservableObject {
-    private static let syncSchemaVersion = 3
+    private static let syncSchemaVersion = 4
     private static let eventSnapshotVersion = 2
     @Published var server = UserDefaults.standard.string(forKey: "server") ?? "https://c3po.eduardocastro.com.br"
     @Published var pairingCode = ""
@@ -67,8 +67,10 @@ final class AgentModel: ObservableObject {
         defer { isWorking = false }
         do {
             guard let url = URL(string: server) else { throw LeahAgentError.invalidServer }
-            let cursor = UserDefaults.standard.object(forKey: "serverCursor") as? Date
             let storedSchemaVersion = UserDefaults.standard.integer(forKey: "syncSchemaVersion")
+            let cursor = storedSchemaVersion == Self.syncSchemaVersion
+                ? UserDefaults.standard.object(forKey: "serverCursor") as? Date
+                : nil
             let localCursor = storedSchemaVersion == Self.syncSchemaVersion
                 ? UserDefaults.standard.object(forKey: "localCursor") as? Date
                 : nil
