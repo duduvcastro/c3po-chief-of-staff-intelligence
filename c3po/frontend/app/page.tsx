@@ -197,7 +197,7 @@ interface Integration {
   metadata?: Record<string, unknown>;
 }
 
-type SystemHealthGroupKey = "apis" | "external_services" | "open_finance" | "aws" | "controls" | "quotes" | "official_sources" | "automations";
+type SystemHealthGroupKey = "apis" | "external_services" | "open_finance" | "aws" | "controls" | "governance" | "quotes" | "official_sources" | "automations";
 
 interface SystemHealthGroup {
   key: SystemHealthGroupKey;
@@ -7807,6 +7807,7 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
     open_finance: WalletCards,
     aws: Server,
     controls: ShieldCheck,
+    governance: LockKeyhole,
     quotes: LineChart,
     official_sources: Building2,
     automations: RefreshCw
@@ -7825,18 +7826,28 @@ function HealthView({ data }: { data: SystemHealthData | null }) {
     const order: Record<SystemHealthGroupKey, number> = {
       aws: 0,
       controls: 1,
-      apis: 2,
-      external_services: 3,
-      open_finance: 4,
-      quotes: 5,
-      official_sources: 6,
-      automations: 7
+      governance: 2,
+      apis: 3,
+      external_services: 4,
+      open_finance: 5,
+      quotes: 6,
+      official_sources: 7,
+      automations: 8
     };
     return order[left.key] - order[right.key];
   });
   const renderHealthGroup = (group: SystemHealthGroup) => {
     const GroupIcon = groupIcons[group.key];
     const visibleItems = group.items.filter((item) => item.name !== "Daily API Usage");
+    if (group.key === "governance") {
+      return (
+        <section className="panel system-health-group system-health-group-governance" key={group.key}>
+          <div className="health-list health-list-large">
+            {visibleItems.map((item) => <HealthRow key={`${group.key}-${item.name}`} item={item} groupKey={group.key} />)}
+          </div>
+        </section>
+      );
+    }
     return (
       <section className={`panel system-health-group system-health-group-${group.key}`} key={group.key}>
         <PanelHeader title={`${group.label} · ${group.healthy_count}/${group.total_count}`} icon={GroupIcon} />

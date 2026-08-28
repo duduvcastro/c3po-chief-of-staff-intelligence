@@ -72,6 +72,7 @@ class SystemHealthService:
             self._group("open_finance", "Pluggy & Banks", self._safe_items("Pluggy API", self.open_finance.integration_health, now)),
             self._group("aws", "AWS Infrastructure", self._aws_health(now)),
             self._group("controls", "Day D & Valuation Controls", self._day_d_and_valuation_health(now)),
+            self._group("governance", "Governança & Vulnerabilidades", [self._governance_vulnerability_health(now)]),
             self._group("quotes", "Market Quotes", self._quote_health(now)),
             self._group("official_sources", "Official Intelligence", self._official_sources_health(now)),
             self._group("automations", "Automatic Routines", self._automation_health(now)),
@@ -821,7 +822,6 @@ class SystemHealthService:
 
     def _day_d_and_valuation_health(self, now: datetime) -> list[IntegrationHealth]:
         return [
-            self._governance_vulnerability_health(now),
             self._valuation_worker_phase_health(now),
             *self._valuation_v2_1b_health(now),
             self._day_d_disk_health(now),
