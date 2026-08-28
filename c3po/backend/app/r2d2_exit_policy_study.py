@@ -43,6 +43,10 @@ DELIVERABLE_ZERO_SHA256 = "ae83428ac0444329efc7405e06078c144b575a0909699e15b16ce
 FROZEN_POLICY_COMMIT = "39ff427fd2f1fa0f42141776921a63651508495f"
 FROZEN_METHODOLOGY = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
 REPORT_SCHEMA_VERSION = "EXIT-POLICY-STUDY-V1.1-REPORT-v2"
+LEDGER_CANDIDATE_SCHEMA_VERSION = "V3-EVIDENCE-LEDGER-CANDIDATE-v1"
+V3_EVIDENCE_LEDGER_SHA256 = (
+    "501ecb1c3b502970a1b70a5e39ca4f36b5624e970ea1e4cf95897ac253339898"
+)
 TERMINAL_SESSIONS = 10
 REGULAR_OPEN = time(9, 30)
 REGULAR_CLOSE = time(16, 0)
@@ -72,6 +76,112 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 def canonical_sha256(value: Any) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def ledger_candidate_line(
+    *,
+    runner: str,
+    finding_type: str,
+    fact: Mapping[str, Any],
+    evidence_path: str,
+    evidence_payload: Any,
+    implication: str,
+) -> dict[str, Any]:
+    candidate: dict[str, Any] = {
+        "schema_version": LEDGER_CANDIDATE_SCHEMA_VERSION,
+        "ledger_contract_sha256": V3_EVIDENCE_LEDGER_SHA256,
+        "runner": runner,
+        "finding_type": finding_type,
+        "fact": dict(fact),
+        "evidence": {
+            "report_path": evidence_path,
+            "section_sha256": canonical_sha256(evidence_payload),
+        },
+        "implication": implication,
+        "governance": {
+            "automatic_draft": True,
+            "ledger_admission_authorized": False,
+            "requires_table_approval": True,
+        },
+    }
+    candidate["candidate_sha256"] = canonical_sha256(candidate)
+    return candidate
+
+
+def _exit_ledger_candidate_lines(
+    *,
+    common_gate: Mapping[str, Any] | None,
+    panel_i: Mapping[str, Any] | None,
+    panel_ii: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    gate = dict(common_gate or {})
+    gate_passed = bool(gate.get("passed"))
+    lines = [
+        ledger_candidate_line(
+            runner="EXIT_POLICY_STUDY_V1.1",
+            finding_type="binding_consistency_gate",
+            fact={
+                "passed": gate_passed,
+                "failure_count": int(gate.get("failure_count") or 0),
+                "market_compatibility_censored_episode_count": int(
+                    _json_ready(gate.get("market_compatibility", {})).get(
+                        "coverage_censored_episode_count", 0,
+                    )
+                ),
+            },
+            evidence_path="binding_consistency_gate",
+            evidence_payload=gate,
+            implication=(
+                "Binding gate passed; panel evidence may be reviewed, but no policy action "
+                "is authorized by this draft."
+                if gate_passed
+                else "Binding gate failed; do not interpret either panel and investigate "
+                "the named failures."
+            ),
+        )
+    ]
+    for panel_name, panel in (("panel_i", panel_i), ("panel_ii", panel_ii)):
+        if panel is None:
+            continue
+        metrics = _json_ready(panel.get("metrics", {}))
+        inference = _json_ready(panel.get("paired_inference", {}))
+        lines.append(ledger_candidate_line(
+            runner="EXIT_POLICY_STUDY_V1.1",
+            finding_type=panel_name,
+            fact={
+                "baseline_policy": panel.get("baseline_policy"),
+                "classification": panel.get("classification"),
+                "session_count": panel.get("session_count"),
+                "policy_metrics": {
+                    policy: {
+                        "episode_count": values.get("episode_count"),
+                        "total_net_pnl_usd": values.get("total_net_pnl_usd"),
+                        "win_rate_percent": values.get("win_rate_percent"),
+                    }
+                    for policy, values in metrics.items()
+                },
+                "paired_inference": {
+                    policy: {
+                        "mean_delta_usd": values.get("mean_delta_usd"),
+                        "confidence_interval_95_usd": values.get(
+                            "confidence_interval_95_usd"
+                        ),
+                    }
+                    for policy, values in inference.items()
+                },
+                "decision_readout": panel.get("preregistered_decision_readout", {}),
+            },
+            evidence_path=panel_name,
+            evidence_payload=panel,
+            implication=(
+                "Review the preregistered paired Panel I readout at the next evidence table; "
+                "the report classification controls whether a proposal is admissible."
+                if panel_name == "panel_i"
+                else "Exploratory only; this evidence may support only a prospective shadow "
+                "proposal, never a direct strategy change."
+            ),
+        ))
+    return lines
 
 
 def sha256_file(path: Path) -> str:
@@ -711,6 +821,11 @@ def build_report(
             "A policy with fewer than 15 observed sessions remains PILOT and cannot move production.",
         ],
     }
+    report["ledger_candidate_lines"] = _exit_ledger_candidate_lines(
+        common_gate=common_gate,
+        panel_i=panel_i,
+        panel_ii=panel_ii,
+    )
     report["report_sha256"] = _report_hash(report)
     return report
 
