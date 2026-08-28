@@ -8076,7 +8076,12 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const checks = Array.isArray(metadata.governance_checks)
     ? metadata.governance_checks.map(objectValue)
     : [];
+  const hasReport = Boolean(metadata.generated_at);
   const statusLabel = item.status === "healthy" ? "Operational" : item.status === "attention" ? "Needs attention" : "Offline";
+  const statusClass = item.status === "healthy" ? "healthy" : item.status === "attention" ? "attention" : "offline";
+  const severityValue = (severity: "critical" | "high" | "medium" | "low") => (
+    hasReport ? Number(severities[severity] ?? 0).toLocaleString("pt-BR") : "—"
+  );
   return (
     <article className={`governance-health-card governance-health-${item.status}`}>
       <header>
@@ -8084,31 +8089,48 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
           {item.status === "healthy" ? <Check size={15} strokeWidth={3} /> : item.status === "offline" ? <span aria-hidden="true">×</span> : null}
         </span>
         <ServiceLogo name="GitHub governance" groupKey="controls" />
-        <div><strong>{item.name}</strong><span>{item.detail}</span></div>
-        <small>{item.last_update}</small>
+        <div className="governance-heading-copy">
+          <div><strong>{item.name}</strong><span className={`governance-status-pill governance-status-${statusClass}`}>{statusLabel}</span></div>
+          <span>{item.detail}</span>
+        </div>
+        <small>Atualizado {item.last_update}</small>
       </header>
       <div className="governance-health-body">
         <section className="governance-dependabot">
-          <div><span>DEPENDABOT OPEN</span><strong>{Number(dependabot.open_total ?? 0).toLocaleString("pt-BR")}</strong></div>
+          <header>
+            <div><span>DEPENDABOT</span><strong>Vulnerabilidades abertas</strong></div>
+            <em className={hasReport ? `governance-summary-${statusClass}` : "governance-summary-pending"}>{hasReport ? statusLabel : "Aguardando atestado"}</em>
+          </header>
+          <div className="governance-open-total"><strong>{hasReport ? Number(dependabot.open_total ?? 0).toLocaleString("pt-BR") : "—"}</strong><span>total em aberto</span></div>
           <dl>
             {(["critical", "high", "medium", "low"] as const).map((severity) => (
               <div className={`governance-severity governance-severity-${severity}`} key={severity}>
-                <dt>{severity}</dt><dd>{Number(severities[severity] ?? 0)}</dd>
+                <dt>{severity}</dt><dd>{severityValue(severity)}</dd>
               </div>
             ))}
           </dl>
         </section>
         <section className="governance-contract">
-          {checks.map((check) => (
-            <div className={`governance-contract-row governance-contract-${String(check.status ?? "offline")}`} key={String(check.key)}>
-              <span>{String(check.label ?? check.key)}</span>
-              <strong>{governanceValueLabel(String(check.key), check.actual)}</strong>
-              {check.reason ? <small>{String(check.reason)}</small> : null}
+          <header><div><span>CONTRATO DA MAIN</span><strong>Controles de governança</strong></div><small>{checks.length ? `${checks.length} controles` : "Coleta diária"}</small></header>
+          {checks.length ? (
+            <div className="governance-contract-grid">
+              {checks.map((check) => (
+                <div className={`governance-contract-row governance-contract-${String(check.status ?? "offline")}`} key={String(check.key)}>
+                  <span>{String(check.label ?? check.key)}</span>
+                  <strong>{governanceValueLabel(String(check.key), check.actual)}</strong>
+                  {check.reason ? <small>{String(check.reason)}</small> : null}
+                </div>
+              ))}
             </div>
-          ))}
+          ) : (
+            <div className="governance-contract-empty">
+              <Clock3 size={28} />
+              <div><strong>Primeiro atestado ainda não gerado</strong><span>A leitura automática começa às 02:15 BRT e preencherá aqui cada proteção da branch principal.</span></div>
+            </div>
+          )}
         </section>
       </div>
-      <footer>Baseline {String(metadata.baseline_sha256 ?? "").slice(0, 12)} · generated {String(metadata.generated_at ?? item.last_update)}</footer>
+      <footer>{hasReport ? `Baseline ${String(metadata.baseline_sha256 ?? "").slice(0, 12)} · gerado ${String(metadata.generated_at)}` : "Baseline aguardando primeiro atestado · coleta diária às 02:15 BRT"}</footer>
     </article>
   );
 }
