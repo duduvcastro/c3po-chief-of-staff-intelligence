@@ -95,6 +95,26 @@ periods configured in the Healthchecks console are:
 Any console change to these values must update this runbook and the deployment
 evidence in the same audited change.
 
+### Mandatory check arming
+
+A newly created Healthchecks check is not operational evidence until it has
+received its first successful ping. The provider's `New` state does not start
+dead-man alerting, so an unarmed check is invisible silence rather than a
+working monitor.
+
+For every new or replaced check:
+
+1. create it with the audited schedule, grace period, and integration;
+2. install its ping URL only through the approved secret path;
+3. send one supervised success ping from the configured production or GitHub
+   environment, without printing the URL or job payload;
+4. refresh the Healthchecks console and verify that the check is no longer
+   `New`, has a factual `Last Ping`, and retains the expected integration;
+5. only then declare that dead-man check armed and trust missed-ping alerts.
+
+An HTTP `200` from the ping call is necessary but not sufficient: the console
+state and `Last Ping` are the authoritative arming evidence.
+
 ## Sentry
 
 Sentry Developer is default-off when `C3PO_SENTRY_DSN` is empty. When enabled:

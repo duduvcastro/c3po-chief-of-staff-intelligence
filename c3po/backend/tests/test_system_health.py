@@ -364,7 +364,7 @@ def _service(
 def test_consolidated_health_covers_every_operational_area() -> None:
     response = _service().snapshot(force=True)
 
-    assert [group.key for group in response.groups] == ["apis", "external_services", "open_finance", "aws", "controls", "quotes", "official_sources", "automations"]
+    assert [group.key for group in response.groups] == ["apis", "external_services", "open_finance", "aws", "controls", "governance", "quotes", "official_sources", "automations"]
     assert response.status == "healthy"
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
@@ -461,9 +461,8 @@ def test_day_d_and_valuation_controls_are_visible_and_healthy() -> None:
 
     controls = next(group for group in response.groups if group.key == "controls")
     assert controls.status == "healthy"
-    assert controls.healthy_count == 6
+    assert controls.healthy_count == 5
     assert {item.name for item in controls.items} == {
-        "Governança & Vulnerabilidades",
         "Valuation worker phases",
         "Valuation V2.1b cycle",
         "V3 pre-A/B gate",
@@ -474,14 +473,29 @@ def test_day_d_and_valuation_controls_are_visible_and_healthy() -> None:
 
 def test_governance_card_exposes_counts_contract_and_hash_metadata() -> None:
     response = _service().snapshot(force=True)
-    controls = next(group for group in response.groups if group.key == "controls")
-    item = next(item for item in controls.items if item.name == "Governança & Vulnerabilidades")
+    governance = next(group for group in response.groups if group.key == "governance")
+    assert governance.label == "Governança & Vulnerabilidades"
+    assert governance.healthy_count == 1
+    assert governance.total_count == 1
+    item = governance.items[0]
 
     assert item.status == "healthy"
     assert item.detail == "Baseline íntegra · Dependabot 0 aberto(s)"
     assert item.metadata["kind"] == "governance_vulnerabilities"
     assert item.metadata["dependabot"]["by_severity"]["critical"] == 0
     assert item.metadata["governance_checks"][0]["label"] == "Branch protection"
+
+
+def test_governance_card_describes_the_daily_window_without_claiming_fixed_schedule() -> None:
+    service = _service()
+    service.database.latest_governance_vulnerability_report = lambda: None  # type: ignore[method-assign]
+
+    item = service._governance_vulnerability_health(datetime.now(timezone.utc))
+
+    assert item.status == "attention"
+    assert item.detail == (
+        "Primeiro atestado diário pendente · diário a partir de 02:15 BRT"
+    )
 
 
 def test_valuation_worker_phase_failure_is_persistently_visible() -> None:
