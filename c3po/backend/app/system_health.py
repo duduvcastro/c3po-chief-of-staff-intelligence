@@ -837,7 +837,7 @@ class SystemHealthService:
             return IntegrationHealth(
                 name="Governança & Vulnerabilidades",
                 status="attention",
-                detail="Primeiro atestado diário pendente · execução às 02:15 BRT",
+                detail="Primeiro atestado diário pendente · diário a partir de 02:15 BRT",
                 last_update=self._format_time(now),
                 metadata={"kind": "governance_vulnerabilities"},
             )
