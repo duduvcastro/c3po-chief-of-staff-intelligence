@@ -8,8 +8,8 @@
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Leah Cloud Agent</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.1</string>
-  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleShortVersionString</key><string>0.1.2</string>
+  <key>CFBundleVersion</key><string>3</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSCalendarsFullAccessUsageDescription</key><string>A Leah Cloud sincroniza seus calendários pessoais com seu espaço privado no C3PO.</string>
   <key>NSRemindersFullAccessUsageDescription</key><string>A Leah Cloud sincroniza seus lembretes pessoais com seu espaço privado no C3PO.</string>

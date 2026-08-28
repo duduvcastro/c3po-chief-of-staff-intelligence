@@ -92,11 +92,14 @@ final class EventKitBridge {
         var acknowledgements: [LeahItem] = []
         for var item in items where item.source == "c3po" {
             if item.kind == "event", calendarAuthorized {
-                let event = item.externalId.flatMap(store.event(withIdentifier:)) ?? EKEvent(eventStore: store)
+                let existingEvent = existingEvent(for: item)
                 if item.deletedAt != nil {
-                    if event.eventIdentifier != nil { try store.remove(event, span: .thisEvent, commit: true) }
+                    if let existingEvent {
+                        try store.remove(existingEvent, span: .thisEvent, commit: true)
+                    }
                     continue
                 }
+                let event = existingEvent ?? EKEvent(eventStore: store)
                 if event.calendar == nil { event.calendar = store.defaultCalendarForNewEvents }
                 event.title = item.title
                 event.notes = item.notes
@@ -134,5 +137,35 @@ final class EventKitBridge {
             }
         }
         return acknowledgements
+    }
+
+    private func existingEvent(for item: LeahItem) -> EKEvent? {
+        guard let identifier = item.externalId else { return nil }
+
+        if let startsAt = item.startsAt {
+            let calendars = item.containerId
+                .flatMap(store.calendar(withIdentifier:))
+                .map { [$0] }
+            let endsAt = max(item.endsAt ?? startsAt.addingTimeInterval(3600), startsAt.addingTimeInterval(1))
+            let predicate = store.predicateForEvents(
+                withStart: startsAt.addingTimeInterval(-1),
+                end: endsAt.addingTimeInterval(1),
+                calendars: calendars
+            )
+            if let occurrence = store.events(matching: predicate).first(where: {
+                ($0.calendarItemIdentifier == identifier || $0.eventIdentifier == identifier)
+                    && abs($0.startDate.timeIntervalSince(startsAt)) < 1
+            }) {
+                return occurrence
+            }
+        }
+
+        // Leah stores calendarItemIdentifier, whose matching lookup is calendarItem(withIdentifier:).
+        // event(withIdentifier:) remains as a compatibility fallback for older event identifiers.
+        let calendarItem = store.calendarItem(withIdentifier: identifier) as? EKEvent
+        if item.startsAt == nil || calendarItem?.recurrenceRules?.isEmpty != false {
+            return calendarItem ?? store.event(withIdentifier: identifier)
+        }
+        return nil
     }
 }
