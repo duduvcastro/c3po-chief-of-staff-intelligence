@@ -7929,6 +7929,8 @@ type ServiceLogoKind =
   | "massive"
   | "healthchecks"
   | "sentry"
+  | "dday"
+  | "valuation"
   | "openai"
   | "anthropic"
   | "cvm"
@@ -7940,6 +7942,11 @@ type ServiceLogoKind =
 
 function serviceLogoKind(name: string, groupKey: SystemHealthGroupKey): ServiceLogoKind {
   const normalized = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (groupKey === "controls" && normalized === "day d disk reserve") return "dday";
+  if (
+    groupKey === "controls"
+    && ["valuation worker phases", "valuation v2.1b cycle", "v3 pre-a/b gate"].includes(normalized)
+  ) return "valuation";
   if (normalized.includes("c3po")) return "c3po";
   if (normalized.includes("postgres")) return "postgresql";
   if (normalized.includes("cloudflare")) return "cloudflare";
@@ -7985,6 +7992,8 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
     massive: "/massive-mark.svg",
     healthchecks: "/healthchecks-mark.png",
     sentry: "/sentry-mark.webp",
+    dday: "/day-d-disk-reserve-mark.webp",
+    valuation: "/valuation-controls-mark.png",
   };
   const officialAsset = officialAssets[kind];
   if (officialAsset) {

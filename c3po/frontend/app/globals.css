@@ -940,6 +940,9 @@ button { cursor: pointer; }
 .service-logo-massive { border-color: #1a5cff; background: #1a5cff; }
 .service-logo-healthchecks { border-color: #083b0b; background: #003b05; }
 .service-logo-sentry { border-color: #76518d; background: #76518d; }
+.service-logo-dday { border-color: #c69817; background: #000; }
+.service-logo-valuation { border-color: #2f6fa4; background: #f3f5f6; }
+.service-logo-valuation img { padding: 3px; }
 .service-logo-issuer { border-color: #c4a040; background: #fff8df; color: #735813; }
 .service-logo-summary { border-color: #d4b760; background: #15140f; color: #efbd35; }
 .service-logo-pdf { background: #c63232; }
