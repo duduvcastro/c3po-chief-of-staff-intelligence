@@ -75,6 +75,7 @@ payloads:
 - valuation off-hours worker;
 - cash-yield phase;
 - code census;
+- governance and vulnerability attestation;
 - PostgreSQL backup;
 - monthly PostgreSQL restore drill.
 
@@ -87,6 +88,7 @@ periods configured in the Healthchecks console are:
 | Valuation worker | daily | 2 hours |
 | Cash yield | daily | 4 hours |
 | Code census | daily | 1 hour |
+| Governance & vulnerabilities | daily at 02:15 BRT | 2 hours |
 | PostgreSQL backup | daily | 2 hours |
 | Restore drill | `0 10 1 * *` UTC | 2 hours |
 
@@ -117,15 +119,31 @@ configuration as operational evidence:
   is at most 35 days old. It becomes attention during the documented grace
   windows and offline for invalid or materially stale evidence. The API never
   tries to list or read S3 with the intentionally write-only host credential.
-- `Healthchecks.io` requires all five dead-man checks to be configured and the
+- `Healthchecks.io` requires all six dead-man checks to be configured and the
   SaaS endpoint to be reachable. Ping URLs are never displayed, logged, or used
   by the dashboard probe because probing them would fabricate job success.
 - `Sentry` requires an official `sentry.io` DSN and a reachable SaaS status
   endpoint. The card proves configuration and provider availability; error
   delivery remains observable in the Sentry project and its alert policy.
 
+## Governance and vulnerability monitor
+
+At or after 02:15 `America/Sao_Paulo`, the server-usage worker performs one
+read-only GitHub attestation per day. It records only open Dependabot counts by
+severity and the live branch-protection fields defined by
+`c3po/docs/GOVERNANCE_VULNERABILITY_BASELINE_V1.json`; alert titles, CVEs,
+package names, and secret values are never persisted. The daily report is
+append-only, self-hashed, and retried no more often than every 30 minutes after
+a failed attempt.
+
+The production token is stored only as `C3PO_GITHUB_GOVERNANCE_TOKEN` in the
+sealed `.env`. It requires read access to Dependabot alerts and repository
+administration metadata, and no write permission. A baseline change requires a
+reviewed PR. `enforce_admins=false` remains expected only while the daily report
+publisher still depends on direct push; its reason is part of the baseline.
+
 The monthly restore check URL remains only in the GitHub `production`
-environment. The production host stores a boolean attestation that the fifth
+environment. The production host stores a boolean attestation that the sixth
 check was present during the audited installer run, never the secret ping URL.
 
 ## Deployment order

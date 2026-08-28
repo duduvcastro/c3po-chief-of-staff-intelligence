@@ -21,7 +21,9 @@ def test_resilience_installer_is_manual_production_and_secret_driven() -> None:
     assert "C3PO_POSTGRES_BACKUP_SECRET_ACCESS_KEY" in workflow
     assert "C3PO_SENTRY_DSN" in workflow
     assert "C3PO_HEALTHCHECK_POSTGRES_BACKUP_URL" in workflow
+    assert "C3PO_HEALTHCHECK_GOVERNANCE_URL" in workflow
     assert "C3PO_HEALTHCHECK_POSTGRES_RESTORE_URL" in workflow
+    assert "C3PO_GITHUB_GOVERNANCE_TOKEN" in workflow
     assert 'payload["C3PO_HEALTHCHECK_POSTGRES_RESTORE_CONFIGURED"] = "true"' in workflow
     assert "systemctl enable --now c3po-postgres-backup.timer" in workflow
     assert "install -o root -g ubuntu -m 0750" in workflow

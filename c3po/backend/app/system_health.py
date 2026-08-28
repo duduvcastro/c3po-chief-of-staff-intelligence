@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from .config import Settings
+from .governance_vulnerability import report_sha256
 from .observability import HealthcheckPing
 from .schemas import AiUsageMetric, ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
 from .valuation_worker_contract import (
@@ -403,15 +404,16 @@ class SystemHealthService:
             self.settings.healthcheck_cash_yield_url,
             self.settings.healthcheck_code_census_url,
             self.settings.healthcheck_postgres_backup_url,
+            self.settings.healthcheck_governance_url,
         )
         configured_count = sum(
             HealthcheckPing(url).configured for url in configured_checks
         ) + int(self.settings.healthcheck_postgres_restore_configured)
-        if configured_count < 5:
+        if configured_count < 6:
             return IntegrationHealth(
                 name="Healthchecks.io",
                 status="offline",
-                detail=f"Dead-man monitoring incomplete · {configured_count}/5 checks armed",
+                detail=f"Dead-man monitoring incomplete · {configured_count}/6 checks armed",
                 last_update=self._format_time(now),
             )
         try:
@@ -425,7 +427,7 @@ class SystemHealthService:
             return IntegrationHealth(
                 name="Healthchecks.io",
                 status=status,
-                detail=f"5/5 dead-man checks armed · SaaS HTTP {response.status_code}",
+                detail=f"6/6 dead-man checks armed · SaaS HTTP {response.status_code}",
                 last_update=self._format_time(now),
             )
         except Exception as exc:
@@ -819,11 +821,74 @@ class SystemHealthService:
 
     def _day_d_and_valuation_health(self, now: datetime) -> list[IntegrationHealth]:
         return [
+            self._governance_vulnerability_health(now),
             self._valuation_worker_phase_health(now),
             *self._valuation_v2_1b_health(now),
             self._day_d_disk_health(now),
             self._b2_zero_cap_health(now),
         ]
+
+    def _governance_vulnerability_health(self, now: datetime) -> IntegrationHealth:
+        try:
+            report = self.database.latest_governance_vulnerability_report()
+        except Exception as exc:
+            return self._offline_item("Governança & Vulnerabilidades", exc, now)
+        if not report:
+            return IntegrationHealth(
+                name="Governança & Vulnerabilidades",
+                status="attention",
+                detail="Primeiro atestado diário pendente · execução às 02:15 BRT",
+                last_update=self._format_time(now),
+                metadata={"kind": "governance_vulnerabilities"},
+            )
+        if report.get("report_sha256") != report_sha256(report):
+            return IntegrationHealth(
+                name="Governança & Vulnerabilidades",
+                status="offline",
+                detail="Atestado diário com hash inválido",
+                last_update=self._format_time(now),
+                metadata={"kind": "governance_vulnerabilities"},
+            )
+        try:
+            generated_at = datetime.fromisoformat(str(report["generated_at"]))
+            if generated_at.tzinfo is None:
+                generated_at = generated_at.replace(tzinfo=timezone.utc)
+        except (KeyError, TypeError, ValueError):
+            return IntegrationHealth(
+                name="Governança & Vulnerabilidades",
+                status="offline",
+                detail="Atestado diário sem horário válido",
+                last_update=self._format_time(now),
+                metadata={"kind": "governance_vulnerabilities"},
+            )
+        stale = now - generated_at > timedelta(hours=36)
+        dependabot = report.get("dependabot") or {}
+        governance = report.get("governance") or {}
+        drift = governance.get("drift") or []
+        open_total = int(dependabot.get("open_total") or 0)
+        status = "offline" if stale else str(report.get("status") or "offline")
+        if stale:
+            detail = "Atestado diário vencido há mais de 36h"
+        elif drift:
+            fields = ", ".join(str(item.get("field")) for item in drift)
+            detail = f"Drift de governança: {fields} · Dependabot {open_total} aberto(s)"
+        else:
+            detail = f"Baseline íntegra · Dependabot {open_total} aberto(s)"
+        return IntegrationHealth(
+            name="Governança & Vulnerabilidades",
+            status=status,
+            detail=detail,
+            last_update=self._format_time(generated_at),
+            metadata={
+                "kind": "governance_vulnerabilities",
+                "generated_at": generated_at.isoformat(),
+                "baseline_sha256": str((report.get("baseline") or {}).get("sha256") or ""),
+                "dependabot": dependabot,
+                "governance_checks": governance.get("checks") or [],
+                "drift_fields": [str(item.get("field")) for item in drift],
+                "stale": stale,
+            },
+        )
 
     def _valuation_worker_phase_health(self, now: datetime) -> IntegrationHealth:
         definitions = {

@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from app.config import Settings
+from app.governance_vulnerability import report_sha256
 from app.schemas import (
     IntegrationHealth,
     MarketDataProviderHealth,
@@ -73,6 +74,35 @@ class _Database:
             for code in source_codes
             if code in self.valuation_phase_states
         }
+
+    def latest_governance_vulnerability_report(self):
+        report = {
+            "schema": "C3PO_GOVERNANCE_VULNERABILITY_REPORT-v1",
+            "session_date": self.now.date().isoformat(),
+            "repository": "duduvcastro/c3po-chief-of-staff-intelligence",
+            "branch": "main",
+            "generated_at": self.now.isoformat(),
+            "baseline": {"schema": "baseline-v1", "sha256": "a" * 64},
+            "dependabot": {
+                "status": "healthy",
+                "open_total": 0,
+                "by_severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+            },
+            "governance": {
+                "status": "healthy",
+                "checks": [{
+                    "key": "branch_protection_enabled",
+                    "label": "Branch protection",
+                    "status": "healthy",
+                    "expected": True,
+                    "actual": True,
+                }],
+                "drift": [],
+            },
+            "status": "healthy",
+        }
+        report["report_sha256"] = report_sha256(report)
+        return report
 
     def latest_analysis_snapshot_outputs(
         self,
@@ -299,6 +329,7 @@ def _service(
         healthcheck_cash_yield_url="https://hc-ping.com/cash-yield",
         healthcheck_code_census_url="https://hc-ping.com/code-census",
         healthcheck_postgres_backup_url="https://hc-ping.com/postgres-backup",
+        healthcheck_governance_url="https://hc-ping.com/governance",
         healthcheck_postgres_restore_configured=True,
         postgres_backup_bucket="c3po-postgres-test",
         postgres_backup_region="us-east-1",
@@ -338,7 +369,7 @@ def test_consolidated_health_covers_every_operational_area() -> None:
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Healthchecks.io", "Sentry", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Valuation worker phases", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve", "B2 zero-cap evidence",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Healthchecks.io", "Sentry", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Governança & Vulnerabilidades", "Valuation worker phases", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve", "B2 zero-cap evidence",
     }
     assert "WhatsApp capture" not in {item.name for group in response.groups for item in group.items}
 
@@ -357,7 +388,7 @@ def test_resilience_services_are_monitored_with_distinct_evidence() -> None:
 
     items = {item.name: item for group in response.groups for item in group.items}
     assert items["Healthchecks.io"].status == "healthy"
-    assert "5/5 dead-man checks armed" in items["Healthchecks.io"].detail
+    assert "6/6 dead-man checks armed" in items["Healthchecks.io"].detail
     assert items["Sentry"].status == "healthy"
     assert "DSN loaded" in items["Sentry"].detail
     assert items["PostgreSQL offsite backup"].status == "healthy"
@@ -365,14 +396,14 @@ def test_resilience_services_are_monitored_with_distinct_evidence() -> None:
     assert "restore drill verified" in items["PostgreSQL offsite backup"].detail
 
 
-def test_healthchecks_is_offline_until_all_five_checks_are_armed() -> None:
+def test_healthchecks_is_offline_until_all_six_checks_are_armed() -> None:
     service = _service()
-    service.settings.healthcheck_postgres_restore_configured = False
+    service.settings.healthcheck_governance_url = ""
 
     item = service._healthchecks_health(datetime.now(timezone.utc))
 
     assert item.status == "offline"
-    assert "4/5 checks armed" in item.detail
+    assert "5/6 checks armed" in item.detail
 
 
 def test_sentry_is_offline_without_an_official_dsn() -> None:
@@ -430,14 +461,27 @@ def test_day_d_and_valuation_controls_are_visible_and_healthy() -> None:
 
     controls = next(group for group in response.groups if group.key == "controls")
     assert controls.status == "healthy"
-    assert controls.healthy_count == 5
+    assert controls.healthy_count == 6
     assert {item.name for item in controls.items} == {
+        "Governança & Vulnerabilidades",
         "Valuation worker phases",
         "Valuation V2.1b cycle",
         "V3 pre-A/B gate",
         "Day D disk reserve",
         "B2 zero-cap evidence",
     }
+
+
+def test_governance_card_exposes_counts_contract_and_hash_metadata() -> None:
+    response = _service().snapshot(force=True)
+    controls = next(group for group in response.groups if group.key == "controls")
+    item = next(item for item in controls.items if item.name == "Governança & Vulnerabilidades")
+
+    assert item.status == "healthy"
+    assert item.detail == "Baseline íntegra · Dependabot 0 aberto(s)"
+    assert item.metadata["kind"] == "governance_vulnerabilities"
+    assert item.metadata["dependabot"]["by_severity"]["critical"] == 0
+    assert item.metadata["governance_checks"][0]["label"] == "Branch protection"
 
 
 def test_valuation_worker_phase_failure_is_persistently_visible() -> None:
@@ -583,8 +627,8 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     assert usage.status == "attention"
     assert response.status == "attention"
     assert response.quality == 97
-    assert response.healthy_count == 31
-    assert response.total_count == 32
+    assert response.healthy_count == 32
+    assert response.total_count == 33
 
 
 def test_finnhub_is_monitored_in_market_quotes() -> None:
