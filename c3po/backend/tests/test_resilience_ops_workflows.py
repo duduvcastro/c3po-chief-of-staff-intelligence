@@ -6,6 +6,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 INSTALLER = ROOT / ".github" / "workflows" / "install-resilience-ops-v1.yml"
 RESTORE = ROOT / ".github" / "workflows" / "postgres-backup-restore-drill.yml"
+PIPELINE = ROOT / ".github" / "workflows" / "c3po-pipeline.yml"
+COMPOSE = ROOT / "c3po" / "compose.yml"
 BACKUP_SCRIPT = ROOT / "scripts" / "c3po-postgres-backup.sh"
 
 
@@ -24,11 +26,17 @@ def test_resilience_installer_is_manual_production_and_secret_driven() -> None:
     assert "C3PO_HEALTHCHECK_GOVERNANCE_URL" in workflow
     assert "C3PO_HEALTHCHECK_POSTGRES_RESTORE_URL" in workflow
     assert "C3PO_GITHUB_GOVERNANCE_TOKEN" in workflow
+    assert "Validate governance token read capabilities" in workflow
+    assert "administration_read" in workflow
+    assert "dependabot_alerts_read" in workflow
+    assert "C3PO_SENTRY_DSN is not a valid sentry.io project DSN" in workflow
     assert 'payload["C3PO_HEALTHCHECK_POSTGRES_RESTORE_CONFIGURED"] = "true"' in workflow
     assert "systemctl enable --now c3po-postgres-backup.timer" in workflow
     assert "install -o root -g ubuntu -m 0750" in workflow
     assert "--force-recreate" in workflow
     assert "api investor-relations-worker valuation-worker server-usage-worker r2d2-worker" in workflow
+    assert "server_usage_worker_running=" in workflow
+    assert "python -m app.governance_vulnerability --root /host/disk" in workflow
 
 
 def test_restore_drill_runs_outside_host_and_never_has_write_credentials() -> None:
@@ -54,3 +62,21 @@ def test_backup_validates_the_dump_from_stdin_without_a_literal_dash() -> None:
     assert 'exec -T db pg_restore --list \\\n  <"$DUMP_PATH"' in script
     assert "pg_restore --list -" not in script
     assert '--user "$(id -u):$(id -g)"' in script
+
+
+def test_governance_worker_has_database_and_external_networks() -> None:
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+
+    assert compose["services"]["server-usage-worker"]["networks"] == [
+        "c3po_internal",
+        "legacy_proxy",
+    ]
+    assert compose["networks"]["c3po_internal"]["internal"] is True
+    assert compose["networks"]["legacy_proxy"]["external"] is True
+
+
+def test_production_health_gate_allows_serialized_schema_startup() -> None:
+    workflow = PIPELINE.read_text(encoding="utf-8")
+
+    assert "for attempt in $(seq 1 90)" in workflow
+    assert "for attempt in $(seq 1 30)" not in workflow

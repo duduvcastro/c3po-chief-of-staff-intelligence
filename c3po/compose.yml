@@ -111,6 +111,7 @@ services:
     restart: unless-stopped
     networks:
       - c3po_internal
+      - legacy_proxy
 
   r2d2-worker:
     build:

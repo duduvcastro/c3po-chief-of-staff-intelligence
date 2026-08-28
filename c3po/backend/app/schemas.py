@@ -223,7 +223,7 @@ class AiUsageMetric(BaseModel):
 
 
 class SystemHealthGroup(BaseModel):
-    key: Literal["apis", "external_services", "open_finance", "aws", "controls", "quotes", "official_sources", "automations"]
+    key: Literal["apis", "external_services", "open_finance", "aws", "controls", "governance", "quotes", "official_sources", "automations"]
     label: str
     status: Literal["healthy", "attention", "offline"]
     healthy_count: int = Field(ge=0)
