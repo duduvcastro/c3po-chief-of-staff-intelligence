@@ -660,6 +660,8 @@ class InstrumentIntradayResponse(BaseModel):
     session_date: str
     requested_session_date: str | None = None
     session_fidelity: Literal["exact", "fallback"] = "exact"
+    previous_close: float | None = None
+    day_change_percent: float | None = None
     series_kind: Literal["intraday", "daily"] = "intraday"
     interval_minutes: int = Field(default=5, ge=1)
     open: float = Field(gt=0)
@@ -682,6 +684,8 @@ class RealtimePortfolioIntradayResponse(BaseModel):
     session_date: str
     requested_session_date: str | None = None
     session_fidelity: Literal["exact", "fallback"] = "exact"
+    previous_close: float | None = None
+    day_change_percent: float | None = None
     interval_minutes: int = Field(default=5, ge=1)
     open: float = Field(gt=0)
     high: float = Field(gt=0)

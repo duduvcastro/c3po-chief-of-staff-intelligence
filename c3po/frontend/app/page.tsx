@@ -887,6 +887,8 @@ interface RealtimePortfolioIntradayResponse {
   session_date: string;
   requested_session_date?: string | null;
   session_fidelity?: "exact" | "fallback";
+  previous_close?: number | null;
+  day_change_percent?: number | null;
   series_kind?: "intraday" | "daily";
   interval_minutes: number;
   open: number;
@@ -5267,9 +5269,9 @@ const RealtimePortfolioIntradayPreview = forwardRef<HTMLDivElement, {
           )}
           <div className="realtime-intraday-summary">
             <div><span>Último</span><strong>{formatIntradayPrice(data.current, data.currency, data.market)}</strong></div>
-            <div className={data.change_percent >= 0 ? "change-up" : "change-down"}>
-              <DirectionIcon direction={data.change_percent >= 0 ? "up" : "down"} size={15} />
-              <strong>{formatPercent(data.change_percent, 2)}</strong><small>{data.series_kind === "daily" ? "vs. fechamento anterior" : "desde a abertura"}</small>
+            <div className={(data.day_change_percent ?? data.change_percent) >= 0 ? "change-up" : "change-down"}>
+              <DirectionIcon direction={(data.day_change_percent ?? data.change_percent) >= 0 ? "up" : "down"} size={15} />
+              <strong>{formatPercent(data.day_change_percent ?? data.change_percent, 2)}</strong><small>{data.day_change_percent != null ? "no dia" : data.series_kind === "daily" ? "vs. fechamento anterior" : "desde a abertura"}</small>
             </div>
           </div>
           <div className="realtime-intraday-chart">
