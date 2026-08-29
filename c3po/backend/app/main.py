@@ -560,7 +560,7 @@ def verify_login_code(
     push_notifications.notify(
         category="security_login",
         title="Novo login no C3PO",
-        body=f"{display_name} ({email})",
+        body=f"{display_name} · {login_at.astimezone(SAO_PAULO):%H:%M}",
         deep_link="/?view=health",
         event_key=f"security-login:{email}:{login_at.isoformat()}",
     )

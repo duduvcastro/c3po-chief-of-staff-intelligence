@@ -868,7 +868,9 @@ def test_login_push_alert_identifies_only_the_user(monkeypatch) -> None:
     """EMENDA 2: o push de novo login diz apenas QUEM entrou; o detalhe de
     aparelho/IP/hora permanece no Radar Alerts (evento de auditoria)."""
     sent: list[dict] = []
-    expires = datetime.now(timezone.utc) + timedelta(minutes=30)
+    fixed_now = datetime(2026, 8, 29, 17, 45, tzinfo=timezone.utc)  # 14:45 em SP
+    expires = fixed_now + timedelta(minutes=30)
+    monkeypatch.setattr(app_main.auth_service, "now", lambda: fixed_now)
     monkeypatch.setattr(
         app_main.auth_service,
         "verify_code",
@@ -901,5 +903,6 @@ def test_login_push_alert_identifies_only_the_user(monkeypatch) -> None:
     login_pushes = [item for item in sent if item["category"] == "security_login"]
     assert len(login_pushes) == 1
     body = login_pushes[0]["body"]
-    assert body == "Dudu (login-push@example.com)"
-    assert "device_type" not in body and "\u00b7" not in body
+    assert body == "Dudu \u00b7 14:45"  # nome de exibição + hora de SP, nada mais
+    assert "login-push@example.com" not in body
+    assert "device_type" not in body
