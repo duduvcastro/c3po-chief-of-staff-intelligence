@@ -9,6 +9,7 @@ RESTORE = ROOT / ".github" / "workflows" / "postgres-backup-restore-drill.yml"
 PIPELINE = ROOT / ".github" / "workflows" / "c3po-pipeline.yml"
 COMPOSE = ROOT / "c3po" / "compose.yml"
 BACKUP_SCRIPT = ROOT / "scripts" / "c3po-postgres-backup.sh"
+DAILY_REPORT_PUBLISHER = ROOT / "scripts" / "r2d2-publish-daily-report.sh"
 
 
 def test_resilience_installer_is_manual_production_and_secret_driven() -> None:
@@ -80,3 +81,13 @@ def test_production_health_gate_allows_serialized_schema_startup() -> None:
 
     assert "for attempt in $(seq 1 90)" in workflow
     assert "for attempt in $(seq 1 30)" not in workflow
+
+
+def test_daily_report_publisher_uses_a_dated_pr_branch_not_main() -> None:
+    script = DAILY_REPORT_PUBLISHER.read_text(encoding="utf-8")
+
+    assert 'BRANCH="daily-export/$EXPORT_DATE"' in script
+    assert 'git push --set-upstream origin "$BRANCH"' in script
+    assert "git push origin main" not in script
+    assert 'git merge --ff-only origin/main' in script
+    assert 'git ls-remote --exit-code --heads origin "$BRANCH"' in script
