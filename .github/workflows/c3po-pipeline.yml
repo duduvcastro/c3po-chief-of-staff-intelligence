@@ -159,6 +159,21 @@ jobs:
       - name: Build frontend
         run: pnpm build
 
+      - name: Validate production Docker images
+        if: github.event_name == 'pull_request'
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker build \
+            --file c3po/backend/Dockerfile \
+            --tag c3po/backend:pr-validation \
+            c3po
+          docker build \
+            --file c3po/frontend/Dockerfile \
+            --build-arg NEXT_PUBLIC_C3PO_API_URL= \
+            --build-arg "NEXT_PUBLIC_C3PO_BUILD_SHA=$GITHUB_SHA" \
+            --tag c3po/web:pr-validation \
+            c3po/frontend
+
   deploy-production:
     name: Deploy production
     needs: [sensitive-files, secret-scan, backend-tests, python-type-check, frontend-build]
@@ -175,8 +190,38 @@ jobs:
         id: revision
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Build production images outside the server
+        env:
+          REVISION: ${{ steps.revision.outputs.sha }}
+        run: |
+          docker build \
+            --file c3po/backend/Dockerfile \
+            --label "org.opencontainers.image.revision=$REVISION" \
+            --tag c3po/backend:production \
+            c3po
+          docker build \
+            --file c3po/frontend/Dockerfile \
+            --build-arg NEXT_PUBLIC_C3PO_API_URL= \
+            --build-arg "NEXT_PUBLIC_C3PO_BUILD_SHA=$REVISION" \
+            --label "org.opencontainers.image.revision=$REVISION" \
+            --tag c3po/web:production \
+            c3po/frontend
+          test "$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' c3po/backend:production)" = "$REVISION"
+          test "$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' c3po/web:production)" = "$REVISION"
+
+      - name: Package production images
+        env:
+          REVISION: ${{ steps.revision.outputs.sha }}
+        run: |
+          docker save c3po/backend:production c3po/web:production \
+            | gzip -1 > "/tmp/c3po-images-$REVISION.tar.gz"
+          sha256sum "/tmp/c3po-images-$REVISION.tar.gz" \
+            > "/tmp/c3po-images-$REVISION.tar.gz.sha256"
+
       - name: Package tracked source
-        run: git archive --format=tar.gz --output=/tmp/c3po-release.tar.gz HEAD
+        env:
+          REVISION: ${{ steps.revision.outputs.sha }}
+        run: git archive --format=tar.gz --output="/tmp/c3po-release-$REVISION.tar.gz" HEAD
 
       - name: Configure deployment SSH key
         env:
@@ -195,8 +240,10 @@ jobs:
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
           scp -i ~/.ssh/c3po_deploy \
-            /tmp/c3po-release.tar.gz \
-            "$USER@$HOST:/tmp/c3po-release-${{ steps.revision.outputs.sha }}.tar.gz"
+            "/tmp/c3po-release-${{ steps.revision.outputs.sha }}.tar.gz" \
+            "/tmp/c3po-images-${{ steps.revision.outputs.sha }}.tar.gz" \
+            "/tmp/c3po-images-${{ steps.revision.outputs.sha }}.tar.gz.sha256" \
+            "$USER@$HOST:/tmp/"
 
       - name: Stage push notification configuration
         env:
@@ -229,8 +276,32 @@ jobs:
 
           APP_DIR=/opt/chief-of-staff-digital
           ARCHIVE="/tmp/c3po-release-${REVISION}.tar.gz"
+          IMAGE_ARCHIVE="/tmp/c3po-images-${REVISION}.tar.gz"
+          IMAGE_SHA256="${IMAGE_ARCHIVE}.sha256"
           RELEASE_DIR="/tmp/c3po-release-${REVISION}"
           PUSH_ENV="/tmp/c3po-push-${REVISION}.env"
+          PREVIOUS_REVISION=$(cat "$APP_DIR/.deploy-version" 2>/dev/null || printf 'unknown')
+
+          cd /tmp
+          sha256sum --check "$IMAGE_SHA256"
+
+          current_backend=$(docker inspect --format '{{.Image}}' \
+            "$(docker compose --env-file "$APP_DIR/.env" -f "$APP_DIR/c3po/compose.yml" ps -q api)" \
+            2>/dev/null || true)
+          current_web=$(docker inspect --format '{{.Image}}' \
+            "$(docker compose --env-file "$APP_DIR/.env" -f "$APP_DIR/c3po/compose.yml" ps -q web)" \
+            2>/dev/null || true)
+          docker image rm c3po/backend:rollback c3po/web:rollback >/dev/null 2>&1 || true
+          if [ -n "$current_backend" ]; then
+            docker image tag "$current_backend" c3po/backend:rollback
+          fi
+          if [ -n "$current_web" ]; then
+            docker image tag "$current_web" c3po/web:rollback
+          fi
+
+          gzip -dc "$IMAGE_ARCHIVE" | docker load
+          test "$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' c3po/backend:production)" = "$REVISION"
+          test "$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' c3po/web:production)" = "$REVISION"
 
           rm -rf "$RELEASE_DIR"
           mkdir -p "$RELEASE_DIR"
@@ -278,20 +349,52 @@ jobs:
 
           cd "$APP_DIR"
           C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml config --quiet
-          C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml up -d --build
+          C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml up -d --no-build
 
           # Each service initializes the idempotent schema under one advisory lock.
           # Allow a cold, serialized startup to finish before declaring the deploy bad.
+          healthy=false
           for attempt in $(seq 1 90); do
             web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
             api_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/health || true)
             if [ "$web_code" = "200" ] && { [ "$api_code" = "200" ] || [ "$api_code" = "401" ]; }; then
-              printf '%s\n' "$REVISION" > .deploy-version
-              rm -rf "$RELEASE_DIR" "$ARCHIVE"
-              exit 0
+              healthy=true
+              break
             fi
             sleep 5
           done
+
+          if [ "$healthy" = true ]; then
+            printf '%s\n' "$REVISION" > .deploy-version
+            rm -rf "$RELEASE_DIR" "$ARCHIVE" "$IMAGE_ARCHIVE" "$IMAGE_SHA256"
+            docker image prune --force >/dev/null
+            docker builder prune --force >/dev/null
+            exit 0
+          fi
+
+          echo "health gate failed; restoring the prior container images" >&2
+          if docker image inspect c3po/backend:rollback c3po/web:rollback >/dev/null 2>&1; then
+            docker image tag c3po/backend:rollback c3po/backend:production
+            docker image tag c3po/web:rollback c3po/web:production
+            C3PO_BUILD_SHA="$PREVIOUS_REVISION" docker compose --env-file .env -f c3po/compose.yml up -d --no-build
+            rollback_healthy=false
+            for attempt in $(seq 1 60); do
+              web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
+              api_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/health || true)
+              if [ "$web_code" = "200" ] && { [ "$api_code" = "200" ] || [ "$api_code" = "401" ]; }; then
+                rollback_healthy=true
+                break
+              fi
+              sleep 5
+            done
+            if [ "$rollback_healthy" = true ]; then
+              echo "rollback health gate restored the prior images" >&2
+            else
+              echo "rollback images loaded but health gate did not recover" >&2
+            fi
+          else
+            echo "rollback images are unavailable" >&2
+          fi
 
           docker compose --env-file .env -f c3po/compose.yml ps
           docker compose --env-file .env -f c3po/compose.yml logs --tail=120 api web
