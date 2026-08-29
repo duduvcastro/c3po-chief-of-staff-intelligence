@@ -842,6 +842,8 @@ button { cursor: pointer; }
 .realtime-intraday-loading, .realtime-intraday-error { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 25px; color: #7a838e; font-size: 9px; text-align: center; }
 .realtime-intraday-loading svg { color: var(--gold); }
 .realtime-intraday-error { color: var(--red); background: var(--red-soft); }
+.realtime-intraday-session-warning { min-height: 32px; display: flex; align-items: center; gap: 7px; padding: 7px 13px; border-bottom: 1px solid #e9c878; color: #77540c; background: #fff4d5; font-size: 8px; font-weight: 800; }
+.realtime-intraday-session-warning svg { flex: 0 0 auto; }
 .realtime-intraday-summary { min-height: 50px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 13px 4px; }
 .realtime-intraday-summary > div:first-child span { display: block; color: #858e98; font-size: 7px; font-weight: 800; text-transform: uppercase; }
 .realtime-intraday-summary > div:first-child strong { display: block; margin-top: 3px; font-size: 14px; }

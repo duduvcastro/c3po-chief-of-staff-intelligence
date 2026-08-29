@@ -12,7 +12,7 @@ from app.market_data.eodhd_stream import EodhdStreamQuote
 from app.market_data.http import MarketDataRequestError
 from app.market_data.live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
 from app.market_data.live_markets import LiveMarketsService, MarketSpec
-from app.market_data.realtime import RealtimeMarketsService
+from app.market_data.realtime import FALLBACK_CACHE_SECONDS, RealtimeMarketsService
 from app.market_data.service import MarketDataService
 from app.schemas import LiveMarketItem, NormalizedQuote
 from app.valuation_policy import METHODOLOGY_VERSION
@@ -1232,6 +1232,88 @@ def test_global_intraday_supports_b3_symbol_outside_my_portfolio() -> None:
     assert response.market == "B3"
     assert response.current == 41.1
     assert not service.database.list_realtime_portfolio()
+
+
+def test_global_intraday_honors_the_requested_line_session_even_when_provider_has_newer_data() -> None:
+    requested_open = int(datetime(2026, 8, 14, 13, 0, tzinfo=timezone.utc).timestamp())
+    requested_later = int(datetime(2026, 8, 14, 15, 0, tzinfo=timezone.utc).timestamp())
+    newer = int(datetime(2026, 8, 15, 13, 0, tzinfo=timezone.utc).timestamp())
+    http = RoutingStubHttp({
+        "/api/v2/stocks/historical": {"results": [{"symbol": "WEGE3", "data": {
+            "historicalDataPrice": [
+                {"date": requested_open, "open": 40.0, "high": 40.5, "low": 39.8, "close": 40.2},
+                {"date": requested_later, "open": 40.2, "high": 41.4, "low": 40.0, "close": 41.1},
+                {"date": newer, "open": 42.0, "high": 43.0, "low": 41.8, "close": 42.8},
+            ],
+        }}]},
+    })
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    response = service.instrument_intraday(
+        "WEGE3",
+        market="B3",
+        name="WEG",
+        requested_session_date=date(2026, 8, 14),
+    )
+
+    assert response.requested_session_date == "2026-08-14"
+    assert response.session_date == "2026-08-14"
+    assert response.session_fidelity == "exact"
+    assert response.current == 41.1
+    assert len(response.points) == 2
+
+
+def test_global_intraday_falls_back_only_to_an_earlier_session_with_short_date_scoped_cache() -> None:
+    previous = int(datetime(2026, 8, 14, 13, 0, tzinfo=timezone.utc).timestamp())
+    http = RoutingStubHttp({
+        "/api/v2/stocks/historical": {"results": [{"symbol": "WEGE3", "data": {
+            "historicalDataPrice": [
+                {"date": previous, "open": 40.0, "high": 40.5, "low": 39.8, "close": 40.2},
+            ],
+        }}]},
+    })
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    fallback = service.instrument_intraday(
+        "WEGE3",
+        market="B3",
+        requested_session_date=date(2026, 8, 15),
+    )
+    exact = service.instrument_intraday(
+        "WEGE3",
+        market="B3",
+        requested_session_date=date(2026, 8, 14),
+    )
+
+    assert fallback.requested_session_date == "2026-08-15"
+    assert fallback.session_date == "2026-08-14"
+    assert fallback.session_fidelity == "fallback"
+    assert exact.session_fidelity == "exact"
+    assert len(http.calls) == 2
+    fallback_expires_at = service._instrument_intraday_series["B3:WEGE3:2026-08-15"][0]
+    assert 0 < (fallback_expires_at - fallback.generated_at).total_seconds() <= FALLBACK_CACHE_SECONDS
+
+
+def test_global_intraday_never_falls_forward_past_the_requested_session() -> None:
+    future = int(datetime(2026, 8, 15, 13, 0, tzinfo=timezone.utc).timestamp())
+    http = RoutingStubHttp({
+        "/api/v2/stocks/historical": {"results": [{"symbol": "WEGE3", "data": {
+            "historicalDataPrice": [
+                {"date": future, "open": 42.0, "high": 43.0, "low": 41.8, "close": 42.8},
+            ],
+        }}]},
+    })
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    with pytest.raises(RuntimeError, match="No market session at or before 2026-08-14"):
+        service.instrument_intraday(
+            "WEGE3",
+            market="B3",
+            requested_session_date=date(2026, 8, 14),
+        )
 
 
 def test_global_intraday_uses_brapi_for_fixed_b3_portfolio_symbol() -> None:

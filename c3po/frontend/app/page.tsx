@@ -885,6 +885,8 @@ interface RealtimePortfolioIntradayResponse {
   market: string;
   currency: string;
   session_date: string;
+  requested_session_date?: string | null;
+  session_fidelity?: "exact" | "fallback";
   series_kind?: "intraday" | "daily";
   interval_minutes: number;
   open: number;
@@ -903,6 +905,7 @@ interface InstrumentPreviewDescriptor {
   symbol: string;
   name: string;
   market?: string;
+  sessionDate?: string;
 }
 
 interface RealtimePortfolioSymbolSuggestion {
@@ -2474,7 +2477,23 @@ interface InstrumentPreviewContextValue {
 const InstrumentPreviewContext = createContext<InstrumentPreviewContextValue | null>(null);
 
 function instrumentPreviewKey(instrument: InstrumentPreviewDescriptor) {
-  return `${instrument.market ?? "AUTO"}:${instrument.symbol}`.toUpperCase();
+  return `${instrument.market ?? "AUTO"}:${instrument.symbol}:${instrument.sessionDate ?? "LATEST"}`.toUpperCase();
+}
+
+function instrumentSessionDate(asOf: string, market?: string) {
+  const timeZone = market === "B3"
+    ? "America/Sao_Paulo"
+    : market === "Crypto" || market === "Currencies"
+      ? "UTC"
+      : "America/New_York";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone
+  }).formatToParts(new Date(asOf));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function InstrumentPreviewProvider({ children }: { children: ReactNode }) {
@@ -2485,7 +2504,7 @@ function InstrumentPreviewProvider({ children }: { children: ReactNode }) {
     width: number;
     pinned: boolean;
   } | null>(null);
-  const [cache, setCache] = useState<Record<string, RealtimePortfolioIntradayResponse>>({});
+  const [cache, setCache] = useState<Record<string, { data: RealtimePortfolioIntradayResponse; expiresAt: number }>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -2501,20 +2520,25 @@ function InstrumentPreviewProvider({ children }: { children: ReactNode }) {
 
   const loadIntraday = useCallback(async (instrument: InstrumentPreviewDescriptor) => {
     const key = instrumentPreviewKey(instrument);
-    if (cache[key] || pendingRef.current.has(key)) return;
+    if ((cache[key]?.expiresAt ?? 0) > Date.now() || pendingRef.current.has(key)) return;
     pendingRef.current.add(key);
     setLoading((current) => ({ ...current, [key]: true }));
     setErrors((current) => ({ ...current, [key]: "" }));
     try {
       const params = new URLSearchParams({ symbol: instrument.symbol, name: instrument.name });
       if (instrument.market) params.set("market", instrument.market);
+      if (instrument.sessionDate) params.set("session_date", instrument.sessionDate);
       const response = await fetch(`${API_URL}/api/v1/market-data/intraday?${params.toString()}`, {
         cache: "no-store",
         credentials: "include"
       });
       const payload: RealtimePortfolioIntradayResponse & { detail?: string } = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? `API ${response.status}`);
-      setCache((current) => ({ ...current, [key]: payload }));
+      const cacheMilliseconds = payload.session_fidelity === "fallback" ? 8_000 : 45_000;
+      setCache((current) => ({
+        ...current,
+        [key]: { data: payload, expiresAt: Date.now() + cacheMilliseconds }
+      }));
     } catch (requestError) {
       setErrors((current) => ({
         ...current,
@@ -2581,7 +2605,7 @@ function InstrumentPreviewProvider({ children }: { children: ReactNode }) {
         <RealtimePortfolioIntradayPreview
           ref={popoverRef}
           item={preview.instrument}
-          data={cache[activeKey ?? ""]}
+          data={cache[activeKey ?? ""]?.data}
           loading={!!loading[activeKey ?? ""]}
           error={errors[activeKey ?? ""]}
           position={{ left: preview.left, top: preview.top, width: preview.width }}
@@ -4645,7 +4669,12 @@ function LiveMarketRow({ item }: { item: LiveMarketItem }) {
         <MarketInstrumentMark symbol={item.symbol} name={item.name} />
         <div>
           <InstrumentPreviewTarget
-            instrument={{ symbol: item.symbol, name: item.name, market: item.group }}
+            instrument={{
+              symbol: item.symbol,
+              name: item.name,
+              market: item.group,
+              sessionDate: instrumentSessionDate(item.as_of, item.group)
+            }}
             className="live-market-ticker-preview"
           >
             <strong>{item.symbol}</strong>
@@ -4806,7 +4835,12 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
               <span>Índice de referência</span>
               <strong>{snapshot.index.name}</strong>
               <InstrumentPreviewTarget
-                instrument={{ symbol: snapshot.index.symbol, name: snapshot.index.name, market: "Indices" }}
+                instrument={{
+                  symbol: snapshot.index.symbol,
+                  name: snapshot.index.name,
+                  market: "Indices",
+                  sessionDate: instrumentSessionDate(snapshot.index.as_of, "Indices")
+                }}
                 className="realtime-index-ticker-preview"
               >
                 <small>{snapshot.index.symbol}</small>
@@ -5096,7 +5130,12 @@ function MyRealtimePortfolio({
                 <div className="realtime-portfolio-company-logo"><CompanyLogo logoUrl={item.logo_url} symbol={item.symbol} /></div>
                 <div className="realtime-portfolio-company-text">
                   <InstrumentPreviewTarget
-                    instrument={{ symbol: item.symbol, name: item.name, market: item.market }}
+                    instrument={{
+                      symbol: item.symbol,
+                      name: item.name,
+                      market: item.market,
+                      sessionDate: instrumentSessionDate(item.as_of, item.market)
+                    }}
                     className="realtime-portfolio-ticker-preview"
                   >
                     <strong>{item.symbol}</strong>
@@ -5205,6 +5244,15 @@ const RealtimePortfolioIntradayPreview = forwardRef<HTMLDivElement, {
         <div className="realtime-intraday-error"><AlertTriangle size={18} /><span>{error}</span></div>
       ) : data && chart ? (
         <>
+          {data.session_fidelity === "fallback" && data.requested_session_date && (
+            <div className="realtime-intraday-session-warning" role="status">
+              <AlertTriangle size={13} />
+              <span>
+                Sessão solicitada {new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(new Date(`${data.requested_session_date}T12:00:00`))}
+                {" · "}exibindo {new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(new Date(`${data.session_date}T12:00:00`))}
+              </span>
+            </div>
+          )}
           <div className="realtime-intraday-summary">
             <div><span>Último</span><strong>{formatIntradayPrice(data.current, data.currency, data.market)}</strong></div>
             <div className={data.change_percent >= 0 ? "change-up" : "change-down"}>
@@ -5239,7 +5287,16 @@ const RealtimePortfolioIntradayPreview = forwardRef<HTMLDivElement, {
             <span>High <strong>{formatIntradayPrice(data.high, data.currency, data.market)}</strong></span>
             <span className={`market-state market-state-${data.status}`}>{data.status}</span>
           </div>
-          <div className="realtime-intraday-source"><span>{data.source}</span><small>{data.series_kind === "daily" ? "diário · fechamento oficial" : `${data.interval_minutes}m · atraso ~${data.delay_minutes}m`}</small></div>
+          <div className="realtime-intraday-source">
+            <span>{data.source}</span>
+            <small>
+              {data.requested_session_date
+                ? `pedida ${data.requested_session_date.slice(8, 10)}/${data.requested_session_date.slice(5, 7)} · exibida ${data.session_date.slice(8, 10)}/${data.session_date.slice(5, 7)}`
+                : data.series_kind === "daily"
+                  ? "diário · fechamento oficial"
+                  : `${data.interval_minutes}m · atraso ~${data.delay_minutes}m`}
+            </small>
+          </div>
         </>
       ) : null}
     </div>
@@ -5273,7 +5330,7 @@ function RealtimeLeaderTable({
           <div className="realtime-table-row" key={item.symbol}>
             <span className="realtime-rank">{index + 1}</span>
             <div className="realtime-company">
-              <div className="realtime-symbol-line"><InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.name, market }}><strong>{item.symbol}</strong></InstrumentPreviewTarget><span className={`market-state market-state-${item.status}`}>{item.status}</span></div>
+              <div className="realtime-symbol-line"><InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.name, market, sessionDate: instrumentSessionDate(item.as_of, market) }}><strong>{item.symbol}</strong></InstrumentPreviewTarget><span className={`market-state market-state-${item.status}`}>{item.status}</span></div>
               <span>{item.name}</span>
             </div>
             <strong className="realtime-price">{formatCurrency(item.price, item.currency)}</strong>

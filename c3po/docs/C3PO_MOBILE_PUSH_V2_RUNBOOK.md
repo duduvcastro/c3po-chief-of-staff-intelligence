@@ -20,6 +20,11 @@ the user to activate alerts again.
 - HTTP 404/410 from a push endpoint logically revokes that subscription.
 - Event keys suppress duplicate alerts from retries.
 - The service worker handles only `push` and `notificationclick`; it has no fetch or cache handler.
+- A deploy during an open US session may emit one catch-up batch of `sell_win` notifications for
+  positive episodes already closed in that session. This is expected: the observer rebuilds the
+  current session from the canonical ledger after restart, while stable episode event keys keep the
+  catch-up idempotent and prevent duplicate delivery. Schedule display-only deploys outside the
+  session when that one-time backlog would be distracting.
 
 ## Device Acceptance
 
