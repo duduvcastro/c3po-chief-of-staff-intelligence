@@ -193,6 +193,14 @@ def test_pwa_icons_are_versioned_and_use_a_distinct_maskable_asset() -> None:
             (180, 180),
             "049ff1a5353927638483b1a3fc470fa87416469d48410b34345e181d1a8e9a0d",
         ),
+        "apple-touch-icon.png": (
+            (180, 180),
+            "049ff1a5353927638483b1a3fc470fa87416469d48410b34345e181d1a8e9a0d",
+        ),
+        "apple-touch-icon-precomposed.png": (
+            (180, 180),
+            "049ff1a5353927638483b1a3fc470fa87416469d48410b34345e181d1a8e9a0d",
+        ),
     }
 
     for filename, (dimensions, sha256) in expected.items():
@@ -209,6 +217,18 @@ def test_pwa_icons_are_versioned_and_use_a_distinct_maskable_asset() -> None:
     assert manifest["icons"][2]["purpose"] == "maskable"
     assert "/c3po-apple-touch-icon-v2.png" in layout
     assert "/c3po-icon-192-v2.png" in worker
+
+
+def test_missing_image_assets_never_fall_through_to_app_html() -> None:
+    root = Path(__file__).resolve().parents[2]
+    nginx = (root / "frontend" / "nginx.conf").read_text(encoding="utf-8")
+
+    assert "location ^~ /market-marks/" in nginx
+    assert "location ^~ /api/" in nginx
+    assert "location = /apple-touch-icon.png" in nginx
+    assert "location = /apple-touch-icon-precomposed.png" in nginx
+    assert "location ~* \\.(avif|gif|ico|jpe?g|png|svg|webp)$" in nginx
+    assert nginx.count("try_files $uri =404;") >= 4
 
 
 def test_frozen_contract_is_byte_identical_to_the_signed_hash() -> None:
