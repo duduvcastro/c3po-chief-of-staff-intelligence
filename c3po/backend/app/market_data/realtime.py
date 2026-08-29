@@ -100,8 +100,11 @@ class RealtimeMarketsService:
         spec = MARKET_SPECS[market]
         index = self._index_quote(spec)
         if market == "B3":
-            rows = self._b3_rows(now)
-            source = "Brapi Pro market-wide quote list"
+            rows = [
+                row.model_copy(update={"as_of": index.as_of})
+                for row in self._b3_rows(now)
+            ]
+            source = "Brapi Pro market-wide quote list + observed quote timestamps"
             delay_minutes = 5
         else:
             rows = self._us_rows(market, now)
@@ -110,14 +113,23 @@ class RealtimeMarketsService:
         if not rows:
             raise RuntimeError(f"No valid {market} securities returned by the market data provider")
 
+        leader_groups = {
+            "gainers": self._leaders(rows, "change_percent", reverse=True),
+            "losers": self._leaders(rows, "change_percent", reverse=False),
+            "volume_leaders": self._leaders(rows, "volume", reverse=True),
+            "cash_leaders": self._leaders(rows, "cash_volume", reverse=True),
+        }
+        if market == "B3":
+            leader_groups = self._enrich_b3_leader_groups(leader_groups)
+
         return RealtimeMarketResponse(
             market=market,
             index=index,
             universe_size=len(rows),
-            gainers=self._leaders(rows, "change_percent", reverse=True),
-            losers=self._leaders(rows, "change_percent", reverse=False),
-            volume_leaders=self._leaders(rows, "volume", reverse=True),
-            cash_leaders=self._leaders(rows, "cash_volume", reverse=True),
+            gainers=leader_groups["gainers"],
+            losers=leader_groups["losers"],
+            volume_leaders=leader_groups["volume_leaders"],
+            cash_leaders=leader_groups["cash_leaders"],
             source=source,
             delay_minutes=delay_minutes,
             refresh_seconds=REFRESH_SECONDS,
@@ -360,20 +372,10 @@ class RealtimeMarketsService:
         requested_session_date: date | None = None,
     ) -> InstrumentIntradayResponse:
         if spec.provider == "brapi" and self.settings.brapi_token:
-            rows = BrapiClient(
-                self.settings.brapi_base_url,
-                self.settings.brapi_token,
-                self.http,
-            ).intraday(spec.provider_symbol or spec.symbol, interval="5m", days=5)
-            return self._normalize_instrument_intraday(
-                rows,
+            return self._b3_instrument_intraday(
                 symbol=spec.symbol,
                 name=spec.name,
-                market="B3",
                 currency=spec.currency,
-                source="Brapi Pro Intraday",
-                delay_minutes=5,
-                market_timezone=ZoneInfo("America/Sao_Paulo"),
                 now=now,
                 requested_session_date=requested_session_date,
             )
@@ -428,6 +430,64 @@ class RealtimeMarketsService:
             now=now,
             requested_session_date=requested_session_date,
         )
+
+    def _b3_instrument_intraday(
+        self,
+        *,
+        symbol: str,
+        name: str,
+        currency: str,
+        now: datetime,
+        requested_session_date: date | None,
+    ) -> InstrumentIntradayResponse:
+        candidates: list[InstrumentIntradayResponse] = []
+        failures: list[Exception] = []
+        try:
+            rows = BrapiClient(
+                self.settings.brapi_base_url,
+                self.settings.brapi_token,
+                self.http,
+            ).intraday(symbol, interval="5m", days=5)
+            brapi_response = self._normalize_instrument_intraday(
+                rows,
+                symbol=symbol,
+                name=name,
+                market="B3",
+                currency=currency,
+                source="Brapi Pro Intraday",
+                delay_minutes=5,
+                market_timezone=ZoneInfo("America/Sao_Paulo"),
+                now=now,
+                requested_session_date=requested_session_date,
+            )
+            if requested_session_date is None or brapi_response.session_fidelity == "exact":
+                return brapi_response
+            candidates.append(brapi_response)
+        except Exception as exc:
+            failures.append(exc)
+
+        if requested_session_date is not None:
+            try:
+                yahoo_response = self._yahoo_instrument_intraday(
+                    f"{symbol.removesuffix('.SA')}.SA",
+                    symbol=symbol.removesuffix(".SA"),
+                    name=name,
+                    market="B3",
+                    currency=currency,
+                    now=now,
+                    requested_session_date=requested_session_date,
+                )
+                if yahoo_response.session_fidelity == "exact":
+                    return yahoo_response
+                candidates.append(yahoo_response)
+            except Exception as exc:
+                failures.append(exc)
+
+        if candidates:
+            return max(candidates, key=lambda response: response.session_date)
+        if failures:
+            raise failures[0]
+        raise RuntimeError(f"No intraday data returned for {symbol}")
 
     def _yahoo_instrument_intraday(
         self,
@@ -684,34 +744,33 @@ class RealtimeMarketsService:
         if market == "B3":
             if not self.settings.brapi_token:
                 raise RuntimeError("Brapi credential is not configured")
-            rows = BrapiClient(
-                self.settings.brapi_base_url,
-                self.settings.brapi_token,
-                self.http,
-            ).intraday(symbol, interval="5m", days=5)
-            market_timezone = ZoneInfo("America/Sao_Paulo")
-            source = "Brapi Pro Intraday"
-            currency = "BRL"
-            delay_minutes = 5
-        else:
-            if not self.settings.eodhd_api_token:
-                raise RuntimeError("EODHD credential is not configured")
-            rows = EodhdClient(
-                self.settings.eodhd_base_url,
-                self.settings.eodhd_api_token,
-                self.http,
-            ).intraday(
-                symbol,
-                exchange="US",
-                interval="5m",
-                days=7,
+            response = self._b3_instrument_intraday(
+                symbol=symbol,
+                name=str(entry.get("name") or symbol),
+                currency="BRL",
+                now=now,
                 requested_session_date=requested_session_date,
-                session_timezone="America/New_York",
             )
-            market_timezone = ZoneInfo("America/New_York")
-            source = "EODHD Intraday 5m"
-            currency = "USD"
-            delay_minutes = 15
+            return RealtimePortfolioIntradayResponse(**response.model_dump())
+
+        if not self.settings.eodhd_api_token:
+            raise RuntimeError("EODHD credential is not configured")
+        rows = EodhdClient(
+            self.settings.eodhd_base_url,
+            self.settings.eodhd_api_token,
+            self.http,
+        ).intraday(
+            symbol,
+            exchange="US",
+            interval="5m",
+            days=7,
+            requested_session_date=requested_session_date,
+            session_timezone="America/New_York",
+        )
+        market_timezone = ZoneInfo("America/New_York")
+        source = "EODHD Intraday 5m"
+        currency = "USD"
+        delay_minutes = 15
 
         normalized_rows: list[dict[str, Any]] = []
         for row in rows:
@@ -1162,6 +1221,48 @@ class RealtimeMarketsService:
             ))
         self._b3_quotes = (now + timedelta(seconds=CACHE_SECONDS), rows)
         return rows
+
+    def _enrich_b3_leader_groups(
+        self,
+        groups: dict[str, list[RealtimeMarketLeader]],
+    ) -> dict[str, list[RealtimeMarketLeader]]:
+        symbols = sorted({row.symbol for rows in groups.values() for row in rows})
+        if not symbols:
+            return groups
+        try:
+            quotes = BrapiClient(
+                self.settings.brapi_base_url,
+                self.settings.brapi_token,
+                self.http,
+            ).quotes(symbols)
+        except Exception:
+            return groups
+        by_symbol = {
+            quote.symbol.removesuffix(".SA"): quote
+            for quote in quotes
+        }
+        enriched: dict[str, list[RealtimeMarketLeader]] = {}
+        for key, rows in groups.items():
+            enriched[key] = []
+            for row in rows:
+                quote_row = by_symbol.get(row.symbol)
+                if quote_row is None:
+                    enriched[key].append(row)
+                    continue
+                price = quote_row.price if quote_row.price > 0 else row.price
+                volume = quote_row.volume if quote_row.volume is not None else row.volume
+                enriched[key].append(row.model_copy(update={
+                    "price": price,
+                    "change_percent": (
+                        quote_row.change_percent
+                        if quote_row.change_percent is not None
+                        else row.change_percent
+                    ),
+                    "volume": volume,
+                    "cash_volume": price * volume,
+                    "as_of": quote_row.as_of,
+                }))
+        return enriched
 
     def _b3_portfolio_rows(self, now: datetime, symbols: list[str]) -> list[RealtimeMarketLeader]:
         rows = {row.symbol: row for row in self._b3_rows(now)}
