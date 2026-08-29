@@ -75,7 +75,7 @@ class RealtimeMarketsService:
         self._us_previous_close: dict[str, float] = {}
         self._us_quote_quarantine: dict[str, dict[str, Any]] = {}
         self._portfolio_quotes: dict[str, tuple[datetime, RealtimeMarketLeader]] = {}
-        self._us_reference_cache: dict[str, tuple[datetime, float | None, date | None]] = {}
+        self._us_reference_cache: dict[tuple[str, date], tuple[datetime, float | None, date | None]] = {}
         self._intraday_series: dict[str, tuple[datetime, RealtimePortfolioIntradayResponse]] = {}
         self._instrument_intraday_series: dict[str, tuple[datetime, InstrumentIntradayResponse]] = {}
 
@@ -166,7 +166,13 @@ class RealtimeMarketsService:
             except Exception as exc:
                 errors.append(f"{market}: {type(exc).__name__}")
 
-        self._prime_us_reference_cache(us_symbols, now)
+        reference_sessions = {
+            symbol: row.as_of.astimezone(NEW_YORK).date()
+            for rows in rows_by_market.values()
+            for symbol, row in rows.items()
+            if symbol in us_symbols
+        }
+        self._prime_us_reference_cache(reference_sessions, now)
 
         items: list[RealtimePortfolioItem] = []
         for entry in entries:
@@ -189,7 +195,13 @@ class RealtimeMarketsService:
                 reference_status, reference_close, reference_as_of = self._us_reference_status(
                     quote_row.symbol,
                     now,
+                    session_date=quote_row.as_of.astimezone(NEW_YORK).date(),
                 )
+                if reference_close is not None and reference_close > 0:
+                    quote_row = quote_row.model_copy(update={
+                        "change_percent": (quote_row.price / reference_close - 1) * 100,
+                    })
+                    reference_status = "validated"
             items.append(RealtimePortfolioItem(
                 **quote_row.model_dump(),
                 market=market,
@@ -212,11 +224,15 @@ class RealtimeMarketsService:
         self,
         symbol: str,
         now: datetime,
+        *,
+        session_date: date | None = None,
     ) -> tuple[str, float | None, date | None]:
-        cached = self._us_reference_cache.get(symbol)
+        anchored_session = session_date or now.astimezone(NEW_YORK).date()
+        cache_key = (symbol, anchored_session)
+        cached = self._us_reference_cache.get(cache_key)
         if not cached or now >= cached[0]:
-            self._prime_us_reference_cache([symbol], now)
-            cached = self._us_reference_cache.get(symbol)
+            self._prime_us_reference_cache({symbol: anchored_session}, now)
+            cached = self._us_reference_cache.get(cache_key)
         reference_close = cached[1] if cached else None
         reference_as_of = cached[2] if cached else None
 
@@ -227,26 +243,33 @@ class RealtimeMarketsService:
         status = "validated" if abs(provider_reference - reference_close) <= tolerance else "unvalidated"
         return status, reference_close, reference_as_of
 
-    def _prime_us_reference_cache(self, symbols: list[str], now: datetime) -> None:
-        missing = sorted({
-            symbol
-            for symbol in symbols
-            if not self._us_reference_cache.get(symbol)
-            or now >= self._us_reference_cache[symbol][0]
-        })
+    def _prime_us_reference_cache(self, symbol_sessions: dict[str, date], now: datetime) -> None:
+        missing = {
+            symbol: session_date
+            for symbol, session_date in symbol_sessions.items()
+            if not self._us_reference_cache.get((symbol, session_date))
+            or now >= self._us_reference_cache[(symbol, session_date)][0]
+        }
         if not missing:
             return
-        session_date = now.astimezone(NEW_YORK).date()
         try:
             client = EodhdClient(
                 self.settings.eodhd_base_url,
                 self.settings.eodhd_api_token,
                 self.http,
             )
-            histories = client.histories(missing, exchange="US", days=120, workers=12)
+            # Live day change is based on raw closes; adjusted history creates
+            # false mismatches around dividends and other corporate actions.
+            histories = client.histories(
+                sorted(missing),
+                exchange="US",
+                days=120,
+                workers=12,
+                adjusted=False,
+            )
         except Exception:
             histories = {}
-        for symbol in missing:
+        for symbol, session_date in missing.items():
             completed = sorted(
                 (
                     row for row in histories.get(symbol, [])
@@ -262,8 +285,15 @@ class RealtimeMarketsService:
                 )
             except ValueError:
                 reference_as_of = None
+            if reference_as_of is None or (session_date - reference_as_of).days > 7:
+                reference_close = None
+                reference_as_of = None
             ttl = timedelta(hours=4) if reference_close is not None else timedelta(minutes=15)
-            self._us_reference_cache[symbol] = (now + ttl, reference_close, reference_as_of)
+            self._us_reference_cache[(symbol, session_date)] = (
+                now + ttl,
+                reference_close,
+                reference_as_of,
+            )
 
     def portfolio_intraday(self, symbol: str) -> RealtimePortfolioIntradayResponse:
         normalized = self._normalize_portfolio_symbol(symbol)
