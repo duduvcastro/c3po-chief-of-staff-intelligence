@@ -114,4 +114,14 @@ class LeahCloudService:
             )
         since = payload.get("cursor")
         changes = self.database.list_leah_changes(device["owner_email"], since=since)
+        replay_deleted_since = payload.get("replay_deleted_since")
+        if replay_deleted_since is not None:
+            known_ids = {str(item["id"]) for item in changes}
+            changes += [
+                item for item in self.database.list_leah_deleted_changes(
+                    device["owner_email"], replay_deleted_since
+                )
+                if str(item["id"]) not in known_ids
+            ]
+            changes.sort(key=lambda item: item["updated_at"])
         return {"cursor": now, "items": changes}

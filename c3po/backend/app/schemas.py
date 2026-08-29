@@ -128,6 +128,7 @@ class LeahEventOccurrence(BaseModel):
 
 class LeahAgentSyncRequest(BaseModel):
     cursor: datetime | None = None
+    replay_deleted_since: datetime | None = None
     calendar_authorized: bool = False
     reminders_authorized: bool = False
     items: list[LeahItem] = Field(default_factory=list, max_length=10_000)

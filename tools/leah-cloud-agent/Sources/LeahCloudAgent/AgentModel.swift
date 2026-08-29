@@ -68,12 +68,8 @@ final class AgentModel: ObservableObject {
         do {
             guard let url = URL(string: server) else { throw LeahAgentError.invalidServer }
             let storedSchemaVersion = UserDefaults.standard.integer(forKey: "syncSchemaVersion")
-            let cursor = storedSchemaVersion == Self.syncSchemaVersion
-                ? UserDefaults.standard.object(forKey: "serverCursor") as? Date
-                : nil
-            let localCursor = storedSchemaVersion == Self.syncSchemaVersion
-                ? UserDefaults.standard.object(forKey: "localCursor") as? Date
-                : nil
+            let cursor = UserDefaults.standard.object(forKey: "serverCursor") as? Date
+            let localCursor = UserDefaults.standard.object(forKey: "localCursor") as? Date
             let batch = await eventKit.localItems(modifiedAfter: localCursor)
             let storedEventSnapshotVersion = UserDefaults.standard.integer(forKey: "eventSnapshotVersion")
             let previousOccurrences = storedEventSnapshotVersion == Self.eventSnapshotVersion
@@ -107,11 +103,11 @@ final class AgentModel: ObservableObject {
                     deletedAt: Date()
                 )
             }
-            let needsFullCalendarSnapshot = storedSchemaVersion != Self.syncSchemaVersion
-                || storedEventSnapshotVersion != Self.eventSnapshotVersion
+            let needsFullCalendarSnapshot = storedEventSnapshotVersion != Self.eventSnapshotVersion
             let response = try await APIClient(serverURL: url).sync(
                 SyncRequest(
                     cursor: cursor,
+                    replayDeletedSince: storedSchemaVersion == Self.syncSchemaVersion ? nil : .distantPast,
                     calendarAuthorized: calendarAuthorized,
                     remindersAuthorized: remindersAuthorized,
                     items: localItems,
@@ -132,6 +128,7 @@ final class AgentModel: ObservableObject {
                 _ = try await APIClient(serverURL: url).sync(
                     SyncRequest(
                     cursor: response.cursor,
+                    replayDeletedSince: nil,
                     calendarAuthorized: calendarAuthorized,
                     remindersAuthorized: remindersAuthorized,
                     items: acknowledgements,

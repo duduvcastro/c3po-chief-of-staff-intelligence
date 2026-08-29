@@ -107,7 +107,15 @@ def test_web_delete_reaches_agent_as_tombstone_with_eventkit_identity() -> None:
     cursor = service.sync(device, {"items": []})["cursor"]
 
     assert database.delete_leah_item("eduardo@example.com", created["id"], cursor + timedelta(seconds=1))
-    pulled = service.sync(device, {"cursor": cursor, "items": []})["items"]
+    cursor_after_delete = cursor + timedelta(seconds=2)
+    pulled = service.sync(
+        device,
+        {
+            "cursor": cursor_after_delete,
+            "replay_deleted_since": datetime(1970, 1, 1, tzinfo=timezone.utc),
+            "items": [],
+        },
+    )["items"]
 
     assert len(pulled) == 1
     assert pulled[0]["source"] == "c3po"
@@ -124,7 +132,8 @@ def test_eventkit_delete_uses_the_calendar_item_identifier_lookup() -> None:
     assert "store.calendarItem(withIdentifier: identifier) as? EKEvent" in source
     assert "try store.remove(existingEvent, span: .thisEvent, commit: true)" in source
     assert "private static let syncSchemaVersion = 4" in model_source
-    assert "let cursor = storedSchemaVersion == Self.syncSchemaVersion" in model_source
+    assert "let cursor = UserDefaults.standard.object(forKey: \"serverCursor\") as? Date" in model_source
+    assert "replayDeletedSince: storedSchemaVersion == Self.syncSchemaVersion ? nil : .distantPast" in model_source
 
 
 def test_recurring_event_occurrences_with_same_external_id_are_preserved() -> None:
