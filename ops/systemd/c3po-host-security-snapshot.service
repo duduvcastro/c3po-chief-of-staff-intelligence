@@ -1,0 +1,16 @@
+[Unit]
+Description=C3PO host operating-system security snapshot
+After=network-online.target apt-daily-upgrade.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/c3po-host-security-snapshot
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/chief-of-staff-digital/runtime/security
+

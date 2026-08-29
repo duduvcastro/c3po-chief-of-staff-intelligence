@@ -1,0 +1,201 @@
+name: Install HOST_SECURITY_V1 in production
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Reviewed commit SHA to install
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c3po-host-security-install
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out reviewed assets
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Configure production transport
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_host_security
+          chmod 600 ~/.ssh/c3po_host_security
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Stage dead-man configuration without exposing URLs
+        env:
+          UNATTENDED_HEALTHCHECK_URL: ${{ secrets.C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_URL }}
+          TRIVY_HEALTHCHECK_URL: ${{ secrets.C3PO_HEALTHCHECK_TRIVY_URL }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          unattended = os.environ.get("UNATTENDED_HEALTHCHECK_URL", "")
+          trivy = os.environ.get("TRIVY_HEALTHCHECK_URL", "")
+          for name, value in (("unattended-upgrades", unattended), ("Trivy", trivy)):
+              parsed = urlsplit(value)
+              if parsed.scheme != "https" or not parsed.hostname or not parsed.path.strip("/"):
+                  raise SystemExit(f"{name} Healthchecks URL is missing or invalid")
+
+          private = Path("/tmp/c3po-host-security.env")
+          private.write_text(
+              f"C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_URL={unattended}\n",
+              encoding="utf-8",
+          )
+          private.chmod(0o600)
+
+          app = Path("/tmp/c3po-host-security-app-env.json")
+          app.write_text(json.dumps({
+              "C3PO_HEALTHCHECK_TRIVY_CONFIGURED": "true",
+              "C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_CONFIGURED": "true",
+          }), encoding="utf-8")
+          app.chmod(0o600)
+          PY
+
+      - name: Upload the versioned host contract
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          scp -i ~/.ssh/c3po_host_security \
+            ops/apt/52c3po-security-upgrades \
+            ops/systemd/c3po-host-security-snapshot.service \
+            ops/systemd/c3po-host-security-snapshot.timer \
+            ops/systemd/apt-daily-upgrade.service.d/c3po-healthcheck.conf \
+            ops/systemd/c3po-unattended-upgrades-healthcheck-success.service \
+            ops/systemd/c3po-unattended-upgrades-healthcheck-failure.service \
+            scripts/c3po-healthcheck-ping.sh \
+            scripts/c3po-host-security-snapshot.py \
+            /tmp/c3po-host-security.env \
+            /tmp/c3po-host-security-app-env.json \
+            "$USER@$HOST:/tmp/"
+
+      - name: Install, verify, and take the first snapshot
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_host_security "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          if ! dpkg-query -W unattended-upgrades python3-apt >/dev/null 2>&1; then
+            sudo apt-get install --yes unattended-upgrades python3-apt
+          fi
+          sudo install -o root -g root -m 0644 \
+            /tmp/52c3po-security-upgrades /etc/apt/apt.conf.d/52c3po-security-upgrades
+          sudo install -o root -g root -m 0755 \
+            /tmp/c3po-host-security-snapshot.py /usr/local/sbin/c3po-host-security-snapshot
+          sudo install -o root -g root -m 0755 \
+            /tmp/c3po-healthcheck-ping.sh /usr/local/sbin/c3po-healthcheck-ping
+          sudo install -d -o root -g root -m 0700 /etc/c3po
+          sudo install -o root -g root -m 0600 \
+            /tmp/c3po-host-security.env /etc/c3po/host-security.env
+          sudo install -o root -g root -m 0644 \
+            /tmp/c3po-host-security-snapshot.service \
+            /etc/systemd/system/c3po-host-security-snapshot.service
+          sudo install -o root -g root -m 0644 \
+            /tmp/c3po-host-security-snapshot.timer \
+            /etc/systemd/system/c3po-host-security-snapshot.timer
+          sudo install -d -o root -g root -m 0755 \
+            /etc/systemd/system/apt-daily-upgrade.service.d
+          sudo install -o root -g root -m 0644 \
+            /tmp/c3po-healthcheck.conf \
+            /etc/systemd/system/apt-daily-upgrade.service.d/c3po-healthcheck.conf
+          sudo install -o root -g root -m 0644 \
+            /tmp/c3po-unattended-upgrades-healthcheck-success.service \
+            /etc/systemd/system/c3po-unattended-upgrades-healthcheck-success.service
+          sudo install -o root -g root -m 0644 \
+            /tmp/c3po-unattended-upgrades-healthcheck-failure.service \
+            /etc/systemd/system/c3po-unattended-upgrades-healthcheck-failure.service
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          source = Path("/tmp/c3po-host-security-app-env.json")
+          target = Path("/opt/chief-of-staff-digital/.env")
+          updates = json.loads(source.read_text(encoding="utf-8"))
+          lines = target.read_text(encoding="utf-8").splitlines()
+          positions = {
+              line.split("=", 1)[0]: index
+              for index, line in enumerate(lines)
+              if "=" in line and not line.lstrip().startswith("#")
+          }
+          for key, value in updates.items():
+              rendered = f"{key}={value}"
+              if key in positions:
+                  lines[positions[key]] = rendered
+              else:
+                  lines.append(rendered)
+          temporary = target.with_suffix(".tmp-host-security")
+          temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          os.chmod(temporary, 0o600)
+          os.replace(temporary, target)
+          source.unlink()
+          PY
+
+          sudo install -d -o root -g ubuntu -m 0755 \
+            /opt/chief-of-staff-digital/runtime/security
+          sudo systemd-analyze verify \
+            apt-daily-upgrade.service \
+            /etc/systemd/system/c3po-unattended-upgrades-healthcheck-success.service \
+            /etc/systemd/system/c3po-unattended-upgrades-healthcheck-failure.service \
+            /etc/systemd/system/c3po-host-security-snapshot.service \
+            /etc/systemd/system/c3po-host-security-snapshot.timer
+          sudo systemctl daemon-reload
+          sudo systemctl start apt-daily-upgrade.service
+          sudo systemctl enable --now c3po-host-security-snapshot.timer
+          sudo systemctl start c3po-host-security-snapshot.service
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('/opt/chief-of-staff-digital/runtime/security/host-os-vulnerability-report.json')
+          report = json.loads(path.read_text(encoding='utf-8'))
+          policy = report['unattended_upgrades']
+          assert policy['installed'] is True
+          assert policy['enabled'] is True
+          assert policy['active'] is True
+          assert policy['security_only'] is True
+          assert policy['automatic_reboot'] is False
+          assert policy['healthcheck_configured'] is True
+          assert policy['last_run_at']
+          print(json.dumps({
+              'security_only': policy['security_only'],
+              'automatic_reboot': policy['automatic_reboot'],
+              'security_updates_pending': report['updates']['security_pending'],
+              'reboot_required': report['reboot_required'],
+              'report_sha256': report['report_sha256'],
+          }, sort_keys=True))
+          PY
+          docker compose --env-file /opt/chief-of-staff-digital/.env \
+            -f /opt/chief-of-staff-digital/c3po/compose.yml \
+            up -d --force-recreate api server-usage-worker
+          rm -f \
+            /tmp/52c3po-security-upgrades \
+            /tmp/c3po-healthcheck.conf \
+            /tmp/c3po-healthcheck-ping.sh \
+            /tmp/c3po-host-security.env \
+            /tmp/c3po-host-security-snapshot.py \
+            /tmp/c3po-host-security-snapshot.service \
+            /tmp/c3po-host-security-snapshot.timer \
+            /tmp/c3po-unattended-upgrades-healthcheck-success.service \
+            /tmp/c3po-unattended-upgrades-healthcheck-failure.service
+          REMOTE

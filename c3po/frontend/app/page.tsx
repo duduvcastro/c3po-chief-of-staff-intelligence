@@ -8367,7 +8367,11 @@ function governanceValueLabel(key: string, value: unknown): string {
 function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const metadata = item.metadata ?? {};
   const dependabot = objectValue(metadata.dependabot);
+  const operatingSystem = objectValue(metadata.operating_system);
+  const operatingSystemDeadMan = objectValue(operatingSystem.dead_man);
+  const productionImages = objectValue(metadata.production_images);
   const severities = objectValue(dependabot.by_severity);
+  const imageSeverities = objectValue(productionImages.by_severity);
   const checks = Array.isArray(metadata.governance_checks)
     ? metadata.governance_checks.map(objectValue)
     : [];
@@ -8377,6 +8381,24 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const dependabotStatus = hasReport ? String(dependabot.status ?? "offline") : "pending";
   const dependabotClass = dependabotStatus === "healthy" ? "healthy" : dependabotStatus === "attention" ? "attention" : dependabotStatus === "pending" ? "pending" : "offline";
   const dependabotLabel = dependabotStatus === "healthy" ? "Operational" : dependabotStatus === "attention" ? "Needs attention" : dependabotStatus === "pending" ? "Aguardando atestado" : "Ação necessária";
+  const layerClass = (status: unknown) => status === "healthy" ? "healthy" : status === "offline" ? "offline" : "attention";
+  const osPending = operatingSystem.security_updates_pending == null ? null : Number(operatingSystem.security_updates_pending);
+  const imageTotal = productionImages.finding_total == null ? null : Number(productionImages.finding_total);
+  const operatingSystemLabel = operatingSystem.available !== true
+    ? "Sem atestado"
+    : operatingSystem.reboot_required === true
+      ? "Reboot manual"
+      : operatingSystemDeadMan.fresh !== true
+        ? "Execução ausente"
+        : "Atualizado";
+  const productionImagesLabel = productionImages.available !== true
+    ? "Sem atestado"
+    : productionImages.dead_man_configured !== true
+      ? "Dead-man ausente"
+      : "Trivy";
+  const knownTotal = hasReport && osPending != null && imageTotal != null
+    ? Number(dependabot.open_total ?? 0) + osPending + imageTotal
+    : null;
   const severityValue = (severity: "critical" | "high" | "medium" | "low") => (
     hasReport ? Number(severities[severity] ?? 0).toLocaleString("pt-BR") : "—"
   );
@@ -8394,19 +8416,40 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
         <small>Atualizado {item.last_update}</small>
       </header>
       <div className="governance-health-body">
-        <section className="governance-dependabot">
+        <section className="governance-dependabot governance-vulnerability-sources">
           <header>
-            <div><span>DEPENDABOT</span><strong>Vulnerabilidades abertas</strong></div>
-            <em className={`governance-summary-${dependabotClass}`}>{dependabotLabel}</em>
+            <div><span>TRÊS CAMADAS</span><strong>Vulnerabilidades conhecidas</strong></div>
+            <em className={`governance-summary-${statusClass}`}>{statusLabel}</em>
           </header>
-          <div className="governance-open-total"><strong>{hasReport ? Number(dependabot.open_total ?? 0).toLocaleString("pt-BR") : "—"}</strong><span>total em aberto</span></div>
-          <dl>
-            {(["critical", "high", "medium", "low"] as const).map((severity) => (
-              <div className={`governance-severity governance-severity-${severity}`} key={severity}>
-                <dt>{severity}</dt><dd>{severityValue(severity)}</dd>
-              </div>
-            ))}
-          </dl>
+          <div className="governance-open-total"><strong>{knownTotal == null ? "—" : knownTotal.toLocaleString("pt-BR")}</strong><span>alertas, pacotes e ocorrências</span></div>
+          <div className="governance-source-list">
+            <div className="governance-source-block">
+              <header><div><span>REPOSITÓRIO</span><strong>Dependabot</strong></div><em className={`governance-summary-${dependabotClass}`}>{dependabotLabel}</em></header>
+              <div className="governance-source-total"><strong>{hasReport ? Number(dependabot.open_total ?? 0).toLocaleString("pt-BR") : "—"}</strong><span>abertos</span></div>
+              <dl>
+                {(["critical", "high", "medium", "low"] as const).map((severity) => (
+                  <div className={`governance-severity governance-severity-${severity}`} key={severity}>
+                    <dt>{severity}</dt><dd>{severityValue(severity)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="governance-source-row">
+              <div><span>SO DO HOST</span><strong>{osPending == null ? "—" : osPending.toLocaleString("pt-BR")}</strong><small>pacotes de segurança pendentes</small></div>
+              <em className={`governance-summary-${layerClass(operatingSystem.status)}`}>{operatingSystemLabel}</em>
+            </div>
+            <div className="governance-source-block">
+              <header><div><span>IMAGENS EM PRODUÇÃO</span><strong>{productionImages.image_count == null ? "Scan semanal" : `${Number(productionImages.image_count)} imagens`}</strong></div><em className={`governance-summary-${layerClass(productionImages.status)}`}>{productionImagesLabel}</em></header>
+              <div className="governance-source-total"><strong>{imageTotal == null ? "—" : imageTotal.toLocaleString("pt-BR")}</strong><span>ocorrências por imagem{Number(productionImages.unknown ?? 0) > 0 ? ` · ${Number(productionImages.unknown).toLocaleString("pt-BR")} sem severidade` : ""}</span></div>
+              <dl>
+                {(["critical", "high", "medium", "low"] as const).map((severity) => (
+                  <div className={`governance-severity governance-severity-${severity}`} key={severity}>
+                    <dt>{severity}</dt><dd>{productionImages.available === true ? Number(imageSeverities[severity] ?? 0).toLocaleString("pt-BR") : "—"}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </div>
         </section>
         <section className="governance-contract">
           <header><div><span>CONTRATO DA MAIN</span><strong>Controles de governança</strong></div><small>{checks.length ? `${checks.length} controles` : "Coleta diária"}</small></header>

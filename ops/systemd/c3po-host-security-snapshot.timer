@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh C3PO host operating-system security evidence
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Persistent=true
+RandomizedDelaySec=30
+Unit=c3po-host-security-snapshot.service
+
+[Install]
+WantedBy=timers.target

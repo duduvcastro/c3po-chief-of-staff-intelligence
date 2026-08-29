@@ -78,7 +78,7 @@ class _Database:
 
     def latest_governance_vulnerability_report(self):
         report = {
-            "schema": "C3PO_GOVERNANCE_VULNERABILITY_REPORT-v1",
+            "schema": "C3PO_GOVERNANCE_VULNERABILITY_REPORT-v2",
             "session_date": self.now.date().isoformat(),
             "repository": "duduvcastro/c3po-chief-of-staff-intelligence",
             "branch": "main",
@@ -89,6 +89,23 @@ class _Database:
                 "open_total": 0,
                 "by_severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
             },
+            "operating_system": {
+                "status": "healthy",
+                "available": True,
+                "security_updates_pending": 0,
+                "all_updates_pending": 3,
+                "reboot_required": False,
+                "generated_at": self.now.isoformat(),
+            },
+            "production_images": {
+                "status": "healthy",
+                "available": True,
+                "finding_total": 0,
+                "by_severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+                "image_count": 3,
+                "generated_at": self.now.isoformat(),
+            },
+            "known_vulnerabilities": {"critical": 0, "high": 0, "medium": 0, "low": 0},
             "governance": {
                 "status": "healthy",
                 "checks": [{
@@ -336,6 +353,8 @@ def _service(
         healthcheck_postgres_backup_url="https://hc-ping.com/postgres-backup",
         healthcheck_governance_url="https://hc-ping.com/governance",
         healthcheck_postgres_restore_configured=True,
+        healthcheck_trivy_configured=True,
+        healthcheck_unattended_upgrades_configured=True,
         postgres_backup_bucket="c3po-postgres-test",
         postgres_backup_region="us-east-1",
         postgres_backup_access_key_id="configured-writer",
@@ -393,7 +412,7 @@ def test_resilience_services_are_monitored_with_distinct_evidence() -> None:
 
     items = {item.name: item for group in response.groups for item in group.items}
     assert items["Healthchecks.io"].status == "healthy"
-    assert "6/6 dead-man checks armed" in items["Healthchecks.io"].detail
+    assert "8/8 dead-man checks configured" in items["Healthchecks.io"].detail
     assert items["Sentry"].status == "healthy"
     assert "DSN loaded" in items["Sentry"].detail
     assert items["PostgreSQL offsite backup"].status == "healthy"
@@ -401,14 +420,14 @@ def test_resilience_services_are_monitored_with_distinct_evidence() -> None:
     assert "restore drill verified" in items["PostgreSQL offsite backup"].detail
 
 
-def test_healthchecks_is_offline_until_all_six_checks_are_armed() -> None:
+def test_healthchecks_is_offline_until_all_eight_checks_are_configured() -> None:
     service = _service()
     service.settings.healthcheck_governance_url = ""
 
     item = service._healthchecks_health(datetime.now(timezone.utc))
 
     assert item.status == "offline"
-    assert "5/6 checks armed" in item.detail
+    assert "7/8 checks configured" in item.detail
 
 
 def test_sentry_is_offline_without_an_official_dsn() -> None:
@@ -485,7 +504,9 @@ def test_governance_card_exposes_counts_contract_and_hash_metadata() -> None:
     item = governance.items[0]
 
     assert item.status == "healthy"
-    assert item.detail == "Baseline íntegra · Dependabot 0 aberto(s)"
+    assert item.detail == "Baseline íntegra · repo 0 · SO 0 · imagens 0"
+    assert item.metadata["operating_system"]["reboot_required"] is False
+    assert item.metadata["production_images"]["image_count"] == 3
     assert item.metadata["kind"] == "governance_vulnerabilities"
     assert item.metadata["dependabot"]["by_severity"]["critical"] == 0
     assert item.metadata["governance_checks"][0]["label"] == "Branch protection"
