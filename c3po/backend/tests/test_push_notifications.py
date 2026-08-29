@@ -1,4 +1,6 @@
+import hashlib
 import json
+import struct
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -149,6 +151,47 @@ def test_mobile_push_contract_has_no_fetch_or_cache_handler() -> None:
     assert required_capability("/api/v1/push/subscribe", "POST") == "read"
     assert required_capability("/api/v1/push/unsubscribe", "POST") == "read"
     assert required_capability("/api/v1/push/test", "POST") == "owner"
+
+
+def test_pwa_icons_are_versioned_and_use_a_distinct_maskable_asset() -> None:
+    root = Path(__file__).resolve().parents[2]
+    public = root / "frontend" / "public"
+    manifest = json.loads((public / "manifest.webmanifest").read_text(encoding="utf-8"))
+    layout = (root / "frontend" / "app" / "layout.tsx").read_text(encoding="utf-8")
+    worker = (public / "push-sw.js").read_text(encoding="utf-8")
+    expected = {
+        "c3po-icon-192-v2.png": (
+            (192, 192),
+            "676ec468c5274003a4fac3e601b62ee90eefa45dfa79afbc2545c51cb6123602",
+        ),
+        "c3po-icon-512-v2.png": (
+            (512, 512),
+            "4fab763573e69d5aaca02cf411b5d0e3720bf1a4c8d6e2a9919b7a57d6457d3d",
+        ),
+        "c3po-icon-maskable-512-v2.png": (
+            (512, 512),
+            "9fa9ecd04c0137a29943e4af4616a6a5777b26320d59f4716c723c609b84f778",
+        ),
+        "c3po-apple-touch-icon-v2.png": (
+            (180, 180),
+            "049ff1a5353927638483b1a3fc470fa87416469d48410b34345e181d1a8e9a0d",
+        ),
+    }
+
+    for filename, (dimensions, sha256) in expected.items():
+        payload = (public / filename).read_bytes()
+        assert payload[:8] == b"\x89PNG\r\n\x1a\n"
+        assert struct.unpack(">II", payload[16:24]) == dimensions
+        assert hashlib.sha256(payload).hexdigest() == sha256
+
+    assert [item["src"] for item in manifest["icons"]] == [
+        "/c3po-icon-192-v2.png",
+        "/c3po-icon-512-v2.png",
+        "/c3po-icon-maskable-512-v2.png",
+    ]
+    assert manifest["icons"][2]["purpose"] == "maskable"
+    assert "/c3po-apple-touch-icon-v2.png" in layout
+    assert "/c3po-icon-192-v2.png" in worker
 
 
 def test_frozen_contract_is_byte_identical_to_the_signed_hash() -> None:
