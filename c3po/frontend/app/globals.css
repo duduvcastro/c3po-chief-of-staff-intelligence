@@ -2597,6 +2597,24 @@ button { cursor: pointer; }
   .profile-device-list div { grid-template-columns: 1fr; gap: 4px; }
 }
 
+/* Tablet tier — iPad landscape (821-1180px). Phone (<=820) and desktop
+   (>1180) rules are untouched by construction; this middle band gives the
+   dense tables that only had those two treatments a presentation that fits.
+   Screenshot-verified components can be appended here as Dudu reports them. */
+@media (min-width: 821px) and (max-width: 1180px) {
+  .r2d2-ledger-head { display: none; }
+  .r2d2-ledger-row { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 16px; padding: 14px 18px; }
+  .r2d2-ledger-row > div:first-child { grid-column: 1 / -1; padding-bottom: 9px; border-bottom: 1px solid #eef0f2; }
+  .r2d2-ledger-row > [data-label]::before { display: block; margin-bottom: 4px; color: #89929d; content: attr(data-label); font-size: 7px; font-weight: 800; line-height: 1.1; text-transform: uppercase; }
+  .market-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .market-groups > section:last-child { grid-column: 1 / -1; }
+  .chewie-summary-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chewie-summary-bar > div { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .iq-records-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .open-finance-investment-head, .open-finance-investment-row { grid-template-columns: minmax(150px, 1.2fr) .6fr .7fr .75fr .75fr; gap: 9px; }
+  .data-table-head, .data-table-row { grid-template-columns: minmax(130px, 1.1fr) .75fr .95fr .7fr; gap: 9px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .falcon-portfolio-ticker { overflow-x: auto; }
   .falcon-portfolio-ticker-track { animation: none; }
