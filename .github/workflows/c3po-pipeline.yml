@@ -206,8 +206,8 @@ jobs:
             --label "org.opencontainers.image.revision=$REVISION" \
             --tag c3po/web:production \
             c3po/frontend
-          test "$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' c3po/backend:production)" = "$REVISION"
-          test "$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' c3po/web:production)" = "$REVISION"
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/backend:production)" = "$REVISION"
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/web:production)" = "$REVISION"
 
       - name: Package production images
         env:
@@ -300,8 +300,8 @@ jobs:
           fi
 
           gzip -dc "$IMAGE_ARCHIVE" | docker load
-          test "$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' c3po/backend:production)" = "$REVISION"
-          test "$(docker image inspect --format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}' c3po/web:production)" = "$REVISION"
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/backend:production)" = "$REVISION"
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/web:production)" = "$REVISION"
 
           rm -rf "$RELEASE_DIR"
           mkdir -p "$RELEASE_DIR"
