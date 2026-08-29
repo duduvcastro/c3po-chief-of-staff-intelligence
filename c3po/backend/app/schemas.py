@@ -655,6 +655,8 @@ class InstrumentIntradayResponse(BaseModel):
     market: str
     currency: str
     session_date: str
+    requested_session_date: str | None = None
+    session_fidelity: Literal["exact", "fallback"] = "exact"
     series_kind: Literal["intraday", "daily"] = "intraday"
     interval_minutes: int = Field(default=5, ge=1)
     open: float = Field(gt=0)
@@ -675,6 +677,8 @@ class RealtimePortfolioIntradayResponse(BaseModel):
     market: Literal["B3", "NASDAQ", "NYSE", "OTC"]
     currency: str
     session_date: str
+    requested_session_date: str | None = None
+    session_fidelity: Literal["exact", "fallback"] = "exact"
     interval_minutes: int = Field(default=5, ge=1)
     open: float = Field(gt=0)
     high: float = Field(gt=0)

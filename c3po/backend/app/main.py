@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 import asyncio
 import hashlib
 import ipaddress
@@ -1376,9 +1376,15 @@ def instrument_intraday(
     symbol: str = Query(min_length=1, max_length=40),
     market: str | None = Query(default=None, max_length=20),
     name: str | None = Query(default=None, max_length=160),
+    session_date: date | None = Query(default=None),
 ) -> InstrumentIntradayResponse:
     try:
-        return realtime_markets.instrument_intraday(symbol, market=market, name=name)
+        return realtime_markets.instrument_intraday(
+            symbol,
+            market=market,
+            name=name,
+            requested_session_date=session_date,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except MarketDataRequestError as exc:

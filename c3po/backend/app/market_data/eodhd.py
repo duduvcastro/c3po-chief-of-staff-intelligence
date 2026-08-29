@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ..schemas import NormalizedQuote
 from .http import JsonHttpClient
@@ -179,18 +180,30 @@ class EodhdClient:
         exchange: str = "US",
         interval: str = "5m",
         days: int = 7,
+        requested_session_date: date | None = None,
+        session_timezone: str = "America/New_York",
     ) -> list[dict[str, Any]]:
         clean = symbol.strip().upper()
         provider_symbol = clean if "." in clean else f"{clean}.{exchange}"
-        now = datetime.now(timezone.utc)
+        if requested_session_date is None:
+            period_end = datetime.now(timezone.utc)
+        else:
+            local_zone = ZoneInfo(session_timezone)
+            period_end = datetime(
+                requested_session_date.year,
+                requested_session_date.month,
+                requested_session_date.day,
+                tzinfo=local_zone,
+            ) + timedelta(days=1)
+            period_end = period_end.astimezone(timezone.utc)
         payload = self.http.get_json(
             f"{self.base_url}/api/intraday/{provider_symbol}",
             params={
                 "api_token": self.token,
                 "fmt": "json",
                 "interval": interval,
-                "from": int((now - timedelta(days=max(2, min(days, 120)))).timestamp()),
-                "to": int(now.timestamp()),
+                "from": int((period_end - timedelta(days=max(2, min(days, 120)))).timestamp()),
+                "to": int(period_end.timestamp()),
             },
         )
         rows = payload if isinstance(payload, list) else payload.get("data", []) if isinstance(payload, dict) else []

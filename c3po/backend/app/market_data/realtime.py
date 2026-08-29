@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import re
 from threading import RLock
-from typing import Any
+from typing import Any, Literal
 import unicodedata
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -33,6 +33,7 @@ from .live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
 REFRESH_SECONDS = 60
 STREAM_REFRESH_SECONDS = 3
 CACHE_SECONDS = 55
+FALLBACK_CACHE_SECONDS = 8
 SYMBOL_CATALOG_SECONDS = 24 * 60 * 60
 MAX_STREAM_PRICE_DEVIATION = 0.35
 DIRECT_QUOTE_FALLBACK_AGE = timedelta(days=30)
@@ -279,12 +280,14 @@ class RealtimeMarketsService:
         *,
         market: str | None = None,
         name: str | None = None,
+        requested_session_date: date | None = None,
     ) -> InstrumentIntradayResponse:
         raw_symbol = symbol.strip()
         if not raw_symbol or len(raw_symbol) > 40:
             raise ValueError("Invalid instrument symbol")
         market_hint = (market or "").strip().upper()
-        cache_key = f"{market_hint}:{raw_symbol.upper()}"
+        requested_key = requested_session_date.isoformat() if requested_session_date else "LATEST"
+        cache_key = f"{market_hint}:{raw_symbol.upper()}:{requested_key}"
         now = datetime.now(timezone.utc)
         cached = self._instrument_intraday_series.get(cache_key)
         if cached and now < cached[0]:
@@ -308,7 +311,11 @@ class RealtimeMarketsService:
                 None,
             )
             if live_spec:
-                response = self._live_instrument_intraday(live_spec, now)
+                response = self._live_instrument_intraday(
+                    live_spec,
+                    now,
+                    requested_session_date=requested_session_date,
+                )
             elif raw_symbol.startswith("^"):
                 response = self._yahoo_instrument_intraday(
                     raw_symbol,
@@ -317,6 +324,7 @@ class RealtimeMarketsService:
                     market="Indices",
                     currency="USD",
                     now=now,
+                    requested_session_date=requested_session_date,
                 )
             else:
                 normalized = self._normalize_portfolio_symbol(raw_symbol)
@@ -333,13 +341,24 @@ class RealtimeMarketsService:
                         "name": name or str((catalog_row or {}).get("Name") or normalized),
                         "market": resolved_market,
                     }
-                portfolio_response = self._build_portfolio_intraday(entry, now)
+                portfolio_response = self._build_portfolio_intraday(
+                    entry,
+                    now,
+                    requested_session_date=requested_session_date,
+                )
                 response = InstrumentIntradayResponse(**portfolio_response.model_dump())
 
-            self._instrument_intraday_series[cache_key] = (now + timedelta(seconds=CACHE_SECONDS), response)
+            cache_seconds = FALLBACK_CACHE_SECONDS if response.session_fidelity == "fallback" else CACHE_SECONDS
+            self._instrument_intraday_series[cache_key] = (now + timedelta(seconds=cache_seconds), response)
             return response
 
-    def _live_instrument_intraday(self, spec: Any, now: datetime) -> InstrumentIntradayResponse:
+    def _live_instrument_intraday(
+        self,
+        spec: Any,
+        now: datetime,
+        *,
+        requested_session_date: date | None = None,
+    ) -> InstrumentIntradayResponse:
         if spec.provider == "brapi" and self.settings.brapi_token:
             rows = BrapiClient(
                 self.settings.brapi_base_url,
@@ -356,14 +375,21 @@ class RealtimeMarketsService:
                 delay_minutes=5,
                 market_timezone=ZoneInfo("America/Sao_Paulo"),
                 now=now,
+                requested_session_date=requested_session_date,
             )
         if spec.provider == "eodhd" and self.settings.eodhd_api_token and spec.eodhd_symbol:
+            timezone_name = "UTC" if spec.group in {"Currencies", "Crypto"} else "America/New_York"
             rows = EodhdClient(
                 self.settings.eodhd_base_url,
                 self.settings.eodhd_api_token,
                 self.http,
-            ).intraday(spec.eodhd_symbol, interval="5m", days=7)
-            timezone_name = "UTC" if spec.group in {"Currencies", "Crypto"} else "America/New_York"
+            ).intraday(
+                spec.eodhd_symbol,
+                interval="5m",
+                days=7,
+                requested_session_date=requested_session_date,
+                session_timezone=timezone_name,
+            )
             return self._normalize_instrument_intraday(
                 rows,
                 symbol=spec.symbol,
@@ -376,6 +402,7 @@ class RealtimeMarketsService:
                 now=now,
                 always_open=spec.group == "Crypto",
                 full_day=spec.group == "Currencies",
+                requested_session_date=requested_session_date,
             )
         if spec.provider == "eodhd_bond" and self.settings.eodhd_api_token and spec.eodhd_symbol:
             rows = EodhdClient(
@@ -390,6 +417,7 @@ class RealtimeMarketsService:
                 market=spec.group,
                 currency=spec.currency,
                 now=now,
+                requested_session_date=requested_session_date,
             )
         return self._yahoo_instrument_intraday(
             spec.provider_symbol,
@@ -398,6 +426,7 @@ class RealtimeMarketsService:
             market=spec.group,
             currency=spec.currency,
             now=now,
+            requested_session_date=requested_session_date,
         )
 
     def _yahoo_instrument_intraday(
@@ -409,10 +438,32 @@ class RealtimeMarketsService:
         market: str,
         currency: str,
         now: datetime,
+        requested_session_date: date | None = None,
     ) -> InstrumentIntradayResponse:
+        params: dict[str, Any] = {"range": "5d", "interval": "5m"}
+        if requested_session_date is not None:
+            query_timezone = (
+                ZoneInfo("America/Sao_Paulo")
+                if market == "B3"
+                else ZoneInfo("UTC")
+                if market in {"Crypto", "Currencies"}
+                else ZoneInfo("America/New_York")
+            )
+            window_end = datetime(
+                requested_session_date.year,
+                requested_session_date.month,
+                requested_session_date.day,
+                tzinfo=query_timezone,
+            ) + timedelta(days=1)
+            window_end = window_end.astimezone(timezone.utc)
+            params = {
+                "period1": int((window_end - timedelta(days=7)).timestamp()),
+                "period2": int(window_end.timestamp()),
+                "interval": "5m",
+            }
         payload = self.http.get_json(
             f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(provider_symbol, safe='')}",
-            params={"range": "5d", "interval": "5m"},
+            params=params,
             headers={"User-Agent": "Mozilla/5.0 C3PO-Instrument-Preview/1.0"},
         )
         result = payload["chart"]["result"][0]
@@ -444,12 +495,42 @@ class RealtimeMarketsService:
             delay_minutes=5,
             market_timezone=market_timezone,
             now=now,
+            requested_session_date=requested_session_date,
         )
 
     @staticmethod
     def _series_value(series: dict[str, Any], key: str, index: int) -> Any:
         values = series.get(key) or []
         return values[index] if index < len(values) else None
+
+    @staticmethod
+    def _requested_session_rows(
+        rows: list[dict[str, Any]],
+        market_timezone: ZoneInfo,
+        requested_session_date: date | None,
+    ) -> tuple[date, list[dict[str, Any]], Literal["exact", "fallback"]]:
+        available_dates = sorted({
+            item["as_of"].astimezone(market_timezone).date()
+            for item in rows
+        })
+        if requested_session_date is None:
+            selected_date = available_dates[-1]
+            fidelity: Literal["exact", "fallback"] = "exact"
+        elif requested_session_date in available_dates:
+            selected_date = requested_session_date
+            fidelity = "exact"
+        else:
+            earlier_dates = [item for item in available_dates if item < requested_session_date]
+            if not earlier_dates:
+                raise RuntimeError(
+                    f"No market session at or before {requested_session_date.isoformat()}"
+                )
+            selected_date = earlier_dates[-1]
+            fidelity = "fallback"
+        return selected_date, [
+            item for item in rows
+            if item["as_of"].astimezone(market_timezone).date() == selected_date
+        ], fidelity
 
     def _normalize_instrument_intraday(
         self,
@@ -465,6 +546,7 @@ class RealtimeMarketsService:
         now: datetime,
         always_open: bool = False,
         full_day: bool = False,
+        requested_session_date: date | None = None,
     ) -> InstrumentIntradayResponse:
         normalized_rows: list[dict[str, Any]] = []
         for row in rows:
@@ -483,11 +565,11 @@ class RealtimeMarketsService:
         if not normalized_rows:
             raise RuntimeError(f"No intraday data returned for {symbol}")
         normalized_rows.sort(key=lambda item: item["as_of"])
-        session_date = max(item["as_of"].astimezone(market_timezone).date() for item in normalized_rows)
-        session_rows = [
-            item for item in normalized_rows
-            if item["as_of"].astimezone(market_timezone).date() == session_date
-        ]
+        session_date, session_rows, session_fidelity = self._requested_session_rows(
+            normalized_rows,
+            market_timezone,
+            requested_session_date,
+        )
         deduplicated = {item["as_of"]: item for item in session_rows}
         session_rows = [deduplicated[key] for key in sorted(deduplicated)]
         opening_price = session_rows[0]["open"] or session_rows[0]["price"]
@@ -508,6 +590,8 @@ class RealtimeMarketsService:
             market=market,
             currency=currency,
             session_date=session_date.isoformat(),
+            requested_session_date=(requested_session_date.isoformat() if requested_session_date else None),
+            session_fidelity=session_fidelity,
             interval_minutes=5,
             open=opening_price,
             high=max(item["high"] or item["price"] for item in session_rows),
@@ -533,6 +617,7 @@ class RealtimeMarketsService:
         market: str,
         currency: str,
         now: datetime,
+        requested_session_date: date | None = None,
     ) -> InstrumentIntradayResponse:
         normalized: dict[str, tuple[datetime, float, float]] = {}
         for row in rows:
@@ -545,13 +630,22 @@ class RealtimeMarketsService:
             except ValueError:
                 continue
             normalized[date_value] = (as_of, price, max(0.0, number(row.get("volume")) or 0.0))
-        history = [normalized[key] for key in sorted(normalized)][-30:]
+        eligible_keys = [
+            key for key in sorted(normalized)
+            if requested_session_date is None or date.fromisoformat(key) <= requested_session_date
+        ]
+        history = [normalized[key] for key in eligible_keys][-30:]
         if not history:
             raise RuntimeError(f"No official daily history returned for {symbol}")
 
         current = history[-1][1]
         previous_close = history[-2][1] if len(history) > 1 else current
         latest_date = history[-1][0].date()
+        session_fidelity: Literal["exact", "fallback"] = (
+            "exact"
+            if requested_session_date is None or latest_date == requested_session_date
+            else "fallback"
+        )
         age_days = (now.date() - latest_date).days
         return InstrumentIntradayResponse(
             symbol=symbol,
@@ -559,6 +653,8 @@ class RealtimeMarketsService:
             market=market,
             currency=currency,
             session_date=latest_date.isoformat(),
+            requested_session_date=(requested_session_date.isoformat() if requested_session_date else None),
+            session_fidelity=session_fidelity,
             series_kind="daily",
             interval_minutes=1440,
             open=previous_close,
@@ -580,6 +676,8 @@ class RealtimeMarketsService:
         self,
         entry: dict[str, Any],
         now: datetime,
+        *,
+        requested_session_date: date | None = None,
     ) -> RealtimePortfolioIntradayResponse:
         symbol = str(entry["symbol"])
         market = str(entry["market"])
@@ -602,7 +700,14 @@ class RealtimeMarketsService:
                 self.settings.eodhd_base_url,
                 self.settings.eodhd_api_token,
                 self.http,
-            ).intraday(symbol, exchange="US", interval="5m", days=7)
+            ).intraday(
+                symbol,
+                exchange="US",
+                interval="5m",
+                days=7,
+                requested_session_date=requested_session_date,
+                session_timezone="America/New_York",
+            )
             market_timezone = ZoneInfo("America/New_York")
             source = "EODHD Intraday 5m"
             currency = "USD"
@@ -626,11 +731,11 @@ class RealtimeMarketsService:
             raise RuntimeError(f"No intraday data returned for {symbol}")
 
         normalized_rows.sort(key=lambda item: item["as_of"])
-        session_date = max(item["as_of"].astimezone(market_timezone).date() for item in normalized_rows)
-        session_rows = [
-            item for item in normalized_rows
-            if item["as_of"].astimezone(market_timezone).date() == session_date
-        ]
+        session_date, session_rows, session_fidelity = self._requested_session_rows(
+            normalized_rows,
+            market_timezone,
+            requested_session_date,
+        )
         deduplicated = {item["as_of"]: item for item in session_rows}
         session_rows = [deduplicated[key] for key in sorted(deduplicated)]
         opening_price = session_rows[0]["open"] or session_rows[0]["price"]
@@ -661,6 +766,8 @@ class RealtimeMarketsService:
             market=market,
             currency=currency,
             session_date=session_date.isoformat(),
+            requested_session_date=(requested_session_date.isoformat() if requested_session_date else None),
+            session_fidelity=session_fidelity,
             interval_minutes=5,
             open=opening_price,
             high=high,
