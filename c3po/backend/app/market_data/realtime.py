@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import re
@@ -269,6 +270,8 @@ class RealtimeMarketsService:
             )
         except Exception:
             histories = {}
+        resolved: dict[tuple[str, date], tuple[float, date]] = {}
+        unresolved: list[tuple[str, date]] = []
         for symbol, session_date in missing.items():
             completed = sorted(
                 (
@@ -286,14 +289,77 @@ class RealtimeMarketsService:
             except ValueError:
                 reference_as_of = None
             if reference_as_of is None or (session_date - reference_as_of).days > 7:
-                reference_close = None
-                reference_as_of = None
+                unresolved.append((symbol, session_date))
+            elif reference_close is not None:
+                resolved[(symbol, session_date)] = (reference_close, reference_as_of)
+
+        def fetch_yahoo_reference(
+            item: tuple[str, date],
+        ) -> tuple[tuple[str, date], tuple[float, date] | None]:
+            symbol, session_date = item
+            try:
+                return item, self._yahoo_us_reference_close(symbol, session_date)
+            except Exception:
+                return item, None
+
+        if unresolved:
+            with ThreadPoolExecutor(max_workers=min(len(unresolved), 6)) as executor:
+                for key, reference in executor.map(fetch_yahoo_reference, unresolved):
+                    if reference is not None:
+                        resolved[key] = reference
+
+        for symbol, session_date in missing.items():
+            reference = resolved.get((symbol, session_date))
+            reference_close = reference[0] if reference else None
+            reference_as_of = reference[1] if reference else None
             ttl = timedelta(hours=4) if reference_close is not None else timedelta(minutes=15)
             self._us_reference_cache[(symbol, session_date)] = (
                 now + ttl,
                 reference_close,
                 reference_as_of,
             )
+
+    def _yahoo_us_reference_close(
+        self,
+        symbol: str,
+        session_date: date,
+    ) -> tuple[float, date] | None:
+        window_end = datetime(
+            session_date.year,
+            session_date.month,
+            session_date.day,
+            tzinfo=NEW_YORK,
+        ) + timedelta(days=1)
+        payload = self.http.get_json(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}",
+            params={
+                "period1": int((window_end - timedelta(days=14)).timestamp()),
+                "period2": int(window_end.timestamp()),
+                "interval": "1d",
+                "events": "history",
+            },
+            headers={"User-Agent": "Mozilla/5.0 C3PO-Reference-Validation/1.0"},
+        )
+        result = payload["chart"]["result"][0]
+        meta = result.get("meta") or {}
+        returned_symbol = str(meta.get("symbol") or symbol).strip().upper()
+        if returned_symbol != symbol.upper():
+            return None
+        timestamps = result.get("timestamp") or []
+        quote_rows = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+        closes = quote_rows.get("close") or []
+        candidates: list[tuple[date, float]] = []
+        for index, timestamp in enumerate(timestamps):
+            close = number(closes[index]) if index < len(closes) else None
+            if close is None or close <= 0:
+                continue
+            row_date = datetime.fromtimestamp(float(timestamp), timezone.utc).astimezone(NEW_YORK).date()
+            if row_date < session_date and (session_date - row_date).days <= 7:
+                candidates.append((row_date, close))
+        if not candidates:
+            return None
+        reference_as_of, reference_close = max(candidates, key=lambda item: item[0])
+        return reference_close, reference_as_of
 
     def portfolio_intraday(self, symbol: str) -> RealtimePortfolioIntradayResponse:
         normalized = self._normalize_portfolio_symbol(symbol)

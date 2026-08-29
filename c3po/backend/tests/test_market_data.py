@@ -1668,6 +1668,28 @@ def test_realtime_portfolio_rejects_stale_reference_for_recent_listing() -> None
     ) == ("unvalidated", None, None)
 
 
+def test_realtime_portfolio_replaces_reused_ticker_history_with_current_listing() -> None:
+    now = datetime(2026, 8, 29, 15, tzinfo=timezone.utc)
+    prior_close_at = int(datetime(2026, 8, 27, 20, tzinfo=timezone.utc).timestamp())
+    http = RoutingStubHttp({
+        "/api/eod/SPCX.US": [{"date": "2023-12-29", "close": 21.9457}],
+        "/v8/finance/chart/SPCX": {"chart": {"result": [{
+            "meta": {"symbol": "SPCX"},
+            "timestamp": [prior_close_at],
+            "indicators": {"quote": [{"close": [138.0]}]},
+        }]}},
+    })
+    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+    service._us_previous_close["SPCX"] = 21.9457
+
+    assert service._us_reference_status(
+        "SPCX",
+        now,
+        session_date=date(2026, 8, 28),
+    ) == ("unvalidated", 138.0, date(2026, 8, 27))
+
+
 def test_realtime_portfolio_recomputes_display_change_from_canonical_reference() -> None:
     class PortfolioDatabase:
         @staticmethod
