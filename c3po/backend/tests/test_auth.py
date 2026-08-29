@@ -862,3 +862,47 @@ def test_login_audit_event_is_available_to_radar_alerts(monkeypatch) -> None:
         assert "iOS 18.6" in alert["action"]
     finally:
         app_main.settings.auth_required = previous_required
+
+
+def test_login_push_alert_identifies_only_the_user(monkeypatch) -> None:
+    """EMENDA 2: o push de novo login diz apenas QUEM entrou; o detalhe de
+    aparelho/IP/hora permanece no Radar Alerts (evento de auditoria)."""
+    sent: list[dict] = []
+    fixed_now = datetime(2026, 8, 29, 17, 45, tzinfo=timezone.utc)  # 14:45 em SP
+    expires = fixed_now + timedelta(minutes=30)
+    monkeypatch.setattr(app_main.auth_service, "now", lambda: fixed_now)
+    monkeypatch.setattr(
+        app_main.auth_service,
+        "verify_code",
+        lambda *_args, **_kwargs: ("token-login-push", expires, "login-push@example.com"),
+    )
+    monkeypatch.setattr(
+        app_main.auth_service,
+        "authenticate",
+        lambda _token: {"email": "login-push@example.com", "display_name": "Dudu", "role": "owner"},
+    )
+    monkeypatch.setattr(
+        app_main.database,
+        "get_access_user",
+        lambda _email: {"display_name": "Dudu", "role": "owner"},
+    )
+    monkeypatch.setattr(app_main, "deliver_login_notification", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        app_main.push_notifications,
+        "notify",
+        lambda **kwargs: sent.append(kwargs) or {"status": "sent"},
+    )
+
+    with TestClient(app_main.app) as client:
+        response = client.post(
+            "/api/v1/auth/verify-code",
+            json={"challenge_id": str(uuid4()), "code": "123456"},
+        )
+
+    assert response.status_code == 200
+    login_pushes = [item for item in sent if item["category"] == "security_login"]
+    assert len(login_pushes) == 1
+    body = login_pushes[0]["body"]
+    assert body == "Dudu \u00b7 14:45"  # nome de exibição + hora de SP, nada mais
+    assert "login-push@example.com" not in body
+    assert "device_type" not in body
