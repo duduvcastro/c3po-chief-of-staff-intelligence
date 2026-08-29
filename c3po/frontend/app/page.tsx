@@ -2289,7 +2289,11 @@ function PushNotificationPanel({ isAdmin }: { isAdmin: boolean }) {
       ? categories.filter((item) => item !== category)
       : [...categories, category];
     setCategories(selected);
-    if (!active) return;
+    if (!active) {
+      setError("");
+      setMessage("Seleção pendente: toque em Ativar alertas para salvá-la neste aparelho.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -2334,10 +2338,18 @@ function PushNotificationPanel({ isAdmin }: { isAdmin: boolean }) {
     setError("");
     setMessage("");
     try {
+      const registration = await navigator.serviceWorker.getRegistration("/push-sw.js");
+      const localSubscription = await registration?.pushManager.getSubscription();
       const response = await fetch(`${API_URL}/api/v1/push/test`, { method: "POST", credentials: "include" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "Falha no teste");
-      setMessage(result.sent > 0 ? "Notificação de teste enviada" : "Nenhuma assinatura recebeu o teste");
+      if (result.sent <= 0) {
+        setMessage("Nenhuma assinatura recebeu o teste");
+      } else if (localSubscription) {
+        setMessage(`Teste enviado para ${result.sent} assinatura(s); este aparelho tem uma assinatura local`);
+      } else {
+        setError("Teste aceito pelo servidor, mas ESTE aparelho não tem assinatura local — toque em Ativar alertas e repita.");
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Falha ao enviar teste");
     } finally {
