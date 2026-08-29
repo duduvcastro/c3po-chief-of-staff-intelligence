@@ -159,8 +159,12 @@ a failed attempt.
 The production token is stored only as `C3PO_GITHUB_GOVERNANCE_TOKEN` in the
 sealed `.env`. It requires read access to Dependabot alerts and repository
 administration metadata, and no write permission. A baseline change requires a
-reviewed PR. `enforce_admins=false` remains expected only while the daily report
-publisher still depends on direct push; its reason is part of the baseline.
+reviewed PR. The publisher writes to the separate private
+`c3po-r2d2-reports` repository,
+never to this repository. It pushes a dated `daily-export/YYYY-MM-DD` branch;
+that repository validates the five allowed CSV files, records a pull request,
+and merges only the validated PR. The C3PO `main` branch therefore requires
+`enforce_admins=true`, with no publisher exception in the baseline.
 
 The monthly restore check URL remains only in the GitHub `production`
 environment. The production host stores a boolean attestation that the sixth

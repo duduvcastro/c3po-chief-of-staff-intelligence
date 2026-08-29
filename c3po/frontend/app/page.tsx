@@ -8341,8 +8341,10 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
     : [];
   const hasReport = Boolean(metadata.generated_at);
   const statusLabel = item.status === "healthy" ? "Operational" : item.status === "attention" ? "Needs attention" : "Critical";
-  const summaryLabel = item.status === "offline" ? "Ação necessária" : statusLabel;
   const statusClass = item.status === "healthy" ? "healthy" : item.status === "attention" ? "attention" : "offline";
+  const dependabotStatus = hasReport ? String(dependabot.status ?? "offline") : "pending";
+  const dependabotClass = dependabotStatus === "healthy" ? "healthy" : dependabotStatus === "attention" ? "attention" : dependabotStatus === "pending" ? "pending" : "offline";
+  const dependabotLabel = dependabotStatus === "healthy" ? "Operational" : dependabotStatus === "attention" ? "Needs attention" : dependabotStatus === "pending" ? "Aguardando atestado" : "Ação necessária";
   const severityValue = (severity: "critical" | "high" | "medium" | "low") => (
     hasReport ? Number(severities[severity] ?? 0).toLocaleString("pt-BR") : "—"
   );
@@ -8363,7 +8365,7 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
         <section className="governance-dependabot">
           <header>
             <div><span>DEPENDABOT</span><strong>Vulnerabilidades abertas</strong></div>
-            <em className={hasReport ? `governance-summary-${statusClass}` : "governance-summary-pending"}>{hasReport ? summaryLabel : "Aguardando atestado"}</em>
+            <em className={`governance-summary-${dependabotClass}`}>{dependabotLabel}</em>
           </header>
           <div className="governance-open-total"><strong>{hasReport ? Number(dependabot.open_total ?? 0).toLocaleString("pt-BR") : "—"}</strong><span>total em aberto</span></div>
           <dl>
