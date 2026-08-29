@@ -994,6 +994,63 @@ def test_realtime_b3_ranks_each_board_from_full_quote_list() -> None:
     assert http.calls[1]["params"]["limit"] == 2000
 
 
+def test_realtime_b3_leaders_carry_the_provider_quote_session_not_collection_time() -> None:
+    quote_time = datetime(2026, 8, 28, 21, 31, 30, tzinfo=timezone.utc)
+    timestamp = int(quote_time.timestamp())
+    http = RoutingStubHttp({
+        "/api/quote/list": {"stocks": [
+            {"stock": "BHIA3", "name": "Grupo Casas Bahia", "close": 0.40, "change": 17.65, "volume": 54_000_000},
+        ]},
+        "/api/v2/stocks/quote": {"results": [{
+            "symbol": "BHIA3",
+            "regularMarketPrice": 0.40,
+            "regularMarketChangePercent": 17.65,
+            "regularMarketVolume": 54_000_000,
+            "regularMarketTime": timestamp,
+        }]},
+        "/v8/finance/chart/": {"chart": {"result": [{"meta": {
+            "regularMarketPrice": 141422,
+            "previousClose": 140993,
+            "regularMarketTime": timestamp,
+            "marketState": "CLOSED",
+            "currency": "BRL",
+        }}]}},
+    })
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    response = service.snapshot("B3")
+
+    assert response.gainers[0].symbol == "BHIA3"
+    assert response.gainers[0].as_of == quote_time
+    assert response.gainers[0].price == 0.40
+    assert response.gainers[0].change_percent == 17.65
+    assert "/api/v2/stocks/quote" in http.calls[2]["url"]
+
+
+def test_realtime_b3_leaders_use_index_session_when_detail_timestamp_is_unavailable() -> None:
+    quote_time = datetime(2026, 8, 28, 21, 31, 30, tzinfo=timezone.utc)
+    timestamp = int(quote_time.timestamp())
+    http = RoutingStubHttp({
+        "/api/quote/list": {"stocks": [
+            {"stock": "BHIA3", "name": "Grupo Casas Bahia", "close": 0.40, "change": 17.65, "volume": 54_000_000},
+        ]},
+        "/v8/finance/chart/": {"chart": {"result": [{"meta": {
+            "regularMarketPrice": 141422,
+            "previousClose": 140993,
+            "regularMarketTime": timestamp,
+            "marketState": "CLOSED",
+            "currency": "BRL",
+        }}]}},
+    })
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    response = service.snapshot("B3")
+
+    assert response.gainers[0].as_of == quote_time
+
+
 def test_realtime_us_separates_nasdaq_and_nyse_common_stocks() -> None:
     timestamp = 1785859200
     catalog = []
@@ -1291,9 +1348,51 @@ def test_global_intraday_falls_back_only_to_an_earlier_session_with_short_date_s
     assert fallback.session_date == "2026-08-14"
     assert fallback.session_fidelity == "fallback"
     assert exact.session_fidelity == "exact"
-    assert len(http.calls) == 2
+    assert len(http.calls) == 3
+    assert "/v8/finance/chart/WEGE3.SA" in http.calls[1]["url"]
     fallback_expires_at = service._instrument_intraday_series["B3:WEGE3:2026-08-15"][0]
     assert 0 < (fallback_expires_at - fallback.generated_at).total_seconds() <= FALLBACK_CACHE_SECONDS
+
+
+def test_global_intraday_uses_yahoo_when_brapi_is_missing_the_requested_b3_session() -> None:
+    previous = int(datetime(2026, 8, 27, 13, 0, tzinfo=timezone.utc).timestamp())
+    requested_open = int(datetime(2026, 8, 28, 13, 0, tzinfo=timezone.utc).timestamp())
+    requested_close = int(datetime(2026, 8, 28, 20, 55, tzinfo=timezone.utc).timestamp())
+    http = RoutingStubHttp({
+        "/api/v2/stocks/historical": {"results": [{"symbol": "BHIA3", "data": {
+            "historicalDataPrice": [
+                {"date": previous, "open": 0.36, "high": 0.37, "low": 0.34, "close": 0.35},
+            ],
+        }}]},
+        "/v8/finance/chart/BHIA3.SA": {"chart": {"result": [{
+            "timestamp": [requested_open, requested_close],
+            "meta": {"currency": "BRL", "exchangeTimezoneName": "America/Sao_Paulo"},
+            "indicators": {"quote": [{
+                "open": [0.34, 0.39],
+                "high": [0.36, 0.40],
+                "low": [0.34, 0.38],
+                "close": [0.35, 0.40],
+                "volume": [1_000_000, 2_000_000],
+            }]},
+        }], "error": None}},
+    })
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    response = service.instrument_intraday(
+        "BHIA3",
+        market="B3",
+        name="Grupo Casas Bahia",
+        requested_session_date=date(2026, 8, 28),
+    )
+
+    assert response.requested_session_date == "2026-08-28"
+    assert response.session_date == "2026-08-28"
+    assert response.session_fidelity == "exact"
+    assert response.current == 0.40
+    assert response.source == "Yahoo Finance Intraday 5m"
+    assert "/api/v2/stocks/historical" in http.calls[0]["url"]
+    assert "/v8/finance/chart/BHIA3.SA" in http.calls[1]["url"]
 
 
 def test_global_intraday_never_falls_forward_past_the_requested_session() -> None:
