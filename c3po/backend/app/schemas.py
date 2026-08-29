@@ -19,6 +19,9 @@ PushCategory = Literal[
     "governance_critical",
     "mesa_reading",
     "disk_threshold",
+    "security_login",
+    "sell_win",
+    "hourly_win_rate",
 ]
 
 
@@ -30,7 +33,7 @@ class PushSubscriptionKeys(BaseModel):
 class PushSubscribeRequest(BaseModel):
     endpoint: str = Field(min_length=12, max_length=2_048)
     keys: PushSubscriptionKeys
-    categories: list[PushCategory] = Field(default_factory=list, max_length=5)
+    categories: list[PushCategory] = Field(default_factory=list, max_length=8)
 
 
 class PushUnsubscribeRequest(BaseModel):

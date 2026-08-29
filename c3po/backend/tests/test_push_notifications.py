@@ -3,13 +3,15 @@ import json
 import struct
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import get_args
 
 from pywebpush import WebPushException
 
+from app.access_control import required_capability
 from app.config import Settings
 from app.database import Database
-from app.access_control import required_capability
-from app.push_notifications import PushNotificationService
+from app.push_notifications import PUSH_CATEGORIES, PushNotificationService
+from app.schemas import PushCategory, PushSubscribeRequest
 
 
 def _settings() -> Settings:
@@ -34,6 +36,21 @@ def _subscribe(
         auth_key="auth-value-long-enough",
         categories=categories,
     )
+
+
+def test_push_subscribe_schema_matches_all_runtime_categories() -> None:
+    assert get_args(PushCategory) == PUSH_CATEGORIES
+
+    payload = PushSubscribeRequest(
+        endpoint="https://push.example/all-categories",
+        keys={
+            "p256dh": "p256dh-value-long-enough",
+            "auth": "auth-value-long-enough",
+        },
+        categories=list(PUSH_CATEGORIES),
+    )
+
+    assert payload.categories == list(PUSH_CATEGORIES)
 
 
 def test_push_delivery_is_filtered_idempotent_and_uses_short_timeout() -> None:
