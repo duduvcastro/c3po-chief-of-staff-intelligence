@@ -45,6 +45,10 @@ def test_production_builds_and_transfers_images_before_connecting_to_host() -> N
     assert "sha256sum --check \"$IMAGE_SHA256\"" in workflow
     assert "gzip -dc \"$IMAGE_ARCHIVE\" | docker load" in workflow
     assert "org.opencontainers.image.revision" in workflow
+    assert workflow.count(
+        "--format '{{ index .Config.Labels \"org.opencontainers.image.revision\" }}'"
+    ) == 4
+    assert '\\\"org.opencontainers.image.revision\\\"' not in workflow
 
 
 def test_production_host_never_builds_and_has_image_rollback() -> None:
