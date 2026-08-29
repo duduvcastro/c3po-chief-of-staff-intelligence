@@ -2186,7 +2186,10 @@ const pushCategoryOptions = [
   { key: "job_failure", label: "Falha de job crítico", detail: "Backup, cash yield, estudos e workers" },
   { key: "governance_critical", label: "Governança crítica", detail: "Vulnerabilidade high/critical ou drift" },
   { key: "mesa_reading", label: "Leitura da mesa", detail: "Novo relatório decisório publicado" },
-  { key: "disk_threshold", label: "Disco acima de 80%", detail: "Capacidade do host requer atenção" }
+  { key: "disk_threshold", label: "Disco acima de 80%", detail: "Capacidade do host requer atenção" },
+  { key: "security_login", label: "Novo login", detail: "Cada login bem-sucedido no C3PO" },
+  { key: "sell_win", label: "Episódio vencedor", detail: "Venda que encerra episódio com lucro líquido" },
+  { key: "hourly_win_rate", label: "% de acerto por hora", detail: "Taxa da sessão a cada hora, só com pregão aberto" }
 ] as const;
 
 type PushCategoryKey = typeof pushCategoryOptions[number]["key"];

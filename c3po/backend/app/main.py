@@ -557,6 +557,13 @@ def verify_login_code(
             "client_info": client_info,
         },
     )
+    push_notifications.notify(
+        category="security_login",
+        title="Novo login no C3PO",
+        body=f"{client_info} · {login_at.astimezone(SAO_PAULO):%d/%m %H:%M}",
+        deep_link="/?view=health",
+        event_key=f"security-login:{email}:{login_at.isoformat()}",
+    )
     background_tasks.add_task(
         deliver_login_notification,
         email,

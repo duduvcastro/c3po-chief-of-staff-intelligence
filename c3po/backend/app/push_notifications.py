@@ -21,6 +21,9 @@ PUSH_CATEGORIES = (
     "governance_critical",
     "mesa_reading",
     "disk_threshold",
+    "security_login",
+    "sell_win",
+    "hourly_win_rate",
 )
 TEST_CATEGORY = "test"
 

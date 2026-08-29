@@ -14,6 +14,7 @@ from .database import Database
 from .governance_vulnerability import GovernanceVulnerabilityService
 from .observability import init_sentry
 from .push_notifications import PushNotificationService
+from .push_market_alerts import PushMarketAlertsService
 from .server_usage import ServerUsageCollector
 
 
@@ -59,6 +60,7 @@ def run_worker() -> None:
         database,
         push_notifications=push_notifications,
     )
+    market_alerts = PushMarketAlertsService(settings, database, push_notifications)
     previous = collector.cpu_ticks()
     while True:
         time.sleep(max(15, settings.server_usage_interval_seconds))
@@ -66,6 +68,10 @@ def run_worker() -> None:
             code_census.run_daily_if_due(Path(settings.server_usage_disk_path))
         except Exception:
             logger.exception("Daily code census failed; next attempt tomorrow")
+        try:
+            market_alerts.run_once()
+        except Exception:
+            logger.exception("Push market alerts tick failed; retrying next tick")
         try:
             governance_vulnerability.run_daily_if_due(
                 Path(settings.server_usage_disk_path)
