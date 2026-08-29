@@ -2374,3 +2374,52 @@ def test_ir_refresh_preserves_matrix_row_when_provider_is_temporarily_incomplete
     assert screener._matrix_rows[0]["our_tp"] == 10.0
     assert screener._matrix_rows[0]["ir_status"] == "pending_review"
     assert screener._matrix_rows[0]["latest_ir_event_type"] == "Material Fact"
+
+
+def test_popup_headline_matches_the_row_day_change_not_the_session_open() -> None:
+    prev_session_last = int(datetime(2026, 8, 27, 20, 55, tzinfo=timezone.utc).timestamp())
+    session_open = int(datetime(2026, 8, 28, 13, 5, tzinfo=timezone.utc).timestamp())
+    session_last = int(datetime(2026, 8, 28, 19, 55, tzinfo=timezone.utc).timestamp())
+    http = RoutingStubHttp({
+        "/api/v2/stocks/historical": {"results": [{"symbol": "PTBL3", "data": {
+            "historicalDataPrice": [
+                {"date": prev_session_last, "open": 1.45, "high": 1.48, "low": 1.44, "close": 1.47},
+                {"date": session_open, "open": 1.48, "high": 1.50, "low": 1.46, "close": 1.49},
+                {"date": session_last, "open": 1.57, "high": 1.62, "low": 1.56, "close": 1.58},
+            ],
+        }}]},
+    })
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    response = service.instrument_intraday(
+        "PTBL3",
+        market="B3",
+        name="PBG",
+        requested_session_date=date(2026, 8, 28),
+    )
+
+    # A manchete do popup usa a MESMA régua da linha: variação sobre o
+    # fechamento da sessão anterior (caso PTBL3 da mesa, 29/08).
+    assert response.previous_close == 1.47
+    assert response.day_change_percent is not None
+    assert round(response.day_change_percent, 2) == 7.48
+    assert round(response.change_percent, 2) == 6.76  # "desde a abertura" preservado
+
+
+def test_day_change_is_absent_when_the_window_has_no_earlier_session() -> None:
+    only_bar = int(datetime(2026, 8, 28, 19, 55, tzinfo=timezone.utc).timestamp())
+    http = RoutingStubHttp({
+        "/api/v2/stocks/historical": {"results": [{"symbol": "PTBL3", "data": {
+            "historicalDataPrice": [
+                {"date": only_bar, "open": 1.48, "high": 1.62, "low": 1.46, "close": 1.58},
+            ],
+        }}]},
+    })
+    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    response = service.instrument_intraday("PTBL3", market="B3", name="PBG")
+
+    assert response.previous_close is None
+    assert response.day_change_percent is None  # frontend cai em "desde a abertura"

@@ -592,6 +592,22 @@ class RealtimeMarketsService:
             if item["as_of"].astimezone(market_timezone).date() == selected_date
         ], fidelity
 
+    @staticmethod
+    def _previous_session_close(
+        rows: list[dict[str, Any]],
+        market_timezone: ZoneInfo,
+        session_date: date,
+    ) -> float | None:
+        """Close of the nearest session before session_date inside the fetched window."""
+        earlier = [
+            item for item in rows
+            if item["as_of"].astimezone(market_timezone).date() < session_date
+        ]
+        if not earlier:
+            return None
+        last = max(earlier, key=lambda item: item["as_of"])
+        return float(last["price"]) or None
+
     def _normalize_instrument_intraday(
         self,
         rows: list[dict[str, Any]],
@@ -634,6 +650,9 @@ class RealtimeMarketsService:
         session_rows = [deduplicated[key] for key in sorted(deduplicated)]
         opening_price = session_rows[0]["open"] or session_rows[0]["price"]
         current = session_rows[-1]["price"]
+        previous_close = self._previous_session_close(
+            normalized_rows, market_timezone, session_date
+        )
         local_now = now.astimezone(market_timezone)
         current_minutes = local_now.hour * 60 + local_now.minute
         if always_open:
@@ -658,6 +677,10 @@ class RealtimeMarketsService:
             low=min(item["low"] or item["price"] for item in session_rows),
             current=current,
             change_percent=(current / opening_price - 1) * 100,
+            previous_close=previous_close,
+            day_change_percent=(
+                (current / previous_close - 1) * 100 if previous_close else None
+            ),
             points=[
                 RealtimePortfolioIntradayPoint(as_of=item["as_of"], price=item["price"], volume=item["volume"])
                 for item in session_rows
@@ -722,6 +745,12 @@ class RealtimeMarketsService:
             low=min(item[1] for item in history),
             current=current,
             change_percent=(current / previous_close - 1) * 100 if previous_close else 0,
+            previous_close=(history[-2][1] if len(history) > 1 else None),
+            day_change_percent=(
+                (current / history[-2][1] - 1) * 100
+                if len(history) > 1 and history[-2][1]
+                else None
+            ),
             points=[
                 RealtimePortfolioIntradayPoint(as_of=as_of, price=price, volume=volume)
                 for as_of, price, volume in history
@@ -798,6 +827,9 @@ class RealtimeMarketsService:
         deduplicated = {item["as_of"]: item for item in session_rows}
         session_rows = [deduplicated[key] for key in sorted(deduplicated)]
         opening_price = session_rows[0]["open"] or session_rows[0]["price"]
+        portfolio_previous_close = self._previous_session_close(
+            normalized_rows, market_timezone, session_date
+        )
         current = session_rows[-1]["price"]
         points = [
             RealtimePortfolioIntradayPoint(
@@ -833,6 +865,12 @@ class RealtimeMarketsService:
             low=low,
             current=current,
             change_percent=(current / opening_price - 1) * 100,
+            previous_close=portfolio_previous_close,
+            day_change_percent=(
+                (current / portfolio_previous_close - 1) * 100
+                if portfolio_previous_close
+                else None
+            ),
             points=points,
             source=source,
             delay_minutes=delay_minutes,
@@ -866,6 +904,11 @@ class RealtimeMarketsService:
             "high": max(response.high, tick.price),
             "low": min(response.low, tick.price),
             "change_percent": (tick.price / response.open - 1) * 100,
+            "day_change_percent": (
+                (tick.price / response.previous_close - 1) * 100
+                if response.previous_close
+                else response.day_change_percent
+            ),
             "points": points,
             "source": f"{response.source} + EODHD Real-Time WebSocket",
             "delay_minutes": 0,
