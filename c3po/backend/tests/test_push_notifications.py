@@ -14,14 +14,37 @@ from app.push_notifications import PUSH_CATEGORIES, PushNotificationService
 from app.schemas import PushCategory, PushSubscribeRequest
 
 
-def _settings() -> Settings:
-    return Settings(
+def _settings(**overrides) -> Settings:
+    values = dict(
         database_url="",
         push_vapid_private_key="private-vapid-key",
         push_vapid_public_key="public-vapid-key",
         push_vapid_subject="mailto:alerts@example.com",
         push_timeout_seconds=2.5,
     )
+    values.update(overrides)
+    return Settings(**values)
+
+
+def _ntfy_settings(**overrides) -> Settings:
+    values = dict(
+        ntfy_base_url="https://ntfy.example.com",
+        ntfy_topic="c3po-watch-abcdefghijkl",
+        ntfy_publish_token="tk_" + "A" * 29,
+        ntfy_timeout_seconds=3.0,
+        public_url="https://c3po.example.com",
+    )
+    values.update(overrides)
+    return _settings(**values)
+
+
+class _NtfyResponse:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+
+    def raise_for_status(self) -> None:
+        if self.error:
+            raise self.error
 
 
 def _subscribe(
@@ -85,6 +108,10 @@ def test_push_delivery_is_filtered_idempotent_and_uses_short_timeout() -> None:
         "sent": 1,
         "failed": 0,
         "expired": 0,
+        "ntfy_configured": False,
+        "ntfy_attempted": 0,
+        "ntfy_sent": 0,
+        "ntfy_failed": 0,
     }
     assert duplicate["attempted"] == 0
     assert len(calls) == 1
@@ -134,6 +161,165 @@ def test_sender_failure_never_escapes_to_the_calling_job() -> None:
 
     assert result["attempted"] == 1
     assert result["failed"] == 1
+
+
+def test_ntfy_runs_after_web_push_with_identical_content_and_shared_idempotence() -> None:
+    calls: list[tuple[str, dict]] = []
+
+    def web_sender(**kwargs):
+        calls.append(("web", kwargs))
+        return type("Response", (), {"status_code": 201})()
+
+    def ntfy_sender(*args, **kwargs):
+        calls.append(("ntfy", {"args": args, **kwargs}))
+        return _NtfyResponse()
+
+    settings = _ntfy_settings()
+    service = PushNotificationService(
+        settings,
+        Database(settings),
+        sender=web_sender,
+        ntfy_sender=ntfy_sender,
+    )
+    _subscribe(service, "https://push.example/watch-pair", ["job_failure"])
+
+    first = service.notify(
+        category="job_failure",
+        title="Backup failed",
+        body="Review the evidence",
+        deep_link="/?view=health",
+        event_key="backup:2026-08-29",
+    )
+    duplicate = service.notify(
+        category="job_failure",
+        title="Backup failed",
+        body="Review the evidence",
+        deep_link="/?view=health",
+        event_key="backup:2026-08-29",
+    )
+
+    assert [channel for channel, _call in calls] == ["web", "ntfy"]
+    assert first["sent"] == 1
+    assert first["ntfy_attempted"] == 1
+    assert first["ntfy_sent"] == 1
+    assert first["ntfy_failed"] == 0
+    assert duplicate["attempted"] == 0
+    assert duplicate["ntfy_attempted"] == 0
+    web_payload = json.loads(calls[0][1]["data"])
+    ntfy_call = calls[1][1]
+    assert ntfy_call["args"] == ("https://ntfy.example.com",)
+    assert ntfy_call["timeout"] == 3.0
+    assert ntfy_call["headers"]["Authorization"] == "Bearer " + "tk_" + "A" * 29
+    assert ntfy_call["json"] == {
+        "topic": "c3po-watch-abcdefghijkl",
+        "title": web_payload["title"],
+        "message": web_payload["body"],
+        "click": "https://c3po.example.com/?view=health",
+    }
+
+
+def test_web_push_failure_does_not_block_ntfy() -> None:
+    ntfy_calls = []
+
+    def web_sender(**_kwargs):
+        raise RuntimeError("web push unavailable")
+
+    def ntfy_sender(*args, **kwargs):
+        ntfy_calls.append((args, kwargs))
+        return _NtfyResponse()
+
+    settings = _ntfy_settings()
+    service = PushNotificationService(
+        settings,
+        Database(settings),
+        sender=web_sender,
+        ntfy_sender=ntfy_sender,
+    )
+    _subscribe(service, "https://push.example/web-failure", ["job_failure"])
+
+    result = service.notify(
+        category="job_failure",
+        title="Worker failed",
+        body="Inspect evidence",
+        deep_link="/?view=health",
+    )
+
+    assert result["failed"] == 1
+    assert result["ntfy_sent"] == 1
+    assert len(ntfy_calls) == 1
+
+
+def test_ntfy_failure_never_escapes_or_changes_web_push_success() -> None:
+    def ntfy_sender(*_args, **_kwargs):
+        return _NtfyResponse(RuntimeError("ntfy unavailable"))
+
+    settings = _ntfy_settings()
+    service = PushNotificationService(
+        settings,
+        Database(settings),
+        sender=lambda **_kwargs: type("Response", (), {"status_code": 201})(),
+        ntfy_sender=ntfy_sender,
+    )
+    _subscribe(service, "https://push.example/ntfy-failure", ["job_failure"])
+
+    result = service.notify(
+        category="job_failure",
+        title="Worker failed",
+        body="Inspect evidence",
+        deep_link="/?view=health",
+    )
+
+    assert result["sent"] == 1
+    assert result["failed"] == 0
+    assert result["ntfy_attempted"] == 1
+    assert result["ntfy_sent"] == 0
+    assert result["ntfy_failed"] == 1
+
+
+def test_ntfy_category_filter_is_fail_closed_but_owner_test_is_always_delivered() -> None:
+    ntfy_calls = []
+
+    def ntfy_sender(*args, **kwargs):
+        ntfy_calls.append((args, kwargs))
+        return _NtfyResponse()
+
+    settings = _ntfy_settings(
+        push_vapid_private_key="",
+        push_vapid_public_key="",
+        ntfy_categories="job_failure",
+    )
+    service = PushNotificationService(
+        settings,
+        Database(settings),
+        ntfy_sender=ntfy_sender,
+    )
+
+    filtered = service.notify(
+        category="mesa_reading",
+        title="Mesa",
+        body="Readout published",
+        deep_link="/?view=r2d2",
+    )
+    tested = service.send_test("owner@example.com")
+
+    assert filtered["ntfy_attempted"] == 0
+    assert tested["ntfy_sent"] == 1
+    assert len(ntfy_calls) == 1
+
+
+def test_ntfy_configuration_rejects_weak_topic_token_and_unsupported_categories() -> None:
+    assert not PushNotificationService(
+        _ntfy_settings(ntfy_topic="short"),
+        Database(_settings()),
+    ).ntfy_configured
+    assert not PushNotificationService(
+        _ntfy_settings(ntfy_publish_token="not-a-token"),
+        Database(_settings()),
+    ).ntfy_configured
+    assert not PushNotificationService(
+        _ntfy_settings(ntfy_categories="job_failure,price_alert"),
+        Database(_settings()),
+    ).ntfy_configured
 
 
 def test_subscription_updates_are_append_only_with_logical_revocation() -> None:

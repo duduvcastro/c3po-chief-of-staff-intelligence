@@ -245,24 +245,77 @@ jobs:
             "/tmp/c3po-images-${{ steps.revision.outputs.sha }}.tar.gz.sha256" \
             "$USER@$HOST:/tmp/"
 
-      - name: Stage push notification configuration
+      - name: Stage push and Watch alert configuration
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
           PUSH_PRIVATE: ${{ secrets.C3PO_PUSH_VAPID_PRIVATE_KEY }}
           PUSH_PUBLIC: ${{ secrets.C3PO_PUSH_VAPID_PUBLIC_KEY }}
+          NTFY_AUTH_USERS: ${{ secrets.C3PO_NTFY_AUTH_USERS }}
+          NTFY_TOPIC: ${{ secrets.C3PO_NTFY_TOPIC }}
+          NTFY_PUBLISH_TOKEN: ${{ secrets.C3PO_NTFY_PUBLISH_TOKEN }}
+          NTFY_SUBSCRIBE_TOKEN: ${{ secrets.C3PO_NTFY_SUBSCRIBE_TOKEN }}
         run: |
           test -n "$PUSH_PRIVATE"
           test -n "$PUSH_PUBLIC"
+          test -n "$NTFY_AUTH_USERS"
+          test -n "$NTFY_TOPIC"
+          test -n "$NTFY_PUBLISH_TOKEN"
+          test -n "$NTFY_SUBSCRIBE_TOKEN"
           umask 077
-          {
-            printf 'C3PO_PUSH_VAPID_PRIVATE_KEY=%s\n' "$PUSH_PRIVATE"
-            printf 'C3PO_PUSH_VAPID_PUBLIC_KEY=%s\n' "$PUSH_PUBLIC"
-          } > /tmp/c3po-push.env
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import shlex
+
+          values = {
+              "C3PO_PUSH_VAPID_PRIVATE_KEY": os.environ["PUSH_PRIVATE"],
+              "C3PO_PUSH_VAPID_PUBLIC_KEY": os.environ["PUSH_PUBLIC"],
+              "C3PO_NTFY_BASE_URL": "https://ntfy.eduardocastro.com.br",
+              "C3PO_NTFY_TOPIC": os.environ["NTFY_TOPIC"],
+              "C3PO_NTFY_PUBLISH_TOKEN": os.environ["NTFY_PUBLISH_TOKEN"],
+          }
+          if any("\n" in value or "\r" in value for value in values.values()):
+              raise SystemExit("notification secrets must be single-line values")
+          if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", values["C3PO_NTFY_TOPIC"]):
+              raise SystemExit("C3PO_NTFY_TOPIC has an invalid format")
+          token_pattern = re.compile(r"tk_[A-Za-z0-9]{29}")
+          publish_token = values["C3PO_NTFY_PUBLISH_TOKEN"]
+          subscribe_token = os.environ["NTFY_SUBSCRIBE_TOKEN"]
+          if not token_pattern.fullmatch(publish_token):
+              raise SystemExit("C3PO_NTFY_PUBLISH_TOKEN has an invalid format")
+          if not token_pattern.fullmatch(subscribe_token) or subscribe_token == publish_token:
+              raise SystemExit("C3PO_NTFY_SUBSCRIBE_TOKEN must be valid and distinct")
+          auth_users = os.environ["NTFY_AUTH_USERS"]
+          if "\n" in auth_users or "\r" in auth_users:
+              raise SystemExit("C3PO_NTFY_AUTH_USERS must be a single-line value")
+
+          pathlib.Path("/tmp/c3po-notifications.env").write_text(
+              "".join(f"{key}={value}\n" for key, value in values.items()),
+              encoding="utf-8",
+          )
+          topic = values["C3PO_NTFY_TOPIC"]
+          ntfy_values = {
+              "NTFY_AUTH_USERS": auth_users,
+              "NTFY_AUTH_ACCESS": f"c3po-publisher:{topic}:wo,dudu-devices:{topic}:ro",
+              "NTFY_AUTH_TOKENS": (
+                  f"c3po-publisher:{publish_token}:c3po-backend,"
+                  f"dudu-devices:{subscribe_token}:apple-devices"
+              ),
+          }
+          pathlib.Path("/tmp/c3po-ntfy.env").write_text(
+              "".join(f"{key}={shlex.quote(value)}\n" for key, value in ntfy_values.items()),
+              encoding="utf-8",
+          )
+          PY
           scp -i ~/.ssh/c3po_deploy \
-            /tmp/c3po-push.env \
-            "$USER@$HOST:/tmp/c3po-push-${{ steps.revision.outputs.sha }}.env"
-          rm -f /tmp/c3po-push.env
+            /tmp/c3po-notifications.env \
+            "$USER@$HOST:/tmp/c3po-notifications-${{ steps.revision.outputs.sha }}.env"
+          scp -i ~/.ssh/c3po_deploy \
+            /tmp/c3po-ntfy.env \
+            "$USER@$HOST:/tmp/c3po-ntfy-${{ steps.revision.outputs.sha }}.env"
+          rm -f /tmp/c3po-notifications.env /tmp/c3po-ntfy.env
 
       - name: Deploy and verify
         env:
@@ -279,7 +332,8 @@ jobs:
           IMAGE_ARCHIVE="/tmp/c3po-images-${REVISION}.tar.gz"
           IMAGE_SHA256="${IMAGE_ARCHIVE}.sha256"
           RELEASE_DIR="/tmp/c3po-release-${REVISION}"
-          PUSH_ENV="/tmp/c3po-push-${REVISION}.env"
+          NOTIFICATION_ENV="/tmp/c3po-notifications-${REVISION}.env"
+          NTFY_ENV="/tmp/c3po-ntfy-${REVISION}.env"
           PREVIOUS_REVISION=$(cat "$APP_DIR/.deploy-version" 2>/dev/null || printf 'unknown')
 
           cd /tmp
@@ -315,11 +369,13 @@ jobs:
             --exclude='outputs/' \
             --exclude='tmp/' \
             --exclude='c3po/data/' \
+            --exclude='c3po/ntfy.env' \
             --exclude='whatsapp_session/' \
             "$RELEASE_DIR/" "$APP_DIR/"
 
-          python3 - "$APP_DIR/.env" "$PUSH_ENV" <<'PY'
+          python3 - "$APP_DIR/.env" "$NOTIFICATION_ENV" "$NTFY_ENV" "$APP_DIR/c3po/ntfy.env" <<'PY'
           import pathlib
+          import shutil
           import sys
 
           target = pathlib.Path(sys.argv[1])
@@ -345,11 +401,24 @@ jobs:
           target.write_text("\n".join(output) + "\n", encoding="utf-8")
           target.chmod(0o600)
           staged.unlink()
+
+          ntfy_staged = pathlib.Path(sys.argv[3])
+          ntfy_target = pathlib.Path(sys.argv[4])
+          ntfy_target.parent.mkdir(parents=True, exist_ok=True)
+          with ntfy_staged.open("rb") as source, ntfy_target.open("wb") as destination:
+              shutil.copyfileobj(source, destination)
+          ntfy_target.chmod(0o600)
+          ntfy_staged.unlink()
           PY
 
           cd "$APP_DIR"
+          docker pull binwiederhier/ntfy:v2.28.0@sha256:6ef4b819f722fccdc036af611c4774cfdc2de821ab74fdd48bbf4c9d6f8973da
+          docker compose --env-file .env -f docker-compose.yml exec -T caddy \
+            caddy validate --config /etc/caddy/Caddyfile
           C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml config --quiet
           C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml up -d --no-build
+          docker compose --env-file .env -f docker-compose.yml exec -T caddy \
+            caddy reload --config /etc/caddy/Caddyfile
 
           # Each service initializes the idempotent schema under one advisory lock.
           # Allow a cold, serialized startup to finish before declaring the deploy bad.
@@ -357,12 +426,31 @@ jobs:
           for attempt in $(seq 1 90); do
             web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
             api_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/health || true)
-            if [ "$web_code" = "200" ] && { [ "$api_code" = "200" ] || [ "$api_code" = "401" ]; }; then
+            ntfy_status=$(docker inspect --format '{{.State.Health.Status}}' \
+              "$(docker compose --env-file .env -f c3po/compose.yml ps -q ntfy)" \
+              2>/dev/null || true)
+            if [ "$web_code" = "200" ] \
+              && { [ "$api_code" = "200" ] || [ "$api_code" = "401" ]; } \
+              && [ "$ntfy_status" = "healthy" ]; then
               healthy=true
               break
             fi
             sleep 5
           done
+
+          if [ "$healthy" = true ]; then
+            unauthenticated_publish_code=$(
+              docker compose --env-file .env -f c3po/compose.yml exec -T api \
+                python -c 'import httpx; print(httpx.post("http://c3po-ntfy:80/c3po-deny-probe", content=b"probe", timeout=2).status_code)'
+            )
+            case "$unauthenticated_publish_code" in
+              401|403) ;;
+              *)
+                echo "ntfy deny-all gate failed" >&2
+                healthy=false
+                ;;
+            esac
+          fi
 
           if [ "$healthy" = true ]; then
             printf '%s\n' "$REVISION" > .deploy-version
@@ -397,6 +485,6 @@ jobs:
           fi
 
           docker compose --env-file .env -f c3po/compose.yml ps
-          docker compose --env-file .env -f c3po/compose.yml logs --tail=120 api web
+          docker compose --env-file .env -f c3po/compose.yml logs --tail=120 api web ntfy
           exit 1
           REMOTE

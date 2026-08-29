@@ -27,6 +27,10 @@ def test_all_application_services_use_the_two_named_images() -> None:
 
     assert services["web"]["image"] == "c3po/web:production"
     assert services["web"]["build"]["context"] == "./frontend"
+    assert services["ntfy"]["image"].startswith(
+        "binwiederhier/ntfy:v2.28.0@sha256:"
+    )
+    assert "build" not in services["ntfy"]
 
 
 def test_production_builds_and_transfers_images_before_connecting_to_host() -> None:

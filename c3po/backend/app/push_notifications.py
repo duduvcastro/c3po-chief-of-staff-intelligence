@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
+import httpx
 from pywebpush import WebPushException, webpush
 
 from .config import Settings, get_settings
@@ -26,6 +28,8 @@ PUSH_CATEGORIES = (
     "hourly_win_rate",
 )
 TEST_CATEGORY = "test"
+NTFY_TOKEN_PATTERN = re.compile(r"tk_[A-Za-z0-9]{29}")
+NTFY_TOPIC_PATTERN = re.compile(r"[A-Za-z0-9_-]{16,128}")
 
 
 def validate_push_categories(categories: list[str]) -> list[str]:
@@ -57,10 +61,12 @@ class PushNotificationService:
         database: Database,
         *,
         sender: Callable[..., Any] | None = None,
+        ntfy_sender: Callable[..., Any] | None = None,
     ) -> None:
         self.settings = settings
         self.database = database
         self.sender = sender or webpush
+        self.ntfy_sender = ntfy_sender or httpx.post
 
     @property
     def configured(self) -> bool:
@@ -68,6 +74,36 @@ class PushNotificationService:
             self.settings.push_vapid_private_key.strip()
             and self.settings.push_vapid_public_key.strip()
         )
+
+    @property
+    def ntfy_configured(self) -> bool:
+        base_url = self.settings.ntfy_base_url.strip()
+        parsed = urlparse(base_url)
+        topic = self.settings.ntfy_topic.strip()
+        token = self.settings.ntfy_publish_token.strip()
+        categories = self._ntfy_categories()
+        return bool(
+            parsed.scheme == "https"
+            and parsed.netloc
+            and not parsed.username
+            and not parsed.password
+            and parsed.path in {"", "/"}
+            and not parsed.query
+            and not parsed.fragment
+            and NTFY_TOPIC_PATTERN.fullmatch(topic)
+            and NTFY_TOKEN_PATTERN.fullmatch(token)
+            and categories
+        )
+
+    def _ntfy_categories(self) -> set[str]:
+        categories = {
+            item.strip()
+            for item in self.settings.ntfy_categories.split(",")
+            if item.strip()
+        }
+        if not categories or not categories.issubset(PUSH_CATEGORIES):
+            return set()
+        return categories
 
     def status(self, user_email: str) -> dict[str, Any]:
         subscriptions = self.database.list_active_push_subscriptions(
@@ -133,10 +169,14 @@ class PushNotificationService:
             "sent": 0,
             "failed": 0,
             "expired": 0,
+            "ntfy_configured": self.ntfy_configured,
+            "ntfy_attempted": 0,
+            "ntfy_sent": 0,
+            "ntfy_failed": 0,
         }
         try:
-            if not self.configured:
-                logger.info("Push notification skipped: VAPID is not configured")
+            if not self.configured and not self.ntfy_configured:
+                logger.info("Push notification skipped: no delivery channel is configured")
                 return result
             if category != TEST_CATEGORY:
                 validate_push_categories([category])
@@ -151,27 +191,43 @@ class PushNotificationService:
                 at=created_at,
             ):
                 return result
-            subscriptions = self.database.list_active_push_subscriptions(
-                category=None if include_all_user_subscriptions else category,
-                user_email=user_email,
-            )
+            notification = {
+                "category": category,
+                "title": title[:120],
+                "body": body[:500],
+                "deep_link": deep_link,
+            }
             payload = json.dumps(
-                {
-                    "category": category,
-                    "title": title[:120],
-                    "body": body[:500],
-                    "deep_link": deep_link,
-                },
+                notification,
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
-            for subscription in subscriptions:
-                result["attempted"] += 1
-                self._deliver(
-                    subscription=subscription,
-                    payload=payload,
-                    category=category,
-                    event_key=event_key,
+            if self.configured:
+                try:
+                    subscriptions = self.database.list_active_push_subscriptions(
+                        category=None if include_all_user_subscriptions else category,
+                        user_email=user_email,
+                    )
+                    for subscription in subscriptions:
+                        result["attempted"] += 1
+                        self._deliver(
+                            subscription=subscription,
+                            payload=payload,
+                            category=category,
+                            event_key=event_key,
+                            result=result,
+                        )
+                except Exception as exc:
+                    result["failed"] += 1
+                    logger.warning(
+                        "Web push emission degraded without blocking ntfy: %s",
+                        type(exc).__name__,
+                    )
+            if self.ntfy_configured and (
+                category == TEST_CATEGORY or category in self._ntfy_categories()
+            ):
+                self._deliver_ntfy(
+                    notification=notification,
                     result=result,
                 )
         except Exception as exc:
@@ -181,6 +237,41 @@ class PushNotificationService:
                 type(exc).__name__,
             )
         return result
+
+    def _deliver_ntfy(
+        self,
+        *,
+        notification: dict[str, str],
+        result: dict[str, Any],
+    ) -> None:
+        result["ntfy_attempted"] += 1
+        try:
+            response = self.ntfy_sender(
+                self.settings.ntfy_base_url.rstrip("/"),
+                headers={
+                    "Authorization": f"Bearer {self.settings.ntfy_publish_token.strip()}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "C3PO-Watch-Alerts/1.0",
+                },
+                json={
+                    "topic": self.settings.ntfy_topic.strip(),
+                    "title": notification["title"],
+                    "message": notification["body"],
+                    "click": urljoin(
+                        f"{self.settings.public_url.rstrip('/')}/",
+                        notification["deep_link"].lstrip("/"),
+                    ),
+                },
+                timeout=self.settings.ntfy_timeout_seconds,
+            )
+            response.raise_for_status()
+            result["ntfy_sent"] += 1
+        except Exception as exc:
+            result["ntfy_failed"] += 1
+            logger.warning(
+                "ntfy delivery degraded without blocking its caller or web push: %s",
+                type(exc).__name__,
+            )
 
     def send_test(self, user_email: str) -> dict[str, Any]:
         return self.notify(

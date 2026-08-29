@@ -58,6 +58,10 @@ class PushTestResponse(BaseModel):
     sent: int = 0
     failed: int = 0
     expired: int = 0
+    ntfy_configured: bool = False
+    ntfy_attempted: int = 0
+    ntfy_sent: int = 0
+    ntfy_failed: int = 0
 
 
 class LeahDevice(BaseModel):

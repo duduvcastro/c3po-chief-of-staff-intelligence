@@ -57,6 +57,20 @@ class Settings(BaseSettings):
     push_vapid_public_key: str = ""
     push_vapid_subject: str = "mailto:eu@eduardocastro.com.br"
     push_timeout_seconds: float = Field(default=3.0, ge=1.0, le=10.0)
+    ntfy_base_url: str = "https://ntfy.eduardocastro.com.br"
+    ntfy_topic: str = ""
+    ntfy_publish_token: str = ""
+    ntfy_categories: str = ",".join((
+        "kill_criterion",
+        "job_failure",
+        "governance_critical",
+        "mesa_reading",
+        "disk_threshold",
+        "security_login",
+        "sell_win",
+        "hourly_win_rate",
+    ))
+    ntfy_timeout_seconds: float = Field(default=3.0, ge=0.5, le=3.0)
     healthcheck_valuation_worker_url: str = ""
     healthcheck_cash_yield_url: str = ""
     healthcheck_code_census_url: str = ""

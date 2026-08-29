@@ -208,22 +208,35 @@ class _ServerUsage:
 
 
 class _ExternalResponse:
-    def __init__(self, *, cloudflare: bool = False, usage: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        cloudflare: bool = False,
+        usage: bool = False,
+        ntfy: bool = False,
+    ) -> None:
         self.status_code = 200
         self.headers = {"server": "cloudflare", "cf-ray": "test-GRU"} if cloudflare else {}
         self.text = "User-agent: *\nDisallow: /" if cloudflare else "{}"
         self.usage = usage
+        self.ntfy = ntfy
 
     def raise_for_status(self):
         return None
 
     def json(self):
-        return {"apiRequests": 60_000, "dailyRateLimit": 100_000} if self.usage else {}
+        if self.usage:
+            return {"apiRequests": 60_000, "dailyRateLimit": 100_000}
+        return {"healthy": True} if self.ntfy else {}
 
 
 def _external_get(url: str, **_kwargs):
     assert "/api/api/" not in url
-    return _ExternalResponse(cloudflare="robots.txt" in url, usage="/api/user/" in url)
+    return _ExternalResponse(
+        cloudflare="robots.txt" in url,
+        usage="/api/user/" in url,
+        ntfy=url.endswith("/v1/health"),
+    )
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -330,6 +343,9 @@ def _service(
         day_d_b2_application_key="configured-application-key",
         day_d_b2_bucket="c3po-day-d-cold-test",
         sentry_dsn="https://public@example.ingest.sentry.io/123",
+        ntfy_base_url="https://ntfy.example.com",
+        ntfy_topic="c3po-watch-abcdefghijkl",
+        ntfy_publish_token="tk_" + "A" * 29,
         healthcheck_valuation_worker_url="https://hc-ping.com/valuation",
         healthcheck_cash_yield_url="https://hc-ping.com/cash-yield",
         healthcheck_code_census_url="https://hc-ping.com/code-census",
@@ -374,7 +390,7 @@ def test_consolidated_health_covers_every_operational_area() -> None:
     assert response.quality == 100
     assert all(group.status == "healthy" for group in response.groups)
     assert {item.name for group in response.groups for item in group.items} >= {
-        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Healthchecks.io", "Sentry", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Governança & Vulnerabilidades", "Valuation worker phases", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve", "B2 zero-cap evidence",
+        "C3PO API", "PostgreSQL", "Daily API Usage", "Cloudflare", "GitHub / CI-CD", "Intermedia Exchange", "Backblaze B2", "Healthchecks.io", "Sentry", "ntfy Watch Alerts", "Open-Meteo", "Pluggy API", "BTG Pactual", "Santander", "Itaú", "Brapi", "EODHD", "Finnhub", "FMP", "Massive", "CVM Dados Abertos", "SEC EDGAR", "Issuer RI", "PostgreSQL offsite backup", "AWS scheduler", "Governança & Vulnerabilidades", "Valuation worker phases", "Valuation V2.1b cycle", "V3 pre-A/B gate", "Day D disk reserve", "B2 zero-cap evidence",
     }
     assert "WhatsApp capture" not in {item.name for group in response.groups for item in group.items}
 
@@ -396,6 +412,8 @@ def test_resilience_services_are_monitored_with_distinct_evidence() -> None:
     assert "6/6 dead-man checks armed" in items["Healthchecks.io"].detail
     assert items["Sentry"].status == "healthy"
     assert "DSN loaded" in items["Sentry"].detail
+    assert items["ntfy Watch Alerts"].status == "healthy"
+    assert "Self-hosted relay reachable" in items["ntfy Watch Alerts"].detail
     assert items["PostgreSQL offsite backup"].status == "healthy"
     assert "Immutable S3 upload evidenced" in items["PostgreSQL offsite backup"].detail
     assert "restore drill verified" in items["PostgreSQL offsite backup"].detail
@@ -419,6 +437,26 @@ def test_sentry_is_offline_without_an_official_dsn() -> None:
 
     assert item.status == "offline"
     assert "not configured" in item.detail
+
+
+def test_ntfy_is_amber_when_unconfigured_or_unreachable() -> None:
+    service = _service()
+    service.settings.ntfy_publish_token = ""
+
+    unconfigured = service._ntfy_health(datetime.now(timezone.utc))
+
+    assert unconfigured.status == "attention"
+    assert "not configured" in unconfigured.detail
+
+    service.settings.ntfy_publish_token = "tk_" + "A" * 29
+    service.external_get = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        TimeoutError("relay timeout")
+    )
+
+    unreachable = service._ntfy_health(datetime.now(timezone.utc))
+
+    assert unreachable.status == "attention"
+    assert "TimeoutError" in unreachable.detail
 
 
 def test_postgres_backup_is_attention_before_first_sealed_upload() -> None:
@@ -646,8 +684,8 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     assert usage.status == "attention"
     assert response.status == "attention"
     assert response.quality == 97
-    assert response.healthy_count == 32
-    assert response.total_count == 33
+    assert response.healthy_count == 33
+    assert response.total_count == 34
 
 
 def test_finnhub_is_monitored_in_market_quotes() -> None:
@@ -769,7 +807,11 @@ def test_high_api_consumption_does_not_mark_operational_connection_unhealthy() -
     service = _service()
 
     def high_usage_get(url: str, **_kwargs):
-        response = _ExternalResponse(cloudflare="robots.txt" in url, usage=False)
+        response = _ExternalResponse(
+            cloudflare="robots.txt" in url,
+            usage=False,
+            ntfy=url.endswith("/v1/health"),
+        )
         if "/api/user/" in url:
             response.json = lambda: {"apiRequests": 95_000, "dailyRateLimit": 100_000}
         return response
@@ -806,7 +848,10 @@ def test_ai_usage_aggregates_official_provider_reports() -> None:
     service.settings.anthropic_admin_api_key = "anthropic-admin"
 
     def usage_get(url: str, **_kwargs):
-        response = _ExternalResponse(usage="/api/user/" in url)
+        response = _ExternalResponse(
+            usage="/api/user/" in url,
+            ntfy=url.endswith("/v1/health"),
+        )
         if "openai.com" in url:
             response.json = lambda: {"data": [{"results": [{
                 "model": "gpt-5-codex", "input_tokens": 12_000,

@@ -19,6 +19,7 @@ import httpx
 from .config import Settings
 from .governance_vulnerability import report_sha256
 from .observability import HealthcheckPing
+from .push_notifications import NTFY_TOKEN_PATTERN, NTFY_TOPIC_PATTERN
 from .schemas import AiUsageMetric, ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
 from .valuation_worker_contract import (
     VALUATION_WORKER_CANONICAL_PHASE,
@@ -101,6 +102,7 @@ class SystemHealthService:
             "backblaze": lambda: self._backblaze_health(now),
             "healthchecks": lambda: self._healthchecks_health(now),
             "sentry": lambda: self._sentry_health(now),
+            "ntfy": lambda: self._ntfy_health(now),
             "open_meteo": lambda: self._open_meteo_health(now),
             "open_finance": lambda: self.open_finance.integration_health(
                 timeout_seconds=timeout
@@ -166,6 +168,7 @@ class SystemHealthService:
                         ("backblaze", "Backblaze B2"),
                         ("healthchecks", "Healthchecks.io"),
                         ("sentry", "Sentry"),
+                        ("ntfy", "ntfy Watch Alerts"),
                         ("open_meteo", "Open-Meteo"),
                     ],
                     now,
@@ -773,6 +776,7 @@ class SystemHealthService:
             self._backblaze_health(now),
             self._healthchecks_health(now),
             self._sentry_health(now),
+            self._ntfy_health(now),
             self._open_meteo_health(now),
         ]
 
@@ -847,6 +851,55 @@ class SystemHealthService:
             )
         except Exception as exc:
             return self._offline_item("Sentry", exc, now)
+
+    def _ntfy_health(self, now: datetime) -> IntegrationHealth:
+        base_url = self.settings.ntfy_base_url.strip()
+        parsed = urlsplit(base_url)
+        if (
+            parsed.scheme != "https"
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or not NTFY_TOPIC_PATTERN.fullmatch(self.settings.ntfy_topic.strip())
+            or not NTFY_TOKEN_PATTERN.fullmatch(
+                self.settings.ntfy_publish_token.strip()
+            )
+        ):
+            return IntegrationHealth(
+                name="ntfy Watch Alerts",
+                status="attention",
+                detail="Apple Watch relay is not configured",
+                last_update=self._format_time(now),
+            )
+        try:
+            response = self.external_get(
+                f"{base_url.rstrip('/')}/v1/health",
+                timeout=self.settings.system_health_probe_timeout_seconds,
+                follow_redirects=True,
+                headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
+            )
+            payload = response.json()
+            healthy = response.status_code < 400 and payload.get("healthy") is True
+            return IntegrationHealth(
+                name="ntfy Watch Alerts",
+                status="healthy" if healthy else "attention",
+                detail=(
+                    "Self-hosted relay reachable · iOS upstream wake enabled"
+                    if healthy
+                    else f"Relay health response is not healthy · HTTP {response.status_code}"
+                ),
+                last_update=self._format_time(now),
+            )
+        except Exception as exc:
+            return IntegrationHealth(
+                name="ntfy Watch Alerts",
+                status="attention",
+                detail=f"Relay probe degraded · {type(exc).__name__}",
+                last_update=self._format_time(now),
+            )
 
     def _backblaze_health(self, now: datetime) -> IntegrationHealth:
         if not all((

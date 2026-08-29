@@ -3,6 +3,24 @@
     reverse_proxy pluggy-webhook:8080
 }
 
+ntfy.eduardocastro.com.br {
+    encode zstd gzip
+    @forwarded_http header X-Forwarded-Proto http
+    redir @forwarded_http https://{host}{uri} 308
+
+    @cloudflare_http header_regexp cf_scheme CF-Visitor scheme.*http([^s]|$)
+    redir @cloudflare_http https://{host}{uri} 308
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex"
+    }
+    reverse_proxy c3po-ntfy:80
+}
+
 {$C3PO_HOST} {
     encode zstd gzip
     @forwarded_http header X-Forwarded-Proto http

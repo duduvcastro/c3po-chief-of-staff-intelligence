@@ -1,0 +1,13 @@
+base-url: "https://ntfy.eduardocastro.com.br"
+upstream-base-url: "https://ntfy.sh"
+behind-proxy: true
+
+cache-file: "/var/lib/ntfy/cache.db"
+cache-duration: "168h"
+auth-file: "/var/lib/ntfy/auth.db"
+auth-default-access: "deny-all"
+
+enable-login: false
+enable-signup: false
+web-root: "disable"
+log-level: "info"

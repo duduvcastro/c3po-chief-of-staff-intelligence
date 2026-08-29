@@ -151,6 +151,28 @@ services:
       - c3po_internal
       - legacy_proxy
 
+  ntfy:
+    image: binwiederhier/ntfy:v2.28.0@sha256:6ef4b819f722fccdc036af611c4774cfdc2de821ab74fdd48bbf4c9d6f8973da
+    command: ["serve"]
+    env_file:
+      - path: ./ntfy.env
+        required: false
+    volumes:
+      - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - c3po_ntfy:/var/lib/ntfy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 http://localhost:80/v1/health -O - | grep -Eq '\"healthy\"[[:space:]]*:[[:space:]]*true' || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+    networks:
+      legacy_proxy:
+        aliases:
+          - c3po-ntfy
+
   web:
     image: c3po/web:production
     build:
@@ -173,6 +195,7 @@ volumes:
   c3po_postgres:
   c3po_one_pagers:
   c3po_day_d_data:
+  c3po_ntfy:
 
 networks:
   c3po_internal:
