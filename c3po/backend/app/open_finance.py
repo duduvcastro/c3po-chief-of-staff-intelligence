@@ -130,7 +130,11 @@ class OpenFinanceService:
             },
         )
 
-    def integration_health(self) -> list[IntegrationHealth]:
+    def integration_health(
+        self,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> list[IntegrationHealth]:
         now = datetime.now(timezone.utc)
         if not self.settings.pluggy_client_id or not self.settings.pluggy_client_secret:
             return self._build_integration_health([], ["Credenciais do Pluggy não configuradas."], now, authenticated=False)
@@ -142,7 +146,7 @@ class OpenFinanceService:
         authenticated = False
         with httpx.Client(
             base_url=self.settings.pluggy_base_url.rstrip("/"),
-            timeout=self.settings.pluggy_timeout_seconds,
+            timeout=timeout_seconds or self.settings.pluggy_timeout_seconds,
             headers={"Accept": "application/json", "User-Agent": "C3PO-Chief-of-Staff/1.0"},
         ) as client:
             try:

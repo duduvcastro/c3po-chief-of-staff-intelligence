@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import logging
 from pathlib import Path
 import re
 import shutil
+from threading import Lock
+import time
 from typing import Any, Callable
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -24,6 +28,7 @@ from .valuation_worker_contract import (
 
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
+logger = logging.getLogger("c3po.system_health")
 
 
 class SystemHealthService:
@@ -53,29 +58,203 @@ class SystemHealthService:
         self.disk_usage = disk_usage or shutil.disk_usage
         self._cached_at: datetime | None = None
         self._cached_response: SystemHealthResponse | None = None
+        self._refresh_lock = Lock()
 
     def snapshot(self, *, force: bool = False) -> SystemHealthResponse:
         now = datetime.now(timezone.utc)
-        if (
-            not force
-            and self._cached_at
-            and self._cached_response
-            and (now - self._cached_at).total_seconds() < self.cache_seconds
-        ):
+        if not force and self._cache_is_fresh(now):
             return self._cached_response
 
-        api_usage = self._api_usage(now)
-        ai_usage = self._ai_usage(now)
+        acquired = self._refresh_lock.acquire(blocking=force)
+        if not acquired:
+            if self._cached_response is not None:
+                return self._cached_response
+            acquired = self._refresh_lock.acquire(
+                timeout=self.settings.system_health_probe_timeout_seconds + 0.25
+            )
+            if acquired and self._cached_response is not None:
+                self._refresh_lock.release()
+                return self._cached_response
+            if not acquired:
+                return self._startup_degraded_response(now)
+
+        try:
+            if not force and self._cache_is_fresh(now):
+                return self._cached_response
+            response = self._refresh_snapshot(now)
+            self._cached_at = now
+            self._cached_response = response
+            return response
+        finally:
+            self._refresh_lock.release()
+
+    def _refresh_snapshot(self, now: datetime) -> SystemHealthResponse:
+        timeout = self.settings.system_health_probe_timeout_seconds
+        probes: dict[str, Callable[[], Any]] = {
+            "api_usage": lambda: self._api_usage(now),
+            "openai_usage": lambda: self._openai_usage(now),
+            "anthropic_usage": lambda: self._anthropic_usage(now),
+            "core": lambda: self._core_api_health(now),
+            "cloudflare": lambda: self._cloudflare_health(now),
+            "github": lambda: self._github_health(now),
+            "intermedia": lambda: self._intermedia_health(now),
+            "backblaze": lambda: self._backblaze_health(now),
+            "healthchecks": lambda: self._healthchecks_health(now),
+            "sentry": lambda: self._sentry_health(now),
+            "open_meteo": lambda: self._open_meteo_health(now),
+            "open_finance": lambda: self.open_finance.integration_health(
+                timeout_seconds=timeout
+            ),
+            "aws": lambda: self._aws_health(now),
+            "controls": lambda: self._day_d_and_valuation_health(now),
+            "governance": lambda: self._governance_vulnerability_health(now),
+            "quote_providers": lambda: self._quote_provider_health(now),
+            "finnhub": lambda: self._finnhub_health(now),
+            "fmp": lambda: self._fmp_health(now),
+            "massive": lambda: self._massive_health(now),
+            "official_sources": lambda: self._official_sources_health(now),
+            "automations": lambda: self._automation_health(now),
+        }
+        results, failures, durations_ms = self._run_probes(probes, timeout)
+
+        api_usage = results.get("api_usage") or []
+        api_usage_health = (
+            self._probe_degraded_item(
+                "Daily API Usage", "api_usage", failures["api_usage"], now
+            )
+            if "api_usage" in failures
+            else self._api_usage_health(api_usage, now)
+        )
+        api_usage_health = self._with_probe_metadata(
+            api_usage_health,
+            "api_usage",
+            durations_ms.get("api_usage"),
+            timeout,
+        )
+        ai_usage = [
+            results.get("openai_usage")
+            or self._degraded_ai_usage(
+                "OpenAI", "GPT Codex", failures.get("openai_usage"), now
+            ),
+            results.get("anthropic_usage")
+            or self._degraded_ai_usage(
+                "Anthropic", "Claude Code", failures.get("anthropic_usage"), now
+            ),
+        ]
         groups = [
-            self._group("apis", "Core APIs", [*self._core_api_health(now), self._api_usage_health(api_usage, now)]),
-            self._group("external_services", "Contracted & External Services", self._external_services_health(now)),
-            self._group("open_finance", "Pluggy & Banks", self._safe_items("Pluggy API", self.open_finance.integration_health, now)),
-            self._group("aws", "AWS Infrastructure", self._aws_health(now)),
-            self._group("controls", "Day D & Valuation Controls", self._day_d_and_valuation_health(now)),
-            self._group("governance", "Governança & Vulnerabilidades", [self._governance_vulnerability_health(now)]),
-            self._group("quotes", "Market Quotes", self._quote_health(now)),
-            self._group("official_sources", "Official Intelligence", self._official_sources_health(now)),
-            self._group("automations", "Automatic Routines", self._automation_health(now)),
+            self._group(
+                "apis",
+                "Core APIs",
+                [
+                    *self._probe_items(
+                        results, failures, durations_ms, "core", "Core APIs", now, timeout
+                    ),
+                    api_usage_health,
+                ],
+            ),
+            self._group(
+                "external_services",
+                "Contracted & External Services",
+                self._probe_items_many(
+                    results,
+                    failures,
+                    durations_ms,
+                    [
+                        ("cloudflare", "Cloudflare"),
+                        ("github", "GitHub / CI-CD"),
+                        ("intermedia", "Intermedia Exchange"),
+                        ("backblaze", "Backblaze B2"),
+                        ("healthchecks", "Healthchecks.io"),
+                        ("sentry", "Sentry"),
+                        ("open_meteo", "Open-Meteo"),
+                    ],
+                    now,
+                    timeout,
+                ),
+            ),
+            self._group(
+                "open_finance",
+                "Pluggy & Banks",
+                self._probe_items(
+                    results, failures, durations_ms, "open_finance", "Pluggy API", now, timeout
+                ),
+            ),
+            self._group(
+                "aws",
+                "AWS Infrastructure",
+                self._probe_items(
+                    results, failures, durations_ms, "aws", "AWS Infrastructure", now, timeout
+                ),
+            ),
+            self._group(
+                "controls",
+                "Day D & Valuation Controls",
+                self._probe_items(
+                    results,
+                    failures,
+                    durations_ms,
+                    "controls",
+                    "Day D & Valuation Controls",
+                    now,
+                    timeout,
+                ),
+            ),
+            self._group(
+                "governance",
+                "Governança & Vulnerabilidades",
+                self._probe_items(
+                    results,
+                    failures,
+                    durations_ms,
+                    "governance",
+                    "Governança & Vulnerabilidades",
+                    now,
+                    timeout,
+                ),
+            ),
+            self._group(
+                "quotes",
+                "Market Quotes",
+                self._probe_items_many(
+                    results,
+                    failures,
+                    durations_ms,
+                    [
+                        ("quote_providers", "Market data APIs"),
+                        ("finnhub", "Finnhub"),
+                        ("fmp", "FMP"),
+                        ("massive", "Massive"),
+                    ],
+                    now,
+                    timeout,
+                ),
+            ),
+            self._group(
+                "official_sources",
+                "Official Intelligence",
+                self._probe_items(
+                    results,
+                    failures,
+                    durations_ms,
+                    "official_sources",
+                    "Official intelligence sources",
+                    now,
+                    timeout,
+                ),
+            ),
+            self._group(
+                "automations",
+                "Automatic Routines",
+                self._probe_items(
+                    results,
+                    failures,
+                    durations_ms,
+                    "automations",
+                    "Summary scheduler",
+                    now,
+                    timeout,
+                ),
+            ),
         ]
         items = [item for group in groups for item in group.items]
         healthy_count = sum(item.status == "healthy" for item in items)
@@ -90,9 +269,203 @@ class SystemHealthService:
             ai_usage=ai_usage,
             groups=groups,
         )
-        self._cached_at = now
-        self._cached_response = response
         return response
+
+    def _cache_is_fresh(self, now: datetime) -> bool:
+        return bool(
+            self._cached_at
+            and self._cached_response
+            and (now - self._cached_at).total_seconds() < self.cache_seconds
+        )
+
+    def _run_probes(
+        self,
+        probes: dict[str, Callable[[], Any]],
+        timeout_seconds: float,
+    ) -> tuple[dict[str, Any], dict[str, str], dict[str, float]]:
+        executor = ThreadPoolExecutor(
+            max_workers=len(probes),
+            thread_name_prefix="system-health",
+        )
+        submitted: dict[str, float] = {}
+
+        def measured_loader(loader: Callable[[], Any]) -> tuple[Any, float]:
+            started = time.monotonic()
+            value = loader()
+            return value, round((time.monotonic() - started) * 1000, 1)
+
+        futures: dict[Future[Any], str] = {}
+        for key, loader in probes.items():
+            submitted[key] = time.monotonic()
+            futures[executor.submit(measured_loader, loader)] = key
+        done, pending = wait(futures, timeout=timeout_seconds)
+        results: dict[str, Any] = {}
+        failures: dict[str, str] = {}
+        durations_ms: dict[str, float] = {}
+        observed_at = time.monotonic()
+
+        for future in done:
+            key = futures[future]
+            try:
+                results[key], durations_ms[key] = future.result()
+            except Exception as exc:
+                durations_ms[key] = round(
+                    (observed_at - submitted[key]) * 1000, 1
+                )
+                failures[key] = f"failed fast · {self._safe_error(exc)}"
+                logger.warning("System-health probe failed: %s", key, exc_info=True)
+        for future in pending:
+            key = futures[future]
+            durations_ms[key] = round(
+                (observed_at - submitted[key]) * 1000, 1
+            )
+            failures[key] = f"timed out after {timeout_seconds:.1f}s"
+            future.cancel()
+            logger.warning(
+                "System-health probe timed out after %.1fs: %s",
+                timeout_seconds,
+                key,
+            )
+
+        executor.shutdown(wait=False, cancel_futures=True)
+        return results, failures, durations_ms
+
+    def _probe_items_many(
+        self,
+        results: dict[str, Any],
+        failures: dict[str, str],
+        durations_ms: dict[str, float],
+        definitions: list[tuple[str, str]],
+        now: datetime,
+        timeout_seconds: float,
+    ) -> list[IntegrationHealth]:
+        return [
+            item
+            for key, name in definitions
+            for item in self._probe_items(
+                results,
+                failures,
+                durations_ms,
+                key,
+                name,
+                now,
+                timeout_seconds,
+            )
+        ]
+
+    def _probe_items(
+        self,
+        results: dict[str, Any],
+        failures: dict[str, str],
+        durations_ms: dict[str, float],
+        key: str,
+        name: str,
+        now: datetime,
+        timeout_seconds: float,
+    ) -> list[IntegrationHealth]:
+        if key in failures:
+            return [
+                self._probe_degraded_item(
+                    name, key, failures[key], now, durations_ms.get(key)
+                )
+            ]
+        value = results.get(key)
+        items = (
+            value
+            if isinstance(value, list)
+            else [value]
+            if isinstance(value, IntegrationHealth)
+            else []
+        )
+        if not items:
+            return [
+                self._probe_degraded_item(
+                    name,
+                    key,
+                    "returned no health signal",
+                    now,
+                    durations_ms.get(key),
+                )
+            ]
+        return [
+            self._with_probe_metadata(
+                item, key, durations_ms.get(key), timeout_seconds
+            )
+            for item in items
+        ]
+
+    @staticmethod
+    def _with_probe_metadata(
+        item: IntegrationHealth,
+        key: str,
+        duration_ms: float | None,
+        timeout_seconds: float,
+    ) -> IntegrationHealth:
+        metadata = {
+            **item.metadata,
+            "probe_key": key,
+            "probe_duration_ms": duration_ms,
+            "probe_timeout_seconds": timeout_seconds,
+            "probe_status": item.metadata.get("probe_status", "completed"),
+        }
+        return item.model_copy(update={"metadata": metadata})
+
+    def _probe_degraded_item(
+        self,
+        name: str,
+        key: str,
+        reason: str,
+        now: datetime,
+        duration_ms: float | None = None,
+    ) -> IntegrationHealth:
+        return IntegrationHealth(
+            name=name,
+            status="attention",
+            detail=f"Status unknown · health probe {reason}",
+            last_update=self._format_time(now),
+            metadata={
+                "probe_key": key,
+                "probe_duration_ms": duration_ms,
+                "probe_timeout_seconds": self.settings.system_health_probe_timeout_seconds,
+                "probe_status": (
+                    "timed_out" if reason.startswith("timed out") else "failed"
+                ),
+            },
+        )
+
+    @staticmethod
+    def _degraded_ai_usage(
+        provider: str,
+        product: str,
+        reason: str | None,
+        now: datetime,
+    ) -> AiUsageMetric:
+        return AiUsageMetric(
+            provider=provider,
+            product=product,
+            status="attention",
+            detail=f"Usage probe {reason or 'returned no signal'}",
+            measured_at=now,
+        )
+
+    def _startup_degraded_response(self, now: datetime) -> SystemHealthResponse:
+        item = self._probe_degraded_item(
+            "System health refresh",
+            "snapshot",
+            "timed out waiting for the initial refresh",
+            now,
+        )
+        group = self._group("apis", "Core APIs", [item])
+        return SystemHealthResponse(
+            generated_at=now,
+            status="attention",
+            quality=0,
+            healthy_count=0,
+            total_count=1,
+            api_usage=[],
+            ai_usage=[],
+            groups=[group],
+        )
 
     def _api_usage(self, now: datetime) -> list[ApiUsageMetric]:
         metrics: list[ApiUsageMetric] = []
@@ -103,7 +476,7 @@ class SystemHealthService:
                 response = self.external_get(
                     usage_url,
                     params={"api_token": self.settings.eodhd_api_token, "fmt": "json"},
-                    timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                     follow_redirects=True,
                     headers={"User-Agent": "C3PO-API-Usage/1.0"},
                 )
@@ -149,7 +522,7 @@ class SystemHealthService:
             response = self.external_get(
                 "https://api.openai.com/v1/organization/usage/completions",
                 params=params,
-                timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                 headers={"Authorization": f"Bearer {self.settings.openai_admin_api_key}", "Content-Type": "application/json"},
             )
             response.raise_for_status()
@@ -193,7 +566,7 @@ class SystemHealthService:
             response = self.external_get(
                 "https://api.anthropic.com/v1/organizations/usage_report/messages",
                 params=params,
-                timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                 headers={
                     "x-api-key": self.settings.anthropic_admin_api_key,
                     "anthropic-version": "2023-06-01",
@@ -283,9 +656,16 @@ class SystemHealthService:
         return items
 
     def _quote_health(self, now: datetime) -> list[IntegrationHealth]:
+        return [
+            *self._quote_provider_health(now),
+            self._finnhub_health(now),
+            self._fmp_health(now),
+            self._massive_health(now),
+        ]
+
+    def _quote_provider_health(self, now: datetime) -> list[IntegrationHealth]:
         try:
-            probe = getattr(self.market_data, "probe_health", None)
-            providers = probe() if callable(probe) else self.market_data.health()
+            providers = self.market_data.health()
         except Exception as exc:
             return [self._offline_item("Market data APIs", exc, now)]
         items: list[IntegrationHealth] = []
@@ -300,9 +680,6 @@ class SystemHealthService:
                 detail=detail,
                 last_update=self._format_time(provider.last_success_at) if provider.last_success_at else "No successful quote yet",
             ))
-        items.append(self._finnhub_health(now))
-        items.append(self._fmp_health(now))
-        items.append(self._massive_health(now))
         return items or [IntegrationHealth(
             name="Market data APIs",
             status="offline",
@@ -322,7 +699,7 @@ class SystemHealthService:
             response = self.external_get(
                 f"{self.settings.finnhub_base_url.rstrip('/')}/api/v1/stock/insider-transactions",
                 params={"symbol": "AAPL", "token": self.settings.finnhub_api_token},
-                timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                 follow_redirects=True,
                 headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
             )
@@ -348,7 +725,7 @@ class SystemHealthService:
             response = self.external_get(
                 f"{self.settings.fmp_base_url.rstrip('/')}/stable/price-target-consensus",
                 params={"symbol": "AAPL", "apikey": self.settings.fmp_api_token},
-                timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                 follow_redirects=True,
                 headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
             )
@@ -374,7 +751,7 @@ class SystemHealthService:
             response = self.external_get(
                 f"{self.settings.massive_base_url.rstrip('/')}/v1/marketstatus/now",
                 params={"apiKey": self.settings.massive_api_token},
-                timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                 follow_redirects=True,
                 headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
             )
@@ -420,7 +797,7 @@ class SystemHealthService:
         try:
             response = self.external_get(
                 "https://healthchecks.io/",
-                timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                 follow_redirects=True,
                 headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
             )
@@ -451,7 +828,7 @@ class SystemHealthService:
         try:
             response = self.external_get(
                 "https://status.sentry.io/api/v2/status.json",
-                timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                 follow_redirects=True,
                 headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
             )
@@ -508,7 +885,12 @@ class SystemHealthService:
             aws_access_key_id=self.settings.day_d_b2_key_id,
             aws_secret_access_key=self.settings.day_d_b2_application_key,
             region_name=self.settings.day_d_b2_region,
-            config=Config(signature_version="s3v4"),
+            config=Config(
+                signature_version="s3v4",
+                connect_timeout=self.settings.system_health_probe_timeout_seconds,
+                read_timeout=self.settings.system_health_probe_timeout_seconds,
+                retries={"max_attempts": 1},
+            ),
         )
 
     def _cloudflare_health(self, now: datetime) -> IntegrationHealth:
@@ -516,7 +898,7 @@ class SystemHealthService:
         try:
             response = self.external_get(
                 url,
-                timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                 follow_redirects=True,
                 headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
             )
@@ -546,7 +928,7 @@ class SystemHealthService:
         try:
             response = self.external_get(
                 f"{self.settings.github_api_url.rstrip('/')}/rate_limit",
-                timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                 follow_redirects=True,
                 headers={
                     "Accept": "application/vnd.github+json",
@@ -617,7 +999,7 @@ class SystemHealthService:
             response = self.external_get(
                 "https://api.open-meteo.com/v1/forecast",
                 params={"latitude": -22.98, "longitude": -43.22, "current": "temperature_2m"},
-                timeout=self.settings.system_health_external_timeout_seconds,
+                timeout=self.settings.system_health_probe_timeout_seconds,
                 follow_redirects=True,
                 headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
             )
@@ -1317,11 +1699,29 @@ class SystemHealthService:
             return [self._offline_item(name, exc, now)]
 
     def _offline_item(self, name: str, exc: Exception, now: datetime) -> IntegrationHealth:
+        timed_out = self._is_timeout_error(exc)
+        if timed_out:
+            logger.warning(
+                "System-health external probe timed out: %s (%s)",
+                name,
+                exc.__class__.__name__,
+            )
         return IntegrationHealth(
             name=name,
-            status="offline",
-            detail=f"Health check failed · {self._safe_error(exc)}",
+            status="attention" if timed_out else "offline",
+            detail=(
+                f"Status unknown · health probe timed out · {self._safe_error(exc)}"
+                if timed_out
+                else f"Health check failed · {self._safe_error(exc)}"
+            ),
             last_update=self._format_time(now),
+            metadata={"probe_status": "timed_out" if timed_out else "failed"},
+        )
+
+    @staticmethod
+    def _is_timeout_error(exc: Exception) -> bool:
+        return isinstance(exc, (TimeoutError, httpx.TimeoutException)) or "timeout" in (
+            exc.__class__.__name__.lower()
         )
 
     def _group(self, key: str, label: str, items: list[IntegrationHealth]) -> SystemHealthGroup:
