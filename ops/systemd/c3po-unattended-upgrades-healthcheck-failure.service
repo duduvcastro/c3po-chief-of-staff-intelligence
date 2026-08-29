@@ -1,0 +1,11 @@
+[Unit]
+Description=C3PO unattended-upgrades dead-man failure ping
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/c3po/host-security.env
+ExecStart=/usr/local/sbin/c3po-healthcheck-ping fail
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict

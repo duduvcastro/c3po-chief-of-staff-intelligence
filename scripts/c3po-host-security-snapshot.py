@@ -13,6 +13,7 @@ from typing import Any
 
 
 SCHEMA = "C3PO_HOST_OS_VULNERABILITY_REPORT-v1"
+HEALTHCHECK_ENV = Path("/etc/c3po/host-security.env")
 DEFAULT_OUTPUT = Path(
     "/opt/chief-of-staff-digital/runtime/security/host-os-vulnerability-report.json"
 )
@@ -102,6 +103,40 @@ def os_release() -> dict[str, str]:
     }
 
 
+def healthcheck_configured() -> bool:
+    try:
+        lines = HEALTHCHECK_ENV.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    prefix = "C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_URL="
+    return any(line.startswith(prefix) and bool(line[len(prefix):].strip()) for line in lines)
+
+
+def unattended_upgrades_last_run_at() -> str | None:
+    status, output = command_status(
+        "journalctl",
+        "--unit",
+        "apt-daily-upgrade.service",
+        "--output",
+        "json",
+        "--reverse",
+        "--lines",
+        "1",
+        "--no-pager",
+    )
+    if status != 0 or not output:
+        return None
+    try:
+        payload = json.loads(output.splitlines()[0])
+        microseconds = int(payload["__REALTIME_TIMESTAMP"])
+        return datetime.fromtimestamp(
+            microseconds / 1_000_000,
+            tz=timezone.utc,
+        ).isoformat()
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
 def collect() -> dict[str, Any]:
     all_pending, security_pending, security_packages = apt_update_counts()
     allowed_origins, security_only, automatic_reboot = apt_policy()
@@ -132,6 +167,8 @@ def collect() -> dict[str, Any]:
             "security_only": security_only,
             "automatic_reboot": automatic_reboot,
             "allowed_origins": allowed_origins,
+            "healthcheck_configured": healthcheck_configured(),
+            "last_run_at": unattended_upgrades_last_run_at(),
         },
         "updates": {
             "all_pending": all_pending,

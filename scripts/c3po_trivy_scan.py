@@ -13,9 +13,10 @@ from typing import Any
 
 
 SCHEMA = "C3PO_CONTAINER_VULNERABILITY_REPORT-v1"
+TRIVY_VERSION = "0.74.0"
 TRIVY_IMAGE = (
     "aquasec/trivy@sha256:"
-    "6029bc807d46103c5511ad70574c935b683bd3d2d3a6f81a04c3e8f29f857e69"
+    "62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969"
 )
 SEVERITIES = ("critical", "high", "medium", "low")
 
@@ -102,6 +103,7 @@ def build_report(
     *,
     scope: str,
     revision: str,
+    dead_man_configured: bool = False,
 ) -> dict[str, Any]:
     images: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
@@ -129,8 +131,10 @@ def build_report(
         "scan_status": "complete" if not errors and len(images) == len(image_specs) else "error",
         "scope": scope,
         "source_revision": revision,
+        "dead_man_configured": dead_man_configured,
         "scanner": {
             "name": "Trivy",
+            "version": TRIVY_VERSION,
             "image": TRIVY_IMAGE,
         },
         "images": images,
@@ -170,9 +174,17 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scope", required=True)
     parser.add_argument("--revision", default="unknown")
+    parser.add_argument("--dead-man-configured", action="store_true")
     args = parser.parse_args()
-    report = build_report(args.images, scope=args.scope, revision=args.revision)
+    report = build_report(
+        args.images,
+        scope=args.scope,
+        revision=args.revision,
+        dead_man_configured=args.dead_man_configured,
+    )
     atomic_write(args.output, report)
+    if report["scan_status"] != "complete" and os.environ.get("GITHUB_ACTIONS") == "true":
+        print("::warning::Trivy scan did not complete; the normalized report is fail-closed")
     print(json.dumps({
         "scan_status": report["scan_status"],
         "critical": report["by_severity"]["critical"],

@@ -77,7 +77,9 @@ payloads:
 - code census;
 - governance and vulnerability attestation;
 - PostgreSQL backup;
-- monthly PostgreSQL restore drill.
+- monthly PostgreSQL restore drill;
+- unattended-upgrades;
+- weekly Trivy scan of production images.
 
 Each integration sends `/start`, base success, or `/fail`. A ping failure is
 logged but never changes the monitored job result. The schedules and grace
@@ -91,6 +93,8 @@ periods configured in the Healthchecks console are:
 | Governance & vulnerabilities | daily at 02:15 BRT | 2 hours |
 | PostgreSQL backup | daily | 2 hours |
 | Restore drill | `0 10 1 * *` UTC | 2 hours |
+| Unattended-upgrades | daily via `apt-daily-upgrade.timer` | 4 hours |
+| Trivy production images | Sunday 04:00 BRT (`0 7 * * 0` UTC) | 2 hours |
 
 Any console change to these values must update this runbook and the deployment
 evidence in the same audited change.
@@ -139,7 +143,7 @@ configuration as operational evidence:
   is at most 35 days old. It becomes attention during the documented grace
   windows and offline for invalid or materially stale evidence. The API never
   tries to list or read S3 with the intentionally write-only host credential.
-- `Healthchecks.io` requires all six dead-man checks to be configured and the
+- `Healthchecks.io` requires all eight dead-man checks to be configured and the
   SaaS endpoint to be reachable. Ping URLs are never displayed, logged, or used
   by the dashboard probe because probing them would fabricate job success.
 - `Sentry` requires an official `sentry.io` DSN and a reachable SaaS status
@@ -166,9 +170,11 @@ that repository validates the five allowed CSV files, records a pull request,
 and merges only the validated PR. The C3PO `main` branch therefore requires
 `enforce_admins=true`, with no publisher exception in the baseline.
 
-The monthly restore check URL remains only in the GitHub `production`
-environment. The production host stores a boolean attestation that the sixth
-check was present during the audited installer run, never the secret ping URL.
+The monthly restore and weekly Trivy check URLs remain only in the GitHub
+`production` environment. The production host stores boolean attestations that
+those checks were present during the audited installer run, never their secret
+ping URLs. The unattended-upgrades URL is stored separately as root-only mode
+`0600` host configuration and is not passed into application containers.
 
 ## Host OS and production image vulnerabilities
 
@@ -185,6 +191,15 @@ exports the three images actually running on the host, scans them on a GitHub
 runner, and atomically installs only the normalized count report at
 `runtime/security/container-production-vulnerability-report.json`. Trivy and
 its vulnerability database never consume production CPU or disk.
+
+Both scheduled layers carry their own dead-man evidence. The apt service sends
+`start` and a systemd `OnSuccess`/`OnFailure` result around its factual daily
+execution. The weekly workflow does the same around the off-host scan. Ping
+delivery itself is best-effort and cannot change an apt or scan result. A fresh
+host snapshot must contain a configured dead-man and an unattended-upgrades
+execution no older than 36 hours; the weekly report must attest its dead-man
+configuration. Missing execution evidence is amber even when vulnerability
+counts are zero.
 
 The Governance card labels image results as finding occurrences per image, not
 unique CVEs. Missing host evidence after 2 hours or image evidence after 8 days

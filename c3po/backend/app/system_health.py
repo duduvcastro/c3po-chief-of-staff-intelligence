@@ -786,12 +786,20 @@ class SystemHealthService:
         )
         configured_count = sum(
             HealthcheckPing(url).configured for url in configured_checks
-        ) + int(self.settings.healthcheck_postgres_restore_configured)
-        if configured_count < 6:
+        ) + sum((
+            int(self.settings.healthcheck_postgres_restore_configured),
+            int(self.settings.healthcheck_trivy_configured),
+            int(self.settings.healthcheck_unattended_upgrades_configured),
+        ))
+        expected_count = 8
+        if configured_count < expected_count:
             return IntegrationHealth(
                 name="Healthchecks.io",
                 status="offline",
-                detail=f"Dead-man monitoring incomplete · {configured_count}/6 checks armed",
+                detail=(
+                    "Dead-man monitoring incomplete · "
+                    f"{configured_count}/{expected_count} checks configured"
+                ),
                 last_update=self._format_time(now),
             )
         try:
@@ -805,7 +813,10 @@ class SystemHealthService:
             return IntegrationHealth(
                 name="Healthchecks.io",
                 status=status,
-                detail=f"6/6 dead-man checks armed · SaaS HTTP {response.status_code}",
+                detail=(
+                    f"{expected_count}/{expected_count} dead-man checks configured · "
+                    f"SaaS HTTP {response.status_code}"
+                ),
                 last_update=self._format_time(now),
             )
         except Exception as exc:

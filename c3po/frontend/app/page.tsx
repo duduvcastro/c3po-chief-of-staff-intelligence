@@ -8368,6 +8368,7 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const metadata = item.metadata ?? {};
   const dependabot = objectValue(metadata.dependabot);
   const operatingSystem = objectValue(metadata.operating_system);
+  const operatingSystemDeadMan = objectValue(operatingSystem.dead_man);
   const productionImages = objectValue(metadata.production_images);
   const severities = objectValue(dependabot.by_severity);
   const imageSeverities = objectValue(productionImages.by_severity);
@@ -8383,6 +8384,18 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const layerClass = (status: unknown) => status === "healthy" ? "healthy" : status === "offline" ? "offline" : "attention";
   const osPending = operatingSystem.security_updates_pending == null ? null : Number(operatingSystem.security_updates_pending);
   const imageTotal = productionImages.finding_total == null ? null : Number(productionImages.finding_total);
+  const operatingSystemLabel = operatingSystem.available !== true
+    ? "Sem atestado"
+    : operatingSystem.reboot_required === true
+      ? "Reboot manual"
+      : operatingSystemDeadMan.fresh !== true
+        ? "Execução ausente"
+        : "Atualizado";
+  const productionImagesLabel = productionImages.available !== true
+    ? "Sem atestado"
+    : productionImages.dead_man_configured !== true
+      ? "Dead-man ausente"
+      : "Trivy";
   const knownTotal = hasReport && osPending != null && imageTotal != null
     ? Number(dependabot.open_total ?? 0) + osPending + imageTotal
     : null;
@@ -8423,10 +8436,10 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
             </div>
             <div className="governance-source-row">
               <div><span>SO DO HOST</span><strong>{osPending == null ? "—" : osPending.toLocaleString("pt-BR")}</strong><small>pacotes de segurança pendentes</small></div>
-              <em className={`governance-summary-${layerClass(operatingSystem.status)}`}>{operatingSystem.reboot_required === true ? "Reboot manual" : operatingSystem.available === true ? "Atualizado" : "Sem atestado"}</em>
+              <em className={`governance-summary-${layerClass(operatingSystem.status)}`}>{operatingSystemLabel}</em>
             </div>
             <div className="governance-source-block">
-              <header><div><span>IMAGENS EM PRODUÇÃO</span><strong>{productionImages.image_count == null ? "Scan semanal" : `${Number(productionImages.image_count)} imagens`}</strong></div><em className={`governance-summary-${layerClass(productionImages.status)}`}>{productionImages.available === true ? "Trivy" : "Sem atestado"}</em></header>
+              <header><div><span>IMAGENS EM PRODUÇÃO</span><strong>{productionImages.image_count == null ? "Scan semanal" : `${Number(productionImages.image_count)} imagens`}</strong></div><em className={`governance-summary-${layerClass(productionImages.status)}`}>{productionImagesLabel}</em></header>
               <div className="governance-source-total"><strong>{imageTotal == null ? "—" : imageTotal.toLocaleString("pt-BR")}</strong><span>ocorrências por imagem{Number(productionImages.unknown ?? 0) > 0 ? ` · ${Number(productionImages.unknown).toLocaleString("pt-BR")} sem severidade` : ""}</span></div>
               <dl>
                 {(["critical", "high", "medium", "low"] as const).map((severity) => (

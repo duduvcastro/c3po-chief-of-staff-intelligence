@@ -13,6 +13,16 @@ PIPELINE = ROOT / ".github" / "workflows" / "c3po-pipeline.yml"
 APT_POLICY = ROOT / "ops" / "apt" / "52c3po-security-upgrades"
 HOST_SERVICE = ROOT / "ops" / "systemd" / "c3po-host-security-snapshot.service"
 HOST_TIMER = ROOT / "ops" / "systemd" / "c3po-host-security-snapshot.timer"
+APT_HEALTHCHECK_DROPIN = (
+    ROOT / "ops" / "systemd" / "apt-daily-upgrade.service.d" / "c3po-healthcheck.conf"
+)
+APT_HEALTHCHECK_SUCCESS = (
+    ROOT / "ops" / "systemd" / "c3po-unattended-upgrades-healthcheck-success.service"
+)
+APT_HEALTHCHECK_FAILURE = (
+    ROOT / "ops" / "systemd" / "c3po-unattended-upgrades-healthcheck-failure.service"
+)
+HEALTHCHECK_SCRIPT = ROOT / "scripts" / "c3po-healthcheck-ping.sh"
 TRIVY_SCRIPT = ROOT / "scripts" / "c3po_trivy_scan.py"
 
 
@@ -49,7 +59,33 @@ def test_host_installer_is_manual_and_verifies_the_effective_policy() -> None:
     assert "environment: production" in workflow
     assert "policy['security_only'] is True" in workflow
     assert "policy['automatic_reboot'] is False" in workflow
+    assert "C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_URL" in workflow
+    assert "C3PO_HEALTHCHECK_TRIVY_URL" in workflow
+    assert "C3PO_HEALTHCHECK_TRIVY_CONFIGURED" in workflow
+    assert "C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_CONFIGURED" in workflow
+    assert "c3po-host-security.env /etc/c3po/host-security.env" in workflow
+    assert "-m 0600" in workflow
+    assert "systemctl start apt-daily-upgrade.service" in workflow
+    assert "policy['healthcheck_configured'] is True" in workflow
+    assert "policy['last_run_at']" in workflow
     assert "systemctl enable --now c3po-host-security-snapshot.timer" in workflow
+
+
+def test_unattended_upgrades_has_start_success_and_failure_dead_man() -> None:
+    dropin = APT_HEALTHCHECK_DROPIN.read_text(encoding="utf-8")
+    success = APT_HEALTHCHECK_SUCCESS.read_text(encoding="utf-8")
+    failure = APT_HEALTHCHECK_FAILURE.read_text(encoding="utf-8")
+    script = HEALTHCHECK_SCRIPT.read_text(encoding="utf-8")
+
+    assert "ExecStartPre=-/usr/local/sbin/c3po-healthcheck-ping start" in dropin
+    assert "OnSuccess=c3po-unattended-upgrades-healthcheck-success.service" in dropin
+    assert "OnFailure=c3po-unattended-upgrades-healthcheck-failure.service" in dropin
+    assert "c3po-healthcheck-ping success" in success
+    assert "c3po-healthcheck-ping fail" in failure
+    assert "C3PO_HEALTHCHECK_UNATTENDED_UPGRADES_URL" in script
+    assert '"${url%/}/start"' in script
+    assert '"${url%/}/fail"' in script
+    assert "|| true" in script
 
 
 def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
@@ -76,8 +112,9 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
     assert image["finding_total"] == 5
     assert scanner.TRIVY_IMAGE == (
         "aquasec/trivy@sha256:"
-        "6029bc807d46103c5511ad70574c935b683bd3d2d3a6f81a04c3e8f29f857e69"
+        "62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969"
     )
+    assert scanner.TRIVY_VERSION == "0.74.0"
 
 
 def test_trivy_scans_are_non_blocking_per_build_and_weekly_off_host() -> None:
@@ -92,5 +129,29 @@ def test_trivy_scans_are_non_blocking_per_build_and_weekly_off_host() -> None:
     assert "docker save c3po/backend:production c3po/web:production" in weekly
     assert "Scan the production images off-host" in weekly
     assert "scripts/c3po_trivy_scan.py" in weekly
+    assert "C3PO_HEALTHCHECK_TRIVY_URL" in weekly
+    assert '"${HEALTHCHECK_URL%/}/start"' in weekly
+    assert '"${HEALTHCHECK_URL%/}/fail"' in weekly
+    assert "--dead-man-configured" in weekly
     assert "container-production-vulnerability-report.json" in weekly
     assert "sudo install -o root -g ubuntu -m 0644" in weekly
+
+
+def test_trivy_report_attests_its_own_dead_man_configuration() -> None:
+    scanner = _scanner_module()
+    scanner.scan_image = lambda label, reference, _work: scanner.normalize_trivy_payload(
+        label,
+        reference,
+        {"ArtifactName": reference, "Metadata": {}, "Results": []},
+    )
+
+    report = scanner.build_report(
+        ["backend=c3po/backend:production"],
+        scope="production_runtime",
+        revision="test",
+        dead_man_configured=True,
+    )
+
+    assert report["scan_status"] == "complete"
+    assert report["dead_man_configured"] is True
+    assert report["report_sha256"] == scanner.report_sha256(report)

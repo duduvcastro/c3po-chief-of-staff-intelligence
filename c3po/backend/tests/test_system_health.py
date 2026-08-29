@@ -353,6 +353,8 @@ def _service(
         healthcheck_postgres_backup_url="https://hc-ping.com/postgres-backup",
         healthcheck_governance_url="https://hc-ping.com/governance",
         healthcheck_postgres_restore_configured=True,
+        healthcheck_trivy_configured=True,
+        healthcheck_unattended_upgrades_configured=True,
         postgres_backup_bucket="c3po-postgres-test",
         postgres_backup_region="us-east-1",
         postgres_backup_access_key_id="configured-writer",
@@ -410,7 +412,7 @@ def test_resilience_services_are_monitored_with_distinct_evidence() -> None:
 
     items = {item.name: item for group in response.groups for item in group.items}
     assert items["Healthchecks.io"].status == "healthy"
-    assert "6/6 dead-man checks armed" in items["Healthchecks.io"].detail
+    assert "8/8 dead-man checks configured" in items["Healthchecks.io"].detail
     assert items["Sentry"].status == "healthy"
     assert "DSN loaded" in items["Sentry"].detail
     assert items["PostgreSQL offsite backup"].status == "healthy"
@@ -418,14 +420,14 @@ def test_resilience_services_are_monitored_with_distinct_evidence() -> None:
     assert "restore drill verified" in items["PostgreSQL offsite backup"].detail
 
 
-def test_healthchecks_is_offline_until_all_six_checks_are_armed() -> None:
+def test_healthchecks_is_offline_until_all_eight_checks_are_configured() -> None:
     service = _service()
     service.settings.healthcheck_governance_url = ""
 
     item = service._healthchecks_health(datetime.now(timezone.utc))
 
     assert item.status == "offline"
-    assert "5/6 checks armed" in item.detail
+    assert "7/8 checks configured" in item.detail
 
 
 def test_sentry_is_offline_without_an_official_dsn() -> None:
