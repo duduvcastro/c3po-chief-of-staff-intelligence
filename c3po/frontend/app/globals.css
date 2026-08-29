@@ -865,7 +865,13 @@ button { cursor: pointer; }
 .realtime-intraday-source { min-height: 29px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 13px; color: #7e7252; background: #f8f5e9; font-size: 7px; }
 .realtime-intraday-source small { color: #91896f; font-size: 7px; white-space: nowrap; }
 .realtime-portfolio-market { width: fit-content; padding: 4px 6px; border-radius: 3px; color: var(--blue); background: var(--blue-soft); font-size: 8px; font-weight: 900; }
-.realtime-portfolio-price { font-size: 11px; white-space: nowrap; }
+.realtime-portfolio-price-cell { min-width: 0; }
+.realtime-portfolio-price { display: block; font-size: 11px; white-space: nowrap; }
+.realtime-portfolio-origin-note { display: block; margin-top: 3px; color: #707987; font-size: 8px; font-weight: 750; line-height: 1.25; }
+.realtime-portfolio-origin-divergent,
+.realtime-portfolio-origin-unavailable,
+.realtime-portfolio-origin-unmapped { color: #a66b12; }
+.realtime-portfolio-origin-fallback { color: #176b52; }
 .realtime-portfolio-volume, .realtime-portfolio-cash { color: #59636f; font-weight: 700; white-space: nowrap; }
 .realtime-portfolio-quote small { display: block; margin-top: 4px; color: #8c949e; font-size: 8px; white-space: nowrap; }
 .realtime-portfolio-delete { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #e6c9c7; border-radius: 4px; color: var(--red); background: #fff; }
@@ -2504,7 +2510,7 @@ button { cursor: pointer; }
   .realtime-intraday-head { padding-top: 7px; }
   .realtime-intraday-chart svg { height: 142px; }
   .realtime-portfolio-market, .realtime-portfolio-market-logo { grid-area: market; }
-  .realtime-portfolio-price { grid-area: price; text-align: right; }
+  .realtime-portfolio-price-cell { grid-area: price; text-align: right; }
   .realtime-portfolio-change { grid-area: change; justify-self: end; }
   .realtime-portfolio-volume { grid-area: volume; }
   .realtime-portfolio-cash { grid-area: cash; }

@@ -20,6 +20,9 @@ class ForeignListingPolicy:
     primary_ticker: str
     primary_currency: str
     fx_symbol: str
+    yahoo_fx_symbol: str
+    otc_to_primary_ratio: float
+    reference_warning_percent: float
     issuer_ir_url: str
     consensus_local: float
     analyst_count: int
@@ -32,12 +35,17 @@ class ForeignListingPolicy:
 # MHVYF is the 1:1 OTC ordinary share for 7011.T. EODHD labels the OTC quote in
 # USD but returns most statement line items in JPY, so it must never enter the
 # valuation engine without this currency bridge.
+# This is an explicit allowlist. New OTC-to-primary relationships require a
+# reviewed entry here; provider metadata must never auto-discover a mapping.
 FOREIGN_LISTING_POLICIES = {
     "MHVYF": ForeignListingPolicy(
         symbol="MHVYF",
         primary_ticker="7011.T",
         primary_currency="JPY",
         fx_symbol="USDJPY.FOREX",
+        yahoo_fx_symbol="JPY=X",
+        otc_to_primary_ratio=1.0,
+        reference_warning_percent=3.0,
         issuer_ir_url="https://www.mhi.com/finance/library/result",
         consensus_local=5_323.08,
         analyst_count=16,
