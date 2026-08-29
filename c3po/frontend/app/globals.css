@@ -1624,7 +1624,7 @@ button { cursor: pointer; }
 .governance-status-attention { color: var(--amber); background: var(--amber-soft); }
 .governance-status-offline { color: var(--red); background: var(--red-soft); }
 .governance-health-card > header > small { color: #7e8792; font-size: 9px; font-weight: 800; white-space: nowrap; }
-.governance-health-body { display: grid; grid-template-columns: minmax(320px, .82fr) minmax(0, 1.8fr); min-height: 230px; }
+.governance-health-body { display: grid; grid-template-columns: minmax(390px, 1fr) minmax(0, 1.45fr); min-height: 230px; }
 .governance-dependabot { padding: 22px 20px; border-right: 1px solid var(--line); background: #fcfcfb; }
 .governance-dependabot > header, .governance-contract > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .governance-dependabot > header span, .governance-contract > header span { display: block; color: var(--gold-deep); font-size: 9px; font-weight: 900; }
@@ -1642,6 +1642,19 @@ button { cursor: pointer; }
 .governance-severity dd { margin: 7px 0 0; font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums; }
 .governance-severity-critical dd, .governance-severity-high dd { color: var(--red); }
 .governance-severity-medium dd { color: var(--amber); }
+.governance-source-list { display: grid; gap: 14px; margin-top: 18px; }
+.governance-source-block { padding-top: 14px; border-top: 1px solid var(--line); }
+.governance-source-block > header, .governance-source-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.governance-source-block > header span, .governance-source-row span { display: block; color: var(--gold-deep); font-size: 8px; font-weight: 900; }
+.governance-source-block > header strong { display: block; margin-top: 3px; font-size: 11px; }
+.governance-source-block em, .governance-source-row em { flex: 0 0 auto; min-height: 22px; display: inline-flex; align-items: center; padding: 0 7px; border-radius: 4px; font-size: 8px; font-style: normal; font-weight: 900; text-transform: uppercase; }
+.governance-source-total { display: flex; align-items: baseline; gap: 7px; margin-top: 10px; }
+.governance-source-total strong { font-size: 24px; line-height: 1; font-variant-numeric: tabular-nums; }
+.governance-source-total span { color: var(--muted); font-size: 9px; font-weight: 700; }
+.governance-source-block dl { margin-top: 10px; }
+.governance-source-row { padding-top: 14px; border-top: 1px solid var(--line); }
+.governance-source-row > div strong { display: inline-block; margin-top: 5px; font-size: 24px; line-height: 1; }
+.governance-source-row > div small { margin-left: 7px; color: var(--muted); font-size: 9px; }
 .governance-contract { min-width: 0; padding: 22px 20px; }
 .governance-contract > header { min-height: 34px; }
 .governance-contract > header > small { color: var(--muted); font-size: 9px; font-weight: 800; }
@@ -1658,7 +1671,7 @@ button { cursor: pointer; }
 .governance-contract-empty span { display: block; margin-top: 7px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .governance-health-card > footer { padding: 10px 20px; color: #7e8792; font-size: 8px; font-weight: 800; text-transform: uppercase; }
 @media (max-width: 1180px) {
-  .governance-health-body { grid-template-columns: minmax(290px, .8fr) minmax(0, 1.2fr); }
+  .governance-health-body { grid-template-columns: minmax(350px, .9fr) minmax(0, 1.1fr); }
   .governance-contract-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .server-usage-view { min-width: 0; }

@@ -170,6 +170,45 @@ The monthly restore check URL remains only in the GitHub `production`
 environment. The production host stores a boolean attestation that the sixth
 check was present during the audited installer run, never the secret ping URL.
 
+## Host OS and production image vulnerabilities
+
+`HOST_VULNERABILITY_CONTRACT_V1` extends the daily Governance attestation to
+the server. `/usr/local/sbin/c3po-host-security-snapshot` refreshes
+`runtime/security/host-os-vulnerability-report.json` every 15 minutes. The apt
+contract clears the default unattended origins, permits only security/ESM
+security channels, and pins `Automatic-Reboot=false`.
+
+The normal build pipeline scans backend and frontend images with the immutable
+Trivy image recorded in `scripts/c3po_trivy_scan.py`. It is deliberately
+non-blocking. The weekly `Scan production container vulnerabilities` workflow
+exports the three images actually running on the host, scans them on a GitHub
+runner, and atomically installs only the normalized count report at
+`runtime/security/container-production-vulnerability-report.json`. Trivy and
+its vulnerability database never consume production CPU or disk.
+
+The Governance card labels image results as finding occurrences per image, not
+unique CVEs. Missing host evidence after 2 hours or image evidence after 8 days
+is amber, never zero. Repository or image high/critical findings are red and
+emit `governance_critical` through the existing best-effort push path.
+
+### Manual reboot procedure
+
+1. Schedule the reboot outside both B3 and US market hours and outside a study,
+   backup, restore drill, or cash-yield run.
+2. Confirm the latest PostgreSQL backup and restore evidence are healthy, then
+   record the deployed revision and `docker compose ps` state.
+3. Run `sudo systemctl reboot` from the production shell. There is no automatic
+   reboot path in this contract.
+4. Reconnect and verify the five application containers, PostgreSQL health,
+   `c3po-host-security-snapshot.timer`, and the current `.deploy-version`.
+5. Run `sudo systemctl start c3po-host-security-snapshot.service`; verify that
+   `reboot_required=false` in the self-hashed report.
+6. Run one supervised Governance attestation and confirm the card reflects the
+   new host report without weakening any repository or image finding.
+
+Base-image remediation is always a reviewed digest-bump PR. Findings are not
+dismissed to turn the card green.
+
 ## Deployment order
 
 1. Create the S3 bucket, lifecycle, writer, and restore-reader credentials.

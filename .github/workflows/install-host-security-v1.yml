@@ -1,0 +1,104 @@
+name: Install HOST_SECURITY_V1 in production
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Reviewed commit SHA to install
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c3po-host-security-install
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out reviewed assets
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Configure production transport
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_host_security
+          chmod 600 ~/.ssh/c3po_host_security
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload the versioned host contract
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          scp -i ~/.ssh/c3po_host_security \
+            ops/apt/52c3po-security-upgrades \
+            ops/systemd/c3po-host-security-snapshot.service \
+            ops/systemd/c3po-host-security-snapshot.timer \
+            scripts/c3po-host-security-snapshot.py \
+            "$USER@$HOST:/tmp/"
+
+      - name: Install, verify, and take the first snapshot
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_host_security "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          if ! dpkg-query -W unattended-upgrades python3-apt >/dev/null 2>&1; then
+            sudo apt-get install --yes unattended-upgrades python3-apt
+          fi
+          sudo install -o root -g root -m 0644 \
+            /tmp/52c3po-security-upgrades /etc/apt/apt.conf.d/52c3po-security-upgrades
+          sudo install -o root -g root -m 0755 \
+            /tmp/c3po-host-security-snapshot.py /usr/local/sbin/c3po-host-security-snapshot
+          sudo install -o root -g root -m 0644 \
+            /tmp/c3po-host-security-snapshot.service \
+            /etc/systemd/system/c3po-host-security-snapshot.service
+          sudo install -o root -g root -m 0644 \
+            /tmp/c3po-host-security-snapshot.timer \
+            /etc/systemd/system/c3po-host-security-snapshot.timer
+          sudo install -d -o root -g ubuntu -m 0755 \
+            /opt/chief-of-staff-digital/runtime/security
+          sudo systemd-analyze verify \
+            /etc/systemd/system/c3po-host-security-snapshot.service \
+            /etc/systemd/system/c3po-host-security-snapshot.timer
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now c3po-host-security-snapshot.timer
+          sudo systemctl start c3po-host-security-snapshot.service
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('/opt/chief-of-staff-digital/runtime/security/host-os-vulnerability-report.json')
+          report = json.loads(path.read_text(encoding='utf-8'))
+          policy = report['unattended_upgrades']
+          assert policy['installed'] is True
+          assert policy['enabled'] is True
+          assert policy['active'] is True
+          assert policy['security_only'] is True
+          assert policy['automatic_reboot'] is False
+          print(json.dumps({
+              'security_only': policy['security_only'],
+              'automatic_reboot': policy['automatic_reboot'],
+              'security_updates_pending': report['updates']['security_pending'],
+              'reboot_required': report['reboot_required'],
+              'report_sha256': report['report_sha256'],
+          }, sort_keys=True))
+          PY
+          rm -f \
+            /tmp/52c3po-security-upgrades \
+            /tmp/c3po-host-security-snapshot.py \
+            /tmp/c3po-host-security-snapshot.service \
+            /tmp/c3po-host-security-snapshot.timer
+          REMOTE

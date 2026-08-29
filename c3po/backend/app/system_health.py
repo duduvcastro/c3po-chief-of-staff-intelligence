@@ -1245,17 +1245,30 @@ class SystemHealthService:
             )
         stale = now - generated_at > timedelta(hours=36)
         dependabot = report.get("dependabot") or {}
+        operating_system = report.get("operating_system") or {}
+        production_images = report.get("production_images") or {}
         governance = report.get("governance") or {}
         drift = governance.get("drift") or []
         open_total = int(dependabot.get("open_total") or 0)
         status = "offline" if stale else str(report.get("status") or "offline")
+        layers_complete = bool(operating_system) and bool(production_images)
+        if not layers_complete and status == "healthy":
+            status = "attention"
+        os_pending = operating_system.get("security_updates_pending")
+        image_total = production_images.get("finding_total")
+        layer_detail = (
+            f"repo {open_total} · SO {os_pending if os_pending is not None else '?'} · "
+            f"imagens {image_total if image_total is not None else '?'}"
+        )
         if stale:
             detail = "Atestado diário vencido há mais de 36h"
         elif drift:
             fields = ", ".join(str(item.get("field")) for item in drift)
-            detail = f"Drift de governança: {fields} · Dependabot {open_total} aberto(s)"
+            detail = f"Drift de governança: {fields} · {layer_detail}"
+        elif not layers_complete:
+            detail = f"Camadas de servidor aguardando primeiro atestado · {layer_detail}"
         else:
-            detail = f"Baseline íntegra · Dependabot {open_total} aberto(s)"
+            detail = f"Baseline íntegra · {layer_detail}"
         return IntegrationHealth(
             name="Governança & Vulnerabilidades",
             status=status,
@@ -1266,6 +1279,9 @@ class SystemHealthService:
                 "generated_at": generated_at.isoformat(),
                 "baseline_sha256": str((report.get("baseline") or {}).get("sha256") or ""),
                 "dependabot": dependabot,
+                "operating_system": operating_system,
+                "production_images": production_images,
+                "known_vulnerabilities": report.get("known_vulnerabilities") or {},
                 "governance_checks": governance.get("checks") or [],
                 "drift_fields": [str(item.get("field")) for item in drift],
                 "stale": stale,

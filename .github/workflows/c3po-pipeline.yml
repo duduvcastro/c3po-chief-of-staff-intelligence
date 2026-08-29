@@ -174,6 +174,28 @@ jobs:
             --tag c3po/web:pr-validation \
             c3po/frontend
 
+      - name: Scan pull-request images with pinned Trivy
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 scripts/c3po_trivy_scan.py \
+            --scope pull_request_build \
+            --revision "$GITHUB_SHA" \
+            --image backend=c3po/backend:pr-validation \
+            --image web=c3po/web:pr-validation \
+            --output "$RUNNER_TEMP/c3po-trivy-pull-request.json"
+
+      - name: Publish pull-request image scan
+        if: github.event_name == 'pull_request' && always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: c3po-trivy-pull-request-${{ github.sha }}
+          path: ${{ runner.temp }}/c3po-trivy-pull-request.json
+          if-no-files-found: warn
+          retention-days: 14
+
   deploy-production:
     name: Deploy production
     needs: [sensitive-files, secret-scan, backend-tests, python-type-check, frontend-build]
@@ -208,6 +230,28 @@ jobs:
             c3po/frontend
           test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/backend:production)" = "$REVISION"
           test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/web:production)" = "$REVISION"
+
+      - name: Scan production build with pinned Trivy
+        continue-on-error: true
+        env:
+          REVISION: ${{ steps.revision.outputs.sha }}
+        run: |
+          python3 scripts/c3po_trivy_scan.py \
+            --scope production_build \
+            --revision "$REVISION" \
+            --image backend=c3po/backend:production \
+            --image web=c3po/web:production \
+            --output "$RUNNER_TEMP/c3po-trivy-production-build.json"
+
+      - name: Publish production build scan
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: c3po-trivy-production-build-${{ steps.revision.outputs.sha }}
+          path: ${{ runner.temp }}/c3po-trivy-production-build.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Package production images
         env:
@@ -314,6 +358,7 @@ jobs:
             --exclude='output/' \
             --exclude='outputs/' \
             --exclude='tmp/' \
+            --exclude='runtime/' \
             --exclude='c3po/data/' \
             --exclude='whatsapp_session/' \
             "$RELEASE_DIR/" "$APP_DIR/"

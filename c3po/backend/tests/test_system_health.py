@@ -78,7 +78,7 @@ class _Database:
 
     def latest_governance_vulnerability_report(self):
         report = {
-            "schema": "C3PO_GOVERNANCE_VULNERABILITY_REPORT-v1",
+            "schema": "C3PO_GOVERNANCE_VULNERABILITY_REPORT-v2",
             "session_date": self.now.date().isoformat(),
             "repository": "duduvcastro/c3po-chief-of-staff-intelligence",
             "branch": "main",
@@ -89,6 +89,23 @@ class _Database:
                 "open_total": 0,
                 "by_severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
             },
+            "operating_system": {
+                "status": "healthy",
+                "available": True,
+                "security_updates_pending": 0,
+                "all_updates_pending": 3,
+                "reboot_required": False,
+                "generated_at": self.now.isoformat(),
+            },
+            "production_images": {
+                "status": "healthy",
+                "available": True,
+                "finding_total": 0,
+                "by_severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+                "image_count": 3,
+                "generated_at": self.now.isoformat(),
+            },
+            "known_vulnerabilities": {"critical": 0, "high": 0, "medium": 0, "low": 0},
             "governance": {
                 "status": "healthy",
                 "checks": [{
@@ -485,7 +502,9 @@ def test_governance_card_exposes_counts_contract_and_hash_metadata() -> None:
     item = governance.items[0]
 
     assert item.status == "healthy"
-    assert item.detail == "Baseline íntegra · Dependabot 0 aberto(s)"
+    assert item.detail == "Baseline íntegra · repo 0 · SO 0 · imagens 0"
+    assert item.metadata["operating_system"]["reboot_required"] is False
+    assert item.metadata["production_images"]["image_count"] == 3
     assert item.metadata["kind"] == "governance_vulnerabilities"
     assert item.metadata["dependabot"]["by_severity"]["critical"] == 0
     assert item.metadata["governance_checks"][0]["label"] == "Branch protection"
