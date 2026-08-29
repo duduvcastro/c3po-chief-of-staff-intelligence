@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     auth_cookie_secure: bool = True
     public_url: str = "https://c3po.eduardocastro.com.br"
     system_health_external_timeout_seconds: float = 6.0
+    system_health_probe_timeout_seconds: float = Field(default=2.0, ge=0.25, le=5.0)
     github_api_url: str = "https://api.github.com"
     github_repository: str = "duduvcastro/c3po-chief-of-staff-intelligence"
     github_governance_token: str = Field(
