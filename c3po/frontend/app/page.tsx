@@ -2065,7 +2065,7 @@ function UserAvatar({
   return (
     <div className={`${className ?? ""}${customMark ? " user-avatar-mark" : ""}`.trim()}>
       {eduardoMark
-        ? <img alt="Eduardo Castro" src="/eduardo-castro-mark.svg?v=1" />
+        ? <img alt="Dudu Castro" src="/eduardo-castro-mark.svg?v=1" />
         : ninaMark
         ? <img alt="Nina Castro" src="/nina-castro-mark.svg?v=1" />
         : profileInitials(displayName, email)}

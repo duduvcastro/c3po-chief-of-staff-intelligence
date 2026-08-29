@@ -86,7 +86,7 @@ def test_alerts_are_persistently_marked_read() -> None:
         subject_type="auth_session",
         subject_id="alert-read-test",
         detail={
-            "display_name": "Eduardo Castro",
+            "display_name": "Dudu Castro",
             "role": "owner",
             "requested_ip": "127.0.0.1",
             "client_info": {
