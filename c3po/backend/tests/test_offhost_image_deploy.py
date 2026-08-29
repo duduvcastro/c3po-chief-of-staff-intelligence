@@ -7,6 +7,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 PIPELINE = ROOT / ".github" / "workflows" / "c3po-pipeline.yml"
 COMPOSE = ROOT / "c3po" / "compose.yml"
+FRONTEND_DOCKERFILE = ROOT / "c3po" / "frontend" / "Dockerfile"
+FRONTEND_DOCKERIGNORE = ROOT / "c3po" / "frontend" / ".dockerignore"
 
 
 def test_all_application_services_use_the_two_named_images() -> None:
@@ -66,3 +68,16 @@ def test_v1_does_not_add_a_registry_or_registry_credentials() -> None:
 
     assert "ghcr.io" not in workflow
     assert "docker login" not in workflow
+
+
+def test_frontend_image_uses_the_ci_package_manager_and_excludes_build_state() -> None:
+    dockerfile = FRONTEND_DOCKERFILE.read_text(encoding="utf-8")
+    dockerignore = set(
+        FRONTEND_DOCKERIGNORE.read_text(encoding="utf-8").splitlines()
+    )
+
+    assert "ARG PNPM_VERSION=10.15.0" in dockerfile
+    assert "corepack prepare pnpm@$PNPM_VERSION --activate" in dockerfile
+    assert "pnpm install --frozen-lockfile" in dockerfile
+    assert "--frozen-lockfile=false" not in dockerfile
+    assert {"node_modules", ".next", "out"} <= dockerignore
