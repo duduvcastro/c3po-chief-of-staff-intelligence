@@ -2,8 +2,9 @@ import Foundation
 
 @MainActor
 final class AgentModel: ObservableObject {
-    private static let syncSchemaVersion = 4
+    private static let syncSchemaVersion = 5
     private static let eventSnapshotVersion = 2
+    private static let syncBatchSize = 50
     @Published var server = UserDefaults.standard.string(forKey: "server") ?? "https://c3po.eduardocastro.com.br"
     @Published var pairingCode = ""
     @Published var status = "Aguardando pareamento"
@@ -104,29 +105,89 @@ final class AgentModel: ObservableObject {
                 )
             }
             let needsFullCalendarSnapshot = storedEventSnapshotVersion != Self.eventSnapshotVersion
-            let response = try await APIClient(serverURL: url).sync(
-                SyncRequest(
-                    cursor: cursor,
-                    replayDeletedSince: storedSchemaVersion == Self.syncSchemaVersion ? nil : .distantPast,
-                    calendarAuthorized: calendarAuthorized,
-                    remindersAuthorized: remindersAuthorized,
-                    items: localItems,
-                    calendarSnapshot: calendarAuthorized && needsFullCalendarSnapshot
+            let client = APIClient(serverURL: url)
+            var nextCursor = cursor
+            if storedSchemaVersion != Self.syncSchemaVersion {
+                nextCursor = try await exchange(
+                    client: client,
+                    token: token,
+                    cursor: nextCursor,
+                    replayDeletedSince: .distantPast,
+                    items: [],
+                    calendarSnapshot: nil,
+                    calendarSnapshotStart: nil,
+                    calendarSnapshotEnd: nil
+                )
+            }
+
+            let batches = stride(from: 0, to: localItems.count, by: Self.syncBatchSize).map {
+                Array(localItems[$0..<min($0 + Self.syncBatchSize, localItems.count)])
+            }
+            let needsRegularExchange = storedSchemaVersion == Self.syncSchemaVersion
+                || needsFullCalendarSnapshot
+            let requestBatches = batches.isEmpty && needsRegularExchange
+                ? [[]]
+                : batches
+            for (index, items) in requestBatches.enumerated() {
+                let includesSnapshot = index == requestBatches.count - 1
+                nextCursor = try await exchange(
+                    client: client,
+                    token: token,
+                    cursor: nextCursor,
+                    replayDeletedSince: nil,
+                    items: items,
+                    calendarSnapshot: calendarAuthorized && needsFullCalendarSnapshot && includesSnapshot
                         ? batch.eventOccurrences
                         : nil,
-                    calendarSnapshotStart: calendarAuthorized && needsFullCalendarSnapshot
+                    calendarSnapshotStart: calendarAuthorized && needsFullCalendarSnapshot && includesSnapshot
                         ? batch.windowStart
                         : nil,
-                    calendarSnapshotEnd: calendarAuthorized && needsFullCalendarSnapshot
+                    calendarSnapshotEnd: calendarAuthorized && needsFullCalendarSnapshot && includesSnapshot
                         ? batch.windowEnd
                         : nil
-                ),
-                token: token
-            )
-            let acknowledgements = try eventKit.apply(response.items)
-            if !acknowledgements.isEmpty {
-                _ = try await APIClient(serverURL: url).sync(
-                    SyncRequest(
+                )
+            }
+
+            localItems.removeAll()
+            let now = Date()
+            UserDefaults.standard.set(nextCursor, forKey: "serverCursor")
+            UserDefaults.standard.set(now, forKey: "localCursor")
+            UserDefaults.standard.set(Self.syncSchemaVersion, forKey: "syncSchemaVersion")
+            saveEventSnapshot(batch.eventOccurrences)
+            lastSync = now
+            status = "Sincronização ativa"
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+
+    private func exchange(
+        client: APIClient,
+        token: String,
+        cursor: Date?,
+        replayDeletedSince: Date?,
+        items: [LeahItem],
+        calendarSnapshot: [EventOccurrence]?,
+        calendarSnapshotStart: Date?,
+        calendarSnapshotEnd: Date?
+    ) async throws -> Date {
+        let response = try await client.sync(
+            SyncRequest(
+                cursor: cursor,
+                replayDeletedSince: replayDeletedSince,
+                calendarAuthorized: calendarAuthorized,
+                remindersAuthorized: remindersAuthorized,
+                items: items,
+                calendarSnapshot: calendarSnapshot,
+                calendarSnapshotStart: calendarSnapshotStart,
+                calendarSnapshotEnd: calendarSnapshotEnd
+            ),
+            token: token
+        )
+        let acknowledgements = try eventKit.apply(response.items)
+        if !acknowledgements.isEmpty {
+            _ = try await client.sync(
+                SyncRequest(
                     cursor: response.cursor,
                     replayDeletedSince: nil,
                     calendarAuthorized: calendarAuthorized,
@@ -136,20 +197,10 @@ final class AgentModel: ObservableObject {
                     calendarSnapshotStart: nil,
                     calendarSnapshotEnd: nil
                 ),
-                    token: token
-                )
-            }
-            localItems.removeAll()
-            let now = Date()
-            UserDefaults.standard.set(response.cursor, forKey: "serverCursor")
-            UserDefaults.standard.set(now, forKey: "localCursor")
-            UserDefaults.standard.set(Self.syncSchemaVersion, forKey: "syncSchemaVersion")
-            saveEventSnapshot(batch.eventOccurrences)
-            lastSync = now
-            status = "Sincronização ativa"
-        } catch {
-            status = error.localizedDescription
+                token: token
+            )
         }
+        return response.cursor
     }
 
     func disconnect() {

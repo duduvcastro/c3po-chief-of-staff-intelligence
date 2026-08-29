@@ -131,9 +131,13 @@ def test_eventkit_delete_uses_the_calendar_item_identifier_lookup() -> None:
 
     assert "store.calendarItem(withIdentifier: identifier) as? EKEvent" in source
     assert "try store.remove(existingEvent, span: .thisEvent, commit: true)" in source
-    assert "private static let syncSchemaVersion = 4" in model_source
+    assert "private static let syncSchemaVersion = 5" in model_source
+    assert "private static let syncBatchSize = 50" in model_source
     assert "let cursor = UserDefaults.standard.object(forKey: \"serverCursor\") as? Date" in model_source
-    assert "replayDeletedSince: storedSchemaVersion == Self.syncSchemaVersion ? nil : .distantPast" in model_source
+    assert "if storedSchemaVersion != Self.syncSchemaVersion" in model_source
+    assert "replayDeletedSince: .distantPast" in model_source
+    assert "stride(from: 0, to: localItems.count, by: Self.syncBatchSize)" in model_source
+    assert "UserDefaults.standard.set(nextCursor, forKey: \"serverCursor\")" in model_source
 
 
 def test_recurring_event_occurrences_with_same_external_id_are_preserved() -> None:
