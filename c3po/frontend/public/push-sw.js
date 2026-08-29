@@ -8,8 +8,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "C3PO";
   event.waitUntil(self.registration.showNotification(title, {
     body: payload.body || "Novo alerta operacional",
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    icon: "/c3po-icon-192-v2.png",
+    badge: "/c3po-icon-192-v2.png",
     data: {
       deepLink: payload.deep_link || "/",
       category: payload.category || "unknown"
