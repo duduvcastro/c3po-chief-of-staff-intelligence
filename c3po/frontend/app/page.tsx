@@ -2346,9 +2346,9 @@ function PushNotificationPanel({ isAdmin }: { isAdmin: boolean }) {
       if (result.sent <= 0) {
         setMessage("Nenhuma assinatura recebeu o teste");
       } else if (localSubscription) {
-        setMessage(`Teste enviado para ${result.sent} assinatura(s); este aparelho tem assinatura ativa`);
+        setMessage(`Teste enviado para ${result.sent} assinatura(s); este aparelho tem uma assinatura local`);
       } else {
-        setError("Teste aceito pelo servidor, mas ESTE aparelho não tem assinatura ativa — toque em Ativar alertas e repita.");
+        setError("Teste aceito pelo servidor, mas ESTE aparelho não tem assinatura local — toque em Ativar alertas e repita.");
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Falha ao enviar teste");
