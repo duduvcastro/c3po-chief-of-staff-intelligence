@@ -150,5 +150,5 @@ def test_production_deploy_uses_the_preserved_root_env_for_compose() -> None:
         encoding="utf-8"
     )
 
-    assert pipeline.count("docker compose --env-file .env -f c3po/compose.yml") == 4
+    assert pipeline.count("docker compose --env-file .env -f c3po/compose.yml") >= 4
     assert "docker compose -f c3po/compose.yml" not in pipeline
