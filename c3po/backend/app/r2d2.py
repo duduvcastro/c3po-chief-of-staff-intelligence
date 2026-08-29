@@ -155,6 +155,7 @@ def _episode_summary_from_trades(
     """Consolidate immutable ledger legs into strategy-eligible flat-to-flat episodes."""
     open_episodes: dict[tuple[str, str], dict[str, Any]] = {}
     positive = negative = flat = 0
+    closed_details: list[dict[str, Any]] = []
     ordered = sorted(
         trades,
         key=lambda item: (
@@ -180,6 +181,7 @@ def _episode_summary_from_trades(
                 "quantity": 0.0,
                 "realized_pnl_usd": 0.0,
                 "strategy_excluded": False,
+                "first_trade_id": str(trade.get("id") or ""),
             })
             state["quantity"] += quantity
             state["strategy_excluded"] = bool(
@@ -216,6 +218,13 @@ def _episode_summary_from_trades(
                 negative += 1
             else:
                 flat += 1
+            closed_details.append({
+                "episode_id": f"{key[0]}:{key[1]}:{state.get('first_trade_id', '')}",
+                "market": key[0],
+                "symbol": key[1],
+                "net_realized_pnl_usd": round(pnl, 6),
+                "closed_at": executed_at,
+            })
         del open_episodes[key]
 
     decided = positive + negative
@@ -227,6 +236,7 @@ def _episode_summary_from_trades(
         "negative_episodes": negative,
         "flat_episodes": flat,
         "win_rate_percent": round(positive / decided * 100, 2) if decided else 0.0,
+        "closed_episode_details": closed_details,
     }
 
 
