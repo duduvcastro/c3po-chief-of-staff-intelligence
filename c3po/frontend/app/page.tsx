@@ -58,6 +58,7 @@ import {
   Trash2,
   Users,
   WalletCards,
+  Watch,
   Wind,
   X
 } from "lucide-react";
@@ -2393,6 +2394,88 @@ function PushNotificationPanel({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+interface WatchDevicePayload {
+  id: string;
+  name: string;
+  created_at: string;
+  last_seen_at: string | null;
+  revoked_at: string | null;
+}
+
+function WatchDevicePanel() {
+  const [devices, setDevices] = useState<WatchDevicePayload[]>([]);
+  const [name, setName] = useState("Apple Watch");
+  const [issuedToken, setIssuedToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    const response = await fetch(`${API_URL}/api/v1/watch/devices`, {
+      cache: "no-store", credentials: "include"
+    });
+    if (!response.ok) throw new Error("Não foi possível consultar os relógios");
+    const payload = await response.json() as { items: WatchDevicePayload[] };
+    setDevices(payload.items);
+  }, []);
+
+  useEffect(() => { void load().catch((reason: Error) => setError(reason.message)); }, [load]);
+
+  async function issue() {
+    setBusy(true); setError(""); setIssuedToken("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/watch/device-tokens`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Não foi possível emitir a credencial");
+      setIssuedToken(payload.watch_device_token);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Falha ao emitir credencial");
+    } finally { setBusy(false); }
+  }
+
+  async function revoke(id: string) {
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/watch/devices/${id}`, {
+        method: "DELETE", credentials: "include"
+      });
+      if (!response.ok) throw new Error("Não foi possível revogar o relógio");
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Falha ao revogar relógio");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <section className="profile-panel-section profile-watch">
+      <div className="profile-panel-section-title"><Watch size={15} /><span>EC Ops Watch</span></div>
+      <div className="profile-watch-issue">
+        <input value={name} onChange={(event) => setName(event.target.value)} maxLength={120} aria-label="Nome do relógio" />
+        <button type="button" onClick={() => void issue()} disabled={busy || !name.trim()}>Emitir credencial</button>
+      </div>
+      {issuedToken && (
+        <div className="profile-watch-token">
+          <code>{issuedToken}</code>
+          <button type="button" onClick={() => void navigator.clipboard.writeText(issuedToken)}>Copiar</button>
+        </div>
+      )}
+      <div className="profile-watch-devices">
+        {devices.filter((device) => !device.revoked_at).map((device) => (
+          <div key={device.id}>
+            <span><strong>{device.name}</strong><small>{device.last_seen_at ? `Visto ${formatRecordDate(device.last_seen_at)}` : "Ainda não registrado"}</small></span>
+            <button type="button" onClick={() => void revoke(device.id)} disabled={busy} aria-label={`Revogar ${device.name}`}><Trash2 size={14} /></button>
+          </div>
+        ))}
+      </div>
+      {error && <p className="profile-totp-error">{error}</p>}
+    </section>
+  );
+}
+
 function ProfilePanel({
   session,
   items,
@@ -2467,6 +2550,7 @@ function ProfilePanel({
 
         <TotpSecurityPanel initiallyEnabled={session.totp_enabled} />
         <PushNotificationPanel isAdmin={session.is_admin} />
+        {session.is_admin && <WatchDevicePanel />}
 
         <div className="profile-panel-actions">
           <button type="button" onClick={() => { onClose(); onLogout(); }}>

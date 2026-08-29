@@ -14,9 +14,14 @@ SESSION_DATE = date(2026, 8, 20)
 class _Notifications:
     def __init__(self) -> None:
         self.sent: list[dict] = []
+        self.complication_refreshes: list[dict] = []
 
     def notify(self, **kwargs) -> dict:
         self.sent.append(kwargs)
+        return {"status": "sent"}
+
+    def refresh_watch_complication(self, **kwargs) -> dict:
+        self.complication_refreshes.append(kwargs)
         return {"status": "sent"}
 
 

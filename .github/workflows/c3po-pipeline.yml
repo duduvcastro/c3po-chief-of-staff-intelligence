@@ -295,6 +295,10 @@ jobs:
           USER: ${{ secrets.C3PO_AWS_USER }}
           PUSH_PRIVATE: ${{ secrets.C3PO_PUSH_VAPID_PRIVATE_KEY }}
           PUSH_PUBLIC: ${{ secrets.C3PO_PUSH_VAPID_PUBLIC_KEY }}
+          WATCH_PRIVATE: ${{ secrets.C3PO_WATCH_APNS_PRIVATE_KEY }}
+          WATCH_KEY_ID: ${{ secrets.C3PO_WATCH_APNS_KEY_ID }}
+          WATCH_TEAM_ID: ${{ secrets.C3PO_WATCH_APNS_TEAM_ID }}
+          WATCH_BUNDLE_ID: ${{ secrets.C3PO_WATCH_APNS_BUNDLE_ID }}
         run: |
           test -n "$PUSH_PRIVATE"
           test -n "$PUSH_PUBLIC"
@@ -303,10 +307,34 @@ jobs:
             printf 'C3PO_PUSH_VAPID_PRIVATE_KEY=%s\n' "$PUSH_PRIVATE"
             printf 'C3PO_PUSH_VAPID_PUBLIC_KEY=%s\n' "$PUSH_PUBLIC"
           } > /tmp/c3po-push.env
+          watch_values=("$WATCH_PRIVATE" "$WATCH_KEY_ID" "$WATCH_TEAM_ID" "$WATCH_BUNDLE_ID")
+          configured=0
+          for value in "${watch_values[@]}"; do
+            if [ -n "$value" ]; then
+              configured=$((configured + 1))
+            fi
+          done
+          if [ "$configured" -ne 0 ]; then
+            test "$configured" -eq 4
+            printf '%s\n' "$WATCH_PRIVATE" > /tmp/c3po-watch-apns.p8
+            chmod 600 /tmp/c3po-watch-apns.p8
+            {
+              printf 'C3PO_WATCH_APNS_PRIVATE_KEY_HOST_PATH=%s\n' \
+                '/opt/chief-of-staff-digital/runtime/secrets/watch-apns.p8'
+              printf 'C3PO_WATCH_APNS_KEY_ID=%s\n' "$WATCH_KEY_ID"
+              printf 'C3PO_WATCH_APNS_TEAM_ID=%s\n' "$WATCH_TEAM_ID"
+              printf 'C3PO_WATCH_APNS_BUNDLE_ID=%s\n' "$WATCH_BUNDLE_ID"
+              printf 'C3PO_WATCH_APNS_ENVIRONMENT=%s\n' 'production'
+            } >> /tmp/c3po-push.env
+          fi
           scp -i ~/.ssh/c3po_deploy \
             /tmp/c3po-push.env \
             "$USER@$HOST:/tmp/c3po-push-${{ steps.revision.outputs.sha }}.env"
-          rm -f /tmp/c3po-push.env
+          if [ -f /tmp/c3po-watch-apns.p8 ]; then
+            scp -i ~/.ssh/c3po_deploy /tmp/c3po-watch-apns.p8 \
+              "$USER@$HOST:/tmp/c3po-watch-apns-${{ steps.revision.outputs.sha }}.p8"
+          fi
+          rm -f /tmp/c3po-push.env /tmp/c3po-watch-apns.p8
 
       - name: Deploy and verify
         env:
@@ -324,6 +352,7 @@ jobs:
           IMAGE_SHA256="${IMAGE_ARCHIVE}.sha256"
           RELEASE_DIR="/tmp/c3po-release-${REVISION}"
           PUSH_ENV="/tmp/c3po-push-${REVISION}.env"
+          WATCH_KEY="/tmp/c3po-watch-apns-${REVISION}.p8"
           PREVIOUS_REVISION=$(cat "$APP_DIR/.deploy-version" 2>/dev/null || printf 'unknown')
 
           cd /tmp
@@ -391,6 +420,12 @@ jobs:
           target.chmod(0o600)
           staged.unlink()
           PY
+
+          if [ -f "$WATCH_KEY" ]; then
+            install -m 700 -d "$APP_DIR/runtime/secrets"
+            install -m 600 "$WATCH_KEY" "$APP_DIR/runtime/secrets/watch-apns.p8"
+            rm -f "$WATCH_KEY"
+          fi
 
           cd "$APP_DIR"
           C3PO_BUILD_SHA="$REVISION" docker compose --env-file .env -f c3po/compose.yml config --quiet

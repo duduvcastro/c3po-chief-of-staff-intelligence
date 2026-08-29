@@ -1,4 +1,5 @@
 import json
+import hmac
 import logging
 import re
 import threading
@@ -39,6 +40,9 @@ class Database:
         self._push_subscriptions: list[dict[str, Any]] = []
         self._push_notification_events: dict[str, dict[str, Any]] = {}
         self._push_delivery_events: list[dict[str, Any]] = []
+        self._watch_device_credentials: list[dict[str, Any]] = []
+        self._watch_subscriptions: list[dict[str, Any]] = []
+        self._watch_delivery_events: list[dict[str, Any]] = []
         self._realtime_portfolio: dict[str, dict[str, Any]] = {}
         self._ir_companies: dict[tuple[str, str], dict[str, Any]] = {}
         self._ir_security_map: dict[tuple[str, str], str] = {}
@@ -313,6 +317,235 @@ class Database:
         with self.connection() as connection:
             connection.execute(
                 """INSERT INTO push_delivery_events
+                   (id, event_key, subscription_id, category, status,
+                    response_status, error_class, attempted_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                tuple(payload.values()),
+            )
+            connection.commit()
+
+    def create_watch_device_credential(
+        self,
+        *,
+        user_email: str,
+        name: str,
+        token_sha256: str,
+        at: datetime,
+    ) -> dict[str, Any]:
+        item = {
+            "id": str(uuid4()),
+            "user_email": user_email,
+            "name": name,
+            "token_sha256": token_sha256,
+            "created_at": at,
+            "last_seen_at": None,
+            "revoked_at": None,
+        }
+        if not self.database_url:
+            self._watch_device_credentials.append(item.copy())
+            return item
+        with self.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO watch_device_credentials
+                   (id, user_email, name, token_sha256, created_at)
+                   VALUES (%s,%s,%s,%s,%s)
+                   RETURNING id::text, user_email, name, token_sha256,
+                             created_at, last_seen_at, revoked_at""",
+                (item["id"], user_email, name, token_sha256, at),
+            ).fetchone()
+            connection.commit()
+        keys = ("id", "user_email", "name", "token_sha256", "created_at", "last_seen_at", "revoked_at")
+        return dict(zip(keys, row))
+
+    def authenticate_watch_device(self, token_sha256: str, *, at: datetime) -> dict[str, Any] | None:
+        if not self.database_url:
+            with self._auth_lock:
+                for item in self._watch_device_credentials:
+                    if not item.get("revoked_at") and hmac.compare_digest(item["token_sha256"], token_sha256):
+                        item["last_seen_at"] = at
+                        return item.copy()
+            return None
+        with self.connection() as connection:
+            row = connection.execute(
+                """UPDATE watch_device_credentials
+                   SET last_seen_at=%s
+                   WHERE token_sha256=%s AND revoked_at IS NULL
+                   RETURNING id::text, user_email, name, token_sha256,
+                             created_at, last_seen_at, revoked_at""",
+                (at, token_sha256),
+            ).fetchone()
+            connection.commit()
+        if not row:
+            return None
+        keys = ("id", "user_email", "name", "token_sha256", "created_at", "last_seen_at", "revoked_at")
+        return dict(zip(keys, row))
+
+    def save_watch_subscription(
+        self,
+        *,
+        credential_id: str,
+        user_email: str,
+        device_token: str,
+        categories: list[str],
+        at: datetime,
+    ) -> dict[str, Any]:
+        item = {
+            "id": str(uuid4()),
+            "credential_id": credential_id,
+            "user_email": user_email,
+            "device_token": device_token,
+            "categories": sorted(set(categories)),
+            "created_at": at,
+            "revoked_at": None,
+        }
+        if not self.database_url:
+            with self._auth_lock:
+                for existing in self._watch_subscriptions:
+                    if (
+                        existing["credential_id"] == credential_id
+                        or existing["device_token"] == device_token
+                    ) and not existing.get("revoked_at"):
+                        existing["revoked_at"] = at
+                self._watch_subscriptions.append(item.copy())
+            return item
+        with self.connection() as connection:
+            connection.execute(
+                """UPDATE watch_push_subscriptions SET revoked_at=%s
+                   WHERE (credential_id=%s OR device_token=%s) AND revoked_at IS NULL""",
+                (at, credential_id, device_token),
+            )
+            row = connection.execute(
+                """INSERT INTO watch_push_subscriptions
+                   (id, credential_id, user_email, device_token, categories, created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s)
+                   RETURNING id::text, credential_id::text, user_email, device_token,
+                             categories, created_at, revoked_at""",
+                (item["id"], credential_id, user_email, device_token, item["categories"], at),
+            ).fetchone()
+            connection.commit()
+        keys = ("id", "credential_id", "user_email", "device_token", "categories", "created_at", "revoked_at")
+        return dict(zip(keys, row))
+
+    def list_active_watch_subscriptions(
+        self,
+        *,
+        category: str | None = None,
+        user_email: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not self.database_url:
+            return [
+                item.copy() for item in self._watch_subscriptions
+                if not item.get("revoked_at")
+                and (user_email is None or item["user_email"] == user_email)
+                and (category is None or category in item["categories"])
+            ]
+        clauses = ["subscription.revoked_at IS NULL", "credential.revoked_at IS NULL"]
+        params: list[Any] = []
+        if category is not None:
+            clauses.append("%s = ANY(subscription.categories)")
+            params.append(category)
+        if user_email is not None:
+            clauses.append("subscription.user_email=%s")
+            params.append(user_email)
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""SELECT subscription.id::text, subscription.credential_id::text,
+                            subscription.user_email, subscription.device_token,
+                            subscription.categories, subscription.created_at,
+                            subscription.revoked_at
+                    FROM watch_push_subscriptions AS subscription
+                    JOIN watch_device_credentials AS credential
+                      ON credential.id=subscription.credential_id
+                    WHERE {' AND '.join(clauses)}
+                    ORDER BY subscription.created_at""",
+                tuple(params),
+            ).fetchall()
+        keys = ("id", "credential_id", "user_email", "device_token", "categories", "created_at", "revoked_at")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def revoke_watch_device(self, credential_id: str, *, at: datetime) -> bool:
+        if not self.database_url:
+            changed = False
+            with self._auth_lock:
+                for item in self._watch_device_credentials:
+                    if item["id"] == credential_id and not item.get("revoked_at"):
+                        item["revoked_at"] = at
+                        changed = True
+                for item in self._watch_subscriptions:
+                    if item["credential_id"] == credential_id and not item.get("revoked_at"):
+                        item["revoked_at"] = at
+            return changed
+        with self.connection() as connection:
+            changed = connection.execute(
+                "UPDATE watch_device_credentials SET revoked_at=%s WHERE id=%s AND revoked_at IS NULL",
+                (at, credential_id),
+            ).rowcount
+            connection.execute(
+                "UPDATE watch_push_subscriptions SET revoked_at=%s WHERE credential_id=%s AND revoked_at IS NULL",
+                (at, credential_id),
+            )
+            connection.commit()
+        return bool(changed)
+
+    def list_watch_devices(self, *, user_email: str) -> list[dict[str, Any]]:
+        if not self.database_url:
+            return [
+                item.copy() for item in self._watch_device_credentials
+                if item["user_email"] == user_email
+            ]
+        with self.connection() as connection:
+            rows = connection.execute(
+                """SELECT id::text, user_email, name, created_at, last_seen_at, revoked_at
+                   FROM watch_device_credentials
+                   WHERE user_email=%s ORDER BY created_at DESC""",
+                (user_email,),
+            ).fetchall()
+        keys = ("id", "user_email", "name", "created_at", "last_seen_at", "revoked_at")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def revoke_watch_subscription(self, credential_id: str, *, at: datetime) -> bool:
+        if not self.database_url:
+            changed = False
+            for item in self._watch_subscriptions:
+                if item["credential_id"] == credential_id and not item.get("revoked_at"):
+                    item["revoked_at"] = at
+                    changed = True
+            return changed
+        with self.connection() as connection:
+            changed = connection.execute(
+                "UPDATE watch_push_subscriptions SET revoked_at=%s WHERE credential_id=%s AND revoked_at IS NULL",
+                (at, credential_id),
+            ).rowcount
+            connection.commit()
+        return bool(changed)
+
+    def record_watch_delivery(
+        self,
+        *,
+        event_key: str | None,
+        subscription_id: str,
+        category: str,
+        delivery_status: str,
+        response_status: int | None,
+        error_class: str | None,
+        attempted_at: datetime,
+    ) -> None:
+        payload = {
+            "id": str(uuid4()),
+            "event_key": event_key,
+            "subscription_id": subscription_id,
+            "category": category,
+            "status": delivery_status,
+            "response_status": response_status,
+            "error_class": error_class,
+            "attempted_at": attempted_at,
+        }
+        if not self.database_url:
+            self._watch_delivery_events.append(payload)
+            return
+        with self.connection() as connection:
+            connection.execute(
+                """INSERT INTO watch_push_delivery_events
                    (id, event_key, subscription_id, category, status,
                     response_status, error_class, attempted_at)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",

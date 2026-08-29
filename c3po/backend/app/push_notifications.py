@@ -11,6 +11,7 @@ from pywebpush import WebPushException, webpush
 
 from .config import Settings, get_settings
 from .database import Database
+from .watch_apns import APNsClient
 
 
 logger = logging.getLogger("c3po.push_notifications")
@@ -57,10 +58,12 @@ class PushNotificationService:
         database: Database,
         *,
         sender: Callable[..., Any] | None = None,
+        watch_sender: APNsClient | None = None,
     ) -> None:
         self.settings = settings
         self.database = database
         self.sender = sender or webpush
+        self.watch_sender = watch_sender or APNsClient(settings)
 
     @property
     def configured(self) -> bool:
@@ -68,6 +71,10 @@ class PushNotificationService:
             self.settings.push_vapid_private_key.strip()
             and self.settings.push_vapid_public_key.strip()
         )
+
+    @property
+    def watch_configured(self) -> bool:
+        return self.watch_sender.configured
 
     def status(self, user_email: str) -> dict[str, Any]:
         subscriptions = self.database.list_active_push_subscriptions(
@@ -128,15 +135,15 @@ class PushNotificationService:
         include_all_user_subscriptions: bool = False,
     ) -> dict[str, Any]:
         result = {
-            "configured": self.configured,
+            "configured": self.configured or self.watch_configured,
             "attempted": 0,
             "sent": 0,
             "failed": 0,
             "expired": 0,
         }
         try:
-            if not self.configured:
-                logger.info("Push notification skipped: VAPID is not configured")
+            if not self.configured and not self.watch_configured:
+                logger.info("Push notification skipped: no delivery channel is configured")
                 return result
             if category != TEST_CATEGORY:
                 validate_push_categories([category])
@@ -151,10 +158,6 @@ class PushNotificationService:
                 at=created_at,
             ):
                 return result
-            subscriptions = self.database.list_active_push_subscriptions(
-                category=None if include_all_user_subscriptions else category,
-                user_email=user_email,
-            )
             payload = json.dumps(
                 {
                     "category": category,
@@ -165,15 +168,42 @@ class PushNotificationService:
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
-            for subscription in subscriptions:
-                result["attempted"] += 1
-                self._deliver(
-                    subscription=subscription,
-                    payload=payload,
-                    category=category,
-                    event_key=event_key,
-                    result=result,
+            if self.configured:
+                subscriptions = self.database.list_active_push_subscriptions(
+                    category=None if include_all_user_subscriptions else category,
+                    user_email=user_email,
                 )
+                for subscription in subscriptions:
+                    result["attempted"] += 1
+                    self._deliver(
+                        subscription=subscription,
+                        payload=payload,
+                        category=category,
+                        event_key=event_key,
+                        result=result,
+                    )
+            if self.watch_configured:
+                watch_subscriptions = self.database.list_active_watch_subscriptions(
+                    category=None if include_all_user_subscriptions else category,
+                    user_email=user_email,
+                )
+                watch_payload = {
+                    "aps": {
+                        "alert": {"title": title[:120], "body": body[:500]},
+                        "sound": "default",
+                    },
+                    "category": category,
+                    "deep_link": deep_link,
+                }
+                for subscription in watch_subscriptions:
+                    result["attempted"] += 1
+                    self._deliver_watch(
+                        subscription=subscription,
+                        payload=watch_payload,
+                        category=category,
+                        event_key=event_key,
+                        result=result,
+                    )
         except Exception as exc:
             result["failed"] += 1
             logger.warning(
@@ -191,6 +221,57 @@ class PushNotificationService:
             user_email=user_email,
             include_all_user_subscriptions=True,
         )
+
+    def refresh_watch_complication(
+        self,
+        *,
+        summary: dict[str, Any],
+        event_key: str,
+    ) -> dict[str, Any]:
+        result = {"configured": self.watch_configured, "attempted": 0, "sent": 0, "failed": 0, "expired": 0}
+        try:
+            if not self.watch_configured:
+                return result
+            wins = int(summary.get("positive_episodes") or 0)
+            decided = int(summary.get("decided_episodes") or 0)
+            percent = float(summary.get("win_rate_percent") or 0.0)
+            display = f"{wins}W/{decided} · {percent:.1f}%".replace(".", ",")
+            now = datetime.now(timezone.utc)
+            if not self.database.claim_push_notification_event(
+                event_key=event_key,
+                category="watch_complication",
+                title="Session metric",
+                body=display,
+                deep_link="/",
+                at=now,
+            ):
+                return result
+            payload = {
+                "aps": {"content-available": 1},
+                "metric": {
+                    "wins": wins,
+                    "decided": decided,
+                    "win_rate_percent": percent,
+                    "display": display,
+                },
+            }
+            for subscription in self.database.list_active_watch_subscriptions():
+                result["attempted"] += 1
+                self._deliver_watch(
+                    subscription=subscription,
+                    payload=payload,
+                    category="watch_complication",
+                    event_key=event_key,
+                    result=result,
+                    push_type="background",
+                )
+        except Exception as exc:
+            result["failed"] += 1
+            logger.warning(
+                "Watch complication refresh degraded without blocking its caller: %s",
+                type(exc).__name__,
+            )
+        return result
 
     def _deliver(
         self,
@@ -253,6 +334,58 @@ class PushNotificationService:
         except Exception as exc:
             logger.warning(
                 "Push delivery diagnostics could not be persisted: %s",
+                type(exc).__name__,
+            )
+
+    def _deliver_watch(
+        self,
+        *,
+        subscription: dict[str, Any],
+        payload: dict[str, Any],
+        category: str,
+        event_key: str | None,
+        result: dict[str, Any],
+        push_type: str = "alert",
+    ) -> None:
+        attempted_at = datetime.now(timezone.utc)
+        delivery_status = "sent"
+        response_status: int | None = None
+        error_class: str | None = None
+        try:
+            response = self.watch_sender.send(
+                device_token=subscription["device_token"],
+                payload=payload,
+                push_type=push_type,
+            )
+            response_status = response.status_code
+            if response_status == 200:
+                result["sent"] += 1
+            elif response_status in {404, 410}:
+                delivery_status = "expired"
+                result["expired"] += 1
+                self.database.revoke_watch_subscription(
+                    subscription["credential_id"], at=attempted_at
+                )
+            else:
+                delivery_status = "failed"
+                result["failed"] += 1
+        except Exception as exc:
+            delivery_status = "failed"
+            error_class = type(exc).__name__
+            result["failed"] += 1
+        try:
+            self.database.record_watch_delivery(
+                event_key=event_key,
+                subscription_id=str(subscription["id"]),
+                category=category,
+                delivery_status=delivery_status,
+                response_status=response_status,
+                error_class=error_class,
+                attempted_at=attempted_at,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Watch delivery diagnostics could not be persisted: %s",
                 type(exc).__name__,
             )
 

@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -57,6 +58,12 @@ class Settings(BaseSettings):
     push_vapid_public_key: str = ""
     push_vapid_subject: str = "mailto:eu@eduardocastro.com.br"
     push_timeout_seconds: float = Field(default=3.0, ge=1.0, le=10.0)
+    watch_apns_private_key_path: Path = Path("/run/secrets/c3po-watch-apns.p8")
+    watch_apns_key_id: str = ""
+    watch_apns_team_id: str = ""
+    watch_apns_bundle_id: str = ""
+    watch_apns_environment: Literal["development", "production"] = "development"
+    watch_apns_timeout_seconds: float = Field(default=3.0, ge=1.0, le=3.0)
     healthcheck_valuation_worker_url: str = ""
     healthcheck_cash_yield_url: str = ""
     healthcheck_code_census_url: str = ""

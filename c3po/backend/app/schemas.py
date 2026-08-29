@@ -60,6 +60,43 @@ class PushTestResponse(BaseModel):
     expired: int = 0
 
 
+class WatchDeviceTokenCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class WatchDeviceTokenResponse(BaseModel):
+    id: str
+    name: str
+    watch_device_token: str
+
+
+class WatchRegisterRequest(BaseModel):
+    device_token: str = Field(min_length=64, max_length=200)
+    categories: list[PushCategory] = Field(default_factory=list, max_length=8)
+
+
+class WatchDeviceResponse(BaseModel):
+    id: str
+    user_email: str
+    name: str
+    created_at: datetime
+    last_seen_at: datetime | None = None
+    revoked_at: datetime | None = None
+
+
+class WatchDeviceListResponse(BaseModel):
+    items: list[WatchDeviceResponse]
+
+
+class WatchComplicationResponse(BaseModel):
+    session_date: date
+    wins: int
+    decided: int
+    win_rate_percent: float
+    display: str
+    generated_at: datetime
+
+
 class LeahDevice(BaseModel):
     id: str
     name: str

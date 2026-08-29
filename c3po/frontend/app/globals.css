@@ -167,6 +167,17 @@ button { cursor: pointer; }
 .profile-push-categories input { width: 17px; height: 17px; flex: 0 0 auto; accent-color: var(--green); }
 .profile-push-test { width: 100%; margin-top: 10px; color: #765a12; background: var(--gold-soft); border-color: #d7bf78; }
 .profile-push-message { margin: 9px 0 0; color: var(--green); font-size: 8px; font-weight: 800; }
+.profile-watch-issue { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.profile-watch-issue input { min-width: 0; height: 34px; padding: 0 10px; border: 1px solid #d8dce1; border-radius: 5px; background: #fff; font-size: 9px; }
+.profile-watch-issue button, .profile-watch-token button { min-height: 34px; padding: 0 10px; border: 1px solid #25282e; border-radius: 5px; color: #fff; background: #17191e; font-size: 9px; font-weight: 800; }
+.profile-watch-token { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 9px; }
+.profile-watch-token code { min-width: 0; overflow: hidden; padding: 9px; border: 1px solid #d8dce1; border-radius: 5px; background: #f5f6f7; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.profile-watch-devices { display: grid; gap: 1px; margin-top: 10px; background: #e6e8eb; border: 1px solid #e1e3e6; }
+.profile-watch-devices > div { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; background: #fafafa; }
+.profile-watch-devices span, .profile-watch-devices strong, .profile-watch-devices small { display: block; }
+.profile-watch-devices strong { font-size: 9px; }
+.profile-watch-devices small { margin-top: 3px; color: #7c8590; font-size: 8px; }
+.profile-watch-devices button { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #d8dce1; border-radius: 5px; color: #b52c24; background: #fff; }
 .profile-panel-actions { padding: 13px 18px; border-bottom: 1px solid #e4e6e9; }
 .profile-panel-actions button { width: 100%; min-height: 36px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #d8a7a4; border-radius: 5px; color: #a72f29; background: #fff8f7; font-size: 9px; font-weight: 900; }
 .profile-panel-actions button:hover { border-color: #ba4b44; background: #fceceb; }
