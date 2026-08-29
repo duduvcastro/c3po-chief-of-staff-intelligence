@@ -46,6 +46,7 @@ class PushMarketAlertsService:
         # the current slot so the first hourly push only fires at the NEXT
         # full hour (Codex audit, finding 3).
         self._last_hourly_key = self._hourly_key(datetime.now(timezone.utc))
+        self._last_complication_close_date: str | None = None
 
     @staticmethod
     def _hourly_key(now: datetime) -> str:
@@ -99,6 +100,14 @@ class PushMarketAlertsService:
         if not summary:
             return
 
+        session_key = now.astimezone(NEW_YORK).date().isoformat()
+        if now >= close_at and self._last_complication_close_date != session_key:
+            self._last_complication_close_date = session_key
+            self.push_notifications.refresh_watch_complication(
+                summary=summary,
+                event_key=f"watch-complication:close:{session_key}",
+            )
+
         for detail in summary.get("closed_episode_details", []):
             net = float(detail.get("net_realized_pnl_usd") or 0.0)
             if net <= 0:
@@ -120,6 +129,10 @@ class PushMarketAlertsService:
         if self._last_hourly_key == hourly_key:
             return
         self._last_hourly_key = hourly_key
+        self.push_notifications.refresh_watch_complication(
+            summary=summary,
+            event_key=f"watch-complication:hour:{hourly_key}",
+        )
         decided = int(summary.get("decided_episodes") or 0)
         if decided <= 0:
             return

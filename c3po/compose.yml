@@ -37,6 +37,7 @@ services:
       - ..:/legacy:ro
       - c3po_one_pagers:/app/generated-one-pagers
       - ${C3PO_DAY_D_DATA_MOUNT_SOURCE:-c3po_day_d_data}:/app/day-d-data
+      - ${C3PO_WATCH_APNS_PRIVATE_KEY_HOST_PATH:-/dev/null}:/run/secrets/c3po-watch-apns.p8:ro
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -80,6 +81,8 @@ services:
       C3PO_MIGRATIONS_DIR: /app/db
       TZ: America/Sao_Paulo
     command: ["python", "-m", "app.valuation_worker"]
+    volumes:
+      - ${C3PO_WATCH_APNS_PRIVATE_KEY_HOST_PATH:-/dev/null}:/run/secrets/c3po-watch-apns.p8:ro
     depends_on:
       db:
         condition: service_healthy
@@ -109,6 +112,7 @@ services:
     volumes:
       - /proc/stat:/host/proc/stat:ro
       - /opt/chief-of-staff-digital:/host/disk:ro
+      - ${C3PO_WATCH_APNS_PRIVATE_KEY_HOST_PATH:-/dev/null}:/run/secrets/c3po-watch-apns.p8:ro
     depends_on:
       db:
         condition: service_healthy

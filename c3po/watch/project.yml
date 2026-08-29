@@ -1,0 +1,36 @@
+name: ECOps
+options:
+  bundleIdPrefix: com.eduardocastro
+  deploymentTarget:
+    watchOS: "10.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+targets:
+  ECOps:
+    type: application
+    platform: watchOS
+    sources:
+      - path: ECOps
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.eduardocastro.ecops.watch
+        INFOPLIST_FILE: ECOps/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ECOps/ECOps.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - target: ECOpsComplication
+  ECOpsComplication:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: ECOpsComplication
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.eduardocastro.ecops.watch.complication
+        INFOPLIST_FILE: ECOpsComplication/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ECOpsComplication/ECOpsComplication.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES

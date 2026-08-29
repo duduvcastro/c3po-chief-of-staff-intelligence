@@ -5,7 +5,7 @@ import hashlib
 import ipaddress
 import re
 from time import perf_counter
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response, status
@@ -42,6 +42,7 @@ from .market_data.http import MarketDataRequestError
 from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerGenerationError, OnePagerService
 from .push_notifications import PushNotificationService
+from .watch_native import WatchAuthenticationError, WatchNativeService
 from .r2d2 import R2D2PaperService
 from .open_finance import OpenFinanceService, PluggyRequestError
 from .official_fundamentals import ensure_builtin_official_fundamentals
@@ -100,6 +101,11 @@ from .schemas import (
     PushSubscribeRequest,
     PushTestResponse,
     PushUnsubscribeRequest,
+    WatchComplicationResponse,
+    WatchDeviceListResponse,
+    WatchDeviceTokenCreateRequest,
+    WatchDeviceTokenResponse,
+    WatchRegisterRequest,
     Provenance,
     RealtimeMarketResponse,
     RealtimePortfolioIntradayResponse,
@@ -180,6 +186,7 @@ chewie_fundamentals = ChewieFundamentalsService(settings, database, market_data.
 r2d2 = R2D2PaperService(settings, database, realtime_markets, b3_screener, one_pagers)
 leah_cloud = LeahCloudService(settings, database)
 push_notifications = PushNotificationService(settings, database)
+watch_native = WatchNativeService(settings, database)
 SESSION_COOKIE = "c3po_session"
 
 
@@ -228,6 +235,12 @@ PUBLIC_AUTH_PATHS = {
     "/api/v1/auth/logout",
 }
 
+WATCH_DEVICE_AUTH_PATHS = {
+    "/api/v1/watch/register",
+    "/api/v1/watch/unregister",
+    "/api/v1/watch/complication",
+}
+
 PERFORMANCE_TELEMETRY_ROUTES = {
     "/api/v1/telemetry/page-load",
     "/api/v1/server-usage/performance",
@@ -258,7 +271,11 @@ async def measure_api_performance(request: Request, call_next):
 @app.middleware("http")
 async def require_authenticated_session(request: Request, call_next):
     path = request.url.path
-    public_auth_route = path in PUBLIC_AUTH_PATHS or path.startswith("/api/v1/leah/agent/")
+    public_auth_route = (
+        path in PUBLIC_AUTH_PATHS
+        or path in WATCH_DEVICE_AUTH_PATHS
+        or path.startswith("/api/v1/leah/agent/")
+    )
     protected_api = path.startswith("/api/") and not public_auth_route
     if settings.auth_required and protected_api and request.method != "OPTIONS":
         session = auth_service.authenticate(request.cookies.get(SESSION_COOKIE))
@@ -680,6 +697,68 @@ def unsubscribe_push(
 def test_push(request: Request) -> PushTestResponse:
     actor = require_owner(request)
     return PushTestResponse(**push_notifications.send_test(actor["email"]))
+
+
+@app.post("/api/v1/watch/device-tokens", response_model=WatchDeviceTokenResponse, status_code=201)
+def issue_watch_device_token(
+    payload: WatchDeviceTokenCreateRequest,
+    request: Request,
+) -> WatchDeviceTokenResponse:
+    actor = require_owner(request)
+    try:
+        result = watch_native.issue_device_token(user_email=actor["email"], name=payload.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return WatchDeviceTokenResponse(**result)
+
+
+@app.get("/api/v1/watch/devices", response_model=WatchDeviceListResponse)
+def list_watch_devices(request: Request) -> WatchDeviceListResponse:
+    actor = require_owner(request)
+    return WatchDeviceListResponse(items=watch_native.list_devices(user_email=actor["email"]))
+
+
+@app.delete("/api/v1/watch/devices/{credential_id}", status_code=204)
+def revoke_watch_device(credential_id: UUID, request: Request) -> Response:
+    actor = require_owner(request)
+    if not watch_native.revoke(user_email=actor["email"], credential_id=str(credential_id)):
+        raise HTTPException(status_code=404, detail="Watch device not found")
+    return Response(status_code=204)
+
+
+@app.post("/api/v1/watch/register", response_model=PushMutationResponse)
+def register_watch(payload: WatchRegisterRequest, request: Request) -> PushMutationResponse:
+    try:
+        result = watch_native.register(
+            authorization=request.headers.get("authorization"),
+            device_token=payload.device_token,
+            categories=list(payload.categories),
+        )
+    except WatchAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return PushMutationResponse(**result)
+
+
+@app.post("/api/v1/watch/unregister", response_model=PushMutationResponse)
+def unregister_watch(request: Request) -> PushMutationResponse:
+    try:
+        return PushMutationResponse(**watch_native.unregister(
+            authorization=request.headers.get("authorization")
+        ))
+    except WatchAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/watch/complication", response_model=WatchComplicationResponse)
+def watch_complication(request: Request) -> WatchComplicationResponse:
+    try:
+        return WatchComplicationResponse(**watch_native.complication(
+            authorization=request.headers.get("authorization")
+        ))
+    except WatchAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/admin/access-users", response_model=AccessUserListResponse)
