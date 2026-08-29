@@ -19,10 +19,10 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/c3po-icon-192-v2.png", sizes: "192x192", type: "image/png" },
-      { url: "/c3po-icon-512-v2.png", sizes: "512x512", type: "image/png" }
+      { url: "/c3po-icon-192-v3.png", sizes: "192x192", type: "image/png" },
+      { url: "/c3po-icon-512-v3.png", sizes: "512x512", type: "image/png" }
     ],
-    apple: "/c3po-apple-touch-icon-v2.png"
+    apple: "/c3po-apple-touch-icon-v3.png"
   },
   robots: {
     index: false,
