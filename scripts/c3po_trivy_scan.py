@@ -66,19 +66,26 @@ def scan_image(label: str, reference: str, work: Path) -> dict[str, Any]:
     raw_path = work / f"{label}.json"
     cache_path = work / "cache"
     cache_path.mkdir(exist_ok=True)
+    docker_socket_group = Path("/var/run/docker.sock").stat().st_gid
     subprocess.run(
         [
             "docker",
             "run",
             "--rm",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+            "--group-add",
+            str(docker_socket_group),
             "--volume",
             "/var/run/docker.sock:/var/run/docker.sock",
             "--volume",
             f"{work}:/reports",
             "--volume",
-            f"{cache_path}:/root/.cache",
+            f"{cache_path}:/tmp/trivy-cache",
             TRIVY_IMAGE,
             "image",
+            "--cache-dir",
+            "/tmp/trivy-cache",
             "--format",
             "json",
             "--output",

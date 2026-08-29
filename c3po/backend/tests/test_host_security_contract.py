@@ -155,3 +155,13 @@ def test_trivy_report_attests_its_own_dead_man_configuration() -> None:
     assert report["scan_status"] == "complete"
     assert report["dead_man_configured"] is True
     assert report["report_sha256"] == scanner.report_sha256(report)
+
+
+def test_trivy_container_does_not_leave_root_owned_runner_cache() -> None:
+    source = TRIVY_SCRIPT.read_text(encoding="utf-8")
+
+    assert '"--user"' in source
+    assert 'f"{os.getuid()}:{os.getgid()}"' in source
+    assert '"--group-add"' in source
+    assert 'f"{cache_path}:/tmp/trivy-cache"' in source
+    assert '"--cache-dir"' in source
