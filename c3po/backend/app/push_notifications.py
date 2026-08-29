@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 from pywebpush import WebPushException, webpush
 
@@ -21,8 +22,23 @@ PUSH_CATEGORIES = (
     "governance_critical",
     "mesa_reading",
     "disk_threshold",
+    "security_login",
+    "sell_win",
+    "hourly_win_rate",
 )
 TEST_CATEGORY = "test"
+SAO_PAULO = ZoneInfo("America/Sao_Paulo")
+GENERIC_DEVICE_LABELS = frozenset({
+    "iPhone",
+    "iPad",
+    "Celular Android",
+    "Tablet Android",
+    "Chromebook",
+    "Computador (desktop/laptop)",
+    "Computador Apple (desktop/laptop)",
+    "Celular",
+    "Dispositivo não identificado",
+})
 
 
 def validate_push_categories(categories: list[str]) -> list[str]:
@@ -270,6 +286,66 @@ def push_notify(
         body=body,
         deep_link=deep_link,
         event_key=event_key,
+    )
+
+
+def notify_security_login(
+    service: PushNotificationService,
+    *,
+    session_id: str,
+    occurred_at: datetime,
+    device_label: str,
+) -> dict[str, Any]:
+    """Emit a non-sensitive login alert keyed to the authenticated session."""
+    local_time = occurred_at.astimezone(SAO_PAULO)
+    generic_device = (
+        device_label if device_label in GENERIC_DEVICE_LABELS else "Dispositivo não identificado"
+    )
+    return service.notify(
+        category="security_login",
+        title="Novo login no C3PO",
+        body=f"{local_time:%d/%m às %H:%M} · {generic_device}",
+        deep_link="/?view=health",
+        event_key=f"security-login:{session_id}",
+    )
+
+
+def notify_sell_win(
+    service: PushNotificationService,
+    *,
+    closing_trade_id: str,
+    symbol: str,
+    net_pnl_usd: float,
+) -> dict[str, Any]:
+    """Emit only for a completed flat-to-flat episode with positive net P&L."""
+    return service.notify(
+        category="sell_win",
+        title="Episódio encerrado no positivo",
+        body=f"{symbol} · líquido +US$ {net_pnl_usd:,.2f}",
+        deep_link="/?view=r2d2",
+        event_key=f"sell-win:{closing_trade_id}",
+    )
+
+
+def notify_hourly_win_rate(
+    service: PushNotificationService,
+    *,
+    session_date: str,
+    local_hour: int,
+    positive_episodes: int,
+    decided_episodes: int,
+    win_rate_percent: float,
+) -> dict[str, Any]:
+    """Emit the same episode counters displayed by the official Falcon tile."""
+    return service.notify(
+        category="hourly_win_rate",
+        title="Win rate da sessão",
+        body=(
+            f"{positive_episodes}/{decided_episodes} fechados = "
+            f"{win_rate_percent:.1f}%"
+        ),
+        deep_link="/?view=r2d2",
+        event_key=f"hourly-win-rate:{session_date}:{local_hour:02d}",
     )
 
 

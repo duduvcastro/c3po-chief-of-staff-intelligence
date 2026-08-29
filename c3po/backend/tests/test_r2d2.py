@@ -20,6 +20,7 @@ from app.r2d2 import (
 from app import r2d2 as r2d2_module
 from app import r2d2_entry_control
 from app.market_data.eodhd_stream import EodhdRealtimeStream, EodhdStreamQuote
+from app.push_notifications import PushNotificationService
 from fastapi.testclient import TestClient
 from app import main as app_main
 
@@ -1179,6 +1180,152 @@ def test_r2d2_episode_summary_consolidates_partial_legs_and_exclusions() -> None
         "flat_episodes": 1,
         "win_rate_percent": 66.67,
     }
+
+
+def test_sell_win_uses_the_completed_episode_not_a_partial_sell_leg() -> None:
+    settings = _settings()
+    settings.push_vapid_private_key = "private-vapid-key"
+    settings.push_vapid_public_key = "public-vapid-key"
+    database = Database(settings)
+    payloads: list[dict[str, object]] = []
+
+    def sender(**kwargs: object) -> object:
+        payloads.append(json.loads(str(kwargs["data"])))
+        return SimpleNamespace(status_code=201)
+
+    push = PushNotificationService(settings, database, sender=sender)
+    push.subscribe(
+        user_email="owner@example.com",
+        endpoint="https://push.example/sell-win",
+        p256dh="p256dh-value-long-enough",
+        auth_key="auth-value-long-enough",
+        categories=["sell_win"],
+    )
+    service = R2D2PaperService(
+        settings, database, None, None, None, push,  # type: ignore[arg-type]
+    )
+    experiment = service.repo.ensure_experiment(settings)
+    opened_at = datetime(2026, 8, 28, 14, 0, tzinfo=timezone.utc)
+
+    def trade(
+        identifier: str,
+        side: str,
+        quantity: float,
+        minutes: int,
+        realized_pnl_usd: float | None = None,
+    ) -> dict[str, object]:
+        return {
+            "id": identifier,
+            "experiment_id": experiment["id"],
+            "market": "NASDAQ",
+            "symbol": "DINO",
+            "side": side,
+            "quantity": quantity,
+            "realized_pnl_usd": realized_pnl_usd,
+            "decision_snapshot": {},
+            "executed_at": opened_at + timedelta(minutes=minutes),
+        }
+
+    buy = trade("dino-buy", "BUY", 10, 0)
+    partial = trade("dino-partial", "SELL", 4, 10, 40)
+    final = trade("dino-final", "SELL", 6, 20, -10)
+    service.repo.memory["trades"].extend([buy, partial])
+
+    service._notify_positive_episode(partial)
+    assert payloads == []
+
+    service.repo.memory["trades"].append(final)
+    service._notify_positive_episode(final)
+    service._notify_positive_episode(final)
+
+    assert len(payloads) == 1
+    assert payloads[0] == {
+        "category": "sell_win",
+        "title": "Episódio encerrado no positivo",
+        "body": "DINO · líquido +US$ 30.00",
+        "deep_link": "/?view=r2d2",
+    }
+
+
+def test_hourly_win_rate_uses_panel_counters_and_silences_empty_sessions() -> None:
+    settings = _settings()
+    settings.push_vapid_private_key = "private-vapid-key"
+    settings.push_vapid_public_key = "public-vapid-key"
+    database = Database(settings)
+    payloads: list[dict[str, object]] = []
+
+    def sender(**kwargs: object) -> object:
+        payloads.append(json.loads(str(kwargs["data"])))
+        return SimpleNamespace(status_code=201)
+
+    push = PushNotificationService(settings, database, sender=sender)
+    push.subscribe(
+        user_email="owner@example.com",
+        endpoint="https://push.example/hourly",
+        p256dh="p256dh-value-long-enough",
+        auth_key="auth-value-long-enough",
+        categories=["hourly_win_rate"],
+    )
+    service = R2D2PaperService(
+        settings, database, None, None, None, push,  # type: ignore[arg-type]
+    )
+    experiment = service.repo.ensure_experiment(settings)
+    noon_brt = datetime(2026, 8, 28, 15, 0, tzinfo=timezone.utc)
+
+    assert service.emit_hourly_win_rate(noon_brt) is None
+    assert payloads == []
+
+    service.repo.memory["trades"].extend([
+        {
+            "id": "a-buy", "experiment_id": experiment["id"], "market": "NASDAQ",
+            "symbol": "A", "side": "BUY", "quantity": 1, "realized_pnl_usd": None,
+            "decision_snapshot": {}, "executed_at": noon_brt - timedelta(minutes=50),
+        },
+        {
+            "id": "a-sell", "experiment_id": experiment["id"], "market": "NASDAQ",
+            "symbol": "A", "side": "SELL", "quantity": 1, "realized_pnl_usd": 10,
+            "decision_snapshot": {}, "executed_at": noon_brt - timedelta(minutes=40),
+        },
+        {
+            "id": "b-buy", "experiment_id": experiment["id"], "market": "NYSE",
+            "symbol": "B", "side": "BUY", "quantity": 1, "realized_pnl_usd": None,
+            "decision_snapshot": {}, "executed_at": noon_brt - timedelta(minutes=30),
+        },
+        {
+            "id": "b-sell", "experiment_id": experiment["id"], "market": "NYSE",
+            "symbol": "B", "side": "SELL", "quantity": 1, "realized_pnl_usd": -5,
+            "decision_snapshot": {}, "executed_at": noon_brt - timedelta(minutes=20),
+        },
+    ])
+    official = service.repo.episode_summary(experiment["id"], date(2026, 8, 28))
+
+    service.emit_hourly_win_rate(noon_brt)
+    service.emit_hourly_win_rate(noon_brt + timedelta(seconds=20))
+
+    assert official["positive_episodes"] == 1
+    assert official["decided_episodes"] == 2
+    assert official["win_rate_percent"] == 50.0
+    assert payloads == [{
+        "category": "hourly_win_rate",
+        "title": "Win rate da sessão",
+        "body": "1/2 fechados = 50.0%",
+        "deep_link": "/?view=r2d2",
+    }]
+
+
+def test_hourly_win_rate_only_runs_on_full_hours_of_an_xnys_session() -> None:
+    assert R2D2PaperService.hourly_win_rate_push_is_due(
+        datetime(2026, 8, 28, 15, 0, tzinfo=timezone.utc)
+    )
+    assert not R2D2PaperService.hourly_win_rate_push_is_due(
+        datetime(2026, 8, 28, 15, 1, tzinfo=timezone.utc)
+    )
+    assert not R2D2PaperService.hourly_win_rate_push_is_due(
+        datetime(2026, 8, 28, 20, 0, tzinfo=timezone.utc)
+    )
+    assert not R2D2PaperService.hourly_win_rate_push_is_due(
+        datetime(2026, 9, 7, 15, 0, tzinfo=timezone.utc)
+    )
 
 
 def test_r2d2_live_positions_api_contract() -> None:

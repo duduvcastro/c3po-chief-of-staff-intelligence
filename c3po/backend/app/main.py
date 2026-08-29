@@ -41,7 +41,7 @@ from .market_data.eodhd_stream import EodhdRealtimeStream
 from .market_data.http import MarketDataRequestError
 from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerGenerationError, OnePagerService
-from .push_notifications import PushNotificationService
+from .push_notifications import PushNotificationService, notify_security_login
 from .r2d2 import R2D2PaperService
 from .open_finance import OpenFinanceService, PluggyRequestError
 from .official_fundamentals import ensure_builtin_official_fundamentals
@@ -557,6 +557,16 @@ def verify_login_code(
             "client_info": client_info,
         },
     )
+    authenticated = auth_service.authenticate(token)
+    if not authenticated:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    background_tasks.add_task(
+        notify_security_login,
+        push_notifications,
+        session_id=str(authenticated["id"]),
+        occurred_at=login_at,
+        device_label=client_info.get("device_type") or "Dispositivo não identificado",
+    )
     background_tasks.add_task(
         deliver_login_notification,
         email,
@@ -566,9 +576,6 @@ def verify_login_code(
         login_at,
         client_info,
     )
-    authenticated = auth_service.authenticate(token)
-    if not authenticated:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     return authenticated_session_response(request, authenticated)
 
 

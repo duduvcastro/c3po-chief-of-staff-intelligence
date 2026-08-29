@@ -11,6 +11,8 @@ from typing import Any, Iterator
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+import exchange_calendars as xcals
+
 from .config import Settings
 from .database import Database
 from .market_data.b3_screener import B3ScreenerService
@@ -21,6 +23,11 @@ from .market_data.models import canonical_us_security_type
 from .market_data.realtime import RealtimeMarketsService
 from .market_data.us_screener import USScreeningService, clamp, normalized_percent
 from .one_pager import OnePagerService
+from .push_notifications import (
+    PushNotificationService,
+    notify_hourly_win_rate,
+    notify_sell_win,
+)
 from . import r2d2_strategy
 from .r2d2_entry_score_adapter import ADAPTER_VERSION, R2D2EntryScoreAdapter
 from .schemas import (
@@ -39,6 +46,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
+XNYS_CALENDAR = xcals.get_calendar("XNYS")
 METHODOLOGY_VERSION = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
 US_LISTING_GAP_DAYS = 90
@@ -149,12 +157,12 @@ def _trade_is_strategy_excluded(trade: dict[str, Any]) -> bool:
     )
 
 
-def _episode_summary_from_trades(
+def _closed_strategy_episodes_from_trades(
     trades: list[dict[str, Any]], session_date: date,
-) -> dict[str, Any]:
-    """Consolidate immutable ledger legs into strategy-eligible flat-to-flat episodes."""
+) -> list[dict[str, Any]]:
+    """Return the strategy-eligible flat-to-flat episodes closed on one session."""
     open_episodes: dict[tuple[str, str], dict[str, Any]] = {}
-    positive = negative = flat = 0
+    closed_episodes: list[dict[str, Any]] = []
     ordered = sorted(
         trades,
         key=lambda item: (
@@ -180,6 +188,8 @@ def _episode_summary_from_trades(
                 "quantity": 0.0,
                 "realized_pnl_usd": 0.0,
                 "strategy_excluded": False,
+                "market": key[0],
+                "symbol": key[1],
             })
             state["quantity"] += quantity
             state["strategy_excluded"] = bool(
@@ -209,14 +219,24 @@ def _episode_summary_from_trades(
             and isinstance(executed_at, datetime)
             and executed_at.astimezone(SAO_PAULO).date() == session_date
         ):
-            pnl = _float(state["realized_pnl_usd"])
-            if pnl > 0:
-                positive += 1
-            elif pnl < 0:
-                negative += 1
-            else:
-                flat += 1
+            closed_episodes.append({
+                "market": state["market"],
+                "symbol": state["symbol"],
+                "net_pnl_usd": _float(state["realized_pnl_usd"]),
+                "closing_trade_id": str(trade.get("id") or ""),
+                "closed_at": executed_at,
+            })
         del open_episodes[key]
+
+    return closed_episodes
+
+
+def _episode_summary_from_closed(
+    episodes: list[dict[str, Any]], session_date: date,
+) -> dict[str, Any]:
+    positive = sum(_float(item.get("net_pnl_usd")) > 0 for item in episodes)
+    negative = sum(_float(item.get("net_pnl_usd")) < 0 for item in episodes)
+    flat = len(episodes) - positive - negative
 
     decided = positive + negative
     return {
@@ -228,6 +248,16 @@ def _episode_summary_from_trades(
         "flat_episodes": flat,
         "win_rate_percent": round(positive / decided * 100, 2) if decided else 0.0,
     }
+
+
+def _episode_summary_from_trades(
+    trades: list[dict[str, Any]], session_date: date,
+) -> dict[str, Any]:
+    """Consolidate immutable ledger legs into strategy-eligible flat-to-flat episodes."""
+    return _episode_summary_from_closed(
+        _closed_strategy_episodes_from_trades(trades, session_date),
+        session_date,
+    )
 
 
 def _paper_exit_execution(*, market: str, price: float, quantity: float, fx: float) -> dict[str, float]:
@@ -1297,6 +1327,14 @@ class R2D2Repository:
         ))
 
     def episode_summary(self, experiment_id: str, session_date: date) -> dict[str, Any]:
+        return _episode_summary_from_closed(
+            self.episode_closures(experiment_id, session_date),
+            session_date,
+        )
+
+    def episode_closures(
+        self, experiment_id: str, session_date: date,
+    ) -> list[dict[str, Any]]:
         if not self.database.database_url:
             trades = [
                 dict(item) for item in self.memory["trades"]
@@ -1327,7 +1365,7 @@ class R2D2Repository:
                 "decision_snapshot", "executed_at",
             )
             trades = [dict(zip(keys, row)) for row in rows]
-        return _episode_summary_from_trades(trades, session_date)
+        return _closed_strategy_episodes_from_trades(trades, session_date)
 
     def daily_learning_curve(self, experiment_id: str) -> list[dict[str, Any]]:
         """One row per session day with at least one closed (SELL, realized)
@@ -1545,13 +1583,15 @@ class R2D2Repository:
 
 class R2D2PaperService:
     def __init__(self, settings: Settings, database: Database, realtime: RealtimeMarketsService,
-                 b3_screener: B3ScreenerService, one_pagers: OnePagerService) -> None:
+                 b3_screener: B3ScreenerService, one_pagers: OnePagerService,
+                 push_notifications: PushNotificationService | None = None) -> None:
         self.settings = settings
         self.repo = R2D2Repository(database)
         self._entry_score_adapter = R2D2EntryScoreAdapter(database)
         self.realtime = realtime
         self.b3_screener = b3_screener
         self.one_pagers = one_pagers
+        self.push_notifications = push_notifications
         self._us_basis: dict[str, tuple[date, dict[str, Any], float]] = {}
         self._us_backfill_attempted: dict[str, date] = {}
         self._us_listing_history: dict[str, tuple[date, bool, str, int, date | None]] = {}
@@ -1981,6 +2021,77 @@ class R2D2PaperService:
         if us.weekday() < 5 and US_REGULAR_OPEN_ET <= us.time() < US_REGULAR_CLOSE_ET:
             markets.extend(("NASDAQ", "NYSE"))
         return markets
+
+    @staticmethod
+    def hourly_win_rate_push_is_due(now: datetime) -> bool:
+        """True only on full hours while the official US regular session is open."""
+        local = now.astimezone(SAO_PAULO)
+        us = now.astimezone(NEW_YORK)
+        return bool(
+            local.minute == 0
+            and XNYS_CALENDAR.is_session(us.date())
+            and US_REGULAR_OPEN_ET <= us.time() < US_REGULAR_CLOSE_ET
+        )
+
+    def emit_hourly_win_rate(self, now: datetime | None = None) -> dict[str, Any] | None:
+        measured_at = now or datetime.now(timezone.utc)
+        if not self.push_notifications or not self.hourly_win_rate_push_is_due(measured_at):
+            return None
+        try:
+            local = measured_at.astimezone(SAO_PAULO)
+            summary = self.repo.episode_summary(
+                self.ensure_initialized()["id"],
+                local.date(),
+            )
+            decided = int(summary["decided_episodes"])
+            if decided <= 0:
+                return None
+            return notify_hourly_win_rate(
+                self.push_notifications,
+                session_date=summary["session_date"],
+                local_hour=local.hour,
+                positive_episodes=int(summary["positive_episodes"]),
+                decided_episodes=decided,
+                win_rate_percent=_float(summary["win_rate_percent"]),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Hourly win-rate push degraded without affecting R2D2: %s",
+                type(exc).__name__,
+            )
+            return None
+
+    def _notify_positive_episode(self, trade: dict[str, Any]) -> None:
+        if not self.push_notifications or str(trade.get("side") or "").upper() != "SELL":
+            return
+        try:
+            executed_at = trade.get("executed_at")
+            if not isinstance(executed_at, datetime):
+                return
+            session_date = executed_at.astimezone(SAO_PAULO).date()
+            episode = next(
+                (
+                    item
+                    for item in self.repo.episode_closures(
+                        str(trade["experiment_id"]), session_date,
+                    )
+                    if item["closing_trade_id"] == str(trade["id"])
+                ),
+                None,
+            )
+            if not episode or _float(episode["net_pnl_usd"]) <= 0:
+                return
+            notify_sell_win(
+                self.push_notifications,
+                closing_trade_id=episode["closing_trade_id"],
+                symbol=episode["symbol"],
+                net_pnl_usd=_float(episode["net_pnl_usd"]),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Positive-episode push degraded without affecting R2D2: %s",
+                type(exc).__name__,
+            )
 
     @staticmethod
     def _seconds_to_us_close(market: str, now: datetime) -> float | None:
@@ -4008,6 +4119,7 @@ class R2D2PaperService:
             fast_exit_audit=fast_exit_audit,
         )
         self.repo.save_decision(experiment["id"], cycle_id, item, "SELL", [reason], trade["id"])
+        self._notify_positive_episode(trade)
         return trade
 
     def _usd_fx(self, now: datetime) -> float:

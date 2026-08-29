@@ -18,6 +18,7 @@ from .microstructure_processor import MicrostructureProcessor
 from .microstructure_telemetry import MicrostructureResourceTelemetry
 from .one_pager import OnePagerService
 from .observability import init_sentry
+from .push_notifications import PushNotificationService
 from .r2d2 import R2D2PaperService
 
 
@@ -142,8 +143,13 @@ def main() -> None:
         b3_screener=screener,
         investor_relations=investor_relations,
     )
-    service = R2D2PaperService(settings, database, realtime, screener, one_pagers)
-    risk_service = R2D2PaperService(settings, database, realtime, screener, one_pagers)
+    push_notifications = PushNotificationService(settings, database)
+    service = R2D2PaperService(
+        settings, database, realtime, screener, one_pagers, push_notifications,
+    )
+    risk_service = R2D2PaperService(
+        settings, database, realtime, screener, one_pagers, push_notifications,
+    )
     experiment = service.ensure_initialized()
     logger.info(
         "R2D2 continuous paper strategy %s ready from %s; 90-day checkpoint %s; real brokerage execution disabled",
@@ -179,6 +185,7 @@ def main() -> None:
                 current = time.monotonic()
                 scan_entries = current - last_candidate_scan >= max(20, settings.r2d2_cycle_seconds)
                 dashboard = service.run_cycle(scan_entries=scan_entries)
+                service.emit_hourly_win_rate()
                 if scan_entries:
                     last_candidate_scan = current
                 logger.info(
