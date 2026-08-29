@@ -727,7 +727,7 @@ class Database:
         now = datetime.now().astimezone()
         payload = {
             "email": normalized_email,
-            "display_name": "Eduardo Castro",
+            "display_name": "Dudu Castro",
             "role": "owner",
             "is_active": True,
             "permissions": list(permissions),
