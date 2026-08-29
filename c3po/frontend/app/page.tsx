@@ -908,6 +908,8 @@ interface InstrumentPreviewDescriptor {
   name: string;
   market?: string;
   sessionDate?: string;
+  linePrice?: number | null;
+  lineChangePercent?: number | null;
 }
 
 interface RealtimePortfolioSymbolSuggestion {
@@ -4687,7 +4689,9 @@ function LiveMarketRow({ item }: { item: LiveMarketItem }) {
               symbol: item.symbol,
               name: item.name,
               market: item.group,
-              sessionDate: instrumentSessionDate(item.as_of, item.group)
+              sessionDate: instrumentSessionDate(item.as_of, item.group),
+              linePrice: item.price,
+              lineChangePercent: item.change_percent
             }}
             className="live-market-ticker-preview"
           >
@@ -4853,7 +4857,9 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
                   symbol: snapshot.index.symbol,
                   name: snapshot.index.name,
                   market: "Indices",
-                  sessionDate: instrumentSessionDate(snapshot.index.as_of, "Indices")
+                  sessionDate: instrumentSessionDate(snapshot.index.as_of, "Indices"),
+                  linePrice: snapshot.index.value,
+                  lineChangePercent: snapshot.index.change_percent
                 }}
                 className="realtime-index-ticker-preview"
               >
@@ -5148,7 +5154,11 @@ function MyRealtimePortfolio({
                       symbol: item.symbol,
                       name: item.name,
                       market: item.market,
-                      sessionDate: instrumentSessionDate(item.as_of, item.market)
+                      sessionDate: instrumentSessionDate(item.as_of, item.market),
+                      linePrice: item.status === "stale" ? null : item.price,
+                      lineChangePercent: item.status === "stale" || item.reference_status === "unvalidated"
+                        ? null
+                        : item.change_percent
                     }}
                     className="realtime-portfolio-ticker-preview"
                   >
@@ -5233,6 +5243,26 @@ const RealtimePortfolioIntradayPreview = forwardRef<HTMLDivElement, {
     const timeIndexes = Array.from(new Set([0, Math.floor((data.points.length - 1) / 2), data.points.length - 1]));
     return { width, height, padding, plotWidth, plotHeight, coordinates, line, area, gridValues, timeIndexes, rawMax, rawMin };
   }, [data]);
+  const hasLinePrice = Object.prototype.hasOwnProperty.call(item, "linePrice");
+  const hasLineChange = Object.prototype.hasOwnProperty.call(item, "lineChangePercent");
+  const headlinePrice = hasLinePrice ? item.linePrice : data?.current;
+  const headlineChange = hasLineChange
+    ? item.lineChangePercent
+    : data?.day_change_percent ?? data?.change_percent;
+  const headlineDirection: Direction = headlineChange == null
+    ? "flat"
+    : headlineChange > 0
+      ? "up"
+      : headlineChange < 0
+        ? "down"
+        : "flat";
+  const headlinePeriod = hasLineChange
+    ? headlineChange == null ? "referência não validada" : "no dia"
+    : data?.day_change_percent != null
+      ? "no dia"
+      : data?.series_kind === "daily"
+        ? "vs. fechamento anterior"
+        : "desde a abertura";
 
   return (
     <div
@@ -5268,10 +5298,10 @@ const RealtimePortfolioIntradayPreview = forwardRef<HTMLDivElement, {
             </div>
           )}
           <div className="realtime-intraday-summary">
-            <div><span>Último</span><strong>{formatIntradayPrice(data.current, data.currency, data.market)}</strong></div>
-            <div className={(data.day_change_percent ?? data.change_percent) >= 0 ? "change-up" : "change-down"}>
-              <DirectionIcon direction={(data.day_change_percent ?? data.change_percent) >= 0 ? "up" : "down"} size={15} />
-              <strong>{formatPercent(data.day_change_percent ?? data.change_percent, 2)}</strong><small>{data.day_change_percent != null ? "no dia" : data.series_kind === "daily" ? "vs. fechamento anterior" : "desde a abertura"}</small>
+            <div><span>Último</span><strong>{headlinePrice == null ? "N/D" : formatIntradayPrice(headlinePrice, data.currency, data.market)}</strong></div>
+            <div className={headlineDirection === "up" ? "change-up" : headlineDirection === "down" ? "change-down" : ""}>
+              <DirectionIcon direction={headlineDirection} size={15} />
+              <strong>{headlineChange == null ? "N/D" : formatPercent(headlineChange, 2)}</strong><small>{headlinePeriod}</small>
             </div>
           </div>
           <div className="realtime-intraday-chart">
@@ -5344,7 +5374,7 @@ function RealtimeLeaderTable({
           <div className="realtime-table-row" key={item.symbol}>
             <span className="realtime-rank">{index + 1}</span>
             <div className="realtime-company">
-              <div className="realtime-symbol-line"><InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.name, market, sessionDate: instrumentSessionDate(item.as_of, market) }}><strong>{item.symbol}</strong></InstrumentPreviewTarget><span className={`market-state market-state-${item.status}`}>{item.status}</span></div>
+              <div className="realtime-symbol-line"><InstrumentPreviewTarget instrument={{ symbol: item.symbol, name: item.name, market, sessionDate: instrumentSessionDate(item.as_of, market), linePrice: item.price, lineChangePercent: item.change_percent }}><strong>{item.symbol}</strong></InstrumentPreviewTarget><span className={`market-state market-state-${item.status}`}>{item.status}</span></div>
               <span>{item.name}</span>
             </div>
             <strong className="realtime-price">{formatCurrency(item.price, item.currency)}</strong>
