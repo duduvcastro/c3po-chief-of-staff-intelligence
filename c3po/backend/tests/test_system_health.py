@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
+import time
 from types import SimpleNamespace
 
 from app.config import Settings
@@ -149,7 +150,8 @@ class _Legacy:
 
 
 class _OpenFinance:
-    def integration_health(self):
+    def integration_health(self, *, timeout_seconds: float | None = None):
+        assert timeout_seconds == 2.0
         return [
             IntegrationHealth(name="Pluggy API", status="healthy", detail="authenticated", last_update="16/08 19:00"),
             IntegrationHealth(name="BTG Pactual", status="healthy", detail="synced", last_update="16/08 19:00"),
@@ -167,6 +169,9 @@ class _MarketData:
             MarketDataProviderHealth(code="brapi", name="Brapi", market="Brazil / B3", configured=True, plan="pro", status="healthy", last_success_at=self.now),
             MarketDataProviderHealth(code="eodhd", name="EODHD", market="United States / Global", configured=True, plan="all-in-one", status="healthy", last_success_at=self.now),
         ]
+
+    def probe_health(self):
+        raise AssertionError("system-health must read persisted provider state")
 
 
 class _ServerUsage:
@@ -739,6 +744,20 @@ def test_health_error_redacts_market_data_credentials() -> None:
     assert "apiKey=[redacted]" in SystemHealthService._safe_error(error)
 
 
+def test_external_timeout_is_unknown_not_falsely_offline() -> None:
+    service = _service()
+
+    item = service._offline_item(
+        "Slow provider",
+        TimeoutError("read operation timed out"),
+        datetime.now(timezone.utc),
+    )
+
+    assert item.status == "attention"
+    assert "Status unknown" in item.detail
+    assert item.metadata["probe_status"] == "timed_out"
+
+
 def test_daily_api_usage_accepts_base_url_that_already_contains_api_path() -> None:
     response = _service(eodhd_base_url="https://eodhd.com/api").snapshot(force=True)
 
@@ -816,3 +835,50 @@ def test_ai_usage_aggregates_official_provider_reports() -> None:
     assert anthropic.input_tokens == 10_000
     assert anthropic.output_tokens == 4_000
     assert anthropic.cached_input_tokens == 3_000
+
+
+def test_slow_probe_degrades_only_its_card_within_two_second_budget() -> None:
+    service = _service()
+    service.settings.system_health_probe_timeout_seconds = 0.25
+    original = service._cloudflare_health
+
+    def slow_cloudflare(now: datetime) -> IntegrationHealth:
+        time.sleep(0.75)
+        return original(now)
+
+    service._cloudflare_health = slow_cloudflare  # type: ignore[method-assign]
+
+    started = time.monotonic()
+    response = service.snapshot(force=True)
+    elapsed = time.monotonic() - started
+
+    external = next(
+        group for group in response.groups if group.key == "external_services"
+    )
+    cloudflare = next(item for item in external.items if item.name == "Cloudflare")
+    github = next(item for item in external.items if item.name == "GitHub / CI-CD")
+    assert elapsed < 0.6
+    assert cloudflare.status == "attention"
+    assert cloudflare.metadata["probe_status"] == "timed_out"
+    assert cloudflare.metadata["probe_timeout_seconds"] == 0.25
+    assert github.status == "healthy"
+    assert github.metadata["probe_status"] == "completed"
+
+
+def test_live_http_probes_receive_the_short_system_health_timeout() -> None:
+    service = _service()
+    observed_timeouts: list[float] = []
+
+    def recording_get(url: str, **kwargs):
+        observed_timeouts.append(float(kwargs["timeout"]))
+        return _external_get(url, **kwargs)
+
+    service.external_get = recording_get
+
+    response = service.snapshot(force=True)
+
+    assert response.status == "healthy"
+    assert observed_timeouts
+    assert set(observed_timeouts) == {2.0}
+    items = [item for group in response.groups for item in group.items]
+    assert all("probe_duration_ms" in item.metadata for item in items)
