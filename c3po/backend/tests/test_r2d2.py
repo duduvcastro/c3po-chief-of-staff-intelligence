@@ -1170,6 +1170,7 @@ def test_r2d2_episode_summary_consolidates_partial_legs_and_exclusions() -> None
 
     summary = _episode_summary_from_trades(trades, session_date)
 
+    details = summary.pop("closed_episode_details")
     assert summary == {
         "session_date": "2026-08-24",
         "closed_episodes": 4,
@@ -1179,6 +1180,16 @@ def test_r2d2_episode_summary_consolidates_partial_legs_and_exclusions() -> None
         "flat_episodes": 1,
         "win_rate_percent": 66.67,
     }
+    # The same walk now also names each strategy-eligible closed episode;
+    # excluded episodes (wind-down, corrected) never appear in the details.
+    assert [
+        (item["episode_id"], item["net_realized_pnl_usd"]) for item in details
+    ] == [
+        ("NASDAQ:A:a-buy", 30.0),
+        ("NASDAQ:B:b-buy", -10.0),
+        ("NASDAQ:FLAT:flat-buy", 0.0),
+        ("NASDAQ:BAD:bad-rebuy", 20.0),
+    ]
 
 
 def test_r2d2_live_positions_api_contract() -> None:
