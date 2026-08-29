@@ -177,29 +177,29 @@ def test_pwa_icons_are_versioned_and_use_a_distinct_maskable_asset() -> None:
     layout = (root / "frontend" / "app" / "layout.tsx").read_text(encoding="utf-8")
     worker = (public / "push-sw.js").read_text(encoding="utf-8")
     expected = {
-        "c3po-icon-192-v2.png": (
+        "c3po-icon-192-v3.png": (
             (192, 192),
-            "676ec468c5274003a4fac3e601b62ee90eefa45dfa79afbc2545c51cb6123602",
+            "3c7b746eda6c716577fe74814d06fb0d0e5899f6f887d477fe6fa64a2b52cd09",
         ),
-        "c3po-icon-512-v2.png": (
+        "c3po-icon-512-v3.png": (
             (512, 512),
-            "4fab763573e69d5aaca02cf411b5d0e3720bf1a4c8d6e2a9919b7a57d6457d3d",
+            "88faba700beeb977b4b4522b056a63881d8ded3046eea74e669b77027cc5ff76",
         ),
-        "c3po-icon-maskable-512-v2.png": (
+        "c3po-icon-maskable-512-v3.png": (
             (512, 512),
-            "9fa9ecd04c0137a29943e4af4616a6a5777b26320d59f4716c723c609b84f778",
+            "340759a2100ad53a29b0ae4199f7acd9ac89f0c2bd5f172fa6745de77c76a587",
         ),
-        "c3po-apple-touch-icon-v2.png": (
+        "c3po-apple-touch-icon-v3.png": (
             (180, 180),
-            "049ff1a5353927638483b1a3fc470fa87416469d48410b34345e181d1a8e9a0d",
+            "55cec2a3d8676a8a23027939f49a26db82b681b124a5bc91c1eadc2165222e24",
         ),
         "apple-touch-icon.png": (
             (180, 180),
-            "049ff1a5353927638483b1a3fc470fa87416469d48410b34345e181d1a8e9a0d",
+            "55cec2a3d8676a8a23027939f49a26db82b681b124a5bc91c1eadc2165222e24",
         ),
         "apple-touch-icon-precomposed.png": (
             (180, 180),
-            "049ff1a5353927638483b1a3fc470fa87416469d48410b34345e181d1a8e9a0d",
+            "55cec2a3d8676a8a23027939f49a26db82b681b124a5bc91c1eadc2165222e24",
         ),
     }
 
@@ -210,13 +210,13 @@ def test_pwa_icons_are_versioned_and_use_a_distinct_maskable_asset() -> None:
         assert hashlib.sha256(payload).hexdigest() == sha256
 
     assert [item["src"] for item in manifest["icons"]] == [
-        "/c3po-icon-192-v2.png",
-        "/c3po-icon-512-v2.png",
-        "/c3po-icon-maskable-512-v2.png",
+        "/c3po-icon-192-v3.png",
+        "/c3po-icon-512-v3.png",
+        "/c3po-icon-maskable-512-v3.png",
     ]
     assert manifest["icons"][2]["purpose"] == "maskable"
-    assert "/c3po-apple-touch-icon-v2.png" in layout
-    assert "/c3po-icon-192-v2.png" in worker
+    assert "/c3po-apple-touch-icon-v3.png" in layout
+    assert "/c3po-icon-192-v3.png" in worker
 
 
 def test_missing_image_assets_never_fall_through_to_app_html() -> None:
