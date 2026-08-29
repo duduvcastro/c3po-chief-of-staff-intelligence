@@ -159,6 +159,21 @@ jobs:
       - name: Build frontend
         run: pnpm build
 
+      - name: Validate production Docker images
+        if: github.event_name == 'pull_request'
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker build \
+            --file c3po/backend/Dockerfile \
+            --tag c3po/backend:pr-validation \
+            c3po
+          docker build \
+            --file c3po/frontend/Dockerfile \
+            --build-arg NEXT_PUBLIC_C3PO_API_URL= \
+            --build-arg "NEXT_PUBLIC_C3PO_BUILD_SHA=$GITHUB_SHA" \
+            --tag c3po/web:pr-validation \
+            c3po/frontend
+
   deploy-production:
     name: Deploy production
     needs: [sensitive-files, secret-scan, backend-tests, python-type-check, frontend-build]

@@ -30,6 +30,10 @@ def test_all_application_services_use_the_two_named_images() -> None:
 def test_production_builds_and_transfers_images_before_connecting_to_host() -> None:
     workflow = PIPELINE.read_text(encoding="utf-8")
 
+    assert "Validate production Docker images" in workflow
+    assert "if: github.event_name == 'pull_request'" in workflow
+    assert "c3po/backend:pr-validation" in workflow
+    assert "c3po/web:pr-validation" in workflow
     build_index = workflow.index("Build production images outside the server")
     ssh_index = workflow.index("Configure deployment SSH key")
     assert build_index < ssh_index
