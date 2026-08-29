@@ -72,7 +72,14 @@ class EodhdClient:
                     output[symbol] = payload
         return output
 
-    def history(self, symbol: str, *, exchange: str = "US", days: int = 365) -> list[dict[str, Any]]:
+    def history(
+        self,
+        symbol: str,
+        *,
+        exchange: str = "US",
+        days: int = 365,
+        adjusted: bool = True,
+    ) -> list[dict[str, Any]]:
         clean = symbol.strip().upper()
         provider_symbol = clean if "." in clean else f"{clean}.{exchange}"
         end = date.today()
@@ -93,7 +100,9 @@ class EodhdClient:
         for item in payload:
             if not isinstance(item, dict):
                 continue
-            close = number(item.get("adjusted_close")) or number(item.get("close"))
+            raw_close = number(item.get("close"))
+            adjusted_close = number(item.get("adjusted_close"))
+            close = (adjusted_close or raw_close) if adjusted else (raw_close or adjusted_close)
             if close is not None:
                 output.append({
                     "date": item.get("date"),
@@ -227,6 +236,7 @@ class EodhdClient:
         exchange: str = "SA",
         days: int = 120,
         workers: int = 8,
+        adjusted: bool = True,
     ) -> dict[str, list[dict[str, Any]]]:
         clean_symbols = list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
         if not clean_symbols:
@@ -234,7 +244,12 @@ class EodhdClient:
 
         def fetch(symbol: str) -> tuple[str, list[dict[str, Any]]]:
             try:
-                return symbol.partition(".")[0], self.history(symbol, exchange=exchange, days=days)
+                return symbol.partition(".")[0], self.history(
+                    symbol,
+                    exchange=exchange,
+                    days=days,
+                    adjusted=adjusted,
+                )
             except Exception:
                 return symbol.partition(".")[0], []
 

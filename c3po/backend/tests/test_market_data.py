@@ -14,7 +14,7 @@ from app.market_data.live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
 from app.market_data.live_markets import LiveMarketsService, MarketSpec
 from app.market_data.realtime import FALLBACK_CACHE_SECONDS, RealtimeMarketsService
 from app.market_data.service import MarketDataService
-from app.schemas import LiveMarketItem, NormalizedQuote
+from app.schemas import LiveMarketItem, NormalizedQuote, RealtimeMarketLeader
 from app.valuation_policy import METHODOLOGY_VERSION
 
 
@@ -636,6 +636,20 @@ def test_eodhd_history_keeps_volume_for_b3_fallback() -> None:
 
     assert history[0] == {"date": "2026-08-05", "close": 21.5, "volume": 1_500_000}
     assert http.calls[0]["url"].endswith("/api/eod/TEST3.SA")
+
+
+def test_eodhd_history_can_return_unadjusted_close_without_changing_its_contract() -> None:
+    http = StubHttp([{
+        "date": "2026-08-27",
+        "close": 100.0,
+        "adjusted_close": 99.0,
+        "volume": 1_500_000,
+    }])
+    client = EodhdClient("https://eodhd.com", "secret", http)  # type: ignore[arg-type]
+
+    history = client.history("AVGO", exchange="US", days=10, adjusted=False)
+
+    assert history == [{"date": "2026-08-27", "close": 100.0, "volume": 1_500_000}]
 
 
 def test_source_confirmation_rewards_independent_agreement() -> None:
@@ -1617,6 +1631,118 @@ def test_realtime_portfolio_hides_change_when_previous_close_is_recycled() -> No
         137.95,
         date(2026, 8, 25),
     )
+
+
+def test_realtime_portfolio_anchors_reference_to_quote_session_on_weekend() -> None:
+    now = datetime(2026, 8, 29, 15, tzinfo=timezone.utc)
+    http = RoutingStubHttp({
+        "/api/eod/AVGO.US": [
+            {"date": "2026-08-27", "close": 100.0, "adjusted_close": 99.0},
+            {"date": "2026-08-28", "close": 110.0, "adjusted_close": 109.0},
+        ],
+    })
+    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+    service._us_previous_close["AVGO"] = 100.0
+
+    assert service._us_reference_status(
+        "AVGO",
+        now,
+        session_date=date(2026, 8, 28),
+    ) == ("validated", 100.0, date(2026, 8, 27))
+
+
+def test_realtime_portfolio_rejects_stale_reference_for_recent_listing() -> None:
+    now = datetime(2026, 8, 29, 15, tzinfo=timezone.utc)
+    http = RoutingStubHttp({
+        "/api/eod/SPCX.US": [{"date": "2023-12-29", "close": 21.9457}],
+    })
+    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+    service._us_previous_close["SPCX"] = 21.9457
+
+    assert service._us_reference_status(
+        "SPCX",
+        now,
+        session_date=date(2026, 8, 28),
+    ) == ("unvalidated", None, None)
+
+
+def test_realtime_portfolio_replaces_reused_ticker_history_with_current_listing() -> None:
+    now = datetime(2026, 8, 29, 15, tzinfo=timezone.utc)
+    prior_close_at = int(datetime(2026, 8, 27, 20, tzinfo=timezone.utc).timestamp())
+    http = RoutingStubHttp({
+        "/api/eod/SPCX.US": [{"date": "2023-12-29", "close": 21.9457}],
+        "/v8/finance/chart/SPCX": {"chart": {"result": [{
+            "meta": {"symbol": "SPCX"},
+            "timestamp": [prior_close_at],
+            "indicators": {"quote": [{"close": [138.0]}]},
+        }]}},
+    })
+    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+    service._us_previous_close["SPCX"] = 21.9457
+
+    assert service._us_reference_status(
+        "SPCX",
+        now,
+        session_date=date(2026, 8, 28),
+    ) == ("unvalidated", 138.0, date(2026, 8, 27))
+
+
+def test_realtime_portfolio_recomputes_display_change_from_canonical_reference() -> None:
+    class PortfolioDatabase:
+        @staticmethod
+        def list_realtime_portfolio() -> list[dict[str, str]]:
+            return [{"symbol": "AVGO", "market": "NASDAQ"}]
+
+    class CanonicalReferenceService(RealtimeMarketsService):
+        def _us_portfolio_rows(
+            self,
+            market: str,
+            now: datetime,
+            symbols: list[str],
+        ) -> list[RealtimeMarketLeader]:
+            return [RealtimeMarketLeader(
+                symbol="AVGO",
+                name="Broadcom Inc",
+                price=110.0,
+                change_percent=-99.0,
+                volume=1_000.0,
+                cash_volume=110_000.0,
+                currency="USD",
+                exchange=market,
+                as_of=now,
+            )]
+
+        def _prime_us_reference_cache(
+            self,
+            symbol_sessions: dict[str, date],
+            now: datetime,
+        ) -> None:
+            return None
+
+        def _us_reference_status(
+            self,
+            symbol: str,
+            now: datetime,
+            *,
+            session_date: date | None = None,
+        ) -> tuple[str, float | None, date | None]:
+            return "unvalidated", 100.0, date(2026, 8, 27)
+
+    settings = Settings(auth_cookie_secure=False)
+    service = CanonicalReferenceService(  # type: ignore[arg-type]
+        settings,
+        PortfolioDatabase(),
+        StubHttp([]),
+    )
+
+    item = service.portfolio_snapshot().items[0]
+
+    assert item.change_percent == pytest.approx(10.0)
+    assert item.reference_status == "validated"
+    assert item.reference_close == 100.0
 
 
 def test_realtime_portfolio_accepts_otc_common_stock() -> None:
