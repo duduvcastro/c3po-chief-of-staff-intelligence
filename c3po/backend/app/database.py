@@ -616,6 +616,33 @@ class Database:
             rows = connection.execute(query, params).fetchall()
         return [self._leah_item_from_row(row) for row in rows]
 
+    def list_leah_deleted_changes(self, owner_email: str, since: datetime) -> list[dict[str, Any]]:
+        if not self.database_url:
+            items = [
+                item for item in self._leah_items.values()
+                if item["owner_email"] == owner_email
+                and item.get("source") == "c3po"
+                and item.get("deleted_at") is not None
+                and item["deleted_at"] >= since
+            ]
+            return [
+                {key: value for key, value in item.items() if key != "owner_email"}
+                for item in sorted(items, key=lambda item: item["updated_at"])
+            ]
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, kind, external_id, container_id, title, notes, starts_at,
+                       ends_at, due_at, is_all_day, is_completed, source, source_device_id,
+                       source_modified_at, deleted_at, version, updated_at
+                FROM leah_items
+                WHERE owner_email = %s AND source = 'c3po' AND deleted_at >= %s
+                ORDER BY updated_at
+                """,
+                (owner_email, since),
+            ).fetchall()
+        return [self._leah_item_from_row(row) for row in rows]
+
     def get_leah_item(self, owner_email: str, item_id: str) -> dict[str, Any] | None:
         return next((item for item in self.list_leah_changes(owner_email) if str(item["id"]) == item_id), None)
 

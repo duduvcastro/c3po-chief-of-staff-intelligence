@@ -107,6 +107,7 @@ struct LocalItemBatch {
 
 struct SyncRequest: Codable {
     let cursor: Date?
+    let replayDeletedSince: Date?
     let calendarAuthorized: Bool
     let remindersAuthorized: Bool
     let items: [LeahItem]
@@ -116,6 +117,7 @@ struct SyncRequest: Codable {
 
     enum CodingKeys: String, CodingKey {
         case cursor, items
+        case replayDeletedSince = "replay_deleted_since"
         case calendarAuthorized = "calendar_authorized"
         case remindersAuthorized = "reminders_authorized"
         case calendarSnapshot = "calendar_snapshot"
