@@ -27,7 +27,8 @@ class ForeignListingPolicy:
     consensus_local: float
     analyst_count: int
     consensus_as_of: date
-    method_targets_local: tuple[tuple[str, float], ...]
+    internal_method_targets_local: tuple[tuple[str, float], ...]
+    internal_method_targets_registered_on: date
     buy_in_local: float
     coverage: tuple[PublicCoverageCall, ...]
 
@@ -50,13 +51,14 @@ FOREIGN_LISTING_POLICIES = {
         consensus_local=5_323.08,
         analyst_count=16,
         consensus_as_of=date(2026, 7, 28),
-        method_targets_local=(
-            ("Goldman Sachs", 5_250.0),
-            ("Morgan Stanley", 5_600.0),
-            ("Bridgewater", 4_750.0),
-            ("JPMorgan", 5_950.0),
-            ("BlackRock", 5_650.0),
+        internal_method_targets_local=(
+            ("Múltiplos de Lucro + EV/EBITDA", 5_250.0),
+            ("Fluxo de Caixa Descontado", 5_600.0),
+            ("Blend Ajustado ao Risco", 4_750.0),
+            ("Momentum de Lucro", 5_950.0),
+            ("Qualidade & Fluxo de Caixa", 5_650.0),
         ),
+        internal_method_targets_registered_on=date(2026, 8, 17),
         buy_in_local=3_110.0,
         coverage=(
             PublicCoverageCall("Goldman Sachs", 6_000.0, "Buy", date(2026, 6, 24)),
@@ -100,7 +102,10 @@ def normalize_foreign_fundamentals(
     ]
     output["foreignListingPolicy"] = {
         "consensusAsOf": policy.consensus_as_of.isoformat(),
-        "methodTargets": {name: value / fx_rate for name, value in policy.method_targets_local},
+        "internalMethodTargets": {
+            name: value / fx_rate for name, value in policy.internal_method_targets_local
+        },
+        "internalMethodTargetsRegisteredOn": policy.internal_method_targets_registered_on.isoformat(),
         "buyIn": policy.buy_in_local / fx_rate,
     }
 

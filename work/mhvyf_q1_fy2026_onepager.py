@@ -36,13 +36,13 @@ day_change = 7.69
 consensus = 5335.58 / fx_usdjpy
 consensus_analysts = 16
 
-# Five-method framework used across the Chief of Staff equity one-pagers.
+# Internal five-method framework, registered in the repository on 17/08/2026.
 valuation_methods = [
-    ("Goldman Sachs", 5250.0 / fx_usdjpy),
-    ("Morgan Stanley", 5600.0 / fx_usdjpy),
-    ("Bridgewater", 4750.0 / fx_usdjpy),
-    ("JPMorgan", 5950.0 / fx_usdjpy),
-    ("BlackRock", 5650.0 / fx_usdjpy),
+    ("Múltiplos de Lucro + EV/EBITDA", 5250.0 / fx_usdjpy),
+    ("Fluxo de Caixa Descontado", 5600.0 / fx_usdjpy),
+    ("Blend Ajustado ao Risco", 4750.0 / fx_usdjpy),
+    ("Momentum de Lucro", 5950.0 / fx_usdjpy),
+    ("Qualidade & Fluxo de Caixa", 5650.0 / fx_usdjpy),
 ]
 target = sum(value for _, value in valuation_methods) / len(valuation_methods)
 buy_in = 3110.0 / fx_usdjpy
@@ -162,6 +162,9 @@ def metric_table(c, x, y, w, h):
 def valuation_table(c, x, y, w, h):
     rounded_box(c, x, y, w, h, fill=colors.HexColor("#FBFCFE"))
     section_title(c, "Valuation - cinco metodologias", x + 11, y + h - 20, w - 22, BLUE)
+    c.setFillColor(SUB)
+    c.setFont("Helvetica-Oblique", 4.6)
+    c.drawRightString(x + w - 11, y + h - 16.5, "estimativas internas registradas em 17/08/2026")
 
     c.setFillColor(LIGHT)
     c.rect(x + 9, y + h - 52, w - 18, 17, fill=1, stroke=0)
@@ -400,7 +403,7 @@ def draw():
     footer = (
         "<b>Fontes:</b> MHI Q1 FY2026 Financial Results (04/08/2026), FY2025 Financial Results e 2024 Medium-Term Business Plan; "
         "MHI releases sobre NVIDIA DSX e Preferred Networks; StockAnalysis/S&amp;P Global para preço, múltiplos, caixa e consenso. "
-        "<b>Metodologia:</b> média de cinco abordagens proprietárias, horizonte de 12 meses. Valores convertidos de 7011.T pela taxa USD/JPY 156,70; MHVYF está sujeito a câmbio e liquidez OTC. "
+        "<b>Metodologia:</b> média de cinco estimativas internas registradas em 17/08/2026, horizonte de 12 meses. Valores convertidos de 7011.T pela taxa USD/JPY 156,70; MHVYF está sujeito a câmbio e liquidez OTC. "
         "Material informativo; não constitui recomendação individual de investimento."
     )
     para(c, footer, M, 66, PAGE_W - 2 * M, "small", 30)
