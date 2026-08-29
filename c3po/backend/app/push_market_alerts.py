@@ -63,7 +63,12 @@ class PushMarketAlertsService:
 
     def _experiment(self) -> str | None:
         if self._experiment_id is None:
-            experiment = R2D2Repository(self.database).ensure_experiment(self.settings)
+            # Pure read only: an observer must never run the initialization
+            # upsert. An absent experiment simply keeps every alert silent
+            # (Codex audit, finding 4).
+            experiment = R2D2Repository(self.database).experiment(
+                self.settings.r2d2_experiment_code
+            )
             self._experiment_id = str(experiment["id"]) if experiment else None
         return self._experiment_id
 

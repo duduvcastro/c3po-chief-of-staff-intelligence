@@ -146,3 +146,30 @@ def test_silent_on_weekends_and_with_zero_decided_episodes():
     service._last_hourly_key = "seed"
     service.run_once(now=SESSION.replace(hour=15, minute=0))
     assert notifications.sent == []  # zero decididos: hora consumida em silêncio
+
+
+def test_observer_only_reads_the_experiment_and_is_silent_when_absent(monkeypatch):
+    import app.push_market_alerts as module
+
+    calls = {"experiment": 0}
+
+    class _ReadOnlyRepo:
+        def __init__(self, database):
+            pass
+
+        def experiment(self, code):
+            calls["experiment"] += 1
+            return None  # experimento ausente
+
+        def ensure_experiment(self, settings):
+            raise AssertionError("observer must NEVER run the initialization upsert")
+
+    monkeypatch.setattr(module, "R2D2Repository", _ReadOnlyRepo)
+    settings = Settings(database_url="", auth_cookie_secure=False)
+    notifications = _Notifications()
+    service = PushMarketAlertsService(settings, None, notifications)  # type: ignore[arg-type]
+
+    service.run_once(now=SESSION.replace(hour=15, minute=0))
+
+    assert calls["experiment"] == 1
+    assert notifications.sent == []  # ausente = silêncio, jamais criação
