@@ -8,6 +8,8 @@ import unicodedata
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+import exchange_calendars as xcals
+
 from ..config import Settings
 from ..database import Database
 from ..foreign_listings import policy_for as foreign_listing_policy_for
@@ -40,6 +42,12 @@ SYMBOL_CATALOG_SECONDS = 24 * 60 * 60
 MAX_STREAM_PRICE_DEVIATION = 0.35
 DIRECT_QUOTE_FALLBACK_AGE = timedelta(days=30)
 NEW_YORK = ZoneInfo("America/New_York")
+PORTFOLIO_MARKET_CALENDARS = {
+    "B3": ("BVMF", ZoneInfo("America/Sao_Paulo"), 10),
+    "NASDAQ": ("XNYS", NEW_YORK, 20),
+    "NYSE": ("XNYS", NEW_YORK, 20),
+    "OTC": ("XNYS", NEW_YORK, 20),
+}
 
 
 @dataclass(frozen=True)
@@ -224,9 +232,9 @@ class RealtimeMarketsService:
                 if market != "B3" and not used_origin_fallback
                 else quote_row
             )
-            age_minutes = max(0, int((now - quote_row.as_of).total_seconds() / 60))
-            if age_minutes > 24 * 60:
-                quote_row = quote_row.model_copy(update={"status": "stale"})
+            quote_row = quote_row.model_copy(update={
+                "status": self._portfolio_quote_status(quote_row, market, now),
+            })
             source = "Brapi Pro" if market == "B3" else (
                 "EODHD Real-Time WebSocket" if quote_row.status == "live" else "EODHD Bulk Live US"
             )
@@ -323,6 +331,30 @@ class RealtimeMarketsService:
             sources=sources,
             errors=errors,
         )
+
+    @staticmethod
+    def _portfolio_quote_status(
+        quote_row: RealtimeMarketLeader,
+        market: str,
+        now: datetime,
+    ) -> Literal["live", "delayed", "closed", "stale"]:
+        if quote_row.status == "live":
+            return "live"
+        try:
+            calendar_name, market_timezone, delay_grace_minutes = (
+                PORTFOLIO_MARKET_CALENDARS[market]
+            )
+            calendar = xcals.get_calendar(calendar_name)
+            expected_session = calendar.minute_to_session(
+                now - timedelta(minutes=delay_grace_minutes),
+                direction="previous",
+            ).date()
+            quote_session = quote_row.as_of.astimezone(market_timezone).date()
+            if quote_session < expected_session:
+                return "stale"
+            return "delayed" if calendar.is_open_on_minute(now) else "closed"
+        except (ValueError, TypeError, KeyError):
+            return "closed" if now - quote_row.as_of <= timedelta(days=7) else "stale"
 
     def _us_reference_status(
         self,
