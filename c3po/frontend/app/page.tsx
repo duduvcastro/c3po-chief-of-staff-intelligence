@@ -8013,14 +8013,27 @@ interface CodeCensusRow {
   generated_at: string;
 }
 
+interface CodeCensusCompoundGrowth {
+  baseline_date: string;
+  days: number;
+  total_growth_pct: number;
+  daily_compound_pct: number;
+  cagr_annualized_pct: number;
+}
+
 interface CodeCensusSnapshot {
   latest: CodeCensusRow | null;
   previous: CodeCensusRow | null;
   delta_comparable: boolean;
   total_delta_vs_previous: number | null;
+  compound_growth: CodeCensusCompoundGrowth | null;
   layer_order: string[];
   series: CodeCensusRow[];
 }
+
+// Annualizing a very short series is numerically wild; below this window the
+// chart shows the compounded daily rate and the total instead of an a.a. figure.
+const CODE_CENSUS_CAGR_FLOOR_DAYS = 30;
 
 const CODE_CENSUS_LAYER_LABELS: Record<string, string> = {
   backend_app: "Backend (app)",
@@ -8066,6 +8079,16 @@ function CodeCensusSection({ data }: { data: CodeCensusSnapshot | null }) {
   const path = series.map((item, index) => `${index ? "L" : "M"}${x(index).toFixed(2)},${y(item.total_lines).toFixed(2)}`).join(" ");
   const guideValues = [rawMax, Math.round((rawMax + rawMin) / 2), rawMin];
   const dateLabel = (value: string) => new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`));
+  const growth = data.compound_growth;
+  const pct = (value: number) => `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+  const growthLabel = growth
+    ? growth.days >= CODE_CENSUS_CAGR_FLOOR_DAYS
+      ? `CAGR ${pct(growth.cagr_annualized_pct)} a.a.`
+      : `CAGR composto ${pct(growth.daily_compound_pct)} a.d. · ${pct(growth.total_growth_pct)} total`
+    : null;
+  const growthTitle = growth
+    ? `Janela de ${growth.days} dia${growth.days === 1 ? "" : "s"} desde ${dateLabel(growth.baseline_date)} na metodologia vigente · anualização exibida a partir de ${CODE_CENSUS_CAGR_FLOOR_DAYS} dias de série`
+    : undefined;
 
   return (
     <section className="server-code-census">
@@ -8099,7 +8122,7 @@ function CodeCensusSection({ data }: { data: CodeCensusSnapshot | null }) {
         </div>
       </div>
       <div className="code-census-history">
-        <header><div><span>CODE GROWTH</span><strong>Daily total</strong></div><small>Since {dateLabel(series[0].session_date)} · ongoing</small></header>
+        <header><div><span>CODE GROWTH</span><strong>Daily total</strong></div><small title={growthTitle}>Since {dateLabel(series[0].session_date)} · ongoing{growthLabel ? ` · ${growthLabel}` : ""}</small></header>
         <svg viewBox={`0 0 ${CODE_CENSUS_CHART.width} ${CODE_CENSUS_CHART.height}`} role="img" aria-label={`Code Census daily history with ${series.length} observations`}>
           {guideValues.map((value) => (
             <line className="code-census-chart-grid" key={value} x1={CODE_CENSUS_CHART.left} x2={CODE_CENSUS_CHART.width - CODE_CENSUS_CHART.right} y1={y(value)} y2={y(value)} />
