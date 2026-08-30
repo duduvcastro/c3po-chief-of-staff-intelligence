@@ -140,20 +140,26 @@ def test_trivy_scans_are_non_blocking_per_build_and_weekly_off_host() -> None:
     assert pipeline.count("continue-on-error: true") >= 4
     assert "--exclude='runtime/'" in pipeline
     assert parsed[True]["schedule"][0]["cron"] == "0 7 * * 0"
-    assert 'docker save c3po/backend:production c3po/web:production "$db_scan_ref"' in weekly
+    assert 'docker save c3po/backend:production c3po/web:production "$db_image_ref"' in weekly
     assert "{{.Image}}|{{.Config.Image}}" in weekly
     assert "C3PO_DB_IMAGE_ID" in weekly
     assert "C3PO_DB_IMAGE_REF" in weekly
     assert "C3PO_DB_SCAN_REF" in weekly
+    assert "C3PO_DB_ROOTFS" in weekly
     assert weekly.count("docker image inspect --format '{{.Id}}'") == 1
-    assert weekly.count("""docker image inspect --format '{{join .RootFS.Layers ","}}'""") == 2
+    assert weekly.count("""docker image inspect --format '{{join .RootFS.Layers ","}}'""") == 3
     assert '"$db_image_ref")" = "$db_image_id"' in weekly
-    assert 'docker tag "$db_image_id" "$db_scan_ref"' in weekly
-    assert 'docker rmi "$db_scan_ref"' in weekly
+    assert "docker rmi" not in weekly
+    assert weekly.count("docker tag") == 1
+    assert 'docker tag "$db_match" "$db_scan_ref"' in weekly
     assert "docker image inspect c3po/backend:production c3po/web:production >/dev/null" in weekly
+    assert "docker images --no-trunc --format '{{.ID}}'" in weekly
     assert 'test -n "$db_rootfs"' in weekly
+    assert 'test -n "$db_match"' in weekly
+    assert "ambiguous database image RootFS match" in weekly
     assert '"$db_scan_ref")" = "$db_rootfs"' in weekly
     assert '--image "database=$C3PO_DB_SCAN_REF"' in weekly
+    assert '--origin "database=$C3PO_DB_IMAGE_REF|$C3PO_DB_IMAGE_ID|$C3PO_DB_ROOTFS"' in weekly
     assert "Scan the production images off-host" in weekly
     assert "scripts/c3po_trivy_scan.py" in weekly
     assert "C3PO_HEALTHCHECK_TRIVY_URL" in weekly
@@ -182,6 +188,56 @@ def test_trivy_report_attests_its_own_dead_man_configuration() -> None:
     assert report["scan_status"] == "complete"
     assert report["dead_man_configured"] is True
     assert report["report_sha256"] == scanner.report_sha256(report)
+
+
+def test_trivy_report_carries_database_origin_identity() -> None:
+    scanner = _scanner_module()
+    scanner.scan_image = lambda label, reference, _work: scanner.normalize_trivy_payload(
+        label,
+        reference,
+        {"ArtifactName": reference, "Metadata": {}, "Results": []},
+    )
+
+    report = scanner.build_report(
+        [
+            "backend=c3po/backend:production",
+            "database=c3po/database:production-scan",
+        ],
+        scope="production_runtime",
+        revision="test",
+        dead_man_configured=True,
+        origin_specs=[
+            "database=postgres:16.15-alpine3.24@sha256:cf78|sha256:cf78|sha256:aaa,sha256:bbb"
+        ],
+    )
+
+    by_label = {image["label"]: image for image in report["images"]}
+    assert by_label["backend"]["origin"] is None
+    assert by_label["database"]["origin"] == {
+        "image_ref": "postgres:16.15-alpine3.24@sha256:cf78",
+        "image_id": "sha256:cf78",
+        "rootfs_layers": ["sha256:aaa", "sha256:bbb"],
+    }
+    assert report["report_sha256"] == scanner.report_sha256(report)
+
+    try:
+        scanner.build_report(
+            ["backend=c3po/backend:production"],
+            scope="production_runtime",
+            revision="test",
+            origin_specs=["database=ref|id|rootfs"],
+        )
+    except ValueError as error:
+        assert "origin labels without a scanned image" in str(error)
+    else:
+        raise AssertionError("unknown origin label must be rejected")
+
+    try:
+        scanner.parse_origin_specs(["database=ref|id-sem-rootfs"])
+    except ValueError as error:
+        assert "invalid origin specification" in str(error)
+    else:
+        raise AssertionError("malformed origin specification must be rejected")
 
 
 def test_trivy_container_does_not_leave_root_owned_runner_cache() -> None:
