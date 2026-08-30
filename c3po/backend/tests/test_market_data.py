@@ -2026,7 +2026,7 @@ def test_mapped_otc_uses_origin_conversion_when_primary_is_old_or_missing(
                 cash_volume=2_400.0,
                 currency="USD",
                 exchange=market,
-                as_of=measured_at - timedelta(days=2),
+                    as_of=measured_at - timedelta(days=10),
             )]
 
         def _otc_origin_reference(self, symbol, measured_at):
