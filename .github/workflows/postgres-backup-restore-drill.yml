@@ -30,8 +30,10 @@ jobs:
 
       - name: Build the production database image
         run: |
+          rebuild_token=$(sha256sum c3po/security/container-rebuild-trigger.json | cut -d ' ' -f 1)
           docker build \
             --file c3po/database/Dockerfile \
+            --build-arg "C3PO_SECURITY_REBUILD=$rebuild_token" \
             --tag c3po/database:restore-drill \
             c3po
           docker run --rm --entrypoint gosu c3po/database:restore-drill \

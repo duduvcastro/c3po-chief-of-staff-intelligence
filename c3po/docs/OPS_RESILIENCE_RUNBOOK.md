@@ -197,6 +197,29 @@ The same complete scan runs again every Sunday at 04:00 BRT as a redundant
 weekly checkpoint. After a remediation deployment, operators dispatch this
 workflow immediately instead of waiting for either scheduled execution.
 
+After each successful scan, a second GitHub-hosted job validates the report
+self-hash, scope, dead-man, detailed `FixedVersion` evidence and aggregate
+counts. If Critical or High fixes exist and no remediation lane is already
+open, it creates `automation/container-security-rebuild-<report hash>`, changes
+the tracked rebuild token, opens one PR and dispatches the five validation gates
+with `deploy=false`. The job is intentionally isolated from the production
+environment and has no SSH key; conversely, the scan job cannot write to the
+repository. An open remediation PR suppresses duplicates by a hash of the
+fixable finding set; if genuinely new fixes appear while that PR is open, the
+controller updates its rebuild token, appends the evidence and re-dispatches
+validation in that same lane instead of opening another.
+
+The generated PR is a work queue, not an approval. It blocks while any fixable
+Critical/High remains in its image scan, never auto-merges and never deploys.
+Codex adjusts packages or base digests when a plain rebuild is insufficient;
+Fable performs the independent audit; Dudu only receives the final merge
+authorization request. The dead-man succeeds only after both scan and remote
+controller complete, so failure to create or dispatch the PR is observable.
+The repository setting that permits Actions-created PRs is a one-time
+prerequisite and is checked before mutation. Although GitHub groups create and
+approve permission in one setting, this workflow contains no review, approval,
+merge or auto-merge command; protected-branch approval remains external.
+
 Both scheduled layers carry their own dead-man evidence. The apt service sends
 `start` and a systemd `OnSuccess`/`OnFailure` result around its factual daily
 execution. The daily workflow does the same around the off-host scan. Ping

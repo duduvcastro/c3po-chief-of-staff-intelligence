@@ -39,7 +39,8 @@ def test_production_builds_and_transfers_images_before_connecting_to_host() -> N
     workflow = PIPELINE.read_text(encoding="utf-8")
 
     assert "Validate production Docker images" in workflow
-    assert "if: github.event_name == 'pull_request'" in workflow
+    assert "github.event_name == 'pull_request' ||" in workflow
+    assert "github.event_name == 'workflow_dispatch' && inputs.remediation" in workflow
     assert "c3po/backend:pr-validation" in workflow
     assert "c3po/web:pr-validation" in workflow
     assert "c3po/database:pr-validation" in workflow
@@ -127,6 +128,7 @@ def test_every_base_image_is_digest_pinned_and_restore_uses_production_db() -> N
     assert database_ref == "c3po/database:production"
     restore = RESTORE_DRILL.read_text(encoding="utf-8")
     assert "--file c3po/database/Dockerfile" in restore
+    assert "C3PO_SECURITY_REBUILD=$rebuild_token" in restore
     assert "c3po/database:restore-drill" in restore
 
 
@@ -137,14 +139,17 @@ def test_fixable_high_and_critical_runtime_findings_have_explicit_upgrades() -> 
     requirements = BACKEND_REQUIREMENTS.read_text(encoding="utf-8")
 
     assert "apt-get install --yes --no-install-recommends --only-upgrade" in backend
+    assert backend.count("C3PO_SECURITY_REBUILD") == 3
     assert {"libssl3t64", "openssl", "openssl-provider-legacy"} <= set(
         backend.split()
     )
     assert "cryptography>=50,<51" in requirements
     assert "apk upgrade --no-cache libcrypto3 libssl3" in frontend
+    assert frontend.count("C3PO_SECURITY_REBUILD") == 2
     assert "golang:1.25.13-alpine3.24@sha256:" in database
     assert "ARG GOSU_COMMIT=6456aaa0f3c854d199d0f037f068eb97515b7513" in database
     assert '"github.com/tianon/gosu@${GOSU_COMMIT}"' in database
     assert "CGO_ENABLED=0" in database
     assert "apk upgrade --no-cache libcrypto3 libssl3" in database
+    assert database.count("C3PO_SECURITY_REBUILD") == 4
     assert "gosu nobody true" in database
