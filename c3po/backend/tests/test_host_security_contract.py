@@ -140,16 +140,19 @@ def test_trivy_scans_are_non_blocking_per_build_and_weekly_off_host() -> None:
     assert pipeline.count("continue-on-error: true") >= 4
     assert "--exclude='runtime/'" in pipeline
     assert parsed[True]["schedule"][0]["cron"] == "0 7 * * 0"
-    assert "docker save c3po/backend:production c3po/web:production" in weekly
+    assert 'docker save c3po/backend:production c3po/web:production "$db_scan_ref"' in weekly
     assert "{{.Image}}|{{.Config.Image}}" in weekly
     assert "C3PO_DB_IMAGE_ID" in weekly
     assert "C3PO_DB_IMAGE_REF" in weekly
     assert "C3PO_DB_SCAN_REF" in weekly
-    assert weekly.count("docker image inspect --format '{{.Id}}'") == 2
+    assert weekly.count("docker image inspect --format '{{.Id}}'") == 1
+    assert weekly.count("""docker image inspect --format '{{join .RootFS.Layers ","}}'""") == 2
     assert '"$db_image_ref")" = "$db_image_id"' in weekly
-    assert 'docker image inspect c3po/backend:production c3po/web:production "$db_image_id"' in weekly
     assert 'docker tag "$db_image_id" "$db_scan_ref"' in weekly
-    assert '"$db_scan_ref")" = "$db_image_id"' in weekly
+    assert 'docker rmi "$db_scan_ref"' in weekly
+    assert "docker image inspect c3po/backend:production c3po/web:production >/dev/null" in weekly
+    assert 'test -n "$db_rootfs"' in weekly
+    assert '"$db_scan_ref")" = "$db_rootfs"' in weekly
     assert '--image "database=$C3PO_DB_SCAN_REF"' in weekly
     assert "Scan the production images off-host" in weekly
     assert "scripts/c3po_trivy_scan.py" in weekly
