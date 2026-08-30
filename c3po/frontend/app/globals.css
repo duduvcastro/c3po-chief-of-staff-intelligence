@@ -2696,3 +2696,8 @@ button { cursor: pointer; }
 @media (display-mode: standalone) {
   body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 }
+
+.governance-refresh-bar { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 12px 20px 0; }
+.governance-refresh-bar button { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; }
+.governance-refresh-bar button:disabled { opacity: .55; cursor: wait; }
+.governance-refresh-bar small { color: #b42318; }
