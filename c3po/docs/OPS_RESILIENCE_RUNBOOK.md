@@ -79,7 +79,7 @@ payloads:
 - PostgreSQL backup;
 - monthly PostgreSQL restore drill;
 - unattended-upgrades;
-- daily Trivy scan of production images.
+- daily Trivy scan of production images, plus a redundant weekly full scan.
 
 Each integration sends `/start`, base success, or `/fail`. A ping failure is
 logged but never changes the monitored job result. The schedules and grace
@@ -94,7 +94,7 @@ periods configured in the Healthchecks console are:
 | PostgreSQL backup | daily | 2 hours |
 | Restore drill | `0 10 1 * *` UTC | 2 hours |
 | Unattended-upgrades | daily via `apt-daily-upgrade.timer` | 4 hours |
-| Trivy production images | daily at 00:17 BRT (`17 3 * * *` UTC) | 2 hours |
+| Trivy production images | daily at 00:17 BRT (`17 3 * * *` UTC); redundant Sunday 04:00 BRT (`0 7 * * 0` UTC) | 2 hours |
 
 Any console change to these values must update this runbook and the deployment
 evidence in the same audited change.
@@ -193,6 +193,9 @@ runner, and atomically installs only the normalized count report at
 its vulnerability database never consume production CPU or disk.
 No workstation, desktop Codex automation, or owner device participates in this
 schedule; an offline owner device cannot delay or suppress a scan.
+The same complete scan runs again every Sunday at 04:00 BRT as a redundant
+weekly checkpoint. After a remediation deployment, operators dispatch this
+workflow immediately instead of waiting for either scheduled execution.
 
 Both scheduled layers carry their own dead-man evidence. The apt service sends
 `start` and a systemd `OnSuccess`/`OnFailure` result around its factual daily

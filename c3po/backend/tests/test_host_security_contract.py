@@ -130,7 +130,7 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
     assert scanner.TRIVY_VERSION == "0.74.0"
 
 
-def test_trivy_scans_are_non_blocking_per_build_and_daily_off_host() -> None:
+def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
     pipeline = PIPELINE.read_text(encoding="utf-8")
     daily = DAILY_SCAN.read_text(encoding="utf-8")
     parsed = yaml.safe_load(daily)
@@ -139,9 +139,11 @@ def test_trivy_scans_are_non_blocking_per_build_and_daily_off_host() -> None:
     assert pipeline.count("--image database=c3po/database:") == 2
     assert pipeline.count("continue-on-error: true") >= 4
     assert "--exclude='runtime/'" in pipeline
-    assert parsed[True]["schedule"][0]["cron"] == "17 3 * * *"
+    schedules = [entry["cron"] for entry in parsed[True]["schedule"]]
+    assert schedules == ["17 3 * * *", "0 7 * * 0"]
+    assert "workflow_dispatch" in parsed[True]
     assert "runs-on: ubuntu-latest" in daily
-    assert "Daily production image scan" in daily
+    assert "Scheduled production image scan" in daily
     assert 'docker save c3po/backend:production c3po/web:production "$db_image_ref"' in daily
     assert "{{.Image}}|{{.Config.Image}}" in daily
     assert "C3PO_DB_IMAGE_ID" in daily
