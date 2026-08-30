@@ -240,16 +240,25 @@ class RealtimeMarketsService:
             origin_reference_divergence_percent = None
             origin_reference_as_of = None
             origin_reference_note = None
+            market_label = market
+            market_detail = None
             if market == "OTC":
                 quote_row = quote_row.model_copy(update={"currency": "USD"})
                 if listing_policy is None:
                     origin_reference_status = "unmapped"
                     origin_reference_note = "sem listagem-mãe mapeada"
-                elif origin_reference is None:
+                else:
+                    market_label = f"{listing_policy.primary_exchange_code} · OTC"
+                    market_detail = (
+                        f"Listagem-mãe {listing_policy.primary_ticker} na "
+                        f"{listing_policy.primary_exchange_name}; preço primário "
+                        f"{entry['symbol']} no OTC em US$."
+                    )
+                if listing_policy is not None and origin_reference is None:
                     origin_reference_status = "unavailable"
                     origin_reference_symbol = listing_policy.primary_ticker
                     origin_reference_note = "listagem-mãe temporariamente indisponível"
-                else:
+                elif listing_policy is not None and origin_reference is not None:
                     origin_reference_symbol = origin_reference.symbol
                     origin_reference_price_usd = origin_reference.price_usd
                     origin_reference_as_of = origin_reference.as_of
@@ -291,6 +300,8 @@ class RealtimeMarketsService:
             items.append(RealtimePortfolioItem(
                 **quote_row.model_dump(),
                 market=market,
+                market_label=market_label,
+                market_detail=market_detail,
                 source=source,
                 reference_status=reference_status,
                 reference_close=reference_close,
@@ -329,12 +340,14 @@ class RealtimeMarketsService:
         reference_close = cached[1] if cached else None
         reference_as_of = cached[2] if cached else None
 
-        provider_reference = self._us_previous_close.get(symbol)
-        if reference_close is None or provider_reference is None:
+        if reference_close is None or reference_as_of is None:
             return "unvalidated", reference_close, reference_as_of
-        tolerance = max(0.02, abs(reference_close) * 0.002)
-        status = "validated" if abs(provider_reference - reference_close) <= tolerance else "unvalidated"
-        return status, reference_close, reference_as_of
+        # The completed raw daily bar is the canonical day-change anchor. The
+        # live feed's previousClose is useful as a hint, but it is known to be
+        # missing or recycled after ticker reuse and must not veto fresh,
+        # symbol-exact history from EODHD/Yahoo.
+        self._us_previous_close[symbol] = reference_close
+        return "validated", reference_close, reference_as_of
 
     def _prime_us_reference_cache(self, symbol_sessions: dict[str, date], now: datetime) -> None:
         missing = {

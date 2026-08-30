@@ -638,6 +638,8 @@ class RealtimePortfolioSymbolSearchResponse(BaseModel):
 
 class RealtimePortfolioItem(RealtimeMarketLeader):
     market: Literal["B3", "NASDAQ", "NYSE", "OTC"]
+    market_label: str | None = None
+    market_detail: str | None = None
     source: str
     delay_minutes: int
     status: Literal["live", "delayed", "closed", "stale"]

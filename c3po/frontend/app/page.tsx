@@ -856,6 +856,8 @@ interface RealtimeMarketResponse {
 
 interface RealtimePortfolioItem extends RealtimeMarketLeader {
   market: RealtimePortfolioMarket;
+  market_label: string | null;
+  market_detail: string | null;
   source: string;
   delay_minutes: number;
   status: LiveMarketStatus;
@@ -5174,10 +5176,12 @@ function MyRealtimePortfolio({
                   <span>{item.name}</span>
                 </div>
               </div>
-              {valuationMarketMarks[item.market] ? (
-                <img src={valuationMarketMarks[item.market]} alt={item.market} title={item.market} className="realtime-portfolio-market-logo" />
+              {valuationMarketMarks[item.market] && (!item.market_label || item.market_label === item.market) ? (
+                <img src={valuationMarketMarks[item.market]} alt={item.market} title={item.market_detail ?? item.market} className="realtime-portfolio-market-logo" />
               ) : (
-                <span className="realtime-portfolio-market">{item.market}</span>
+                <span className="realtime-portfolio-market" title={item.market_detail ?? item.market}>
+                  {item.market_label ?? item.market}
+                </span>
               )}
               <div className="realtime-portfolio-price-cell">
                 <strong className="realtime-portfolio-price">{item.status === "stale" ? "N/D" : formatCurrency(item.price, item.market === "OTC" ? "USD" : item.currency)}</strong>
