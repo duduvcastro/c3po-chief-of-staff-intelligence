@@ -124,27 +124,56 @@ def scan_image(label: str, reference: str, work: Path) -> dict[str, Any]:
     return normalize_trivy_payload(label, reference, payload)
 
 
+def parse_origin_specs(origin_specs: list[str]) -> dict[str, dict[str, Any]]:
+    origins: dict[str, dict[str, Any]] = {}
+    for spec in origin_specs:
+        if "=" not in spec:
+            raise ValueError(f"invalid origin specification: {spec}")
+        label, value = spec.split("=", 1)
+        parts = value.split("|")
+        if not label or len(parts) != 3 or not all(parts):
+            raise ValueError(f"invalid origin specification: {spec}")
+        image_ref, image_id, rootfs = parts
+        origins[label] = {
+            "image_ref": image_ref,
+            "image_id": image_id,
+            "rootfs_layers": rootfs.split(","),
+        }
+    return origins
+
+
 def build_report(
     image_specs: list[str],
     *,
     scope: str,
     revision: str,
     dead_man_configured: bool = False,
+    origin_specs: list[str] | None = None,
 ) -> dict[str, Any]:
     images: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    parsed_specs: list[tuple[str, str]] = []
+    for spec in image_specs:
+        if "=" not in spec:
+            raise ValueError(f"invalid image specification: {spec}")
+        label, reference = spec.split("=", 1)
+        if not label or not reference:
+            raise ValueError(f"invalid image specification: {spec}")
+        parsed_specs.append((label, reference))
+    origins = parse_origin_specs(origin_specs or [])
+    unknown_origins = sorted(set(origins) - {label for label, _ in parsed_specs})
+    if unknown_origins:
+        raise ValueError(f"origin labels without a scanned image: {unknown_origins}")
     with tempfile.TemporaryDirectory(prefix="c3po-trivy-") as temporary:
         work = Path(temporary)
-        for spec in image_specs:
-            if "=" not in spec:
-                raise ValueError(f"invalid image specification: {spec}")
-            label, reference = spec.split("=", 1)
-            if not label or not reference:
-                raise ValueError(f"invalid image specification: {spec}")
+        for label, reference in parsed_specs:
             try:
-                images.append(scan_image(label, reference, work))
+                image = scan_image(label, reference, work)
             except Exception as exc:
                 errors.append({"label": label, "error": f"{type(exc).__name__}: {exc}"})
+            else:
+                image["origin"] = origins.get(label)
+                images.append(image)
     counts = {severity: 0 for severity in SEVERITIES}
     fix_available = {severity: 0 for severity in SEVERITIES}
     for image in images:
@@ -197,6 +226,7 @@ def atomic_write(output: Path, report: dict[str, Any]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scan container images with pinned Trivy")
     parser.add_argument("--image", action="append", required=True, dest="images")
+    parser.add_argument("--origin", action="append", default=[], dest="origins")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scope", required=True)
     parser.add_argument("--revision", default="unknown")
@@ -207,6 +237,7 @@ def main() -> None:
         scope=args.scope,
         revision=args.revision,
         dead_man_configured=args.dead_man_configured,
+        origin_specs=args.origins,
     )
     atomic_write(args.output, report)
     if report["scan_status"] != "complete" and os.environ.get("GITHUB_ACTIONS") == "true":
