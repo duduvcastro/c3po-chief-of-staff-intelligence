@@ -79,7 +79,7 @@ payloads:
 - PostgreSQL backup;
 - monthly PostgreSQL restore drill;
 - unattended-upgrades;
-- weekly Trivy scan of production images.
+- daily Trivy scan of production images, plus a redundant weekly full scan.
 
 Each integration sends `/start`, base success, or `/fail`. A ping failure is
 logged but never changes the monitored job result. The schedules and grace
@@ -94,7 +94,7 @@ periods configured in the Healthchecks console are:
 | PostgreSQL backup | daily | 2 hours |
 | Restore drill | `0 10 1 * *` UTC | 2 hours |
 | Unattended-upgrades | daily via `apt-daily-upgrade.timer` | 4 hours |
-| Trivy production images | Sunday 04:00 BRT (`0 7 * * 0` UTC) | 2 hours |
+| Trivy production images | daily at 00:17 BRT (`17 3 * * *` UTC); redundant Sunday 04:00 BRT (`0 7 * * 0` UTC) | 2 hours |
 
 Any console change to these values must update this runbook and the deployment
 evidence in the same audited change.
@@ -170,7 +170,7 @@ that repository validates the five allowed CSV files, records a pull request,
 and merges only the validated PR. The C3PO `main` branch therefore requires
 `enforce_admins=true`, with no publisher exception in the baseline.
 
-The monthly restore and weekly Trivy check URLs remain only in the GitHub
+The monthly restore and daily Trivy check URLs remain only in the GitHub
 `production` environment. The production host stores boolean attestations that
 those checks were present during the audited installer run, never their secret
 ping URLs. The unattended-upgrades URL is stored separately as root-only mode
@@ -186,23 +186,28 @@ security channels, and pins `Automatic-Reboot=false`.
 
 The normal build pipeline scans backend and frontend images with the immutable
 Trivy image recorded in `scripts/c3po_trivy_scan.py`. It is deliberately
-non-blocking. The weekly `Scan production container vulnerabilities` workflow
+non-blocking. The daily `Scan production container vulnerabilities` workflow
 exports the three images actually running on the host, scans them on a GitHub
 runner, and atomically installs only the normalized count report at
 `runtime/security/container-production-vulnerability-report.json`. Trivy and
 its vulnerability database never consume production CPU or disk.
+No workstation, desktop Codex automation, or owner device participates in this
+schedule; an offline owner device cannot delay or suppress a scan.
+The same complete scan runs again every Sunday at 04:00 BRT as a redundant
+weekly checkpoint. After a remediation deployment, operators dispatch this
+workflow immediately instead of waiting for either scheduled execution.
 
 Both scheduled layers carry their own dead-man evidence. The apt service sends
 `start` and a systemd `OnSuccess`/`OnFailure` result around its factual daily
-execution. The weekly workflow does the same around the off-host scan. Ping
+execution. The daily workflow does the same around the off-host scan. Ping
 delivery itself is best-effort and cannot change an apt or scan result. A fresh
 host snapshot must contain a configured dead-man and an unattended-upgrades
-execution no older than 36 hours; the weekly report must attest its dead-man
+execution no older than 36 hours; the daily report must attest its dead-man
 configuration. Missing execution evidence is amber even when vulnerability
 counts are zero.
 
 The Governance card labels image results as finding occurrences per image, not
-unique CVEs. Missing host evidence after 2 hours or image evidence after 8 days
+unique CVEs. Missing host evidence after 2 hours or image evidence after 36 hours
 is amber, never zero. Repository or image high/critical findings are red and
 emit `governance_critical` through the existing best-effort push path.
 

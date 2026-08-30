@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 HOST_INSTALLER = ROOT / ".github" / "workflows" / "install-host-security-v1.yml"
-WEEKLY_SCAN = ROOT / ".github" / "workflows" / "container-vulnerability-scan.yml"
+DAILY_SCAN = ROOT / ".github" / "workflows" / "container-vulnerability-scan.yml"
 PIPELINE = ROOT / ".github" / "workflows" / "c3po-pipeline.yml"
 APT_POLICY = ROOT / "ops" / "apt" / "52c3po-security-upgrades"
 HOST_SERVICE = ROOT / "ops" / "systemd" / "c3po-host-security-snapshot.service"
@@ -130,44 +130,48 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
     assert scanner.TRIVY_VERSION == "0.74.0"
 
 
-def test_trivy_scans_are_non_blocking_per_build_and_weekly_off_host() -> None:
+def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
     pipeline = PIPELINE.read_text(encoding="utf-8")
-    weekly = WEEKLY_SCAN.read_text(encoding="utf-8")
-    parsed = yaml.safe_load(weekly)
+    daily = DAILY_SCAN.read_text(encoding="utf-8")
+    parsed = yaml.safe_load(daily)
 
     assert pipeline.count("scripts/c3po_trivy_scan.py") == 2
     assert pipeline.count("--image database=c3po/database:") == 2
     assert pipeline.count("continue-on-error: true") >= 4
     assert "--exclude='runtime/'" in pipeline
-    assert parsed[True]["schedule"][0]["cron"] == "0 7 * * 0"
-    assert 'docker save c3po/backend:production c3po/web:production "$db_image_ref"' in weekly
-    assert "{{.Image}}|{{.Config.Image}}" in weekly
-    assert "C3PO_DB_IMAGE_ID" in weekly
-    assert "C3PO_DB_IMAGE_REF" in weekly
-    assert "C3PO_DB_SCAN_REF" in weekly
-    assert "C3PO_DB_ROOTFS" in weekly
-    assert weekly.count("docker image inspect --format '{{.Id}}'") == 1
-    assert weekly.count("""docker image inspect --format '{{join .RootFS.Layers ","}}'""") == 3
-    assert '"$db_image_ref")" = "$db_image_id"' in weekly
-    assert "docker rmi" not in weekly
-    assert weekly.count("docker tag") == 1
-    assert 'docker tag "$db_match" "$db_scan_ref"' in weekly
-    assert "docker image inspect c3po/backend:production c3po/web:production >/dev/null" in weekly
-    assert "docker images --no-trunc --format '{{.ID}}'" in weekly
-    assert 'test -n "$db_rootfs"' in weekly
-    assert 'test -n "$db_match"' in weekly
-    assert "ambiguous database image RootFS match" in weekly
-    assert '"$db_scan_ref")" = "$db_rootfs"' in weekly
-    assert '--image "database=$C3PO_DB_SCAN_REF"' in weekly
-    assert '--origin "database=$C3PO_DB_IMAGE_REF|$C3PO_DB_IMAGE_ID|$C3PO_DB_ROOTFS"' in weekly
-    assert "Scan the production images off-host" in weekly
-    assert "scripts/c3po_trivy_scan.py" in weekly
-    assert "C3PO_HEALTHCHECK_TRIVY_URL" in weekly
-    assert '"${HEALTHCHECK_URL%/}/start"' in weekly
-    assert '"${HEALTHCHECK_URL%/}/fail"' in weekly
-    assert "--dead-man-configured" in weekly
-    assert "container-production-vulnerability-report.json" in weekly
-    assert "sudo install -o root -g ubuntu -m 0644" in weekly
+    schedules = [entry["cron"] for entry in parsed[True]["schedule"]]
+    assert schedules == ["17 3 * * *", "0 7 * * 0"]
+    assert "workflow_dispatch" in parsed[True]
+    assert "runs-on: ubuntu-latest" in daily
+    assert "Scheduled production image scan" in daily
+    assert 'docker save c3po/backend:production c3po/web:production "$db_image_ref"' in daily
+    assert "{{.Image}}|{{.Config.Image}}" in daily
+    assert "C3PO_DB_IMAGE_ID" in daily
+    assert "C3PO_DB_IMAGE_REF" in daily
+    assert "C3PO_DB_SCAN_REF" in daily
+    assert "C3PO_DB_ROOTFS" in daily
+    assert daily.count("docker image inspect --format '{{.Id}}'") == 1
+    assert daily.count("""docker image inspect --format '{{join .RootFS.Layers ","}}'""") == 3
+    assert '"$db_image_ref")" = "$db_image_id"' in daily
+    assert "docker rmi" not in daily
+    assert daily.count("docker tag") == 1
+    assert 'docker tag "$db_match" "$db_scan_ref"' in daily
+    assert "docker image inspect c3po/backend:production c3po/web:production >/dev/null" in daily
+    assert "docker images --no-trunc --format '{{.ID}}'" in daily
+    assert 'test -n "$db_rootfs"' in daily
+    assert 'test -n "$db_match"' in daily
+    assert "ambiguous database image RootFS match" in daily
+    assert '"$db_scan_ref")" = "$db_rootfs"' in daily
+    assert '--image "database=$C3PO_DB_SCAN_REF"' in daily
+    assert '--origin "database=$C3PO_DB_IMAGE_REF|$C3PO_DB_IMAGE_ID|$C3PO_DB_ROOTFS"' in daily
+    assert "Scan the production images off-host" in daily
+    assert "scripts/c3po_trivy_scan.py" in daily
+    assert "C3PO_HEALTHCHECK_TRIVY_URL" in daily
+    assert '"${HEALTHCHECK_URL%/}/start"' in daily
+    assert '"${HEALTHCHECK_URL%/}/fail"' in daily
+    assert "--dead-man-configured" in daily
+    assert "container-production-vulnerability-report.json" in daily
+    assert "sudo install -o root -g ubuntu -m 0644" in daily
 
 
 def test_trivy_report_attests_its_own_dead_man_configuration() -> None:
