@@ -140,12 +140,15 @@ def test_trivy_scans_are_non_blocking_per_build_and_weekly_off_host() -> None:
     assert pipeline.count("continue-on-error: true") >= 4
     assert "--exclude='runtime/'" in pipeline
     assert parsed[True]["schedule"][0]["cron"] == "0 7 * * 0"
-    assert "docker save c3po/backend:production c3po/web:production" in weekly
+    assert 'docker save "$backend_image_ref" "$web_image_ref" "$db_image_ref"' in weekly
     assert "{{.Image}}|{{.Config.Image}}" in weekly
-    assert "C3PO_DB_IMAGE_ID" in weekly
     assert "C3PO_DB_IMAGE_REF" in weekly
-    assert weekly.count("docker image inspect --format '{{.Id}}'") == 2
-    assert '"$db_image_ref")" = "$db_image_id"' in weekly
+    assert "C3PO_ARCHIVE_SHA256" in weekly
+    assert 'sha256sum "$RUNNER_TEMP/c3po-production-images.tar.gz"' in weekly
+    assert "manifest.json" in weekly
+    assert weekly.count("docker image inspect --format '{{.Id}}'") == 6
+    assert weekly.count("--runtime-image-id") == 3
+    assert '--transport-sha256 "$C3PO_IMAGE_ARCHIVE_SHA256"' in weekly
     assert "Scan the production images off-host" in weekly
     assert "scripts/c3po_trivy_scan.py" in weekly
     assert "C3PO_HEALTHCHECK_TRIVY_URL" in weekly
@@ -173,6 +176,43 @@ def test_trivy_report_attests_its_own_dead_man_configuration() -> None:
 
     assert report["scan_status"] == "complete"
     assert report["dead_man_configured"] is True
+    assert report["images"][0]["runtime_image_id"] == report["images"][0]["image_id"]
+    assert report["source_transport"] == {
+        "kind": "local_docker_store",
+        "sha256": None,
+    }
+    assert report["report_sha256"] == scanner.report_sha256(report)
+
+
+def test_trivy_report_chains_runtime_ids_to_verified_archive() -> None:
+    scanner = _scanner_module()
+    scanner.scan_image = lambda label, reference, _work: scanner.normalize_trivy_payload(
+        label,
+        reference,
+        {
+            "ArtifactName": reference,
+            "Metadata": {"ImageID": "sha256:loaded"},
+            "Results": [],
+        },
+    )
+    archive_sha256 = "a" * 64
+
+    report = scanner.build_report(
+        ["database=postgres:16-alpine"],
+        scope="production_runtime",
+        revision="test",
+        dead_man_configured=True,
+        runtime_image_specs=["database=sha256:runtime-manifest"],
+        transport_sha256=archive_sha256,
+    )
+
+    assert report["schema"] == "C3PO_CONTAINER_VULNERABILITY_REPORT-v2"
+    assert report["images"][0]["image_id"] == "sha256:loaded"
+    assert report["images"][0]["runtime_image_id"] == "sha256:runtime-manifest"
+    assert report["source_transport"] == {
+        "kind": "verified_docker_archive",
+        "sha256": archive_sha256,
+    }
     assert report["report_sha256"] == scanner.report_sha256(report)
 
 

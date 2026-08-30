@@ -130,7 +130,23 @@ def build_report(
     scope: str,
     revision: str,
     dead_man_configured: bool = False,
+    runtime_image_specs: list[str] | None = None,
+    transport_sha256: str | None = None,
 ) -> dict[str, Any]:
+    runtime_image_ids: dict[str, str] = {}
+    for spec in runtime_image_specs or []:
+        if "=" not in spec:
+            raise ValueError(f"invalid runtime image specification: {spec}")
+        label, image_id = spec.split("=", 1)
+        if not label or not image_id or label in runtime_image_ids:
+            raise ValueError(f"invalid runtime image specification: {spec}")
+        runtime_image_ids[label] = image_id
+    if transport_sha256 is not None and (
+        len(transport_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in transport_sha256)
+    ):
+        raise ValueError("transport sha256 is not lowercase hexadecimal")
+
     images: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
     with tempfile.TemporaryDirectory(prefix="c3po-trivy-") as temporary:
@@ -142,7 +158,9 @@ def build_report(
             if not label or not reference:
                 raise ValueError(f"invalid image specification: {spec}")
             try:
-                images.append(scan_image(label, reference, work))
+                image = scan_image(label, reference, work)
+                image["runtime_image_id"] = runtime_image_ids.get(label) or image["image_id"]
+                images.append(image)
             except Exception as exc:
                 errors.append({"label": label, "error": f"{type(exc).__name__}: {exc}"})
     counts = {severity: 0 for severity in SEVERITIES}
@@ -158,6 +176,10 @@ def build_report(
         "scope": scope,
         "source_revision": revision,
         "dead_man_configured": dead_man_configured,
+        "source_transport": {
+            "kind": "verified_docker_archive" if transport_sha256 else "local_docker_store",
+            "sha256": transport_sha256,
+        },
         "scanner": {
             "name": "Trivy",
             "version": TRIVY_VERSION,
@@ -201,12 +223,16 @@ def main() -> None:
     parser.add_argument("--scope", required=True)
     parser.add_argument("--revision", default="unknown")
     parser.add_argument("--dead-man-configured", action="store_true")
+    parser.add_argument("--runtime-image-id", action="append", default=[])
+    parser.add_argument("--transport-sha256")
     args = parser.parse_args()
     report = build_report(
         args.images,
         scope=args.scope,
         revision=args.revision,
         dead_man_configured=args.dead_man_configured,
+        runtime_image_specs=args.runtime_image_id,
+        transport_sha256=args.transport_sha256,
     )
     atomic_write(args.output, report)
     if report["scan_status"] != "complete" and os.environ.get("GITHUB_ACTIONS") == "true":
