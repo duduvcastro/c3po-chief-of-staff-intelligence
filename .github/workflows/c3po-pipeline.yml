@@ -12,6 +12,16 @@ on:
         required: true
         default: main
         type: string
+      deploy:
+        description: Deploy after validation
+        required: true
+        default: true
+        type: boolean
+      remediation:
+        description: Require zero fixable critical/high findings
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -143,6 +153,12 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.sha }}
 
+      - name: Derive the container security rebuild token
+        working-directory: ${{ github.workspace }}
+        run: |
+          token=$(sha256sum c3po/security/container-rebuild-trigger.json | cut -d ' ' -f 1)
+          printf 'C3PO_SECURITY_REBUILD=%s\n' "$token" >> "$GITHUB_ENV"
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -160,28 +176,35 @@ jobs:
         run: pnpm build
 
       - name: Validate production Docker images
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation)
         working-directory: ${{ github.workspace }}
         run: |
           docker build \
             --file c3po/backend/Dockerfile \
+            --build-arg "C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD" \
             --tag c3po/backend:pr-validation \
             c3po
           docker build \
             --file c3po/frontend/Dockerfile \
             --build-arg NEXT_PUBLIC_C3PO_API_URL= \
             --build-arg "NEXT_PUBLIC_C3PO_BUILD_SHA=$GITHUB_SHA" \
+            --build-arg "C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD" \
             --tag c3po/web:pr-validation \
             c3po/frontend
           docker build \
             --file c3po/database/Dockerfile \
+            --build-arg "C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD" \
             --tag c3po/database:pr-validation \
             c3po
           docker run --rm --entrypoint gosu c3po/database:pr-validation \
             nobody true
 
       - name: Scan pull-request images with pinned Trivy
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation)
         continue-on-error: true
         working-directory: ${{ github.workspace }}
         run: |
@@ -194,7 +217,10 @@ jobs:
             --output "$RUNNER_TEMP/c3po-trivy-pull-request.json"
 
       - name: Publish pull-request image scan
-        if: github.event_name == 'pull_request' && always()
+        if: >-
+          always() &&
+          (github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation))
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
@@ -203,10 +229,21 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Require zero fixable C/H in automated remediation
+        if: >-
+          (github.event_name == 'workflow_dispatch' && inputs.remediation) ||
+          (github.event_name == 'pull_request' && startsWith(github.head_ref, 'automation/container-security-rebuild-'))
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 scripts/c3po_container_remediation.py verify-zero \
+            --report "$RUNNER_TEMP/c3po-trivy-pull-request.json"
+
   deploy-production:
     name: Deploy production
     needs: [sensitive-files, secret-scan, backend-tests, python-type-check, frontend-build]
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy)
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -219,12 +256,18 @@ jobs:
         id: revision
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Derive the container security rebuild token
+        run: |
+          token=$(sha256sum c3po/security/container-rebuild-trigger.json | cut -d ' ' -f 1)
+          printf 'C3PO_SECURITY_REBUILD=%s\n' "$token" >> "$GITHUB_ENV"
+
       - name: Build production images outside the server
         env:
           REVISION: ${{ steps.revision.outputs.sha }}
         run: |
           docker build \
             --file c3po/backend/Dockerfile \
+            --build-arg "C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD" \
             --label "org.opencontainers.image.revision=$REVISION" \
             --tag c3po/backend:production \
             c3po
@@ -232,11 +275,13 @@ jobs:
             --file c3po/frontend/Dockerfile \
             --build-arg NEXT_PUBLIC_C3PO_API_URL= \
             --build-arg "NEXT_PUBLIC_C3PO_BUILD_SHA=$REVISION" \
+            --build-arg "C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD" \
             --label "org.opencontainers.image.revision=$REVISION" \
             --tag c3po/web:production \
             c3po/frontend
           docker build \
             --file c3po/database/Dockerfile \
+            --build-arg "C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD" \
             --label "org.opencontainers.image.revision=$REVISION" \
             --tag c3po/database:production \
             c3po

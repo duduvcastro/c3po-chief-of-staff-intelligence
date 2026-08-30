@@ -24,6 +24,9 @@ APT_HEALTHCHECK_FAILURE = (
 )
 HEALTHCHECK_SCRIPT = ROOT / "scripts" / "c3po-healthcheck-ping.sh"
 TRIVY_SCRIPT = ROOT / "scripts" / "c3po_trivy_scan.py"
+REMEDIATION_DISPATCH = (
+    ROOT / ".github" / "scripts" / "c3po_dispatch_remediation.sh"
+)
 
 
 def _scanner_module():
@@ -95,7 +98,13 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
         "Metadata": {"ImageID": "sha256:test", "RepoDigests": ["repo@sha256:test"]},
         "Results": [{
             "Vulnerabilities": [
-                {"Severity": "CRITICAL", "FixedVersion": "2.0"},
+                {
+                    "VulnerabilityID": "CVE-TEST-CRITICAL",
+                    "Severity": "CRITICAL",
+                    "FixedVersion": "2.0",
+                    "PkgName": "critical-lib",
+                    "InstalledVersion": "1.0",
+                },
                 {
                     "VulnerabilityID": "CVE-TEST-1",
                     "Severity": "HIGH",
@@ -103,7 +112,13 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
                     "PkgName": "sample-lib",
                     "InstalledVersion": "1.0",
                 },
-                {"Severity": "HIGH", "FixedVersion": "3.0"},
+                {
+                    "VulnerabilityID": "CVE-TEST-HIGH",
+                    "Severity": "HIGH",
+                    "FixedVersion": "3.0",
+                    "PkgName": "high-lib",
+                    "InstalledVersion": "2.0",
+                },
                 {"Severity": "MEDIUM", "FixedVersion": ""},
                 {"Severity": "UNKNOWN", "FixedVersion": ""},
             ],
@@ -114,6 +129,24 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
 
     assert image["by_severity"] == {"critical": 1, "high": 2, "medium": 1, "low": 0}
     assert image["fix_available"] == {"critical": 1, "high": 1, "medium": 0, "low": 0}
+    assert image["fixable_high_critical"] == [
+        {
+            "vulnerability_id": "CVE-TEST-CRITICAL",
+            "severity": "critical",
+            "package": "critical-lib",
+            "installed_version": "1.0",
+            "fixed_version": "2.0",
+            "target": "unknown",
+        },
+        {
+            "vulnerability_id": "CVE-TEST-HIGH",
+            "severity": "high",
+            "package": "high-lib",
+            "installed_version": "2.0",
+            "fixed_version": "3.0",
+            "target": "unknown",
+        },
+    ]
     assert image["unfixed_high_critical"] == [{
         "vulnerability_id": "CVE-TEST-1",
         "severity": "high",
@@ -133,7 +166,9 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
 def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
     pipeline = PIPELINE.read_text(encoding="utf-8")
     daily = DAILY_SCAN.read_text(encoding="utf-8")
+    remediation_dispatch = REMEDIATION_DISPATCH.read_text(encoding="utf-8")
     parsed = yaml.safe_load(daily)
+    jobs = parsed["jobs"]
 
     assert pipeline.count("scripts/c3po_trivy_scan.py") == 2
     assert pipeline.count("--image database=c3po/database:") == 2
@@ -144,6 +179,37 @@ def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
     assert "workflow_dispatch" in parsed[True]
     assert "runs-on: ubuntu-latest" in daily
     assert "Scheduled production image scan" in daily
+    assert jobs["scan-production-images"]["permissions"] == {"contents": "read"}
+    controller = jobs["remediation-controller"]
+    assert "environment" not in controller
+    assert controller["permissions"] == {
+        "actions": "write",
+        "contents": "write",
+        "issues": "write",
+        "pull-requests": "write",
+    }
+    controller_source = yaml.safe_dump(controller, sort_keys=False)
+    assert "c3po_container_remediation.py plan" in controller_source
+    assert "gh pr create" in controller_source
+    assert "gh pr comment" in controller_source
+    assert "REMEDIATION_KEY" in controller_source
+    assert "REMEDIATION_BRANCH" in controller_source
+    assert "git switch -C" in controller_source
+    assert "git push origin" in controller_source
+    assert "actions/permissions/workflow" in controller_source
+    assert "can_approve_pull_request_reviews" in controller_source
+    assert "automation/container-security-rebuild-" in controller_source
+    assert controller_source.count("c3po_dispatch_remediation.sh") == 2
+    assert remediation_dispatch.count("gh workflow run c3po-pipeline.yml") == 1
+    assert "deploy=false" in remediation_dispatch
+    assert "remediation=true" in remediation_dispatch
+    mutation_source = controller_source + remediation_dispatch
+    assert "gh pr merge" not in mutation_source
+    assert "gh pr review" not in mutation_source
+    assert "--auto" not in mutation_source
+    lifecycle = jobs["complete-trivy-dead-man"]
+    assert lifecycle["needs"] == ["scan-production-images", "remediation-controller"]
+    assert lifecycle["environment"] == "production"
     assert 'docker save c3po/backend:production c3po/web:production "$db_image_ref"' in daily
     assert "{{.Image}}|{{.Config.Image}}" in daily
     assert "C3PO_DB_IMAGE_ID" in daily
@@ -172,6 +238,54 @@ def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
     assert "--dead-man-configured" in daily
     assert "container-production-vulnerability-report.json" in daily
     assert "sudo install -o root -g ubuntu -m 0644" in daily
+    assert "needs.remediation-controller.result" in daily
+
+
+def test_remediation_dispatch_marker_is_written_only_after_dispatch_acceptance() -> None:
+    daily = DAILY_SCAN.read_text(encoding="utf-8")
+    dispatch = REMEDIATION_DISPATCH.read_text(encoding="utf-8")
+
+    assert "key_present" in daily
+    assert "marker_present" in daily
+    assert 'evidence_marker="Chave de deduplicação: \\`$REMEDIATION_KEY\\`"' in daily
+    assert "c3po-container-remediation-dispatch:$REMEDIATION_KEY" in daily
+    assert "Evidence exists without a dispatch marker; resuming validation only" in daily
+    assert "c3po-container-remediation-dispatch:$remediation_key" in dispatch
+    assert "databaseId,headSha,url" in dispatch
+    assert 'if [ -z "$dispatch_info" ]' in dispatch
+    assert dispatch.index("gh workflow run c3po-pipeline.yml") < dispatch.index(
+        'gh pr comment "$pr_number"'
+    )
+
+
+def test_remediation_refresh_and_lane_discovery_are_fail_closed_and_idempotent() -> None:
+    daily = DAILY_SCAN.read_text(encoding="utf-8")
+
+    assert "lane_count=$(jq 'length'" in daily
+    assert 'if [ "$lane_count" -gt 1 ]' in daily
+    assert "Multiple open container remediation lanes are forbidden" in daily
+    assert "baseRefName,isCrossRepository" in daily
+    assert "--app github-actions" in daily
+    assert '"$base_branch" != "main"' in daily
+    assert '"$cross_repository" != "false"' in daily
+    assert '"$controller_matches" -ne 1' in daily
+    assert "must target main, be same-repository, and be authored by github-actions[bot]" in daily
+    assert "git diff --staged --quiet" in daily
+    assert '|| git commit -m "Refresh container security remediation evidence"' in daily
+    assert 'git push origin "HEAD:$REMEDIATION_BRANCH"' in daily
+
+
+def test_automated_remediation_validation_never_deploys_before_approval() -> None:
+    pipeline = PIPELINE.read_text(encoding="utf-8")
+    parsed = yaml.safe_load(pipeline)
+    dispatch = parsed[True]["workflow_dispatch"]["inputs"]
+
+    assert dispatch["deploy"]["default"] is True
+    assert dispatch["remediation"]["default"] is False
+    assert "inputs.deploy" in parsed["jobs"]["deploy-production"]["if"]
+    assert "c3po_container_remediation.py verify-zero" in pipeline
+    assert "automation/container-security-rebuild-" in pipeline
+    assert pipeline.count("C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD") == 6
 
 
 def test_trivy_report_attests_its_own_dead_man_configuration() -> None:

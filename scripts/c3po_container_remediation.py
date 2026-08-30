@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+from c3po_trivy_scan import SCHEMA as REPORT_SCHEMA
+from c3po_trivy_scan import report_sha256
+
+
+TRIGGER_SCHEMA = "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1"
+HIGH_CRITICAL = ("critical", "high")
+HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+PR_MARKER = "<!-- c3po-container-remediation -->"
+
+
+class ReportValidationError(RuntimeError):
+    pass
+
+
+def _nonnegative_int(value: Any, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ReportValidationError(f"{field} must be a non-negative integer")
+    return value
+
+
+def load_report(path: Path) -> dict[str, Any]:
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReportValidationError(f"cannot read normalized report: {exc}") from exc
+    if not isinstance(report, dict):
+        raise ReportValidationError("normalized report must be a JSON object")
+    return report
+
+
+def validate_report(
+    report: dict[str, Any],
+    *,
+    expected_scope: str = "production_runtime",
+    require_dead_man: bool = True,
+) -> tuple[dict[str, int], list[dict[str, str]]]:
+    observed_hash = report.get("report_sha256")
+    if not isinstance(observed_hash, str) or not HASH_PATTERN.fullmatch(observed_hash):
+        raise ReportValidationError("report_sha256 must be a lowercase SHA-256")
+    if observed_hash != report_sha256(report):
+        raise ReportValidationError("normalized report self-hash mismatch")
+    if report.get("schema") != REPORT_SCHEMA:
+        raise ReportValidationError("unsupported normalized report schema")
+    if report.get("scope") != expected_scope:
+        raise ReportValidationError(
+            f"remediation controller expected scope {expected_scope}"
+        )
+    if report.get("scan_status") != "complete" or report.get("errors") != []:
+        raise ReportValidationError("production scan is not complete and error-free")
+    if require_dead_man and report.get("dead_man_configured") is not True:
+        raise ReportValidationError("production scan did not attest its dead-man")
+
+    raw_counts = report.get("fix_available")
+    if not isinstance(raw_counts, dict):
+        raise ReportValidationError("fix_available must be an object")
+    counts = {
+        severity: _nonnegative_int(raw_counts.get(severity), f"fix_available.{severity}")
+        for severity in HIGH_CRITICAL
+    }
+
+    images = report.get("images")
+    if not isinstance(images, list):
+        raise ReportValidationError("images must be a list")
+    findings: list[dict[str, str]] = []
+    seen_labels: set[str] = set()
+    required_fields = (
+        "vulnerability_id",
+        "severity",
+        "package",
+        "installed_version",
+        "fixed_version",
+        "target",
+    )
+    for image in images:
+        if not isinstance(image, dict):
+            raise ReportValidationError("each image entry must be an object")
+        label = image.get("label")
+        if not isinstance(label, str) or not label or label in seen_labels:
+            raise ReportValidationError("image labels must be non-empty and unique")
+        seen_labels.add(label)
+        raw_findings = image.get("fixable_high_critical")
+        if not isinstance(raw_findings, list):
+            raise ReportValidationError(
+                f"image {label} is missing fixable_high_critical evidence"
+            )
+        for raw_finding in raw_findings:
+            if not isinstance(raw_finding, dict):
+                raise ReportValidationError("fixable finding must be an object")
+            finding: dict[str, str] = {"image": label}
+            for field in required_fields:
+                value = raw_finding.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    raise ReportValidationError(
+                        f"fixable finding {field} must be a non-empty string"
+                    )
+                finding[field] = value.strip()
+            if finding["severity"] not in HIGH_CRITICAL:
+                raise ReportValidationError("fixable finding severity must be critical or high")
+            findings.append(finding)
+
+    detail_counts = {
+        severity: sum(1 for finding in findings if finding["severity"] == severity)
+        for severity in HIGH_CRITICAL
+    }
+    if detail_counts != counts:
+        raise ReportValidationError(
+            f"fixable detail/count mismatch: details={detail_counts}, totals={counts}"
+        )
+    findings.sort(
+        key=lambda finding: (
+            finding["severity"],
+            finding["vulnerability_id"],
+            finding["image"],
+            finding["package"],
+            finding["target"],
+        )
+    )
+    return counts, findings
+
+
+def build_trigger(
+    report: dict[str, Any],
+    *,
+    counts: dict[str, int],
+    findings: list[dict[str, str]],
+    run_url: str,
+    artifact_name: str,
+) -> dict[str, Any]:
+    generated_at = report.get("generated_at")
+    source_revision = report.get("source_revision")
+    if not isinstance(generated_at, str) or not generated_at:
+        raise ReportValidationError("generated_at must be a non-empty string")
+    if not isinstance(source_revision, str) or not source_revision:
+        raise ReportValidationError("source_revision must be a non-empty string")
+    if not run_url.startswith("https://github.com/"):
+        raise ReportValidationError("run_url must be an HTTPS GitHub URL")
+    if not artifact_name:
+        raise ReportValidationError("artifact_name must not be empty")
+    remediation_key = hashlib.sha256(
+        json.dumps(
+            {"fix_available": counts, "findings": findings},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return {
+        "schema": TRIGGER_SCHEMA,
+        "remediation_key": remediation_key,
+        "generated_at": generated_at,
+        "source_revision": source_revision,
+        "report_sha256": report["report_sha256"],
+        "run_url": run_url,
+        "artifact_name": artifact_name,
+        "fix_available": counts,
+        "finding_total": sum(counts.values()),
+        "findings": findings,
+    }
+
+
+def _cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")
+
+
+def render_pr_body(trigger: dict[str, Any]) -> str:
+    counts = trigger["fix_available"]
+    findings = trigger["findings"]
+    lines = [
+        PR_MARKER,
+        "## Remediação automática de imagens",
+        "",
+        "O controlador remoto detectou uma `FixedVersion` no scan completo das imagens ",
+        "em produção e abriu esta PR sem depender de workstation ou Codex desktop.",
+        "",
+        f"- Critical fixável: **{counts['critical']}**",
+        f"- High fixável: **{counts['high']}**",
+        f"- Report self-hash: `{trigger['report_sha256']}`",
+        f"- Chave de deduplicação: `{trigger['remediation_key']}`",
+        f"- [Workflow de origem]({trigger['run_url']})",
+        f"- Artefato: `{trigger['artifact_name']}`",
+        "",
+        "| Imagem | Severidade | CVE | Pacote | Instalada | FixedVersion |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for finding in findings[:100]:
+        lines.append(
+            "| "
+            + " | ".join(
+                _cell(finding[field])
+                for field in (
+                    "image",
+                    "severity",
+                    "vulnerability_id",
+                    "package",
+                    "installed_version",
+                    "fixed_version",
+                )
+            )
+            + " |"
+        )
+    if len(findings) > 100:
+        lines.extend(["", f"Mais {len(findings) - 100} ocorrências constam no artefato."])
+    lines.extend([
+        "",
+        "### Rito obrigatório",
+        "",
+        "O commit inicial apenas força rebuild integral a partir das bases pinadas e dos ",
+        "repositórios oficiais. Se o scan da PR não zerar os C/H fixáveis, Codex ajusta ",
+        "pacotes ou digests nesta mesma PR. Fable audita a evidência final. Dudu autoriza ",
+        "o merge. **Não há auto-merge nem deploy antes desses portões.**",
+        "",
+        "Após o deploy, o scan de produção deve ser reexecutado e o atestado deve consumir ",
+        "o novo report.",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _append_github_outputs(path: Path, outputs: dict[str, str]) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        for key, value in outputs.items():
+            handle.write(f"{key}={value}\n")
+
+
+def plan(args: argparse.Namespace) -> int:
+    report = load_report(args.report)
+    counts, findings = validate_report(report)
+    required = sum(counts.values()) > 0
+    remediation_key = ""
+    if required:
+        trigger = build_trigger(
+            report,
+            counts=counts,
+            findings=findings,
+            run_url=args.run_url,
+            artifact_name=args.artifact_name,
+        )
+        remediation_key = trigger["remediation_key"]
+        _write_json(args.trigger, trigger)
+        args.pr_body.write_text(render_pr_body(trigger), encoding="utf-8")
+    _append_github_outputs(args.github_output, {
+        "required": "true" if required else "false",
+        "critical": str(counts["critical"]),
+        "high": str(counts["high"]),
+        "report_sha256": str(report["report_sha256"]),
+        "remediation_key": remediation_key,
+    })
+    print(json.dumps({"required": required, "fix_available": counts}, sort_keys=True))
+    return 0
+
+
+def verify_zero(args: argparse.Namespace) -> int:
+    report = load_report(args.report)
+    counts, _ = validate_report(
+        report,
+        expected_scope="pull_request_build",
+        require_dead_man=False,
+    )
+    print(json.dumps({"fix_available": counts}, sort_keys=True))
+    if sum(counts.values()) > 0:
+        raise ReportValidationError(
+            f"remediation still has fixable critical/high findings: {counts}"
+        )
+    return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Validate production Trivy evidence and control remediation PRs"
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    plan_parser = subparsers.add_parser("plan")
+    plan_parser.add_argument("--report", type=Path, required=True)
+    plan_parser.add_argument("--trigger", type=Path, required=True)
+    plan_parser.add_argument("--pr-body", type=Path, required=True)
+    plan_parser.add_argument("--run-url", required=True)
+    plan_parser.add_argument("--artifact-name", required=True)
+    plan_parser.add_argument("--github-output", type=Path, required=True)
+    plan_parser.set_defaults(handler=plan)
+
+    verify_parser = subparsers.add_parser("verify-zero")
+    verify_parser.add_argument("--report", type=Path, required=True)
+    verify_parser.set_defaults(handler=verify_zero)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    try:
+        code = args.handler(args)
+    except ReportValidationError as exc:
+        raise SystemExit(f"fail-closed: {exc}") from exc
+    raise SystemExit(code)
+
+
+if __name__ == "__main__":
+    main()
