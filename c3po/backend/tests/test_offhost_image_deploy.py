@@ -7,8 +7,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 PIPELINE = ROOT / ".github" / "workflows" / "c3po-pipeline.yml"
 COMPOSE = ROOT / "c3po" / "compose.yml"
+BACKEND_DOCKERFILE = ROOT / "c3po" / "backend" / "Dockerfile"
 FRONTEND_DOCKERFILE = ROOT / "c3po" / "frontend" / "Dockerfile"
 FRONTEND_DOCKERIGNORE = ROOT / "c3po" / "frontend" / ".dockerignore"
+RESTORE_DRILL = ROOT / ".github" / "workflows" / "postgres-backup-restore-drill.yml"
 
 
 def test_all_application_services_use_the_two_named_images() -> None:
@@ -85,3 +87,24 @@ def test_frontend_image_uses_the_ci_package_manager_and_excludes_build_state() -
     assert "pnpm install --frozen-lockfile" in dockerfile
     assert "--frozen-lockfile=false" not in dockerfile
     assert {"node_modules", ".next", "out"} <= dockerignore
+
+
+def test_every_base_image_is_digest_pinned_and_restore_uses_production_db() -> None:
+    digest_ref = re.compile(r"^[^\s]+@sha256:[0-9a-f]{64}(?:\s|$)")
+    backend_from = [
+        line.removeprefix("FROM ")
+        for line in BACKEND_DOCKERFILE.read_text(encoding="utf-8").splitlines()
+        if line.startswith("FROM ")
+    ]
+    frontend_from = [
+        line.removeprefix("FROM ")
+        for line in FRONTEND_DOCKERFILE.read_text(encoding="utf-8").splitlines()
+        if line.startswith("FROM ")
+    ]
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    database_ref = compose["services"]["db"]["image"]
+
+    assert backend_from and frontend_from
+    assert all(digest_ref.match(reference) for reference in backend_from + frontend_from)
+    assert digest_ref.match(database_ref)
+    assert database_ref in RESTORE_DRILL.read_text(encoding="utf-8")

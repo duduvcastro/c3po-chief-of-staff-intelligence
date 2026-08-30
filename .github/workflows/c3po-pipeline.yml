@@ -173,6 +173,10 @@ jobs:
             --build-arg "NEXT_PUBLIC_C3PO_BUILD_SHA=$GITHUB_SHA" \
             --tag c3po/web:pr-validation \
             c3po/frontend
+          db_image=$(docker compose --env-file /dev/null -f c3po/compose.yml config --images | grep '^postgres:')
+          test "$(printf '%s\n' "$db_image" | wc -l)" -eq 1
+          docker pull "$db_image"
+          printf 'C3PO_SCANNED_DB_IMAGE=%s\n' "$db_image" >> "$GITHUB_ENV"
 
       - name: Scan pull-request images with pinned Trivy
         if: github.event_name == 'pull_request'
@@ -184,6 +188,7 @@ jobs:
             --revision "$GITHUB_SHA" \
             --image backend=c3po/backend:pr-validation \
             --image web=c3po/web:pr-validation \
+            --image "database=$C3PO_SCANNED_DB_IMAGE" \
             --output "$RUNNER_TEMP/c3po-trivy-pull-request.json"
 
       - name: Publish pull-request image scan
@@ -228,6 +233,10 @@ jobs:
             --label "org.opencontainers.image.revision=$REVISION" \
             --tag c3po/web:production \
             c3po/frontend
+          db_image=$(docker compose --env-file /dev/null -f c3po/compose.yml config --images | grep '^postgres:')
+          test "$(printf '%s\n' "$db_image" | wc -l)" -eq 1
+          docker pull "$db_image"
+          printf 'C3PO_SCANNED_DB_IMAGE=%s\n' "$db_image" >> "$GITHUB_ENV"
           test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/backend:production)" = "$REVISION"
           test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/web:production)" = "$REVISION"
 
@@ -241,6 +250,7 @@ jobs:
             --revision "$REVISION" \
             --image backend=c3po/backend:production \
             --image web=c3po/web:production \
+            --image "database=$C3PO_SCANNED_DB_IMAGE" \
             --output "$RUNNER_TEMP/c3po-trivy-production-build.json"
 
       - name: Publish production build scan
