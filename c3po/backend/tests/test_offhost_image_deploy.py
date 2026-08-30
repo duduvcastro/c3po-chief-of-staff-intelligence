@@ -143,8 +143,8 @@ def test_fixable_high_and_critical_runtime_findings_have_explicit_upgrades() -> 
     assert "cryptography>=50,<51" in requirements
     assert "apk upgrade --no-cache libcrypto3 libssl3" in frontend
     assert "golang:1.25.13-alpine3.24@sha256:" in database
-    assert "ARG GOSU_VERSION=v1.19" in database
-    assert '"github.com/tianon/gosu@${GOSU_VERSION}"' in database
+    assert "ARG GOSU_COMMIT=6456aaa0f3c854d199d0f037f068eb97515b7513" in database
+    assert '"github.com/tianon/gosu@${GOSU_COMMIT}"' in database
     assert "CGO_ENABLED=0" in database
     assert "apk upgrade --no-cache libcrypto3 libssl3" in database
     assert "gosu nobody true" in database
