@@ -42,6 +42,7 @@ from .market_data.http import MarketDataRequestError
 from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerGenerationError, OnePagerService
 from .push_notifications import PushNotificationService
+from .operational_incidents import OperationalIncidentService
 from .governance_vulnerability import GovernanceVulnerabilityService
 from .r2d2 import R2D2PaperService
 from .open_finance import OpenFinanceService, PluggyRequestError
@@ -93,6 +94,9 @@ from .schemas import (
     OnePagerReport,
     OnePagerRequest,
     OpenFinanceResponse,
+    OperationalIncident,
+    OperationalIncidentListResponse,
+    OperationalIncidentResolveRequest,
     PageLoadPerformanceRequest,
     PageLoadPerformanceResponse,
     PerformanceHistoryResponse,
@@ -181,6 +185,7 @@ chewie_fundamentals = ChewieFundamentalsService(settings, database, market_data.
 r2d2 = R2D2PaperService(settings, database, realtime_markets, b3_screener, one_pagers)
 leah_cloud = LeahCloudService(settings, database)
 push_notifications = PushNotificationService(settings, database)
+operational_incidents = OperationalIncidentService(database)
 governance_vulnerability = GovernanceVulnerabilityService(
     settings,
     database,
@@ -406,6 +411,51 @@ def require_owner(request: Request) -> dict:
     return actor
 
 
+@app.get("/api/v1/operational-incidents", response_model=OperationalIncidentListResponse)
+def list_operational_incidents(request: Request) -> OperationalIncidentListResponse:
+    current_access_actor(request)
+    return OperationalIncidentListResponse(
+        generated_at=datetime.now().astimezone(),
+        incidents=[
+            OperationalIncident(**item)
+            for item in database.list_operational_incidents(limit=50)
+        ],
+    )
+
+
+@app.post(
+    "/api/v1/operational-incidents/{incident_id}/acknowledge",
+    response_model=OperationalIncident,
+)
+def acknowledge_operational_incident(
+    incident_id: str,
+    request: Request,
+) -> OperationalIncident:
+    actor = require_owner(request)
+    incident = operational_incidents.acknowledge(incident_id, actor["email"])
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return OperationalIncident(**incident)
+
+
+@app.post(
+    "/api/v1/operational-incidents/{incident_id}/resolve",
+    response_model=OperationalIncident,
+)
+def resolve_operational_incident(
+    incident_id: str,
+    payload: OperationalIncidentResolveRequest,
+    request: Request,
+) -> OperationalIncident:
+    actor = require_owner(request)
+    incident = operational_incidents.resolve(
+        incident_id,
+        actor["email"],
+        payload.resolution,
+    )
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return OperationalIncident(**incident)
 @app.post("/api/v1/admin/governance/attest")
 def run_governance_attestation(request: Request) -> dict:
     require_owner(request)

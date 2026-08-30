@@ -12,6 +12,7 @@ from .code_census import CodeCensusService
 from .config import get_settings
 from .database import Database
 from .governance_vulnerability import GovernanceVulnerabilityService
+from .operational_incidents import OperationalIncidentService
 from .observability import init_sentry
 from .push_notifications import PushNotificationService
 from .push_market_alerts import PushMarketAlertsService
@@ -53,12 +54,14 @@ def run_worker() -> None:
     database = Database(settings)
     database.initialize()
     push_notifications = PushNotificationService(settings, database)
+    operational_incidents = OperationalIncidentService(database)
     collector = ServerUsageCollector(settings, database)
     code_census = CodeCensusService(settings, database, push_notifications)
     governance_vulnerability = GovernanceVulnerabilityService(
         settings,
         database,
         push_notifications=push_notifications,
+        operational_incidents=operational_incidents,
     )
     market_alerts = PushMarketAlertsService(settings, database, push_notifications)
     previous = collector.cpu_ticks()

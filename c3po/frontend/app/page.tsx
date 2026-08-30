@@ -8186,7 +8186,7 @@ function HealthView({ data, canManage }: { data: SystemHealthData | null; canMan
             </div>
           )}
           <div className="health-list health-list-large">
-            {visibleItems.map((item) => <HealthRow key={`${group.key}-${item.name}`} item={item} groupKey={group.key} />)}
+            {visibleItems.map((item) => <HealthRow key={`${group.key}-${item.name}`} item={item} groupKey={group.key} canManage={canManage} />)}
           </div>
         </section>
       );
@@ -8195,7 +8195,7 @@ function HealthView({ data, canManage }: { data: SystemHealthData | null; canMan
       <section className={`panel system-health-group system-health-group-${group.key}`} key={group.key}>
         <PanelHeader title={`${group.label} · ${group.healthy_count}/${group.total_count}`} icon={GroupIcon} />
         <div className={`health-list health-list-large health-list-horizontal health-list-${visibleItems.length}`}>
-          {visibleItems.map((item) => <HealthRow key={`${group.key}-${item.name}`} item={item} groupKey={group.key} />)}
+          {visibleItems.map((item) => <HealthRow key={`${group.key}-${item.name}`} item={item} groupKey={group.key} canManage={canManage} />)}
         </div>
       </section>
     );
@@ -8383,9 +8383,12 @@ function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: Sys
   return <span className="service-logo service-logo-generic service-logo-word" aria-hidden="true"><b>{name.slice(0, 2).toUpperCase()}</b></span>;
 }
 
-function HealthRow({ item, groupKey = "apis" }: { item: Integration; groupKey?: SystemHealthGroupKey }) {
+function HealthRow({ item, groupKey = "apis", canManage = false }: { item: Integration; groupKey?: SystemHealthGroupKey; canManage?: boolean }) {
   if (item.metadata?.kind === "governance_vulnerabilities") {
     return <GovernanceVulnerabilityRow item={item} />;
+  }
+  if (item.metadata?.kind === "operational_incidents") {
+    return <OperationalIncidentsRow item={item} canManage={canManage} />;
   }
   const statusLabel = item.status === "healthy" ? "Operational" : item.status === "attention" ? "Needs attention" : "Offline";
   return (
@@ -8403,6 +8406,63 @@ function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function OperationalIncidentsRow({ item, canManage }: { item: Integration; canManage: boolean }) {
+  const incidents = Array.isArray(item.metadata?.incidents)
+    ? item.metadata.incidents.map(objectValue)
+    : [];
+  const [busy, setBusy] = useState("");
+  const transition = async (incidentId: string, action: "acknowledge" | "resolve") => {
+    let body: string | undefined;
+    if (action === "resolve") {
+      const resolution = window.prompt("Registre a evidência ou causa da resolução:");
+      if (!resolution || resolution.trim().length < 3) return;
+      body = JSON.stringify({ resolution: resolution.trim() });
+    }
+    setBusy(`${incidentId}:${action}`);
+    try {
+      const response = await fetch(`${API_URL}/api/v1/operational-incidents/${incidentId}/${action}`, {
+        method: "POST",
+        credentials: "include",
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body
+      });
+      if (!response.ok) throw new Error(await response.text());
+      window.location.reload();
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <article className={`operational-incidents-card operational-incidents-${item.status}`}>
+      <header>
+        <div><AlertTriangle size={22} /><div><span>CENTRAL OPERACIONAL</span><strong>Incidentes</strong></div></div>
+        <em>{item.detail}</em>
+      </header>
+      {incidents.length ? (
+        <div className="operational-incident-list">
+          {incidents.map((incident) => {
+            const id = String(incident.id);
+            const incidentStatus = String(incident.status);
+            return (
+              <div className={`operational-incident operational-incident-${incidentStatus}`} key={id}>
+                <span className={`operational-incident-severity operational-incident-severity-${String(incident.severity)}`}>{String(incident.severity)}</span>
+                <div><strong>{String(incident.title)}</strong><span>{String(incident.detail)}</span><small>{String(incident.source)} · {Number(incident.event_count)} evento(s) · hash {String(incident.evidence_sha256).slice(0, 10)}</small></div>
+                <span className="operational-incident-status">{incidentStatus === "open" ? "Aberto" : incidentStatus === "acknowledged" ? "Reconhecido" : "Resolvido"}</span>
+                {canManage && incidentStatus !== "resolved" && (
+                  <div className="operational-incident-actions">
+                    {incidentStatus === "open" && <button type="button" disabled={Boolean(busy)} onClick={() => void transition(id, "acknowledge")}>Reconhecer</button>}
+                    <button type="button" disabled={Boolean(busy)} onClick={() => void transition(id, "resolve")}>Resolver</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : <div className="operational-incidents-empty"><Check size={18} /><span>Nenhum incidente registrado.</span></div>}
+    </article>
+  );
 }
 
 function governanceValueLabel(key: string, value: unknown): string {
