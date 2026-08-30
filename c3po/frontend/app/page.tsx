@@ -8599,7 +8599,7 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
               <em className={`governance-summary-${layerClass(operatingSystem.status)}`}>{operatingSystemLabel}</em>
             </div>
             <div className="governance-source-block">
-              <header><div><span>IMAGENS EM PRODUÇÃO</span><strong>{productionImages.image_count == null ? "Scan semanal" : `${Number(productionImages.image_count)} imagens`}</strong></div><em className={`governance-summary-${layerClass(productionImages.status)} trivy-scanner-badge`} title={productionImagesLabel} aria-label={productionImagesLabel}><TrivyMark />Trivy</em></header>
+              <header><div><span>IMAGENS EM PRODUÇÃO</span><strong>{productionImages.image_count == null ? "Scan semanal" : `${Number(productionImages.image_count)} imagens`}</strong></div><em className={`governance-summary-${layerClass(productionImages.status)} trivy-scanner-badge`}><TrivyMark />{productionImagesLabel === "Trivy" ? "Trivy" : `Trivy · ${productionImagesLabel}`}</em></header>
               <div className="governance-source-total"><strong>{imageTotal == null ? "—" : imageTotal.toLocaleString("pt-BR")}</strong><span>ocorrências por imagem{Number(productionImages.unknown ?? 0) > 0 ? ` · ${Number(productionImages.unknown).toLocaleString("pt-BR")} sem severidade` : ""}</span></div>
               <dl>
                 {(["critical", "high", "medium", "low"] as const).map((severity) => (
