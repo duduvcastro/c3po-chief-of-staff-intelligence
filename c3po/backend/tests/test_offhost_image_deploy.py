@@ -143,6 +143,15 @@ def test_runtime_images_upgrade_os_packages_during_build() -> None:
     assert "openssl-provider-legacy=3.5.7-1~deb13u2" in backend
     assert "rm -f /etc/apt/sources.list.d/c3po-proposed-updates.list" in backend
     assert "rm -rf /var/lib/apt/lists/*" in backend
+    assert backend.index("apt-get upgrade -y") < backend.index(
+        "trixie-proposed-updates main"
+    )
+    assert backend.index("trixie-proposed-updates main") < backend.index(
+        "apt-get install -y --no-install-recommends"
+    )
+    assert backend.index("apt-get install -y --no-install-recommends") < backend.index(
+        "rm -f /etc/apt/sources.list.d/c3po-proposed-updates.list"
+    )
     assert frontend.count("apk upgrade --no-cache") == 1
     assert database.count("apk upgrade --no-cache") == 1
     assert "golang:1.25.14-alpine3.24@sha256:" in database
