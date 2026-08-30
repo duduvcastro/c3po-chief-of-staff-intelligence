@@ -137,6 +137,7 @@ services:
       C3PO_R2D2_MAX_MARKET_PERCENT: 48
       C3PO_R2D2_TRADE_COOLDOWN_MINUTES: 8
       C3PO_R2D2_MAX_DAILY_ORDERS: ${C3PO_R2D2_MAX_DAILY_ORDERS:-500}
+      C3PO_R2D2_SHADOW_CANDIDATE_LOG_ENABLED: "true"
       C3PO_R2D2_MICROSTRUCTURE_RAW_DIR: /app/day-d-data/provider=eodhd/microstructure/raw
       C3PO_SERVICE_NAME: r2d2-worker
       TZ: America/Sao_Paulo
@@ -150,6 +151,31 @@ services:
     networks:
       - c3po_internal
       - legacy_proxy
+
+  r2d2-shadow-candidate-worker:
+    image: c3po/backend:production
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
+      C3PO_MIGRATIONS_DIR: /app/db
+      C3PO_R2D2_EXPERIMENT_CODE: R2D2-90D-001
+      C3PO_R2D2_SHADOW_CANDIDATE_OUTCOMES_ENABLED: "true"
+      C3PO_R2D2_SHADOW_CANDIDATE_EVIDENCE_DIR: /app/day-d-data/evidence/r2d2-shadow-candidate-log-v1
+      TZ: America/Sao_Paulo
+    command: ["python", "-m", "app.r2d2_shadow_candidate_worker"]
+    volumes:
+      - ..:/legacy:ro
+      - ${C3PO_DAY_D_DATA_MOUNT_SOURCE:-c3po_day_d_data}:/app/day-d-data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - c3po_internal
 
   web:
     image: c3po/web:production

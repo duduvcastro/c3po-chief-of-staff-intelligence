@@ -23,6 +23,11 @@ from .market_data.us_screener import USScreeningService, clamp, normalized_perce
 from .one_pager import OnePagerService
 from . import r2d2_strategy
 from .r2d2_entry_score_adapter import ADAPTER_VERSION, R2D2EntryScoreAdapter
+from .r2d2_shadow_candidate_log import (
+    R2D2ShadowCandidateLog,
+    build_observation as build_shadow_candidate_observation,
+    entry_rejection_reason_id,
+)
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
@@ -255,6 +260,39 @@ def _paper_exit_execution(*, market: str, price: float, quantity: float, fx: flo
         "gross_value_usd": gross_value_usd,
         "fees_usd": fees_usd,
         "slippage_usd": slippage_usd,
+    }
+
+
+def _paper_buy_execution(*, market: str, price: float, quantity: float, fx: float) -> dict[str, float]:
+    """Apply the paper ledger's existing market-specific BUY friction model."""
+    slippage_rate = 0.0015 if market == "B3" else 0.0010
+    fee_rate = 0.0006 if market == "B3" else 0.0004
+    fill_price = price * (1 + slippage_rate)
+    gross_value_usd = quantity * fill_price * fx
+    fees_usd = gross_value_usd * fee_rate
+    slippage_usd = quantity * (fill_price - price) * fx
+    return {
+        "slippage_rate": slippage_rate,
+        "fee_rate": fee_rate,
+        "fill_price": fill_price,
+        "gross_value_usd": gross_value_usd,
+        "fees_usd": fees_usd,
+        "slippage_usd": slippage_usd,
+    }
+
+
+def _accepted_shadow_candidate(
+    candidate: dict[str, Any],
+    trade: dict[str, Any],
+) -> dict[str, Any]:
+    """Use the immutable executed decision rather than a pre-execution quote snapshot."""
+    decision_snapshot = trade.get("decision_snapshot")
+    executed = dict(decision_snapshot) if isinstance(decision_snapshot, dict) else {}
+    return {
+        **candidate,
+        **executed,
+        "price": trade.get("signal_price_local", executed.get("price")),
+        "quote_as_of": trade.get("quote_as_of", executed.get("quote_as_of")),
     }
 
 
@@ -1559,6 +1597,7 @@ class R2D2PaperService:
         self.settings = settings
         self.repo = R2D2Repository(database)
         self._entry_score_adapter = R2D2EntryScoreAdapter(database)
+        self._shadow_candidate_log = R2D2ShadowCandidateLog(database)
         self.realtime = realtime
         self.b3_screener = b3_screener
         self.one_pagers = one_pagers
@@ -1578,6 +1617,96 @@ class R2D2PaperService:
         self._active_policy = dict(BASE_ENTRY_POLICY)
         self._learning_state: dict[str, Any] | None = None
         self._fast_risk_seen_ticks: dict[tuple[str, str], datetime] = {}
+        self._last_rotation_buy_trade: dict[str, Any] | None = None
+        self._last_rotation_entry_decision: tuple[str, list[str]] | None = None
+
+    def _queue_shadow_candidate(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        experiment_id: str,
+        cycle_id: str,
+        candidate: dict[str, Any],
+        cascade_step: str,
+        reason_id: str,
+        decision: str,
+        rejection_class: str,
+        reason_detail: list[str] | None = None,
+        trade_id: str | None = None,
+    ) -> bool:
+        if not self.settings.r2d2_shadow_candidate_log_enabled:
+            return True
+        try:
+            rows.append(build_shadow_candidate_observation(
+                experiment_id=experiment_id,
+                cycle_id=cycle_id,
+                observed_at=datetime.now(timezone.utc),
+                candidate=candidate,
+                cascade_step=cascade_step,
+                reason_id=reason_id,
+                decision=decision,
+                rejection_class=rejection_class,
+                reason_detail=reason_detail or [],
+                trade_id=trade_id,
+            ))
+            return True
+        except Exception:
+            logger.exception(
+                "R2D2 shadow-candidate serialization degraded for %s:%s",
+                candidate.get("market"),
+                candidate.get("symbol"),
+            )
+            return False
+
+    def _flush_shadow_candidates(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        serialization_failures: int,
+        population_count: int,
+    ) -> dict[str, Any]:
+        if not self.settings.r2d2_shadow_candidate_log_enabled:
+            return {
+                "enabled": False,
+                "status": "disabled",
+                "attempted": 0,
+                "written": 0,
+                "deduplicated": 0,
+                "serialization_failures": 0,
+                "population_count": population_count,
+                "observed_count": 0,
+                "terminal_count": 0,
+                "population_complete": None,
+            }
+        try:
+            result = self._shadow_candidate_log.append_observations(rows)
+            return {
+                "enabled": True,
+                "status": "healthy" if serialization_failures == 0 else "degraded",
+                **result,
+                "serialization_failures": serialization_failures,
+                "population_count": population_count,
+                "observed_count": len(rows),
+                "terminal_count": len(rows) + serialization_failures,
+                "population_complete": (
+                    len(rows) == population_count and serialization_failures == 0
+                ),
+            }
+        except Exception as exc:
+            logger.exception("R2D2 shadow-candidate append-only sink degraded")
+            return {
+                "enabled": True,
+                "status": "degraded",
+                "attempted": len(rows),
+                "written": 0,
+                "deduplicated": 0,
+                "serialization_failures": serialization_failures,
+                "population_count": population_count,
+                "observed_count": len(rows),
+                "terminal_count": len(rows) + serialization_failures,
+                "population_complete": False,
+                "error": str(exc)[:1000],
+            }
 
     def ensure_initialized(self) -> dict[str, Any]:
         experiment = self.repo.ensure_experiment(self.settings)
@@ -2038,6 +2167,40 @@ class R2D2PaperService:
             return self.dashboard()
         scanned = signals = trade_count = 0
         errors: list[str] = []
+        shadow_rows: list[dict[str, Any]] = []
+        shadow_serialization_failures = 0
+        shadow_population_count = 0
+        shadow_metadata: dict[str, Any] = {
+            "enabled": bool(self.settings.r2d2_shadow_candidate_log_enabled),
+            "status": "pending" if self.settings.r2d2_shadow_candidate_log_enabled else "disabled",
+        }
+
+        def observe_shadow_candidate(
+            candidate: dict[str, Any],
+            *,
+            cascade_step: str,
+            reason_id: str,
+            decision: str = "rejected",
+            rejection_class: str = "quality",
+            reason_detail: list[str] | None = None,
+            trade_id: str | None = None,
+        ) -> None:
+            nonlocal shadow_serialization_failures
+            queued = self._queue_shadow_candidate(
+                shadow_rows,
+                experiment_id=experiment["id"],
+                cycle_id=cycle_id,
+                candidate=candidate,
+                cascade_step=cascade_step,
+                reason_id=reason_id,
+                decision=decision,
+                rejection_class=rejection_class,
+                reason_detail=reason_detail,
+                trade_id=trade_id,
+            )
+            if not queued:
+                shadow_serialization_failures += 1
+
         try:
             positions = positions_at_start
             stream = getattr(self.realtime, "stream", None)
@@ -2078,6 +2241,7 @@ class R2D2PaperService:
             for market in ACTIVE_MARKETS:
                 if market in markets:
                     candidates.extend(self._us_candidates(market, now))
+            shadow_population_count = len(candidates)
             scanned = sum(
                 self._us_scan_counts.get(market, {}).get(
                     "universe_count",
@@ -2126,12 +2290,34 @@ class R2D2PaperService:
                 row["executed_at"].astimezone(SAO_PAULO).date() == local_day
                 for row in self.repo.trades(experiment["id"], limit=500)
             )
-            for candidate in candidates:
+            for candidate_index, candidate in enumerate(candidates):
                 if candidate.get("technical_reviewed") is False:
+                    observe_shadow_candidate(
+                        candidate,
+                        cascade_step="technical_review_capacity",
+                        reason_id="technical_review_capacity",
+                        rejection_class="capacity",
+                        reason_detail=["Candidate was outside the finite live technical-review capacity."],
+                    )
                     continue
                 if orders_today >= self.settings.r2d2_max_daily_orders:
+                    for capped_candidate in candidates[candidate_index:]:
+                        observe_shadow_candidate(
+                            capped_candidate,
+                            cascade_step="daily_order_capacity",
+                            reason_id="daily_order_cap",
+                            rejection_class="capacity",
+                            reason_detail=["The session daily-order cap was already full."],
+                        )
                     break
                 if any(row["market"] == candidate["market"] and row["symbol"] == candidate["symbol"] for row in positions):
+                    observe_shadow_candidate(
+                        candidate,
+                        cascade_step="portfolio_capacity",
+                        reason_id="position_already_open",
+                        rejection_class="capacity",
+                        reason_detail=["The candidate already had an open paper position."],
+                    )
                     continue
                 if len(positions) >= self.settings.r2d2_max_positions:
                     rotation_trades = self._rotate_if_better(
@@ -2142,6 +2328,52 @@ class R2D2PaperService:
                         orders_today += rotation_trades
                         signals += 1
                         positions = self.repo.positions(experiment["id"])
+                    if rotation_trades == 2:
+                        rotation_trade = self._last_rotation_buy_trade
+                        if rotation_trade is not None:
+                            observe_shadow_candidate(
+                                _accepted_shadow_candidate(candidate, rotation_trade),
+                                cascade_step="entry_execution",
+                                reason_id="entry_accepted_after_rotation",
+                                decision="accepted",
+                                rejection_class="none",
+                                reason_detail=["Paper BUY executed after opportunity-cost rotation."],
+                                trade_id=str(rotation_trade["id"]),
+                            )
+                        else:
+                            observe_shadow_candidate(
+                                candidate,
+                                cascade_step="entry_execution",
+                                reason_id="accepted_trade_link_unavailable",
+                                rejection_class="capacity",
+                                reason_detail=["Rotation reported a BUY but its immutable trade link was unavailable."],
+                            )
+                    elif rotation_trades == 1:
+                        observe_shadow_candidate(
+                            candidate,
+                            cascade_step="portfolio_capacity",
+                            reason_id="rotation_replacement_blocked",
+                            rejection_class="capacity",
+                            reason_detail=["Rotation exit completed but replacement execution was blocked."],
+                        )
+                    else:
+                        rotation_action, rotation_reasons = (
+                            self._last_rotation_entry_decision
+                            or ("BUY", ["No eligible incumbent could be rotated."])
+                        )
+                        quality_rejected = rotation_action != "BUY"
+                        observe_shadow_candidate(
+                            candidate,
+                            cascade_step=(
+                                "entry_quality" if quality_rejected else "portfolio_capacity"
+                            ),
+                            reason_id=(
+                                entry_rejection_reason_id(rotation_reasons)
+                                if quality_rejected else "portfolio_full_no_rotation"
+                            ),
+                            rejection_class="quality" if quality_rejected else "capacity",
+                            reason_detail=rotation_reasons,
+                        )
                     continue
                 if self.repo.loss_exit_on_session(
                     experiment["id"], candidate["market"], candidate["symbol"], local_day,
@@ -2149,6 +2381,12 @@ class R2D2PaperService:
                     self.repo.save_decision(
                         experiment["id"], cycle_id, candidate, "REJECT",
                         ["A loss exit already executed for this symbol in this session; capital must rotate to another opportunity"],
+                    )
+                    observe_shadow_candidate(
+                        _accepted_shadow_candidate(candidate, trade),
+                        cascade_step="session_reentry_policy",
+                        reason_id="session_loss_reentry_lock",
+                        reason_detail=["A loss exit already executed for this symbol in this session."],
                     )
                     continue
                 cooldown_since = now - timedelta(minutes=self.settings.r2d2_trade_cooldown_minutes)
@@ -2159,10 +2397,24 @@ class R2D2PaperService:
                         experiment["id"], cycle_id, candidate, "REJECT",
                         [f"{self.settings.r2d2_trade_cooldown_minutes}-minute re-entry cooldown is active"],
                     )
+                    observe_shadow_candidate(
+                        candidate,
+                        cascade_step="session_reentry_policy",
+                        reason_id="reentry_cooldown",
+                        reason_detail=[
+                            f"{self.settings.r2d2_trade_cooldown_minutes}-minute re-entry cooldown is active"
+                        ],
+                    )
                     continue
                 action, reasons = self._entry_decision(candidate)
                 if action != "BUY":
                     self.repo.save_decision(experiment["id"], cycle_id, candidate, action, reasons)
+                    observe_shadow_candidate(
+                        candidate,
+                        cascade_step="entry_quality",
+                        reason_id=entry_rejection_reason_id(reasons),
+                        reason_detail=reasons,
+                    )
                     continue
                 signals += 1
                 trade = self._buy(
@@ -2173,6 +2425,25 @@ class R2D2PaperService:
                     trade_count += 1
                     orders_today += 1
                     positions = self.repo.positions(experiment["id"])
+                    observe_shadow_candidate(
+                        candidate,
+                        cascade_step="entry_execution",
+                        reason_id="entry_accepted",
+                        decision="accepted",
+                        rejection_class="none",
+                        reason_detail=reasons,
+                        trade_id=str(trade["id"]),
+                    )
+                else:
+                    observe_shadow_candidate(
+                        candidate,
+                        cascade_step="entry_execution",
+                        reason_id="paper_execution_unavailable",
+                        rejection_class="capacity",
+                        reason_detail=[
+                            "Entry quality passed, but live execution or portfolio capacity was unavailable."
+                        ],
+                    )
             if self.settings.r2d2_entry_score_adapter_enabled:
                 evaluated_count = sum(
                     candidate.get("technical_reviewed") is not False
@@ -2211,6 +2482,11 @@ class R2D2PaperService:
                         )
                     except Exception:
                         logger.exception("Could not persist entry-score adapter degradation audit")
+            shadow_metadata = self._flush_shadow_candidates(
+                shadow_rows,
+                serialization_failures=shadow_serialization_failures,
+                population_count=shadow_population_count,
+            )
             self._snapshot(experiment, local_day, now)
             self.repo.finish_cycle(cycle_id, "succeeded" if not errors else "partial", scanned, signals, trade_count,
                                    "; ".join(errors)[:1000] or None,
@@ -2219,10 +2495,24 @@ class R2D2PaperService:
                                        "eodhd_usage": _estimate_eodhd_credits(self._eodhd_call_counts),
                                        "technical_review": dict(self._technical_review_stats),
                                        "entry_score_adapter": adapter_metadata,
+                                       "shadow_candidate_log": shadow_metadata,
                                    })
         except Exception as exc:
             logger.exception("R2D2 cycle failed")
-            self.repo.finish_cycle(cycle_id, "failed", scanned, signals, trade_count, str(exc)[:1000])
+            shadow_metadata = self._flush_shadow_candidates(
+                shadow_rows,
+                serialization_failures=shadow_serialization_failures,
+                population_count=shadow_population_count,
+            )
+            self.repo.finish_cycle(
+                cycle_id,
+                "failed",
+                scanned,
+                signals,
+                trade_count,
+                str(exc)[:1000],
+                metadata={"shadow_candidate_log": shadow_metadata},
+            )
         return self.dashboard()
 
     def run_risk_monitor_cycle(self, now: datetime | None = None) -> int:
@@ -3780,10 +4070,13 @@ class R2D2PaperService:
     def _rotate_if_better(self, experiment: dict[str, Any], cycle_id: str, candidate: dict[str, Any],
                           positions: list[dict[str, Any]], quotes: dict[tuple[str, str], Any],
                           now: datetime) -> int:
+        self._last_rotation_buy_trade = None
+        self._last_rotation_entry_decision = None
         current = self.repo.experiment(experiment["code"])
         if experiment.get("entries_paused") or (current and current.get("entries_paused")):
             return 0
         action, reasons = self._entry_decision(candidate)
+        self._last_rotation_entry_decision = (action, list(reasons))
         if action != "BUY":
             return 0
         dashboard = self.dashboard()
@@ -3847,6 +4140,7 @@ class R2D2PaperService:
                 [*reasons, "Rotation exit completed, but portfolio capacity blocked the replacement order."],
             )
             return 1
+        self._last_rotation_buy_trade = trade
         return 2
 
     def _buy(self, experiment: dict[str, Any], cycle_id: str, item: dict[str, Any],
@@ -3930,9 +4224,16 @@ class R2D2PaperService:
         quantity = math.floor((allocation / (fill * fx)) * precision) / precision
         if quantity <= 0:
             return None
-        gross = quantity * fill * fx
-        fees = gross * fee_rate
-        slippage = quantity * (fill - item["price"]) * fx
+        execution = _paper_buy_execution(
+            market=item["market"],
+            price=item["price"],
+            quantity=quantity,
+            fx=fx,
+        )
+        fill = execution["fill_price"]
+        gross = execution["gross_value_usd"]
+        fees = execution["fees_usd"]
+        slippage = execution["slippage_usd"]
         average_cost_local = (gross + fees) / (quantity * fx)
         technical_indicators = item.get("technical_indicators") or {}
         execution_entry_stop = r2d2_strategy.entry_stop_quote_price(

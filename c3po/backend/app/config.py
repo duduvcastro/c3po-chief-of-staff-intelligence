@@ -187,6 +187,11 @@ class Settings(BaseSettings):
     r2d2_fast_risk_tick_max_age_seconds: float = 10.0
     r2d2_fast_risk_atr_max_age_seconds: float = 30.0
     r2d2_entry_score_adapter_enabled: bool = False
+    r2d2_shadow_candidate_log_enabled: bool = False
+    r2d2_shadow_candidate_outcomes_enabled: bool = False
+    r2d2_shadow_candidate_evidence_dir: Path = Path(
+        "/app/day-d-data/evidence/r2d2-shadow-candidate-log-v1"
+    )
     r2d2_cash_yield_accounting_enabled: bool = False
     r2d2_max_positions: int = 20
     # Dudu, 2026-08-20: while still in the test phase, widened from 6.0/1.5 so
