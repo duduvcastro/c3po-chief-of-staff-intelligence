@@ -127,6 +127,11 @@ def test_trivy_scans_are_non_blocking_per_build_and_weekly_off_host() -> None:
     assert "--exclude='runtime/'" in pipeline
     assert parsed[True]["schedule"][0]["cron"] == "0 7 * * 0"
     assert "docker save c3po/backend:production c3po/web:production" in weekly
+    assert "{{.Image}}|{{.Config.Image}}" in weekly
+    assert "C3PO_DB_IMAGE_ID" in weekly
+    assert "C3PO_DB_IMAGE_REF" in weekly
+    assert weekly.count("docker image inspect --format '{{.Id}}'") == 2
+    assert '"$db_image_ref")" = "$db_image_id"' in weekly
     assert "Scan the production images off-host" in weekly
     assert "scripts/c3po_trivy_scan.py" in weekly
     assert "C3PO_HEALTHCHECK_TRIVY_URL" in weekly
