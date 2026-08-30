@@ -8362,6 +8362,26 @@ function serviceLogoKind(name: string, groupKey: SystemHealthGroupKey): ServiceL
   return "generic";
 }
 
+function TrivyMark() {
+  return (
+    <svg viewBox="0 0 100 104" aria-hidden="true">
+      <mask id="trivy-mark-cut">
+        <rect width="100" height="104" fill="#fff" />
+        <path d="M50,52 L7,27 M50,52 L93,27 M50,52 L50,102" stroke="#000" strokeWidth="5.4" fill="none" />
+        <circle cx="50" cy="52" r="18.5" stroke="#000" strokeWidth="5.2" fill="none" />
+        <circle cx="50" cy="52" r="31.5" stroke="#000" strokeWidth="5.2" fill="none" />
+        <circle cx="50" cy="52" r="11" fill="#000" />
+      </mask>
+      <g mask="url(#trivy-mark-cut)">
+        <polygon points="50,2 93,27 50,52 7,27" fill="#FFC900" />
+        <polygon points="7,27 50,52 50,102 7,77" fill="#1904DA" />
+        <polygon points="93,27 50,52 50,102 93,77" fill="#08B1D5" />
+      </g>
+      <path d="M42.4,50.6 a7.6,7.6 0 0,1 15.2,0 c0,3.9 -3.9,6.1 -7.6,10.4 c-3.7,-4.3 -7.6,-6.5 -7.6,-10.4 Z" fill="#FF0036" />
+    </svg>
+  );
+}
+
 function ServiceLogo({ name, groupKey = "apis" }: { name: string; groupKey?: SystemHealthGroupKey }) {
   const kind = serviceLogoKind(name, groupKey);
   const officialAssets: Partial<Record<ServiceLogoKind, string>> = {
@@ -8579,7 +8599,7 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
               <em className={`governance-summary-${layerClass(operatingSystem.status)}`}>{operatingSystemLabel}</em>
             </div>
             <div className="governance-source-block">
-              <header><div><span>IMAGENS EM PRODUÇÃO</span><strong>{productionImages.image_count == null ? "Scan semanal" : `${Number(productionImages.image_count)} imagens`}</strong></div><em className={`governance-summary-${layerClass(productionImages.status)}`}>{productionImagesLabel}</em></header>
+              <header><div><span>IMAGENS EM PRODUÇÃO</span><strong>{productionImages.image_count == null ? "Scan semanal" : `${Number(productionImages.image_count)} imagens`}</strong></div><div className="trivy-scanner-identity"><span className="service-logo service-logo-trivy" aria-hidden="true"><TrivyMark /></span><em className={`governance-summary-${layerClass(productionImages.status)} trivy-scanner-badge`}>{productionImagesLabel === "Trivy" ? "Trivy" : `Trivy · ${productionImagesLabel}`}</em></div></header>
               <div className="governance-source-total"><strong>{imageTotal == null ? "—" : imageTotal.toLocaleString("pt-BR")}</strong><span>ocorrências por imagem{Number(productionImages.unknown ?? 0) > 0 ? ` · ${Number(productionImages.unknown).toLocaleString("pt-BR")} sem severidade` : ""}</span></div>
               <dl>
                 {(["critical", "high", "medium", "low"] as const).map((severity) => (

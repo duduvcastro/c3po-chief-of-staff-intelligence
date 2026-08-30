@@ -111,14 +111,17 @@ dos achados que ja possuem `FixedVersion`.
 
 ## Registro da decisao da mesa
 
-Estado inicial: **PENDENTE**. A proposta tecnica acima nao constitui aceite de
-risco ate que Dudu e Fable registrem o veredito; Codex e o autor da analise e
-nao autoaprova a propria implementacao.
+Estado: **DECIDIDO em 2026-08-30**. A mesa aceitou os sete grupos conforme a
+proposta tecnica, com os prazos de revisao e gatilhos antecipados inalterados.
+O aceite nao corrige nada, nao filtra o laudo, nao fecha o incidente e nao
+autoriza `Resolver`; Codex e o autor da analise e nao autoaprova a propria
+implementacao. Base do aceite: o residuo confirmado no report vivo de producao
+pos-remediacao (mesmos 13 CVEs / 16 ocorrencias da analise).
 
 | Papel | Veredito | Data/hora | Escopo/hash revisado |
 | --- | --- | --- | --- |
-| Dudu (owner) | PENDENTE | - | - |
-| Fable (auditoria independente) | PENDENTE | - | - |
+| Dudu (owner) | ACEITO — os 7 grupos conforme proposta, ordenado em chat ao Fable | 2026-08-30T20:31Z | report vivo `1717bfb6e284192b5550fabf534ac1600b5589a0f1709ff45c558b5d8bbe5df1` (revisao `ba6bbcd0`) |
+| Fable (auditoria independente) | RATIFICADO — analise de alcancabilidade verificada no GO da #330; recomendou aceite dos 7 | 2026-08-30T20:31Z | analise `31184e4c…` + residuo revalidado no report vivo `1717bfb6…` (13 CVEs / 16 ocorrencias, set-equality conferida) |
 | Codex (implementacao/analise) | PROPOSTA LAVRADA | 2026-08-30 | report `31184e4cd45179ed370e24323910d66be82adf2a9b69060040a905603da5f38f` |
 
 O fechamento permanece fail-closed: PR auditada e mergeada, novo scan de
