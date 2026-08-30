@@ -5176,8 +5176,8 @@ function MyRealtimePortfolio({
                   <span>{item.name}</span>
                 </div>
               </div>
-              {valuationMarketMarks[item.market] && (!item.market_label || item.market_label === item.market) ? (
-                <img src={valuationMarketMarks[item.market]} alt={item.market} title={item.market_detail ?? item.market} className="realtime-portfolio-market-logo" />
+              {portfolioMarketMarks[item.market_label ?? item.market] ? (
+                <img src={portfolioMarketMarks[item.market_label ?? item.market]} alt={item.market_label ?? item.market} title={item.market_detail ?? item.market} className="realtime-portfolio-market-logo" />
               ) : (
                 <span className="realtime-portfolio-market" title={item.market_detail ?? item.market}>
                   {item.market_label ?? item.market}
@@ -6386,6 +6386,11 @@ const valuationMarketMarks: Record<string, string> = {
   B3: "/market-marks/b3.svg",
   NASDAQ: "/market-marks/nasdaq.svg",
   NYSE: "/market-marks/nyse.svg"
+};
+
+const portfolioMarketMarks: Record<string, string> = {
+  ...valuationMarketMarks,
+  "TSE · OTC": "/market-marks/tse-otc.png"
 };
 
 function MarketMark({ market }: { market: string }) {

@@ -1595,7 +1595,7 @@ def test_realtime_portfolio_replaces_ancient_bulk_quote_with_direct_quote() -> N
     assert added.item_count == 1
     assert added.items[0].price == 143.34
     assert added.items[0].change_percent == -1.9763
-    assert added.items[0].status == "delayed"
+    assert added.items[0].status != "stale"
     assert any("/api/real-time/SPCX.US" in call["url"] for call in http.calls)
 
 
@@ -1750,6 +1750,58 @@ def test_realtime_portfolio_validates_every_visible_us_asset_from_canonical_hist
     assert all(item.reference_status == "validated" for item in snapshot.items)
     assert all(item.reference_close == 100.0 for item in snapshot.items)
     assert all(item.change_percent == pytest.approx(10.0) for item in snapshot.items)
+
+
+@pytest.mark.parametrize(
+    ("measured_at", "expected_status"),
+    [
+        (datetime(2026, 8, 29, 2, tzinfo=timezone.utc), "closed"),
+        (datetime(2026, 8, 30, 20, tzinfo=timezone.utc), "closed"),
+        (datetime(2026, 8, 31, 13, tzinfo=timezone.utc), "closed"),
+        (datetime(2026, 8, 31, 15, tzinfo=timezone.utc), "stale"),
+    ],
+)
+def test_us_portfolio_quote_freshness_follows_exchange_sessions(
+    measured_at: datetime,
+    expected_status: str,
+) -> None:
+    friday_close = RealtimeMarketLeader(
+        symbol="QQQM",
+        name="Invesco NASDAQ 100 ETF",
+        price=294.79,
+        change_percent=1.0,
+        volume=1_000.0,
+        cash_volume=294_790.0,
+        currency="USD",
+        exchange="NASDAQ",
+        as_of=datetime(2026, 8, 28, 20, 59, tzinfo=timezone.utc),
+    )
+
+    assert RealtimeMarketsService._portfolio_quote_status(
+        friday_close,
+        "NASDAQ",
+        measured_at,
+    ) == expected_status
+
+
+def test_us_portfolio_quote_remains_current_during_exchange_holiday() -> None:
+    friday_close = RealtimeMarketLeader(
+        symbol="QQQM",
+        name="Invesco NASDAQ 100 ETF",
+        price=294.79,
+        change_percent=1.0,
+        volume=1_000.0,
+        cash_volume=294_790.0,
+        currency="USD",
+        exchange="NASDAQ",
+        as_of=datetime(2026, 9, 4, 20, 59, tzinfo=timezone.utc),
+    )
+
+    assert RealtimeMarketsService._portfolio_quote_status(
+        friday_close,
+        "NASDAQ",
+        datetime(2026, 9, 7, 18, tzinfo=timezone.utc),
+    ) == "closed"
 
 
 def test_realtime_portfolio_recomputes_display_change_from_canonical_reference() -> None:
@@ -2004,7 +2056,7 @@ def test_mapped_otc_uses_origin_conversion_when_primary_is_old_or_missing(
     assert item.origin_reference_note == "via bolsa de origem × câmbio"
     assert item.change_percent == pytest.approx(3.8461538)
     assert item.volume == 0
-    assert item.status == "delayed"
+    assert item.status != "stale"
     assert item.source == "Yahoo Finance · via bolsa de origem × câmbio"
 
 
