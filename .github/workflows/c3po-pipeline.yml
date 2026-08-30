@@ -402,7 +402,11 @@ jobs:
           for attempt in $(seq 1 90); do
             web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
             api_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/health || true)
-            if [ "$web_code" = "200" ] && { [ "$api_code" = "200" ] || [ "$api_code" = "401" ]; }; then
+            shadow_id=$(docker compose --env-file .env -f c3po/compose.yml ps -q r2d2-shadow-candidate-worker)
+            shadow_status=$(docker inspect -f '{{.State.Status}}' "$shadow_id" 2>/dev/null || true)
+            if [ "$web_code" = "200" ] \
+              && { [ "$api_code" = "200" ] || [ "$api_code" = "401" ]; } \
+              && [ "$shadow_status" = "running" ]; then
               healthy=true
               break
             fi
@@ -421,7 +425,17 @@ jobs:
           if docker image inspect c3po/backend:rollback c3po/web:rollback >/dev/null 2>&1; then
             docker image tag c3po/backend:rollback c3po/backend:production
             docker image tag c3po/web:rollback c3po/web:production
+            rollback_has_shadow_worker=false
+            if docker run --rm --entrypoint python c3po/backend:production \
+              -c 'import app.r2d2_shadow_candidate_worker'; then
+              rollback_has_shadow_worker=true
+            fi
             C3PO_BUILD_SHA="$PREVIOUS_REVISION" docker compose --env-file .env -f c3po/compose.yml up -d --no-build
+            if [ "$rollback_has_shadow_worker" != "true" ]; then
+              # Only the first rollback target predates this worker. Later
+              # rollback images keep the evidence collector running.
+              docker compose --env-file .env -f c3po/compose.yml stop r2d2-shadow-candidate-worker
+            fi
             rollback_healthy=false
             for attempt in $(seq 1 60); do
               web_code=$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
