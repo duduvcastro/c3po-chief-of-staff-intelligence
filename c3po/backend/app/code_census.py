@@ -257,6 +257,33 @@ class CodeCensusService:
         delta_comparable = bool(
             latest and previous and latest["methodology"] == previous["methodology"]
         )
+        # The compound window obeys the same ruler rule: it starts at the
+        # oldest row that shares the latest methodology, never earlier.
+        compound_growth = None
+        if latest:
+            window = []
+            for row in series:
+                if row["methodology"] != latest["methodology"]:
+                    break
+                window.append(row)
+            baseline = window[-1]
+            span_days = (
+                date.fromisoformat(latest["session_date"])
+                - date.fromisoformat(baseline["session_date"])
+            ).days
+            if span_days >= 1 and baseline["total_lines"] > 0:
+                ratio = latest["total_lines"] / baseline["total_lines"]
+                compound_growth = {
+                    "baseline_date": baseline["session_date"],
+                    "days": span_days,
+                    "total_growth_pct": round((ratio - 1.0) * 100.0, 4),
+                    "daily_compound_pct": round(
+                        (ratio ** (1.0 / span_days) - 1.0) * 100.0, 4
+                    ),
+                    "cagr_annualized_pct": round(
+                        (ratio ** (365.25 / span_days) - 1.0) * 100.0, 4
+                    ),
+                }
         return {
             "latest": latest,
             "previous": previous,
@@ -265,6 +292,7 @@ class CodeCensusService:
                 latest["total_lines"] - previous["total_lines"]
                 if delta_comparable else None
             ),
+            "compound_growth": compound_growth,
             "layer_order": list(LAYER_ORDER),
             "series": list(reversed(series)),
         }

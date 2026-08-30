@@ -205,6 +205,79 @@ def test_snapshot_never_compares_totals_across_methodology_changes() -> None:
     assert stable["total_delta_vs_previous"] == 467
 
 
+def test_snapshot_compound_growth_since_the_measurement_start() -> None:
+    settings = Settings(database_url="", auth_cookie_secure=False)
+
+    snapshot = CodeCensusService(
+        settings,
+        _SeriesDatabase([  # type: ignore[arg-type]
+            _series_row("2026-08-30", CENSUS_METHODOLOGY, 121_927),
+            _series_row("2026-08-28", CENSUS_METHODOLOGY, 110_000),
+            _series_row("2026-08-26", CENSUS_METHODOLOGY, 100_000),
+        ]),
+    ).snapshot()
+
+    growth = snapshot["compound_growth"]
+    assert growth is not None
+    assert growth["baseline_date"] == "2026-08-26"
+    assert growth["days"] == 4
+    assert abs(growth["total_growth_pct"] - 21.927) < 0.0005
+    assert abs(growth["daily_compound_pct"] - 5.0812) < 0.001
+    # Annualizing four days is mathematically defined but numerically wild;
+    # the payload still reports it and display rules live in the frontend.
+    assert 1e9 < growth["cagr_annualized_pct"] < 1e10
+
+
+def test_snapshot_compound_growth_restarts_at_a_methodology_change() -> None:
+    settings = Settings(database_url="", auth_cookie_secure=False)
+
+    snapshot = CodeCensusService(
+        settings,
+        _SeriesDatabase([  # type: ignore[arg-type]
+            _series_row("2026-08-30", CENSUS_METHODOLOGY, 121_927),
+            _series_row("2026-08-29", CENSUS_METHODOLOGY, 110_000),
+            _series_row("2026-08-28", "raw-line-count-frozen-globs-v0", 108_000),
+        ]),
+    ).snapshot()
+
+    growth = snapshot["compound_growth"]
+    assert growth is not None
+    assert growth["baseline_date"] == "2026-08-29"
+    assert growth["days"] == 1
+    assert abs(growth["total_growth_pct"] - 10.8427) < 0.001
+    assert growth["daily_compound_pct"] == growth["total_growth_pct"]
+
+
+def test_snapshot_compound_growth_needs_a_window_and_a_nonzero_baseline() -> None:
+    settings = Settings(database_url="", auth_cookie_secure=False)
+
+    single = CodeCensusService(
+        settings,
+        _SeriesDatabase([  # type: ignore[arg-type]
+            _series_row("2026-08-30", CENSUS_METHODOLOGY, 121_927),
+        ]),
+    ).snapshot()
+    assert single["compound_growth"] is None
+
+    all_changed = CodeCensusService(
+        settings,
+        _SeriesDatabase([  # type: ignore[arg-type]
+            _series_row("2026-08-30", CENSUS_METHODOLOGY, 121_927),
+            _series_row("2026-08-29", "raw-line-count-frozen-globs-v0", 110_000),
+        ]),
+    ).snapshot()
+    assert all_changed["compound_growth"] is None
+
+    zero_baseline = CodeCensusService(
+        settings,
+        _SeriesDatabase([  # type: ignore[arg-type]
+            _series_row("2026-08-30", CENSUS_METHODOLOGY, 121_927),
+            _series_row("2026-08-29", CENSUS_METHODOLOGY, 0),
+        ]),
+    ).snapshot()
+    assert zero_baseline["compound_growth"] is None
+
+
 def test_snapshot_returns_complete_history_in_chronological_order_by_default() -> None:
     database = _SeriesDatabase(
         [
