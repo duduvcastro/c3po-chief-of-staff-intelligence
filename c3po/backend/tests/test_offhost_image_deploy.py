@@ -124,7 +124,10 @@ def test_every_base_image_is_digest_pinned_and_restore_uses_production_db() -> N
         digest_ref.match(reference)
         for reference in backend_from + frontend_from + database_from
     )
-    assert database_from[0] in RESTORE_DRILL.read_text(encoding="utf-8")
+    database_runtime_ref = next(
+        reference for reference in database_from if reference.startswith("postgres:")
+    )
+    assert database_runtime_ref in RESTORE_DRILL.read_text(encoding="utf-8")
 
 
 def test_runtime_images_upgrade_os_packages_during_build() -> None:
@@ -137,3 +140,7 @@ def test_runtime_images_upgrade_os_packages_during_build() -> None:
     assert "rm -rf /var/lib/apt/lists/*" in backend
     assert frontend.count("apk upgrade --no-cache") == 1
     assert database.count("apk upgrade --no-cache") == 1
+    assert "golang:1.25.14-alpine3.24@sha256:" in database
+    assert "github.com/tianon/gosu@6456aaa0f3c854d199d0f037f068eb97515b7513" in database
+    assert "COPY --from=gosu-build /go/bin/gosu /usr/local/bin/gosu" in database
+    assert "gosu nobody true" in database

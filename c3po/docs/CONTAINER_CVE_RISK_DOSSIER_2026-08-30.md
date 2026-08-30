@@ -68,6 +68,11 @@ privilegio deve ser tratada em obra separada, com testes dos volumes e jobs.
   manter o estado de atencao sem aceite. Este documento recomenda aceite
   temporario somente pela ausencia de caminhos alcancaveis demonstrados.
 
+Os CVEs do binario `gosu` da imagem PostgreSQL nao entram neste aceite. Eles
+possuem versao corrigida do runtime Go e sao remediados nesta obra ao recompilar
+o mesmo `gosu` 1.19, no commit oficial pinado, com Go 1.25.14 pinado. O entrypoint
+e seu mecanismo de queda de privilegio permanecem os mesmos.
+
 ## Fora de escopo imediato
 
 - Remover `perl-base` nao e recomendavel: ele e pacote Essential no Debian e a
