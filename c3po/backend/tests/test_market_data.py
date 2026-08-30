@@ -12,7 +12,11 @@ from app.market_data.eodhd_stream import EodhdStreamQuote
 from app.market_data.http import MarketDataRequestError
 from app.market_data.live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
 from app.market_data.live_markets import LiveMarketsService, MarketSpec
-from app.market_data.realtime import FALLBACK_CACHE_SECONDS, RealtimeMarketsService
+from app.market_data.realtime import (
+    FALLBACK_CACHE_SECONDS,
+    OtcOriginReference,
+    RealtimeMarketsService,
+)
 from app.market_data.service import MarketDataService
 from app.schemas import LiveMarketItem, NormalizedQuote, RealtimeMarketLeader
 from app.valuation_policy import METHODOLOGY_VERSION
@@ -1785,6 +1789,201 @@ def test_realtime_portfolio_accepts_otc_common_stock() -> None:
     assert added.items[0].name == "Mitsubishi Heavy Industries Ltd."
     assert added.items[0].market == "OTC"
     assert added.items[0].price == 26.84
+
+
+def test_mhvyf_origin_reference_uses_curated_yahoo_listing_and_live_fx() -> None:
+    now = datetime(2026, 8, 29, 15, tzinfo=timezone.utc)
+    origin_time = int((now - timedelta(minutes=20)).timestamp())
+    fx_time = int((now - timedelta(minutes=1)).timestamp())
+    http = RoutingStubHttp({
+        "/v8/finance/chart/7011.T": {"chart": {"result": [{
+            "meta": {
+                "symbol": "7011.T",
+                "currency": "JPY",
+                "regularMarketPrice": 4_050.0,
+                "chartPreviousClose": 3_900.0,
+                "regularMarketTime": origin_time,
+            },
+            "timestamp": [],
+            "indicators": {"quote": [{}]},
+        }]}},
+        "/v8/finance/chart/JPY%3DX": {"chart": {"result": [{
+            "meta": {
+                "symbol": "JPY=X",
+                "currency": "JPY",
+                "regularMarketPrice": 150.0,
+                "regularMarketTime": fx_time,
+            },
+            "timestamp": [],
+            "indicators": {"quote": [{}]},
+        }]}},
+    })
+    settings = Settings(auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+
+    reference = service._otc_origin_reference("MHVYF", now)
+
+    assert reference is not None
+    assert reference.symbol == "7011.T"
+    assert reference.fx_symbol == "JPY=X"
+    assert reference.price_usd == pytest.approx(27.0)
+    assert reference.previous_close_usd == pytest.approx(26.0)
+    assert reference.as_of == datetime.fromtimestamp(origin_time, timezone.utc)
+    assert len(http.calls) == 2
+
+
+def test_mapped_otc_keeps_primary_usd_price_and_labels_material_divergence() -> None:
+    now = datetime(2026, 8, 29, 15, tzinfo=timezone.utc)
+
+    class PortfolioDatabase:
+        @staticmethod
+        def list_realtime_portfolio() -> list[dict[str, str]]:
+            return [{"symbol": "MHVYF", "name": "Mitsubishi Heavy", "market": "OTC"}]
+
+    class OriginReferenceService(RealtimeMarketsService):
+        def _us_portfolio_rows(self, market, measured_at, symbols):
+            return [RealtimeMarketLeader(
+                symbol="MHVYF",
+                name="Mitsubishi Heavy",
+                price=26.0,
+                change_percent=1.25,
+                volume=200.0,
+                cash_volume=5_200.0,
+                currency="USD",
+                exchange=market,
+                as_of=measured_at,
+            )]
+
+        def _otc_origin_reference(self, symbol, measured_at):
+            return OtcOriginReference(
+                symbol="7011.T",
+                price_local=4_050.0,
+                previous_close_local=3_900.0,
+                fx_symbol="JPY=X",
+                fx_rate=150.0,
+                price_usd=27.0,
+                previous_close_usd=26.0,
+                as_of=measured_at - timedelta(minutes=20),
+            )
+
+    service = OriginReferenceService(  # type: ignore[arg-type]
+        Settings(auth_cookie_secure=False),
+        PortfolioDatabase(),
+        StubHttp({}),
+    )
+
+    item = service.portfolio_snapshot().items[0]
+
+    assert item.price == 26.0
+    assert item.currency == "USD"
+    assert item.price_basis == "primary"
+    assert item.change_percent == 1.25
+    assert item.origin_reference_status == "divergent"
+    assert item.origin_reference_price_usd == 27.0
+    assert item.origin_reference_divergence_percent == pytest.approx(-3.7037037)
+    assert item.origin_reference_note == "divergência de 3.7% vs 7011.T × câmbio"
+    assert item.reference_status == "not_applicable"
+    assert "Yahoo Finance origin reference" in item.source
+
+
+@pytest.mark.parametrize("primary_missing", [False, True])
+def test_mapped_otc_uses_origin_conversion_when_primary_is_old_or_missing(
+    primary_missing: bool,
+) -> None:
+    now = datetime(2026, 8, 29, 15, tzinfo=timezone.utc)
+
+    class PortfolioDatabase:
+        @staticmethod
+        def list_realtime_portfolio() -> list[dict[str, str]]:
+            return [{"symbol": "MHVYF", "name": "Mitsubishi Heavy", "market": "OTC"}]
+
+    class OriginFallbackService(RealtimeMarketsService):
+        def _us_portfolio_rows(self, market, measured_at, symbols):
+            if primary_missing:
+                return []
+            return [RealtimeMarketLeader(
+                symbol="MHVYF",
+                name="Mitsubishi Heavy",
+                price=24.0,
+                change_percent=-1.0,
+                volume=100.0,
+                cash_volume=2_400.0,
+                currency="USD",
+                exchange=market,
+                as_of=measured_at - timedelta(days=2),
+            )]
+
+        def _otc_origin_reference(self, symbol, measured_at):
+            return OtcOriginReference(
+                symbol="7011.T",
+                price_local=4_050.0,
+                previous_close_local=3_900.0,
+                fx_symbol="JPY=X",
+                fx_rate=150.0,
+                price_usd=27.0,
+                previous_close_usd=26.0,
+                as_of=measured_at - timedelta(minutes=20),
+            )
+
+    service = OriginFallbackService(  # type: ignore[arg-type]
+        Settings(auth_cookie_secure=False),
+        PortfolioDatabase(),
+        StubHttp({}),
+    )
+
+    item = service.portfolio_snapshot().items[0]
+
+    assert item.price == 27.0
+    assert item.currency == "USD"
+    assert item.price_basis == "origin_converted"
+    assert item.origin_reference_status == "fallback"
+    assert item.origin_reference_note == "via bolsa de origem × câmbio"
+    assert item.change_percent == pytest.approx(3.8461538)
+    assert item.volume == 0
+    assert item.status == "delayed"
+    assert item.source == "Yahoo Finance · via bolsa de origem × câmbio"
+
+
+def test_unmapped_otc_keeps_current_behavior_and_declares_missing_curated_map() -> None:
+    now = datetime(2026, 8, 29, 15, tzinfo=timezone.utc)
+
+    class PortfolioDatabase:
+        @staticmethod
+        def list_realtime_portfolio() -> list[dict[str, str]]:
+            return [{"symbol": "XYZOF", "name": "Example OTC", "market": "OTC"}]
+
+    class UnmappedService(RealtimeMarketsService):
+        def _us_portfolio_rows(self, market, measured_at, symbols):
+            return [RealtimeMarketLeader(
+                symbol="XYZOF",
+                name="Example OTC",
+                price=12.0,
+                change_percent=2.0,
+                volume=50.0,
+                cash_volume=600.0,
+                currency="USD",
+                exchange=market,
+                as_of=measured_at,
+            )]
+
+        def _prime_us_reference_cache(self, symbol_sessions, measured_at):
+            return None
+
+        def _us_reference_status(self, symbol, measured_at, *, session_date=None):
+            return "unvalidated", None, None
+
+    service = UnmappedService(  # type: ignore[arg-type]
+        Settings(auth_cookie_secure=False),
+        PortfolioDatabase(),
+        StubHttp({}),
+    )
+
+    item = service.portfolio_snapshot().items[0]
+
+    assert item.price == 12.0
+    assert item.reference_status == "unvalidated"
+    assert item.origin_reference_status == "unmapped"
+    assert item.origin_reference_note == "sem listagem-mãe mapeada"
 
 
 def test_realtime_portfolio_search_suggests_stocks_and_etfs_by_ticker_or_name() -> None:
