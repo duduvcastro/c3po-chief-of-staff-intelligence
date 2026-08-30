@@ -22,6 +22,46 @@ Debian 13/trixie ainda vulneraveis e versoes corrigidas em releases Debian
 posteriores. Migrar producao para Debian unstable apenas para antecipar esses
 pacotes nao e recomendado.
 
+## Revalidacao da imagem corrigida
+
+O re-scan posterior a correcao da ordem do `apt` foi executado no run
+`33329867016`. O merge-ref escaneado
+`bb06a401ac8d78f12a7c38d8a59f16b50ee6f610` tem como pais `main`
+`e168c259ccb55a9c4da2e269bf9b392e18bee249` e o head corrigido
+`d1f6da9c1bb8e3f4971972e491db3f28657b5041`.
+
+- artifact: `c3po-trivy-pull-request-bb06a401ac8d78f12a7c38d8a59f16b50ee6f610`;
+- digest do artifact: `sha256:b47e1c6b75bb4d7d37c097fa0a522fef8372c37e7ff33ea5dab95353ad2243d9`;
+- SHA-256 do JSON baixado:
+  `2af74f1d9f3d98218791131bcad40f7fe6f3d3fd26dd6a44a72f9b1fb70c3a66`;
+- self-hash do report:
+  `8d95187d6da80bd72a37d7e061b653bd65cbaf9e3c379d777f305e3870ac6f29`;
+- estado: `scan_status=complete`, `errors=[]`, 3 critical e 13 high,
+  todos sem `FixedVersion`; zero critical/high fixavel.
+
+O log de build prova duas transacoes separadas. O primeiro `apt-get update` e
+`apt-get upgrade -y` consultou apenas `trixie`, `trixie-updates` e
+`trixie-security`: atualizou somente `libssl3t64`, `openssl` e
+`openssl-provider-legacy`, todos para `3.5.7-1~deb13u2` a partir de
+`trixie-security`. So depois o Dockerfile habilitou `trixie-proposed-updates`
+para o install das mesmas tres versoes exatas; essa segunda transacao registrou
+`0 upgraded`. Nenhum `bash`, `libc6`, `libc-bin`, `libcap2` ou
+`libsqlite3-0` foi absorvido de proposed-updates.
+
+Inventario critical/high sem correcao efetivamente observado nessa imagem:
+
+| Pacote | Versao instalada | Ocorrencias | CVEs distintos |
+| --- | --- | ---: | ---: |
+| `perl-base` | `5.40.1-6` | 8 | 8 |
+| `ncurses-bin`, `ncurses-base`, `libtinfo6`, `libncursesw6` | `6.5+20250216-2` | 4 | 1 |
+| `libsqlite3-0` | `3.46.1-7+deb13u1` | 2 | 2 |
+| `libacl1` | `2.3.2-2+b1` | 1 | 1 |
+| `gzip` | `1.13-1` | 1 | 1 |
+
+Total: 16 ocorrencias, 13 CVEs distintos. Esse inventario substitui qualquer
+leitura transitoria da imagem anterior, que havia absorvido
+`libsqlite3-0 3.46.1-7+deb13u2` de proposed-updates.
+
 ## Superficie observada
 
 Busca estatica no backend e em suas dependencias declaradas encontrou:
