@@ -499,8 +499,8 @@ def test_governance_card_exposes_counts_contract_and_hash_metadata() -> None:
     response = _service().snapshot(force=True)
     governance = next(group for group in response.groups if group.key == "governance")
     assert governance.label == "Governança & Vulnerabilidades"
-    assert governance.healthy_count == 1
-    assert governance.total_count == 1
+    assert governance.healthy_count == 2
+    assert governance.total_count == 2
     item = governance.items[0]
 
     assert item.status == "healthy"
@@ -667,8 +667,8 @@ def test_missing_daily_api_usage_counter_prevents_full_readiness() -> None:
     assert usage.status == "attention"
     assert response.status == "attention"
     assert response.quality == 97
-    assert response.healthy_count == 32
-    assert response.total_count == 33
+    assert response.healthy_count == 33
+    assert response.total_count == 34
 
 
 def test_finnhub_is_monitored_in_market_quotes() -> None:

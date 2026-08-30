@@ -1277,6 +1277,32 @@ class AlertReadResponse(BaseModel):
     read_at: datetime
 
 
+class OperationalIncident(BaseModel):
+    id: str
+    incident_key: str
+    source: str
+    severity: Literal["attention", "critical"]
+    title: str
+    detail: str
+    deep_link: str
+    status: Literal["open", "acknowledged", "resolved"]
+    opened_at: datetime
+    last_seen_at: datetime
+    event_count: int = Field(ge=1)
+    evidence_sha256: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    actor_email: str | None = None
+
+
+class OperationalIncidentListResponse(BaseModel):
+    generated_at: datetime
+    incidents: list[OperationalIncident]
+
+
+class OperationalIncidentResolveRequest(BaseModel):
+    resolution: str = Field(min_length=3, max_length=500)
+
+
 class NavigationIndicator(BaseModel):
     has_new: bool
     unseen_count: int = Field(ge=0)

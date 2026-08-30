@@ -108,6 +108,7 @@ class SystemHealthService:
             "aws": lambda: self._aws_health(now),
             "controls": lambda: self._day_d_and_valuation_health(now),
             "governance": lambda: self._governance_vulnerability_health(now),
+            "incidents": lambda: self._operational_incident_health(now),
             "quote_providers": lambda: self._quote_provider_health(now),
             "finnhub": lambda: self._finnhub_health(now),
             "fmp": lambda: self._fmp_health(now),
@@ -208,6 +209,14 @@ class SystemHealthService:
                     durations_ms,
                     "governance",
                     "Governança & Vulnerabilidades",
+                    now,
+                    timeout,
+                ) + self._probe_items(
+                    results,
+                    failures,
+                    durations_ms,
+                    "incidents",
+                    "Incidentes operacionais",
                     now,
                     timeout,
                 ),
@@ -1220,6 +1229,30 @@ class SystemHealthService:
             self._day_d_disk_health(now),
             self._b2_zero_cap_health(now),
         ]
+
+    def _operational_incident_health(self, now: datetime) -> IntegrationHealth:
+        loader = getattr(self.database, "list_operational_incidents", None)
+        incidents = loader(limit=20) if loader else []
+        active = [item for item in incidents if item["status"] != "resolved"]
+        critical = sum(item["severity"] == "critical" for item in active)
+        status = "offline" if critical else "attention" if active else "healthy"
+        detail = (
+            f"{len(active)} ativo(s) · {critical} crítico(s)"
+            if active else "Nenhum incidente operacional ativo"
+        )
+        latest_at = incidents[0]["last_seen_at"] if incidents else now
+        return IntegrationHealth(
+            name="Incidentes operacionais",
+            status=status,
+            detail=detail,
+            last_update=self._format_time(latest_at),
+            metadata={
+                "kind": "operational_incidents",
+                "active_count": len(active),
+                "critical_count": critical,
+                "incidents": incidents,
+            },
+        )
 
     def _governance_vulnerability_health(self, now: datetime) -> IntegrationHealth:
         try:

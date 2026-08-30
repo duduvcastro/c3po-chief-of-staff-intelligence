@@ -1,4 +1,5 @@
 import json
+import hashlib
 import logging
 import re
 import threading
@@ -36,6 +37,8 @@ class Database:
         self._api_performance_buckets: list[dict[str, Any]] = []
         self._page_load_performance_samples: list[dict[str, Any]] = []
         self._governance_vulnerability_reports: dict[date, dict[str, Any]] = {}
+        self._operational_incidents: dict[str, dict[str, Any]] = {}
+        self._operational_incident_events: list[dict[str, Any]] = []
         self._push_subscriptions: list[dict[str, Any]] = []
         self._push_notification_events: dict[str, dict[str, Any]] = {}
         self._push_delivery_events: list[dict[str, Any]] = []
@@ -139,6 +142,196 @@ class Database:
                    LIMIT 1"""
             ).fetchone()
         return dict(row[0]) if row else None
+
+    def record_operational_incident(
+        self,
+        *,
+        incident_key: str,
+        source: str,
+        severity: str,
+        title: str,
+        detail: str,
+        deep_link: str,
+        evidence: dict[str, Any],
+        evidence_sha256: str,
+        at: datetime,
+    ) -> dict[str, Any]:
+        if severity not in {"attention", "critical"}:
+            raise ValueError("invalid incident severity")
+        if not self.database_url:
+            incident = self._operational_incidents.get(incident_key)
+            if incident is None:
+                incident = {
+                    "id": str(uuid4()), "incident_key": incident_key, "source": source,
+                    "severity": severity, "title": title, "deep_link": deep_link,
+                    "opened_at": at,
+                }
+                self._operational_incidents[incident_key] = incident
+                event_type = "opened"
+            else:
+                current = self.operational_incident_by_key(incident_key)
+                event_type = "reopened" if current and current["status"] == "resolved" else "observed"
+                if current and current.get("evidence_sha256") == evidence_sha256 and event_type == "observed":
+                    return current
+            self._operational_incident_events.append({
+                "id": str(uuid4()), "incident_id": incident["id"], "event_type": event_type,
+                "actor_email": "system", "detail": detail, "evidence": dict(evidence),
+                "evidence_sha256": evidence_sha256, "occurred_at": at,
+            })
+            return self.operational_incident_by_key(incident_key) or {}
+
+        with self.connection() as connection:
+            connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"operational-incident:{incident_key}",),
+            )
+            row = connection.execute(
+                "SELECT id FROM operational_incidents WHERE incident_key = %s",
+                (incident_key,),
+            ).fetchone()
+            if row:
+                incident_id = row[0]
+                state = connection.execute(
+                    """SELECT event_type FROM operational_incident_events
+                       WHERE incident_id = %s
+                         AND event_type IN ('opened','reopened','acknowledged','resolved')
+                       ORDER BY occurred_at DESC, created_at DESC LIMIT 1""",
+                    (incident_id,),
+                ).fetchone()
+                latest = connection.execute(
+                    """SELECT evidence_sha256 FROM operational_incident_events
+                       WHERE incident_id = %s ORDER BY occurred_at DESC, created_at DESC LIMIT 1""",
+                    (incident_id,),
+                ).fetchone()
+                event_type = "reopened" if state and state[0] == "resolved" else "observed"
+                if event_type == "observed" and latest and latest[0] == evidence_sha256:
+                    connection.commit()
+                    return self.operational_incident_by_key(incident_key) or {}
+            else:
+                incident_id = uuid4()
+                connection.execute(
+                    """INSERT INTO operational_incidents
+                       (id, incident_key, source, severity, title, deep_link, opened_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                    (incident_id, incident_key, source, severity, title, deep_link, at),
+                )
+                event_type = "opened"
+            connection.execute(
+                """INSERT INTO operational_incident_events
+                   (id, incident_id, event_type, actor_email, detail, evidence,
+                    evidence_sha256, occurred_at)
+                   VALUES (%s,%s,%s,'system',%s,%s::jsonb,%s,%s)""",
+                (uuid4(), incident_id, event_type, detail, json.dumps(evidence), evidence_sha256, at),
+            )
+            connection.commit()
+        return self.operational_incident_by_key(incident_key) or {}
+
+    def transition_operational_incident(
+        self,
+        *,
+        incident_id: str,
+        event_type: str,
+        actor_email: str,
+        detail: str,
+        at: datetime,
+    ) -> dict[str, Any] | None:
+        if event_type not in {"acknowledged", "resolved"}:
+            raise ValueError("invalid incident transition")
+        incident = next(
+            (item for item in self.list_operational_incidents(limit=1000) if item["id"] == incident_id),
+            None,
+        )
+        if not incident or incident["status"] == "resolved":
+            return incident
+        if event_type == "acknowledged" and incident["status"] == "acknowledged":
+            return incident
+        evidence: dict[str, Any] = {}
+        evidence_hash = hashlib.sha256(b"{}").hexdigest()
+        event = {
+            "id": str(uuid4()), "incident_id": incident_id, "event_type": event_type,
+            "actor_email": actor_email, "detail": detail, "evidence": evidence,
+            "evidence_sha256": evidence_hash, "occurred_at": at,
+        }
+        if not self.database_url:
+            self._operational_incident_events.append(event)
+        else:
+            with self.connection() as connection:
+                inserted = connection.execute(
+                    """INSERT INTO operational_incident_events
+                       (id, incident_id, event_type, actor_email, detail, evidence,
+                        evidence_sha256, occurred_at)
+                       SELECT %s,%s,%s,%s,%s,'{}'::jsonb,%s,%s
+                       WHERE EXISTS (SELECT 1 FROM operational_incidents WHERE id = %s)""",
+                    (uuid4(), incident_id, event_type, actor_email, detail, evidence_hash, at, incident_id),
+                ).rowcount
+                connection.commit()
+            if not inserted:
+                return None
+        return next(
+            (item for item in self.list_operational_incidents(limit=1000) if item["id"] == incident_id),
+            None,
+        )
+
+    def operational_incident_by_key(self, incident_key: str) -> dict[str, Any] | None:
+        return next(
+            (item for item in self.list_operational_incidents(limit=1000) if item["incident_key"] == incident_key),
+            None,
+        )
+
+    def list_operational_incidents(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        if not self.database_url:
+            rows: list[dict[str, Any]] = []
+            for incident in self._operational_incidents.values():
+                events = [event for event in self._operational_incident_events if event["incident_id"] == incident["id"]]
+                if not events:
+                    continue
+                latest = max(events, key=lambda event: event["occurred_at"])
+                state_events = [event for event in events if event["event_type"] != "observed"]
+                state = max(state_events, key=lambda event: event["occurred_at"])["event_type"]
+                status = "open" if state in {"opened", "reopened"} else state
+                rows.append({
+                    **incident, "status": status, "detail": latest["detail"],
+                    "evidence": dict(latest["evidence"]), "evidence_sha256": latest["evidence_sha256"],
+                    "last_seen_at": latest["occurred_at"], "event_count": len(events),
+                    "actor_email": latest["actor_email"],
+                })
+            return sorted(rows, key=lambda item: item["last_seen_at"], reverse=True)[:limit]
+
+        with self.connection() as connection:
+            rows = connection.execute(
+                """SELECT incident.id::text, incident.incident_key, incident.source,
+                          incident.severity, incident.title, incident.deep_link,
+                          incident.opened_at, latest.detail, latest.evidence,
+                          latest.evidence_sha256, latest.occurred_at,
+                          CASE state.event_type
+                            WHEN 'acknowledged' THEN 'acknowledged'
+                            WHEN 'resolved' THEN 'resolved'
+                            ELSE 'open'
+                          END AS status,
+                          latest.actor_email,
+                          (SELECT count(*) FROM operational_incident_events count_event
+                           WHERE count_event.incident_id = incident.id)
+                   FROM operational_incidents incident
+                   JOIN LATERAL (
+                     SELECT detail, evidence, evidence_sha256, occurred_at, actor_email
+                     FROM operational_incident_events
+                     WHERE incident_id = incident.id
+                     ORDER BY occurred_at DESC, created_at DESC LIMIT 1
+                   ) latest ON true
+                   JOIN LATERAL (
+                     SELECT event_type FROM operational_incident_events
+                     WHERE incident_id = incident.id AND event_type <> 'observed'
+                     ORDER BY occurred_at DESC, created_at DESC LIMIT 1
+                   ) state ON true
+                   ORDER BY latest.occurred_at DESC LIMIT %s""",
+                (limit,),
+            ).fetchall()
+        keys = (
+            "id", "incident_key", "source", "severity", "title", "deep_link",
+            "opened_at", "detail", "evidence", "evidence_sha256", "last_seen_at",
+            "status", "actor_email", "event_count",
+        )
+        return [dict(zip(keys, row)) for row in rows]
 
     def save_push_subscription(
         self,

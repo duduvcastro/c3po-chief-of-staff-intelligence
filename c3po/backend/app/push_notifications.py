@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -11,6 +12,7 @@ from pywebpush import WebPushException, webpush
 
 from .config import Settings, get_settings
 from .database import Database
+from .operational_incidents import OperationalIncidentService
 
 
 logger = logging.getLogger("c3po.push_notifications")
@@ -135,6 +137,25 @@ class PushNotificationService:
             "expired": 0,
         }
         try:
+            if category in {"job_failure", "disk_threshold"}:
+                try:
+                    signal_key = event_key or title
+                    OperationalIncidentService(self.database).signal(
+                        incident_key=f"notification:{category}:{signal_key}",
+                        source="worker" if category == "job_failure" else "host",
+                        severity="critical" if category == "job_failure" else "attention",
+                        title=title,
+                        detail=body[:500],
+                        deep_link=deep_link,
+                        evidence={
+                            "category": category,
+                            "event_key_sha256": hashlib.sha256(signal_key.encode()).hexdigest(),
+                        },
+                    )
+                except Exception:
+                    logger.exception(
+                        "Operational incident recording failed without affecting notification"
+                    )
             if not self.configured:
                 logger.info("Push notification skipped: VAPID is not configured")
                 return result
