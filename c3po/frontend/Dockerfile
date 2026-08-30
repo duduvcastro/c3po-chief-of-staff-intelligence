@@ -16,7 +16,7 @@ ENV NEXT_PUBLIC_C3PO_BUILD_SHA=$NEXT_PUBLIC_C3PO_BUILD_SHA
 
 RUN pnpm build
 
-FROM nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+FROM nginx:1.31.4-alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/out /usr/share/nginx/html
 EXPOSE 80
