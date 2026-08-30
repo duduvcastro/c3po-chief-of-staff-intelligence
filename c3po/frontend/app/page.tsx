@@ -862,6 +862,13 @@ interface RealtimePortfolioItem extends RealtimeMarketLeader {
   reference_status: "validated" | "unvalidated" | "not_applicable";
   reference_close: number | null;
   reference_as_of: string | null;
+  price_basis: "primary" | "origin_converted";
+  origin_reference_status: "consistent" | "divergent" | "fallback" | "unavailable" | "unmapped" | "not_applicable";
+  origin_reference_symbol: string | null;
+  origin_reference_price_usd: number | null;
+  origin_reference_divergence_percent: number | null;
+  origin_reference_as_of: string | null;
+  origin_reference_note: string | null;
 }
 
 interface RealtimePortfolioResponse {
@@ -5172,7 +5179,14 @@ function MyRealtimePortfolio({
               ) : (
                 <span className="realtime-portfolio-market">{item.market}</span>
               )}
-              <strong className="realtime-portfolio-price">{item.status === "stale" ? "N/D" : formatCurrency(item.price, item.currency)}</strong>
+              <div className="realtime-portfolio-price-cell">
+                <strong className="realtime-portfolio-price">{item.status === "stale" ? "N/D" : formatCurrency(item.price, item.market === "OTC" ? "USD" : item.currency)}</strong>
+                {item.origin_reference_note && (
+                  <small className={`realtime-portfolio-origin-note realtime-portfolio-origin-${item.origin_reference_status}`}>
+                    {item.origin_reference_note}
+                  </small>
+                )}
+              </div>
               {item.status === "stale" ? (
                 <span className="realtime-portfolio-change">N/D</span>
               ) : item.reference_status === "unvalidated" ? (
@@ -8094,8 +8108,33 @@ function CodeCensusSection({ data }: { data: CodeCensusSnapshot | null }) {
 }
 
 function HealthView({ data, canManage }: { data: SystemHealthData | null; canManage: boolean }) {
-  if (!data) return <LoadingState />;
-  const apiUsage = data.api_usage ?? [];
+  const [health, setHealth] = useState(data);
+  const [attesting, setAttesting] = useState(false);
+  const [attestationError, setAttestationError] = useState("");
+  useEffect(() => setHealth(data), [data]);
+  const refreshGovernance = useCallback(async () => {
+    setAttesting(true);
+    setAttestationError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/admin/governance/attest`, {
+        method: "POST",
+        credentials: "include"
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const healthResponse = await fetch(`${API_URL}/api/v1/system-health`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      if (!healthResponse.ok) throw new Error("Atestado criado, mas a releitura do painel falhou");
+      setHealth(await healthResponse.json());
+    } catch (error) {
+      setAttestationError(error instanceof Error ? error.message : "Não foi possível gerar o atestado");
+    } finally {
+      setAttesting(false);
+    }
+  }, []);
+  if (!health) return <LoadingState />;
+  const apiUsage = health.api_usage ?? [];
   const groupIcons: Record<SystemHealthGroupKey, ComponentType<{ size?: number }>> = {
     apis: Activity,
     external_services: Cloud,
@@ -8107,17 +8146,17 @@ function HealthView({ data, canManage }: { data: SystemHealthData | null; canMan
     official_sources: Building2,
     automations: RefreshCw
   };
-  const headline = data.status === "healthy"
+  const headline = health.status === "healthy"
     ? "All services operational"
-    : data.status === "offline"
+    : health.status === "offline"
       ? "Service interruption detected"
       : "Conditions require attention";
-  const qualityTone = data.quality >= 100
+  const qualityTone = health.quality >= 100
     ? "good"
-    : data.quality >= 80
+    : health.quality >= 80
       ? "warning"
       : "critical";
-  const orderedGroups = [...data.groups].sort((left, right) => {
+  const orderedGroups = [...health.groups].sort((left, right) => {
     const order: Record<SystemHealthGroupKey, number> = {
       aws: 0,
       controls: 1,
@@ -8137,6 +8176,15 @@ function HealthView({ data, canManage }: { data: SystemHealthData | null; canMan
     if (group.key === "governance") {
       return (
         <section className="panel system-health-group system-health-group-governance" key={group.key}>
+          {canManage && (
+            <div className="governance-refresh-bar">
+              <button type="button" onClick={() => void refreshGovernance()} disabled={attesting}>
+                <RefreshCw size={16} />
+                <span>{attesting ? "Gerando atestado" : "Atualizar agora"}</span>
+              </button>
+              {attestationError && <small role="alert">{attestationError}</small>}
+            </div>
+          )}
           <div className="health-list health-list-large">
             {visibleItems.map((item) => <HealthRow key={`${group.key}-${item.name}`} item={item} groupKey={group.key} canManage={canManage} />)}
           </div>
@@ -8155,9 +8203,9 @@ function HealthView({ data, canManage }: { data: SystemHealthData | null; canMan
   return (
     <div className="content-stack">
       <div className={`quality-banner quality-${qualityTone}`}>
-        <div className="quality-score">{data.quality}%</div>
-        <div><span>Storm Troops Readiness</span><strong>{headline}</strong><small>{data.healthy_count}/{data.total_count} services operational · {formatDate(data.generated_at)}</small></div>
-        <div className="quality-meter"><span style={{ width: `${data.quality}%` }} /></div>
+        <div className="quality-score">{health.quality}%</div>
+        <div><span>Storm Troops Readiness</span><strong>{headline}</strong><small>{health.healthy_count}/{health.total_count} services operational · {formatDate(health.generated_at)}</small></div>
+        <div className="quality-meter"><span style={{ width: `${health.quality}%` }} /></div>
       </div>
       <div className="system-health-group-grid system-health-infrastructure-grid">
         {orderedGroups.filter((group) => group.key === "aws").map(renderHealthGroup)}
@@ -8531,7 +8579,7 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
           )}
         </section>
       </div>
-      <footer>{hasReport ? `Baseline ${String(metadata.baseline_sha256 ?? "").slice(0, 12)} · gerado ${String(metadata.generated_at)}` : "Baseline aguardando primeiro atestado · coleta diária às 02:15 BRT"}</footer>
+      <footer>{hasReport ? `Revisão ${Number(metadata.revision ?? 1)} · Baseline ${String(metadata.baseline_sha256 ?? "").slice(0, 12)} · gerado ${String(metadata.generated_at)}` : "Baseline aguardando primeiro atestado · coleta diária às 02:15 BRT"}</footer>
     </article>
   );
 }

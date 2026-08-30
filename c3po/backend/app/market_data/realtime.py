@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings
 from ..database import Database
+from ..foreign_listings import policy_for as foreign_listing_policy_for
 from ..schemas import (
     InstrumentIntradayResponse,
     NormalizedQuote,
@@ -49,6 +50,18 @@ class RealtimeMarketSpec:
     index_currency: str
 
 
+@dataclass(frozen=True)
+class OtcOriginReference:
+    symbol: str
+    price_local: float
+    previous_close_local: float | None
+    fx_symbol: str
+    fx_rate: float
+    price_usd: float
+    previous_close_usd: float | None
+    as_of: datetime
+
+
 MARKET_SPECS = {
     "B3": RealtimeMarketSpec("B3", "^BVSP", "Ibovespa", "BRL"),
     "NASDAQ": RealtimeMarketSpec("NASDAQ", "^IXIC", "Nasdaq Composite", "USD"),
@@ -77,6 +90,7 @@ class RealtimeMarketsService:
         self._us_quote_quarantine: dict[str, dict[str, Any]] = {}
         self._portfolio_quotes: dict[str, tuple[datetime, RealtimeMarketLeader]] = {}
         self._us_reference_cache: dict[tuple[str, date], tuple[datetime, float | None, date | None]] = {}
+        self._otc_origin_cache: dict[str, tuple[datetime, OtcOriginReference | None]] = {}
         self._intraday_series: dict[str, tuple[datetime, RealtimePortfolioIntradayResponse]] = {}
         self._instrument_intraday_series: dict[str, tuple[datetime, InstrumentIntradayResponse]] = {}
 
@@ -167,22 +181,49 @@ class RealtimeMarketsService:
             except Exception as exc:
                 errors.append(f"{market}: {type(exc).__name__}")
 
-        reference_sessions = {
-            symbol: row.as_of.astimezone(NEW_YORK).date()
-            for rows in rows_by_market.values()
-            for symbol, row in rows.items()
-            if symbol in us_symbols
+        origin_references = {
+            entry["symbol"]: self._otc_origin_reference(entry["symbol"], now)
+            for entry in entries
+            if entry["market"] == "OTC"
+            and foreign_listing_policy_for(entry["symbol"]) is not None
         }
+        reference_sessions = {}
+        for entry in entries:
+            symbol = entry["symbol"]
+            row = rows_by_market.get(entry["market"], {}).get(symbol)
+            if (
+                row is not None
+                and symbol in us_symbols
+                and not (
+                    entry["market"] == "OTC"
+                    and foreign_listing_policy_for(symbol) is not None
+                )
+            ):
+                reference_sessions[symbol] = row.as_of.astimezone(NEW_YORK).date()
         self._prime_us_reference_cache(reference_sessions, now)
 
         items: list[RealtimePortfolioItem] = []
         for entry in entries:
             market = entry["market"]
             quote_row = rows_by_market.get(market, {}).get(entry["symbol"])
+            listing_policy = (
+                foreign_listing_policy_for(entry["symbol"])
+                if market == "OTC"
+                else None
+            )
+            origin_reference = origin_references.get(entry["symbol"])
+            used_origin_fallback = False
+            if not quote_row and listing_policy and origin_reference:
+                quote_row = self._otc_origin_fallback_row(entry, origin_reference, now)
+                used_origin_fallback = True
             if not quote_row:
                 errors.append(f"{entry['symbol']}: quote unavailable")
                 continue
-            quote_row = self._apply_stream_row(quote_row) if market != "B3" else quote_row
+            quote_row = (
+                self._apply_stream_row(quote_row)
+                if market != "B3" and not used_origin_fallback
+                else quote_row
+            )
             age_minutes = max(0, int((now - quote_row.as_of).total_seconds() / 60))
             if age_minutes > 24 * 60:
                 quote_row = quote_row.model_copy(update={"status": "stale"})
@@ -192,7 +233,51 @@ class RealtimeMarketsService:
             reference_status = "not_applicable"
             reference_close = None
             reference_as_of = None
-            if market != "B3":
+            price_basis = "primary"
+            origin_reference_status = "not_applicable"
+            origin_reference_symbol = None
+            origin_reference_price_usd = None
+            origin_reference_divergence_percent = None
+            origin_reference_as_of = None
+            origin_reference_note = None
+            if market == "OTC":
+                quote_row = quote_row.model_copy(update={"currency": "USD"})
+                if listing_policy is None:
+                    origin_reference_status = "unmapped"
+                    origin_reference_note = "sem listagem-mãe mapeada"
+                elif origin_reference is None:
+                    origin_reference_status = "unavailable"
+                    origin_reference_symbol = listing_policy.primary_ticker
+                    origin_reference_note = "listagem-mãe temporariamente indisponível"
+                else:
+                    origin_reference_symbol = origin_reference.symbol
+                    origin_reference_price_usd = origin_reference.price_usd
+                    origin_reference_as_of = origin_reference.as_of
+                    if quote_row.status == "stale":
+                        quote_row = self._otc_origin_fallback_row(entry, origin_reference, now)
+                        used_origin_fallback = True
+                    if used_origin_fallback:
+                        price_basis = "origin_converted"
+                        origin_reference_status = "fallback"
+                        origin_reference_note = "via bolsa de origem × câmbio"
+                        source = "Yahoo Finance · via bolsa de origem × câmbio"
+                    else:
+                        origin_reference_divergence_percent = (
+                            quote_row.price / origin_reference.price_usd - 1
+                        ) * 100
+                        divergent = (
+                            abs(origin_reference_divergence_percent)
+                            > listing_policy.reference_warning_percent
+                        )
+                        origin_reference_status = "divergent" if divergent else "consistent"
+                        origin_reference_note = (
+                            f"divergência de {abs(origin_reference_divergence_percent):.1f}% "
+                            f"vs {origin_reference.symbol} × câmbio"
+                            if divergent
+                            else f"referência {origin_reference.symbol} × câmbio"
+                        )
+                        source = f"{source} + Yahoo Finance origin reference"
+            if market != "B3" and listing_policy is None:
                 reference_status, reference_close, reference_as_of = self._us_reference_status(
                     quote_row.symbol,
                     now,
@@ -210,6 +295,13 @@ class RealtimeMarketsService:
                 reference_status=reference_status,
                 reference_close=reference_close,
                 reference_as_of=reference_as_of,
+                price_basis=price_basis,
+                origin_reference_status=origin_reference_status,
+                origin_reference_symbol=origin_reference_symbol,
+                origin_reference_price_usd=origin_reference_price_usd,
+                origin_reference_divergence_percent=origin_reference_divergence_percent,
+                origin_reference_as_of=origin_reference_as_of,
+                origin_reference_note=origin_reference_note,
             ))
         sources = sorted({item.source for item in items})
         return RealtimePortfolioResponse(
@@ -360,6 +452,128 @@ class RealtimeMarketsService:
             return None
         reference_as_of, reference_close = max(candidates, key=lambda item: item[0])
         return reference_close, reference_as_of
+
+    def _otc_origin_reference(
+        self,
+        symbol: str,
+        now: datetime,
+    ) -> OtcOriginReference | None:
+        normalized = symbol.strip().upper()
+        policy = foreign_listing_policy_for(normalized)
+        if policy is None:
+            return None
+        cached = self._otc_origin_cache.get(normalized)
+        if cached and now < cached[0]:
+            return cached[1]
+
+        reference: OtcOriginReference | None = None
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                origin_future = executor.submit(
+                    self._yahoo_current_quote,
+                    policy.primary_ticker,
+                )
+                fx_future = executor.submit(
+                    self._yahoo_current_quote,
+                    policy.yahoo_fx_symbol,
+                )
+                origin_price, origin_previous, origin_currency, origin_as_of = (
+                    origin_future.result()
+                )
+                fx_rate, _fx_previous, _fx_currency, fx_as_of = fx_future.result()
+            if origin_currency != policy.primary_currency:
+                raise RuntimeError(
+                    f"{policy.primary_ticker}: expected {policy.primary_currency}, "
+                    f"received {origin_currency}"
+                )
+            if fx_rate <= 0 or policy.otc_to_primary_ratio <= 0:
+                raise RuntimeError("OTC origin conversion inputs must be positive")
+            reference = OtcOriginReference(
+                symbol=policy.primary_ticker,
+                price_local=origin_price,
+                previous_close_local=origin_previous,
+                fx_symbol=policy.yahoo_fx_symbol,
+                fx_rate=fx_rate,
+                price_usd=(origin_price * policy.otc_to_primary_ratio) / fx_rate,
+                previous_close_usd=(
+                    (origin_previous * policy.otc_to_primary_ratio) / fx_rate
+                    if origin_previous is not None and origin_previous > 0
+                    else None
+                ),
+                as_of=min(origin_as_of, fx_as_of),
+            )
+        except Exception:
+            reference = None
+        ttl = timedelta(seconds=CACHE_SECONDS if reference is not None else 15)
+        self._otc_origin_cache[normalized] = (now + ttl, reference)
+        return reference
+
+    def _yahoo_current_quote(
+        self,
+        symbol: str,
+    ) -> tuple[float, float | None, str, datetime]:
+        payload = self.http.get_json(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}",
+            params={"range": "5d", "interval": "5m", "events": "history"},
+            headers={"User-Agent": "Mozilla/5.0 C3PO-OTC-Origin-Reference/1.0"},
+        )
+        result = payload["chart"]["result"][0]
+        meta = result.get("meta") or {}
+        returned_symbol = str(meta.get("symbol") or "").strip().upper()
+        if returned_symbol != symbol.upper():
+            raise RuntimeError(f"Yahoo returned {returned_symbol!r} for {symbol}")
+        timestamps = result.get("timestamp") or []
+        quote_rows = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+        closes = quote_rows.get("close") or []
+        latest_price = None
+        latest_timestamp = None
+        for index, timestamp in enumerate(timestamps):
+            close = number(closes[index]) if index < len(closes) else None
+            if close is not None and close > 0:
+                latest_price = close
+                latest_timestamp = number(timestamp)
+        price = number(meta.get("regularMarketPrice")) or latest_price
+        timestamp = number(meta.get("regularMarketTime")) or latest_timestamp
+        if price is None or price <= 0 or timestamp is None:
+            raise RuntimeError(f"{symbol}: Yahoo current quote is incomplete")
+        previous_close = number(meta.get("chartPreviousClose")) or number(
+            meta.get("previousClose")
+        )
+        currency = str(meta.get("currency") or "").strip().upper()
+        if not currency:
+            raise RuntimeError(f"{symbol}: Yahoo quote has no currency")
+        return (
+            price,
+            previous_close,
+            currency,
+            datetime.fromtimestamp(timestamp, timezone.utc),
+        )
+
+    @staticmethod
+    def _otc_origin_fallback_row(
+        entry: dict[str, Any],
+        reference: OtcOriginReference,
+        now: datetime,
+    ) -> RealtimeMarketLeader:
+        change_percent = 0.0
+        if reference.previous_close_usd and reference.previous_close_usd > 0:
+            change_percent = (
+                reference.price_usd / reference.previous_close_usd - 1
+            ) * 100
+        age_minutes = max(0, int((now - reference.as_of).total_seconds() / 60))
+        return RealtimeMarketLeader(
+            symbol=str(entry["symbol"]),
+            name=str(entry.get("name") or entry["symbol"]),
+            price=reference.price_usd,
+            change_percent=change_percent,
+            volume=0.0,
+            cash_volume=0.0,
+            currency="USD",
+            exchange="OTC",
+            as_of=reference.as_of,
+            status="delayed" if age_minutes <= 24 * 60 else "closed",
+            delay_minutes=age_minutes,
+        )
 
     def portfolio_intraday(self, symbol: str) -> RealtimePortfolioIntradayResponse:
         normalized = self._normalize_portfolio_symbol(symbol)

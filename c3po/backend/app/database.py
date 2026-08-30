@@ -36,7 +36,7 @@ class Database:
         self._server_usage_samples: list[dict[str, Any]] = []
         self._api_performance_buckets: list[dict[str, Any]] = []
         self._page_load_performance_samples: list[dict[str, Any]] = []
-        self._governance_vulnerability_reports: dict[date, dict[str, Any]] = {}
+        self._governance_vulnerability_reports: dict[tuple[date, int], dict[str, Any]] = {}
         self._operational_incidents: dict[str, dict[str, Any]] = {}
         self._operational_incident_events: list[dict[str, Any]] = []
         self._push_subscriptions: list[dict[str, Any]] = []
@@ -99,21 +99,24 @@ class Database:
 
     def save_governance_vulnerability_report(self, report: dict[str, Any]) -> bool:
         session_date = date.fromisoformat(str(report["session_date"]))
+        revision = int(report["revision"])
         if not self.database_url:
-            if session_date in self._governance_vulnerability_reports:
+            key = (session_date, revision)
+            if key in self._governance_vulnerability_reports:
                 return False
-            self._governance_vulnerability_reports[session_date] = dict(report)
+            self._governance_vulnerability_reports[key] = dict(report)
             return True
 
         with self.connection() as connection:
             inserted = connection.execute(
                 """INSERT INTO governance_vulnerability_daily
-                   (session_date, schema_id, repository, branch, baseline_sha256,
+                   (session_date, revision, schema_id, repository, branch, baseline_sha256,
                     status, report, report_sha256, generated_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)
-                   ON CONFLICT (session_date) DO NOTHING""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)
+                   ON CONFLICT (session_date, revision) DO NOTHING""",
                 (
                     session_date,
+                    revision,
                     report["schema"],
                     report["repository"],
                     report["branch"],
@@ -127,6 +130,28 @@ class Database:
             connection.commit()
         return bool(inserted)
 
+    def next_governance_vulnerability_revision(self, session_date: date) -> tuple[int, str | None]:
+        if not self.database_url:
+            prior = [
+                report for (day, _), report in self._governance_vulnerability_reports.items()
+                if day == session_date
+            ]
+            if not prior:
+                return 1, None
+            latest = max(prior, key=lambda report: int(report["revision"]))
+            return int(latest["revision"]) + 1, str(latest["report_sha256"])
+
+        with self.connection() as connection:
+            row = connection.execute(
+                """SELECT revision, report_sha256
+                   FROM governance_vulnerability_daily
+                   WHERE session_date = %s
+                   ORDER BY revision DESC
+                   LIMIT 1""",
+                (session_date,),
+            ).fetchone()
+        return (int(row[0]) + 1, str(row[1])) if row else (1, None)
+
     def latest_governance_vulnerability_report(self) -> dict[str, Any] | None:
         if not self.database_url:
             if not self._governance_vulnerability_reports:
@@ -138,7 +163,7 @@ class Database:
             row = connection.execute(
                 """SELECT report
                    FROM governance_vulnerability_daily
-                   ORDER BY session_date DESC
+                   ORDER BY session_date DESC, revision DESC
                    LIMIT 1"""
             ).fetchone()
         return dict(row[0]) if row else None

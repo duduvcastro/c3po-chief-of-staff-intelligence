@@ -43,6 +43,7 @@ from .market_data.us_screener import USScreeningService
 from .one_pager import OnePagerGenerationError, OnePagerService
 from .push_notifications import PushNotificationService
 from .operational_incidents import OperationalIncidentService
+from .governance_vulnerability import GovernanceVulnerabilityService
 from .r2d2 import R2D2PaperService
 from .open_finance import OpenFinanceService, PluggyRequestError
 from .official_fundamentals import ensure_builtin_official_fundamentals
@@ -185,6 +186,11 @@ r2d2 = R2D2PaperService(settings, database, realtime_markets, b3_screener, one_p
 leah_cloud = LeahCloudService(settings, database)
 push_notifications = PushNotificationService(settings, database)
 operational_incidents = OperationalIncidentService(database)
+governance_vulnerability = GovernanceVulnerabilityService(
+    settings,
+    database,
+    push_notifications=push_notifications,
+)
 SESSION_COOKIE = "c3po_session"
 
 
@@ -450,6 +456,17 @@ def resolve_operational_incident(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
     return OperationalIncident(**incident)
+@app.post("/api/v1/admin/governance/attest")
+def run_governance_attestation(request: Request) -> dict:
+    require_owner(request)
+    _, report = governance_vulnerability.run_supervised(settings.legacy_root)
+    return {
+        "status": report["status"],
+        "session_date": report["session_date"],
+        "revision": report["revision"],
+        "report_sha256": report["report_sha256"],
+        "generated_at": report["generated_at"],
+    }
 
 
 def normalize_access_email(email: str) -> str:

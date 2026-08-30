@@ -644,6 +644,20 @@ class RealtimePortfolioItem(RealtimeMarketLeader):
     reference_status: Literal["validated", "unvalidated", "not_applicable"] = "not_applicable"
     reference_close: float | None = None
     reference_as_of: date | None = None
+    price_basis: Literal["primary", "origin_converted"] = "primary"
+    origin_reference_status: Literal[
+        "consistent",
+        "divergent",
+        "fallback",
+        "unavailable",
+        "unmapped",
+        "not_applicable",
+    ] = "not_applicable"
+    origin_reference_symbol: str | None = None
+    origin_reference_price_usd: float | None = None
+    origin_reference_divergence_percent: float | None = None
+    origin_reference_as_of: datetime | None = None
+    origin_reference_note: str | None = None
 
 
 class RealtimePortfolioIntradayPoint(BaseModel):

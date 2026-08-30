@@ -1321,6 +1321,7 @@ class SystemHealthService:
             metadata={
                 "kind": "governance_vulnerabilities",
                 "generated_at": generated_at.isoformat(),
+                "revision": int(report.get("revision") or 1),
                 "baseline_sha256": str((report.get("baseline") or {}).get("sha256") or ""),
                 "dependabot": dependabot,
                 "operating_system": operating_system,

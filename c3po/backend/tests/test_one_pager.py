@@ -309,7 +309,39 @@ def test_mhvyf_uses_primary_listing_currency_and_public_coverage(tmp_path) -> No
     assert analysis["c3po_tp"] == pytest.approx(34.149, rel=1e-3)
     assert analysis["buy_in"] == pytest.approx(19.522, rel=1e-3)
     assert analysis["c3po_tp"] > analysis["price"]
+    assert tuple(analysis["methods"]) == (
+        "Múltiplos de Lucro + EV/EBITDA",
+        "Fluxo de Caixa Descontado",
+        "Blend Ajustado ao Risco",
+        "Momentum de Lucro",
+        "Qualidade & Fluxo de Caixa",
+    )
+    assert not {
+        "Goldman Sachs",
+        "Morgan Stanley",
+        "Bridgewater",
+        "JPMorgan",
+        "BlackRock",
+    }.intersection(analysis["methods"])
+    assert analysis["method_estimate_registered_on"] == "2026-08-17"
+    assert "estimativas internas registradas em 17/08/2026" in analysis["source"]
     assert "Goldman Sachs" in analysis["thesis"][2]
+
+    foreign_policy = fundamentals["foreignListingPolicy"]
+    assert "methodTargets" not in foreign_policy
+    assert foreign_policy["internalMethodTargetsRegisteredOn"] == "2026-08-17"
+
+    undated_fundamentals = dict(fundamentals)
+    undated_policy = dict(foreign_policy)
+    undated_policy.pop("internalMethodTargetsRegisteredOn")
+    undated_fundamentals["foreignListingPolicy"] = undated_policy
+    with pytest.raises(OnePagerGenerationError, match="não têm data de registro válida"):
+        service._analyze(
+            "MHVYF",
+            "US",
+            {"price": 26.84, "currency": "USD", "change_percent": -0.56},
+            undated_fundamentals,
+        )
 
 
 def test_insider_net_signal_reflects_buy_sell_balance_and_sample_confidence(tmp_path) -> None:
