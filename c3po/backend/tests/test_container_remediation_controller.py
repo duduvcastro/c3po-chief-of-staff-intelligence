@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -14,6 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 SCANNER_PATH = ROOT / "scripts" / "c3po_trivy_scan.py"
 CONTROLLER_PATH = ROOT / "scripts" / "c3po_container_remediation.py"
+DISPATCH_PATH = ROOT / ".github" / "scripts" / "c3po_dispatch_remediation.sh"
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -159,6 +162,98 @@ def test_zero_gate_accepts_pull_request_scope_without_a_dead_man() -> None:
 
     assert counts == {"critical": 0, "high": 0}
     assert findings == []
+
+
+@pytest.mark.parametrize("dispatch_succeeds", [False, True])
+def test_dispatch_helper_records_the_run_marker_only_after_accepted_dispatch(
+    tmp_path: Path,
+    dispatch_succeeds: bool,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_gh = fake_bin / "gh"
+    fake_gh.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$GH_LOG"
+if [ "$1 $2" = "run list" ]; then
+  if [[ "$*" == *"databaseId,headSha,url"* ]]; then
+    printf '[{"databaseId":987,"headSha":"%s","url":"https://github.com/duduvcastro/c3po/actions/runs/987"}]\\n' "$EXPECTED_SHA"
+  else
+    printf '0\\n'
+  fi
+elif [ "$1 $2" = "workflow run" ]; then
+  if [ "$GH_WORKFLOW_RESULT" != "0" ]; then
+    exit "$GH_WORKFLOW_RESULT"
+  fi
+  touch "$GH_DISPATCHED"
+elif [ "$1 $2" = "pr comment" ]; then
+  test -f "$GH_DISPATCHED"
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "--body-file" ]; then
+      cp "$2" "$GH_COMMENT"
+      exit 0
+    fi
+    shift
+  done
+  exit 1
+else
+  echo "unexpected gh command: $*" >&2
+  exit 1
+fi
+""",
+        encoding="utf-8",
+    )
+    fake_gh.chmod(0o755)
+    log_path = tmp_path / "gh.log"
+    marker_path = tmp_path / "marker.md"
+    expected_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        text=True,
+        check=True,
+        capture_output=True,
+    ).stdout.strip()
+    environment = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "duduvcastro/c3po",
+        "RUNNER_TEMP": str(tmp_path),
+        "GH_LOG": str(log_path),
+        "GH_DISPATCHED": str(tmp_path / "dispatched"),
+        "GH_COMMENT": str(marker_path),
+        "EXPECTED_SHA": expected_sha,
+        "GH_WORKFLOW_RESULT": "0" if dispatch_succeeds else "1",
+    }
+    remediation_key = "a" * 64
+
+    completed = subprocess.run(
+        [
+            "bash",
+            str(DISPATCH_PATH),
+            "automation/container-security-rebuild-test-123",
+            remediation_key,
+            "42",
+        ],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+    )
+
+    commands = log_path.read_text(encoding="utf-8")
+    if not dispatch_succeeds:
+        assert completed.returncode != 0
+        assert "pr comment 42" not in commands
+        assert not marker_path.exists()
+        return
+
+    assert completed.returncode == 0, completed.stderr
+    assert commands.index("workflow run c3po-pipeline.yml") < commands.index("pr comment 42")
+    marker = marker_path.read_text(encoding="utf-8")
+    assert f"c3po-container-remediation-dispatch:{remediation_key}" in marker
+    assert "run `987`" in marker
+    assert "https://github.com/duduvcastro/c3po/actions/runs/987" in marker
 
 
 @pytest.mark.parametrize(
