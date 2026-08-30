@@ -26,17 +26,19 @@ sha256 `073e31e54043e20803e62b4de252daeffcfa962d1a694335734021ed80d13676`.
 
 ## Contrato de deploy
 
-1. O job `Deploy production`, depois dos cinco portoes verdes, constroi duas
+1. O job `Deploy production`, depois dos cinco portoes verdes, constroi tres
    imagens no runner do GitHub:
    - `c3po/backend:production`, compartilhada por API e workers;
-   - `c3po/web:production`, com o SHA testado incorporado ao frontend.
-2. As duas imagens recebem o label OCI `org.opencontainers.image.revision` e
+   - `c3po/web:production`, com o SHA testado incorporado ao frontend;
+   - `c3po/database:production`, derivada do PostgreSQL pinado e com os
+     pacotes/binarios de runtime corrigidos.
+2. As tres imagens recebem o label OCI `org.opencontainers.image.revision` e
    sao transportadas no mesmo arquivo gerado por `docker save`.
 3. O servidor valida o SHA dos bytes transferidos, executa `docker load`,
    confere o label de revisao e sobe o Compose exclusivamente com `--no-build`.
 4. O source archive continua sendo sincronizado porque `/legacy` e runbooks do
    host ainda dependem do checkout implantado. Isso nao autoriza build no host.
-5. Antes do load, as imagens correntes de backend e web recebem tags de
+5. Antes do load, as imagens correntes de backend, web e database recebem tags de
    rollback. Se o health gate falhar, o deploy restaura essas tags e recria os
    containers com `--no-build`. O pipeline permanece vermelho mesmo quando o
    rollback recupera o servico.
