@@ -137,6 +137,11 @@ def test_runtime_images_upgrade_os_packages_during_build() -> None:
 
     assert "apt-get update" in backend
     assert "apt-get upgrade -y" in backend
+    assert "trixie-proposed-updates main" in backend
+    assert "libssl3t64=3.5.7-1~deb13u2" in backend
+    assert "openssl=3.5.7-1~deb13u2" in backend
+    assert "openssl-provider-legacy=3.5.7-1~deb13u2" in backend
+    assert "rm -f /etc/apt/sources.list.d/c3po-proposed-updates.list" in backend
     assert "rm -rf /var/lib/apt/lists/*" in backend
     assert frontend.count("apk upgrade --no-cache") == 1
     assert database.count("apk upgrade --no-cache") == 1
