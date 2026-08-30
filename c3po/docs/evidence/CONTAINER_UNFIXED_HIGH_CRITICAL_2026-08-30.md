@@ -19,6 +19,24 @@ nao autoriza resolver o incidente.
 O report registra 3 `critical` e 13 `high` sem `FixedVersion` no backend.
 Database e web nao possuem `critical`/`high` sem correcao.
 
+## Cadeia operacional anterior a remediacao
+
+Estado supervisionado e carimbado na sessao de 30/08/2026:
+
+- PR #328 mergeada em `e168c259ccb55a9c4da2e269bf9b392e18bee249`,
+  revisao que tambem estava em producao;
+- atestado executado: Revisao 4, baseline `fb459d1a8f5a`, gerado em
+  `2026-08-30T18:00:11Z`;
+- Storm Troops: 4 `critical`, 44 `high`, 99 `medium`, 102 `low`, 257
+  ocorrencias e 8 sem severidade;
+- incidente ativo: `4 critical, 44 high; 0 drift(s)`, categoria `governance`,
+  9 eventos historicos, hash `d334bd977f`;
+- `Reconhecido` e `Resolver` permaneceram intocados.
+
+Este dossie nao altera esse estado. Aceite de risco pela mesa, se aprovado,
+nao equivale a correcao, nao filtra o laudo e nao autoriza resolver
+manualmente o incidente.
+
 ## Metodo de exposicao
 
 A classificacao abaixo cruza quatro fatos:
@@ -69,3 +87,41 @@ padrao Python. Nao ha import de `sqlite3`; o banco da aplicacao e PostgreSQL.
    separada, com teste de compatibilidade e rollback; nao como atalho desta PR.
 5. Depois do merge auditado da remediacao fixavel, fazer novo scan da producao.
    O atestado supervisionado continua sendo acao do owner.
+
+## Proposta para decisao formal da mesa
+
+Os prazos abaixo sao limites de reavaliacao, nao datas de supressao. Qualquer
+`FixedVersion` publicado antes do prazo abre PR de rebuild/bump imediatamente.
+O scan semanal continua sendo o detector primario.
+
+| Grupo de decisao | CVEs | Proposta tecnica | Limite de revisao | Gatilho antecipado |
+| --- | --- | --- | --- | --- |
+| `PERL-CRIT-7D` | CVE-2026-13221, CVE-2026-42496 | Aceitar risco residual temporario: Perl nao e executado; `Archive::Tar` esta ausente. Aguardar Trixie; nao misturar pacotes de outra suite. | 2026-09-06 | `FixedVersion`, introducao de executor Perl/modulo tar, ou mudanca de superficie. |
+| `PERL-32BIT-30D` | CVE-2026-8376 | Registrar nao aplicabilidade arquitetural para `linux/amd64`, mantendo o achado visivel. Aguardar Trixie/Trivy. | 2026-09-30 | Mudanca de plataforma para 32 bits ou `FixedVersion`. |
+| `PERL-HIGH-30D` | CVE-2026-42497, CVE-2026-48962, CVE-2026-57432, CVE-2026-57433, CVE-2026-9538 | Aceitar risco residual temporario sob a proibicao de Perl e dos modulos ausentes. Aguardar Trixie. | 2026-09-30 | `FixedVersion`, instalacao dos modulos ou nova chamada Perl. |
+| `NCURSES-HIGH-30D` | CVE-2025-69720 (4 ocorrencias) | Aceitar risco residual temporario: `infocmp` nao e chamado e o runtime e nao interativo. Aguardar point release. | 2026-09-30 | Entrada terminfo nao confiavel, uso de `infocmp` ou `FixedVersion`. |
+| `SQLITE-HIGH-30D` | CVE-2026-11822, CVE-2026-11824 | Aceitar risco residual temporario: aplicacao usa PostgreSQL e nao ingere SQLite/FTS5. Aguardar Trixie; avaliar remocao somente numa trilha de dependencias separada. | 2026-09-30 | Ingestao SQLite/FTS5, novo consumidor de `libsqlite3-0` ou `FixedVersion`. |
+| `ACL-HIGH-30D` | CVE-2026-54369 | Aceitar risco residual temporario: nao ha chamada ACL nem caminho controlado para operacao privilegiada. Aguardar point release devido a mudanca de ABI. | 2026-09-30 | Uso de ACL, mudanca de privilegios/superficie ou `FixedVersion`. |
+| `GZIP-HIGH-30D` | CVE-2026-41992 | Aceitar risco residual temporario: backend usa a biblioteca Python e nao encaminha uploads ao binario. Aguardar Trixie. | 2026-09-30 | Uso do binario com entrada externa ou `FixedVersion`. |
+
+`perl-base` nao e candidato a remocao nesta PR por ser Essential no Debian.
+Uma base slim/distroless e o hardening de usuario nao-root sao trilhas de longo
+prazo, com compatibilidade e rollback proprios, e nao bloqueiam a remediacao
+dos achados que ja possuem `FixedVersion`.
+
+## Registro da decisao da mesa
+
+Estado inicial: **PENDENTE**. A proposta tecnica acima nao constitui aceite de
+risco ate que Dudu e Fable registrem o veredito; Codex e o autor da analise e
+nao autoaprova a propria implementacao.
+
+| Papel | Veredito | Data/hora | Escopo/hash revisado |
+| --- | --- | --- | --- |
+| Dudu (owner) | PENDENTE | - | - |
+| Fable (auditoria independente) | PENDENTE | - | - |
+| Codex (implementacao/analise) | PROPOSTA LAVRADA | 2026-08-30 | report `31184e4cd45179ed370e24323910d66be82adf2a9b69060040a905603da5f38f` |
+
+O fechamento permanece fail-closed: PR auditada e mergeada, novo scan de
+producao com zero `critical`/`high` fixavel, decisoes acima registradas e novo
+atestado integralmente healthy. Os nove eventos sao historicos e nao zeram.
+`Resolver` manual segue proibido.
