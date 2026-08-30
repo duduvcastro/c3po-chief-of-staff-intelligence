@@ -1618,7 +1618,7 @@ def test_realtime_portfolio_validates_previous_close_against_completed_daily_bar
     )
 
 
-def test_realtime_portfolio_hides_change_when_previous_close_is_recycled() -> None:
+def test_realtime_portfolio_uses_canonical_close_when_live_reference_is_recycled() -> None:
     now = datetime(2026, 8, 26, 15, tzinfo=timezone.utc)
     http = RoutingStubHttp({
         "/api/eod/SPCX.US": [
@@ -1631,10 +1631,11 @@ def test_realtime_portfolio_hides_change_when_previous_close_is_recycled() -> No
     service._us_previous_close["SPCX"] = 21.9457
 
     assert service._us_reference_status("SPCX", now) == (
-        "unvalidated",
+        "validated",
         137.95,
         date(2026, 8, 25),
     )
+    assert service._us_previous_close["SPCX"] == 137.95
 
 
 def test_realtime_portfolio_anchors_reference_to_quote_session_on_weekend() -> None:
@@ -1691,7 +1692,64 @@ def test_realtime_portfolio_replaces_reused_ticker_history_with_current_listing(
         "SPCX",
         now,
         session_date=date(2026, 8, 28),
-    ) == ("unvalidated", 138.0, date(2026, 8, 27))
+    ) == ("validated", 138.0, date(2026, 8, 27))
+    assert service._us_previous_close["SPCX"] == 138.0
+
+
+def test_realtime_portfolio_validates_every_visible_us_asset_from_canonical_history() -> None:
+    now = datetime(2026, 8, 28, 21, tzinfo=timezone.utc)
+    entries = [
+        {"symbol": "AVGO", "name": "Broadcom", "market": "NASDAQ"},
+        {"symbol": "IBIT", "name": "iShares Bitcoin Trust", "market": "NASDAQ"},
+        {"symbol": "QQQM", "name": "Invesco NASDAQ 100 ETF", "market": "NASDAQ"},
+        {"symbol": "SPCX", "name": "SpaceX", "market": "NASDAQ"},
+        {"symbol": "UNH", "name": "UnitedHealth", "market": "NYSE"},
+        {"symbol": "VOO", "name": "Vanguard S&P 500 ETF", "market": "NYSE"},
+    ]
+
+    class PortfolioDatabase:
+        @staticmethod
+        def list_realtime_portfolio() -> list[dict[str, str]]:
+            return entries
+
+    class CanonicalHistoryService(RealtimeMarketsService):
+        def _us_portfolio_rows(self, market, measured_at, symbols):
+            return [
+                RealtimeMarketLeader(
+                    symbol=symbol,
+                    name=symbol,
+                    price=110.0,
+                    change_percent=-99.0,
+                    volume=1_000.0,
+                    cash_volume=110_000.0,
+                    currency="USD",
+                    exchange=market,
+                    as_of=measured_at,
+                )
+                for symbol in symbols
+            ]
+
+        def _prime_us_reference_cache(self, symbol_sessions, measured_at):
+            for symbol, session_date in symbol_sessions.items():
+                self._us_reference_cache[(symbol, session_date)] = (
+                    measured_at + timedelta(hours=1),
+                    100.0,
+                    session_date - timedelta(days=1),
+                )
+
+    service = CanonicalHistoryService(  # type: ignore[arg-type]
+        Settings(auth_cookie_secure=False),
+        PortfolioDatabase(),
+        StubHttp({}),
+    )
+    service._us_previous_close.update({"AVGO": 12.0, "QQQM": 250.0})
+
+    snapshot = service.portfolio_snapshot()
+
+    assert {item.symbol for item in snapshot.items} == {entry["symbol"] for entry in entries}
+    assert all(item.reference_status == "validated" for item in snapshot.items)
+    assert all(item.reference_close == 100.0 for item in snapshot.items)
+    assert all(item.change_percent == pytest.approx(10.0) for item in snapshot.items)
 
 
 def test_realtime_portfolio_recomputes_display_change_from_canonical_reference() -> None:
@@ -1883,6 +1941,12 @@ def test_mapped_otc_keeps_primary_usd_price_and_labels_material_divergence() -> 
     assert item.origin_reference_divergence_percent == pytest.approx(-3.7037037)
     assert item.origin_reference_note == "divergência de 3.7% vs 7011.T × câmbio"
     assert item.reference_status == "not_applicable"
+    assert item.market == "OTC"
+    assert item.market_label == "TSE · OTC"
+    assert item.market_detail == (
+        "Listagem-mãe 7011.T na Tokyo Stock Exchange; "
+        "preço primário MHVYF no OTC em US$."
+    )
     assert "Yahoo Finance origin reference" in item.source
 
 

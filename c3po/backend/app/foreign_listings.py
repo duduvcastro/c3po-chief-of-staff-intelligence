@@ -18,6 +18,8 @@ class PublicCoverageCall:
 class ForeignListingPolicy:
     symbol: str
     primary_ticker: str
+    primary_exchange_code: str
+    primary_exchange_name: str
     primary_currency: str
     fx_symbol: str
     yahoo_fx_symbol: str
@@ -42,6 +44,8 @@ FOREIGN_LISTING_POLICIES = {
     "MHVYF": ForeignListingPolicy(
         symbol="MHVYF",
         primary_ticker="7011.T",
+        primary_exchange_code="TSE",
+        primary_exchange_name="Tokyo Stock Exchange",
         primary_currency="JPY",
         fx_symbol="USDJPY.FOREX",
         yahoo_fx_symbol="JPY=X",
