@@ -136,7 +136,9 @@ def test_trivy_scans_are_non_blocking_per_build_and_weekly_off_host() -> None:
     parsed = yaml.safe_load(weekly)
 
     assert pipeline.count("scripts/c3po_trivy_scan.py") == 2
-    assert pipeline.count('--image "database=$C3PO_SCANNED_DB_IMAGE"') == 2
+    assert "--image database=c3po/database:pr-validation" in pipeline
+    assert "--image database=c3po/database:production" in pipeline
+    assert "C3PO_SCANNED_DB_IMAGE" not in pipeline
     assert pipeline.count("continue-on-error: true") >= 4
     assert "--exclude='runtime/'" in pipeline
     assert parsed[True]["schedule"][0]["cron"] == "0 7 * * 0"

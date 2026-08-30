@@ -26,17 +26,18 @@ sha256 `073e31e54043e20803e62b4de252daeffcfa962d1a694335734021ed80d13676`.
 
 ## Contrato de deploy
 
-1. O job `Deploy production`, depois dos cinco portoes verdes, constroi duas
+1. O job `Deploy production`, depois dos cinco portoes verdes, constroi tres
    imagens no runner do GitHub:
    - `c3po/backend:production`, compartilhada por API e workers;
-   - `c3po/web:production`, com o SHA testado incorporado ao frontend.
-2. As duas imagens recebem o label OCI `org.opencontainers.image.revision` e
+   - `c3po/web:production`, com o SHA testado incorporado ao frontend;
+   - `c3po/database:production`, derivada da base PostgreSQL pinada.
+2. As tres imagens recebem o label OCI `org.opencontainers.image.revision` e
    sao transportadas no mesmo arquivo gerado por `docker save`.
 3. O servidor valida o SHA dos bytes transferidos, executa `docker load`,
    confere o label de revisao e sobe o Compose exclusivamente com `--no-build`.
 4. O source archive continua sendo sincronizado porque `/legacy` e runbooks do
    host ainda dependem do checkout implantado. Isso nao autoriza build no host.
-5. Antes do load, as imagens correntes de backend e web recebem tags de
+5. Antes do load, as imagens correntes de backend, web e database recebem tags de
    rollback. Se o health gate falhar, o deploy restaura essas tags e recria os
    containers com `--no-build`. O pipeline permanece vermelho mesmo quando o
    rollback recupera o servico.
@@ -51,6 +52,14 @@ sha256 `073e31e54043e20803e62b4de252daeffcfa962d1a694335734021ed80d13676`.
 - Falha de transferencia, hash, label, load ou health gate interrompe o deploy.
 - Politica A, risco, consumidores, TP, banco e dados persistentes nao mudam.
 - Imagens de rollback nao sao removidas pelo prune de sucesso.
+
+## Emenda operacional de 30/08/2026
+
+A ordem de remediar os CVEs fixaveis nas tres imagens de producao incorporou o
+banco ao build off-host. A base PostgreSQL continua pinada por digest; o runner
+aplica os updates disponiveis no canal Alpine, escaneia a imagem resultante e a
+transporta sob a mesma custodia, verificacao de revisao e rollback das imagens
+de backend e web. O host permanece proibido de construir imagens.
 
 ## Aceite
 

@@ -173,10 +173,10 @@ jobs:
             --build-arg "NEXT_PUBLIC_C3PO_BUILD_SHA=$GITHUB_SHA" \
             --tag c3po/web:pr-validation \
             c3po/frontend
-          db_image=$(docker compose --env-file /dev/null -f c3po/compose.yml config --images | grep '^postgres:')
-          test "$(printf '%s\n' "$db_image" | wc -l)" -eq 1
-          docker pull "$db_image"
-          printf 'C3PO_SCANNED_DB_IMAGE=%s\n' "$db_image" >> "$GITHUB_ENV"
+          docker build \
+            --file c3po/database/Dockerfile \
+            --tag c3po/database:pr-validation \
+            c3po/database
 
       - name: Scan pull-request images with pinned Trivy
         if: github.event_name == 'pull_request'
@@ -188,7 +188,7 @@ jobs:
             --revision "$GITHUB_SHA" \
             --image backend=c3po/backend:pr-validation \
             --image web=c3po/web:pr-validation \
-            --image "database=$C3PO_SCANNED_DB_IMAGE" \
+            --image database=c3po/database:pr-validation \
             --output "$RUNNER_TEMP/c3po-trivy-pull-request.json"
 
       - name: Publish pull-request image scan
@@ -233,12 +233,14 @@ jobs:
             --label "org.opencontainers.image.revision=$REVISION" \
             --tag c3po/web:production \
             c3po/frontend
-          db_image=$(docker compose --env-file /dev/null -f c3po/compose.yml config --images | grep '^postgres:')
-          test "$(printf '%s\n' "$db_image" | wc -l)" -eq 1
-          docker pull "$db_image"
-          printf 'C3PO_SCANNED_DB_IMAGE=%s\n' "$db_image" >> "$GITHUB_ENV"
+          docker build \
+            --file c3po/database/Dockerfile \
+            --label "org.opencontainers.image.revision=$REVISION" \
+            --tag c3po/database:production \
+            c3po/database
           test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/backend:production)" = "$REVISION"
           test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/web:production)" = "$REVISION"
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/database:production)" = "$REVISION"
 
       - name: Scan production build with pinned Trivy
         continue-on-error: true
@@ -250,7 +252,7 @@ jobs:
             --revision "$REVISION" \
             --image backend=c3po/backend:production \
             --image web=c3po/web:production \
-            --image "database=$C3PO_SCANNED_DB_IMAGE" \
+            --image database=c3po/database:production \
             --output "$RUNNER_TEMP/c3po-trivy-production-build.json"
 
       - name: Publish production build scan
@@ -267,7 +269,7 @@ jobs:
         env:
           REVISION: ${{ steps.revision.outputs.sha }}
         run: |
-          docker save c3po/backend:production c3po/web:production \
+          docker save c3po/backend:production c3po/web:production c3po/database:production \
             | gzip -1 > "/tmp/c3po-images-$REVISION.tar.gz"
           sha256sum "/tmp/c3po-images-$REVISION.tar.gz" \
             > "/tmp/c3po-images-$REVISION.tar.gz.sha256"
@@ -345,17 +347,24 @@ jobs:
           current_web=$(docker inspect --format '{{.Image}}' \
             "$(docker compose --env-file "$APP_DIR/.env" -f "$APP_DIR/c3po/compose.yml" ps -q web)" \
             2>/dev/null || true)
-          docker image rm c3po/backend:rollback c3po/web:rollback >/dev/null 2>&1 || true
+          current_database=$(docker inspect --format '{{.Image}}' \
+            "$(docker compose --env-file "$APP_DIR/.env" -f "$APP_DIR/c3po/compose.yml" ps -q db)" \
+            2>/dev/null || true)
+          docker image rm c3po/backend:rollback c3po/web:rollback c3po/database:rollback >/dev/null 2>&1 || true
           if [ -n "$current_backend" ]; then
             docker image tag "$current_backend" c3po/backend:rollback
           fi
           if [ -n "$current_web" ]; then
             docker image tag "$current_web" c3po/web:rollback
           fi
+          if [ -n "$current_database" ]; then
+            docker image tag "$current_database" c3po/database:rollback
+          fi
 
           gzip -dc "$IMAGE_ARCHIVE" | docker load
           test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/backend:production)" = "$REVISION"
           test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/web:production)" = "$REVISION"
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' c3po/database:production)" = "$REVISION"
 
           rm -rf "$RELEASE_DIR"
           mkdir -p "$RELEASE_DIR"
@@ -432,9 +441,10 @@ jobs:
           fi
 
           echo "health gate failed; restoring the prior container images" >&2
-          if docker image inspect c3po/backend:rollback c3po/web:rollback >/dev/null 2>&1; then
+          if docker image inspect c3po/backend:rollback c3po/web:rollback c3po/database:rollback >/dev/null 2>&1; then
             docker image tag c3po/backend:rollback c3po/backend:production
             docker image tag c3po/web:rollback c3po/web:production
+            docker image tag c3po/database:rollback c3po/database:production
             rollback_has_shadow_worker=false
             if docker run --rm --entrypoint python c3po/backend:production \
               -c 'import app.r2d2_shadow_candidate_worker'; then
