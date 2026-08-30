@@ -1639,8 +1639,10 @@ button { cursor: pointer; }
 .governance-summary-healthy { color: var(--green); background: var(--green-soft); }
 .governance-summary-attention, .governance-summary-pending { color: var(--amber); background: var(--amber-soft); }
 .governance-summary-offline { color: var(--red); background: var(--red-soft); }
-.trivy-scanner-badge { display: inline-flex; align-items: center; gap: 5px; }
-.trivy-scanner-badge svg { width: 13px; height: 13.5px; flex: 0 0 auto; }
+.trivy-scanner-identity { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; }
+.service-logo-trivy { border-color: #d9dde3; }
+.service-logo-trivy svg { width: 32px; height: 33px; }
+.trivy-scanner-badge { display: inline-flex; align-items: center; }
 .governance-open-total { display: flex; align-items: baseline; gap: 9px; margin-top: 22px; }
 .governance-open-total strong { font-size: 42px; line-height: 1; font-variant-numeric: tabular-nums; }
 .governance-open-total span { color: var(--muted); font-size: 10px; font-weight: 700; }
