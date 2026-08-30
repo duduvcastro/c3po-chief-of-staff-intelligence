@@ -128,9 +128,10 @@ class PushMarketAlertsService:
         local = now.astimezone(SAO_PAULO)
         self.push_notifications.notify(
             category="hourly_win_rate",
-            title="Taxa de acerto da sessão",
+            title="Taxa de acerto acumulada do dia",
             body=(
-                f"{wins}W/{decided} episódios decididos = {percent:.1f}% "
+                f"Acumulado do pregão: {wins}W/{decided} episódios decididos "
+                f"= {percent:.1f}% "
                 f"até {local:%H:%M}."
             ),
             deep_link="/?view=falcon",
