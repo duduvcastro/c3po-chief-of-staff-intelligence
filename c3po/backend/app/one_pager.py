@@ -595,10 +595,19 @@ class OnePagerService:
         )
         foreign_policy = fundamentals.get("foreignListingPolicy")
         foreign_buy_in_override = None
+        method_estimate_registered_on = None
+        method_estimate_registered_display = None
         if isinstance(foreign_policy, dict):
-            foreign_methods = foreign_policy.get("methodTargets")
+            foreign_methods = foreign_policy.get("internalMethodTargets")
             foreign_buy_in = self._positive(foreign_policy.get("buyIn"))
             if isinstance(foreign_methods, dict) and len(foreign_methods) == 5 and foreign_buy_in:
+                registered_on_raw = foreign_policy.get("internalMethodTargetsRegisteredOn")
+                try:
+                    registered_on = date.fromisoformat(str(registered_on_raw))
+                except (TypeError, ValueError):
+                    raise OnePagerGenerationError(
+                        f"{symbol}: as estimativas internas da listagem primária não têm data de registro válida."
+                    ) from None
                 methods = OrderedDict(
                     (str(name), float(value))
                     for name, value in foreign_methods.items()
@@ -610,6 +619,8 @@ class OnePagerService:
                     )
                 c3po_tp = statistics.mean(methods.values())
                 foreign_buy_in_override = foreign_buy_in
+                method_estimate_registered_on = registered_on.isoformat()
+                method_estimate_registered_display = registered_on.strftime("%d/%m/%Y")
         method_values = list(methods.values())
         dispersion = self._dispersion(method_values)
         completeness_fields = (
@@ -811,6 +822,7 @@ class OnePagerService:
             "risk_score": risk_score,
             "dispersion": dispersion,
             "methods": methods,
+            "method_estimate_registered_on": method_estimate_registered_on,
             "multiples": OrderedDict(
                 (
                     ("P/E REPORTADO", self._positive(fundamentals.get("trailingPE"))),
@@ -831,7 +843,13 @@ class OnePagerService:
                 else f"Brapi + EODHD | {C3PO_VALUATION_POLICY.label}"
                 if market == "B3"
                 else f"EODHD | {C3PO_VALUATION_POLICY.label}"
-            ) + (f" + listagem primária {fundamentals.get('primaryTicker')} normalizada" if fundamentals.get("primaryTicker") else ""),
+            )
+            + (f" + listagem primária {fundamentals.get('primaryTicker')} normalizada" if fundamentals.get("primaryTicker") else "")
+            + (
+                f" + estimativas internas registradas em {method_estimate_registered_display}"
+                if method_estimate_registered_display
+                else ""
+            ),
             "methodology_name": METHODOLOGY_NAME,
             "methodology_version": METHODOLOGY_VERSION,
         }

@@ -20,11 +20,15 @@ class ForeignListingPolicy:
     primary_ticker: str
     primary_currency: str
     fx_symbol: str
+    yahoo_fx_symbol: str
+    otc_to_primary_ratio: float
+    reference_warning_percent: float
     issuer_ir_url: str
     consensus_local: float
     analyst_count: int
     consensus_as_of: date
-    method_targets_local: tuple[tuple[str, float], ...]
+    internal_method_targets_local: tuple[tuple[str, float], ...]
+    internal_method_targets_registered_on: date
     buy_in_local: float
     coverage: tuple[PublicCoverageCall, ...]
 
@@ -32,23 +36,29 @@ class ForeignListingPolicy:
 # MHVYF is the 1:1 OTC ordinary share for 7011.T. EODHD labels the OTC quote in
 # USD but returns most statement line items in JPY, so it must never enter the
 # valuation engine without this currency bridge.
+# This is an explicit allowlist. New OTC-to-primary relationships require a
+# reviewed entry here; provider metadata must never auto-discover a mapping.
 FOREIGN_LISTING_POLICIES = {
     "MHVYF": ForeignListingPolicy(
         symbol="MHVYF",
         primary_ticker="7011.T",
         primary_currency="JPY",
         fx_symbol="USDJPY.FOREX",
+        yahoo_fx_symbol="JPY=X",
+        otc_to_primary_ratio=1.0,
+        reference_warning_percent=3.0,
         issuer_ir_url="https://www.mhi.com/finance/library/result",
         consensus_local=5_323.08,
         analyst_count=16,
         consensus_as_of=date(2026, 7, 28),
-        method_targets_local=(
-            ("Goldman Sachs", 5_250.0),
-            ("Morgan Stanley", 5_600.0),
-            ("Bridgewater", 4_750.0),
-            ("JPMorgan", 5_950.0),
-            ("BlackRock", 5_650.0),
+        internal_method_targets_local=(
+            ("Múltiplos de Lucro + EV/EBITDA", 5_250.0),
+            ("Fluxo de Caixa Descontado", 5_600.0),
+            ("Blend Ajustado ao Risco", 4_750.0),
+            ("Momentum de Lucro", 5_950.0),
+            ("Qualidade & Fluxo de Caixa", 5_650.0),
         ),
+        internal_method_targets_registered_on=date(2026, 8, 17),
         buy_in_local=3_110.0,
         coverage=(
             PublicCoverageCall("Goldman Sachs", 6_000.0, "Buy", date(2026, 6, 24)),
@@ -92,7 +102,10 @@ def normalize_foreign_fundamentals(
     ]
     output["foreignListingPolicy"] = {
         "consensusAsOf": policy.consensus_as_of.isoformat(),
-        "methodTargets": {name: value / fx_rate for name, value in policy.method_targets_local},
+        "internalMethodTargets": {
+            name: value / fx_rate for name, value in policy.internal_method_targets_local
+        },
+        "internalMethodTargetsRegisteredOn": policy.internal_method_targets_registered_on.isoformat(),
         "buyIn": policy.buy_in_local / fx_rate,
     }
 

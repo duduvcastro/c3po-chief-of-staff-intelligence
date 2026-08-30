@@ -297,8 +297,19 @@ class PremiumOnePagerRenderer:
         self._rounded_box(pdf, x, y, w, h, fill=colors.HexColor("#FBFCFE"))
         self._section_title(pdf, "Performance 12m + valuation", x + 11, y + h - 20, w - 22, BLUE)
         pdf.setFillColor(SUB)
-        pdf.setFont("Helvetica-Oblique", 4.6)
-        pdf.drawRightString(x + w - 11, y + h - 16.5, f"perfil: {self._profile_label(data.get('profile'))}")
+        valuation_note = f"perfil: {self._profile_label(data.get('profile'))}"
+        registered_on = data.get("method_estimate_registered_on")
+        if registered_on:
+            try:
+                registered_on_display = datetime.fromisoformat(str(registered_on)).strftime("%d/%m/%Y")
+            except ValueError:
+                registered_on_display = str(registered_on)
+            valuation_note += f" · estimativas internas registradas em {registered_on_display}"
+        pdf.setFont(
+            "Helvetica-Oblique",
+            self._fit_font(valuation_note, "Helvetica-Oblique", 4.6, 3.8, w - 135),
+        )
+        pdf.drawRightString(x + w - 11, y + h - 16.5, valuation_note)
         self._performance_chart(pdf, x + 10, y + 112, w - 20, 91, data, history)
 
         pdf.setFillColor(LIGHT)

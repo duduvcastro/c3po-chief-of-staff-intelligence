@@ -862,6 +862,13 @@ interface RealtimePortfolioItem extends RealtimeMarketLeader {
   reference_status: "validated" | "unvalidated" | "not_applicable";
   reference_close: number | null;
   reference_as_of: string | null;
+  price_basis: "primary" | "origin_converted";
+  origin_reference_status: "consistent" | "divergent" | "fallback" | "unavailable" | "unmapped" | "not_applicable";
+  origin_reference_symbol: string | null;
+  origin_reference_price_usd: number | null;
+  origin_reference_divergence_percent: number | null;
+  origin_reference_as_of: string | null;
+  origin_reference_note: string | null;
 }
 
 interface RealtimePortfolioResponse {
@@ -5172,7 +5179,14 @@ function MyRealtimePortfolio({
               ) : (
                 <span className="realtime-portfolio-market">{item.market}</span>
               )}
-              <strong className="realtime-portfolio-price">{item.status === "stale" ? "N/D" : formatCurrency(item.price, item.currency)}</strong>
+              <div className="realtime-portfolio-price-cell">
+                <strong className="realtime-portfolio-price">{item.status === "stale" ? "N/D" : formatCurrency(item.price, item.market === "OTC" ? "USD" : item.currency)}</strong>
+                {item.origin_reference_note && (
+                  <small className={`realtime-portfolio-origin-note realtime-portfolio-origin-${item.origin_reference_status}`}>
+                    {item.origin_reference_note}
+                  </small>
+                )}
+              </div>
               {item.status === "stale" ? (
                 <span className="realtime-portfolio-change">N/D</span>
               ) : item.reference_status === "unvalidated" ? (
