@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "C3PO_CONTAINER_VULNERABILITY_REPORT-v1"
+SCHEMA = "C3PO_CONTAINER_VULNERABILITY_REPORT-v2"
 TRIVY_VERSION = "0.74.0"
 TRIVY_IMAGE = (
     "aquasec/trivy@sha256:"
@@ -38,14 +38,24 @@ def report_sha256(report: dict[str, Any]) -> str:
 def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any]) -> dict[str, Any]:
     counts = {severity: 0 for severity in SEVERITIES}
     fix_available = {severity: 0 for severity in SEVERITIES}
+    unfixed_high_critical: list[dict[str, str]] = []
     unknown = 0
     for result in payload.get("Results") or []:
         for vulnerability in result.get("Vulnerabilities") or []:
             severity = str(vulnerability.get("Severity") or "unknown").lower()
+            fixed_version = str(vulnerability.get("FixedVersion") or "").strip()
             if severity in counts:
                 counts[severity] += 1
-                if str(vulnerability.get("FixedVersion") or "").strip():
+                if fixed_version:
                     fix_available[severity] += 1
+                elif severity in {"critical", "high"}:
+                    unfixed_high_critical.append({
+                        "vulnerability_id": str(vulnerability.get("VulnerabilityID") or "unknown"),
+                        "severity": severity,
+                        "package": str(vulnerability.get("PkgName") or "unknown"),
+                        "installed_version": str(vulnerability.get("InstalledVersion") or "unknown"),
+                        "target": str(result.get("Target") or "unknown"),
+                    })
             else:
                 unknown += 1
     metadata = payload.get("Metadata") or {}
@@ -57,6 +67,15 @@ def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any])
         "repo_digests": sorted(str(item) for item in metadata.get("RepoDigests") or []),
         "by_severity": counts,
         "fix_available": fix_available,
+        "unfixed_high_critical": sorted(
+            unfixed_high_critical,
+            key=lambda finding: (
+                finding["severity"],
+                finding["vulnerability_id"],
+                finding["package"],
+                finding["target"],
+            ),
+        ),
         "unknown": unknown,
         "finding_total": sum(counts.values()) + unknown,
     }

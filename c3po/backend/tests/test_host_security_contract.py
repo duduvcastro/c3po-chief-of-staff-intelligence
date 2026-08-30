@@ -96,7 +96,13 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
         "Results": [{
             "Vulnerabilities": [
                 {"Severity": "CRITICAL", "FixedVersion": "2.0"},
-                {"Severity": "HIGH", "FixedVersion": ""},
+                {
+                    "VulnerabilityID": "CVE-TEST-1",
+                    "Severity": "HIGH",
+                    "FixedVersion": "",
+                    "PkgName": "sample-lib",
+                    "InstalledVersion": "1.0",
+                },
                 {"Severity": "HIGH", "FixedVersion": "3.0"},
                 {"Severity": "MEDIUM", "FixedVersion": ""},
                 {"Severity": "UNKNOWN", "FixedVersion": ""},
@@ -108,6 +114,13 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
 
     assert image["by_severity"] == {"critical": 1, "high": 2, "medium": 1, "low": 0}
     assert image["fix_available"] == {"critical": 1, "high": 1, "medium": 0, "low": 0}
+    assert image["unfixed_high_critical"] == [{
+        "vulnerability_id": "CVE-TEST-1",
+        "severity": "high",
+        "package": "sample-lib",
+        "installed_version": "1.0",
+        "target": "unknown",
+    }]
     assert image["unknown"] == 1
     assert image["finding_total"] == 5
     assert scanner.TRIVY_IMAGE == (
