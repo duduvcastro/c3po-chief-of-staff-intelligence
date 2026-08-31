@@ -1556,6 +1556,9 @@ button { cursor: pointer; }
 .quality-banner strong { display: block; margin: 5px 0; color: var(--quality-accent); font-size: 16px; transition: color .2s ease; }
 .quality-meter { height: 7px; background: #3a3425; border-radius: 4px; overflow: hidden; }
 .quality-meter span { display: block; height: 100%; background: var(--quality-accent); border-radius: 4px; transition: width .25s ease, background-color .2s ease; }
+.system-health-auto-refresh { min-height: 34px; display: flex; align-items: center; gap: 8px; padding: 8px 11px; border: 1px solid; border-radius: 5px; font-size: 9px; font-weight: 800; }
+.system-health-auto-refresh-healthy { color: var(--green); background: var(--green-soft); border-color: #b9dfcf; }
+.system-health-auto-refresh-attention { color: var(--amber); background: var(--amber-soft); border-color: #ead49d; }
 .health-list-large .health-row { min-height: 56px; }
 .api-usage-panel { overflow: hidden; }
 .api-usage-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 15px 16px 17px; }

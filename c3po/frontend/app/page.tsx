@@ -1243,6 +1243,16 @@ interface GlobalSearchResult {
 
 const API_URL = process.env.NEXT_PUBLIC_C3PO_API_URL ?? "http://localhost:8000";
 const FRONTEND_BUILD_SHA = process.env.NEXT_PUBLIC_C3PO_BUILD_SHA ?? "development";
+const SYSTEM_HEALTH_REFRESH_INTERVAL_MS = 60_000;
+
+function shouldAcceptSystemHealthSnapshot(current: SystemHealthData | null, candidate: SystemHealthData) {
+  if (!current) return true;
+  const currentTimestamp = Date.parse(current.generated_at);
+  const candidateTimestamp = Date.parse(candidate.generated_at);
+  if (!Number.isFinite(candidateTimestamp)) return false;
+  if (!Number.isFinite(currentTimestamp)) return true;
+  return candidateTimestamp >= currentTimestamp;
+}
 
 function useR2D2LivePositions() {
   const [telemetry, setTelemetry] = useState<R2D2LivePositionsData | null>(null);
@@ -2698,6 +2708,8 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [marketProviders, setMarketProviders] = useState<MarketDataProvider[]>([]);
   const [systemHealth, setSystemHealth] = useState<SystemHealthData | null>(null);
+  const [systemHealthCheckedAt, setSystemHealthCheckedAt] = useState<string | null>(null);
+  const [systemHealthRefreshError, setSystemHealthRefreshError] = useState("");
   const visibleNavItems = useMemo(() => {
     const allowed = new Set(session.permissions);
     const items = navItems.filter((item) => allowed.has(item.key));
@@ -2929,6 +2941,31 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     }
   }, [onSessionExpired, session.permissions]);
 
+  const acceptSystemHealth = useCallback((candidate: SystemHealthData) => {
+    setSystemHealth((current) => shouldAcceptSystemHealthSnapshot(current, candidate) ? candidate : current);
+    setSystemHealthCheckedAt(new Date().toISOString());
+    setSystemHealthRefreshError("");
+  }, []);
+
+  const refreshSystemHealth = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/v1/system-health`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      if (response.status === 401) {
+        onSessionExpired();
+        throw new Error("Sessão expirada");
+      }
+      if (!response.ok) throw new Error(`API ${response.status}`);
+      acceptSystemHealth(await response.json() as SystemHealthData);
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Falha de conexão";
+      setSystemHealthRefreshError(message);
+      throw requestError;
+    }
+  }, [acceptSystemHealth, onSessionExpired]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -2954,18 +2991,31 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
         setReports(reportPayload.items ?? []);
       }
       if (providersResponse?.ok) setMarketProviders(await providersResponse.json());
-      if (systemHealthResponse.ok) setSystemHealth(await systemHealthResponse.json());
+      if (systemHealthResponse.ok) acceptSystemHealth(await systemHealthResponse.json() as SystemHealthData);
+      else setSystemHealthRefreshError(`API ${systemHealthResponse.status}`);
       await refreshNotificationState();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Connection failed");
     } finally {
       setLoading(false);
     }
-  }, [onSessionExpired, refreshNotificationState, session.permissions]);
+  }, [acceptSystemHealth, onSessionExpired, refreshNotificationState, session.permissions]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshSystemHealth().catch(() => undefined);
+    };
+    const interval = window.setInterval(refreshWhenVisible, SYSTEM_HEALTH_REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshSystemHealth]);
 
   useEffect(() => {
     const refreshWhenVisible = () => {
@@ -3168,6 +3218,9 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
               portfolio={data?.portfolio ?? []}
               marketProviders={marketProviders}
               systemHealth={systemHealth}
+              systemHealthCheckedAt={systemHealthCheckedAt}
+              systemHealthRefreshError={systemHealthRefreshError}
+              onSystemHealthRefresh={refreshSystemHealth}
               financeRefreshKey={financeRefreshKey}
               onNavigate={selectView}
               onAlertsRead={setActiveAlertCount}
@@ -3191,6 +3244,9 @@ function ViewRouter({
   portfolio,
   marketProviders,
   systemHealth,
+  systemHealthCheckedAt,
+  systemHealthRefreshError,
+  onSystemHealthRefresh,
   financeRefreshKey,
   onNavigate,
   onAlertsRead,
@@ -3203,6 +3259,9 @@ function ViewRouter({
   portfolio: PortfolioItem[];
   marketProviders: MarketDataProvider[];
   systemHealth: SystemHealthData | null;
+  systemHealthCheckedAt: string | null;
+  systemHealthRefreshError: string;
+  onSystemHealthRefresh: () => Promise<void>;
   financeRefreshKey: number;
   onNavigate: (view: ViewKey, realtimeTab?: RealtimeTabKey, query?: string) => void;
   onAlertsRead: (count: number) => void;
@@ -3221,7 +3280,7 @@ function ViewRouter({
   if (activeView === "realtime") return <RealTimeView canManage={session.is_admin} canDelete={canDeleteData} />;
   if (activeView === "weather") return <WeatherView />;
   if (activeView === "intelligence") return <IQRecordsView />;
-  if (activeView === "health") return <HealthView data={systemHealth} canManage={session.is_admin} />;
+  if (activeView === "health") return <HealthView data={systemHealth} canManage={session.is_admin} checkedAt={systemHealthCheckedAt} refreshError={systemHealthRefreshError} onHealthRefresh={onSystemHealthRefresh} />;
   if (activeView === "serverusage") return <ServerUsageView pageLoadStats={pageLoadStats} />;
   if (activeView === "leah") return <LeahCloudView session={session} />;
   if (activeView === "alerts") return <AlertsView onRead={onAlertsRead} />;
@@ -8142,11 +8201,22 @@ function CodeCensusSection({ data }: { data: CodeCensusSnapshot | null }) {
   );
 }
 
-function HealthView({ data, canManage }: { data: SystemHealthData | null; canManage: boolean }) {
-  const [health, setHealth] = useState(data);
+function HealthView({
+  data,
+  canManage,
+  checkedAt,
+  refreshError,
+  onHealthRefresh
+}: {
+  data: SystemHealthData | null;
+  canManage: boolean;
+  checkedAt: string | null;
+  refreshError: string;
+  onHealthRefresh: () => Promise<void>;
+}) {
+  const health = data;
   const [attesting, setAttesting] = useState(false);
   const [attestationError, setAttestationError] = useState("");
-  useEffect(() => setHealth(data), [data]);
   const refreshGovernance = useCallback(async () => {
     setAttesting(true);
     setAttestationError("");
@@ -8156,18 +8226,13 @@ function HealthView({ data, canManage }: { data: SystemHealthData | null; canMan
         credentials: "include"
       });
       if (!response.ok) throw new Error(await response.text());
-      const healthResponse = await fetch(`${API_URL}/api/v1/system-health`, {
-        cache: "no-store",
-        credentials: "include"
-      });
-      if (!healthResponse.ok) throw new Error("Atestado criado, mas a releitura do painel falhou");
-      setHealth(await healthResponse.json());
+      await onHealthRefresh();
     } catch (error) {
       setAttestationError(error instanceof Error ? error.message : "Não foi possível gerar o atestado");
     } finally {
       setAttesting(false);
     }
-  }, []);
+  }, [onHealthRefresh]);
   if (!health) return <LoadingState />;
   const apiUsage = health.api_usage ?? [];
   const groupIcons: Record<SystemHealthGroupKey, ComponentType<{ size?: number }>> = {
@@ -8215,7 +8280,7 @@ function HealthView({ data, canManage }: { data: SystemHealthData | null; canMan
             <div className="governance-refresh-bar">
               <button type="button" onClick={() => void refreshGovernance()} disabled={attesting}>
                 <RefreshCw size={16} />
-                <span>{attesting ? "Gerando atestado" : "Atualizar agora"}</span>
+                <span>{attesting ? "Gerando atestado" : "Gerar novo atestado"}</span>
               </button>
               {attestationError && <small role="alert">{attestationError}</small>}
             </div>
@@ -8241,6 +8306,16 @@ function HealthView({ data, canManage }: { data: SystemHealthData | null; canMan
         <div className="quality-score">{health.quality}%</div>
         <div><span>Storm Troops Readiness</span><strong>{headline}</strong><small>{health.healthy_count}/{health.total_count} services operational · {formatDate(health.generated_at)}</small></div>
         <div className="quality-meter"><span style={{ width: `${health.quality}%` }} /></div>
+      </div>
+      <div
+        className={`system-health-auto-refresh system-health-auto-refresh-${refreshError ? "attention" : "healthy"}`}
+        role={refreshError ? "alert" : undefined}
+        title={refreshError || undefined}
+      >
+        <RefreshCw size={14} aria-hidden="true" />
+        <span>{refreshError
+          ? `Atualização automática temporariamente indisponível · exibindo a última medição válida de ${formatDate(health.generated_at)}`
+          : `Atualização automática ativa · última consulta ${formatDate(checkedAt ?? health.generated_at)}`}</span>
       </div>
       <div className="system-health-group-grid system-health-infrastructure-grid">
         {orderedGroups.filter((group) => group.key === "aws").map(renderHealthGroup)}
