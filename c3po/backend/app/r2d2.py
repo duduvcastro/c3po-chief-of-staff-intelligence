@@ -512,6 +512,8 @@ class R2D2Repository:
                 "realtime_symbol_capacity_scope": (
                     "shared across all US markets; open positions reserve capacity first"
                 ),
+                "entry_confirmation_reviews": settings.r2d2_entry_confirmation_reviews,
+                "max_new_positions_per_scan": settings.r2d2_max_new_positions_per_scan,
                 "entry_routes": [
                     "strategic valuation", "tactical quality momentum",
                     "cost-aware intraday momentum",
@@ -1618,11 +1620,66 @@ class R2D2PaperService:
         self._ws_rotation_age = 0
         self._fmp_quote_cache: dict[str, tuple[datetime, dict[str, Any] | None]] = {}
         self._technical_review_stats: dict[str, Any] = {}
+        self._entry_review_generation = 0
+        self._entry_confirmation_state: dict[tuple[str, str], dict[str, Any]] = {}
         self._active_policy = dict(BASE_ENTRY_POLICY)
         self._learning_state: dict[str, Any] | None = None
         self._fast_risk_seen_ticks: dict[tuple[str, str], datetime] = {}
         self._last_rotation_buy_trade: dict[str, Any] | None = None
         self._last_rotation_entry_decision: tuple[str, list[str]] | None = None
+
+    @staticmethod
+    def _entry_confirmation_key(candidate: dict[str, Any]) -> tuple[str, str]:
+        return (
+            str(candidate.get("market") or "").upper(),
+            str(candidate.get("symbol") or "").upper(),
+        )
+
+    def _reset_entry_confirmation(self, candidate: dict[str, Any]) -> None:
+        self._entry_confirmation_state.pop(self._entry_confirmation_key(candidate), None)
+
+    def _confirm_entry_setup(
+        self,
+        candidate: dict[str, Any],
+        *,
+        generation: int,
+    ) -> tuple[int, bool]:
+        """Advance entry confirmation only on a distinct live quote.
+
+        A worker restart intentionally forgets pending confirmations. That is
+        fail-closed: the first post-restart scan can observe, but never buy.
+        """
+        key = self._entry_confirmation_key(candidate)
+        quote_as_of = self._bar_timestamp(candidate.get("quote_as_of"))
+        previous = self._entry_confirmation_state.get(key)
+        consecutive = bool(
+            previous and int(previous.get("generation") or 0) == generation - 1
+        )
+        previous_quote = previous.get("quote_as_of") if previous else None
+        distinct_live_tick = bool(
+            quote_as_of is not None
+            and (not isinstance(previous_quote, datetime) or quote_as_of > previous_quote)
+        )
+        if consecutive and distinct_live_tick:
+            reviews = int(previous.get("reviews") or 0) + 1
+        elif consecutive:
+            reviews = int(previous.get("reviews") or 0)
+        else:
+            reviews = 1 if quote_as_of is not None else 0
+        self._entry_confirmation_state[key] = {
+            "generation": generation,
+            "quote_as_of": quote_as_of or previous_quote,
+            "reviews": reviews,
+        }
+        required = max(1, self.settings.r2d2_entry_confirmation_reviews)
+        return reviews, reviews >= required
+
+    def _expire_entry_confirmations(self, generation: int) -> None:
+        self._entry_confirmation_state = {
+            key: state
+            for key, state in self._entry_confirmation_state.items()
+            if int(state.get("generation") or 0) == generation
+        }
 
     def _queue_shadow_candidate(
         self,
@@ -2294,8 +2351,45 @@ class R2D2PaperService:
                 row["executed_at"].astimezone(SAO_PAULO).date() == local_day
                 for row in self.repo.trades(experiment["id"], limit=500)
             )
+            self._entry_review_generation += 1
+            entry_generation = self._entry_review_generation
+            new_entries_this_scan = 0
+            confirmation_pending_count = 0
+            burst_deferred_count = 0
+
+            def assess_entry_admission(
+                candidate: dict[str, Any],
+            ) -> tuple[str, list[str], bool]:
+                nonlocal confirmation_pending_count
+                action, reasons = self._entry_decision(candidate)
+                if action != "BUY":
+                    self._reset_entry_confirmation(candidate)
+                    return action, reasons, False
+                reviews, confirmed = self._confirm_entry_setup(
+                    candidate,
+                    generation=entry_generation,
+                )
+                candidate["entry_confirmation_reviews"] = reviews
+                candidate["entry_confirmation_reviews_required"] = max(
+                    1,
+                    self.settings.r2d2_entry_confirmation_reviews,
+                )
+                if confirmed:
+                    return action, reasons, True
+                confirmation_pending_count += 1
+                pending_reasons = [
+                    *reasons,
+                    (
+                        "Entry setup passed, but capital waits for "
+                        f"{self.settings.r2d2_entry_confirmation_reviews} consecutive reviews "
+                        f"on distinct live ticks ({reviews} observed)."
+                    ),
+                ]
+                return "REJECT", pending_reasons, False
+
             for candidate_index, candidate in enumerate(candidates):
                 if candidate.get("technical_reviewed") is False:
+                    self._reset_entry_confirmation(candidate)
                     observe_shadow_candidate(
                         candidate,
                         cascade_step="technical_review_capacity",
@@ -2315,6 +2409,7 @@ class R2D2PaperService:
                         )
                     break
                 if any(row["market"] == candidate["market"] and row["symbol"] == candidate["symbol"] for row in positions):
+                    self._reset_entry_confirmation(candidate)
                     observe_shadow_candidate(
                         candidate,
                         cascade_step="portfolio_capacity",
@@ -2324,6 +2419,38 @@ class R2D2PaperService:
                     )
                     continue
                 if len(positions) >= self.settings.r2d2_max_positions:
+                    action, reasons, entry_confirmed = assess_entry_admission(candidate)
+                    if not entry_confirmed:
+                        self.repo.save_decision(
+                            experiment["id"], cycle_id, candidate, action, reasons,
+                        )
+                        observe_shadow_candidate(
+                            candidate,
+                            cascade_step=(
+                                "entry_confirmation"
+                                if candidate.get("entry_confirmation_reviews") is not None
+                                else "entry_quality"
+                            ),
+                            reason_id=(
+                                "entry_confirmation_pending"
+                                if candidate.get("entry_confirmation_reviews") is not None
+                                else entry_rejection_reason_id(reasons)
+                            ),
+                            reason_detail=reasons,
+                        )
+                        continue
+                    if new_entries_this_scan >= self.settings.r2d2_max_new_positions_per_scan:
+                        burst_deferred_count += 1
+                        observe_shadow_candidate(
+                            candidate,
+                            cascade_step="entry_cycle_capacity",
+                            reason_id="entry_cycle_capacity",
+                            rejection_class="capacity",
+                            reason_detail=[
+                                "The per-scan new-position limit was full; confirmation remains eligible for the next scan."
+                            ],
+                        )
+                        continue
                     rotation_trades = self._rotate_if_better(
                         experiment, cycle_id, candidate, positions, quote_map, now,
                     )
@@ -2333,6 +2460,8 @@ class R2D2PaperService:
                         signals += 1
                         positions = self.repo.positions(experiment["id"])
                     if rotation_trades == 2:
+                        new_entries_this_scan += 1
+                        self._reset_entry_confirmation(candidate)
                         rotation_trade = self._last_rotation_buy_trade
                         if rotation_trade is not None:
                             observe_shadow_candidate(
@@ -2382,6 +2511,7 @@ class R2D2PaperService:
                 if self.repo.loss_exit_on_session(
                     experiment["id"], candidate["market"], candidate["symbol"], local_day,
                 ):
+                    self._reset_entry_confirmation(candidate)
                     self.repo.save_decision(
                         experiment["id"], cycle_id, candidate, "REJECT",
                         ["A loss exit already executed for this symbol in this session; capital must rotate to another opportunity"],
@@ -2397,6 +2527,7 @@ class R2D2PaperService:
                 if self.repo.in_cooldown(
                     experiment["id"], candidate["market"], candidate["symbol"], cooldown_since,
                 ):
+                    self._reset_entry_confirmation(candidate)
                     self.repo.save_decision(
                         experiment["id"], cycle_id, candidate, "REJECT",
                         [f"{self.settings.r2d2_trade_cooldown_minutes}-minute re-entry cooldown is active"],
@@ -2410,14 +2541,34 @@ class R2D2PaperService:
                         ],
                     )
                     continue
-                action, reasons = self._entry_decision(candidate)
-                if action != "BUY":
+                action, reasons, entry_confirmed = assess_entry_admission(candidate)
+                if not entry_confirmed:
                     self.repo.save_decision(experiment["id"], cycle_id, candidate, action, reasons)
                     observe_shadow_candidate(
                         candidate,
-                        cascade_step="entry_quality",
-                        reason_id=entry_rejection_reason_id(reasons),
+                        cascade_step=(
+                            "entry_confirmation"
+                            if candidate.get("entry_confirmation_reviews") is not None
+                            else "entry_quality"
+                        ),
+                        reason_id=(
+                            "entry_confirmation_pending"
+                            if candidate.get("entry_confirmation_reviews") is not None
+                            else entry_rejection_reason_id(reasons)
+                        ),
                         reason_detail=reasons,
+                    )
+                    continue
+                if new_entries_this_scan >= self.settings.r2d2_max_new_positions_per_scan:
+                    burst_deferred_count += 1
+                    observe_shadow_candidate(
+                        candidate,
+                        cascade_step="entry_cycle_capacity",
+                        reason_id="entry_cycle_capacity",
+                        rejection_class="capacity",
+                        reason_detail=[
+                            "The per-scan new-position limit was full; confirmation remains eligible for the next scan."
+                        ],
                     )
                     continue
                 signals += 1
@@ -2428,6 +2579,8 @@ class R2D2PaperService:
                 if trade:
                     trade_count += 1
                     orders_today += 1
+                    new_entries_this_scan += 1
+                    self._reset_entry_confirmation(candidate)
                     positions = self.repo.positions(experiment["id"])
                     observe_shadow_candidate(
                         candidate,
@@ -2448,6 +2601,7 @@ class R2D2PaperService:
                             "Entry quality passed, but live execution or portfolio capacity was unavailable."
                         ],
                     )
+            self._expire_entry_confirmations(entry_generation)
             if self.settings.r2d2_entry_score_adapter_enabled:
                 evaluated_count = sum(
                     candidate.get("technical_reviewed") is not False
@@ -2498,11 +2652,19 @@ class R2D2PaperService:
                                        "scan_funnel": dict(self._us_scan_counts),
                                        "eodhd_usage": _estimate_eodhd_credits(self._eodhd_call_counts),
                                        "technical_review": dict(self._technical_review_stats),
+                                       "entry_admission": {
+                                           "confirmation_reviews_required": self.settings.r2d2_entry_confirmation_reviews,
+                                           "max_new_positions_per_scan": self.settings.r2d2_max_new_positions_per_scan,
+                                           "confirmation_pending_count": confirmation_pending_count,
+                                           "burst_deferred_count": burst_deferred_count,
+                                           "new_positions_count": new_entries_this_scan,
+                                       },
                                        "entry_score_adapter": adapter_metadata,
                                        "shadow_candidate_log": shadow_metadata,
                                    })
         except Exception as exc:
             logger.exception("R2D2 cycle failed")
+            self._entry_confirmation_state.clear()
             shadow_metadata = self._flush_shadow_candidates(
                 shadow_rows,
                 serialization_failures=shadow_serialization_failures,

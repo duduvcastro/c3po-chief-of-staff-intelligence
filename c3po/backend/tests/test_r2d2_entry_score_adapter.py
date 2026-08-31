@@ -272,6 +272,7 @@ def test_entry_score_adapter_runs_after_the_entry_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = _settings(adapter_enabled=True)
+    settings.r2d2_entry_confirmation_reviews = 1
     service = R2D2PaperService(settings, Database(settings), None, None, None)  # type: ignore[arg-type]
     service.ensure_initialized()
     service.repo.memory["experiment"].update({

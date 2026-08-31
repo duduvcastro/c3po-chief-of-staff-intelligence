@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -37,6 +38,30 @@ def _settings() -> Settings:
 def _service() -> R2D2PaperService:
     settings = _settings()
     return R2D2PaperService(settings, Database(settings), None, None, None)  # type: ignore[arg-type]
+
+
+def _qualifying_entry_candidate(
+    symbol: str,
+    quote_as_of: datetime,
+    *,
+    composite_score: float = 78.0,
+) -> dict[str, Any]:
+    return {
+        "market": "NASDAQ", "symbol": symbol, "name": f"{symbol} Corp", "currency": "USD",
+        "price": 100.0, "stop_price": 99.1, "upside": 35.0, "risk_score": 30.0,
+        "confidence": 80.0, "buy_in_distance": 4.0, "technical_score": 82.0,
+        "technical_validated": True, "technical_reviewed": True, "quote_status": "live",
+        "composite_score": composite_score, "fundamental_score": 82.0,
+        "thesis": "Persistent live quality momentum", "quote_as_of": quote_as_of,
+        "technical_indicators": {
+            "data_status": "live", "trend_state": "bullish",
+            "volume_state": "accumulation", "price_structure": "breakout",
+            "relative_volume": 1.7, "vwap": 99.5, "ema8": 99.8, "ema20": 99.4,
+            "momentum15": 0.3, "momentum30": 0.5, "momentum60": 0.8,
+            "macd_histogram": 0.2, "macd_acceleration": 0.1,
+            "rsi14": 60.0, "relative_strength": 0.4,
+        },
+    }
 
 
 def test_r2d2_start_date_accepts_compose_timestamp() -> None:
@@ -185,6 +210,8 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
     assert experiment["mandate"]["opportunity_funnel"]["realtime_symbol_capacity_scope"] == (
         "shared across all US markets; open positions reserve capacity first"
     )
+    assert experiment["mandate"]["opportunity_funnel"]["entry_confirmation_reviews"] == 2
+    assert experiment["mandate"]["opportunity_funnel"]["max_new_positions_per_scan"] == 4
     assert experiment["mandate"]["turnover_policy"]["minimum_hold_minutes"] == 5
     assert experiment["mandate"]["performance_target_percent"] == 0.5
     assert "weekly_conviction" in experiment["mandate"]["horizon_policy"]
@@ -1880,6 +1907,79 @@ def test_r2d2_cost_aware_intraday_route_rejects_edge_below_friction_buffer() -> 
     assert candidate["modeled_intraday_edge_percent"] < 0.55
 
 
+def test_r2d2_entry_confirmation_requires_consecutive_distinct_live_ticks() -> None:
+    service = _service()
+    first_tick = datetime(2026, 8, 31, 14, 0, tzinfo=timezone.utc)
+    candidate = _qualifying_entry_candidate("PERSIST", first_tick)
+
+    assert service._confirm_entry_setup(candidate, generation=1) == (1, False)
+    assert service._confirm_entry_setup(candidate, generation=2) == (1, False)
+
+    candidate["quote_as_of"] = first_tick + timedelta(seconds=30)
+    assert service._confirm_entry_setup(candidate, generation=3) == (2, True)
+
+    candidate["quote_as_of"] = first_tick + timedelta(seconds=60)
+    assert service._confirm_entry_setup(candidate, generation=5) == (1, False)
+
+
+def test_r2d2_run_cycle_waits_for_second_entry_confirmation() -> None:
+    service = _service()
+    first_scan = datetime(2026, 8, 31, 14, 0, tzinfo=timezone.utc)
+    active_scan = {"at": datetime.now(timezone.utc)}
+    service._position_quotes = lambda positions, now: {}  # type: ignore[method-assign]
+    service._us_candidates = (  # type: ignore[method-assign]
+        lambda market, now: (
+            [_qualifying_entry_candidate("PERSIST", active_scan["at"])]
+            if market == "NASDAQ" else []
+        )
+    )
+    service._enrich_technicals = lambda candidates, **kwargs: None  # type: ignore[method-assign]
+
+    first = service.run_cycle(first_scan)
+
+    assert first.open_positions == 0
+    assert first.last_cycle is not None
+    assert first.last_cycle.metadata["entry_admission"]["confirmation_pending_count"] == 1
+
+    active_scan["at"] = active_scan["at"] + timedelta(seconds=1)
+    second = service.run_cycle(first_scan + timedelta(minutes=1))
+
+    assert second.open_positions == 1
+    assert second.positions[0].symbol == "PERSIST"
+    assert second.last_cycle is not None
+    assert second.last_cycle.metadata["entry_admission"]["new_positions_count"] == 1
+
+
+def test_r2d2_limits_new_positions_from_one_market_snapshot() -> None:
+    service = _service()
+    service.settings.r2d2_entry_confirmation_reviews = 1
+    service.settings.r2d2_max_new_positions_per_scan = 2
+    scan_at = datetime(2026, 8, 31, 14, 0, tzinfo=timezone.utc)
+    quote_at = datetime.now(timezone.utc)
+    candidates = [
+        _qualifying_entry_candidate(f"BATCH{index}", quote_at, composite_score=90 - index)
+        for index in range(5)
+    ]
+    service._position_quotes = lambda positions, now: {}  # type: ignore[method-assign]
+    service._us_candidates = (  # type: ignore[method-assign]
+        lambda market, now: candidates if market == "NASDAQ" else []
+    )
+    service._enrich_technicals = lambda candidates, **kwargs: None  # type: ignore[method-assign]
+
+    dashboard = service.run_cycle(scan_at)
+
+    assert dashboard.open_positions == 2
+    assert {position.symbol for position in dashboard.positions} == {"BATCH0", "BATCH1"}
+    assert dashboard.last_cycle is not None
+    assert dashboard.last_cycle.metadata["entry_admission"] == {
+        "confirmation_reviews_required": 1,
+        "max_new_positions_per_scan": 2,
+        "confirmation_pending_count": 0,
+        "burst_deferred_count": 3,
+        "new_positions_count": 2,
+    }
+
+
 def test_r2d2_daily_order_cap_blocks_new_entries() -> None:
     service = _service()
     service.settings.r2d2_max_daily_orders = 0
@@ -2030,6 +2130,7 @@ def test_r2d2_weekly_conviction_rejects_an_uncontrolled_pullback() -> None:
 
 def test_r2d2_exit_triggers_an_immediate_replacement_scan() -> None:
     service = _service()
+    service.settings.r2d2_entry_confirmation_reviews = 1
     service.ensure_initialized()
     calls: list[str] = []
     candidate = {
