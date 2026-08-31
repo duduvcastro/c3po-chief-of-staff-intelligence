@@ -1,0 +1,66 @@
+{
+  "by_severity": {
+    "critical": 0,
+    "high": 1,
+    "low": 0,
+    "medium": 0
+  },
+  "counting_method": "synthetic positive-control occurrence for the remediation controller dry-run",
+  "dead_man_configured": false,
+  "errors": [],
+  "finding_total": 1,
+  "fixture_id": "container-remediation-positive-v1",
+  "fix_available": {
+    "critical": 0,
+    "high": 1,
+    "low": 0,
+    "medium": 0
+  },
+  "generated_at": "2026-08-31T00:00:00+00:00",
+  "images": [
+    {
+      "artifact_name": "synthetic://c3po-controller-positive-control",
+      "by_severity": {
+        "critical": 0,
+        "high": 1,
+        "low": 0,
+        "medium": 0
+      },
+      "finding_total": 1,
+      "fix_available": {
+        "critical": 0,
+        "high": 1,
+        "low": 0,
+        "medium": 0
+      },
+      "fixable_high_critical": [
+        {
+          "fixed_version": "2",
+          "installed_version": "1",
+          "package": "c3po-positive-control",
+          "severity": "high",
+          "target": "synthetic-controller-fixture",
+          "vulnerability_id": "C3PO-DRY-RUN-FIXABLE-001"
+        }
+      ],
+      "image_id": "synthetic-positive-control",
+      "label": "controller-positive-control",
+      "origin": null,
+      "reference": "synthetic://c3po-controller-positive-control",
+      "repo_digests": [],
+      "unfixed_high_critical": [],
+      "unknown": 0
+    }
+  ],
+  "report_sha256": "80941aa211fa2e812402dcaa6b3beb7eb3cd571301dc28dbd8c0e0cad24084ff",
+  "scan_status": "complete",
+  "scanner": {
+    "image": "synthetic-positive-control",
+    "name": "C3PO controller dry-run fixture",
+    "version": "v1"
+  },
+  "schema": "C3PO_CONTAINER_VULNERABILITY_REPORT-v2",
+  "scope": "controller_dry_run",
+  "source_revision": "fixture:container-remediation-positive-v1",
+  "unknown": 0
+}

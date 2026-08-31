@@ -232,7 +232,9 @@ jobs:
       - name: Require zero fixable C/H in automated remediation
         if: >-
           (github.event_name == 'workflow_dispatch' && inputs.remediation) ||
-          (github.event_name == 'pull_request' && startsWith(github.head_ref, 'automation/container-security-rebuild-'))
+          (github.event_name == 'pull_request' &&
+          (startsWith(github.head_ref, 'automation/container-security-rebuild-') ||
+          startsWith(github.head_ref, 'automation/controller-positive-dry-run-')))
         working-directory: ${{ github.workspace }}
         run: |
           python3 scripts/c3po_container_remediation.py verify-zero \

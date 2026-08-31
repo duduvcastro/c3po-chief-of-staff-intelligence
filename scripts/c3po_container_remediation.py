@@ -16,6 +16,13 @@ TRIGGER_SCHEMA = "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1"
 HIGH_CRITICAL = ("critical", "high")
 HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 PR_MARKER = "<!-- c3po-container-remediation -->"
+PRODUCTION_LANE_PREFIX = "automation/container-security-rebuild-"
+DRY_RUN_LANE_PREFIX = "automation/controller-positive-dry-run-"
+DRY_RUN_SCOPE = "controller_dry_run"
+DRY_RUN_FIXTURE_ID = "container-remediation-positive-v1"
+DRY_RUN_FIXTURE_SHA256 = (
+    "821a574be7dae0c1bd9ec558594bd5bc152a241883373e3022765865ea55ea2f"
+)
 
 
 class ReportValidationError(RuntimeError):
@@ -128,6 +135,38 @@ def validate_report(
     return counts, findings
 
 
+def validate_positive_dry_run_fixture(
+    path: Path,
+    report: dict[str, Any],
+) -> tuple[dict[str, int], list[dict[str, str]]]:
+    try:
+        raw_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise ReportValidationError(f"cannot seal dry-run fixture: {exc}") from exc
+    if raw_hash != DRY_RUN_FIXTURE_SHA256:
+        raise ReportValidationError("positive dry-run fixture seal mismatch")
+    if report.get("fixture_id") != DRY_RUN_FIXTURE_ID:
+        raise ReportValidationError("unexpected positive dry-run fixture id")
+    if report.get("dead_man_configured") is not False:
+        raise ReportValidationError("dry-run fixture must not attest a production dead-man")
+    counts, findings = validate_report(
+        report,
+        expected_scope=DRY_RUN_SCOPE,
+        require_dead_man=False,
+    )
+    if counts != {"critical": 0, "high": 1} or findings != [{
+        "image": "controller-positive-control",
+        "vulnerability_id": "C3PO-DRY-RUN-FIXABLE-001",
+        "severity": "high",
+        "package": "c3po-positive-control",
+        "installed_version": "1",
+        "fixed_version": "2",
+        "target": "synthetic-controller-fixture",
+    }]:
+        raise ReportValidationError("positive dry-run fixture payload is not the pinned control")
+    return counts, findings
+
+
 def build_trigger(
     report: dict[str, Any],
     *,
@@ -135,6 +174,7 @@ def build_trigger(
     findings: list[dict[str, str]],
     run_url: str,
     artifact_name: str,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     generated_at = report.get("generated_at")
     source_revision = report.get("source_revision")
@@ -162,6 +202,8 @@ def build_trigger(
         "report_sha256": report["report_sha256"],
         "run_url": run_url,
         "artifact_name": artifact_name,
+        "dry_run": dry_run,
+        "evidence_scope": report["scope"],
         "fix_available": counts,
         "finding_total": sum(counts.values()),
         "findings": findings,
@@ -175,12 +217,26 @@ def _cell(value: str) -> str:
 def render_pr_body(trigger: dict[str, Any]) -> str:
     counts = trigger["fix_available"]
     findings = trigger["findings"]
+    dry_run = trigger.get("dry_run") is True
     lines = [
         PR_MARKER,
-        "## Remediação automática de imagens",
+        (
+            "## CONTROLE SINTÉTICO — NÃO É PRODUÇÃO"
+            if dry_run
+            else "## Remediação automática de imagens"
+        ),
         "",
-        "O controlador remoto detectou uma `FixedVersion` no scan completo das imagens ",
-        "em produção e abriu esta PR sem depender de workstation ou Codex desktop.",
+        (
+            "Esta PR-fixture exercita a máquina de estados do controlador com uma "
+            "ocorrência sintética selada. Não representa um achado de produção."
+            if dry_run
+            else "O controlador remoto detectou uma `FixedVersion` no scan completo das imagens "
+        ),
+        (
+            "Ela nunca deve ser mergeada e será fechada após a execução supervisionada."
+            if dry_run
+            else "em produção e abriu esta PR sem depender de workstation ou Codex desktop."
+        ),
         "",
         f"- Critical fixável: **{counts['critical']}**",
         f"- High fixável: **{counts['high']}**",
@@ -188,6 +244,7 @@ def render_pr_body(trigger: dict[str, Any]) -> str:
         f"- Chave de deduplicação: `{trigger['remediation_key']}`",
         f"- [Workflow de origem]({trigger['run_url']})",
         f"- Artefato: `{trigger['artifact_name']}`",
+        f"- Escopo da evidência: `{trigger['evidence_scope']}`",
         "",
         "| Imagem | Severidade | CVE | Pacote | Instalada | FixedVersion |",
         "| --- | --- | --- | --- | --- | --- |",
@@ -210,19 +267,28 @@ def render_pr_body(trigger: dict[str, Any]) -> str:
         )
     if len(findings) > 100:
         lines.extend(["", f"Mais {len(findings) - 100} ocorrências constam no artefato."])
-    lines.extend([
-        "",
-        "### Rito obrigatório",
-        "",
-        "O commit inicial apenas força rebuild integral a partir das bases pinadas e dos ",
-        "repositórios oficiais. Se o scan da PR não zerar os C/H fixáveis, Codex ajusta ",
-        "pacotes ou digests nesta mesma PR. Fable audita a evidência final. Dudu autoriza ",
-        "o merge. **Não há auto-merge nem deploy antes desses portões.**",
-        "",
-        "Após o deploy, o scan de produção deve ser reexecutado e o atestado deve consumir ",
-        "o novo report.",
-        "",
-    ])
+    lines.extend(["", "### Rito obrigatório", ""])
+    if dry_run:
+        lines.extend([
+            "O commit existe somente para forçar o rebuild e validar o controlador. "
+            "A PR-fixture não pode ser mergeada. A validação usa `deploy=false`.",
+            "Fable audita a evidência e Dudu supervisiona o encerramento sem merge.",
+            "",
+            "Se `verify-zero` ficar vermelho na Fase B, isso indica um C/H fixável real "
+            "nas imagens atuais; não é defeito do harness e exige remediação normal.",
+            "",
+        ])
+    else:
+        lines.extend([
+            "O commit inicial apenas força rebuild integral a partir das bases pinadas e dos ",
+            "repositórios oficiais. Se o scan da PR não zerar os C/H fixáveis, Codex ajusta ",
+            "pacotes ou digests nesta mesma PR. Fable audita a evidência final. Dudu autoriza ",
+            "o merge. **Não há auto-merge nem deploy antes desses portões.**",
+            "",
+            "Após o deploy, o scan de produção deve ser reexecutado e o atestado deve consumir ",
+            "o novo report.",
+            "",
+        ])
     return "\n".join(lines)
 
 
@@ -240,9 +306,14 @@ def _append_github_outputs(path: Path, outputs: dict[str, str]) -> None:
             handle.write(f"{key}={value}\n")
 
 
-def plan(args: argparse.Namespace) -> int:
+def _plan(args: argparse.Namespace, *, dry_run: bool) -> int:
     report = load_report(args.report)
-    counts, findings = validate_report(report)
+    if dry_run:
+        counts, findings = validate_positive_dry_run_fixture(args.report, report)
+        lane_prefix = DRY_RUN_LANE_PREFIX
+    else:
+        counts, findings = validate_report(report)
+        lane_prefix = PRODUCTION_LANE_PREFIX
     required = sum(counts.values()) > 0
     remediation_key = ""
     if required:
@@ -252,6 +323,7 @@ def plan(args: argparse.Namespace) -> int:
             findings=findings,
             run_url=args.run_url,
             artifact_name=args.artifact_name,
+            dry_run=dry_run,
         )
         remediation_key = trigger["remediation_key"]
         _write_json(args.trigger, trigger)
@@ -262,9 +334,19 @@ def plan(args: argparse.Namespace) -> int:
         "high": str(counts["high"]),
         "report_sha256": str(report["report_sha256"]),
         "remediation_key": remediation_key,
+        "lane_prefix": lane_prefix,
+        "dry_run": "true" if dry_run else "false",
     })
     print(json.dumps({"required": required, "fix_available": counts}, sort_keys=True))
     return 0
+
+
+def plan(args: argparse.Namespace) -> int:
+    return _plan(args, dry_run=False)
+
+
+def plan_dry_run_positive(args: argparse.Namespace) -> int:
+    return _plan(args, dry_run=True)
 
 
 def verify_zero(args: argparse.Namespace) -> int:
@@ -296,6 +378,15 @@ def parse_args() -> argparse.Namespace:
     plan_parser.add_argument("--artifact-name", required=True)
     plan_parser.add_argument("--github-output", type=Path, required=True)
     plan_parser.set_defaults(handler=plan)
+
+    dry_run_parser = subparsers.add_parser("plan-dry-run-positive")
+    dry_run_parser.add_argument("--report", type=Path, required=True)
+    dry_run_parser.add_argument("--trigger", type=Path, required=True)
+    dry_run_parser.add_argument("--pr-body", type=Path, required=True)
+    dry_run_parser.add_argument("--run-url", required=True)
+    dry_run_parser.add_argument("--artifact-name", required=True)
+    dry_run_parser.add_argument("--github-output", type=Path, required=True)
+    dry_run_parser.set_defaults(handler=plan_dry_run_positive)
 
     verify_parser = subparsers.add_parser("verify-zero")
     verify_parser.add_argument("--report", type=Path, required=True)

@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[3]
 SCANNER_PATH = ROOT / "scripts" / "c3po_trivy_scan.py"
 CONTROLLER_PATH = ROOT / "scripts" / "c3po_container_remediation.py"
 DISPATCH_PATH = ROOT / ".github" / "scripts" / "c3po_dispatch_remediation.sh"
+POSITIVE_FIXTURE_PATH = (
+    ROOT / "c3po" / "security" / "fixtures" / "container-remediation-positive-v1.json"
+)
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -143,8 +146,75 @@ def test_plan_emits_machine_outputs_and_only_writes_work_when_required(
     assert outputs["required"] == str(required).lower()
     assert outputs["critical"] == str(int(required))
     assert bool(outputs["remediation_key"]) is required
+    assert outputs["lane_prefix"] == controller.PRODUCTION_LANE_PREFIX
+    assert outputs["dry_run"] == "false"
     assert trigger_path.exists() is required
     assert body_path.exists() is required
+
+
+def test_positive_dry_run_fixture_is_sealed_scoped_and_actionable(tmp_path: Path) -> None:
+    _, controller = _modules()
+    report = controller.load_report(POSITIVE_FIXTURE_PATH)
+
+    counts, findings = controller.validate_positive_dry_run_fixture(
+        POSITIVE_FIXTURE_PATH,
+        report,
+    )
+
+    assert counts == {"critical": 0, "high": 1}
+    assert findings[0]["vulnerability_id"] == "C3PO-DRY-RUN-FIXABLE-001"
+    trigger_path = tmp_path / "trigger.json"
+    body_path = tmp_path / "body.md"
+    output_path = tmp_path / "github-output"
+    result = controller.plan_dry_run_positive(Namespace(
+        report=POSITIVE_FIXTURE_PATH,
+        trigger=trigger_path,
+        pr_body=body_path,
+        run_url="https://github.com/duduvcastro/c3po/actions/runs/456",
+        artifact_name="c3po-controller-dry-run-positive-456",
+        github_output=output_path,
+    ))
+
+    outputs = dict(
+        line.split("=", 1)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+    )
+    trigger = json.loads(trigger_path.read_text(encoding="utf-8"))
+    body = body_path.read_text(encoding="utf-8")
+    assert result == 0
+    assert outputs["required"] == "true"
+    assert outputs["lane_prefix"] == controller.DRY_RUN_LANE_PREFIX
+    assert outputs["dry_run"] == "true"
+    assert trigger["dry_run"] is True
+    assert trigger["evidence_scope"] == controller.DRY_RUN_SCOPE
+    assert "CONTROLE SINTÉTICO — NÃO É PRODUÇÃO" in body
+    assert "nunca deve ser mergeada" in body
+    assert "deploy=false" in body
+    assert "fixável real" in body
+
+
+def test_positive_dry_run_fixture_rejects_tampering_and_production_scope(
+    tmp_path: Path,
+) -> None:
+    scanner, controller = _modules()
+    fixture = controller.load_report(POSITIVE_FIXTURE_PATH)
+    tampered_path = tmp_path / "tampered.json"
+    fixture["images"][0]["fixable_high_critical"][0]["fixed_version"] = "3"
+    fixture["report_sha256"] = scanner.report_sha256(fixture)
+    tampered_path.write_text(json.dumps(fixture), encoding="utf-8")
+
+    with pytest.raises(controller.ReportValidationError, match="seal mismatch"):
+        controller.validate_positive_dry_run_fixture(tampered_path, fixture)
+
+    sealed_fixture = controller.load_report(POSITIVE_FIXTURE_PATH)
+    with pytest.raises(controller.ReportValidationError, match="production_runtime"):
+        controller.validate_report(sealed_fixture)
+
+    production_report = _report(scanner)
+    production_path = tmp_path / "production.json"
+    production_path.write_text(json.dumps(production_report), encoding="utf-8")
+    with pytest.raises(controller.ReportValidationError, match="seal mismatch"):
+        controller.validate_positive_dry_run_fixture(production_path, production_report)
 
 
 def test_zero_gate_accepts_pull_request_scope_without_a_dead_man() -> None:
@@ -165,9 +235,14 @@ def test_zero_gate_accepts_pull_request_scope_without_a_dead_man() -> None:
 
 
 @pytest.mark.parametrize("dispatch_succeeds", [False, True])
+@pytest.mark.parametrize("branch", [
+    "automation/container-security-rebuild-test-123",
+    "automation/controller-positive-dry-run-test-123",
+])
 def test_dispatch_helper_records_the_run_marker_only_after_accepted_dispatch(
     tmp_path: Path,
     dispatch_succeeds: bool,
+    branch: str,
 ) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -231,7 +306,7 @@ fi
         [
             "bash",
             str(DISPATCH_PATH),
-            "automation/container-security-rebuild-test-123",
+            branch,
             remediation_key,
             "42",
         ],
@@ -254,6 +329,22 @@ fi
     assert f"c3po-container-remediation-dispatch:{remediation_key}" in marker
     assert "run `987`" in marker
     assert "https://github.com/duduvcastro/c3po/actions/runs/987" in marker
+
+
+def test_dispatch_helper_accepts_only_the_real_and_dry_run_lane_prefixes() -> None:
+    dispatch = DISPATCH_PATH.read_text(encoding="utf-8")
+
+    assert "container-security-rebuild|controller-positive-dry-run" in dispatch
+    assert "^automation/" in dispatch
+
+    completed = subprocess.run(
+        ["bash", str(DISPATCH_PATH), "automation/untrusted-lane", "a" * 64, "42"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    assert completed.returncode != 0
+    assert "invalid remediation branch" in completed.stderr
 
 
 @pytest.mark.parametrize(

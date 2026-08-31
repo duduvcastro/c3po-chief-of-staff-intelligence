@@ -27,6 +27,10 @@ TRIVY_SCRIPT = ROOT / "scripts" / "c3po_trivy_scan.py"
 REMEDIATION_DISPATCH = (
     ROOT / ".github" / "scripts" / "c3po_dispatch_remediation.sh"
 )
+POSITIVE_FIXTURE = (
+    ROOT / "c3po" / "security" / "fixtures" / "container-remediation-positive-v1.json"
+)
+OPS_RUNBOOK = ROOT / "c3po" / "docs" / "OPS_RESILIENCE_RUNBOOK.md"
 
 
 def _scanner_module():
@@ -198,7 +202,7 @@ def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
     assert "git push origin" in controller_source
     assert "actions/permissions/workflow" in controller_source
     assert "can_approve_pull_request_reviews" in controller_source
-    assert "automation/container-security-rebuild-" in controller_source
+    assert "steps.remediation.outputs.lane_prefix" in controller_source
     assert controller_source.count("c3po_dispatch_remediation.sh") == 2
     assert remediation_dispatch.count("gh workflow run c3po-pipeline.yml") == 1
     assert "deploy=false" in remediation_dispatch
@@ -275,6 +279,87 @@ def test_remediation_refresh_and_lane_discovery_are_fail_closed_and_idempotent()
     assert 'git push origin "HEAD:$REMEDIATION_BRANCH"' in daily
 
 
+def test_positive_controller_dry_run_is_manual_isolated_and_two_phase() -> None:
+    daily = DAILY_SCAN.read_text(encoding="utf-8")
+    fixture = POSITIVE_FIXTURE.read_text(encoding="utf-8")
+    runbook = OPS_RUNBOOK.read_text(encoding="utf-8")
+    parsed = yaml.safe_load(daily)
+    inputs = parsed[True]["workflow_dispatch"]["inputs"]
+    jobs = parsed["jobs"]
+
+    assert inputs["controller_dry_run_phase"]["options"] == [
+        "none",
+        "interrupt-before-dispatch",
+        "resume",
+    ]
+    assert inputs["controller_dry_run_phase"]["default"] == "none"
+    fixture_job = jobs["controller-positive-dry-run-fixture"]
+    assert "environment" not in fixture_job
+    assert fixture_job["permissions"] == {"contents": "read"}
+    fixture_source = yaml.safe_dump(fixture_job, sort_keys=False)
+    confirmation_source = next(
+        step["run"]
+        for step in fixture_job["steps"]
+        if step.get("name") == "Validate the supervised dry-run request"
+    )
+    fixture_checkout = next(
+        step
+        for step in fixture_job["steps"]
+        if step.get("uses") == "actions/checkout@v6"
+    )
+    assert "github.event_name == 'workflow_dispatch'" in fixture_job["if"]
+    assert "refs/heads/main" in fixture_source
+    assert fixture_checkout["with"]["ref"] == "${{ github.sha }}"
+    assert '[ "$DRY_RUN_CONFIRMATION" != "C3PO-CONTROLLER-POSITIVE-DRY-RUN" ]' in confirmation_source
+    assert 'echo "$DRY_RUN_CONFIRMATION"' not in confirmation_source
+    assert "C3PO_AWS_SSH_KEY" not in fixture_source
+    assert "C3PO_HEALTHCHECK_TRIVY_URL" not in fixture_source
+    assert "environment: production" not in fixture_source
+    assert "c3po-controller-dry-run-positive-${{ github.run_id }}" in fixture_source
+
+    controller = jobs["remediation-controller"]
+    assert controller["needs"] == [
+        "scan-production-images",
+        "controller-positive-dry-run-fixture",
+    ]
+    controller_source = yaml.safe_dump(controller, sort_keys=False)
+    open_lane_source = next(
+        step["run"]
+        for step in controller["steps"]
+        if step.get("name") == "Open a rebuild PR and start validation"
+    )
+    assert "plan-dry-run-positive" in controller_source
+    assert "automation/controller-positive-dry-run-" not in controller_source
+    assert "LANE_PREFIX" in controller_source
+    assert "startsWith($prefix)" not in controller_source
+    assert "startswith($prefix)" in controller_source
+    assert "Dry-run interrupt phase requires no existing dry-run lane" in daily
+    assert "Dry-run resume phase requires one existing dry-run lane" in daily
+    assert "Dry-run resume requires exactly one recorded Phase A interruption run" in daily
+    assert 'contains($marker) and contains("/actions/runs/")' in daily
+    assert "c3po-controller-dry-run-interruption:" in open_lane_source
+    assert "FASE A — interrupção controlada antes do dispatch" in open_lane_source
+    assert open_lane_source.index('gh pr comment "$created_pr"') < open_lane_source.index(
+        "Intentional dry-run interruption recorded"
+    )
+    assert "C3PO_AWS_SSH_KEY" not in controller_source
+    assert "C3PO_HEALTHCHECK_TRIVY_URL" not in controller_source
+
+    production_if = jobs["scan-production-images"]["if"]
+    lifecycle_if = jobs["complete-trivy-dead-man"]["if"]
+    assert "controller_dry_run_phase == 'none'" in production_if
+    assert "controller_dry_run_phase == 'none'" in lifecycle_if
+    assert parsed["concurrency"]["group"] == "c3po-production-container-scan"
+
+    assert '"scope": "controller_dry_run"' in fixture
+    assert '"dead_man_configured": false' in fixture
+    assert '"fixture_id": "container-remediation-positive-v1"' in fixture
+    assert '"high": 1' in fixture
+    assert "Supervised positive controller dry-run" in runbook
+    assert "real** fixable Critical/High finding" in runbook
+    assert "Never weaken or bypass `verify-zero`" in runbook
+
+
 def test_automated_remediation_validation_never_deploys_before_approval() -> None:
     pipeline = PIPELINE.read_text(encoding="utf-8")
     parsed = yaml.safe_load(pipeline)
@@ -285,6 +370,7 @@ def test_automated_remediation_validation_never_deploys_before_approval() -> Non
     assert "inputs.deploy" in parsed["jobs"]["deploy-production"]["if"]
     assert "c3po_container_remediation.py verify-zero" in pipeline
     assert "automation/container-security-rebuild-" in pipeline
+    assert "automation/controller-positive-dry-run-" in pipeline
     assert pipeline.count("C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD") == 6
 
 
