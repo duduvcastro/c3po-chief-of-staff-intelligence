@@ -5,7 +5,7 @@ branch=${1:?remediation branch is required}
 remediation_key=${2:?remediation key is required}
 pr_number=${3:?pull request number is required}
 
-if [[ ! "$branch" =~ ^automation/container-security-rebuild-[a-zA-Z0-9._-]+$ ]]; then
+if [[ ! "$branch" =~ ^automation/(container-security-rebuild|controller-positive-dry-run)-[a-zA-Z0-9._-]+$ ]]; then
   echo "invalid remediation branch: $branch" >&2
   exit 1
 fi

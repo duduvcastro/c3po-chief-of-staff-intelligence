@@ -249,6 +249,32 @@ prerequisite and is checked before mutation. Although GitHub groups create and
 approve permission in one setting, this workflow contains no review, approval,
 merge or auto-merge command; protected-branch approval remains external.
 
+### Supervised positive controller dry-run
+
+The positive path is exercised only by manual `workflow_dispatch` from `main`,
+with the exact confirmation phrase recorded in the reviewed workflow. The
+sealed `controller_dry_run` fixture is isolated from the production image scan,
+the live normalized report, production secrets and the Trivy dead-man. Its lane
+uses the disjoint prefix `automation/controller-positive-dry-run-` and must
+never be merged.
+
+Run the exercise in two supervised phases, outside an active production scan:
+
+1. `interrupt-before-dispatch` creates one bot-authored fixture PR and records
+   an intentional red run in that PR before stopping. Confirm that the evidence
+   key exists and the dispatch marker does not.
+2. `resume` must discover that same PR, make no new evidence commit or duplicate
+   evidence comment, dispatch validation with `deploy=false`, and write the
+   marker only after the validation run has an ID and URL.
+3. Confirm five green validation gates, a skipped production deploy, one PR,
+   one evidence entry and one dispatch marker. Then close the fixture PR without
+   merging after preserving its run URLs and artifact hashes.
+
+If `verify-zero` is red during phase 2, stop the exercise. That result means the
+freshly built images contain a **real** fixable Critical/High finding; it is not
+a harness defect and must enter the normal Codex/Fable/Dudu remediation path.
+Never weaken or bypass `verify-zero` to make the dry-run green.
+
 Both scheduled layers carry their own dead-man evidence. The apt service sends
 `start` and a systemd `OnSuccess`/`OnFailure` result around its factual daily
 execution. The daily workflow does the same around the off-host scan. Ping
