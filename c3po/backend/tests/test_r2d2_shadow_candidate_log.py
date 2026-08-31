@@ -318,6 +318,35 @@ def test_daily_cap_still_observes_every_remaining_candidate() -> None:
     assert metadata["population_complete"] is True
 
 
+def test_same_session_loss_reentry_is_logged_without_an_executed_trade() -> None:
+    settings = _settings(enabled=True)
+    service = R2D2PaperService(settings, Database(settings), None, None, None)  # type: ignore[arg-type]
+    service.ensure_initialized()
+    service.repo.memory["experiment"].update({
+        "policy_epoch": "policy-a-resume-2026-08-26",
+        "methodology_version": "test-methodology",
+    })
+    candidate = _candidate("STOPPED")
+    service._position_quotes = lambda positions, now: {}  # type: ignore[method-assign]
+    service._mark_and_exit = lambda *args, **kwargs: 0  # type: ignore[method-assign]
+    service._us_candidates = (  # type: ignore[method-assign]
+        lambda market, now: [copy.deepcopy(candidate)] if market == "NASDAQ" else []
+    )
+    service._enrich_technicals = lambda candidates, **kwargs: None  # type: ignore[method-assign]
+    service.repo.loss_exit_on_session = lambda *args, **kwargs: True  # type: ignore[method-assign]
+
+    dashboard = service.run_cycle(datetime(2026, 8, 28, 14, 0, tzinfo=timezone.utc))
+
+    assert dashboard.last_cycle is not None
+    assert dashboard.last_cycle.status == "succeeded"
+    rows = service._shadow_candidate_log.observations()
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "STOPPED"
+    assert rows[0]["decision"] == "rejected"
+    assert rows[0]["reason_id"] == "session_loss_reentry_lock"
+    assert rows[0]["trade_id"] is None
+
+
 def test_shadow_sink_failure_never_changes_trading_cycle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
