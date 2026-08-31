@@ -1,4 +1,8 @@
 -- C3PO_MOBILE_PUSH_V2 Amendment 1: security_login, sell_win, hourly_win_rate.
+-- Amendment 2 (hotfix 2026-08-31): includes remediation_lane_opened so this
+-- migration stays re-runnable after 041 appends that category to live rows.
+-- Migrations here are reapplied on every boot; each file must accept the
+-- final state produced by every later migration.
 DO $$
 DECLARE
     constraint_name text;
@@ -19,6 +23,7 @@ ADD CONSTRAINT push_subscriptions_categories_check CHECK (
         'kill_criterion',
         'job_failure',
         'governance_critical',
+        'remediation_lane_opened',
         'mesa_reading',
         'disk_threshold',
         'security_login',
