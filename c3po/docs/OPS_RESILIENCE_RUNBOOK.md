@@ -156,9 +156,38 @@ At or after 02:15 `America/Sao_Paulo`, the server-usage worker performs one
 read-only GitHub attestation per day. It records only open Dependabot counts by
 severity and the live branch-protection fields defined by
 `c3po/docs/GOVERNANCE_VULNERABILITY_BASELINE_V1.json`; alert titles, CVEs,
-package names, and secret values are never persisted. The daily report is
+package names, and secret values from Dependabot are never persisted. The daily report is
 append-only, self-hashed, and retried no more often than every 30 minutes after
 a failed attempt.
+
+The same read-only token lists open pull requests and retains only remediation
+lanes whose head branch starts with `automation/`. The attestation payload and
+Storm Troops card expose each lane's PR number, title, head branch, creation
+time, and canonical GitHub URL. A failed or malformed GitHub response is stored
+as `available=false`, `count=null`, and `items=null`; it is displayed as
+`Não verificável` and makes the aggregate state at least attention. It is never
+converted to an empty list or zero. That unavailable revision is persisted as
+evidence, but the attempt sends `/fail` to the governance dead-man and remains
+eligible for the existing 30-minute retry instead of completing the day.
+
+A matching prefix alone is not provenance. A trusted lane must also target the
+versioned baseline branch, originate in this same repository, and be authored
+by `github-actions[bot]`, matching the controller contract. Forks, wrong-base
+PRs, unapproved actors, and incomplete provenance are excluded from the trusted
+lane set and cannot trigger the card action state or push notification.
+
+Every observed lane emits the opt-in `remediation_lane_opened` Web Push category
+with an application deep link. The durable event key includes repository and PR
+number, so repeated daily attestations cannot emit the same lane twice. Push is
+best-effort and does not mutate, approve, merge, or deploy the lane. Users can
+disable this default-on category independently in the existing device
+preferences; the migration enables it only on active subscriptions while
+preserving their prior rows through the existing logical-revocation model.
+
+This in-app contract replaces the former external 08:00 BRT read-only check:
+the daily atestado/card is the state surface, the governance Healthchecks
+dead-man covers a missing run, and the lane notification is the action signal.
+No owner workstation or desktop automation participates.
 
 The production token is stored only as `C3PO_GITHUB_GOVERNANCE_TOKEN` in the
 sealed `.env`. It requires read access to Dependabot alerts and repository

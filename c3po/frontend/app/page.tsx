@@ -2201,6 +2201,7 @@ const pushCategoryOptions = [
   { key: "kill_criterion", label: "Kill criterion", detail: "Pausa ou veredito formal da estratégia" },
   { key: "job_failure", label: "Falha de job crítico", detail: "Backup, cash yield, estudos e workers" },
   { key: "governance_critical", label: "Governança crítica", detail: "Vulnerabilidade high/critical ou drift" },
+  { key: "remediation_lane_opened", label: "Remediação automática", detail: "Nova PR automática pronta para revisão e auditoria" },
   { key: "mesa_reading", label: "Leitura da mesa", detail: "Novo relatório decisório publicado" },
   { key: "disk_threshold", label: "Disco acima de 80%", detail: "Capacidade do host requer atenção" },
   { key: "security_login", label: "Novo login", detail: "Cada login bem-sucedido no C3PO" },
@@ -2250,7 +2251,9 @@ function PushNotificationPanel({ isAdmin }: { isAdmin: boolean }) {
       .then(async (status) => {
         setConfigured(status.configured);
         setPublicKey(status.vapid_public_key || "");
-        setCategories(status.categories || []);
+        setCategories(status.active_subscription_count > 0
+          ? status.categories || []
+          : ["remediation_lane_opened"]);
         const registration = await navigator.serviceWorker.getRegistration("/push-sw.js");
         const subscription = await registration?.pushManager.getSubscription();
         setActive(Boolean(subscription));
@@ -8530,6 +8533,10 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const operatingSystem = objectValue(metadata.operating_system);
   const operatingSystemDeadMan = objectValue(operatingSystem.dead_man);
   const productionImages = objectValue(metadata.production_images);
+  const remediationLanes = objectValue(metadata.remediation_lanes);
+  const remediationLaneItems = Array.isArray(remediationLanes.items)
+    ? remediationLanes.items.map(objectValue)
+    : [];
   const severities = objectValue(dependabot.by_severity);
   const imageSeverities = objectValue(productionImages.by_severity);
   const checks = Array.isArray(metadata.governance_checks)
@@ -8544,6 +8551,9 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const layerClass = (status: unknown) => status === "healthy" ? "healthy" : status === "offline" ? "offline" : "attention";
   const osPending = operatingSystem.security_updates_pending == null ? null : Number(operatingSystem.security_updates_pending);
   const imageTotal = productionImages.finding_total == null ? null : Number(productionImages.finding_total);
+  const remediationLaneCount = remediationLanes.available === true && typeof remediationLanes.count === "number"
+    ? Number(remediationLanes.count)
+    : null;
   const operatingSystemLabel = operatingSystem.available !== true
     ? "Sem atestado"
     : operatingSystem.reboot_required === true
@@ -8613,6 +8623,26 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
         </section>
         <section className="governance-contract">
           <header><div><span>CONTRATO DA MAIN</span><strong>Controles de governança</strong></div><small>{checks.length ? `${checks.length} controles` : "Coleta diária"}</small></header>
+          <div className={`governance-remediation-lanes governance-remediation-${remediationLaneCount == null ? "unavailable" : remediationLaneCount > 0 ? "open" : "clear"}`}>
+            <header>
+              <div><span>REMEDIAÇÃO AUTOMÁTICA</span><strong>Lanes abertas</strong></div>
+              <em>{remediationLaneCount == null ? "Não verificável" : remediationLaneCount === 0 ? "Nenhuma" : remediationLaneCount.toLocaleString("pt-BR")}</em>
+            </header>
+            {remediationLaneCount == null ? (
+              <p>A consulta read-only ao GitHub não foi concluída; este estado nunca é exibido como zero.</p>
+            ) : remediationLaneItems.length === 0 ? (
+              <p>Nenhuma PR com branch <code>automation/*</code> está aberta.</p>
+            ) : (
+              <div className="governance-remediation-list">
+                {remediationLaneItems.map((lane) => (
+                  <a id={`remediation-pr-${Number(lane.number)}`} href={String(lane.url)} target="_blank" rel="noreferrer" key={Number(lane.number)}>
+                    <span><strong>#{Number(lane.number)} · {String(lane.title)}</strong><ExternalLink size={12} /></span>
+                    <small>{String(lane.head)} · criada em {formatDate(String(lane.created_at))}</small>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
           {checks.length ? (
             <div className="governance-contract-grid">
               {checks.map((check) => (
