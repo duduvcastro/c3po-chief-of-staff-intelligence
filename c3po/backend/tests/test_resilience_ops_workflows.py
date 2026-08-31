@@ -30,6 +30,7 @@ def test_resilience_installer_is_manual_production_and_secret_driven() -> None:
     assert "Validate governance token read capabilities" in workflow
     assert "administration_read" in workflow
     assert "dependabot_alerts_read" in workflow
+    assert "pull_requests_read" in workflow
     assert "C3PO_SENTRY_DSN is not a valid sentry.io project DSN" in workflow
     assert 'payload["C3PO_HEALTHCHECK_POSTGRES_RESTORE_CONFIGURED"] = "true"' in workflow
     assert "systemctl enable --now c3po-postgres-backup.timer" in workflow

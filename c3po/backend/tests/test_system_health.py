@@ -105,6 +105,12 @@ class _Database:
                 "image_count": 3,
                 "generated_at": self.now.isoformat(),
             },
+            "remediation_lanes": {
+                "status": "healthy",
+                "available": True,
+                "count": 0,
+                "items": [],
+            },
             "known_vulnerabilities": {"critical": 0, "high": 0, "medium": 0, "low": 0},
             "governance": {
                 "status": "healthy",
@@ -509,7 +515,33 @@ def test_governance_card_exposes_counts_contract_and_hash_metadata() -> None:
     assert item.metadata["production_images"]["image_count"] == 3
     assert item.metadata["kind"] == "governance_vulnerabilities"
     assert item.metadata["dependabot"]["by_severity"]["critical"] == 0
+    assert item.metadata["remediation_lanes"]["count"] == 0
     assert item.metadata["governance_checks"][0]["label"] == "Branch protection"
+
+
+def test_governance_card_never_converts_unverifiable_lanes_to_zero() -> None:
+    service = _service()
+    original = service.database.latest_governance_vulnerability_report
+
+    def unavailable_report():
+        report = original()
+        report["remediation_lanes"] = {
+            "status": "attention",
+            "available": False,
+            "count": None,
+            "items": None,
+            "error": "GitHub remediation lane query is not verifiable",
+        }
+        report["report_sha256"] = report_sha256(report)
+        return report
+
+    service.database.latest_governance_vulnerability_report = unavailable_report  # type: ignore[method-assign]
+
+    item = service._governance_vulnerability_health(datetime.now(timezone.utc))
+
+    assert item.status == "attention"
+    assert item.detail.startswith("Lanes de remediação não verificáveis")
+    assert item.metadata["remediation_lanes"]["count"] is None
 
 
 def test_governance_card_describes_the_daily_window_without_claiming_fixed_schedule() -> None:

@@ -21,6 +21,7 @@ PUSH_CATEGORIES = (
     "kill_criterion",
     "job_failure",
     "governance_critical",
+    "remediation_lane_opened",
     "mesa_reading",
     "disk_threshold",
     "security_login",
