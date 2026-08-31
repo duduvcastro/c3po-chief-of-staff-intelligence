@@ -72,6 +72,9 @@ FAILED_ENTRY_MINUTES = 3
 FAILED_ENTRY_LOSS_PERCENT = 0.30
 US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
 POSITION_STREAM_PRIORITY = 200
+# Expands the rotating review pool while cash is above its ceiling. Concurrent
+# subscriptions remain bounded independently by r2d2_ws_max_symbols.
+CASH_DEPLOYMENT_TECHNICAL_REVIEW_FLOOR_PER_MARKET = 450
 # US session policy is centralized here so candidate screening, position
 # protection and close-time decisions cannot silently drift apart again.
 US_REGULAR_OPEN_ET = time(9, 30)
@@ -94,6 +97,15 @@ ENTRY_POLICY_BOUNDS = {
     "min_technical_score": (55.0, 68.0),
     "min_composite_score": (60.0, 72.0),
 }
+
+
+def _technical_review_limit_per_market(settings: Settings, *, deployment_mode: bool) -> int:
+    if deployment_mode:
+        return max(
+            settings.r2d2_deployment_technical_review_per_market,
+            CASH_DEPLOYMENT_TECHNICAL_REVIEW_FLOOR_PER_MARKET,
+        )
+    return settings.r2d2_standard_technical_review_per_market
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -505,7 +517,10 @@ class R2D2Repository:
                 "security_types": ["stocks", "ETFs"],
                 "deep_shortlist_per_market": "uncapped -- every symbol clearing the price/liquidity bar",
                 "technical_reviews_per_market": {
-                    "cash_deployment": settings.r2d2_deployment_technical_review_per_market,
+                    "cash_deployment": _technical_review_limit_per_market(
+                        settings,
+                        deployment_mode=True,
+                    ),
                     "standard": settings.r2d2_standard_technical_review_per_market,
                 },
                 "entry_routes": [
@@ -2258,10 +2273,9 @@ class R2D2PaperService:
             deployment_mode = cash_percent > self.settings.r2d2_max_cash_percent
             self._enrich_technicals(
                 candidates,
-                review_limit=(
-                    self.settings.r2d2_deployment_technical_review_per_market
-                    if deployment_mode
-                    else self.settings.r2d2_standard_technical_review_per_market
+                review_limit=_technical_review_limit_per_market(
+                    self.settings,
+                    deployment_mode=deployment_mode,
                 ),
                 max_ws_symbols=(
                     max(0, stream.max_symbols - len({
