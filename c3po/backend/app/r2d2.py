@@ -74,7 +74,7 @@ US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
 POSITION_STREAM_PRIORITY = 200
 # Expands the rotating review pool while cash is above its ceiling. Concurrent
 # subscriptions remain bounded independently by r2d2_ws_max_symbols.
-CASH_DEPLOYMENT_TECHNICAL_REVIEW_FLOOR_PER_MARKET = 450
+CASH_DEPLOYMENT_TECHNICAL_REVIEW_FLOOR_PER_MARKET = 550
 # US session policy is centralized here so candidate screening, position
 # protection and close-time decisions cannot silently drift apart again.
 US_REGULAR_OPEN_ET = time(9, 30)

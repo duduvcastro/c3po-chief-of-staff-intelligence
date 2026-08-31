@@ -222,7 +222,8 @@ class Settings(BaseSettings):
     # (~180 extrapolated from today) while still tripping on genuine
     # runaway/erratic behavior.
     r2d2_max_daily_orders: int = 500
-    r2d2_ws_max_symbols: int = 50
+    # EODHD account contract: 50 base symbols plus the active 500-symbol add-on.
+    r2d2_ws_max_symbols: int = 550
     r2d2_ws_rotation_grace_cycles: int = 3
     r2d2_ws_rotation_core_percent: float = 50.0
     r2d2_microstructure_raw_capture_enabled: bool = False

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -177,7 +178,7 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
         "uncapped -- every symbol clearing the price/liquidity bar"
     )
     assert experiment["mandate"]["opportunity_funnel"]["technical_reviews_per_market"] == {
-        "cash_deployment": 450,
+        "cash_deployment": 550,
         "standard": 24,
     }
     assert experiment["mandate"]["turnover_policy"]["minimum_hold_minutes"] == 5
@@ -496,12 +497,17 @@ def test_cash_deployment_expands_review_pool_without_changing_standard_capacity(
     assert r2d2_module._technical_review_limit_per_market(
         settings,
         deployment_mode=True,
-    ) == 450
+    ) == 550
     assert r2d2_module._technical_review_limit_per_market(
         settings,
         deployment_mode=False,
     ) == 350
-    assert settings.r2d2_ws_max_symbols == 50
+    assert settings.r2d2_ws_max_symbols == 550
+
+    worker_source = (
+        Path(__file__).resolve().parents[1] / "app" / "r2d2_worker.py"
+    ).read_text(encoding="utf-8")
+    assert "max_symbols=settings.r2d2_ws_max_symbols" in worker_source
 
 
 def test_r2d2_keeps_websocket_window_for_grace_then_rotates_deterministically() -> None:
