@@ -1246,10 +1246,10 @@ const FRONTEND_BUILD_SHA = process.env.NEXT_PUBLIC_C3PO_BUILD_SHA ?? "developmen
 const SYSTEM_HEALTH_REFRESH_INTERVAL_MS = 60_000;
 
 function shouldAcceptSystemHealthSnapshot(current: SystemHealthData | null, candidate: SystemHealthData) {
-  if (!current) return true;
-  const currentTimestamp = Date.parse(current.generated_at);
   const candidateTimestamp = Date.parse(candidate.generated_at);
   if (!Number.isFinite(candidateTimestamp)) return false;
+  if (!current) return true;
+  const currentTimestamp = Date.parse(current.generated_at);
   if (!Number.isFinite(currentTimestamp)) return true;
   return candidateTimestamp >= currentTimestamp;
 }
@@ -2708,6 +2708,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [marketProviders, setMarketProviders] = useState<MarketDataProvider[]>([]);
   const [systemHealth, setSystemHealth] = useState<SystemHealthData | null>(null);
+  const systemHealthSnapshotRef = useRef<SystemHealthData | null>(null);
   const [systemHealthCheckedAt, setSystemHealthCheckedAt] = useState<string | null>(null);
   const [systemHealthRefreshError, setSystemHealthRefreshError] = useState("");
   const visibleNavItems = useMemo(() => {
@@ -2942,9 +2943,13 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
   }, [onSessionExpired, session.permissions]);
 
   const acceptSystemHealth = useCallback((candidate: SystemHealthData) => {
+    const accepted = shouldAcceptSystemHealthSnapshot(systemHealthSnapshotRef.current, candidate);
+    if (!accepted) return false;
+    systemHealthSnapshotRef.current = candidate;
     setSystemHealth((current) => shouldAcceptSystemHealthSnapshot(current, candidate) ? candidate : current);
     setSystemHealthCheckedAt(new Date().toISOString());
     setSystemHealthRefreshError("");
+    return true;
   }, []);
 
   const refreshSystemHealth = useCallback(async () => {
@@ -4388,7 +4393,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   const [r2d2, setR2d2] = useState<R2D2DashboardData | null>(null);
   const liveTelemetry = useR2D2LivePositions();
   const [indices, setIndices] = useState<LiveMarketItem[]>([]);
-  const [health, setHealth] = useState<SystemHealthData | null>(systemHealth);
+  const [health, setHealth] = useState<SystemHealthData | null>(null);
   const [error, setError] = useState("");
   const mountedRef = useRef(true);
   const r2d2RequestInFlight = useRef(false);
@@ -4434,11 +4439,20 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   const loadHealth = useCallback(async () => {
     try {
       const response = await fetch(`${API_URL}/api/v1/system-health`, { cache: "no-store", credentials: "include" });
-      if (response.ok && mountedRef.current) setHealth(await response.json());
+      if (response.ok && mountedRef.current) {
+        const candidate = await response.json() as SystemHealthData;
+        setHealth((current) => shouldAcceptSystemHealthSnapshot(current, candidate) ? candidate : current);
+      }
     } catch {
       // The last valid readiness bar remains visible during transient failures.
     }
   }, []);
+
+  useEffect(() => {
+    if (!systemHealth) return;
+    const candidate = systemHealth;
+    setHealth((current) => shouldAcceptSystemHealthSnapshot(current, candidate) ? candidate : current);
+  }, [systemHealth]);
 
   useEffect(() => {
     mountedRef.current = true;
