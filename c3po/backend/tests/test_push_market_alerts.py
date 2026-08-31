@@ -123,6 +123,25 @@ def test_hourly_fires_once_per_boundary_with_panel_numbers_verbatim():
     assert hourly[0]["event_key"] == "hourly-win-rate:2026-08-20:14"
 
 
+def test_each_hour_reports_the_full_day_accumulated_rate_not_the_hourly_increment():
+    service, notifications = _service(None)
+    service._last_hourly_key = service._hourly_key(SESSION.replace(hour=16, minute=59))
+    summaries = {
+        17: _summary([], 1, 2, 50.0),
+        18: _summary([], 3, 5, 60.0),
+    }
+    service._panel_summary = lambda now: summaries[now.hour]  # type: ignore[method-assign]
+
+    service.run_once(now=SESSION.replace(hour=17, minute=0, second=5))
+    service.run_once(now=SESSION.replace(hour=18, minute=0, second=5))
+
+    hourly = [item for item in notifications.sent if item["category"] == "hourly_win_rate"]
+    assert len(hourly) == 2
+    assert "Acumulado do pregão: 1W/2 episódios decididos = 50.0%" in hourly[0]["body"]
+    assert "Acumulado do pregão: 3W/5 episódios decididos = 60.0%" in hourly[1]["body"]
+    assert "2W/3" not in hourly[1]["body"]  # incremento isolado da segunda hora
+
+
 def test_process_born_mid_hour_stays_mute_until_the_next_boundary():
     service, notifications = _service(_summary([], 1, 3, 33.33))
     birth = SESSION.replace(hour=17, minute=1)  # nasce às 14:01 BRT

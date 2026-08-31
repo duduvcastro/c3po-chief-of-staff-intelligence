@@ -2205,7 +2205,7 @@ const pushCategoryOptions = [
   { key: "disk_threshold", label: "Disco acima de 80%", detail: "Capacidade do host requer atenção" },
   { key: "security_login", label: "Novo login", detail: "Cada login bem-sucedido no C3PO" },
   { key: "sell_win", label: "Episódio vencedor", detail: "Venda que encerra episódio com lucro líquido" },
-  { key: "hourly_win_rate", label: "% de acerto por hora", detail: "Taxa da sessão a cada hora, só com pregão aberto" }
+  { key: "hourly_win_rate", label: "% de acerto acumulado do dia", detail: "Enviado a cada hora com o acumulado do pregão até o momento" }
 ] as const;
 
 type PushCategoryKey = typeof pushCategoryOptions[number]["key"];
