@@ -53,6 +53,28 @@ def test_push_subscribe_schema_matches_all_runtime_categories() -> None:
     assert payload.categories == list(PUSH_CATEGORIES)
 
 
+def test_remediation_lane_category_is_default_on_opt_out_and_allowed_by_postgres() -> None:
+    root = Path(__file__).resolve().parents[2]
+    migration = (root / "db" / "041_push_remediation_lane_category.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "remediation_lane_opened" in PUSH_CATEGORIES
+    assert "'remediation_lane_opened'" in migration
+    assert "ADD CONSTRAINT push_subscriptions_categories_check" in migration
+    assert "UPDATE push_subscriptions" in migration
+    assert "SET revoked_at = NOW()" in migration
+    assert "INSERT INTO push_subscriptions" in migration
+    assert "WHERE revoked_at IS NULL" in migration
+    assert PushSubscribeRequest(
+        endpoint="https://push.example/defaults",
+        keys={
+            "p256dh": "p256dh-value-long-enough",
+            "auth": "auth-value-long-enough",
+        },
+    ).categories == ["remediation_lane_opened"]
+
+
 def test_push_delivery_is_filtered_idempotent_and_uses_short_timeout() -> None:
     calls: list[dict] = []
 

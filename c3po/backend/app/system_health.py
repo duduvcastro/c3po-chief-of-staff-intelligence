@@ -1291,12 +1291,28 @@ class SystemHealthService:
         dependabot = report.get("dependabot") or {}
         operating_system = report.get("operating_system") or {}
         production_images = report.get("production_images") or {}
+        remediation_lanes = report.get("remediation_lanes") or {}
         governance = report.get("governance") or {}
         drift = governance.get("drift") or []
         open_total = int(dependabot.get("open_total") or 0)
         status = "offline" if stale else str(report.get("status") or "offline")
         layers_complete = bool(operating_system) and bool(production_images)
+        remediation_lane_count = remediation_lanes.get("count")
+        remediation_lane_items = remediation_lanes.get("items")
+        remediation_lanes_complete = (
+            remediation_lanes.get("available") is True
+            and isinstance(remediation_lane_count, int)
+            and not isinstance(remediation_lane_count, bool)
+            and remediation_lane_count >= 0
+            and isinstance(remediation_lane_items, list)
+            and len(remediation_lane_items) == remediation_lane_count
+        )
         if not layers_complete and status == "healthy":
+            status = "attention"
+        if (
+            not remediation_lanes_complete
+            or int(remediation_lane_count or 0) > 0
+        ) and status == "healthy":
             status = "attention"
         os_pending = operating_system.get("security_updates_pending")
         image_total = production_images.get("finding_total")
@@ -1306,6 +1322,13 @@ class SystemHealthService:
         )
         if stale:
             detail = "Atestado diário vencido há mais de 36h"
+        elif not remediation_lanes_complete:
+            detail = f"Lanes de remediação não verificáveis · {layer_detail}"
+        elif int(remediation_lanes["count"]) > 0:
+            detail = (
+                f"{int(remediation_lanes['count'])} lane(s) de remediação aberta(s) · "
+                f"{layer_detail}"
+            )
         elif drift:
             fields = ", ".join(str(item.get("field")) for item in drift)
             detail = f"Drift de governança: {fields} · {layer_detail}"
@@ -1326,6 +1349,7 @@ class SystemHealthService:
                 "dependabot": dependabot,
                 "operating_system": operating_system,
                 "production_images": production_images,
+                "remediation_lanes": remediation_lanes,
                 "known_vulnerabilities": report.get("known_vulnerabilities") or {},
                 "governance_checks": governance.get("checks") or [],
                 "drift_fields": [str(item.get("field")) for item in drift],
