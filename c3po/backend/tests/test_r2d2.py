@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 import json
 from pathlib import Path
+from time import perf_counter
 from types import SimpleNamespace
 from typing import Any
 
@@ -96,6 +97,8 @@ def test_r2d2_live_policy_has_no_position_count_gate() -> None:
     assert "r2d2_max_positions" not in policy_sources
     assert "C3PO_R2D2_MAX_POSITIONS" not in policy_sources
     assert "remaining_slots_after_buy" not in policy_sources
+    assert "2026-08-31 18:14:27 UTC - live review window 550" in milestone
+    assert "2026-08-31 19:11:00 UTC - persistent entry admission" in milestone
     assert "2026-08-31-derived-portfolio-capacity-v1" in milestone
     assert "Confirmation remains two consecutive reviews" in milestone
     assert "New positions remain capped at four per scan" in milestone
@@ -866,22 +869,42 @@ def test_r2d2_derived_capacity_carries_forty_five_positions_through_risk_monitor
     class CaptureStream:
         max_symbols = 550
 
+        def __init__(self, quotes: dict[str, Any]) -> None:
+            self.quotes = quotes
+
         def set_group(self, name: str, symbols: list[str], *, priority: int) -> None:
             groups.append((name, list(symbols), priority))
 
-    service.realtime = SimpleNamespace(stream=CaptureStream())  # type: ignore[assignment]
+        def quote(self, symbol: str) -> Any:
+            return self.quotes.get(symbol)
+
+    monitor_at = datetime(2026, 8, 31, 15, 0, tzinfo=timezone.utc)
+    stream_quotes = {
+        position.symbol: SimpleNamespace(
+            price=position.last_price_local,
+            as_of=monitor_at,
+        )
+        for position in dashboard.positions
+    }
+    service.realtime = SimpleNamespace(  # type: ignore[assignment]
+        stream=CaptureStream(stream_quotes),
+    )
     service._position_quotes = (  # type: ignore[method-assign]
         lambda positions, now: seen_positions.append(len(positions)) or {}
     )
     service._mark_and_exit = lambda *args, **kwargs: 0  # type: ignore[method-assign]
 
-    exits = service.run_risk_monitor_cycle(
-        datetime(2026, 8, 31, 15, 0, tzinfo=timezone.utc),
-    )
+    exits = service.run_risk_monitor_cycle(monitor_at)
+    fast_started = perf_counter()
+    fast_exits = service.run_fast_risk_watcher_cycle(monitor_at)
+    fast_elapsed = perf_counter() - fast_started
 
     assert exits == 0
+    assert fast_exits == 0
+    assert fast_elapsed < 5.0
     assert seen_positions == [45]
-    assert groups == [("r2d2-positions", [f"T{index:02d}" for index in range(45)], 200)]
+    expected_group = ("r2d2-positions", [f"T{index:02d}" for index in range(45)], 200)
+    assert groups == [expected_group, expected_group]
     assert CaptureStream.max_symbols - dashboard.open_positions == 505
 
 
@@ -928,6 +951,53 @@ def test_r2d2_derived_capacity_stops_at_gross_limit_instead_of_position_count() 
     assert all(trade is not None for trade in trades[:47])
     assert trades[47] is None
     assert dashboard.open_positions == 47
+    assert dashboard.gross_exposure_usd / dashboard.nav_usd * 100 <= 95.0
+    assert dashboard.cash_usd / dashboard.nav_usd * 100 >= 5.0
+
+
+def test_r2d2_derived_capacity_rotates_without_breaching_signed_limits() -> None:
+    service = _service()
+    experiment = service.ensure_initialized()
+    cycle_id = service.repo.start_cycle(experiment["id"], ["NASDAQ", "NYSE"])
+    for index in range(47):
+        candidate = _capacity_candidate(index)
+        assert service._buy(
+            experiment,
+            cycle_id,
+            candidate,
+            service.repo.positions(experiment["id"]),
+            candidate["quote_as_of"],
+        ) is not None
+
+    rotation_at = datetime.now(timezone.utc)
+    for position in service.repo.memory["positions"].values():
+        position["opened_at"] = rotation_at - timedelta(minutes=20)
+        position["strategy_snapshot"]["live_composite_score"] = 60.0
+        position["strategy_snapshot"]["technical_score"] = 40.0
+    replacement = _qualifying_entry_candidate(
+        "ROTATE", rotation_at, composite_score=90.0,
+    )
+    replacement["market"] = "NYSE"
+    replacement["technical_indicators"]["atr_percent"] = 1.8
+    positions = service.repo.positions(experiment["id"])
+    quotes = {
+        (position["market"], position["symbol"]): SimpleNamespace(
+            price=position["last_price_local"],
+            as_of=rotation_at,
+            status="live",
+        )
+        for position in positions
+    }
+
+    assert service._has_entry_capacity(replacement) is False
+    trades = service._rotate_if_better(
+        experiment, cycle_id, replacement, positions, quotes, rotation_at,
+    )
+
+    dashboard = service.dashboard()
+    assert trades == 2
+    assert dashboard.open_positions == 47
+    assert any(position.symbol == "ROTATE" for position in dashboard.positions)
     assert dashboard.gross_exposure_usd / dashboard.nav_usd * 100 <= 95.0
     assert dashboard.cash_usd / dashboard.nav_usd * 100 >= 5.0
 
@@ -2087,8 +2157,32 @@ def test_r2d2_limits_new_positions_from_one_market_snapshot() -> None:
         "max_new_positions_per_scan": 2,
         "confirmation_pending_count": 0,
         "burst_deferred_count": 3,
+        "financial_capacity_deferred_count": 0,
         "new_positions_count": 2,
     }
+
+
+def test_r2d2_counts_financial_capacity_deferral_separately_from_burst() -> None:
+    service = _service()
+    service.settings.r2d2_entry_confirmation_reviews = 1
+    scan_at = datetime(2026, 8, 31, 14, 0, tzinfo=timezone.utc)
+    candidate = _qualifying_entry_candidate("CAPACITY", datetime.now(timezone.utc))
+    service._position_quotes = lambda positions, now: {}  # type: ignore[method-assign]
+    service._us_candidates = (  # type: ignore[method-assign]
+        lambda market, now: [candidate] if market == "NASDAQ" else []
+    )
+    service._enrich_technicals = lambda candidates, **kwargs: None  # type: ignore[method-assign]
+    service._has_entry_capacity = lambda candidate: False  # type: ignore[method-assign]
+    service._rotate_if_better = lambda *args, **kwargs: 0  # type: ignore[method-assign]
+
+    dashboard = service.run_cycle(scan_at)
+
+    assert dashboard.open_positions == 0
+    assert dashboard.last_cycle is not None
+    admission = dashboard.last_cycle.metadata["entry_admission"]
+    assert admission["financial_capacity_deferred_count"] == 1
+    assert admission["burst_deferred_count"] == 0
+    assert admission["new_positions_count"] == 0
 
 
 def test_r2d2_daily_order_cap_blocks_new_entries() -> None:

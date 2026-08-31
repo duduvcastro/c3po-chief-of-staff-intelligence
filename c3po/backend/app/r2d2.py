@@ -2376,6 +2376,7 @@ class R2D2PaperService:
             new_entries_this_scan = 0
             confirmation_pending_count = 0
             burst_deferred_count = 0
+            financial_capacity_deferred_count = 0
 
             def assess_entry_admission(
                 candidate: dict[str, Any],
@@ -2510,6 +2511,8 @@ class R2D2PaperService:
                         orders_today += rotation_trades
                         signals += 1
                         positions = self.repo.positions(experiment["id"])
+                    if rotation_trades != 2:
+                        financial_capacity_deferred_count += 1
                     if rotation_trades == 2:
                         new_entries_this_scan += 1
                         self._reset_entry_confirmation(candidate)
@@ -2646,6 +2649,7 @@ class R2D2PaperService:
                                            "max_new_positions_per_scan": self.settings.r2d2_max_new_positions_per_scan,
                                            "confirmation_pending_count": confirmation_pending_count,
                                            "burst_deferred_count": burst_deferred_count,
+                                           "financial_capacity_deferred_count": financial_capacity_deferred_count,
                                            "new_positions_count": new_entries_this_scan,
                                        },
                                        "entry_score_adapter": adapter_metadata,
