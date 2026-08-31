@@ -96,7 +96,15 @@ def test_entry_score_adapter_uses_only_causal_nightly_sources_and_never_ab_as_v3
         cycle_id=cycle_id,
         policy_epoch="policy-a-resume-2026-08-26",
         candidates=[
-            _candidate("AAA", price=100.0, composite=80),
+            {
+                **_candidate("AAA", price=100.0, composite=80),
+                "entry_capacity_policy": {
+                    "milestone": "2026-08-31-derived-portfolio-capacity-v1",
+                    "position_count_limit": None,
+                    "confirmation_reviews": 2,
+                    "max_new_positions_per_scan": 4,
+                },
+            },
             _candidate("BBB", price=100.0, composite=70),
         ],
         decision_at=decision_at,
@@ -125,6 +133,12 @@ def test_entry_score_adapter_uses_only_causal_nightly_sources_and_never_ab_as_v3
     assert aaa["valuation_comparisons"]["v3_shadow"]["upside_percent"] is None
     assert aaa["raw_cash_volume_usd"] == 42_000_000
     assert aaa["spread_bps"] is None
+    assert aaa["candidate_context"]["entry_capacity_policy"] == {
+        "milestone": "2026-08-31-derived-portfolio-capacity-v1",
+        "position_count_limit": None,
+        "confirmation_reviews": 2,
+        "max_new_positions_per_scan": 4,
+    }
 
 
 def test_entry_score_adapter_excludes_source_not_yet_available_at_decision() -> None:

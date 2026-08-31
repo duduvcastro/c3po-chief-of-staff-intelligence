@@ -338,6 +338,7 @@ class R2D2EntryScoreAdapter:
             "pretrade_rank": _number(candidate.get("pretrade_rank")),
             "raw_cash_volume_usd": _number(candidate.get("raw_cash_volume_usd")),
             "spread_bps": _number(candidate.get("spread_bps")),
+            "entry_capacity_policy": _json_ready(candidate.get("entry_capacity_policy")),
         }
         return {
             "id": str(uuid4()),

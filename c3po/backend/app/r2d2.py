@@ -44,7 +44,7 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
-METHODOLOGY_VERSION = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
+METHODOLOGY_VERSION = "R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
 US_LISTING_GAP_DAYS = 90
 US_LISTING_MIN_SESSIONS = 20
@@ -59,6 +59,7 @@ PROFIT_PULLBACK_PERCENT = 0.35
 WEEKLY_PROFIT_HARVEST_FRACTION = 0.70
 MIN_POSITION_PERCENT = 2.0
 MAX_DYNAMIC_POSITION_PERCENT = 6.0
+ENTRY_CAPACITY_POLICY_MILESTONE = "2026-08-31-derived-portfolio-capacity-v1"
 SIMULATED_ROUND_TRIP_COST_PERCENT = 0.28
 MIN_INTRADAY_EDGE_PERCENT = 0.55
 # Lowered from $20M on 2026-08-20 (Dudu's call: split the difference between
@@ -94,6 +95,23 @@ ENTRY_POLICY_BOUNDS = {
     "min_technical_score": (55.0, 68.0),
     "min_composite_score": (60.0, 72.0),
 }
+
+
+def _entry_capacity_policy(settings: Settings) -> dict[str, Any]:
+    return {
+        "milestone": ENTRY_CAPACITY_POLICY_MILESTONE,
+        "position_count_limit": None,
+        "confirmation_reviews": settings.r2d2_entry_confirmation_reviews,
+        "max_new_positions_per_scan": settings.r2d2_max_new_positions_per_scan,
+        "max_position_percent": settings.r2d2_max_position_percent,
+        "max_market_percent": settings.r2d2_max_market_percent,
+        "max_gross_exposure_percent": settings.r2d2_max_gross_exposure_percent,
+        "minimum_cash_buffer_percent": settings.r2d2_min_cash_buffer_percent,
+        "capacity_rule": (
+            "position count emerges from per-name, per-market, gross-exposure "
+            "and minimum-cash constraints"
+        ),
+    }
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -464,13 +482,13 @@ class R2D2Repository:
             "retired_markets": {
                 "B3": "Disabled for paper intraday execution because the available quote feed is delayed by five minutes.",
             },
-            "max_positions": settings.r2d2_max_positions,
             "max_position_percent": settings.r2d2_max_position_percent,
             "max_market_percent": settings.r2d2_max_market_percent,
             "max_cash_percent": settings.r2d2_max_cash_percent,
             "minimum_invested_percent": 100.0 - settings.r2d2_max_cash_percent,
             "minimum_cash_buffer_percent": settings.r2d2_min_cash_buffer_percent,
             "max_gross_exposure_percent": settings.r2d2_max_gross_exposure_percent,
+            "position_capacity": _entry_capacity_policy(settings),
             "daily_loss_limit_percent": settings.r2d2_daily_loss_limit_percent,
             "soft_loss_exit_percent": settings.r2d2_soft_loss_exit_percent,
             "max_position_loss_percent": settings.r2d2_max_position_loss_percent,
@@ -529,7 +547,7 @@ class R2D2Repository:
                 ),
                 "portfolio_pacing": (
                     "treat 25% cash as a normal ceiling, seek at least 75% invested with eligible signals, "
-                    "and preserve a 5% execution buffer"
+                    "and let position count emerge from the signed exposure and cash constraints"
                 ),
                 "cash_deployment": "expand technical review and size eligible entries while cash exceeds the ceiling",
             },
@@ -2331,9 +2349,11 @@ class R2D2PaperService:
                     if stream else None
                 ),
             )
+            entry_capacity_policy = _entry_capacity_policy(self.settings)
             for candidate in candidates:
                 candidate["learning_version"] = int(learning["version"])
                 candidate["entry_policy"] = dict(self._active_policy)
+                candidate["entry_capacity_policy"] = dict(entry_capacity_policy)
                 candidate["policy_epoch"] = experiment.get("policy_epoch")
                 candidate["methodology_version"] = experiment.get("methodology_version")
             candidates.sort(key=lambda item: item["composite_score"], reverse=True)
@@ -2418,96 +2438,6 @@ class R2D2PaperService:
                         reason_detail=["The candidate already had an open paper position."],
                     )
                     continue
-                if len(positions) >= self.settings.r2d2_max_positions:
-                    action, reasons, entry_confirmed = assess_entry_admission(candidate)
-                    if not entry_confirmed:
-                        self.repo.save_decision(
-                            experiment["id"], cycle_id, candidate, action, reasons,
-                        )
-                        observe_shadow_candidate(
-                            candidate,
-                            cascade_step=(
-                                "entry_confirmation"
-                                if candidate.get("entry_confirmation_reviews") is not None
-                                else "entry_quality"
-                            ),
-                            reason_id=(
-                                "entry_confirmation_pending"
-                                if candidate.get("entry_confirmation_reviews") is not None
-                                else entry_rejection_reason_id(reasons)
-                            ),
-                            reason_detail=reasons,
-                        )
-                        continue
-                    if new_entries_this_scan >= self.settings.r2d2_max_new_positions_per_scan:
-                        burst_deferred_count += 1
-                        observe_shadow_candidate(
-                            candidate,
-                            cascade_step="entry_cycle_capacity",
-                            reason_id="entry_cycle_capacity",
-                            rejection_class="capacity",
-                            reason_detail=[
-                                "The per-scan new-position limit was full; confirmation remains eligible for the next scan."
-                            ],
-                        )
-                        continue
-                    rotation_trades = self._rotate_if_better(
-                        experiment, cycle_id, candidate, positions, quote_map, now,
-                    )
-                    if rotation_trades:
-                        trade_count += rotation_trades
-                        orders_today += rotation_trades
-                        signals += 1
-                        positions = self.repo.positions(experiment["id"])
-                    if rotation_trades == 2:
-                        new_entries_this_scan += 1
-                        self._reset_entry_confirmation(candidate)
-                        rotation_trade = self._last_rotation_buy_trade
-                        if rotation_trade is not None:
-                            observe_shadow_candidate(
-                                _accepted_shadow_candidate(candidate, rotation_trade),
-                                cascade_step="entry_execution",
-                                reason_id="entry_accepted_after_rotation",
-                                decision="accepted",
-                                rejection_class="none",
-                                reason_detail=["Paper BUY executed after opportunity-cost rotation."],
-                                trade_id=str(rotation_trade["id"]),
-                            )
-                        else:
-                            observe_shadow_candidate(
-                                candidate,
-                                cascade_step="entry_execution",
-                                reason_id="accepted_trade_link_unavailable",
-                                rejection_class="capacity",
-                                reason_detail=["Rotation reported a BUY but its immutable trade link was unavailable."],
-                            )
-                    elif rotation_trades == 1:
-                        observe_shadow_candidate(
-                            candidate,
-                            cascade_step="portfolio_capacity",
-                            reason_id="rotation_replacement_blocked",
-                            rejection_class="capacity",
-                            reason_detail=["Rotation exit completed but replacement execution was blocked."],
-                        )
-                    else:
-                        rotation_action, rotation_reasons = (
-                            self._last_rotation_entry_decision
-                            or ("BUY", ["No eligible incumbent could be rotated."])
-                        )
-                        quality_rejected = rotation_action != "BUY"
-                        observe_shadow_candidate(
-                            candidate,
-                            cascade_step=(
-                                "entry_quality" if quality_rejected else "portfolio_capacity"
-                            ),
-                            reason_id=(
-                                entry_rejection_reason_id(rotation_reasons)
-                                if quality_rejected else "portfolio_full_no_rotation"
-                            ),
-                            rejection_class="quality" if quality_rejected else "capacity",
-                            reason_detail=rotation_reasons,
-                        )
-                    continue
                 if self.repo.loss_exit_on_session(
                     experiment["id"], candidate["market"], candidate["symbol"], local_day,
                 ):
@@ -2570,6 +2500,64 @@ class R2D2PaperService:
                             "The per-scan new-position limit was full; confirmation remains eligible for the next scan."
                         ],
                     )
+                    continue
+                if not self._has_entry_capacity(candidate):
+                    rotation_trades = self._rotate_if_better(
+                        experiment, cycle_id, candidate, positions, quote_map, now,
+                    )
+                    if rotation_trades:
+                        trade_count += rotation_trades
+                        orders_today += rotation_trades
+                        signals += 1
+                        positions = self.repo.positions(experiment["id"])
+                    if rotation_trades == 2:
+                        new_entries_this_scan += 1
+                        self._reset_entry_confirmation(candidate)
+                        rotation_trade = self._last_rotation_buy_trade
+                        if rotation_trade is not None:
+                            observe_shadow_candidate(
+                                _accepted_shadow_candidate(candidate, rotation_trade),
+                                cascade_step="entry_execution",
+                                reason_id="entry_accepted_after_rotation",
+                                decision="accepted",
+                                rejection_class="none",
+                                reason_detail=["Paper BUY executed after opportunity-cost rotation."],
+                                trade_id=str(rotation_trade["id"]),
+                            )
+                        else:
+                            observe_shadow_candidate(
+                                candidate,
+                                cascade_step="entry_execution",
+                                reason_id="accepted_trade_link_unavailable",
+                                rejection_class="capacity",
+                                reason_detail=["Rotation reported a BUY but its immutable trade link was unavailable."],
+                            )
+                    elif rotation_trades == 1:
+                        observe_shadow_candidate(
+                            candidate,
+                            cascade_step="portfolio_capacity",
+                            reason_id="rotation_replacement_blocked",
+                            rejection_class="capacity",
+                            reason_detail=["Rotation exit completed but replacement execution was blocked."],
+                        )
+                    else:
+                        rotation_action, rotation_reasons = (
+                            self._last_rotation_entry_decision
+                            or ("BUY", ["No eligible incumbent could be rotated."])
+                        )
+                        quality_rejected = rotation_action != "BUY"
+                        observe_shadow_candidate(
+                            candidate,
+                            cascade_step=(
+                                "entry_quality" if quality_rejected else "portfolio_capacity"
+                            ),
+                            reason_id=(
+                                entry_rejection_reason_id(rotation_reasons)
+                                if quality_rejected else "derived_capacity_full_no_rotation"
+                            ),
+                            rejection_class="quality" if quality_rejected else "capacity",
+                            reason_detail=rotation_reasons,
+                        )
                     continue
                 signals += 1
                 trade = self._buy(
@@ -2653,6 +2641,7 @@ class R2D2PaperService:
                                        "eodhd_usage": _estimate_eodhd_credits(self._eodhd_call_counts),
                                        "technical_review": dict(self._technical_review_stats),
                                        "entry_admission": {
+                                           "capacity_policy": entry_capacity_policy,
                                            "confirmation_reviews_required": self.settings.r2d2_entry_confirmation_reviews,
                                            "max_new_positions_per_scan": self.settings.r2d2_max_new_positions_per_scan,
                                            "confirmation_pending_count": confirmation_pending_count,
@@ -4309,6 +4298,35 @@ class R2D2PaperService:
         self._last_rotation_buy_trade = trade
         return 2
 
+    def _entry_capacity_usd(self, item: dict[str, Any], dashboard: Any | None = None) -> float:
+        dashboard = dashboard or self.dashboard()
+        nav = dashboard.nav_usd
+        if nav <= 0:
+            return 0.0
+        market_exposure = sum(
+            position.market_value_usd
+            for position in dashboard.positions
+            if position.market == item["market"]
+        )
+        max_market = nav * self.settings.r2d2_max_market_percent / 100
+        max_gross_percent = min(
+            self.settings.r2d2_max_gross_exposure_percent,
+            100.0 - self.settings.r2d2_min_cash_buffer_percent,
+        )
+        max_gross = nav * max_gross_percent / 100
+        execution_cost_buffer = nav * 0.0005
+        return max(0.0, min(
+            nav * self.settings.r2d2_max_position_percent / 100,
+            max_market - market_exposure,
+            max_gross - dashboard.gross_exposure_usd - execution_cost_buffer,
+            dashboard.cash_usd,
+        ))
+
+    def _has_entry_capacity(self, item: dict[str, Any], dashboard: Any | None = None) -> bool:
+        dashboard = dashboard or self.dashboard()
+        minimum_position_usd = dashboard.nav_usd * MIN_POSITION_PERCENT / 100
+        return self._entry_capacity_usd(item, dashboard) >= minimum_position_usd * 0.90
+
     def _buy(self, experiment: dict[str, Any], cycle_id: str, item: dict[str, Any],
              positions: list[dict[str, Any]], now: datetime | None = None,
              *, entry_reasons: list[str] | None = None) -> dict[str, Any] | None:
@@ -4354,27 +4372,7 @@ class R2D2PaperService:
             item, cash_overhang_percent=cash_overhang_percent,
         )
         minimum_position_usd = nav * MIN_POSITION_PERCENT / 100
-        market_exposure = sum(position.market_value_usd for position in dashboard.positions if position.market == item["market"])
-        max_market = nav * self.settings.r2d2_max_market_percent / 100
-        max_gross_percent = min(
-            self.settings.r2d2_max_gross_exposure_percent,
-            100.0 - self.settings.r2d2_min_cash_buffer_percent,
-        )
-        max_gross = nav * max_gross_percent / 100
-        execution_cost_buffer = nav * 0.0005
-        remaining_slots_after_buy = max(0, self.settings.r2d2_max_positions - len(positions) - 1)
-        reserved_for_remaining_slots = minimum_position_usd * remaining_slots_after_buy
-        portfolio_pacing_capacity = (
-            max_gross - dashboard.gross_exposure_usd
-            - reserved_for_remaining_slots - execution_cost_buffer
-        )
-        capacity = min(
-            nav * self.settings.r2d2_max_position_percent / 100,
-            max_market - market_exposure,
-            max_gross - dashboard.gross_exposure_usd - execution_cost_buffer,
-            portfolio_pacing_capacity,
-            dashboard.cash_usd,
-        )
+        capacity = self._entry_capacity_usd(item, dashboard)
         # Fees and simulated slippage reduce NAV by a few dollars after each fill.
         # A 10% tolerance on the minimum ticket prevents fees and simulated
         # slippage from blocking the final diversification slot while the 95%

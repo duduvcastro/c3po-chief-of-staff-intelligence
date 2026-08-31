@@ -193,12 +193,10 @@ class Settings(BaseSettings):
         "/app/day-d-data/evidence/r2d2-shadow-candidate-log-v1"
     )
     r2d2_cash_yield_accounting_enabled: bool = False
-    r2d2_max_positions: int = 20
-    # Dudu, 2026-08-20: while still in the test phase, widened from 6.0/1.5 so
-    # a normal day's volatility doesn't halt trading (losing trading hours
-    # entirely) before enough real trades accumulate to learn from. Position
-    # sizing still decides the actual allocation within [2%, 5%] per trade.
-    r2d2_max_position_percent: float = 5.0
+    # This is a hard per-name ceiling, not a target. Risk-normalized sizing
+    # normally allocates 2%-3.08%; the live portfolio has used 6% since
+    # 2026-08-20, so keep one canonical value instead of a compose override.
+    r2d2_max_position_percent: float = 6.0
     r2d2_max_market_percent: float = 48.0
     r2d2_max_cash_percent: float = 25.0
     r2d2_min_cash_buffer_percent: float = 5.0
