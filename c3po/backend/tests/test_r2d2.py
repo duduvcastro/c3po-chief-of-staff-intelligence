@@ -178,9 +178,13 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
         "uncapped -- every symbol clearing the price/liquidity bar"
     )
     assert experiment["mandate"]["opportunity_funnel"]["technical_reviews_per_market"] == {
-        "cash_deployment": 550,
+        "cash_deployment": 32,
         "standard": 24,
     }
+    assert experiment["mandate"]["opportunity_funnel"]["realtime_symbol_capacity_total"] == 550
+    assert experiment["mandate"]["opportunity_funnel"]["realtime_symbol_capacity_scope"] == (
+        "shared across all US markets; open positions reserve capacity first"
+    )
     assert experiment["mandate"]["turnover_policy"]["minimum_hold_minutes"] == 5
     assert experiment["mandate"]["performance_target_percent"] == 0.5
     assert "weekly_conviction" in experiment["mandate"]["horizon_policy"]
@@ -489,19 +493,13 @@ def test_r2d2_trims_review_batch_to_available_websocket_capacity() -> None:
     assert reviewed == {"Q0": True, "Y0": True, "Q1": True, "Y1": True, "Q2": False, "Y2": False}
 
 
-def test_cash_deployment_expands_review_pool_without_changing_standard_capacity() -> None:
+def test_contracted_websocket_capacity_is_global_and_wired_to_worker() -> None:
     settings = _settings()
     settings.r2d2_deployment_technical_review_per_market = 350
     settings.r2d2_standard_technical_review_per_market = 350
 
-    assert r2d2_module._technical_review_limit_per_market(
-        settings,
-        deployment_mode=True,
-    ) == 550
-    assert r2d2_module._technical_review_limit_per_market(
-        settings,
-        deployment_mode=False,
-    ) == 350
+    assert settings.r2d2_deployment_technical_review_per_market == 350
+    assert settings.r2d2_standard_technical_review_per_market == 350
     assert settings.r2d2_ws_max_symbols == 550
 
     worker_source = (
