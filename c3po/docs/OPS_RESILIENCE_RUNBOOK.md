@@ -170,6 +170,12 @@ converted to an empty list or zero. That unavailable revision is persisted as
 evidence, but the attempt sends `/fail` to the governance dead-man and remains
 eligible for the existing 30-minute retry instead of completing the day.
 
+A matching prefix alone is not provenance. A trusted lane must also target the
+versioned baseline branch, originate in this same repository, and be authored
+by `github-actions[bot]`, matching the controller contract. Forks, wrong-base
+PRs, unapproved actors, and incomplete provenance are excluded from the trusted
+lane set and cannot trigger the card action state or push notification.
+
 Every observed lane emits the opt-in `remediation_lane_opened` Web Push category
 with an application deep link. The durable event key includes repository and PR
 number, so repeated daily attestations cannot emit the same lane twice. Push is
