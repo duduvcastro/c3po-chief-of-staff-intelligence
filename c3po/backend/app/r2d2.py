@@ -508,6 +508,10 @@ class R2D2Repository:
                     "cash_deployment": settings.r2d2_deployment_technical_review_per_market,
                     "standard": settings.r2d2_standard_technical_review_per_market,
                 },
+                "realtime_symbol_capacity_total": settings.r2d2_ws_max_symbols,
+                "realtime_symbol_capacity_scope": (
+                    "shared across all US markets; open positions reserve capacity first"
+                ),
                 "entry_routes": [
                     "strategic valuation", "tactical quality momentum",
                     "cost-aware intraday momentum",

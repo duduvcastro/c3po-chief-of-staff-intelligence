@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -180,6 +181,10 @@ def test_r2d2_experiment_is_paper_only_continuous_and_has_90_day_checkpoint() ->
         "cash_deployment": 32,
         "standard": 24,
     }
+    assert experiment["mandate"]["opportunity_funnel"]["realtime_symbol_capacity_total"] == 550
+    assert experiment["mandate"]["opportunity_funnel"]["realtime_symbol_capacity_scope"] == (
+        "shared across all US markets; open positions reserve capacity first"
+    )
     assert experiment["mandate"]["turnover_policy"]["minimum_hold_minutes"] == 5
     assert experiment["mandate"]["performance_target_percent"] == 0.5
     assert "weekly_conviction" in experiment["mandate"]["horizon_policy"]
@@ -486,6 +491,21 @@ def test_r2d2_trims_review_batch_to_available_websocket_capacity() -> None:
     assert stream.symbols == ["Q0", "Y0", "Q1", "Y1"]
     reviewed = {item["symbol"]: item["technical_reviewed"] for item in candidates}
     assert reviewed == {"Q0": True, "Y0": True, "Q1": True, "Y1": True, "Q2": False, "Y2": False}
+
+
+def test_contracted_websocket_capacity_is_global_and_wired_to_worker() -> None:
+    settings = _settings()
+    settings.r2d2_deployment_technical_review_per_market = 350
+    settings.r2d2_standard_technical_review_per_market = 350
+
+    assert settings.r2d2_deployment_technical_review_per_market == 350
+    assert settings.r2d2_standard_technical_review_per_market == 350
+    assert settings.r2d2_ws_max_symbols == 550
+
+    worker_source = (
+        Path(__file__).resolve().parents[1] / "app" / "r2d2_worker.py"
+    ).read_text(encoding="utf-8")
+    assert "max_symbols=settings.r2d2_ws_max_symbols" in worker_source
 
 
 def test_r2d2_keeps_websocket_window_for_grace_then_rotates_deterministically() -> None:
