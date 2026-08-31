@@ -210,6 +210,11 @@ class Settings(BaseSettings):
     r2d2_delayed_quote_protection_grace_minutes: float = 3.0
     r2d2_delayed_quote_fallback_max_age_minutes: float = 30.0
     r2d2_trade_cooldown_minutes: int = 8
+    # A single bullish snapshot is too fragile to authorize capital. Require
+    # the same symbol to pass on distinct live ticks in consecutive scans, and
+    # keep one market-wide snapshot from filling every vacant portfolio slot.
+    r2d2_entry_confirmation_reviews: int = Field(default=2, ge=1, le=5)
+    r2d2_max_new_positions_per_scan: int = Field(default=4, ge=1, le=20)
     # Root-caused 2026-08-20: this default (not an env override) is what the
     # worker falls back to whenever a deploy doesn't carry forward a manual
     # production tweak -- it silently reverted from a 200 override earlier
