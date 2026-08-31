@@ -2383,7 +2383,7 @@ class R2D2PaperService:
                         ["A loss exit already executed for this symbol in this session; capital must rotate to another opportunity"],
                     )
                     observe_shadow_candidate(
-                        _accepted_shadow_candidate(candidate, trade),
+                        candidate,
                         cascade_step="session_reentry_policy",
                         reason_id="session_loss_reentry_lock",
                         reason_detail=["A loss exit already executed for this symbol in this session."],
