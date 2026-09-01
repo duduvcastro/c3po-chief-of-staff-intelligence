@@ -117,6 +117,20 @@ class SystemHealthService:
             "automations": lambda: self._automation_health(now),
         }
         results, failures, durations_ms = self._run_probes(probes, timeout)
+        if failures and self._cached_response is not None:
+            previous = self._cached_response
+            last_verified_at = previous.last_verified_at or previous.generated_at
+            logger.warning(
+                "System-health refresh incomplete; retaining last integral snapshot: %s",
+                ", ".join(sorted(failures)),
+            )
+            return previous.model_copy(update={
+                "generated_at": now,
+                "last_verified_at": last_verified_at,
+                "status": "attention",
+                "probe_failure_count": len(failures),
+                "probe_failures": sorted(failures),
+            })
 
         api_usage = results.get("api_usage") or []
         api_usage_health = (
@@ -270,10 +284,13 @@ class SystemHealthService:
         status = self._aggregate_status([group.status for group in groups])
         response = SystemHealthResponse(
             generated_at=now,
+            last_verified_at=now,
             status=status,
             quality=round(healthy_count / len(items) * 100) if items else 0,
             healthy_count=healthy_count,
             total_count=len(items),
+            probe_failure_count=len(failures),
+            probe_failures=sorted(failures),
             api_usage=api_usage,
             ai_usage=ai_usage,
             groups=groups,
@@ -467,10 +484,13 @@ class SystemHealthService:
         group = self._group("apis", "Core APIs", [item])
         return SystemHealthResponse(
             generated_at=now,
+            last_verified_at=None,
             status="attention",
             quality=0,
             healthy_count=0,
             total_count=1,
+            probe_failure_count=1,
+            probe_failures=["snapshot"],
             api_usage=[],
             ai_usage=[],
             groups=[group],

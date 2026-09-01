@@ -210,10 +210,13 @@ interface SystemHealthGroup {
 
 interface SystemHealthData {
   generated_at: string;
+  last_verified_at?: string | null;
   status: "healthy" | "attention" | "offline";
   quality: number;
   healthy_count: number;
   total_count: number;
+  probe_failure_count?: number;
+  probe_failures?: string[];
   api_usage: ApiUsageMetric[];
   groups: SystemHealthGroup[];
 }
@@ -3127,7 +3130,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
                 <span className="nav-item-label">{item.label}</span>
                 {item.key === "health" && systemHealth && (
                   <span className={`nav-health-percent nav-health-${systemHealth.status}`}>
-                    {systemHealth.quality}%
+                    {systemHealth.probe_failure_count ? "VERIFY" : `${systemHealth.quality}%`}
                   </span>
                 )}
               </button>
@@ -4488,12 +4491,15 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   const todayPositiveSellShare = todayRealizedSellLegs > 0 ? todayPositiveSellLegs / todayRealizedSellLegs * 100 : 0;
   const todayNegativeSellShare = todayRealizedSellLegs > 0 ? todayNegativeSellLegs / todayRealizedSellLegs * 100 : 0;
   const todayEpisodes = r2d2?.today_episode_stats;
-  const healthHeadline = health?.status === "healthy"
+  const healthVerificationPending = (health?.probe_failure_count ?? 0) > 0;
+  const healthHeadline = healthVerificationPending
+    ? "Verification delayed"
+    : health?.status === "healthy"
     ? "All services operational"
     : health?.status === "offline"
       ? "Service interruption detected"
       : "Conditions require attention";
-  const healthTone = !health ? "warning" : health.quality >= 100 ? "good" : health.quality >= 80 ? "warning" : "critical";
+  const healthTone = !health || healthVerificationPending ? "warning" : health.quality >= 100 ? "good" : health.quality >= 80 ? "warning" : "critical";
   const dailyConsumption = health?.api_usage?.[0] ?? null;
   const dailyPnlDate = r2d2?.daily_pnl_date
     ? new Date(`${r2d2.daily_pnl_date}T12:00:00`).toLocaleDateString("pt-BR", {
@@ -4588,7 +4594,9 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
 
       <div className={`quality-banner quality-${healthTone} falcon-capcom-readiness falcon-capcom-readiness-with-usage`}>
         <div className="quality-score">{health?.quality ?? 0}%</div>
-        <div><span>Storm Troops Readiness</span><strong>{healthHeadline}</strong><small>{health ? `${health.healthy_count}/${health.total_count} services operational · ${formatDate(health.generated_at)}` : "Collecting service conditions"}</small></div>
+        <div><span>Storm Troops Readiness</span><strong>{healthHeadline}</strong><small>{health ? healthVerificationPending
+          ? `${health.healthy_count}/${health.total_count} last verified operational · ${health.probe_failure_count} checks pending · ${formatDate(health.last_verified_at ?? health.generated_at)}`
+          : `${health.healthy_count}/${health.total_count} services operational · ${formatDate(health.generated_at)}` : "Collecting service conditions"}</small></div>
         <div className="quality-meter"><span style={{ width: `${health?.quality ?? 0}%` }} /></div>
         <div className={`falcon-capcom-consumption api-usage-${dailyConsumption?.status ?? "healthy"}`}>
           <header>
@@ -8260,12 +8268,17 @@ function HealthView({
     official_sources: Building2,
     automations: RefreshCw
   };
-  const headline = health.status === "healthy"
+  const verificationPending = (health.probe_failure_count ?? 0) > 0;
+  const headline = verificationPending
+    ? "Verification delayed"
+    : health.status === "healthy"
     ? "All services operational"
     : health.status === "offline"
       ? "Service interruption detected"
       : "Conditions require attention";
-  const qualityTone = health.quality >= 100
+  const qualityTone = verificationPending
+    ? "warning"
+    : health.quality >= 100
     ? "good"
     : health.quality >= 80
       ? "warning"
@@ -8318,7 +8331,9 @@ function HealthView({
     <div className="content-stack">
       <div className={`quality-banner quality-${qualityTone}`}>
         <div className="quality-score">{health.quality}%</div>
-        <div><span>Storm Troops Readiness</span><strong>{headline}</strong><small>{health.healthy_count}/{health.total_count} services operational · {formatDate(health.generated_at)}</small></div>
+        <div><span>Storm Troops Readiness</span><strong>{headline}</strong><small>{verificationPending
+          ? `${health.healthy_count}/${health.total_count} last verified operational · ${health.probe_failure_count} checks pending · ${formatDate(health.last_verified_at ?? health.generated_at)}`
+          : `${health.healthy_count}/${health.total_count} services operational · ${formatDate(health.generated_at)}`}</small></div>
         <div className="quality-meter"><span style={{ width: `${health.quality}%` }} /></div>
       </div>
       <div
@@ -8327,7 +8342,9 @@ function HealthView({
         title={refreshError || undefined}
       >
         <RefreshCw size={14} aria-hidden="true" />
-        <span>{refreshError
+        <span>{verificationPending
+          ? `${health.probe_failure_count} verificações pendentes · última medição integral ${formatDate(health.last_verified_at ?? health.generated_at)}`
+          : refreshError
           ? `Atualização automática temporariamente indisponível · exibindo a última medição válida de ${formatDate(health.generated_at)}`
           : `Atualização automática ativa · última consulta ${formatDate(checkedAt ?? health.generated_at)}`}</span>
       </div>
