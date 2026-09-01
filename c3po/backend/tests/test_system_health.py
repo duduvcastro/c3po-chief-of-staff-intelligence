@@ -918,6 +918,41 @@ def test_slow_probe_degrades_only_its_card_within_two_second_budget() -> None:
     assert github.metadata["probe_status"] == "completed"
 
 
+def test_timeout_storm_preserves_last_integral_snapshot_and_names_pending_checks() -> None:
+    service = _service()
+    baseline = service.snapshot(force=True)
+    service.settings.system_health_probe_timeout_seconds = 0.25
+    original_cloudflare = service._cloudflare_health
+    original_github = service._github_health
+    original_open_finance = service.open_finance.integration_health
+    service.open_finance.integration_health = (
+        lambda **_kwargs: original_open_finance(timeout_seconds=2.0)
+    )
+
+    def slow_cloudflare(now: datetime) -> IntegrationHealth:
+        time.sleep(0.75)
+        return original_cloudflare(now)
+
+    def slow_github(now: datetime) -> IntegrationHealth:
+        time.sleep(0.75)
+        return original_github(now)
+
+    service._cloudflare_health = slow_cloudflare  # type: ignore[method-assign]
+    service._github_health = slow_github  # type: ignore[method-assign]
+
+    response = service.snapshot(force=True)
+
+    assert response.generated_at > baseline.generated_at
+    assert response.last_verified_at == baseline.generated_at
+    assert response.status == "attention"
+    assert response.quality == baseline.quality
+    assert response.healthy_count == baseline.healthy_count
+    assert response.total_count == baseline.total_count
+    assert response.probe_failure_count == 2
+    assert response.probe_failures == ["cloudflare", "github"]
+    assert response.groups == baseline.groups
+
+
 def test_live_http_probes_receive_the_short_system_health_timeout() -> None:
     service = _service()
     observed_timeouts: list[float] = []

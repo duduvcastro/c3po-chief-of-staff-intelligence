@@ -285,10 +285,13 @@ class SystemHealthGroup(BaseModel):
 
 class SystemHealthResponse(BaseModel):
     generated_at: datetime
+    last_verified_at: datetime | None = None
     status: Literal["healthy", "attention", "offline"]
     quality: int = Field(ge=0, le=100)
     healthy_count: int = Field(ge=0)
     total_count: int = Field(ge=0)
+    probe_failure_count: int = Field(default=0, ge=0)
+    probe_failures: list[str] = Field(default_factory=list)
     api_usage: list[ApiUsageMetric] = Field(default_factory=list)
     ai_usage: list[AiUsageMetric] = Field(default_factory=list)
     groups: list[SystemHealthGroup]

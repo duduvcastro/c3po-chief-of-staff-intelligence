@@ -59,6 +59,16 @@ def test_every_system_health_snapshot_setter_uses_the_timestamp_guard() -> None:
     assert falcon.count(guarded_falcon_setter) == 2
 
 
+def test_probe_timeouts_are_presented_as_pending_verification_not_outages() -> None:
+    page = _page()
+
+    assert 'systemHealth.probe_failure_count ? "VERIFY"' in page
+    assert page.count('"Verification delayed"') == 2
+    assert page.count("last verified operational") == 2
+    assert "verificações pendentes · última medição integral" in page
+    assert "health.last_verified_at ?? health.generated_at" in page
+
+
 def test_attestation_is_not_presented_as_a_regular_panel_refresh() -> None:
     page = _page()
 
