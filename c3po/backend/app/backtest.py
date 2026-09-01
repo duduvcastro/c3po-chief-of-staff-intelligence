@@ -150,7 +150,7 @@ def run_backtest(
     *,
     fundamentals: dict[str, dict[str, Any]] | Callable[[str, datetime], dict[str, Any]] | None = None,
     starting_capital: float = 1_000_000.0,
-    max_positions: int = 20,
+    max_positions: int | None = None,
     max_position_percent: float = strategy.DEFAULT_MAX_POSITION_PERCENT,
     max_position_loss_percent: float = strategy.DEFAULT_MAX_POSITION_LOSS_PERCENT,
     soft_loss_exit_percent: float = strategy.DEFAULT_SOFT_LOSS_EXIT_PERCENT,
@@ -256,7 +256,7 @@ def run_backtest(
                     position.quantity = remaining
             continue
 
-        if len(positions) >= max_positions:
+        if max_positions is not None and len(positions) >= max_positions:
             continue
         fnd = fundamentals_for(symbol, timestamp)
         item = {
