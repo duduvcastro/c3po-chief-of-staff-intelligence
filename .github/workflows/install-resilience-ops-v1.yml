@@ -2,6 +2,15 @@ name: Read interim M1 evidence
 
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Production-safe operation to execute
+        required: true
+        default: diagnose-kill
+        type: choice
+        options:
+          - diagnose-kill
+          - read-m1
 
 permissions:
   contents: read
@@ -17,6 +26,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Wait for the post-market evidence window
+        if: inputs.operation == 'read-m1'
         run: |
           target=$(date -u -d '2026-09-02T20:15:00Z' +%s)
           now=$(date -u +%s)
@@ -41,7 +51,45 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Inspect the host evidence for the killed M1 reader
+        if: inputs.operation == 'diagnose-kill'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo '=== dmesg OOM signatures (requested evidence) ==='
+          sudo -n dmesg -T \
+            | grep -i -E 'oom|out of memory|killed process|memory cgroup' \
+            | tail -n 100 || true
+          echo '=== kernel journal, 17:14:30-17:16:30 BRT ==='
+          sudo -n journalctl -k \
+            --since '2026-09-02 17:14:30 -03:00' \
+            --until '2026-09-02 17:16:30 -03:00' \
+            -o short-iso --no-pager \
+            | grep -i -E 'oom|out of memory|killed process|memory cgroup' || true
+          echo '=== systemd-oomd journal in the incident window ==='
+          sudo -n journalctl -u systemd-oomd \
+            --since '2026-09-02 17:14:30 -03:00' \
+            --until '2026-09-02 17:16:30 -03:00' \
+            -o short-iso --no-pager || true
+          echo '=== Docker OOM/kill/die events in the incident window ==='
+          docker events \
+            --since '2026-09-02T20:14:30Z' \
+            --until '2026-09-02T20:16:30Z' \
+            --filter type=container \
+            --filter event=oom \
+            --filter event=kill \
+            --filter event=die \
+            --format '{{.Time}} {{.Action}} {{.Actor.Attributes.name}}' || true
+          echo '=== current memory and swap ==='
+          free -h
+          grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo
+          REMOTE
+
       - name: Recompute the five-session interim reading read-only
+        if: inputs.operation == 'read-m1'
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
@@ -56,6 +104,7 @@ jobs:
             < "$query" > /tmp/m1-interim.json
 
       - name: Validate reduced evidence artifact
+        if: inputs.operation == 'read-m1'
         run: |
           python - <<'PY'
           import json
@@ -112,6 +161,7 @@ jobs:
           PY
 
       - name: Seal query and reduced artifact
+        if: inputs.operation == 'read-m1'
         run: |
           install -m 700 -d /tmp/m1-evidence
           install -m 600 /tmp/m1-interim.json /tmp/m1-evidence/m1-interim.json
@@ -121,6 +171,7 @@ jobs:
           sha256sum -c SHA256SUMS
 
       - name: Upload the reduced evidence artifact
+        if: inputs.operation == 'read-m1'
         id: upload
         uses: actions/upload-artifact@v4
         with:
@@ -130,6 +181,7 @@ jobs:
           retention-days: 30
 
       - name: Register the reduced reading and expiry on PR 348
+        if: inputs.operation == 'read-m1'
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
