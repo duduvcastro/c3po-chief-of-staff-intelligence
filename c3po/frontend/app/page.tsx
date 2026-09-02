@@ -4124,7 +4124,7 @@ function R2D2RisingView() {
           <div><Brain size={18} /><h2>Learning Curve</h2></div>
           {learningCurve.length ? (
             <div className="r2d2-learning-summary">
-              <span>Média móvel (5d)<strong>{learningLastMovingAverage.toFixed(1)}%</strong></span>
+              <span>{`Média móvel (${LEARNING_MOVING_AVERAGE_WINDOW}d)`}<strong>{learningLastMovingAverage.toFixed(1)}%</strong></span>
               <span>Dias operados<strong>{learningCurve.length}</strong></span>
               <small className={`r2d2-learning-trend-${learningTrendTone}`}>{learningTrendLabel}</small>
             </div>
@@ -4139,7 +4139,7 @@ function R2D2RisingView() {
               width={learningChartWidth}
               height={LEARNING_CHART_HEIGHT}
               role="img"
-              aria-label="Curva de aprendizado: percentuais diários de operações positivas e negativas, com linha de média móvel de 5 dias para as operações positivas"
+              aria-label={`Curva de aprendizado: percentuais diários de operações positivas e negativas, com linha de média móvel de ${LEARNING_MOVING_AVERAGE_WINDOW} dias para as operações positivas`}
             >
               {[0, 25, 50, 75, 100].map((tick) => {
                 const y = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (tick / 100) * LEARNING_PLOT_HEIGHT;
@@ -4194,7 +4194,7 @@ function R2D2RisingView() {
               ) : null}
               {learningMovingAveragePoints.map((point, index) => (
                 <circle key={`ma-${learningCurve[index].session_date}`} cx={point.x} cy={point.y} r={2.5} className="r2d2-learning-ma-dot">
-                  <title>{`Média móvel 5 dias em ${learningCurve[index].session_date}: ${learningMovingAverage[index].toFixed(1)}%`}</title>
+                  <title>{`Média móvel ${LEARNING_MOVING_AVERAGE_WINDOW} dias em ${learningCurve[index].session_date}: ${learningMovingAverage[index].toFixed(1)}%`}</title>
                 </circle>
               ))}
               {learningMovingAveragePoints.length ? (
