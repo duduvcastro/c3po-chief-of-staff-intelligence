@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - diagnose-kill
+          - inspect-orphans
           - read-m1
 
 permissions:
@@ -86,6 +87,34 @@ jobs:
           echo '=== current memory and swap ==='
           free -h
           grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo
+          REMOTE
+
+      - name: Inventory the seven Day-D orphan containers
+        if: inputs.operation == 'inspect-orphans'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          orphans=(
+            c3po-day-d-qualification-20241224-drill-v2
+            c3po-day-d-qualification-20241224-drill
+            c3po-day-d-qualification-20241224-offload
+            c3po-day-d-qualification-20241224-download-v2
+            c3po-day-d-qualification-20241224-download
+            c3po-day-d-minute-offload-20260823
+            c3po-day-d-minute-20260823
+          )
+          for name in "${orphans[@]}"; do
+            docker container inspect --size --format \
+              'name={{.Name}} project={{index .Config.Labels "com.docker.compose.project"}} service={{index .Config.Labels "com.docker.compose.service"}} oneoff={{index .Config.Labels "com.docker.compose.oneoff"}} state={{.State.Status}} rw_bytes={{.SizeRw}}' \
+              "$name"
+            docker container inspect --format \
+              '{{range .Mounts}}mount type={{.Type}} name={{.Name}} source={{.Source}} destination={{.Destination}} rw={{.RW}}{{println}}{{end}}' \
+              "$name"
+            docker diff "$name"
+          done
           REMOTE
 
       - name: Recompute the five-session interim reading read-only
