@@ -16,9 +16,10 @@ on:
           - cleanup-orphans
           - verify-orphan-cleanup
           - inspect-m1-server-source
-          - read-m1
+          - read-m1-incremental
 
 permissions:
+  actions: read
   contents: read
   issues: write
 
@@ -30,21 +31,6 @@ jobs:
     steps:
       - name: Check out the exact query source
         uses: actions/checkout@v6
-
-      - name: Wait for the post-market evidence window
-        if: inputs.operation == 'read-m1'
-        run: |
-          target=$(date -u -d '2026-09-02T20:15:00Z' +%s)
-          now=$(date -u +%s)
-          remaining=$((target - now))
-          if (( remaining > 3600 )); then
-            echo "::error::post-market gate is unexpectedly more than one hour away"
-            exit 1
-          fi
-          if (( remaining > 0 )); then
-            echo "Waiting ${remaining}s for 17:15 BRT; production credentials are not loaded yet."
-            sleep "$remaining"
-          fi
 
       - name: Configure production SSH key
         env:
@@ -283,50 +269,167 @@ jobs:
           fi
           exit "$status"
 
-      - name: Recompute the five-session interim reading read-only
-        if: inputs.operation == 'read-m1'
+      - name: Download and verify the pinned factual baseline
+        if: inputs.operation == 'read-m1-incremental'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test ! -e /tmp/m1-baseline
+          gh run download 33022905030 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name entry-quality-pr257-factual-33022905030 \
+            --dir /tmp/m1-baseline
+          baseline_root=/tmp/m1-baseline/33022905030
+          test -s "$baseline_root/study/report.json"
+          (
+            cd "$baseline_root"
+            sha256sum -c SHA256SUMS
+          )
+          PYTHONPATH=.github/scripts python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import c3po_m1_incremental_reducer as reducer
+
+          report = json.loads(Path(
+              '/tmp/m1-baseline/33022905030/study/report.json'
+          ).read_text(encoding='utf-8'))
+          reducer.verify_baseline(report)
+          print('baseline_report_sha256=' + report['report_sha256'])
+          PY
+
+      - name: Enumerate completed current-policy sessions read-only
+        if: inputs.operation == 'read-m1-incremental'
         env:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
-          query=.github/scripts/c3po_interim_m1_read.py
-          query_sha=$(sha256sum "$query" | cut -d ' ' -f 1)
-          test "${#query_sha}" -eq 64
+          set -euo pipefail
+          umask 077
+          sessions_query=.github/scripts/c3po_m1_current_sessions.sql
+          sessions_sha=$(sha256sum "$sessions_query" | cut -d ' ' -f 1)
           ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-            "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml run --rm -T \
-            -e 'PGOPTIONS=-c role=pg_read_all_data -c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000' \
-            -e 'C3PO_EVIDENCE_QUERY_SHA256=$query_sha' api python -" \
-            < "$query" > /tmp/m1-interim.json
+            "cd /opt/chief-of-staff-digital && \
+             docker compose --env-file .env -f c3po/compose.yml exec -T \
+               -e 'PGOPTIONS=-c role=pg_read_all_data -c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000' \
+               db sh -ceu 'exec psql -X --no-psqlrc -qAt -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\"'" \
+            < "$sessions_query" > /tmp/m1-sessions.txt
+          test -s /tmp/m1-sessions.txt
+          if grep -Evq '^2026-(08-(26|27|28|29|30|31)|09-0[1-2])$' /tmp/m1-sessions.txt; then
+            echo 'session enumeration returned an unexpected value' >&2
+            exit 1
+          fi
+          test "$(sort -u /tmp/m1-sessions.txt | wc -l | tr -d ' ')" \
+            = "$(wc -l < /tmp/m1-sessions.txt | tr -d ' ')"
+          printf 'completed_sessions=%s sessions_query_sha256=%s\n' \
+            "$(wc -l < /tmp/m1-sessions.txt | tr -d ' ')" "$sessions_sha"
+
+      - name: Recompute M1 one completed session at a time
+        if: inputs.operation == 'read-m1-incremental'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          set -euo pipefail
+          umask 077
+          query=.github/scripts/c3po_m1_session_snapshot.py
+          query_sha=$(sha256sum "$query" | cut -d ' ' -f 1)
+          [[ "$query_sha" =~ ^[0-9a-f]{64}$ ]]
+          engine_sha=$(sha256sum c3po/backend/app/r2d2_entry_quality_engine.py | cut -d ' ' -f 1)
+          study_sha=$(sha256sum c3po/backend/app/r2d2_entry_quality_study.py | cut -d ' ' -f 1)
+          epochs_sha=$(sha256sum c3po/docs/ENTRY_QUALITY_STUDY_V1_POLICY_EPOCHS.json | cut -d ' ' -f 1)
+          install -m 700 -d /tmp/m1-transient
+          while IFS= read -r session; do
+            [[ "$session" =~ ^2026-(08-(26|27|28|29|30|31)|09-0[1-2])$ ]]
+            snapshot="/tmp/m1-transient/session-${session}.json"
+            test ! -e "$snapshot"
+            # The preflight and 512 MiB virtual-memory ceiling protect the
+            # 1.9 GiB production host.  The process is sequential and runs in
+            # the existing API container; it never creates a second API.
+            ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+              "test \$(awk '/^MemAvailable:/ {print \$2}' /proc/meminfo) -ge 450000 && \
+               cd /opt/chief-of-staff-digital && \
+               docker compose --env-file .env -f c3po/compose.yml exec -T \
+                 -e 'PGOPTIONS=-c role=pg_read_all_data -c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000' \
+                 -e 'C3PO_EVIDENCE_QUERY_SHA256=$query_sha' \
+                 api sh -ceu 'ulimit -v 524288; exec nice -n 10 python - --session \"$session\"'" \
+              < "$query" > "$snapshot"
+            test -s "$snapshot"
+            SNAPSHOT="$snapshot" EXPECTED_ENGINE_SHA="$engine_sha" \
+              EXPECTED_STUDY_SHA="$study_sha" EXPECTED_EPOCHS_SHA="$epochs_sha" \
+              PYTHONPATH=.github/scripts python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import c3po_m1_incremental_reducer as reducer
+
+          path = Path(os.environ['SNAPSHOT'])
+          snapshot = reducer.validate_snapshot(json.loads(path.read_text(encoding='utf-8')))
+          expected_sources = {
+              'r2d2_entry_quality_engine.py': os.environ['EXPECTED_ENGINE_SHA'],
+              'r2d2_entry_quality_study.py': os.environ['EXPECTED_STUDY_SHA'],
+          }
+          if snapshot['frozen_source_sha256'] != expected_sources:
+              raise SystemExit('deployed frozen source differs from the checked-out query contract')
+          if snapshot['policy_epochs_sha256'] != os.environ['EXPECTED_EPOCHS_SHA']:
+              raise SystemExit('deployed policy epochs differ from the checked-out contract')
+          print('validated_session=' + path.stem.removeprefix('session-'))
+          PY
+          done < /tmp/m1-sessions.txt
+
+      - name: Reduce transient snapshots and reproduce the frozen estimators
+        if: inputs.operation == 'read-m1-incremental'
+        run: |
+          set -euo pipefail
+          reducer=.github/scripts/c3po_m1_incremental_reducer.py
+          reducer_sha=$(sha256sum "$reducer" | cut -d ' ' -f 1)
+          [[ "$reducer_sha" =~ ^[0-9a-f]{64}$ ]]
+          mapfile -t snapshots < <(find /tmp/m1-transient -maxdepth 1 -type f \
+            -name 'session-*.json' -print | sort)
+          test "${#snapshots[@]}" \
+            = "$(wc -l < /tmp/m1-sessions.txt | tr -d ' ')"
+          args=(
+            --baseline-report /tmp/m1-baseline/33022905030/study/report.json
+            --output /tmp/m1-interim.json
+          )
+          for snapshot in "${snapshots[@]}"; do
+            args+=(--session-snapshot "$snapshot")
+          done
+          C3PO_EVIDENCE_REDUCER_SHA256="$reducer_sha" \
+            python3 "$reducer" "${args[@]}"
+          test -s /tmp/m1-interim.json
 
       - name: Validate reduced evidence artifact
-        if: inputs.operation == 'read-m1'
+        if: inputs.operation == 'read-m1-incremental'
         run: |
-          python - <<'PY'
+          PYTHONPATH=.github/scripts python3 - <<'PY'
           import json
           import re
           from pathlib import Path
+          import c3po_m1_incremental_reducer as reducer
 
           path = Path('/tmp/m1-interim.json')
           payload = json.loads(path.read_text(encoding='utf-8'))
           checks = {
-              'schema': payload.get('schema') == 'C3PO_ENTRY_QUALITY_M1_INTERIM_REDUCED-v1',
-              'dry_run': payload.get('dry_run') is True,
+              'schema': payload.get('schema') == 'C3PO_ENTRY_QUALITY_M1_INCREMENTAL_REDUCED-v1',
               'analysis_interpretable': payload.get('analysis_interpretable') is True,
-              'entry_gate_passed': payload.get('entry_gate_passed') is True,
-              'report_sha256': len(str((payload.get('source_evidence') or {}).get('report_sha256') or '')) == 64,
-              'manifest_sha256': len(str((payload.get('source_evidence') or {}).get('manifest_sha256') or '')) == 64,
-              'query_sha256': len(str((payload.get('query') or {}).get('sha256') or '')) == 64,
-              'dedicated_role': (payload.get('database_access') or {}).get('effective_role') == 'pg_read_all_data',
-              'transaction_read_only': (payload.get('database_access') or {}).get('transaction_read_only') is True,
-              'zero_ddl_dml': (payload.get('database_access') or {}).get('ddl_or_dml_executed') is False,
+              'entry_gate_passed': (payload.get('entry_consistency_gate') or {}).get('passed') is True,
+              'baseline_pinned': (payload.get('baseline') or {}).get('report_sha256') == '23ede14e5d76cdd70bd1df58fcde62ad9445291eacae4872174b835ac4b94756',
+              'source_evidence_present': bool(payload.get('source_evidence')),
               'm1_available': (payload.get('m1') or {}).get('available') is True,
               'h3_present': isinstance(payload.get('h3'), dict),
-              'strategy_change_forbidden': (payload.get('partial_verdict') or {}).get('strategy_change_authorized') is False,
+              'read_only': (payload.get('governance') or {}).get('read_only') is True,
+              'raw_rows_absent': (payload.get('governance') or {}).get('raw_rows_retained') is False,
+              'ids_absent': (payload.get('governance') or {}).get('entry_identifiers_retained') is False,
+              'strategy_change_forbidden': (payload.get('governance') or {}).get('strategy_change_authorized') is False,
               'retention_30d': (payload.get('retention') or {}).get('days') == 30,
+              'retention_enforced': (payload.get('retention') or {}).get('enforcement') == 'github_private_artifact_retention',
           }
           failed = sorted(name for name, passed in checks.items() if not passed)
           if failed:
               raise SystemExit('interim evidence validation failed: ' + ', '.join(failed))
+          reducer.verify_self_hash(payload, 'artifact_sha256')
 
           sensitive_key = re.compile(
               r'(password|passwd|secret|token|credential|private.?key|api.?key|endpoint|database.?url|dsn|uri|url)',
@@ -356,17 +459,27 @@ jobs:
           PY
 
       - name: Seal query and reduced artifact
-        if: inputs.operation == 'read-m1'
+        if: inputs.operation == 'read-m1-incremental'
         run: |
+          set -euo pipefail
           install -m 700 -d /tmp/m1-evidence
           install -m 600 /tmp/m1-interim.json /tmp/m1-evidence/m1-interim.json
-          install -m 600 .github/scripts/c3po_interim_m1_read.py /tmp/m1-evidence/query.py
+          install -m 600 .github/scripts/c3po_m1_session_snapshot.py \
+            /tmp/m1-evidence/session-query.py
+          install -m 600 .github/scripts/c3po_m1_incremental_reducer.py \
+            /tmp/m1-evidence/reducer.py
+          install -m 600 .github/scripts/c3po_m1_current_sessions.sql \
+            /tmp/m1-evidence/session-enumeration.sql
           cd /tmp/m1-evidence
-          sha256sum m1-interim.json query.py > SHA256SUMS
+          sha256sum m1-interim.json session-query.py reducer.py \
+            session-enumeration.sql > SHA256SUMS
           sha256sum -c SHA256SUMS
+          # Transient snapshots and the raw factual baseline are deliberately
+          # excluded from the retainable artefact.
+          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 5
 
       - name: Upload the reduced evidence artifact
-        if: inputs.operation == 'read-m1'
+        if: inputs.operation == 'read-m1-incremental'
         id: upload
         uses: actions/upload-artifact@v4
         with:
@@ -376,7 +489,7 @@ jobs:
           retention-days: 30
 
       - name: Register the reduced reading and expiry on PR 348
-        if: inputs.operation == 'read-m1'
+        if: inputs.operation == 'read-m1-incremental'
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
@@ -389,24 +502,27 @@ jobs:
 
           payload = json.loads(Path('/tmp/m1-interim.json').read_text(encoding='utf-8'))
           m1 = payload['m1']
-          barrier = m1['barrier']
+          summary = m1['summary']
+          barrier = summary['barrier']
           h3 = payload['h3']
-          source = payload['source_evidence']
+          gate = payload['entry_consistency_gate']
+          baseline = payload['baseline']
           query = payload['query']
           retention = payload['retention']
           comment = '\n'.join([
               '## Leitura interina M1 — evidência reduzida',
               '',
               f"- Run read-only: `{os.environ['GITHUB_RUN_ID']}`",
-              '- Papel efetivo PostgreSQL: `pg_read_all_data`; `transaction_read_only=on`',
-              f"- População da época vigente: **{m1['population']['entry_count']} entradas / {m1['population']['session_count']} sessões**",
+              '- Papel efetivo PostgreSQL: `pg_read_all_data`; `transaction_read_only=on`; uma sessão encerrada por processo',
+              f"- População da época vigente: **{summary['entry_count']} entradas / {summary['session_count']} sessões**",
+              f"- Gate global: **PASS**; construídas `{gate['constructed_entry_count']}`, medidas na época vigente `{gate['measured_entry_count']}`",
               f"- UCB unilateral 98,75%: central `{barrier['p_hat_ucb_98_75']}`; conservadora `{barrier['p_hat_cons_ucb_98_75']}`",
               f"- Contagens da barreira: `{json.dumps(barrier['categories'], sort_keys=True)}`",
               f"- Veredito parcial M1: **{barrier['verdict_against_50_percent']}** (`{m1['classification']}`)",
               f"- H3: **{h3['status']}**; células insuficientes `{json.dumps(h3['insufficient_cells'], sort_keys=True)}`",
-              f"- Report self-hash: `{source['report_sha256']}`",
-              f"- Manifest hash: `{source['manifest_sha256']}`",
-              f"- Consulta exata: `.github/scripts/c3po_interim_m1_read.py`, sha256 `{query['sha256']}`",
+              f"- Baseline factual pinado: run `{baseline['workflow_run_id']}`, report self-hash `{baseline['report_sha256']}`",
+              f"- Consultas de sessão: `{json.dumps(query['session_query_sha256'])}`; reducer sha256 `{query['reducer_sha256']}`",
+              f"- Artefato self-hash: `{payload['artifact_sha256']}`",
               f"- Artefato privado reduzido: [download]({os.environ['ARTIFACT_URL']}); digest `{os.environ['ARTIFACT_DIGEST']}`",
               f"- Expurgo automático pelo GitHub: **{retention['expires_at']}** (30 dias); o item de retenção reabre no gate nessa data.",
               '',
@@ -416,3 +532,8 @@ jobs:
           Path('/tmp/pr348-m1-comment.md').write_text(comment, encoding='utf-8')
           PY
           gh pr comment 348 --repo "$GITHUB_REPOSITORY" --body-file /tmp/pr348-m1-comment.md
+
+      - name: Destroy transient rows on the ephemeral runner
+        if: always() && inputs.operation == 'read-m1-incremental'
+        run: |
+          rm -rf -- /tmp/m1-transient /tmp/m1-baseline
