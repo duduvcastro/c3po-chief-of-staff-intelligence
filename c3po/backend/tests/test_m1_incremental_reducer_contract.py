@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -28,6 +29,19 @@ def _load_reducer() -> ModuleType:
 
 
 REDUCER = _load_reducer()
+
+
+def _load_snapshot() -> ModuleType:
+    path = Path(__file__).resolve().parents[3] / ".github/scripts/c3po_m1_session_snapshot.py"
+    spec = importlib.util.spec_from_file_location("c3po_m1_session_snapshot", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+SNAPSHOT = _load_snapshot()
 
 
 def _measurement(
@@ -244,3 +258,165 @@ def test_mixed_deployed_source_hashes_fail_closed(
 
     with pytest.raises(REDUCER.ReductionError, match="one frozen contract"):
         REDUCER.merge_current_epoch(report, [first, second])
+
+
+class _Result:
+    def __init__(self, row: tuple[object, ...] | None = None) -> None:
+        self.row = row
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self.row
+
+
+class _ServerCursor:
+    def __init__(self, rows: list[tuple[object, ...]]) -> None:
+        self.rows = list(rows)
+        self.query = ""
+        self.params: tuple[object, ...] = ()
+        self.fetch_sizes: list[int] = []
+
+    def __enter__(self) -> _ServerCursor:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def execute(self, query: str, params: tuple[object, ...]) -> None:
+        self.query = query
+        self.params = params
+
+    def fetchmany(self, size: int) -> list[tuple[object, ...]]:
+        self.fetch_sizes.append(size)
+        batch, self.rows = self.rows[:size], self.rows[size:]
+        return batch
+
+
+class _Connection:
+    def __init__(
+        self,
+        experiment: tuple[object, ...],
+        trades: list[tuple[object, ...]],
+        observations: list[tuple[object, ...]],
+    ) -> None:
+        self.experiment = experiment
+        self.cursors = {
+            "m1_session_trades": _ServerCursor(trades),
+            "m1_session_observations": _ServerCursor(observations),
+        }
+        self.rolled_back = False
+
+    def execute(
+        self,
+        query: str,
+        _params: tuple[object, ...] | None = None,
+    ) -> _Result:
+        if "FROM r2d2_experiments" in query:
+            return _Result(self.experiment)
+        return _Result()
+
+    def cursor(self, *, name: str) -> _ServerCursor:
+        return self.cursors[name]
+
+    def rollback(self) -> None:
+        self.rolled_back = True
+
+
+class _Database:
+    database_url = "postgresql://test"
+
+    def __init__(self, connection: _Connection) -> None:
+        self.value = connection
+
+    @contextmanager
+    def connection(self):  # type: ignore[no-untyped-def]
+        yield self.value
+
+
+def _trade_tuple(
+    entry_id: str,
+    cycle_id: str,
+    executed_at: datetime,
+    *,
+    corrected: bool = False,
+) -> tuple[object, ...]:
+    decision_snapshot: dict[str, object] = {"stop_price": 99.0}
+    if corrected:
+        decision_snapshot["correction"] = "exclude"
+    return (
+        entry_id,
+        cycle_id,
+        "NASDAQ",
+        "TEST",
+        "Test",
+        "BUY",
+        10.0,
+        100.0,
+        100.1,
+        1.0,
+        1001.0,
+        0.4004,
+        1.0,
+        None,
+        "route",
+        decision_snapshot,
+        executed_at,
+        executed_at - timedelta(seconds=2),
+    )
+
+
+def test_session_reader_uses_bounded_server_cursors_and_exact_record_filter() -> None:
+    session = date(2026, 8, 20)
+    at = datetime(2026, 8, 20, 15, tzinfo=timezone.utc)
+    experiment = (
+        "experiment-id",
+        "R2D2-90D-001",
+        "active",
+        1_000_000,
+        session,
+        "v1",
+        at,
+        at,
+    )
+    connection = _Connection(
+        experiment,
+        [
+            _trade_tuple("keep", "cycle-1", at),
+            _trade_tuple("corrected", "cycle-2", at, corrected=True),
+        ],
+        [
+            (
+                "cycle-1",
+                REDUCER.POLICY_EPOCH,
+                at,
+                "NASDAQ",
+                "TEST",
+                {},
+                {},
+                {},
+                "a" * 64,
+            ),
+        ],
+    )
+
+    observed_experiment, records = SNAPSHOT._read_session_records(
+        _Database(connection),
+        experiment_code="R2D2-90D-001",
+        session=session,
+    )
+
+    assert observed_experiment["id"] == "experiment-id"
+    assert [record.fill.id for record in records] == ["keep"]
+    assert records[0].adapter_observation is not None
+    trades = connection.cursors["m1_session_trades"]
+    observations = connection.cursors["m1_session_observations"]
+    assert "executed_at >= %s" in trades.query
+    assert "executed_at < %s" in trades.query
+    assert "EXISTS" in observations.query
+    assert "cycle_id IS NOT DISTINCT FROM" in observations.query
+    assert trades.params[1:] == (
+        datetime(2026, 8, 20, 4, tzinfo=timezone.utc),
+        datetime(2026, 8, 21, 4, tzinfo=timezone.utc),
+    )
+    assert all(size == SNAPSHOT.FETCH_BATCH_SIZE for size in trades.fetch_sizes)
+    assert all(size == SNAPSHOT.FETCH_BATCH_SIZE for size in observations.fetch_sizes)
+    assert connection.rolled_back is True

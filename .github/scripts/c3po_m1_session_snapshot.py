@@ -21,7 +21,7 @@ import os
 import re
 from collections import defaultdict
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +40,7 @@ from app.r2d2_entry_quality_study import (
     _load_policy_epochs,
     _read_price_paths,
 )
-from app.r2d2_exit_policy_study import _json_ready, canonical_sha256
+from app.r2d2_exit_policy_study import _json_ready, _ledger_fill, canonical_sha256
 
 
 SCHEMA = "C3PO_ENTRY_QUALITY_M1_SESSION_SNAPSHOT-v1"
@@ -49,6 +49,50 @@ ALLOWED_TIMEOUTS = {
     "statement_timeout": {"2min", "120s", "120000ms"},
     "lock_timeout": {"5s", "5000ms"},
 }
+FETCH_BATCH_SIZE = 128
+NEW_YORK = __import__("zoneinfo").ZoneInfo("America/New_York")
+
+EXPERIMENT_KEYS = (
+    "id",
+    "code",
+    "status",
+    "starting_capital",
+    "start_date",
+    "methodology_version",
+    "created_at",
+    "updated_at",
+)
+TRADE_KEYS = (
+    "id",
+    "cycle_id",
+    "market",
+    "symbol",
+    "name",
+    "side",
+    "quantity",
+    "signal_price_local",
+    "fill_price_local",
+    "fx_to_usd",
+    "gross_value_usd",
+    "fees_usd",
+    "slippage_usd",
+    "realized_pnl_usd",
+    "reason",
+    "decision_snapshot",
+    "executed_at",
+    "quote_as_of",
+)
+OBSERVATION_KEYS = (
+    "cycle_id",
+    "policy_epoch",
+    "decision_at",
+    "market",
+    "symbol",
+    "source_references",
+    "valuation_comparisons",
+    "candidate_context",
+    "candidate_sha256",
+)
 
 
 def _parse_session(value: str) -> date:
@@ -109,6 +153,121 @@ def _database_access(database: Database) -> dict[str, Any]:
     }
 
 
+def _server_rows(
+    connection: Any,
+    *,
+    name: str,
+    query: str,
+    params: tuple[Any, ...],
+) -> list[tuple[Any, ...]]:
+    """Fetch one bounded session through a named PostgreSQL cursor."""
+    rows: list[tuple[Any, ...]] = []
+    with connection.cursor(name=name) as cursor:
+        cursor.execute(query, params)
+        while True:
+            batch = cursor.fetchmany(FETCH_BATCH_SIZE)
+            if not batch:
+                break
+            rows.extend(batch)
+    return rows
+
+
+def _session_bounds(session: date) -> tuple[datetime, datetime]:
+    start = datetime.combine(session, time.min, tzinfo=NEW_YORK)
+    end = datetime.combine(session + timedelta(days=1), time.min, tzinfo=NEW_YORK)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def _read_session_records(
+    database: Database,
+    *,
+    experiment_code: str,
+    session: date,
+) -> tuple[dict[str, Any], list[Any]]:
+    """Exact EntryLedgerReader semantics, bounded to one NY session.
+
+    The prior implementation called EntryLedgerReader.read(), whose observations
+    query used fetchall() across the complete experiment.  This variant retains
+    its selected columns, ordering, conversion and _records filtering while
+    constraining both server cursors to the requested session.
+    """
+    if not database.database_url:
+        raise SystemExit("production database is unavailable")
+    start_at, end_at = _session_bounds(session)
+    with database.connection() as connection:
+        connection.execute("SET TRANSACTION READ ONLY")
+        experiment_row = connection.execute(
+            """
+            SELECT id::text, code, status, starting_capital, start_date,
+                   methodology_version, created_at, updated_at
+            FROM r2d2_experiments
+            WHERE code = %s
+            """,
+            (experiment_code,),
+        ).fetchone()
+        if not experiment_row:
+            raise EntryQualityStudyError(
+                f"R2D2 experiment not found: {experiment_code}"
+            )
+        trade_tuples = _server_rows(
+            connection,
+            name="m1_session_trades",
+            query="""
+                SELECT id::text, cycle_id::text, market, symbol, name, side,
+                       quantity, signal_price_local, fill_price_local, fx_to_usd,
+                       gross_value_usd, fees_usd, slippage_usd,
+                       realized_pnl_usd, reason, decision_snapshot,
+                       executed_at, quote_as_of
+                FROM r2d2_trades
+                WHERE experiment_id = %s
+                  AND side = 'BUY'
+                  AND executed_at >= %s
+                  AND executed_at < %s
+                ORDER BY executed_at, id
+            """,
+            params=(experiment_row[0], start_at, end_at),
+        )
+        observation_tuples = _server_rows(
+            connection,
+            name="m1_session_observations",
+            query="""
+                SELECT observation.cycle_id::text, observation.policy_epoch,
+                       observation.decision_at, observation.market,
+                       observation.symbol, observation.source_references,
+                       observation.valuation_comparisons,
+                       observation.candidate_context,
+                       observation.candidate_sha256
+                FROM r2d2_entry_score_observations AS observation
+                WHERE observation.experiment_id = %s
+                  AND EXISTS (
+                      SELECT 1
+                      FROM r2d2_trades AS trade
+                      WHERE trade.experiment_id = observation.experiment_id
+                        AND trade.side = 'BUY'
+                        AND trade.executed_at >= %s
+                        AND trade.executed_at < %s
+                        AND trade.cycle_id IS NOT DISTINCT FROM observation.cycle_id
+                        AND trade.market = observation.market
+                        AND trade.symbol = observation.symbol
+                  )
+                ORDER BY observation.decision_at,
+                         observation.market,
+                         observation.symbol
+            """,
+            params=(experiment_row[0], start_at, end_at),
+        )
+        connection.rollback()
+
+    experiment = dict(zip(EXPERIMENT_KEYS, experiment_row))
+    trade_rows = [dict(zip(TRADE_KEYS, row)) for row in trade_tuples]
+    fills = [_ledger_fill(row) for row in trade_rows]
+    cycles = {str(row["id"]): row.get("cycle_id") for row in trade_rows}
+    observations = [
+        dict(zip(OBSERVATION_KEYS, row)) for row in observation_tuples
+    ]
+    return experiment, EntryLedgerReader._records(fills, cycles, observations)
+
+
 def build_snapshot(
     *,
     session: date,
@@ -121,16 +280,16 @@ def build_snapshot(
     database = Database(settings)
     access = _database_access(database)
     epochs, epoch_evidence = _load_policy_epochs(policy_epochs_path)
-    experiment, all_records = EntryLedgerReader(database).read(
-        settings.r2d2_experiment_code
+    experiment, all_records = _read_session_records(
+        database,
+        experiment_code=settings.r2d2_experiment_code,
+        session=session,
     )
 
     selected = []
     epoch_by_entry: dict[str, str] = {}
     for record in all_records:
-        observed_session = record.fill.executed_at.astimezone(
-            __import__("zoneinfo").ZoneInfo("America/New_York")
-        ).date()
+        observed_session = record.fill.executed_at.astimezone(NEW_YORK).date()
         if observed_session != session:
             continue
         epoch = _epoch_for(record.fill, epochs)
