@@ -13,6 +13,7 @@ on:
           - inspect-orphans
           - compare-legacy-day-d-volume
           - preview-orphan-cleanup
+          - cleanup-orphans
           - read-m1
 
 permissions:
@@ -181,6 +182,70 @@ jobs:
           cd /opt/chief-of-staff-digital
           docker compose --dry-run --env-file .env -f c3po/compose.yml \
             run --rm -T --no-deps --remove-orphans api true
+          REMOTE
+
+      - name: Remove only the seven verified Day-D orphan containers
+        if: inputs.operation == 'cleanup-orphans'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/chief-of-staff-digital
+          expected=(
+            c3po-day-d-minute-20260823
+            c3po-day-d-minute-offload-20260823
+            c3po-day-d-qualification-20241224-download
+            c3po-day-d-qualification-20241224-download-v2
+            c3po-day-d-qualification-20241224-drill
+            c3po-day-d-qualification-20241224-drill-v2
+            c3po-day-d-qualification-20241224-offload
+          )
+          for name in "${expected[@]}"; do
+            test "$(docker inspect --format '{{.State.Status}}' "$name")" = exited
+            test "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$name")" = c3po
+            test "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.oneoff"}}' "$name")" = True
+          done
+          preview=$(docker compose --dry-run --env-file .env -f c3po/compose.yml \
+            run --rm -T --no-deps --remove-orphans api true 2>&1 || true)
+          mapfile -t observed < <(
+            printf '%s\n' "$preview" \
+              | grep -oE 'c3po-day-d-[A-Za-z0-9-]+' \
+              | sort -u
+          )
+          test "${#observed[@]}" -eq "${#expected[@]}"
+          test "$(printf '%s\n' "${observed[@]}")" = "$(printf '%s\n' "${expected[@]}")"
+          sudo -n python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          legacy = Path('/var/lib/docker/volumes/c3po_c3po_day_d_data/_data')
+          persistent = Path('/mnt/day-d-data')
+          for source in sorted(path for path in legacy.rglob('*') if path.is_file()):
+              target = persistent / source.relative_to(legacy)
+              if not target.is_file():
+                  raise SystemExit('legacy evidence is absent from persistent storage')
+              def sha(path: Path) -> str:
+                  value = hashlib.sha256()
+                  with path.open('rb') as handle:
+                      for block in iter(lambda: handle.read(1024 * 1024), b''):
+                          value.update(block)
+                  return value.hexdigest()
+              if sha(source) != sha(target):
+                  raise SystemExit('legacy evidence differs from persistent storage')
+          PY
+          docker compose --env-file .env -f c3po/compose.yml \
+            run --rm -T --no-deps --remove-orphans api true
+          for name in "${expected[@]}"; do
+            if docker inspect "$name" >/dev/null 2>&1; then
+              echo "orphan container still exists: $name" >&2
+              exit 1
+            fi
+          done
+          docker volume inspect c3po_c3po_day_d_data >/dev/null
+          test -d /mnt/day-d-data
+          printf 'removed_orphan_containers=%s volumes_removed=0\n' "${#expected[@]}"
           REMOTE
 
       - name: Recompute the five-session interim reading read-only
