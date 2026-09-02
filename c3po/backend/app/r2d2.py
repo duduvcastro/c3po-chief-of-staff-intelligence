@@ -6,10 +6,13 @@ import math
 import statistics
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from threading import Lock
-from typing import Any, Iterator
+from typing import Any, Iterator, TypedDict
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+
+import exchange_calendars as xcals
 
 from .config import Settings
 from .database import Database
@@ -35,6 +38,7 @@ from .schemas import (
     R2D2LearningCurvePoint,
     R2D2LearningState,
     R2D2LivePositionsResponse,
+    R2D2NavSessionDelta,
     R2D2Position,
     R2D2SummaryStats,
     R2D2TrackPoint,
@@ -44,6 +48,11 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 NEW_YORK = ZoneInfo("America/New_York")
+USD_CENT = Decimal("0.01")
+PERCENT_POINT = Decimal("0.0001")
+XNYS_CLOSE_CAPTURE_GRACE = timedelta(minutes=5)
+XNYS_CLOSE_MARK_LOOKBACK = timedelta(minutes=5)
+XNYS_CLOSE_SOURCE = "xnys_last_tick_mtm"
 METHODOLOGY_VERSION = "R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY"
 ACTIVE_MARKETS = ("NASDAQ", "NYSE")
 US_LISTING_GAP_DAYS = 90
@@ -75,10 +84,24 @@ US_FUNDAMENTAL_BACKFILL_PER_CYCLE = 40
 POSITION_STREAM_PRIORITY = 200
 # US session policy is centralized here so candidate screening, position
 # protection and close-time decisions cannot silently drift apart again.
-US_REGULAR_OPEN_ET = time(9, 30)
+US_REGULAR_OPEN_ET = time(9, 30)  # compatibility: imported by wind-down policy
 US_SCREENING_START_ET = time(9, 40)
 US_SCREENING_CUTOFF_ET = time(15, 50)
-US_REGULAR_CLOSE_ET = time(16, 0)
+US_REGULAR_CLOSE_ET = time(16, 0)  # compatibility: imported by wind-down policy
+
+
+class R2D2DailySnapshot(TypedDict):
+    session_date: date
+    nav_usd: float
+    cash_usd: float
+    daily_pnl_usd: float
+    daily_return_percent: float
+    gross_exposure_usd: float
+    open_positions: int
+    is_final: bool
+    benchmark_snapshot: dict[str, Any]
+
+
 BASE_ENTRY_POLICY = {
     "entry_upside_floor": 20.0,
     "max_risk_score": 48.0,
@@ -420,6 +443,282 @@ def _realized_daily_track(
             "is_final": bool(snapshot.get("is_final")),
         })
     return track
+
+
+def _decimal_value(value: Any) -> Decimal:
+    try:
+        parsed = Decimal(str(value))
+        return parsed if parsed.is_finite() else Decimal("0")
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+
+
+def _usd_cent(value: Any) -> Decimal:
+    return _decimal_value(value).quantize(USD_CENT, rounding=ROUND_HALF_UP)
+
+
+def _delta_percent(amount: Decimal, denominator: Decimal) -> Decimal:
+    return (amount / denominator * Decimal("100")).quantize(
+        PERCENT_POINT,
+        rounding=ROUND_HALF_UP,
+    )
+
+
+def _datetime_value(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _canonical_nav_close(snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    """Return only an explicitly captured and internally consistent XNYS close."""
+    benchmark = snapshot.get("benchmark_snapshot")
+    nav_close = benchmark.get("nav_close") if isinstance(benchmark, dict) else None
+    if not isinstance(nav_close, dict) or nav_close.get("source") != XNYS_CLOSE_SOURCE:
+        return None
+    try:
+        session_date = _date_value(snapshot["session_date"])
+        provenance_date = _date_value(nav_close["session_date"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if provenance_date != session_date:
+        return None
+    calendar = xcals.get_calendar("XNYS")
+    if not calendar.is_session(session_date):
+        return None
+    scheduled_close = calendar.session_close(session_date).to_pydatetime()
+    captured_at = _datetime_value(nav_close.get("captured_at"))
+    recorded_close = _datetime_value(nav_close.get("session_close_at"))
+    if captured_at is None or recorded_close is None:
+        return None
+    captured_at = captured_at.astimezone(timezone.utc)
+    recorded_close = recorded_close.astimezone(timezone.utc)
+    if recorded_close != scheduled_close or not (
+        scheduled_close <= captured_at <= scheduled_close + XNYS_CLOSE_CAPTURE_GRACE
+    ):
+        return None
+    marks = nav_close.get("marks")
+    position_count = nav_close.get("position_count")
+    try:
+        snapshot_position_count = int(snapshot["open_positions"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if (
+        not isinstance(marks, list)
+        or position_count != len(marks)
+        or position_count != snapshot_position_count
+    ):
+        return None
+    position_keys: set[tuple[str, str]] = set()
+    marked_exposure = Decimal("0")
+    for mark in marks:
+        if not isinstance(mark, dict) or not mark.get("market") or not mark.get("symbol"):
+            return None
+        position_key = (str(mark["market"]), str(mark["symbol"]))
+        # The retired B3 adapter has no independently timestamped price and FX
+        # pair, so it cannot authenticate an exact TOTAL close yet.
+        if position_key[0] not in ACTIVE_MARKETS:
+            return None
+        if position_key in position_keys:
+            return None
+        position_keys.add(position_key)
+        if (
+            _decimal_value(mark.get("price_local")) <= 0
+            or _decimal_value(mark.get("fx_to_usd")) <= 0
+            or _decimal_value(mark.get("quantity")) <= 0
+        ):
+            return None
+        marked_exposure += (
+            _decimal_value(mark["quantity"])
+            * _decimal_value(mark["price_local"])
+            * _decimal_value(mark["fx_to_usd"])
+        )
+        quote_as_of = _datetime_value(mark.get("quote_as_of"))
+        if quote_as_of is None or not (
+            scheduled_close - XNYS_CLOSE_MARK_LOOKBACK
+            <= quote_as_of.astimezone(timezone.utc)
+            <= scheduled_close
+        ):
+            return None
+    snapshot_exposure = _usd_cent(snapshot.get("gross_exposure_usd"))
+    snapshot_cash = _usd_cent(snapshot.get("cash_usd"))
+    snapshot_nav = _usd_cent(snapshot.get("nav_usd"))
+    if snapshot_exposure != _usd_cent(marked_exposure):
+        return None
+    if snapshot_nav != snapshot_cash + snapshot_exposure:
+        return None
+    return nav_close
+
+
+def _build_nav_session_delta(
+    *,
+    now: datetime,
+    experiment_start_date: date,
+    policy_epoch_started_at: datetime | None,
+    current_marked_nav_usd: Any,
+    current_mark_available: bool,
+    snapshots: list[dict[str, Any]],
+    cash_yield_entries: list[dict[str, Any]],
+) -> R2D2NavSessionDelta:
+    """Compare live marked TOTAL NAV with the exact prior XNYS session close.
+
+    This display-only decomposition deliberately does not reuse the realized
+    accounting track. Both percentage components share prior TOTAL NAV as the
+    denominator, so organic plus interest reconciles to the headline. Cash
+    yield is included only when an append-only ledger row has been posted.
+    """
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    calendar = xcals.get_calendar("XNYS")
+    new_york_date = now.astimezone(NEW_YORK).date()
+    if calendar.is_session(new_york_date):
+        session_date = new_york_date
+        session_open = calendar.session_open(session_date).to_pydatetime()
+        session_close = calendar.session_close(session_date).to_pydatetime()
+    else:
+        session_date = calendar.minute_to_session(
+            now.astimezone(timezone.utc),
+            direction="previous",
+        ).date()
+        session_open = None
+        session_close = None
+    previous_session_date = calendar.previous_session(session_date).date()
+
+    if policy_epoch_started_at is not None:
+        epoch_started_at = policy_epoch_started_at
+        if epoch_started_at.tzinfo is None:
+            epoch_started_at = epoch_started_at.replace(tzinfo=timezone.utc)
+        epoch_date = epoch_started_at.astimezone(NEW_YORK).date()
+    else:
+        epoch_date = experiment_start_date
+    if calendar.is_session(epoch_date):
+        epoch_session_close = calendar.session_close(epoch_date)
+        first_epoch_session = (
+            calendar.next_session(epoch_date).date()
+            if policy_epoch_started_at is not None
+            and epoch_started_at.astimezone(timezone.utc) >= epoch_session_close
+            else epoch_date
+        )
+    else:
+        first_epoch_session = calendar.minute_to_session(
+            datetime.combine(epoch_date, time(12), tzinfo=NEW_YORK),
+            direction="next",
+        ).date()
+
+    if session_date <= first_epoch_session or previous_session_date < first_epoch_session:
+        return R2D2NavSessionDelta(
+            status="first_session",
+            session_date=session_date.isoformat(),
+            previous_session_date=None,
+            interest_status="not_applicable",
+        )
+
+    current_interest_posted = any(
+        _date_value(row["session_date"]) == session_date
+        for row in cash_yield_entries
+    )
+    previous_close = next((
+        row
+        for row in snapshots
+        if bool(row.get("is_final"))
+        and _canonical_nav_close(row) is not None
+        and _date_value(row["session_date"]) == previous_session_date
+    ), None)
+    if previous_close is None:
+        return R2D2NavSessionDelta(
+            status="missing_previous_close",
+            session_date=session_date.isoformat(),
+            previous_session_date=previous_session_date.isoformat(),
+            interest_status="posted" if current_interest_posted else "pending",
+        )
+
+    now_utc = now.astimezone(timezone.utc)
+    if session_open is not None and now_utc < session_open:
+        return R2D2NavSessionDelta(
+            status="current_mark_unavailable",
+            session_date=session_date.isoformat(),
+            previous_session_date=previous_session_date.isoformat(),
+            interest_status="posted" if current_interest_posted else "pending",
+        )
+    if session_close is not None and now_utc < session_close:
+        if not current_mark_available or _decimal_value(current_marked_nav_usd) <= 0:
+            return R2D2NavSessionDelta(
+                status="current_mark_unavailable",
+                session_date=session_date.isoformat(),
+                previous_session_date=previous_session_date.isoformat(),
+                interest_status="posted" if current_interest_posted else "pending",
+            )
+        current_marked_nav = _usd_cent(current_marked_nav_usd)
+    else:
+        current_close = next((
+            row
+            for row in snapshots
+            if bool(row.get("is_final"))
+            and _canonical_nav_close(row) is not None
+            and _date_value(row["session_date"]) == session_date
+        ), None)
+        if current_close is None:
+            return R2D2NavSessionDelta(
+                status="current_mark_unavailable",
+                session_date=session_date.isoformat(),
+                previous_session_date=previous_session_date.isoformat(),
+                interest_status="posted" if current_interest_posted else "pending",
+            )
+        current_marked_nav = _usd_cent(current_close["nav_usd"])
+    previous_marked_nav = _usd_cent(previous_close["nav_usd"])
+    current_interest = _usd_cent(sum(
+        (
+            _decimal_value(row.get("interest_income_usd"))
+            for row in cash_yield_entries
+            if _date_value(row["session_date"]) <= session_date
+        ),
+        Decimal("0"),
+    ))
+    previous_interest = _usd_cent(sum(
+        (
+            _decimal_value(row.get("interest_income_usd"))
+            for row in cash_yield_entries
+            if _date_value(row["session_date"]) <= previous_session_date
+        ),
+        Decimal("0"),
+    ))
+    current_total_nav = current_marked_nav + current_interest
+    previous_total_nav = previous_marked_nav + previous_interest
+    if previous_total_nav <= 0:
+        return R2D2NavSessionDelta(
+            status="missing_previous_close",
+            session_date=session_date.isoformat(),
+            previous_session_date=previous_session_date.isoformat(),
+            interest_status="posted" if current_interest_posted else "pending",
+        )
+
+    organic_delta = current_marked_nav - previous_marked_nav
+    interest_delta = current_interest - previous_interest
+    total_delta = organic_delta + interest_delta
+    total_delta_percent = _delta_percent(total_delta, previous_total_nav)
+    interest_delta_percent = _delta_percent(interest_delta, previous_total_nav)
+    organic_delta_percent = total_delta_percent - interest_delta_percent
+    return R2D2NavSessionDelta(
+        status="available",
+        session_date=session_date.isoformat(),
+        previous_session_date=previous_session_date.isoformat(),
+        current_total_nav_usd=float(current_total_nav),
+        previous_total_nav_usd=float(previous_total_nav),
+        total_delta_usd=float(total_delta),
+        total_delta_percent=float(total_delta_percent),
+        organic_delta_usd=float(organic_delta),
+        organic_delta_percent=float(organic_delta_percent),
+        interest_delta_usd=float(interest_delta),
+        interest_delta_percent=float(interest_delta_percent),
+        interest_status="posted" if current_interest_posted else "pending",
+    )
 
 
 class R2D2Repository:
@@ -1148,9 +1447,35 @@ class R2D2Repository:
             )
             connection.commit()
 
-    def save_snapshot(self, experiment_id: str, session_date: date, nav: float, cash: float,
-                      exposure: float, positions: int, is_final: bool = False) -> dict[str, Any]:
+    def save_snapshot(
+        self,
+        experiment_id: str,
+        session_date: date,
+        nav: float,
+        cash: float,
+        exposure: float,
+        positions: int,
+        is_final: bool = False,
+        *,
+        benchmark_snapshot: dict[str, Any] | None = None,
+    ) -> R2D2DailySnapshot:
         snapshots = self.snapshots(experiment_id)
+        previous_snapshot = next((
+            item for item in snapshots if _date_value(item["session_date"]) == session_date
+        ), None)
+        previous_benchmark = dict(
+            (previous_snapshot or {}).get("benchmark_snapshot") or {}
+        )
+        # A canonical close is immutable. In particular, a later routine
+        # intraday save must never replace its NAV with a post-close mark.
+        if (
+            previous_snapshot is not None
+            and _canonical_nav_close(previous_snapshot) is not None
+        ):
+            return dict(previous_snapshot)  # type: ignore[return-value]
+        incoming_benchmark = dict(benchmark_snapshot or {})
+        merged_benchmark = {**previous_benchmark, **incoming_benchmark}
+        effective_is_final = bool((previous_snapshot or {}).get("is_final")) or is_final
         if not self.database.database_url:
             starting_capital = _float((self.memory.get("experiment") or {}).get("starting_capital"), nav)
         else:
@@ -1162,7 +1487,7 @@ class R2D2Repository:
             starting_capital = _float(row[0], nav) if row else nav
         current_snapshot = {
             "session_date": session_date,
-            "is_final": is_final,
+            "is_final": effective_is_final,
         }
         track = _realized_daily_track(
             [*snapshots, current_snapshot],
@@ -1173,11 +1498,17 @@ class R2D2Repository:
         current_track = next(item for item in reversed(track) if item["session_date"] == session_date)
         pnl = _float(current_track["daily_pnl_usd"])
         daily_return = _float(current_track["daily_return_percent"])
-        payload = {
+        payload: R2D2DailySnapshot = {
             "session_date": session_date, "nav_usd": nav, "cash_usd": cash,
             "daily_pnl_usd": pnl, "daily_return_percent": daily_return,
-            "gross_exposure_usd": exposure, "open_positions": positions, "is_final": is_final,
+            "gross_exposure_usd": exposure, "open_positions": positions,
+            "is_final": effective_is_final, "benchmark_snapshot": merged_benchmark,
         }
+        if (
+            "nav_close" in incoming_benchmark
+            and _canonical_nav_close(payload) is None
+        ):
+            raise ValueError("invalid canonical XNYS close provenance")
         if not self.database.database_url:
             self.memory["snapshots"][session_date] = payload
             return payload
@@ -1185,32 +1516,45 @@ class R2D2Repository:
             connection.execute(
                 """INSERT INTO r2d2_daily_snapshots
                    (experiment_id, session_date, nav_usd, cash_usd, daily_pnl_usd,
-                    daily_return_percent, gross_exposure_usd, open_positions, is_final)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    daily_return_percent, gross_exposure_usd, open_positions, is_final,
+                    benchmark_snapshot)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
                    ON CONFLICT (experiment_id, session_date) DO UPDATE SET
                      nav_usd=EXCLUDED.nav_usd, cash_usd=EXCLUDED.cash_usd,
                      daily_pnl_usd=EXCLUDED.daily_pnl_usd,
                      daily_return_percent=EXCLUDED.daily_return_percent,
                      gross_exposure_usd=EXCLUDED.gross_exposure_usd,
                      open_positions=EXCLUDED.open_positions,
-                     is_final=r2d2_daily_snapshots.is_final OR EXCLUDED.is_final, updated_at=now()""",
-                (experiment_id, session_date, nav, cash, pnl, daily_return, exposure, positions, is_final),
+                     is_final=r2d2_daily_snapshots.is_final OR EXCLUDED.is_final,
+                     benchmark_snapshot=(r2d2_daily_snapshots.benchmark_snapshot || EXCLUDED.benchmark_snapshot),
+                     updated_at=now()
+                   WHERE NOT (r2d2_daily_snapshots.benchmark_snapshot ? 'nav_close')""",
+                (
+                    experiment_id, session_date, nav, cash, pnl, daily_return,
+                    exposure, positions, effective_is_final,
+                    json.dumps(merged_benchmark, default=str),
+                ),
             )
             connection.commit()
-        return payload
+        stored = next((
+            item for item in self.snapshots(experiment_id)
+            if _date_value(item["session_date"]) == session_date
+        ), None)
+        return stored or payload
 
-    def snapshots(self, experiment_id: str) -> list[dict[str, Any]]:
+    def snapshots(self, experiment_id: str) -> list[R2D2DailySnapshot]:
         if not self.database.database_url:
             return [dict(value) for _, value in sorted(self.memory["snapshots"].items())]
         with self.database.connection() as connection:
             rows = connection.execute(
                 """SELECT session_date, nav_usd, cash_usd, daily_pnl_usd,
-                          daily_return_percent, gross_exposure_usd, open_positions, is_final
+                          daily_return_percent, gross_exposure_usd, open_positions, is_final,
+                          benchmark_snapshot
                    FROM r2d2_daily_snapshots WHERE experiment_id=%s ORDER BY session_date""",
                 (experiment_id,),
             ).fetchall()
         keys = ("session_date", "nav_usd", "cash_usd", "daily_pnl_usd", "daily_return_percent",
-                "gross_exposure_usd", "open_positions", "is_final")
+                "gross_exposure_usd", "open_positions", "is_final", "benchmark_snapshot")
         return [dict(zip(keys, row)) for row in rows]
 
     def cash_yield_entries(self, experiment_id: str) -> list[dict[str, Any]]:
@@ -1236,6 +1580,9 @@ class R2D2Repository:
         return [dict(zip(keys, row)) for row in rows]
 
     def finalize_before(self, experiment_id: str, session_date: date) -> None:
+        # Preserve the legacy accounting lifecycle: cash-yield, learning and
+        # track-record consumers still use is_final. The NAV-delta tile applies
+        # the stricter nav_close provenance check independently.
         if not self.database.database_url:
             for key, item in self.memory["snapshots"].items():
                 if key < session_date:
@@ -2048,6 +2395,18 @@ class R2D2PaperService:
             _float(latest_interest["interest_income_usd"]) if latest_interest else 0.0
         )
         accounting_total_nav = accounting_nav + interest_income_epoch
+        nav_session_delta = _build_nav_session_delta(
+            now=now,
+            experiment_start_date=experiment["start_date"],
+            policy_epoch_started_at=experiment.get("policy_epoch_started_at"),
+            current_marked_nav_usd=nav,
+            current_mark_available=all(
+                position.quote_status == "live"
+                for position in position_models
+            ),
+            snapshots=snapshots,
+            cash_yield_entries=cash_yield_entries,
+        )
         closed = [row for row in strategy_track if row.get("is_final")]
         positives = sum(_float(row["daily_return_percent"]) > 0 for row in closed)
         negatives = sum(_float(row["daily_return_percent"]) < 0 for row in closed)
@@ -2144,6 +2503,7 @@ class R2D2PaperService:
                 latest_interest["source_observation_date"].isoformat()
                 if latest_interest else None
             ),
+            nav_session_delta=nav_session_delta,
             cash_usd=round(cash, 2),
             gross_exposure_usd=round(exposure, 2),
             total_return_percent=round((accounting_nav / starting_capital - 1) * 100, 4),
@@ -2179,11 +2539,29 @@ class R2D2PaperService:
     @staticmethod
     def open_markets(now: datetime) -> list[str]:
         """Markets eligible for candidate screening and new entries."""
-        markets: list[str] = []
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        now_utc = now.astimezone(timezone.utc)
         us = now.astimezone(NEW_YORK)
-        if us.weekday() < 5 and US_SCREENING_START_ET <= us.time() <= US_SCREENING_CUTOFF_ET:
-            markets.extend(("NASDAQ", "NYSE"))
-        return markets
+        calendar = xcals.get_calendar("XNYS")
+        if not calendar.is_session(us.date()):
+            return []
+        session_close = calendar.session_close(us.date()).to_pydatetime()
+        screening_start = datetime.combine(
+            us.date(), US_SCREENING_START_ET, tzinfo=NEW_YORK,
+        ).astimezone(timezone.utc)
+        regular_cutoff = datetime.combine(
+            us.date(), US_SCREENING_CUTOFF_ET, tzinfo=NEW_YORK,
+        ).astimezone(timezone.utc)
+        screening_cutoff = min(
+            regular_cutoff,
+            session_close - timedelta(minutes=10),
+        )
+        return (
+            ["NASDAQ", "NYSE"]
+            if screening_start <= now_utc <= screening_cutoff
+            else []
+        )
 
     @staticmethod
     def risk_markets(now: datetime) -> list[str]:
@@ -2194,28 +2572,147 @@ class R2D2PaperService:
         must keep running for those final ten minutes without reopening the
         entry pipeline.
         """
-        markets: list[str] = []
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        now_utc = now.astimezone(timezone.utc)
         us = now.astimezone(NEW_YORK)
-        if us.weekday() < 5 and US_REGULAR_OPEN_ET <= us.time() < US_REGULAR_CLOSE_ET:
-            markets.extend(("NASDAQ", "NYSE"))
-        return markets
+        calendar = xcals.get_calendar("XNYS")
+        if not calendar.is_session(us.date()):
+            return []
+        session_open = calendar.session_open(us.date()).to_pydatetime()
+        session_close = calendar.session_close(us.date()).to_pydatetime()
+        return (
+            ["NASDAQ", "NYSE"]
+            if session_open <= now_utc < session_close
+            else []
+        )
 
     @staticmethod
     def _seconds_to_us_close(market: str, now: datetime) -> float | None:
-        """Seconds remaining until the official 16:00 ET regular close."""
-        if market not in ACTIVE_MARKETS:
+        """Seconds remaining until the official XNYS session close."""
+        if market not in ACTIVE_MARKETS or now.tzinfo is None:
             return None
-        us = now.astimezone(NEW_YORK)
-        if us.weekday() >= 5:
+        now_utc = now.astimezone(timezone.utc)
+        session_date = now.astimezone(NEW_YORK).date()
+        calendar = xcals.get_calendar("XNYS")
+        if not calendar.is_session(session_date):
             return None
-        close = datetime.combine(us.date(), US_REGULAR_CLOSE_ET, tzinfo=NEW_YORK)
-        remaining = (close - us).total_seconds()
+        close = calendar.session_close(session_date).to_pydatetime()
+        remaining = (close - now_utc).total_seconds()
         return remaining if 0 <= remaining else None
 
     @staticmethod
     def _b3_session_open(now: datetime) -> bool:
         local = now.astimezone(SAO_PAULO)
         return local.weekday() < 5 and time(10, 10) <= local.time() <= time(17, 50)
+
+    @staticmethod
+    def _xnys_close_capture_context(now: datetime) -> tuple[date, datetime] | None:
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        now_utc = now.astimezone(timezone.utc)
+        session_date = now.astimezone(NEW_YORK).date()
+        calendar = xcals.get_calendar("XNYS")
+        if not calendar.is_session(session_date):
+            return None
+        session_close = calendar.session_close(session_date).to_pydatetime()
+        if session_close <= now_utc <= session_close + XNYS_CLOSE_CAPTURE_GRACE:
+            return session_date, session_close
+        return None
+
+    def _capture_canonical_close(
+        self,
+        experiment: dict[str, Any],
+        now: datetime,
+    ) -> bool:
+        context = self._xnys_close_capture_context(now)
+        if context is None:
+            return False
+        session_date, session_close = context
+        existing = next((
+            row for row in self.repo.snapshots(experiment["id"])
+            if _date_value(row["session_date"]) == session_date
+        ), None)
+        if existing is not None and _canonical_nav_close(existing) is not None:
+            return True
+
+        with self.repo.risk_evaluation_lock(experiment["id"]) as acquired:
+            if not acquired:
+                return False
+            current_experiment = self.repo.experiment(experiment["code"]) or experiment
+            positions = self.repo.positions(experiment["id"])
+            if any(position["market"] not in ACTIVE_MARKETS for position in positions):
+                # A partial/stored B3 mark would make TOTAL look precise when it
+                # is not. Remain unavailable until price and FX both have real
+                # close-time provenance.
+                return False
+            quotes = self._position_quotes(positions, now) if positions else {}
+            marks: list[dict[str, Any]] = []
+            exposure = Decimal("0")
+            earliest_quote = session_close - XNYS_CLOSE_MARK_LOOKBACK
+            latest_quote = session_close
+            for position in sorted(
+                positions,
+                key=lambda item: (str(item["market"]), str(item["symbol"])),
+            ):
+                quote = quotes.get((position["market"], position["symbol"]))
+                quote_as_of = _datetime_value(getattr(quote, "as_of", None))
+                price = _float(getattr(quote, "price", None))
+                fx = _float(position.get("fx_to_usd"), 1.0)
+                quantity = _float(position.get("quantity"))
+                if (
+                    quote_as_of is None
+                    or not earliest_quote
+                    <= quote_as_of.astimezone(timezone.utc)
+                    <= latest_quote
+                    or price <= 0
+                    or fx <= 0
+                    or quantity <= 0
+                ):
+                    return False
+                marks.append({
+                    "market": str(position["market"]),
+                    "symbol": str(position["symbol"]),
+                    "quantity": quantity,
+                    "price_local": price,
+                    "fx_to_usd": fx,
+                    "quote_as_of": quote_as_of.astimezone(timezone.utc).isoformat(),
+                })
+                exposure += (
+                    _decimal_value(quantity)
+                    * _decimal_value(price)
+                    * _decimal_value(fx)
+                )
+
+            captured_at = (
+                now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+            ).astimezone(timezone.utc)
+            nav_close = {
+                "schema": "R2D2_NAV_CLOSE_V1",
+                "source": XNYS_CLOSE_SOURCE,
+                "session_date": session_date.isoformat(),
+                "session_close_at": session_close.isoformat(),
+                "captured_at": captured_at.isoformat(),
+                "position_count": len(positions),
+                "cash_only": not positions,
+                "quote_window": {
+                    "earliest": earliest_quote.isoformat(),
+                    "latest": latest_quote.isoformat(),
+                },
+                "marks": marks,
+            }
+            cash = _float(current_experiment["cash_balance"])
+            saved = self.repo.save_snapshot(
+                experiment["id"],
+                session_date,
+                cash + float(exposure),
+                cash,
+                float(exposure),
+                len(positions),
+                True,
+                benchmark_snapshot={"nav_close": nav_close},
+            )
+            return _canonical_nav_close(saved) is not None
 
     def run_cycle(self, now: datetime | None = None, *, force: bool = False,
                   scan_entries: bool = True) -> R2D2DashboardResponse:
@@ -2225,9 +2722,18 @@ class R2D2PaperService:
         self.repo.finalize_before(experiment["id"], local_day)
         learning = self._ensure_daily_learning(experiment, local_day)
         markets = self.open_markets(now)
+        close_capture_due = self._xnys_close_capture_context(now) is not None
         if local_day < experiment["start_date"]:
             cycle_id = self.repo.start_cycle(experiment["id"], [], "scheduled")
             self.repo.finish_cycle(cycle_id, "scheduled", 0, 0, 0)
+            return self.dashboard()
+        if close_capture_due:
+            # Calendar truth (including early closes) wins over every forced
+            # or legacy exit path. No state may mutate after the canonical
+            # close has been attempted in this cycle.
+            self._capture_canonical_close(experiment, now)
+            cycle_id = self.repo.start_cycle(experiment["id"], [], "market_closed")
+            self.repo.finish_cycle(cycle_id, "market_closed", 0, 0, 0)
             return self.dashboard()
         positions_at_start = self.repo.positions(experiment["id"])
         legacy_b3_exit_window = (
@@ -4504,4 +5010,7 @@ class R2D2PaperService:
                        for row in positions)
         cash = _float(experiment["cash_balance"])
         all_closed = not self.open_markets(now) and now.astimezone(NEW_YORK).time() >= time(16, 5)
-        self.repo.save_snapshot(experiment["id"], local_day, cash + exposure, cash, exposure, len(positions), all_closed)
+        self.repo.save_snapshot(
+            experiment["id"], local_day, cash + exposure, cash, exposure,
+            len(positions), all_closed,
+        )

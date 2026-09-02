@@ -855,6 +855,26 @@ class R2D2LearningState(BaseModel):
     rationale: list[str]
 
 
+class R2D2NavSessionDelta(BaseModel):
+    status: Literal[
+        "available",
+        "first_session",
+        "missing_previous_close",
+        "current_mark_unavailable",
+    ]
+    session_date: str
+    previous_session_date: str | None = None
+    current_total_nav_usd: float | None = None
+    previous_total_nav_usd: float | None = None
+    total_delta_usd: float | None = None
+    total_delta_percent: float | None = None
+    organic_delta_usd: float | None = None
+    organic_delta_percent: float | None = None
+    interest_delta_usd: float | None = None
+    interest_delta_percent: float | None = None
+    interest_status: Literal["posted", "pending", "not_applicable"]
+
+
 class R2D2DashboardResponse(BaseModel):
     experiment_code: str
     status: Literal["scheduled", "running", "paused", "completed"]
@@ -888,6 +908,7 @@ class R2D2DashboardResponse(BaseModel):
     interest_income_status: Literal["pending", "posted"] = "pending"
     interest_income_annual_rate: float | None = None
     interest_income_rate_date: str | None = None
+    nav_session_delta: R2D2NavSessionDelta
     cash_usd: float
     gross_exposure_usd: float
     total_return_percent: float

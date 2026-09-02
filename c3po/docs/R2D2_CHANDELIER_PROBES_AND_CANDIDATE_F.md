@@ -1,0 +1,101 @@
+# R2D2 — Sondas A/B e backtest do Candidato F
+
+**Status:** runner de evidência para a mesa; nenhuma política é alterada.
+
+**Época observada:** `policy-a-resume-2026-08-26`, desde
+`2026-08-26T13:30:24.983322Z`.
+
+**Retenção:** 30 dias, com `expires_at` no laudo e retenção equivalente no
+artefato privado do GitHub Actions.
+
+## Hipótese
+
+A régua principal hoje recalcula, a cada observação:
+
+`E = max(stop_original, high_water_close - 2,5 × ATR_vivo)`
+
+Como o ATR pode subir mais rápido do que o `high_water`, `E` pode cair. O
+contrafactual F muda uma única regra:
+
+`F(t) = max(F(t-1), E(t))`
+
+O watcher rápido, quando habilitado e com ATR fresco, já persiste uma catraca
+própria e exige dois ticks. O laudo separa `fast_exit_rule` de saídas do ciclo
+principal para não atribuir à régua principal uma execução feita por outro
+motor.
+
+## Sonda A — devolução associada ao afrouxamento
+
+- População: episódios orgânicos, US, flat-to-flat e fechados, abertos na
+  época 2; episódios corrigidos ou de `operator_wind_down` não entram.
+- Relato individual: todo episódio vencedor aparece com token SHA-256
+  irreversível, sem símbolo, fills ou barras cruas.
+- Relógio: closes completos de cinco minutos; `high_water` usa closes, como o
+  harness original do Candidato E.
+- ATR: média simples dos 14 true ranges que `compute_technical_snapshot`
+  usava na janela móvel de 40 barras, com o mesmo piso de `0,4%` do preço.
+- Cruzamento atribuível à catraca: primeiro close `<= F` e `> E`. Se também
+  rompe E, a diferença não é atribuída a F.
+- Fronteira temporal: só entram closes completos cujo `bar_end` seja anterior
+  ou igual à saída real. Uma barra iniciada antes, mas fechada depois da
+  saída, é excluída integralmente.
+- Fill contrafactual: preço do close com a mesma fricção de saída do paper
+  ledger. Episódios com escala ou parcial ficam visíveis, mas censurados.
+- Saídas: P&L líquido real, P&L F, devolução evitável em USD, maior distância
+  acumulada entre a catraca F e a régua E em bps e distribuição agregada.
+
+## Sonda B — arrependimento de stop-out
+
+- Stop-out: SELL final com `fast_exit_rule` `hard_stop` ou
+  `chandelier_2tick`, ou motivo equivalente do ciclo principal.
+- Janela de recuperação: barras de um minuto estritamente posteriores ao
+  minuto da saída, até o fim da mesma sessão regular de Nova York. A barra da
+  saída é excluída porque a ordem intraminuto é desconhecida.
+- Entrada: fill médio ponderado pelas quantidades compradas.
+- `1R`: entrada menos o `stop_price` original persistido no BUY.
+- Saídas: percentual que voltou acima da entrada; percentual que chegou a
+  `+1R`; ambas com denominador elegível explícito.
+
+## Backtest E × F
+
+O harness ad hoc de 20/08 foi recuperado do registro local. O replay congela:
+
+- commit da política E: `bc79ca195c19bee9b9ef18c3098d28ae6c149597`;
+- 40 nomes: 20 NASDAQ e 20 NYSE registrados no harness;
+- sessões 06–19/08/2026, barras de cinco minutos;
+- capital de USD 1 milhão, 20 posições, 5 bps de fee, 5 bps de slippage e
+  lookback de 40 barras;
+- fundamentos neutros do próprio `backtest.py`;
+- E: stop inicial 2×ATR, trail 2,5×ATR e budget de risco de 0,03% do NAV;
+- F: tudo idêntico a E, acrescentando somente `max(F anterior, E atual)`.
+
+Para cada variante, a taxa de saída precipitada é a fração dos legs de saída
+por stop em que uma barra posterior da mesma sessão voltou acima do custo
+médio da entrada. A barra da própria saída é excluída. A Sonda B permanece a
+medida canônica da produção e acrescenta o limiar de `+1R`, indisponível no
+schema congelado do backtest.
+
+Os bytes da resposta EODHD usados em 20/08 não foram retidos. A nova execução
+usa as mesmas datas e símbolos sobre o arquivo Massive de um minuto,
+checksumado e agregado para cinco minutos. Essa troca fica no laudo e impede
+qualquer alegação de reprodução byte a byte do número histórico.
+
+O Candidato G não roda nesta primeira comparação: manter E×F com uma única
+variável reduz ambiguidade. O resultado pode justificar uma nova obra para G,
+mas não a autoriza.
+
+## Execução e segurança
+
+O workflow é manual, exige a frase exata `RUN R2D2 CHANDELIER STUDY`, a revisão
+auditada já implantada e janela de 00:00–08:00 BRT. A consulta abre transação
+PostgreSQL `READ ONLY` e verifica `transaction_read_only=on`; nenhuma API
+externa é chamada. Saem do host somente os dois laudos JSON, o SQL exato, o
+digest textual do pacote congelado e o manifesto de checksums. Os contêineres de
+estudo rodam com o UID/GID do usuário operacional, no diretório exclusivo do
+`RUN_ID`. O pacote é validado antes da extração; seu SHA-256 entra no laudo e
+no manifesto portátil. Todos os arquivos recebem SHA-256, e o resumo factual
+é anexado à PR #348.
+
+O runner não altera tabelas, imagens, workers, stops, sizing, flags ou estado
+do experimento. Resultado favorável a F é apenas insumo da mesa e exige nova
+política versionada, auditoria do Fable e autorização do Dudu.
