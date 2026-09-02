@@ -12,6 +12,9 @@ jobs:
     environment: production
     timeout-minutes: 45
     steps:
+      - name: Check out the exact query source
+        uses: actions/checkout@v6
+
       - name: Configure production SSH key
         env:
           DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
@@ -28,79 +31,84 @@ jobs:
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
-          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' > /tmp/m1-interim.json <<'REMOTE'
-          set -euo pipefail
-          cd /opt/chief-of-staff-digital
-          docker compose --env-file .env -f c3po/compose.yml run --rm -T api python - <<'PY'
-          from __future__ import annotations
-
-          import json
-          from datetime import datetime, timezone
-          from pathlib import Path
-
-          from app.config import get_settings
-          from app.r2d2_entry_quality_study import (
-              CURRENT_M1_POLICY_EPOCH,
-              _report_hash,
-              build_report,
-          )
-
-          docs = Path('/legacy/c3po/docs')
-          manifest, report = build_report(
-              settings=get_settings(),
-              policy_epochs_path=docs / 'ENTRY_QUALITY_STUDY_V1_POLICY_EPOCHS.json',
-              spec_path=docs / 'ENTRY_QUALITY_STUDY_V1.md',
-              attestation_path=docs / 'ENTRY_QUALITY_STUDY_V1_RUNNER_ATTESTATION_1.md',
-              attestation_two_path=docs / 'ENTRY_QUALITY_STUDY_V1_RUNNER_ATTESTATION_2.md',
-              generated_at=datetime.now(timezone.utc),
-              dry_run=True,
-          )
-          if report['report_sha256'] != _report_hash(report, 'report_sha256'):
-              raise SystemExit('entry-study report self-hash mismatch')
-          epoch = report['policy_epoch_results'].get(CURRENT_M1_POLICY_EPOCH) or {}
-          payload = {
-              'generated_at': report['generated_at'],
-              'dry_run': report['dry_run'],
-              'analysis_interpretable': report['analysis_interpretable'],
-              'classification': report['classification'],
-              'manifest_sha256': manifest['manifest_sha256'],
-              'report_sha256': report['report_sha256'],
-              'entry_gate_passed': report['entry_consistency_gate']['passed'],
-              'cohort': report['cohort'],
-              'm1': report['kill_criterion_m1_current_epoch'],
-              'h3': (epoch.get('hypotheses') or {}).get('H3'),
-              'ledger_candidate_lines': report['ledger_candidate_lines'],
-          }
-          print(json.dumps(payload, sort_keys=True, default=str))
-          PY
-          REMOTE
+          query=.github/scripts/c3po_interim_m1_read.py
+          query_sha=$(sha256sum "$query" | cut -d ' ' -f 1)
+          test "${#query_sha}" -eq 64
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
+            "cd /opt/chief-of-staff-digital && docker compose --env-file .env -f c3po/compose.yml run --rm -T \
+            -e 'PGOPTIONS=-c role=pg_read_all_data -c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000' \
+            -e 'C3PO_EVIDENCE_QUERY_SHA256=$query_sha' api python -" \
+            < "$query" > /tmp/m1-interim.json
 
       - name: Validate reduced evidence artifact
         run: |
           python - <<'PY'
           import json
+          import re
           from pathlib import Path
 
           path = Path('/tmp/m1-interim.json')
           payload = json.loads(path.read_text(encoding='utf-8'))
           checks = {
+              'schema': payload.get('schema') == 'C3PO_ENTRY_QUALITY_M1_INTERIM_REDUCED-v1',
               'dry_run': payload.get('dry_run') is True,
               'analysis_interpretable': payload.get('analysis_interpretable') is True,
               'entry_gate_passed': payload.get('entry_gate_passed') is True,
-              'report_sha256': len(str(payload.get('report_sha256') or '')) == 64,
-              'manifest_sha256': len(str(payload.get('manifest_sha256') or '')) == 64,
+              'report_sha256': len(str((payload.get('source_evidence') or {}).get('report_sha256') or '')) == 64,
+              'manifest_sha256': len(str((payload.get('source_evidence') or {}).get('manifest_sha256') or '')) == 64,
+              'query_sha256': len(str((payload.get('query') or {}).get('sha256') or '')) == 64,
+              'dedicated_role': (payload.get('database_access') or {}).get('effective_role') == 'pg_read_all_data',
+              'transaction_read_only': (payload.get('database_access') or {}).get('transaction_read_only') is True,
+              'zero_ddl_dml': (payload.get('database_access') or {}).get('ddl_or_dml_executed') is False,
               'm1_available': (payload.get('m1') or {}).get('available') is True,
               'h3_present': isinstance(payload.get('h3'), dict),
+              'strategy_change_forbidden': (payload.get('partial_verdict') or {}).get('strategy_change_authorized') is False,
+              'retention_30d': (payload.get('retention') or {}).get('days') == 30,
           }
           failed = sorted(name for name, passed in checks.items() if not passed)
           if failed:
               raise SystemExit('interim evidence validation failed: ' + ', '.join(failed))
+
+          sensitive_key = re.compile(
+              r'(password|passwd|secret|token|credential|private.?key|api.?key|endpoint|database.?url|dsn|uri|url)',
+              re.I,
+          )
+          prohibited_value = re.compile(
+              r'(postgres(?:ql)?://|https?://|gh[opusr]_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]+)',
+              re.I,
+          )
+
+          def walk(value, path='root'):
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      if sensitive_key.search(str(key)):
+                          raise SystemExit(f'sensitive key in reduced artifact: {path}.{key}')
+                      walk(child, f'{path}.{key}')
+              elif isinstance(value, list):
+                  for index, child in enumerate(value):
+                      walk(child, f'{path}[{index}]')
+              elif isinstance(value, str):
+                  if prohibited_value.search(value):
+                      raise SystemExit(f'prohibited value in reduced artifact: {path}')
+                  if re.fullmatch(r'[0-9a-f]{8}-[0-9a-f-]{27,}', value, re.I):
+                      raise SystemExit(f'raw identifier in reduced artifact: {path}')
+
+          walk(payload)
           PY
+
+      - name: Seal query and reduced artifact
+        run: |
+          install -m 700 -d /tmp/m1-evidence
+          install -m 600 /tmp/m1-interim.json /tmp/m1-evidence/m1-interim.json
+          install -m 600 .github/scripts/c3po_interim_m1_read.py /tmp/m1-evidence/query.py
+          cd /tmp/m1-evidence
+          sha256sum m1-interim.json query.py > SHA256SUMS
+          sha256sum -c SHA256SUMS
 
       - name: Upload the reduced evidence artifact
         uses: actions/upload-artifact@v4
         with:
-          name: entry-quality-m1-interim-20260902
-          path: /tmp/m1-interim.json
+          name: entry-quality-m1-interim-20260902-${{ github.run_id }}
+          path: /tmp/m1-evidence
           if-no-files-found: error
           retention-days: 30
