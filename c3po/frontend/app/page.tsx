@@ -3858,7 +3858,7 @@ function R2D2RisingView() {
     return { ...item, start };
   });
   const learningCurve = data.learning_curve;
-  const LEARNING_MOVING_AVERAGE_WINDOW = 5;
+  const LEARNING_MOVING_AVERAGE_WINDOW = 10;
   const learningMovingAverage = learningCurve.map((_, index) => {
     const window = learningCurve.slice(Math.max(0, index - (LEARNING_MOVING_AVERAGE_WINDOW - 1)), index + 1);
     return window.reduce((sum, point) => sum + point.positive_percent, 0) / window.length;
@@ -4207,7 +4207,7 @@ function R2D2RisingView() {
                   <rect x={learningChartWidth - 178} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-negative" />
                   <text x={learningChartWidth - 167} y={13} className="r2d2-learning-legend-label">Negativas</text>
                   <circle cx={learningChartWidth - 92} cy={13} r={3.5} className="r2d2-learning-ma-dot" />
-                  <text x={learningChartWidth - 84} y={13} className="r2d2-learning-ma-label">{`MM5 ${learningLastMovingAverage.toFixed(1)}%`}</text>
+                  <text x={learningChartWidth - 84} y={13} className="r2d2-learning-ma-label">{`MM${LEARNING_MOVING_AVERAGE_WINDOW} ${learningLastMovingAverage.toFixed(1)}%`}</text>
                 </g>
               ) : null}
             </svg>
