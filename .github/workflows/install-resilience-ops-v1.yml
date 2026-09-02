@@ -161,6 +161,7 @@ jobs:
               'file_count': len(rows),
               'total_bytes': sum(row['bytes'] for row in rows),
               'matching_persistent_files': sum(row['persistent_match'] for row in rows),
+              'files': rows,
               'unmatched_files': [row for row in rows if not row['persistent_match']],
           }
           print(json.dumps(result, sort_keys=True))
