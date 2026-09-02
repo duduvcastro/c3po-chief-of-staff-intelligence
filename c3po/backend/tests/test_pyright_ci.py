@@ -31,10 +31,18 @@ def test_production_deploy_requires_the_type_check() -> None:
 
 
 def test_secret_scan_is_pinned_and_proves_adversarial_detection() -> None:
+    import tomllib
+
     pipeline = (REPO_ROOT / ".github" / "workflows" / "c3po-pipeline.yml").read_text(
         encoding="utf-8"
     )
     allowlist = (REPO_ROOT / ".gitleaks.toml").read_text(encoding="utf-8")
+    config = tomllib.loads(allowlist)
+    identifier_allowlist = next(
+        item
+        for item in config["allowlists"]
+        if item.get("description") == "Structured public identifier constants"
+    )
 
     assert "GITLEAKS_VERSION: \"8.30.1\"" in pipeline
     assert (
@@ -46,7 +54,7 @@ def test_secret_scan_is_pinned_and_proves_adversarial_detection() -> None:
     assert "--config .gitleaks.toml" in pipeline
     assert "adversarial fixtures were NOT detected" in pipeline
     assert "useDefault = true" in allowlist
-    assert "paths" not in allowlist.split("[allowlist]")[1].split("[[rules]]")[0]
+    assert "paths" not in identifier_allowlist
 
 
 def test_gitleaks_allowlist_never_excuses_adversarial_secret_shapes() -> None:
@@ -55,7 +63,7 @@ def test_gitleaks_allowlist_never_excuses_adversarial_secret_shapes() -> None:
 
     config = tomllib.loads((REPO_ROOT / ".gitleaks.toml").read_text(encoding="utf-8"))
     allowlist_regexes = [
-        re.compile(pattern) for pattern in config["allowlist"]["regexes"]
+        re.compile(pattern) for pattern in config["allowlists"][0]["regexes"]
     ]
     generic = next(
         rule for rule in config["rules"] if rule["id"] == "generic-api-key"
@@ -107,3 +115,35 @@ def test_gitleaks_allowlist_never_excuses_adversarial_secret_shapes() -> None:
     crossline = "BRAPI_TOKEN=" + "\n" + "C3PO_BRAPI_PLAN=pro"
     assert generic_regex.search(crossline) is None
     assert generic_regex.search(hex_shaped) is not None
+
+
+def test_gitleaks_remediation_digest_exception_is_field_and_path_scoped() -> None:
+    import re
+    import tomllib
+
+    config = tomllib.loads((REPO_ROOT / ".gitleaks.toml").read_text(encoding="utf-8"))
+    allowlist = next(
+        item
+        for item in config["allowlists"]
+        if item.get("description")
+        == "Deterministic remediation digest in the generated controller trigger"
+    )
+
+    assert allowlist["condition"] == "AND"
+    assert allowlist["targetRules"] == ["generic-api-key"]
+    assert allowlist["regexTarget"] == "line"
+    assert allowlist["paths"] == [
+        r"(^|/)c3po/security/container-rebuild-trigger\.json$"
+    ]
+    assert allowlist["regexes"] == [
+        r'^\s*"remediation_key"\s*:\s*"[0-9a-f]{64}"\s*,?\s*$'
+    ]
+
+    path_regex = re.compile(allowlist["paths"][0])
+    line_regex = re.compile(allowlist["regexes"][0])
+    digest = "a" * 64
+    assert path_regex.fullmatch("c3po/security/container-rebuild-trigger.json")
+    assert not path_regex.fullmatch("tmp/adversarial/container-rebuild-trigger.json")
+    assert line_regex.fullmatch(f'  "remediation_key": "{digest}",')
+    assert not line_regex.fullmatch(f'  "api_key": "{digest}",')
+    assert not line_regex.fullmatch(f'  "remediation_key": "{digest}x",')
