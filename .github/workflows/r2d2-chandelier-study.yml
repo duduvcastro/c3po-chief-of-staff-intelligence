@@ -1,0 +1,223 @@
+name: R2D2 Chandelier probes and Candidate F backtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN R2D2 CHANDELIER STUDY
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: r2d2-chandelier-study
+  cancel-in-progress: false
+
+jobs:
+  read-only-study:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
+      - name: Require exact confirmation
+        env:
+          RECEIVED: ${{ inputs.confirmation }}
+        run: |
+          if [ "$RECEIVED" != 'RUN R2D2 CHANDELIER STUDY' ]; then
+            echo 'Confirmation did not match the approved phrase.' >&2
+            exit 2
+          fi
+
+      - name: Check out audited study revision
+        uses: actions/checkout@v6
+
+      - name: Check out frozen Candidate E policy
+        uses: actions/checkout@v6
+        with:
+          ref: bc79ca195c19bee9b9ef18c3098d28ae6c149597
+          path: frozen-candidate-e
+
+      - name: Package frozen policy source
+        run: |
+          tar -C frozen-candidate-e -czf "$RUNNER_TEMP/candidate-e-source.tar.gz" c3po/backend
+          sha256sum "$RUNNER_TEMP/candidate-e-source.tar.gz" \
+            > "$RUNNER_TEMP/candidate-e-source.tar.gz.sha256"
+
+      - name: Configure production transport
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_study
+          chmod 600 ~/.ssh/c3po_study
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload frozen source
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          scp -i ~/.ssh/c3po_study \
+            "$RUNNER_TEMP/candidate-e-source.tar.gz" \
+            "$RUNNER_TEMP/candidate-e-source.tar.gz.sha256" \
+            "$USER@$HOST:/tmp/"
+
+      - name: Run production read-only probes and frozen replay
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          REVISION: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          ssh -i ~/.ssh/c3po_study "$USER@$HOST" \
+            "REVISION='$REVISION' RUN_ID='$RUN_ID' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+
+          APP_DIR=/opt/chief-of-staff-digital
+          HOST_OUTPUT_ROOT=/mnt/day-d-data/evidence/r2d2-chandelier-study-v1
+          HOST_OUTPUT="$HOST_OUTPUT_ROOT/run-$RUN_ID"
+          CONTAINER_OUTPUT="/app/day-d-data/evidence/r2d2-chandelier-study-v1/run-$RUN_ID"
+          frozen_tmp=$(mktemp -d /tmp/r2d2-candidate-e.XXXXXX)
+          cleanup() {
+            case "$frozen_tmp" in
+              /tmp/r2d2-candidate-e.*) rm -rf -- "$frozen_tmp" ;;
+              *) echo 'Refusing unexpected cleanup target.' >&2 ;;
+            esac
+          }
+          trap cleanup EXIT
+
+          local_hour=$(TZ=America/Sao_Paulo date +%H)
+          if [ "$local_hour" -ge 8 ]; then
+            echo 'Heavy study is restricted to 00:00-08:00 America/Sao_Paulo.' >&2
+            exit 10
+          fi
+          cd "$APP_DIR"
+          if [ "$(cat .deploy-version 2>/dev/null || true)" != "$REVISION" ]; then
+            echo 'Audited revision is not the live deployed revision.' >&2
+            exit 11
+          fi
+          if ! mountpoint -q /mnt/day-d-data; then
+            echo '/mnt/day-d-data is not mounted.' >&2
+            exit 12
+          fi
+          mkdir -p "$HOST_OUTPUT"
+          tar -C "$frozen_tmp" -xzf /tmp/candidate-e-source.tar.gz
+          (cd /tmp && sha256sum -c candidate-e-source.tar.gz.sha256)
+
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          "${compose[@]}" run --rm -T api \
+            python -m app.r2d2_chandelier_probe \
+            --output "$CONTAINER_OUTPUT/probes-a-b.json" \
+            --query-output "$CONTAINER_OUTPUT/query.sql"
+
+          "${compose[@]}" run --rm -T \
+            -v "$frozen_tmp:/frozen:ro" \
+            -e PYTHONPATH=/frozen/c3po/backend \
+            api python /app/app/r2d2_candidate_f_backtest.py \
+            --data-root /app/day-d-data \
+            --output "$CONTAINER_OUTPUT/backtest-e-f.json"
+
+          python3 - "$HOST_OUTPUT" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          for name in ("probes-a-b.json", "backtest-e-f.json"):
+              payload = json.loads((root / name).read_text(encoding="utf-8"))
+              expected = payload.pop("report_sha256")
+              encoded = json.dumps(
+                  payload,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=True,
+                  allow_nan=False,
+                  default=str,
+              ).encode("utf-8")
+              observed = hashlib.sha256(encoded).hexdigest()
+              if observed != expected:
+                  raise SystemExit(f"self-hash mismatch for {name}: {observed} != {expected}")
+          query = root / "query.sql"
+          query_sha = hashlib.sha256(query.read_bytes()).hexdigest()
+          probe = json.loads((root / "probes-a-b.json").read_text(encoding="utf-8"))
+          if query_sha != probe["governance"]["query_sha256"]:
+              raise SystemExit("query hash mismatch")
+          PY
+
+          (
+            cd "$HOST_OUTPUT"
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+              | sort -z | xargs -0 sha256sum > SHA256SUMS
+          )
+          chmod 0444 "$HOST_OUTPUT"/*
+          REMOTE
+
+      - name: Download reduced artifact
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/r2d2-chandelier-study"
+          scp -i ~/.ssh/c3po_study \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-chandelier-study-v1/run-$RUN_ID/probes-a-b.json" \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-chandelier-study-v1/run-$RUN_ID/backtest-e-f.json" \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-chandelier-study-v1/run-$RUN_ID/query.sql" \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-chandelier-study-v1/run-$RUN_ID/SHA256SUMS" \
+            "$RUNNER_TEMP/r2d2-chandelier-study/"
+          (cd "$RUNNER_TEMP/r2d2-chandelier-study" && sha256sum -c SHA256SUMS)
+
+      - name: Publish reduced evidence for 30 days
+        uses: actions/upload-artifact@v4
+        with:
+          name: r2d2-chandelier-study-${{ github.run_id }}
+          path: ${{ runner.temp }}/r2d2-chandelier-study
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Annex factual summary to gate agenda
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROOT: ${{ runner.temp }}/r2d2-chandelier-study
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - "$ROOT" "$RUN_URL" > "$RUNNER_TEMP/gate-annex.md" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          run_url = sys.argv[2]
+          probe = json.loads((root / "probes-a-b.json").read_text(encoding="utf-8"))
+          backtest = json.loads((root / "backtest-e-f.json").read_text(encoding="utf-8"))
+          a = probe["probe_a"]
+          b = probe["probe_b"]
+          e = backtest["candidate_e"]
+          f = backtest["candidate_f"]
+          print("## Anexo factual — Chandelier E×F")
+          print()
+          print(f"- [run e artefato reduzido]({run_url}) — retenção 30 dias")
+          print(f"- Sonda A: {a['eligible_episode_count']} vencedores elegíveis; "
+                f"{a['ratchet_only_exit_count']} cruzamentos exclusivos da catraca.")
+          print(f"- Sonda B: {b['eligible_stop_out_count']} stop-outs elegíveis; "
+                f"{b['recovered_above_entry_percent']}% voltaram acima da entrada e "
+                f"{b['reached_plus_1r_percent']}% chegaram a +1R na mesma sessão.")
+          print(f"- Backtest E→F: payoff {e['payoff_ratio']}→{f['payoff_ratio']}; "
+                f"drawdown {e['max_drawdown_percent']}%→{f['max_drawdown_percent']}%; "
+                f"retorno {e['total_return_percent']}%→{f['total_return_percent']}%.")
+          print(f"- Saída precipitada E→F: "
+                f"{e['premature_exit']['premature_exit_percent']}%→"
+                f"{f['premature_exit']['premature_exit_percent']}% "
+                f"(denominadores {e['premature_exit']['eligible_stop_exit_leg_count']}→"
+                f"{f['premature_exit']['eligible_stop_exit_leg_count']}).")
+          print(f"- Hashes: probes `{probe['report_sha256']}`; backtest `{backtest['report_sha256']}`.")
+          print("- Evidência apenas: nenhuma mudança de política ou produção foi autorizada.")
+          PY
+          gh pr comment 348 --body-file "$RUNNER_TEMP/gate-annex.md"
