@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   read-production-evidence:
@@ -120,9 +121,51 @@ jobs:
           sha256sum -c SHA256SUMS
 
       - name: Upload the reduced evidence artifact
+        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: entry-quality-m1-interim-20260902-${{ github.run_id }}
           path: /tmp/m1-evidence
           if-no-files-found: error
           retention-days: 30
+
+      - name: Register the reduced reading and expiry on PR 348
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/m1-interim.json').read_text(encoding='utf-8'))
+          m1 = payload['m1']
+          barrier = m1['barrier']
+          h3 = payload['h3']
+          source = payload['source_evidence']
+          query = payload['query']
+          retention = payload['retention']
+          comment = '\n'.join([
+              '## Leitura interina M1 — evidência reduzida',
+              '',
+              f"- Run read-only: `{os.environ['GITHUB_RUN_ID']}`",
+              '- Papel efetivo PostgreSQL: `pg_read_all_data`; `transaction_read_only=on`',
+              f"- População da época vigente: **{m1['population']['entry_count']} entradas / {m1['population']['session_count']} sessões**",
+              f"- UCB unilateral 98,75%: central `{barrier['p_hat_ucb_98_75']}`; conservadora `{barrier['p_hat_cons_ucb_98_75']}`",
+              f"- Contagens da barreira: `{json.dumps(barrier['categories'], sort_keys=True)}`",
+              f"- Veredito parcial M1: **{barrier['verdict_against_50_percent']}** (`{m1['classification']}`)",
+              f"- H3: **{h3['status']}**; células insuficientes `{json.dumps(h3['insufficient_cells'], sort_keys=True)}`",
+              f"- Report self-hash: `{source['report_sha256']}`",
+              f"- Manifest hash: `{source['manifest_sha256']}`",
+              f"- Consulta exata: `.github/scripts/c3po_interim_m1_read.py`, sha256 `{query['sha256']}`",
+              f"- Artefato privado reduzido: [download]({os.environ['ARTIFACT_URL']}); digest `{os.environ['ARTIFACT_DIGEST']}`",
+              f"- Expurgo automático pelo GitHub: **{retention['expires_at']}** (30 dias); o item de retenção reabre no gate nessa data.",
+              '',
+              'Sem linhas cruas, posições, valores de trades, credenciais, endpoints ou segredos. Esta leitura é `PILOT_ONLY`; admissão a qualquer canônico e mudança de estratégia continuam humanas.',
+              '',
+          ])
+          Path('/tmp/pr348-m1-comment.md').write_text(comment, encoding='utf-8')
+          PY
+          gh pr comment 348 --repo "$GITHUB_REPOSITORY" --body-file /tmp/pr348-m1-comment.md
