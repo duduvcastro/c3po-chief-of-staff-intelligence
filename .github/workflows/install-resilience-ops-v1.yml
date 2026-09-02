@@ -12,6 +12,7 @@ on:
           - diagnose-kill
           - inspect-orphans
           - compare-legacy-day-d-volume
+          - preview-orphan-cleanup
           - read-m1
 
 permissions:
@@ -168,6 +169,19 @@ jobs:
           if result['unmatched_files']:
               raise SystemExit('legacy Day-D volume contains evidence absent from persistent storage')
           PY
+
+      - name: Preview the exact Compose orphan cleanup
+        if: inputs.operation == 'preview-orphan-cleanup'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/chief-of-staff-digital
+          docker compose --dry-run --env-file .env -f c3po/compose.yml \
+            run --rm -T --no-deps --remove-orphans api true
+          REMOTE
 
       - name: Recompute the five-session interim reading read-only
         if: inputs.operation == 'read-m1'
