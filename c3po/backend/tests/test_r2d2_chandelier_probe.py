@@ -7,9 +7,11 @@ from typing import Any
 import pytest
 
 from app.r2d2_candidate_f_backtest import (
+    CandidateBacktestError,
     _candidate_f_wrapper,
     _json_default,
     _premature_exit_metrics,
+    _require_sha256,
     SYMBOLS,
     canonical_sha256 as backtest_sha256,
 )
@@ -134,6 +136,35 @@ def test_probe_a_detects_ratchet_only_exit_and_reduced_giveback() -> None:
     assert row["actual_exit_engine"] == "chandelier_2tick"
 
 
+def test_probe_a_rejects_close_that_becomes_available_after_actual_exit() -> None:
+    episode = _episode(sell_price=103.0)
+    start = datetime(2026, 8, 26, 11, 0, tzinfo=UTC)
+    bars = [
+        FiveMinuteBar(
+            "TEST", start + timedelta(minutes=5 * index),
+            100, 100.2, 99.8, 100, 1_000, 5,
+        )
+        for index in range(35)
+    ]
+    bars.extend((
+        FiveMinuteBar(
+            "TEST", datetime(2026, 8, 26, 14, 5, tzinfo=UTC),
+            100, 110, 100, 110, 1_000, 5,
+        ),
+        FiveMinuteBar(
+            "TEST", datetime(2026, 8, 26, 14, 55, tzinfo=UTC),
+            110, 121, 100, 106, 1_000, 5,
+        ),
+    ))
+    row = analyze_winning_episode(episode, bars)
+    assert row["eligibility"] == "eligible"
+    assert row["ratchet_only_exit_observed"] is False
+    assert row["f_exit_at"] is None
+    assert row["counterfactual_f_net_pnl_usd"] == row["actual_net_pnl_usd"]
+    assert row["avoidable_giveback_usd"] == 0.0
+    assert row["maximum_trail_loosen_bps"] == 0.0
+
+
 def test_probe_b_uses_only_strictly_later_same_session_bars() -> None:
     episode = _episode(
         sell_reason="Immediate hard stop at mark -0.8%",
@@ -199,6 +230,13 @@ def test_backtest_self_hash_survives_json_datetime_serialization() -> None:
     assert backtest_sha256(loaded) == expected
 
 
+def test_frozen_source_hash_is_strictly_validated() -> None:
+    digest = "a" * 64
+    assert _require_sha256(digest.upper()) == digest
+    with pytest.raises(CandidateBacktestError, match="64 hexadecimal"):
+        _require_sha256("not-a-digest")
+
+
 def test_backtest_premature_exit_rate_uses_later_same_session_bar() -> None:
     from types import SimpleNamespace
 
@@ -235,6 +273,12 @@ def test_workflow_pins_read_only_window_retention_and_frozen_policy() -> None:
     assert "00:00-08:00 America/Sao_Paulo" in workflow
     assert "retention-days: 30" in workflow
     assert "gh pr comment 348" in workflow
+    assert 'host_identity="$(id -u):$(id -g)"' in workflow
+    assert workflow.count('--user "$host_identity"') == 3
+    assert 'test -w "$STUDY_OUTPUT"' in workflow
+    assert 'HOST_OUTPUT="$HOST_OUTPUT_ROOT/run-$RUN_ID"' in workflow
+    assert "frozen-candidate-e-source.tar.gz.sha256" in workflow
+    assert "frozen source provenance mismatch" in workflow
     assert "docker compose up" not in workflow
     assert "docker compose restart" not in workflow
 

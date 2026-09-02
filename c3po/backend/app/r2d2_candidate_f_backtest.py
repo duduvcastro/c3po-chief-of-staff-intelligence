@@ -49,6 +49,13 @@ def _json_default(value: Any) -> str:
     return value.isoformat() if isinstance(value, (date, datetime)) else str(value)
 
 
+def _require_sha256(value: str) -> str:
+    normalized = value.strip().lower()
+    if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
+        raise CandidateBacktestError("frozen source SHA-256 must be 64 hexadecimal characters")
+    return normalized
+
+
 def canonical_sha256(payload: Any) -> str:
     return hashlib.sha256(json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False,
@@ -291,7 +298,13 @@ def _metrics(report: Any, bars: dict[str, list[dict[str, Any]]]) -> dict[str, An
     }
 
 
-def build_report(data_root: Path, generated_at: datetime) -> dict[str, Any]:
+def build_report(
+    data_root: Path,
+    generated_at: datetime,
+    *,
+    frozen_source_sha256: str,
+) -> dict[str, Any]:
+    frozen_source_sha256 = _require_sha256(frozen_source_sha256)
     bars, source_evidence = _five_minute_bars(data_root)
     missing = sorted(set(SYMBOLS) - set(bars))
     if missing:
@@ -305,6 +318,7 @@ def build_report(data_root: Path, generated_at: datetime) -> dict[str, Any]:
         "generated_at": generated_at,
         "frozen_harness": {
             "policy_commit": FROZEN_POLICY_COMMIT,
+            "source_package_sha256": frozen_source_sha256,
             "recovered_at": ORIGINAL_HARNESS_RECOVERED_AT,
             "symbols": list(SYMBOLS),
             "session_from": SESSION_FROM,
@@ -379,12 +393,17 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Frozen Candidate E versus ratcheted Candidate F")
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--frozen-source-sha256", required=True)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    payload = build_report(args.data_root, datetime.now(timezone.utc))
+    payload = build_report(
+        args.data_root,
+        datetime.now(timezone.utc),
+        frozen_source_sha256=args.frozen_source_sha256,
+    )
     encoded = json.dumps(
         payload,
         sort_keys=True,

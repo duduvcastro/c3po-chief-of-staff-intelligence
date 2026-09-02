@@ -287,7 +287,11 @@ def analyze_winning_episode(
     synthetic_at: datetime | None = None
     for index, bar in enumerate(ordered):
         bar_end = bar.start_at + timedelta(minutes=5)
-        if bar_end <= episode.opened_at or bar.start_at >= (episode.closed_at or bar.start_at):
+        if (
+            bar_end <= episode.opened_at
+            or episode.closed_at is None
+            or bar_end > episode.closed_at
+        ):
             continue
         atr = atr14_sma(ordered, index)
         if atr is None:

@@ -43,8 +43,10 @@ jobs:
       - name: Package frozen policy source
         run: |
           tar -C frozen-candidate-e -czf "$RUNNER_TEMP/candidate-e-source.tar.gz" c3po/backend
-          sha256sum "$RUNNER_TEMP/candidate-e-source.tar.gz" \
-            > "$RUNNER_TEMP/candidate-e-source.tar.gz.sha256"
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum candidate-e-source.tar.gz > candidate-e-source.tar.gz.sha256
+          )
 
       - name: Configure production transport
         env:
@@ -107,20 +109,33 @@ jobs:
             exit 12
           fi
           mkdir -p "$HOST_OUTPUT"
-          tar -C "$frozen_tmp" -xzf /tmp/candidate-e-source.tar.gz
           (cd /tmp && sha256sum -c candidate-e-source.tar.gz.sha256)
+          frozen_source_sha256=$(awk 'NR == 1 {print $1}' /tmp/candidate-e-source.tar.gz.sha256)
+          tar -C "$frozen_tmp" -xzf /tmp/candidate-e-source.tar.gz
+          cp /tmp/candidate-e-source.tar.gz.sha256 \
+            "$HOST_OUTPUT/frozen-candidate-e-source.tar.gz.sha256"
 
           compose=(docker compose --env-file .env -f c3po/compose.yml)
-          "${compose[@]}" run --rm -T api \
+          host_identity="$(id -u):$(id -g)"
+          "${compose[@]}" run --rm -T --user "$host_identity" \
+            -e EXPECTED_IDENTITY="$host_identity" \
+            -e STUDY_OUTPUT="$CONTAINER_OUTPUT" \
+            api sh -eu -c '
+              test "$(id -u):$(id -g)" = "$EXPECTED_IDENTITY"
+              test -w "$STUDY_OUTPUT"
+            '
+
+          "${compose[@]}" run --rm -T --user "$host_identity" api \
             python -m app.r2d2_chandelier_probe \
             --output "$CONTAINER_OUTPUT/probes-a-b.json" \
             --query-output "$CONTAINER_OUTPUT/query.sql"
 
-          "${compose[@]}" run --rm -T \
+          "${compose[@]}" run --rm -T --user "$host_identity" \
             -v "$frozen_tmp:/frozen:ro" \
             -e PYTHONPATH=/frozen/c3po/backend \
             api python /app/app/r2d2_candidate_f_backtest.py \
             --data-root /app/day-d-data \
+            --frozen-source-sha256 "$frozen_source_sha256" \
             --output "$CONTAINER_OUTPUT/backtest-e-f.json"
 
           python3 - "$HOST_OUTPUT" <<'PY'
@@ -149,6 +164,12 @@ jobs:
           probe = json.loads((root / "probes-a-b.json").read_text(encoding="utf-8"))
           if query_sha != probe["governance"]["query_sha256"]:
               raise SystemExit("query hash mismatch")
+          frozen_sha = (
+              root / "frozen-candidate-e-source.tar.gz.sha256"
+          ).read_text(encoding="utf-8").split()[0]
+          backtest = json.loads((root / "backtest-e-f.json").read_text(encoding="utf-8"))
+          if frozen_sha != backtest["frozen_harness"]["source_package_sha256"]:
+              raise SystemExit("frozen source provenance mismatch")
           PY
 
           (
@@ -170,6 +191,7 @@ jobs:
             "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-chandelier-study-v1/run-$RUN_ID/probes-a-b.json" \
             "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-chandelier-study-v1/run-$RUN_ID/backtest-e-f.json" \
             "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-chandelier-study-v1/run-$RUN_ID/query.sql" \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-chandelier-study-v1/run-$RUN_ID/frozen-candidate-e-source.tar.gz.sha256" \
             "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-chandelier-study-v1/run-$RUN_ID/SHA256SUMS" \
             "$RUNNER_TEMP/r2d2-chandelier-study/"
           (cd "$RUNNER_TEMP/r2d2-chandelier-study" && sha256sum -c SHA256SUMS)
@@ -218,6 +240,8 @@ jobs:
                 f"(denominadores {e['premature_exit']['eligible_stop_exit_leg_count']}→"
                 f"{f['premature_exit']['eligible_stop_exit_leg_count']}).")
           print(f"- Hashes: probes `{probe['report_sha256']}`; backtest `{backtest['report_sha256']}`.")
+          print(f"- Política E congelada: commit `{backtest['frozen_harness']['policy_commit']}`; "
+                f"pacote `{backtest['frozen_harness']['source_package_sha256']}`.")
           print("- Evidência apenas: nenhuma mudança de política ou produção foi autorizada.")
           PY
           gh pr comment 348 --body-file "$RUNNER_TEMP/gate-annex.md"

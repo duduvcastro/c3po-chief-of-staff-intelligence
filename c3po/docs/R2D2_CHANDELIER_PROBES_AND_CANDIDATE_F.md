@@ -36,6 +36,9 @@ motor.
   usava na janela móvel de 40 barras, com o mesmo piso de `0,4%` do preço.
 - Cruzamento atribuível à catraca: primeiro close `<= F` e `> E`. Se também
   rompe E, a diferença não é atribuída a F.
+- Fronteira temporal: só entram closes completos cujo `bar_end` seja anterior
+  ou igual à saída real. Uma barra iniciada antes, mas fechada depois da
+  saída, é excluída integralmente.
 - Fill contrafactual: preço do close com a mesma fricção de saída do paper
   ledger. Episódios com escala ou parcial ficam visíveis, mas censurados.
 - Saídas: P&L líquido real, P&L F, devolução evitável em USD, maior distância
@@ -86,8 +89,12 @@ mas não a autoriza.
 O workflow é manual, exige a frase exata `RUN R2D2 CHANDELIER STUDY`, a revisão
 auditada já implantada e janela de 00:00–08:00 BRT. A consulta abre transação
 PostgreSQL `READ ONLY` e verifica `transaction_read_only=on`; nenhuma API
-externa é chamada. Só três arquivos reduzidos saem do host: dois laudos JSON e
-o SQL exato. Todos recebem SHA-256, e o resumo factual é anexado à PR #348.
+externa é chamada. Saem do host somente os dois laudos JSON, o SQL exato, o
+digest textual do pacote congelado e o manifesto de checksums. Os contêineres de
+estudo rodam com o UID/GID do usuário operacional, no diretório exclusivo do
+`RUN_ID`. O pacote é validado antes da extração; seu SHA-256 entra no laudo e
+no manifesto portátil. Todos os arquivos recebem SHA-256, e o resumo factual
+é anexado à PR #348.
 
 O runner não altera tabelas, imagens, workers, stops, sizing, flags ou estado
 do experimento. Resultado favorável a F é apenas insumo da mesa e exige nova
