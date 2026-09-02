@@ -1226,6 +1226,13 @@ def test_r2d2_dashboard_api_contract() -> None:
         "positive_episodes", "negative_episodes", "flat_episodes",
         "win_rate_percent",
     }
+    assert set(payload["nav_session_delta"]) == {
+        "status", "session_date", "previous_session_date",
+        "current_total_nav_usd", "previous_total_nav_usd",
+        "total_delta_usd", "total_delta_percent",
+        "organic_delta_usd", "organic_delta_percent",
+        "interest_delta_usd", "interest_delta_percent", "interest_status",
+    }
     assert payload["mandate"]["real_broker_execution"] is False
     assert payload["mandate"]["continuous_operation"] is True
     assert "end_date" not in payload
