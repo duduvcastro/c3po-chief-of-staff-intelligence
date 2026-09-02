@@ -344,16 +344,19 @@ jobs:
             [[ "$session" =~ ^2026-(08-(26|27|28|29|30|31)|09-0[1-2])$ ]]
             snapshot="/tmp/m1-transient/session-${session}.json"
             test ! -e "$snapshot"
-            # The preflight and 512 MiB virtual-memory ceiling protect the
+            # The preflight and 384 MiB virtual-memory ceiling protect the
             # 1.9 GiB production host.  The process is sequential and runs in
             # the existing API container; it never creates a second API.
             ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" \
-              "test \$(awk '/^MemAvailable:/ {print \$2}' /proc/meminfo) -ge 450000 && \
+              "available=\$(awk '/^MemAvailable:/ {print \$2}' /proc/meminfo); \
+               if test \"\$available\" -lt 260000; then \
+                 echo \"M1 preflight refused: MemAvailable below 260000 kB\" >&2; exit 75; \
+               fi; \
                cd /opt/chief-of-staff-digital && \
                docker compose --env-file .env -f c3po/compose.yml exec -T \
                  -e 'PGOPTIONS=-c role=pg_read_all_data -c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000' \
                  -e 'C3PO_EVIDENCE_QUERY_SHA256=$query_sha' \
-                 api sh -ceu 'ulimit -v 524288; exec nice -n 10 python - --session \"$session\"'" \
+                 api sh -ceu 'ulimit -v 393216; exec nice -n 10 python - --session \"$session\"'" \
               < "$query" > "$snapshot"
             test -s "$snapshot"
             SNAPSHOT="$snapshot" EXPECTED_ENGINE_SHA="$engine_sha" \
