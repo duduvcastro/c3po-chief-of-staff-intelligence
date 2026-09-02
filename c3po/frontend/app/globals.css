@@ -620,6 +620,12 @@ button { cursor: pointer; }
 .r2d2-trade-summary .positive b { color: var(--green); }
 .r2d2-trade-summary .negative { color: #a52d27; background: #fff0ef; border-color: #f1d2cf; }
 .r2d2-trade-summary .negative b { color: var(--red); }
+.r2d2-trade-summary .r2d2-episode-summary { color: #4e6074; background: #edf4fa; border-color: #d4e2ee; }
+.r2d2-trade-summary .r2d2-episode-summary b { color: #315f87; }
+.r2d2-trade-summary .r2d2-episode-positive { color: #176c49; background: #eaf7f1; border-color: #cfe9dd; }
+.r2d2-trade-summary .r2d2-episode-positive b { color: var(--green); }
+.r2d2-trade-summary .r2d2-episode-negative { color: #a52d27; background: #fff0ef; border-color: #f1d2cf; }
+.r2d2-trade-summary .r2d2-episode-negative b { color: var(--red); }
 .r2d2-cycle-strip { min-height: 42px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; padding: 8px 14px; color: #77818d; background: #f7f8f9; border: 1px solid var(--line); border-radius: var(--radius); font-size: 9px; }
 .r2d2-cycle-strip svg { color: var(--gold-deep); }
 .r2d2-cycle-strip strong { color: #242b34; }
@@ -988,6 +994,8 @@ button { cursor: pointer; }
 .falcon-flight-metric strong { margin-top: 7px; font-size: 22px; line-height: 1; }
 .falcon-flight-metric strong.falcon-money-inline, .r2d2-money-inline { white-space: nowrap; }
 .falcon-flight-metric strong.falcon-money-inline { font-size: 19px; }
+.falcon-flight-metric strong.falcon-nav-delta-value { display: flex; align-items: baseline; flex-wrap: wrap; font-size: 19px; row-gap: 3px; }
+.falcon-flight-metric strong.falcon-nav-delta-value em { font-size: 11px; white-space: nowrap; }
 .falcon-flight-metric strong em { font-size: 13px; font-style: normal; }
 .falcon-flight-metric small { margin-top: 7px; color: #8c929b; font-size: 8px; white-space: nowrap; }
 .falcon-capcom-view { container-type: inline-size; gap: 16px; }

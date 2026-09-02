@@ -262,6 +262,20 @@ interface R2D2DashboardData {
   interest_income_status: "pending" | "posted";
   interest_income_annual_rate: number | null;
   interest_income_rate_date: string | null;
+  nav_session_delta: {
+    status: "available" | "first_session" | "missing_previous_close" | "current_mark_unavailable";
+    session_date: string;
+    previous_session_date: string | null;
+    current_total_nav_usd: number | null;
+    previous_total_nav_usd: number | null;
+    total_delta_usd: number | null;
+    total_delta_percent: number | null;
+    organic_delta_usd: number | null;
+    organic_delta_percent: number | null;
+    interest_delta_usd: number | null;
+    interest_delta_percent: number | null;
+    interest_status: "posted" | "pending" | "not_applicable";
+  };
   cash_usd: number;
   gross_exposure_usd: number;
   total_return_percent: number;
@@ -3755,6 +3769,13 @@ function R2D2RisingView() {
   const todayTrades = data.trades.filter((trade) => saoPauloDateKey(trade.executed_at) === todayKey);
   const todayPositiveTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) > 0).length;
   const todayNegativeTrades = todayTrades.filter((trade) => (trade.realized_pnl_usd ?? 0) < 0).length;
+  const todayEpisodes = data.today_episode_stats;
+  const todayEpisodeWinRate = todayEpisodes.decided_episodes > 0
+    ? todayEpisodes.win_rate_percent
+    : null;
+  const todayEpisodeTone = todayEpisodeWinRate === null
+    ? "neutral"
+    : todayEpisodeWinRate >= 50 ? "positive" : "negative";
   const lifetimeClosedTrades = data.stats.positive_transactions + data.stats.negative_transactions;
   const lifetimePositiveShare = lifetimeClosedTrades > 0 ? data.stats.positive_transactions / lifetimeClosedTrades * 100 : 0;
   const lifetimeNegativeShare = lifetimeClosedTrades > 0 ? data.stats.negative_transactions / lifetimeClosedTrades * 100 : 0;
@@ -4237,7 +4258,14 @@ function R2D2RisingView() {
       <section className="panel r2d2-trades-panel">
         <header className="panel-header r2d2-trades-header">
           <div><BookOpenCheck size={18} /><h2>Daily Buy / Sell Log</h2></div>
-          <div className="r2d2-trade-summary" aria-label="Resumo das transações">
+          <div className="r2d2-trade-summary" aria-label="Resumo dos episódios e das transações">
+            <span
+              className={`r2d2-episode-summary r2d2-episode-${todayEpisodeTone}`}
+              title={`${todayEpisodes.closed_episodes} episódios encerrados hoje${todayEpisodes.flat_episodes ? ` · ${todayEpisodes.flat_episodes} flat` : ""}`}
+            >
+              <b>{todayEpisodes.positive_episodes}/{todayEpisodes.decided_episodes}</b>
+              episódios · {todayEpisodeWinRate === null ? "N/D" : `${todayEpisodeWinRate.toFixed(1)}%`}
+            </span>
             <span className="positive" title="Vendas encerradas hoje com P&L realizado positivo"><b>{todayPositiveTrades}</b> positivas</span>
             <span className="negative" title="Vendas encerradas hoje com P&L realizado negativo"><b>{todayNegativeTrades}</b> negativas</span>
           </div>
@@ -4474,6 +4502,10 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
     style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2
   }).format(value).replace("$", "US$ ");
   const signedUsd = (value: number) => `${value >= 0 ? "+" : "-"}${usd(Math.abs(value))}`;
+  const signedPercent = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+  const isFiniteNumber = (value: number | null | undefined): value is number => (
+    typeof value === "number" && Number.isFinite(value)
+  );
   const saoPauloDate = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
@@ -4487,7 +4519,6 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   const todayRealizedSellLegs = todayPositiveSellLegs + todayNegativeSellLegs;
   const todayPositiveSellShare = todayRealizedSellLegs > 0 ? todayPositiveSellLegs / todayRealizedSellLegs * 100 : 0;
   const todayNegativeSellShare = todayRealizedSellLegs > 0 ? todayNegativeSellLegs / todayRealizedSellLegs * 100 : 0;
-  const todayEpisodes = r2d2?.today_episode_stats;
   const healthHeadline = health?.status === "healthy"
     ? "All services operational"
     : health?.status === "offline"
@@ -4524,6 +4555,43 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   const accountingTotalReturnDetail = r2d2 && accountingTotalReturnPercent !== null
     ? `${accountingTotalReturnPercent >= 0 ? "+" : ""}${accountingTotalReturnPercent.toFixed(2)}% vs ${usd(r2d2.starting_capital_usd)} invested`
     : "Waiting for R2D2";
+  const navSessionDelta = r2d2?.nav_session_delta ?? null;
+  const navDeltaMetrics = (
+    navSessionDelta?.status === "available"
+    && isFiniteNumber(navSessionDelta.total_delta_percent)
+    && isFiniteNumber(navSessionDelta.total_delta_usd)
+    && isFiniteNumber(navSessionDelta.organic_delta_percent)
+    && isFiniteNumber(navSessionDelta.interest_delta_percent)
+  ) ? {
+    totalPercent: navSessionDelta.total_delta_percent,
+    totalUsd: navSessionDelta.total_delta_usd,
+    organicPercent: navSessionDelta.organic_delta_percent,
+    interestPercent: navSessionDelta.interest_delta_percent
+  } : null;
+  const navDeltaFirstSession = navSessionDelta?.status === "first_session";
+  const navDeltaPreviousSessionDate = navSessionDelta?.previous_session_date
+    ? new Date(`${navSessionDelta.previous_session_date}T12:00:00`).toLocaleDateString("pt-BR", {
+        day: "2-digit", month: "2-digit", year: "numeric"
+      })
+    : null;
+  const navDeltaValue = navDeltaMetrics
+    ? signedPercent(navDeltaMetrics.totalPercent)
+    : "N/D";
+  const navDeltaSecondaryValue = navDeltaMetrics
+    ? signedUsd(navDeltaMetrics.totalUsd)
+    : navDeltaFirstSession ? "primeira sessão" : undefined;
+  const navDeltaDetail = navDeltaMetrics && navSessionDelta
+    ? `orgânico ${signedPercent(navDeltaMetrics.organicPercent)} · juros ${signedPercent(navDeltaMetrics.interestPercent)}${navSessionDelta.interest_status === "pending" ? " · lançamento pendente" : ""}`
+    : navDeltaFirstSession
+      ? "Sem fechamento anterior nesta época"
+      : navSessionDelta?.status === "current_mark_unavailable"
+        ? "Marca viva indisponível"
+      : navSessionDelta?.status === "missing_previous_close"
+        ? `Fechamento anterior${navDeltaPreviousSessionDate ? ` de ${navDeltaPreviousSessionDate}` : ""} indisponível`
+        : r2d2 ? "Dados da sessão ainda indisponíveis" : "Waiting for R2D2";
+  const navDeltaTone: "blue" | "green" | "red" = navDeltaMetrics
+    ? navDeltaMetrics.totalPercent >= 0 ? "green" : "red"
+    : "blue";
   const livePositions = liveTelemetry?.positions ?? r2d2?.positions ?? [];
   const liveOpenPositions = liveTelemetry?.open_positions ?? r2d2?.open_positions ?? 0;
   const liveTelemetryTime = liveTelemetry?.generated_at
@@ -4543,7 +4611,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
         <FalconMetric label="Daily trading P&L" value={r2d2 ? signedUsd(r2d2.organic_daily_pnl_usd ?? r2d2.daily_pnl_usd) : "—"} detail={r2d2 ? `${dailyPnlDate ?? "No session"} trades · ${cashYieldDetail}` : "Waiting for R2D2"} tone={(r2d2?.organic_daily_pnl_usd ?? r2d2?.daily_pnl_usd ?? 0) >= 0 ? "green" : "red"} valueClassName="falcon-money-inline" />
         <FalconMetric label="Positive Sell Legs" value={`${todayPositiveSellLegs}`} secondaryValue={`${todayPositiveSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="green" />
         <FalconMetric label="Negative Sell Legs" value={`${todayNegativeSellLegs}`} secondaryValue={`${todayNegativeSellShare.toFixed(1)}%`} detail={`of ${todayRealizedSellLegs} realized sell legs today`} tone="red" />
-        <FalconMetric label="Episode Win Rate" value={todayEpisodes ? `${todayEpisodes.positive_episodes}/${todayEpisodes.decided_episodes}` : "—"} secondaryValue={todayEpisodes ? `${todayEpisodes.win_rate_percent.toFixed(1)}%` : undefined} detail={todayEpisodes ? `${todayEpisodes.closed_episodes} closed episodes today${todayEpisodes.flat_episodes ? ` · ${todayEpisodes.flat_episodes} flat` : ""}` : "Waiting for R2D2"} tone={(todayEpisodes?.win_rate_percent ?? 0) >= 50 ? "green" : "red"} />
+        <FalconMetric label="NAV Δ vs sessão anterior" value={navDeltaValue} secondaryValue={navDeltaSecondaryValue} detail={navDeltaDetail} tone={navDeltaTone} valueClassName="falcon-nav-delta-value" />
       </section>
 
       {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span><button onClick={() => { setError(""); void loadR2D2(); void loadIndices(); }}>Retry</button></div>}
