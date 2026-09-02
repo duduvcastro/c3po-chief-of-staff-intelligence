@@ -11,6 +11,7 @@ on:
         options:
           - diagnose-kill
           - inspect-orphans
+          - compare-legacy-day-d-volume
           - read-m1
 
 permissions:
@@ -116,6 +117,56 @@ jobs:
             docker diff "$name"
           done
           REMOTE
+
+      - name: Compare the legacy Day-D volume with persistent storage
+        if: inputs.operation == 'compare-legacy-day-d-volume'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'sudo -n python3 -' <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          from pathlib import Path
+
+          legacy = Path('/var/lib/docker/volumes/c3po_c3po_day_d_data/_data')
+          persistent = Path('/mnt/day-d-data')
+
+          def digest(path: Path) -> str:
+              value = hashlib.sha256()
+              with path.open('rb') as handle:
+                  for block in iter(lambda: handle.read(1024 * 1024), b''):
+                      value.update(block)
+              return value.hexdigest()
+
+          if not legacy.is_dir() or not persistent.is_dir():
+              raise SystemExit('required Day-D storage root is missing')
+          rows = []
+          for source in sorted(path for path in legacy.rglob('*') if path.is_file()):
+              relative = source.relative_to(legacy)
+              target = persistent / relative
+              source_sha = digest(source)
+              target_sha = digest(target) if target.is_file() else None
+              rows.append({
+                  'path': str(relative),
+                  'bytes': source.stat().st_size,
+                  'sha256': source_sha,
+                  'persistent_match': target_sha == source_sha,
+              })
+          result = {
+              'schema': 'C3PO_DAY_D_LEGACY_VOLUME_COMPARISON-v1',
+              'legacy_volume': 'c3po_c3po_day_d_data',
+              'file_count': len(rows),
+              'total_bytes': sum(row['bytes'] for row in rows),
+              'matching_persistent_files': sum(row['persistent_match'] for row in rows),
+              'unmatched_files': [row for row in rows if not row['persistent_match']],
+          }
+          print(json.dumps(result, sort_keys=True))
+          if result['unmatched_files']:
+              raise SystemExit('legacy Day-D volume contains evidence absent from persistent storage')
+          PY
 
       - name: Recompute the five-session interim reading read-only
         if: inputs.operation == 'read-m1'
