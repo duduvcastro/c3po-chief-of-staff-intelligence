@@ -193,6 +193,14 @@ def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
         "pull-requests": "write",
     }
     controller_source = yaml.safe_dump(controller, sort_keys=False)
+    controller_steps = {
+        step.get("name"): step
+        for step in controller["steps"]
+        if step.get("name")
+    }
+    open_lane_source = controller_steps[
+        "Open a rebuild PR and start validation"
+    ]["run"]
     assert "c3po_container_remediation.py plan" in controller_source
     assert "gh pr create" in controller_source
     assert "gh pr comment" in controller_source
@@ -200,8 +208,12 @@ def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
     assert "REMEDIATION_BRANCH" in controller_source
     assert "git switch -C" in controller_source
     assert "git push origin" in controller_source
-    assert "actions/permissions/workflow" in controller_source
-    assert "can_approve_pull_request_reviews" in controller_source
+    assert "actions/permissions/workflow" not in controller_source
+    assert "can_approve_pull_request_reviews" not in controller_source
+    assert "Prove GitHub Actions may create remediation PRs" not in controller_steps
+    assert open_lane_source.index('git push origin "$branch"') < open_lane_source.index(
+        "gh pr create"
+    )
     assert "steps.remediation.outputs.lane_prefix" in controller_source
     assert controller_source.count("c3po_dispatch_remediation.sh") == 2
     assert remediation_dispatch.count("gh workflow run c3po-pipeline.yml") == 1

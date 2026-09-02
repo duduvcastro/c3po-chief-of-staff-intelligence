@@ -3,7 +3,8 @@ title = "C3PO secret scan"
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
+description = "Structured public identifier constants"
 # Audited 28/08/2026 (Fable, corrections required by Codex audit of PR #276).
 # No path is ever excused wholesale. Only two shapes of line are allowed:
 #   Named-constant *_KEY assignments whose value is a structured identifier:
@@ -16,6 +17,22 @@ regexes = [
   '''^\s*[A-Z][A-Z0-9_]*_KEY(:\s*[A-Za-z\[\]"' ]+)?\s*=\s*"[a-z][a-z0-9]{2,}(_[a-z0-9]+)+"\s*$''',
   '''^\s*[A-Z][A-Z0-9_]*_KEY(:\s*[A-Za-z\[\]"' ]+)?\s*=\s*"[A-Z][A-Z0-9]{1,}(_[A-Z0-9]+)+"\s*$''',
   '''^\s*[A-Z][A-Z0-9_]*_KEY\s*=\s*[A-Z][A-Za-z0-9_.]{1,80}$''',
+]
+
+# The controller writes this deterministic SHA-256 over the sorted fixable
+# findings. It is a public idempotency identifier, not authentication material.
+# Both predicates are mandatory: every other field and every other path remains
+# scanned, including an identical secret-shaped assignment in a test fixture.
+[[allowlists]]
+description = "Deterministic remediation digest in the generated controller trigger"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = [
+    '''(^|/)c3po/security/container-rebuild-trigger\.json$''',
+]
+regexTarget = "line"
+regexes = [
+    '''^\s*"remediation_key"\s*:\s*"[0-9a-f]{64}"\s*,?\s*$''',
 ]
 
 # Overrides the default rule of the PINNED gitleaks 8.30.1 by id. The stock
@@ -51,6 +68,7 @@ regexTarget = "match"
 regexes = [
     '''(?i)(?:access(?:ibility|or)|access[_.-]?id|random[_.-]?access|api[_.-]?(?:id|name|version)|rapid|capital|[a-z0-9-]*?api[a-z0-9-]*?:jar:|author|X-MS-Exchange-Organization-Auth|Authentication-Results|(?:credentials?[_.-]?id|withCredentials)|(?:bucket|foreign|hot|idx|natural|primary|pub(?:lic)?|schema|sequence)[_.-]?key|(?:turkey)|key[_.-]?(?:alias|board|code|frame|id|length|mesh|name|pair|press(?:ed)?|ring|selector|signature|size|stone|storetype|word|up|down|left|right)|key[_.-]?vault[_.-]?(?:id|name)|keyVaultToStoreSecrets|key(?:store|tab)[_.-]?(?:file|path)|issuerkeyhash|(?-i:[DdMm]onkey|[DM]ONKEY)|keying|(?:secret)[_.-]?(?:length|name|size)|UserSecretsId|(?:csrf)[_.-]?token|(?:io\.jsonwebtoken[ \t]?:[ \t]?[\w-]+)|(?:api|credentials|token)[_.-]?(?:endpoint|ur[il])|public[_.-]?token|(?:key|token)[_.-]?file|(?-i:(?:[A-Z_]+=\n[A-Z_]+=|[a-z_]+=\n[a-z_]+=)(?:\n|\z))|(?-i:(?:[A-Z.]+=\n[A-Z.]+=|[a-z.]+=\n[a-z.]+=)(?:\n|\z)))''',
 ]
+
 stopwords = [
     "000000",
     "6fe4476ee5a1832882e326b506d14126",
@@ -1516,4 +1534,3 @@ regexes = [
     '''LIC_FILES_CHKSUM[^=]*=\s*"[^"]+''',
     '''SRC[^=]*=\s*"[a-zA-Z0-9]+''',
 ]
-
