@@ -14,6 +14,7 @@ on:
           - compare-legacy-day-d-volume
           - preview-orphan-cleanup
           - cleanup-orphans
+          - verify-orphan-cleanup
           - read-m1
 
 permissions:
@@ -246,6 +247,21 @@ jobs:
           docker volume inspect c3po_c3po_day_d_data >/dev/null
           test -d /mnt/day-d-data
           printf 'removed_orphan_containers=%s volumes_removed=0\n' "${#expected[@]}"
+          REMOTE
+
+      - name: Verify the Day-D orphan cleanup
+        if: inputs.operation == 'verify-orphan-cleanup'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -i ~/.ssh/c3po_deploy "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          names=$(docker ps -a --format '{{.Names}}' | grep '^c3po-day-d-' || true)
+          test -z "$names"
+          docker volume inspect c3po_c3po_day_d_data >/dev/null
+          test -d /mnt/day-d-data
+          printf 'day_d_orphan_containers=0 legacy_volume_preserved=true persistent_bind_preserved=true\n'
           REMOTE
 
       - name: Recompute the five-session interim reading read-only
