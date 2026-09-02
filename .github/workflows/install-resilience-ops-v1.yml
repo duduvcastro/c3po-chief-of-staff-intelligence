@@ -15,6 +15,7 @@ on:
           - preview-orphan-cleanup
           - cleanup-orphans
           - verify-orphan-cleanup
+          - inspect-m1-server-source
           - read-m1
 
 permissions:
@@ -263,6 +264,24 @@ jobs:
           test -d /mnt/day-d-data
           printf 'day_d_orphan_containers=0 legacy_volume_preserved=true persistent_bind_preserved=true\n'
           REMOTE
+
+      - name: Probe canonical equivalence of the server-side M1 source
+        if: inputs.operation == 'inspect-m1-server-source'
+        env:
+          C3PO_PRODUCTION_HOST: ${{ secrets.C3PO_AWS_HOST }}
+          C3PO_PRODUCTION_USER: ${{ secrets.C3PO_AWS_USER }}
+          C3PO_SSH_KEY: /home/runner/.ssh/c3po_deploy
+        run: |
+          set +e
+          .github/scripts/c3po_interim_m1_server_read.sh /tmp/m1-server-source.json
+          status=$?
+          set -e
+          if [[ "$status" -eq 3 ]]; then
+            test ! -e /tmp/m1-server-source.json
+            echo 'canonical_equivalent=false m1_emitted=false fallback_required=true'
+            exit 0
+          fi
+          exit "$status"
 
       - name: Recompute the five-session interim reading read-only
         if: inputs.operation == 'read-m1'
