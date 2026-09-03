@@ -1672,6 +1672,9 @@ button { cursor: pointer; }
 .governance-source-total { display: flex; align-items: baseline; gap: 7px; margin-top: 10px; }
 .governance-source-total strong { font-size: 24px; line-height: 1; font-variant-numeric: tabular-nums; }
 .governance-source-total span { color: var(--muted); font-size: 9px; font-weight: 700; }
+.governance-acceptance-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 12px; margin-top: 8px; font-size: 8px; font-weight: 800; }
+.governance-acceptance-summary > span { color: var(--muted); }
+.governance-acceptance-summary em { padding: 5px 7px; border-radius: 5px; background: var(--amber-soft); color: var(--amber); font-style: normal; }
 .governance-source-block dl { margin-top: 10px; }
 .governance-source-row { padding-top: 14px; border-top: 1px solid var(--line); }
 .governance-source-row > div strong { display: inline-block; margin-top: 5px; font-size: 24px; line-height: 1; }

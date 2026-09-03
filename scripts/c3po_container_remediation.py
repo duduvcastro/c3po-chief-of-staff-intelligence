@@ -5,11 +5,24 @@ import argparse
 import hashlib
 import json
 import re
+import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from c3po_trivy_scan import SCHEMA as REPORT_SCHEMA
 from c3po_trivy_scan import report_sha256
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+BACKEND_ROOT = REPOSITORY_ROOT / "c3po" / "backend"
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+from app.cve_acceptance import (  # noqa: E402
+    archive_acceptances_for_findings,
+    load_acceptance_registry_file,
+)
 
 
 TRIGGER_SCHEMA = "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1"
@@ -245,6 +258,10 @@ def render_pr_body(trigger: dict[str, Any]) -> str:
         f"- [Workflow de origem]({trigger['run_url']})",
         f"- Artefato: `{trigger['artifact_name']}`",
         f"- Escopo da evidência: `{trigger['evidence_scope']}`",
+        *([] if dry_run else [
+            "- Aceites arquivados no mesmo commit: "
+            f"**{int(trigger.get('acceptance_entries_archived') or 0)}**"
+        ]),
         "",
         "| Imagem | Severidade | CVE | Pacote | Instalada | FixedVersion |",
         "| --- | --- | --- | --- | --- | --- |",
@@ -300,6 +317,50 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
+def _archive_fixable_acceptances(
+    args: argparse.Namespace,
+    report: dict[str, Any],
+    findings: list[dict[str, str]],
+    *,
+    dry_run: bool,
+) -> int:
+    registry_path = getattr(args, "acceptance_registry", None)
+    archived_path = getattr(args, "archived_acceptance_registry", None)
+    if dry_run:
+        return 0
+    if not isinstance(registry_path, Path) or not isinstance(archived_path, Path):
+        raise ReportValidationError(
+            "production remediation requires acceptance registry archival paths"
+        )
+    try:
+        entries, _registry_sha256 = load_acceptance_registry_file(registry_path)
+        generated_at = datetime.fromisoformat(
+            str(report.get("generated_at") or "").replace("Z", "+00:00")
+        )
+        archived_entries, archived_count = archive_acceptances_for_findings(
+            entries,
+            findings,
+            archived_at=generated_at,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise ReportValidationError(
+            f"cannot prepare CVE acceptance archival: {exc}"
+        ) from exc
+    if archived_count:
+        archived_path.parent.mkdir(parents=True, exist_ok=True)
+        archived_path.write_text(
+            json.dumps(
+                archived_entries,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    return archived_count
+
+
 def _append_github_outputs(path: Path, outputs: dict[str, str]) -> None:
     with path.open("a", encoding="utf-8") as handle:
         for key, value in outputs.items():
@@ -316,7 +377,14 @@ def _plan(args: argparse.Namespace, *, dry_run: bool) -> int:
         lane_prefix = PRODUCTION_LANE_PREFIX
     required = sum(counts.values()) > 0
     remediation_key = ""
+    acceptance_archived = 0
     if required:
+        acceptance_archived = _archive_fixable_acceptances(
+            args,
+            report,
+            findings,
+            dry_run=dry_run,
+        )
         trigger = build_trigger(
             report,
             counts=counts,
@@ -325,6 +393,7 @@ def _plan(args: argparse.Namespace, *, dry_run: bool) -> int:
             artifact_name=args.artifact_name,
             dry_run=dry_run,
         )
+        trigger["acceptance_entries_archived"] = acceptance_archived
         remediation_key = trigger["remediation_key"]
         _write_json(args.trigger, trigger)
         args.pr_body.write_text(render_pr_body(trigger), encoding="utf-8")
@@ -336,6 +405,7 @@ def _plan(args: argparse.Namespace, *, dry_run: bool) -> int:
         "remediation_key": remediation_key,
         "lane_prefix": lane_prefix,
         "dry_run": "true" if dry_run else "false",
+        "acceptance_archived": str(acceptance_archived),
     })
     print(json.dumps({"required": required, "fix_available": counts}, sort_keys=True))
     return 0
@@ -377,6 +447,12 @@ def parse_args() -> argparse.Namespace:
     plan_parser.add_argument("--run-url", required=True)
     plan_parser.add_argument("--artifact-name", required=True)
     plan_parser.add_argument("--github-output", type=Path, required=True)
+    plan_parser.add_argument("--acceptance-registry", type=Path, required=True)
+    plan_parser.add_argument(
+        "--archived-acceptance-registry",
+        type=Path,
+        required=True,
+    )
     plan_parser.set_defaults(handler=plan)
 
     dry_run_parser = subparsers.add_parser("plan-dry-run-positive")

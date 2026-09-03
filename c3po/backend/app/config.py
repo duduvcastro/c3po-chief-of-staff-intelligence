@@ -49,6 +49,7 @@ class Settings(BaseSettings):
             "C3PO_GITHUB_TOKEN",
         ),
     )
+    cve_acceptance_lane_enabled: bool = False
     deploy_version_file: Path = DEFAULT_LEGACY_ROOT / ".deploy-version"
     build_sha: str = "development"
     sentry_dsn: str = ""

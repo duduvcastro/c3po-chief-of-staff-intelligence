@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from .config import Settings
+from .cve_acceptance import validate_acceptance_overlay_payload
 from .governance_vulnerability import report_sha256
 from .observability import HealthcheckPing
 from .schemas import AiUsageMetric, ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
@@ -1315,10 +1316,38 @@ class SystemHealthService:
         ) and status == "healthy":
             status = "attention"
         os_pending = operating_system.get("security_updates_pending")
-        image_total = production_images.get("finding_total")
+        acceptance = production_images.get("acceptance") or {}
+        if acceptance.get("enabled") is True:
+            try:
+                validate_acceptance_overlay_payload(production_images)
+            except RuntimeError:
+                return IntegrationHealth(
+                    name="Governança & Vulnerabilidades",
+                    status="offline",
+                    detail="Atestado diário com camada de aceite inválida",
+                    last_update=self._format_time(generated_at),
+                    metadata={"kind": "governance_vulnerabilities"},
+                )
+        acceptance_counts = acceptance.get("counts") or {}
+        pending_acceptance = acceptance_counts.get("pending") or {}
+        image_total = (
+            pending_acceptance.get("total")
+            if acceptance.get("enabled") is True
+            else production_images.get("finding_total")
+        )
+        if acceptance.get("enabled") is True:
+            raw_acceptance = acceptance_counts.get("raw") or {}
+            accepted_acceptance = acceptance_counts.get("accepted") or {}
+            image_detail = (
+                f"imagens {image_total if image_total is not None else '?'} pendentes · "
+                f"{accepted_acceptance.get('total', '?')} aceitas · "
+                f"{raw_acceptance.get('total', '?')} brutas"
+            )
+        else:
+            image_detail = f"imagens {image_total if image_total is not None else '?'}"
         layer_detail = (
             f"repo {open_total} · SO {os_pending if os_pending is not None else '?'} · "
-            f"imagens {image_total if image_total is not None else '?'}"
+            f"{image_detail}"
         )
         if stale:
             detail = "Atestado diário vencido há mais de 36h"

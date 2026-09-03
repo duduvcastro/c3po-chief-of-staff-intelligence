@@ -61,6 +61,60 @@ def test_identical_observation_is_idempotent_and_new_signal_reopens() -> None:
     assert reopened["event_count"] == 3
 
 
+def test_new_signal_updates_header_and_can_escalate_existing_incident() -> None:
+    service = _service()
+    at = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
+    opened = service.signal(
+        incident_key="governance-vulnerability",
+        source="governance",
+        severity="attention",
+        title="Governance needs review",
+        detail="unknown findings",
+        deep_link="/?view=health",
+        evidence={"status": "attention"},
+        at=at,
+    )
+
+    escalated = service.signal(
+        incident_key="governance-vulnerability",
+        source="governance",
+        severity="critical",
+        title="Governança e vulnerabilidades requerem ação",
+        detail="1 critical pending",
+        deep_link="/?view=health&severity=critical",
+        evidence={"status": "offline", "critical": 1},
+        at=at + timedelta(minutes=1),
+    )
+
+    assert escalated["id"] == opened["id"]
+    assert escalated["severity"] == "critical"
+    assert escalated["title"] == "Governança e vulnerabilidades requerem ação"
+    assert escalated["deep_link"] == "/?view=health&severity=critical"
+    assert escalated["event_count"] == 2
+
+
+def test_resolve_key_accepts_fixed_clock() -> None:
+    service = _service()
+    opened_at = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
+    resolved_at = opened_at + timedelta(minutes=1)
+    service.signal(
+        incident_key="fixed-clock",
+        source="test",
+        severity="attention",
+        title="Fixed clock",
+        detail="open",
+        deep_link="/",
+        evidence={"state": "open"},
+        at=opened_at,
+    )
+
+    resolved = service.resolve_key("fixed-clock", "done", at=resolved_at)
+
+    assert resolved is not None
+    assert resolved["status"] == "resolved"
+    assert resolved["last_seen_at"] == resolved_at
+
+
 def test_sensitive_evidence_keys_are_rejected() -> None:
     service = _service()
     with pytest.raises(ValueError, match="sensitive incident evidence key"):
