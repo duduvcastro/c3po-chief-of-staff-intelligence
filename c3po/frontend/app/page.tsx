@@ -8522,6 +8522,15 @@ function serviceLogoKind(name: string, groupKey: SystemHealthGroupKey): ServiceL
   return "generic";
 }
 
+function DependabotMark() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="#0969DA">
+      <path d="M8.75 11a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5a.75.75 0 0 1 .75-.75Zm7.25.75a.75.75 0 0 0-1.5 0v3.5a.75.75 0 0 0 1.5 0v-3.5Z" />
+      <path d="M9.813 1h2.437a.75.75 0 0 1 .75.75V5h6.75A2.25 2.25 0 0 1 22 7.25v5.25h1.25a.75.75 0 0 1 0 1.5H22v5.75A2.25 2.25 0 0 1 19.75 22H4.25A2.25 2.25 0 0 1 2 19.75V14H.75a.75.75 0 0 1 0-1.5H2V7.25A2.25 2.25 0 0 1 4.25 5h7.25V2.5H9.813A.75.75 0 0 1 9.812 1ZM3.5 7.25v12.5c0 .414.336.75.75.75h15.5a.75.75 0 0 0 .75-.75V7.25a.75.75 0 0 0-.75-.75H4.25a.75.75 0 0 0-.75.75Z" />
+    </svg>
+  );
+}
+
 function TrivyMark() {
   return (
     <svg viewBox="0 0 100 104" aria-hidden="true">
@@ -8751,7 +8760,7 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
           <div className="governance-open-total"><strong>{knownTotal == null ? "—" : knownTotal.toLocaleString("pt-BR")}</strong><span>alertas, pacotes e ocorrências</span></div>
           <div className="governance-source-list">
             <div className="governance-source-block">
-              <header><div><span>REPOSITÓRIO</span><strong>Dependabot</strong></div><em className={`governance-summary-${dependabotClass}`}>{dependabotLabel}</em></header>
+              <header><div><span>REPOSITÓRIO</span><strong>Dependabot</strong></div><div className="dependabot-scanner-identity"><span className="service-logo service-logo-dependabot" aria-hidden="true"><DependabotMark /></span><em className={`governance-summary-${dependabotClass}`}>{dependabotLabel}</em></div></header>
               <div className="governance-source-total"><strong>{hasReport ? Number(dependabot.open_total ?? 0).toLocaleString("pt-BR") : "—"}</strong><span>abertos</span></div>
               <dl>
                 {(["critical", "high", "medium", "low"] as const).map((severity) => (
