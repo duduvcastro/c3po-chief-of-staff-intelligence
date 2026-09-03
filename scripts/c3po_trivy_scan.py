@@ -19,6 +19,8 @@ TRIVY_IMAGE = (
     "62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969"
 )
 SEVERITIES = ("critical", "high", "medium", "low")
+PRODUCTION_RUNTIME_SCOPE = "production_runtime"
+PRODUCTION_IMAGE_LABELS = ("backend", "web", "database")
 
 
 def canonical_bytes(payload: dict[str, Any]) -> bytes:
@@ -68,6 +70,7 @@ def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any])
                         "severity": severity,
                         "package": str(vulnerability.get("PkgName") or "unknown"),
                         "installed_version": str(vulnerability.get("InstalledVersion") or "unknown"),
+                        "fixed_version": fixed_version,
                         "target": str(result.get("Target") or "unknown"),
                     })
             else:
@@ -78,6 +81,7 @@ def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any])
         "reference": reference,
         "artifact_name": str(payload.get("ArtifactName") or reference),
         "image_id": str(metadata.get("ImageID") or ""),
+        "rootfs_layers": [str(item) for item in metadata.get("DiffIDs") or []],
         "repo_digests": sorted(str(item) for item in metadata.get("RepoDigests") or []),
         "by_severity": counts,
         "fix_available": fix_available,
@@ -156,13 +160,77 @@ def parse_origin_specs(origin_specs: list[str]) -> dict[str, dict[str, Any]]:
         parts = value.split("|")
         if not label or len(parts) != 3 or not all(parts):
             raise ValueError(f"invalid origin specification: {spec}")
+        if label in origins:
+            raise ValueError(f"duplicate origin label: {label}")
         image_ref, image_id, rootfs = parts
+        rootfs_layers = rootfs.split(",")
+        if not all(rootfs_layers):
+            raise ValueError(f"invalid origin specification: {spec}")
         origins[label] = {
             "image_ref": image_ref,
             "image_id": image_id,
-            "rootfs_layers": rootfs.split(","),
+            "rootfs_layers": rootfs_layers,
         }
     return origins
+
+
+def archive_config_image_ids(
+    manifest: Any,
+    requested_refs: list[tuple[str, str]],
+) -> dict[str, str]:
+    if not isinstance(manifest, list):
+        raise ValueError("Docker archive manifest must be a list")
+    entries: dict[str, dict[str, Any]] = {}
+    for item in manifest:
+        if not isinstance(item, dict):
+            raise ValueError("Docker archive manifest entries must be objects")
+        repo_tags = item.get("RepoTags") or []
+        if not isinstance(repo_tags, list):
+            raise ValueError("Docker archive RepoTags must be a list")
+        for tag in repo_tags:
+            if not isinstance(tag, str) or not tag:
+                raise ValueError("Docker archive RepoTags must be non-empty strings")
+            if tag in entries:
+                raise ValueError(f"duplicate Docker archive RepoTag: {tag}")
+            entries[tag] = item
+
+    requested_labels: set[str] = set()
+    requested_images: set[str] = set()
+    result: dict[str, str] = {}
+    for label, reference in requested_refs:
+        if not label or label in requested_labels:
+            raise ValueError(f"duplicate requested image label: {label}")
+        if not reference or reference in requested_images:
+            raise ValueError(f"duplicate requested image reference: {reference}")
+        requested_labels.add(label)
+        requested_images.add(reference)
+        item = entries.get(reference)
+        if item is None:
+            raise ValueError(f"Docker archive is missing {reference}")
+        config = item.get("Config")
+        if not isinstance(config, str) or not config.endswith(".json"):
+            raise ValueError(f"Docker archive config is invalid for {reference}")
+        digest = config.removesuffix(".json")
+        if (
+            "/" in digest
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ValueError(f"Docker archive config digest is invalid for {reference}")
+        result[label] = f"sha256:{digest}"
+    return result
+
+
+def verify_origin_identity(
+    image: dict[str, Any],
+    origin: dict[str, Any],
+) -> None:
+    label = str(image.get("label") or "unknown")
+    # The production containerd store exposes a manifest digest while the
+    # runner Docker store and Trivy expose a config digest. Ordered DiffIDs are
+    # the cross-store content identity; both digest namespaces remain recorded.
+    if image.get("rootfs_layers") != origin["rootfs_layers"]:
+        raise RuntimeError(f"scanned ordered RootFS does not match live origin for {label}")
 
 
 def build_report(
@@ -172,6 +240,7 @@ def build_report(
     revision: str,
     dead_man_configured: bool = False,
     origin_specs: list[str] | None = None,
+    transport_sha256: str | None = None,
 ) -> dict[str, Any]:
     images: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
@@ -182,11 +251,30 @@ def build_report(
         label, reference = spec.split("=", 1)
         if not label or not reference:
             raise ValueError(f"invalid image specification: {spec}")
+        if any(existing_label == label for existing_label, _ in parsed_specs):
+            raise ValueError(f"duplicate image label: {label}")
         parsed_specs.append((label, reference))
     origins = parse_origin_specs(origin_specs or [])
-    unknown_origins = sorted(set(origins) - {label for label, _ in parsed_specs})
+    if transport_sha256 is not None and (
+        len(transport_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in transport_sha256)
+    ):
+        raise ValueError("transport sha256 is not lowercase hexadecimal")
+    scanned_labels = {label for label, _ in parsed_specs}
+    unknown_origins = sorted(set(origins) - scanned_labels)
     if unknown_origins:
         raise ValueError(f"origin labels without a scanned image: {unknown_origins}")
+    if scope == PRODUCTION_RUNTIME_SCOPE:
+        required_labels = set(PRODUCTION_IMAGE_LABELS)
+        if scanned_labels != required_labels:
+            raise ValueError(
+                "production runtime scan requires exactly backend, web and database images"
+            )
+        missing_origins = sorted(required_labels - set(origins))
+        if missing_origins:
+            raise ValueError(f"production image labels without an origin: {missing_origins}")
+        if transport_sha256 is None:
+            raise ValueError("production runtime scan requires a verified transport sha256")
     with tempfile.TemporaryDirectory(prefix="c3po-trivy-") as temporary:
         work = Path(temporary)
         for label, reference in parsed_specs:
@@ -196,6 +284,12 @@ def build_report(
                 errors.append({"label": label, "error": f"{type(exc).__name__}: {exc}"})
             else:
                 image["origin"] = origins.get(label)
+                if image["origin"] is not None:
+                    try:
+                        verify_origin_identity(image, image["origin"])
+                    except Exception as exc:
+                        errors.append({"label": label, "error": f"{type(exc).__name__}: {exc}"})
+                        continue
                 images.append(image)
     counts = {severity: 0 for severity in SEVERITIES}
     fix_available = {severity: 0 for severity in SEVERITIES}
@@ -210,6 +304,10 @@ def build_report(
         "scope": scope,
         "source_revision": revision,
         "dead_man_configured": dead_man_configured,
+        "source_transport": {
+            "kind": "verified_docker_archive" if transport_sha256 else "local_docker_store",
+            "sha256": transport_sha256,
+        },
         "scanner": {
             "name": "Trivy",
             "version": TRIVY_VERSION,
@@ -254,6 +352,7 @@ def main() -> None:
     parser.add_argument("--scope", required=True)
     parser.add_argument("--revision", default="unknown")
     parser.add_argument("--dead-man-configured", action="store_true")
+    parser.add_argument("--transport-sha256")
     args = parser.parse_args()
     report = build_report(
         args.images,
@@ -261,6 +360,7 @@ def main() -> None:
         revision=args.revision,
         dead_man_configured=args.dead_man_configured,
         origin_specs=args.origins,
+        transport_sha256=args.transport_sha256,
     )
     atomic_write(args.output, report)
     if report["scan_status"] != "complete" and os.environ.get("GITHUB_ACTIONS") == "true":
