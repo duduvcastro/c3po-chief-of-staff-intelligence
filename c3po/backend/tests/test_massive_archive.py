@@ -86,6 +86,7 @@ def _archive(
                 int(item["content_length"]) for item in artifacts.values()
             ),
             campaign_pause_bytes=10_000,
+            include_extension_scope=False,
             require_complete_frozen_scope=False,
         ),
         disk_usage=disk_usage or (lambda _path: SimpleNamespace(free=free)),

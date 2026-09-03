@@ -16,9 +16,9 @@
     "plan_only_data_inspection_authorized": true,
     "bulk_download_authorized": false,
     "limited_first_byte_download_authorized_after_reviewed_merge": true,
-    "limited_first_byte_scope": "five_year_minute_aggregates_plus_twelve_qualification_sessions_trades_and_quotes",
-    "limited_first_byte_scope_bytes": 131006214944,
-    "campaign_pause_bytes": 137556525692,
+    "limited_first_byte_scope": "five_year_minute_aggregates_plus_eight_session_probe_extension_plus_twelve_qualification_sessions_trades_and_quotes",
+    "limited_first_byte_scope_bytes": 131221198632,
+    "campaign_pause_bytes": 137782258564,
     "point_in_time_reference_tickers_authorized_after_reviewed_merge": true,
     "point_in_time_reference_endpoint": "/v3/reference/tickers",
     "point_in_time_reference_scope": "only_the_twelve_frozen_qualification_previous_session_dates_with_complete_pagination_and_immutable_page_hashes",
@@ -52,6 +52,7 @@
   },
   "frozen_contracts": {
     "massive_t0": "day_d/massive_t0_contract.json",
+    "massive_minute_extension": "day_d/massive_minute_extension_20260903_contract.json",
     "massive_ingestion_policy": {
       "path": "day_d/massive_ingestion_policy_v1.json",
       "status": "frozen_by_six_hands"

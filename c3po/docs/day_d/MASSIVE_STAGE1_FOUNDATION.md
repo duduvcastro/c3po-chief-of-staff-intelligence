@@ -15,6 +15,12 @@ readiness merge and controlled worker restart. Bulk downloads beyond the
 limited first-byte scope, official replay and production trading changes remain
 unauthorized.
 
+The historical T0 remains byte-for-byte immutable. The separately frozen
+[`massive_minute_extension_20260903_contract.json`](./massive_minute_extension_20260903_contract.json)
+adds only eight minute-aggregate sessions (24 August through 2 September 2026,
+including the ATR warmup) for Chandelier probes A/B. It does not add ticks,
+authorize official replay, or change production trading policy.
+
 ## Provider surfaces
 
 - REST: `https://api.massive.com`, authenticated by API token.

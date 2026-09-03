@@ -123,7 +123,11 @@ def test_stage1_stays_locked_until_infrastructure_and_r1_are_verified() -> None:
         "explicitly_enable_C3PO_DAY_D_HISTORICAL_DOWNLOAD_AUTHORIZED_after_reviewed_merge",
     }
     assert authorization["scope"]["official_252_session_tick_window_authorized"] is False
-    assert authorization["scope"]["limited_first_byte_scope_bytes"] == 131_006_214_944
+    assert authorization["scope"]["limited_first_byte_scope_bytes"] == 131_221_198_632
+    assert authorization["scope"]["campaign_pause_bytes"] == 137_782_258_564
+    assert authorization["frozen_contracts"]["massive_minute_extension"] == (
+        "day_d/massive_minute_extension_20260903_contract.json"
+    )
     assert authorization["scope"]["qualified_tick_lot_local_deletion_authorized"] is True
     assert authorization["scope"]["minute_aggregate_local_deletion_authorized"] is False
 
