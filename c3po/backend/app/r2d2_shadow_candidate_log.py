@@ -22,6 +22,8 @@ CASCADE_STEPS = frozenset({
     "portfolio_capacity",
     "session_reentry_policy",
     "entry_quality",
+    "entry_confirmation",
+    "entry_cycle_capacity",
     "entry_execution",
 })
 
