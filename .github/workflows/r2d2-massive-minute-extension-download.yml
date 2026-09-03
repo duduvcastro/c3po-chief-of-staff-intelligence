@@ -79,7 +79,6 @@ jobs:
             echo 'Run-specific output already exists; refusing overwrite.' >&2
             exit 13
           fi
-          mkdir -p "$HOST_OUTPUT"
 
           active_api_oneoffs=$(
             docker ps \
@@ -94,8 +93,67 @@ jobs:
           fi
 
           compose=(docker compose --env-file .env -f c3po/compose.yml)
-          host_identity="$(id -u):$(id -g)"
+          operational_uid="$(id -u)"
+          operational_gid="$(id -g)"
+          if [ "$operational_uid" -eq 0 ]; then
+            echo 'Operational Massive identity must not be root.' >&2
+            exit 15
+          fi
+          host_identity="$operational_uid:$operational_gid"
+          install -d -m 0700 -- "$HOST_OUTPUT"
+
+          write_preflight=c3po/backend/app/day_d_replay/massive_extension_write_preflight.py
+          provision_list="$(mktemp /tmp/massive-extension-provision.XXXXXX)"
+          privileged_list="$(mktemp /tmp/massive-extension-privileged.XXXXXX)"
+          cleanup_lists() {
+            rm -f -- "$provision_list" "$privileged_list"
+          }
+          trap cleanup_lists EXIT
+          python3 "$write_preflight" list-provision-parent-directories \
+            --root /mnt/day-d-data \
+            --output "$HOST_OUTPUT/extension-download-manifest.json" \
+            > "$provision_list"
+          python3 "$write_preflight" list-privileged-write-directories \
+            --root /mnt/day-d-data \
+            --output "$HOST_OUTPUT/extension-download-manifest.json" \
+            > "$privileged_list"
+
+          provision_failures=()
+          while IFS= read -r path; do
+            if [ -L "$path" ]; then
+              provision_failures+=("$path: parent path is a symlink")
+              continue
+            fi
+            if ! sudo -n install -d -o root -g root -m 0755 -- "$path"; then
+              provision_failures+=("$path: parent provisioning failed")
+              continue
+            fi
+            if [ "$(stat -c '%u:%g:%a' -- "$path")" != '0:0:755' ]; then
+              provision_failures+=("$path: parent identity or mode differs from root:root:0755")
+            fi
+          done < "$provision_list"
+          while IFS= read -r path; do
+            if [ -L "$path" ]; then
+              provision_failures+=("$path: writable path is a symlink")
+              continue
+            fi
+            if ! sudo -n install -d -o "$operational_uid" -g "$operational_gid" \
+              -m 0700 -- "$path"; then
+              provision_failures+=("$path: writable directory provisioning failed")
+              continue
+            fi
+            if [ "$(stat -c '%u:%g:%a' -- "$path")" != "$operational_uid:$operational_gid:700" ]; then
+              provision_failures+=("$path: writable directory identity or mode mismatch")
+            fi
+          done < "$privileged_list"
+          if [ "${#provision_failures[@]}" -ne 0 ]; then
+            echo 'Massive extension directory provisioning failed:' >&2
+            printf ' - %s\n' "${provision_failures[@]}" | sort -u >&2
+            exit 16
+          fi
+
           COMPOSE_STATUS_STDOUT=0 "${compose[@]}" run --rm -T --no-deps \
+            --pull never \
             --user "$host_identity" \
             -e C3PO_DAY_D_HISTORICAL_DOWNLOAD_AUTHORIZED=true \
             api python -m app.day_d_replay.massive_extension_download \
@@ -103,6 +161,8 @@ jobs:
               --head-revision "$REVISION" \
               --workflow-run-id "$RUN_ID" \
               --workflow-run-attempt "$RUN_ATTEMPT" \
+              --expected-uid "$operational_uid" \
+              --expected-gid "$operational_gid" \
               </dev/null
 
           test -s "$HOST_OUTPUT/extension-download-manifest.json"
@@ -177,6 +237,37 @@ jobs:
               raise SystemExit("extension download totals mismatch")
           if manifest.get("plan_report_sha256") != "cf78e15dfd48aa3eaafa2ef27bdc3b65b5f77894e54495e25fa99ab7c11b7a65":
               raise SystemExit("extension download plan hash mismatch")
+          preflight = manifest.get("write_preflight")
+          if not isinstance(preflight, dict) or preflight.get("status") != "ok":
+              raise SystemExit("extension download write preflight evidence is missing")
+          identity = preflight.get("operational_identity")
+          checked = preflight.get("checked_directories")
+          checked_targets = preflight.get("checked_targets")
+          frozen_artifacts = preflight.get("frozen_artifacts")
+          existing_orphans = preflight.get("existing_orphan_parts")
+          cross_checked = preflight.get("cross_directory_checked")
+          if (
+              preflight.get("frozen_plan_sha256") != manifest["plan_report_sha256"]
+              or preflight.get("network_calls_before_preflight") != 0
+              or not isinstance(identity, dict)
+              or int(identity.get("uid", 0)) <= 0
+              or int(identity.get("gid", -1)) < 0
+              or not isinstance(checked, list)
+              or preflight.get("checked_directory_count") != len(checked)
+              or len(checked) < 22
+              or not isinstance(checked_targets, list)
+              or not isinstance(frozen_artifacts, list)
+              or len(frozen_artifacts) != 8
+              or not isinstance(existing_orphans, list)
+              or not isinstance(cross_checked, list)
+              or preflight.get("checked_target_count") != len(checked_targets)
+              or len(checked_targets) != 76 + len(existing_orphans)
+              or preflight.get("cross_directory_probe_count")
+              != len(cross_checked)
+              or len(cross_checked) != 16 + len(existing_orphans)
+              or preflight.get("locked_preflight_recheck_count") != 8
+          ):
+              raise SystemExit("extension download write preflight evidence is invalid")
           if manifest.get("raw_files_returned_to_ci") is not False:
               raise SystemExit("extension download evidence exposed raw files")
           if manifest.get("evidence_retention_days") != 30:

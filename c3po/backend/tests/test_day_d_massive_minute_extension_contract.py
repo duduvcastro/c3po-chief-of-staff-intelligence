@@ -5,6 +5,7 @@ from decimal import Decimal, ROUND_CEILING
 import hashlib
 import json
 from pathlib import Path
+import re
 
 from app.day_d_replay.massive_campaign import (
     AUTHORIZED_SCOPE_BYTES,
@@ -111,6 +112,57 @@ def test_massive_minute_extension_download_workflow_is_exact_and_reduced() -> No
     assert workflow.count(confirmation) >= 2
     assert "C3PO_DAY_D_HISTORICAL_DOWNLOAD_AUTHORIZED=true" in workflow
     assert "python -m app.day_d_replay.massive_extension_download" in workflow
+    assert "list-provision-parent-directories" in workflow
+    assert "list-privileged-write-directories" in workflow
+    assert 'operational_uid="$(id -u)"' in workflow
+    assert 'operational_gid="$(id -g)"' in workflow
+    assert 'if [ "$operational_uid" -eq 0 ]' in workflow
+    assert "sudo -n install -d -o root -g root -m 0755" in workflow
+    assert 'sudo -n install -d -o "$operational_uid" -g "$operational_gid"' in workflow
+    assert "mktemp /tmp/massive-extension-provision.XXXXXX" in workflow
+    assert "mktemp /tmp/massive-extension-privileged.XXXXXX" in workflow
+    assert '--user "$host_identity"' in workflow
+    assert '--expected-uid "$operational_uid"' in workflow
+    assert '--expected-gid "$operational_gid"' in workflow
+    assert "--pull never" in workflow
+    assert "write preflight evidence is missing" in workflow
+    assert "network_calls_before_preflight" in workflow
+    assert "len(checked) < 22" in workflow
+    assert 'preflight.get("checked_target_count") != len(checked_targets)' in workflow
+    assert "len(checked_targets) != 76 + len(existing_orphans)" in workflow
+    assert "len(cross_checked) != 16 + len(existing_orphans)" in workflow
+    assert "cross_directory_probe_count" in workflow
+    assert 'preflight.get("locked_preflight_recheck_count") != 8' in workflow
+    assert workflow.index("list-privileged-write-directories") < workflow.index(
+        "python -m app.day_d_replay.massive_extension_download"
+    )
+    main_body = runner.split("def main", 1)[1]
+    assert main_body.index("_assert_local_download_ready(") < main_body.index(
+        "_build_store("
+    )
+    assert "expected_plan=(frozen_by_session[session_date.isoformat()],)" in runner
+    assert "archive_lock_held=True" in runner
+    assert "locked_write_preflight=locked_write_preflight" in runner
+    assert (
+        'preflight["locked_preflight_recheck_count"] = '
+        "locked_preflight_recheck_count"
+    ) in runner
+    forbidden = (
+        "chown -R",
+        "chown --recursive",
+        "chmod -R",
+        "chmod --recursive",
+        "chmod 777",
+        "--user 0",
+        "--user root",
+    )
+    assert not any(token in workflow for token in forbidden)
+    assert re.search(
+        r"\b(?:chmod|chown)\b[^\n]*(?:\s-R(?:\s|$)|--recursive)",
+        workflow,
+    ) is None
+    assert workflow.count("sudo ") == 2
+    assert workflow.count("sudo -n install -d ") == 2
     assert "(FlatFileDataset.MINUTE_AGGREGATES,)" in runner
     assert "FlatFileDataset.TRADES" not in runner
     assert "FlatFileDataset.QUOTES" not in runner
