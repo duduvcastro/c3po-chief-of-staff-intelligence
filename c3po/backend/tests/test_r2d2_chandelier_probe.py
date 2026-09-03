@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from app import r2d2_candidate_f_backtest as candidate_backtest
+from app import r2d2_chandelier_probe as chandelier_probe
 from app.r2d2_candidate_f_backtest import (
+    BLOCKED_CLASSIFICATION,
+    BLOCKED_EXIT_CODE,
     CandidateBacktestError,
     EXPECTED_SESSIONS,
     MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION,
@@ -20,7 +26,10 @@ from app.r2d2_candidate_f_backtest import (
     _require_frozen_coverage,
     _require_sha256,
     SYMBOLS,
+    STUDY_STATUS_BLOCKED,
+    STUDY_STATUS_COMPLETE,
     aggregate_massive_five_minute_rows,
+    build_report as build_backtest_report,
     canonical_sha256 as backtest_sha256,
 )
 from app.r2d2_chandelier_probe import (
@@ -100,18 +109,19 @@ def test_five_minute_aggregation_uses_real_sparse_rows_and_fixed_window() -> Non
     window = datetime(2026, 8, 26, 13, 30, tzinfo=UTC)
     minutes = [
         StudyBar("TEST", window + timedelta(minutes=index), 100 + index, 101 + index, 99, 100 + index, 10)
-        for index in (1, 3, 4)
+        for index in (1, 4)
     ]
     sparse = aggregate_five_minutes(minutes)
     assert len(sparse) == 1
     assert sparse[0].start_at == window
-    assert sparse[0].source_minutes == 3
+    assert sparse[0].source_minutes == 2
     assert sparse[0].open == 101
     assert sparse[0].high == 105
     assert sparse[0].low == 99
     assert sparse[0].close == 104
-    assert sparse[0].volume == 30
+    assert sparse[0].volume == 20
     assert aggregate_five_minutes([]) == []
+    assert aggregate_massive_five_minute_rows([], symbol="TEST") == []
 
     candidate = aggregate_massive_five_minute_rows([
         {
@@ -133,6 +143,31 @@ def test_five_minute_aggregation_uses_real_sparse_rows_and_fixed_window() -> Non
         "volume": sparse[0].volume,
         "source_minutes": sparse[0].source_minutes,
     }]
+
+
+def test_probe_and_backtest_share_the_only_five_minute_bar_builder() -> None:
+    root = Path(__file__).resolve().parents[3]
+    candidate_source = (
+        root / "c3po" / "backend" / "app" / "r2d2_candidate_f_backtest.py"
+    ).read_text(encoding="utf-8")
+    probe_source = (
+        root / "c3po" / "backend" / "app" / "r2d2_chandelier_probe.py"
+    ).read_text(encoding="utf-8")
+    assert candidate_source.count("def aggregate_massive_five_minute_rows(") == 1
+    assert "buckets: dict[datetime, list[Mapping[str, Any]]]" in candidate_source
+    assert "aggregate_massive_five_minute_rows(values, symbol=symbol)" in candidate_source
+    assert "aggregate_massive_five_minute_rows," in probe_source
+    assert "for row in aggregate_massive_five_minute_rows(rows, symbol=symbol)" in probe_source
+    assert "def aggregate_massive_five_minute_rows(" not in probe_source
+    assert "defaultdict" not in probe_source
+    assert (
+        chandelier_probe.aggregate_massive_five_minute_rows
+        is candidate_backtest.aggregate_massive_five_minute_rows
+    )
+    assert (
+        aggregate_five_minutes.__globals__["aggregate_massive_five_minute_rows"]
+        is aggregate_massive_five_minute_rows
+    )
 
 
 def test_sparse_aggregation_aligns_to_window_and_never_fills_empty_window() -> None:
@@ -170,7 +205,7 @@ def test_frozen_coverage_guard_remains_at_seventy_without_attrition() -> None:
     assert len(SYMBOLS) == 40
     assert len(EXPECTED_SESSIONS) == 10
     assert MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION == 70
-    assert BACKTEST_SCHEMA_VERSION == "R2D2-CANDIDATE-E-F-BACKTEST-v2"
+    assert BACKTEST_SCHEMA_VERSION == "R2D2-CANDIDATE-E-F-BACKTEST-v3"
     assert PROBE_SCHEMA_VERSION == "R2D2-CHANDELIER-PROBE-v3"
     assert PRIOR_FAILED_WORKFLOW_RUN_ID == 33714916267
     assert PRIOR_PROBE_REPORT_SHA256 == (
@@ -194,6 +229,169 @@ def test_frozen_coverage_guard_remains_at_seventy_without_attrition() -> None:
         symbols=("ADP",),
         sessions=(session,),
     )
+
+
+def test_coverage_guard_counts_formed_bars_not_source_minute_rows() -> None:
+    session = EXPECTED_SESSIONS[0]
+    start = datetime(session.year, session.month, session.day, 13, 30, tzinfo=UTC)
+    rows = [
+        {
+            "timestamp": start,
+            "open": 100,
+            "high": 101,
+            "low": 99,
+            "close": 100,
+            "volume": 10,
+        },
+        {
+            "timestamp": start + timedelta(minutes=1),
+            "open": 100,
+            "high": 102,
+            "low": 98,
+            "close": 101,
+            "volume": 20,
+        },
+        *(
+            {
+                "timestamp": start + timedelta(minutes=5 * index),
+                "open": 100,
+                "high": 101,
+                "low": 99,
+                "close": 100,
+                "volume": 10,
+            }
+            for index in range(1, MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION)
+        ),
+    ]
+    formed = aggregate_massive_five_minute_rows(rows, symbol="ADP")
+    assert len(rows) == 71
+    assert len(formed) == MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION
+    assert formed[0]["source_minutes"] == 2
+    assert all(item["source_minutes"] == 1 for item in formed[1:])
+    _require_frozen_coverage(
+        {"ADP": formed},
+        symbols=("ADP",),
+        sessions=(session,),
+    )
+    with pytest.raises(CandidateBacktestError, match='"2026-08-06":69'):
+        _require_frozen_coverage(
+            {"ADP": formed[:-1]},
+            symbols=("ADP",),
+            sessions=(session,),
+        )
+
+
+def test_blocked_backtest_is_self_hashed_and_emits_no_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = date(2026, 8, 6)
+    start = datetime(2026, 8, 6, 13, 30, tzinfo=UTC)
+    formed = [
+        {
+            "timestamp": start + timedelta(minutes=5 * index),
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.0,
+            "volume": 10.0,
+            "source_minutes": 1,
+        }
+        for index in range(69)
+    ]
+    monkeypatch.setattr(candidate_backtest, "SYMBOLS", ("ADP",))
+    monkeypatch.setattr(candidate_backtest, "EXPECTED_SESSIONS", (session,))
+    monkeypatch.setattr(
+        candidate_backtest,
+        "_five_minute_bars",
+        lambda _root: ({"ADP": formed}, []),
+    )
+
+    def forbidden_replay(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("E/F replay must not run when formed-bar coverage is below 70")
+
+    monkeypatch.setattr(candidate_backtest, "_run_variant", forbidden_replay)
+    generated_at = datetime(2026, 9, 3, 8, 0, tzinfo=UTC)
+    report = build_backtest_report(
+        tmp_path,
+        generated_at,
+        frozen_source_sha256="a" * 64,
+    )
+    assert report["study_status"] == STUDY_STATUS_BLOCKED
+    assert report["analysis_interpretable"] is False
+    assert report["candidate_e"] is None
+    assert report["candidate_f"] is None
+    assert report["paired_delta_f_minus_e"] is None
+    gate = dict(report["coverage_gate"])
+    diagnostic_sha256 = gate.pop("diagnostic_sha256")
+    assert gate["classification"] == BLOCKED_CLASSIFICATION
+    assert gate["minimum_formed_five_minute_bars_per_symbol_session"] == 70
+    assert gate["shortfalls"] == {"ADP": {"2026-08-06": 69}}
+    assert gate["metrics_emitted"] is False
+    assert backtest_sha256(gate) == diagnostic_sha256
+    report_without_hash = dict(report)
+    report_sha256 = report_without_hash.pop("report_sha256")
+    assert backtest_sha256(report_without_hash) == report_sha256
+
+    monkeypatch.setattr(candidate_backtest, "build_report", lambda *_args, **_kwargs: report)
+    output = tmp_path / "blocked.json"
+    assert candidate_backtest.main([
+        "--data-root", str(tmp_path),
+        "--output", str(output),
+        "--frozen-source-sha256", "a" * 64,
+    ]) == BLOCKED_EXIT_CODE
+    assert json.loads(output.read_text(encoding="utf-8"))["study_status"] == STUDY_STATUS_BLOCKED
+
+
+def test_complete_backtest_uses_identical_bars_and_discloses_comparability(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    session = date(2026, 8, 6)
+    start = datetime(2026, 8, 6, 13, 30, tzinfo=UTC)
+    formed = [
+        {
+            "timestamp": start + timedelta(minutes=5 * index),
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.0,
+            "volume": 10.0,
+            "source_minutes": 1,
+        }
+        for index in range(70)
+    ]
+    bars = {"ADP": formed}
+    monkeypatch.setattr(candidate_backtest, "SYMBOLS", ("ADP",))
+    monkeypatch.setattr(candidate_backtest, "EXPECTED_SESSIONS", (session,))
+    monkeypatch.setattr(candidate_backtest, "_five_minute_bars", lambda _root: (bars, []))
+    replay_inputs: list[tuple[int, bool]] = []
+
+    def replay(observed: dict[str, list[dict[str, Any]]], *, candidate_f: bool) -> Any:
+        replay_inputs.append((id(observed), candidate_f))
+        return SimpleNamespace(
+            trades=[],
+            win_rate_percent=0.0,
+            profit_factor=None,
+            total_return_percent=0.0,
+            max_drawdown_percent=0.0,
+            ending_nav=1_000_000.0,
+        )
+
+    monkeypatch.setattr(candidate_backtest, "_run_variant", replay)
+    report = build_backtest_report(
+        tmp_path,
+        datetime(2026, 9, 3, 8, 0, tzinfo=UTC),
+        frozen_source_sha256="b" * 64,
+    )
+    assert report["study_status"] == STUDY_STATUS_COMPLETE
+    assert replay_inputs == [(id(bars), False), (id(bars), True)]
+    disclosure = report["bar_construction_disclosure"]
+    assert disclosure["historical_candidate_e_absolute_metrics_may_diverge"] is True
+    assert disclosure["paired_e_f_uses_identical_formed_bars"] is True
+    assert disclosure["material_divergence_requires_candidate_e_reattestation"] is True
+    assert disclosure["materiality_is_not_auto_adjudicated"] is True
+    assert report["coverage_gate"]["classification"] == "PASSED"
 
 
 def test_reports_pin_both_superseded_run_provenances() -> None:
@@ -548,9 +746,25 @@ def test_workflow_pins_read_only_window_retention_and_frozen_policy() -> None:
     assert "frozen source provenance mismatch" in workflow
     assert "docker compose up" not in workflow
     assert "docker compose restart" not in workflow
+    assert "set +e" in remote
+    assert "backtest_exit=$?" in remote
+    assert '0|2) ;;' in remote
+    assert 'expected_backtest_exit = int(sys.argv[5])' in remote
+    assert 'status == "PARTIAL/BLOCKED"' in remote
+    assert 'blocked E/F report emitted prohibited metrics' in remote
+    assert 'blocked E/F coverage diagnostic self-hash mismatch' in remote
+    assert 'BLOCKED_BY_MINIMUM_FIVE_MINUTE_BAR_GATE' in remote
+    assert 'minimum_formed_five_minute_bars_per_symbol_session' in remote
     assert 'if b["eligible_stop_out_count"]:' in workflow
     assert "0 elegíveis; recuperação N/D (denominador vazio)." in workflow
     assert "None%" not in workflow
+    assert "zero métricas E×F emitidas" in workflow
+    assert "divergência material exige re-atestação de E" in workflow
+    upload_index = workflow.index("- name: Publish reduced evidence for 30 days")
+    comment_index = workflow.index("- name: Annex factual summary to gate agenda")
+    fail_index = workflow.index("- name: Fail closed after publishing blocked E/F diagnosis")
+    assert upload_index < comment_index < fail_index
+    assert "evidence was published before this failure" in workflow
 
 
 def test_probe_source_pins_database_read_only_and_query_fingerprint() -> None:
@@ -567,3 +781,17 @@ def test_probe_source_pins_database_read_only_and_query_fingerprint() -> None:
     ) < build_report_source.index("reader.read(sources, symbols)")
     assert '"source_lookback_session_count": SOURCE_LOOKBACK_SESSIONS' in source
     assert '"source_coverage_verified": True' in source
+
+
+def test_study_document_pins_comparability_and_blocked_fallback() -> None:
+    root = Path(__file__).resolve().parents[3]
+    document = (
+        root / "c3po" / "docs" / "R2D2_CHANDELIER_PROBES_AND_CANDIDATE_F.md"
+    ).read_text(encoding="utf-8")
+    normalized = " ".join(document.split())
+    assert "números absolutos de E divergirem" in normalized
+    assert "mesmo conjunto de barras formadas" in normalized
+    assert "E deve ser re-atestado" in normalized
+    assert "`PARTIAL/BLOCKED` self-hashed" in document
+    assert "`candidate_e`, `candidate_f` e o delta pareado nulos" in document
+    assert "workflow termina vermelho" in document

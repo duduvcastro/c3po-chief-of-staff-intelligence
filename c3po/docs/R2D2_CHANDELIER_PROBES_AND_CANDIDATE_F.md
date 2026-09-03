@@ -96,7 +96,21 @@ cinco minutos, `open` é a primeira linha real, `high/low` são os extremos,
 símbolo/sessão permanece fail-closed depois da agregação. O run `33714916267`
 usou a implementação v1, que descartava a janela inteira quando uma das cinco
 linhas de minuto não existia; o JSON parcial dessa execução não foi publicado e
-é explicitamente superseded pela execução v2.
+é explicitamente superseded pela montagem corrigida, preservada neste schema v3.
+
+Essa correção da montagem pode fazer os números absolutos de E divergirem do
+relatório de 20/08. E e F, porém, recebem exatamente o mesmo conjunto de barras
+formadas, de modo que a comparação pareada permanece internamente válida quando
+o estudo completa. A materialidade dessa divergência não é decidida
+automaticamente: se a mesa a considerar material, E deve ser re-atestado com a
+montagem nova antes de qualquer conclusão de política.
+
+Se qualquer símbolo/sessão continuar abaixo das 70 barras formadas, o runner
+publica um laudo `PARTIAL/BLOCKED` self-hashed com a matriz integral de
+shortfalls, `candidate_e`, `candidate_f` e o delta pareado nulos. Só depois do
+artefato e do anexo serem publicados o workflow termina vermelho. O bloqueio
+volta à mesa; não há attrition, redução do piso, preenchimento de preço ou
+interpolação.
 
 O run `33716979776` produziu um backtest E×F válido, mas o seu arquivo de
 minutos terminava em 21/08 enquanto a coorte das Sondas A/B começava em 26/08.
