@@ -507,6 +507,19 @@ def test_workflow_pins_read_only_window_retention_and_frozen_policy() -> None:
     assert "00:00-08:00 America/Sao_Paulo" in workflow
     assert "retention-days: 30" in workflow
     assert "gh pr comment 348" in workflow
+    assert "PROBE_INPUT_CUTOFF_AT: '2026-09-03T04:58:39.183354+00:00'" in workflow
+    assert "PROBE_LEDGER_ROW_COUNT: '1292'" in workflow
+    assert (
+        "PROBE_LEDGER_CANONICAL_SHA256: "
+        "e641371f2db261556624b57eca930f97d01e5c3951401b18dbe7b13532f01dd8"
+    ) in workflow
+    assert '--cutoff-at "$PROBE_INPUT_CUTOFF_AT"' in workflow
+    assert 'probe.get("input_cutoff_at") != expected_cutoff' in workflow
+    assert 'probe.get("inputs", {}).get("ledger_row_count") != expected_ledger_rows' in workflow
+    assert (
+        'probe.get("inputs", {}).get("ledger_canonical_sha256") '
+        "!= expected_ledger_sha256"
+    ) in workflow
     assert 'host_identity="$(id -u):$(id -g)"' in workflow
     assert workflow.count('--user "$host_identity"') == 3
     study_step = workflow.split("- name: Run production read-only probes", 1)[1].split(

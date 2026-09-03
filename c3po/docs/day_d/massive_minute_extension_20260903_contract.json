@@ -1,0 +1,70 @@
+{
+  "schema_version": "DAY-D-MASSIVE-MINUTE-EXTENSION-v1",
+  "status": "owner_authorized_execution_gate",
+  "authorized_at": "2026-09-03",
+  "authorized_by": "Dudu",
+  "purpose": "restore_complete_bar_coverage_for_chandelier_probes_a_and_b",
+  "source_plan": {
+    "workflow_run_id": 33721558175,
+    "workflow_run_attempt": 1,
+    "head_revision": "377d7497dec3cdb4d5940124037a3e94c94f4f96",
+    "artifact_id": 9880410007,
+    "artifact_digest": "sha256:12eca21b86e2897d07f4301cc08dad33dd1db343cc1865ff8c7b95bd747e7b35",
+    "artifact_expires_at": "2026-10-03T06:04:43Z",
+    "report_path": "backend/app/day_d_replay/massive_minute_extension_20260903_plan.json",
+    "report_sha256": "cf78e15dfd48aa3eaafa2ef27bdc3b65b5f77894e54495e25fa99ab7c11b7a65",
+    "manifest_file_sha256": "03627d89d47058fcee718b26d3c0c616cc9c125b701639a3e994dcc2a98f77d7",
+    "manifest_self_hash": "7f58055bd25db89127970f6cc6042d2a78e59fff5863ab032996f8f972caa6ff",
+    "mode": "read_only_head_only",
+    "source_csv_files_downloaded": 0
+  },
+  "authorized_extension": {
+    "dataset": "minute_aggregates",
+    "sessions": [
+      "2026-08-24",
+      "2026-08-25",
+      "2026-08-26",
+      "2026-08-27",
+      "2026-08-28",
+      "2026-08-31",
+      "2026-09-01",
+      "2026-09-02"
+    ],
+    "session_count": 8,
+    "planned_bytes": 214983688,
+    "retain_indefinitely": true,
+    "local_deletion_authorized": false
+  },
+  "combined_campaign": {
+    "base_t0_contract": "day_d/massive_t0_contract.json",
+    "base_authorized_scope_bytes": 131006214944,
+    "extension_authorized_scope_bytes": 214983688,
+    "authorized_scope_bytes": 131221198632,
+    "campaign_pause_bytes": 137782258564,
+    "campaign_pause_formula": "ceil(authorized_scope_bytes * 1.05)",
+    "minute_aggregate_objects": 1263,
+    "qualification_tick_objects": 24
+  },
+  "execution_gate": {
+    "workflow": ".github/workflows/r2d2-massive-minute-extension-download.yml",
+    "exact_confirmation": "DOWNLOAD MASSIVE MINUTE EXTENSION 2026-08-24 2026-09-02",
+    "one_off_runtime_enablement_only": true,
+    "deployed_revision_must_equal_audited_revision": true,
+    "remote_metadata_must_equal_frozen_plan": true,
+    "per_file_sha256_required": true,
+    "post_download_rehead_required": true,
+    "single_writer_lock_required": true,
+    "partial_or_changed_object_action": "abort_and_quarantine",
+    "raw_files_returned_to_ci": false,
+    "reduced_manifest_retention_days": 30
+  },
+  "explicitly_not_authorized": [
+    "trades_or_quotes_extension",
+    "day_aggregates",
+    "historical_rest",
+    "official_replay_admission",
+    "production_trading_change",
+    "capital_use",
+    "minute_aggregate_deletion"
+  ]
+}

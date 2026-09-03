@@ -86,6 +86,7 @@ def _archive(
                 int(item["content_length"]) for item in artifacts.values()
             ),
             campaign_pause_bytes=10_000,
+            include_extension_scope=False,
             require_complete_frozen_scope=False,
         ),
         disk_usage=disk_usage or (lambda _path: SimpleNamespace(free=free)),
@@ -332,8 +333,8 @@ def test_massive_archive_refuses_concurrent_download_process(tmp_path: Path) -> 
     key = _key(FlatFileDataset.TRADES)
     store = FakeStore({key: b"fresh"})
     archive = _archive(tmp_path, store)
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    lock_path = tmp_path / ".massive-download.lock"
+    lock_path = tmp_path / "evidence" / ".massive-download.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     with lock_path.open("a+", encoding="utf-8") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -344,3 +345,17 @@ def test_massive_archive_refuses_concurrent_download_process(tmp_path: Path) -> 
             )
 
     assert store.downloads == []
+
+
+def test_massive_archive_places_lock_in_writable_evidence_namespace(tmp_path: Path) -> None:
+    key = _key(FlatFileDataset.TRADES)
+    store = FakeStore({key: b"fresh"})
+    archive = _archive(tmp_path, store)
+
+    archive.download(
+        session_date=date(2026, 8, 21),
+        datasets=(FlatFileDataset.TRADES,),
+    )
+
+    assert (tmp_path / "evidence" / ".massive-download.lock").is_file()
+    assert not (tmp_path / ".massive-download.lock").exists()
