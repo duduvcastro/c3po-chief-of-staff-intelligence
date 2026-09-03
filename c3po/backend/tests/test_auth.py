@@ -627,7 +627,7 @@ def test_runtime_configuration_pins_the_requested_idle_windows() -> None:
 
 def test_idle_timeout_migration_is_reentrant_and_legacy_safe() -> None:
     initial_schema = (ROOT / "db" / "001_initial.sql").read_text(encoding="utf-8")
-    migration = (ROOT / "db" / "043_auth_session_idle_policy.sql").read_text(
+    migration = (ROOT / "db" / "044_auth_session_idle_policy.sql").read_text(
         encoding="utf-8"
     )
 
