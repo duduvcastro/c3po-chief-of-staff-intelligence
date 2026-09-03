@@ -30,8 +30,11 @@ motor.
   época 2; episódios corrigidos ou de `operator_wind_down` não entram.
 - Relato individual: todo episódio vencedor aparece com token SHA-256
   irreversível, sem símbolo, fills ou barras cruas.
-- Relógio: closes completos de cinco minutos; `high_water` usa closes, como o
-  harness original do Candidato E.
+- Relógio: janelas fixas de cinco minutos de Nova York; cada barra agrega as
+  1–5 linhas reais emitidas pelo Massive na janela. Minuto sem negócio elegível
+  não gera linha no provedor e não é tratado como corrupção. Janela vazia não
+  gera barra; não há `forward-fill`, interpolação nem preço sintético.
+  `high_water` usa closes, como o harness original do Candidato E.
 - ATR: média simples dos 14 true ranges que `compute_technical_snapshot`
   usava na janela móvel de 40 barras, com o mesmo piso de `0,4%` do preço.
 - Cruzamento atribuível à catraca: primeiro close `<= F` e `> E`. Se também
@@ -79,6 +82,17 @@ Os bytes da resposta EODHD usados em 20/08 não foram retidos. A nova execução
 usa as mesmas datas e símbolos sobre o arquivo Massive de um minuto,
 checksumado e agregado para cinco minutos. Essa troca fica no laudo e impede
 qualquer alegação de reprodução byte a byte do número histórico.
+
+A reconstrução usa a semântica publicada pelo Massive: em cada janela fixa de
+cinco minutos, `open` é a primeira linha real, `high/low` são os extremos,
+`close` é a última linha real e `volume` é a soma. O piso de 70 barras por
+símbolo/sessão permanece fail-closed depois da agregação. O run `33714916267`
+usou a implementação v1, que descartava a janela inteira quando uma das cinco
+linhas de minuto não existia; o JSON parcial dessa execução não foi publicado e
+é explicitamente superseded pela próxima execução v2.
+
+Referências primárias: [Custom Bars (OHLC)](https://www.massive.com/docs/rest/stocks/aggregates/custom-bars)
+e [Why are there missing aggregates?](https://massive.com/knowledge-base/article/why-are-there-missing-aggregates-in-massives-data).
 
 O Candidato G não roda nesta primeira comparação: manter E×F com uma única
 variável reduz ambiguidade. O resultado pode justificar uma nova obra para G,

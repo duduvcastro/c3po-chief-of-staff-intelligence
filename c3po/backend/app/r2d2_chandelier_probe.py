@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 import math
-from collections import defaultdict
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -13,6 +13,11 @@ from zoneinfo import ZoneInfo
 
 from .config import Settings, get_settings
 from .database import Database
+from .r2d2_candidate_f_backtest import (
+    PRIOR_FAILED_WORKFLOW_RUN_ID,
+    PRIOR_PROBE_REPORT_SHA256,
+    aggregate_massive_five_minute_rows,
+)
 from .r2d2_exit_policy_engine import Episode, LedgerFill, PositionState, StudyBar, build_episodes
 from .r2d2_exit_policy_study import (
     MinuteAggregateReader,
@@ -26,7 +31,7 @@ from .r2d2_exit_policy_study import (
 NEW_YORK = ZoneInfo("America/New_York")
 POLICY_EPOCH = "policy-a-resume-2026-08-26"
 POLICY_EPOCH_FROM = datetime.fromisoformat("2026-08-26T13:30:24.983322+00:00")
-SCHEMA_VERSION = "R2D2-CHANDELIER-PROBE-v1"
+SCHEMA_VERSION = "R2D2-CHANDELIER-PROBE-v2"
 EXPERIMENT_QUERY = """
 SELECT id::text, code, status, starting_capital, start_date,
        methodology_version, created_at, updated_at
@@ -150,30 +155,36 @@ def _read_ledger(
 
 
 def aggregate_five_minutes(bars: Sequence[StudyBar]) -> list[FiveMinuteBar]:
-    buckets: dict[tuple[str, date, int, int], list[StudyBar]] = defaultdict(list)
-    for bar in sorted(bars, key=lambda item: item.start_at):
-        local = bar.start_at.astimezone(NEW_YORK)
-        bucket_minute = local.minute - (local.minute % 5)
-        buckets[(bar.symbol, local.date(), local.hour, bucket_minute)].append(bar)
-    output: list[FiveMinuteBar] = []
-    for values in buckets.values():
-        ordered = sorted(values, key=lambda item: item.start_at)
-        if len(ordered) != 5:
-            continue
-        expected = [ordered[0].start_at + timedelta(minutes=index) for index in range(5)]
-        if [item.start_at for item in ordered] != expected:
-            continue
-        output.append(FiveMinuteBar(
-            symbol=ordered[0].symbol,
-            start_at=ordered[0].start_at,
-            open=ordered[0].open,
-            high=max(item.high for item in ordered),
-            low=min(item.low for item in ordered),
-            close=ordered[-1].close,
-            volume=sum(item.volume for item in ordered),
-            source_minutes=5,
-        ))
-    return sorted(output, key=lambda item: item.start_at)
+    if not bars:
+        return []
+    symbols = {bar.symbol for bar in bars}
+    if len(symbols) != 1:
+        raise ChandelierProbeError("five-minute aggregation requires exactly one symbol")
+    symbol = next(iter(symbols))
+    rows = [
+        {
+            "timestamp": bar.start_at,
+            "open": bar.open,
+            "high": bar.high,
+            "low": bar.low,
+            "close": bar.close,
+            "volume": bar.volume,
+        }
+        for bar in bars
+    ]
+    return [
+        FiveMinuteBar(
+            symbol=symbol,
+            start_at=row["timestamp"],
+            open=row["open"],
+            high=row["high"],
+            low=row["low"],
+            close=row["close"],
+            volume=row["volume"],
+            source_minutes=row["source_minutes"],
+        )
+        for row in aggregate_massive_five_minute_rows(rows, symbol=symbol)
+    ]
 
 
 def atr14_sma(bars: Sequence[FiveMinuteBar], index: int) -> float | None:
@@ -462,6 +473,11 @@ def build_report(
     eligible_b = [row for row in probe_b if row["eligibility"] == "eligible"]
     givebacks = [float(row["avoidable_giveback_usd"]) for row in eligible_a]
     loosening = [float(row["maximum_trail_loosen_bps"]) for row in eligible_a]
+    source_minute_counts = Counter(
+        bar.source_minutes
+        for values in five_by_symbol.values()
+        for bar in values
+    )
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": generated_at,
@@ -479,6 +495,14 @@ def build_report(
             "retention_days": 30,
             "expires_at": generated_at + timedelta(days=30),
             "query_sha256": QUERY_SHA256,
+            "supersedes": {
+                "workflow_run_id": PRIOR_FAILED_WORKFLOW_RUN_ID,
+                "report_sha256": PRIOR_PROBE_REPORT_SHA256,
+                "reason": (
+                    "v1 discarded a fixed five-minute window unless Massive emitted all five "
+                    "one-minute rows; that partial file was never published as an artifact"
+                ),
+            },
         },
         "experiment": {
             "code": experiment["code"],
@@ -491,6 +515,14 @@ def build_report(
             "minute_source_manifest_sha256": canonical_sha256(source_evidence),
             "minute_source_first_session": source_evidence[0]["session_date"],
             "minute_source_last_session": source_evidence[-1]["session_date"],
+            "five_minute_aggregation": (
+                "fixed New York windows from the 1-5 real Massive rows present; "
+                "empty windows omitted; no forward-fill or interpolation"
+            ),
+            "source_minute_rows_per_five_minute_bar": {
+                str(count): source_minute_counts.get(count, 0)
+                for count in range(1, 6)
+            },
         },
         "cohort": {
             "constructed_episode_count": len(episodes),
@@ -502,7 +534,10 @@ def build_report(
             "contract": {
                 "e": "max(original_stop, close_high_water - 2.5 * max(ATR14_SMA, close * 0.004))",
                 "f": "max(previous_f, e)",
-                "observation_clock": "completed five-minute close; high-water uses closes like Candidate E",
+                "observation_clock": (
+                    "completed fixed five-minute window from real Massive rows; "
+                    "high-water uses closes like Candidate E"
+                ),
                 "counterfactual_trigger": "first close <= F and > E; fill uses the paper US exit friction",
                 "scope": "winning episodes; scaled/partial episodes reported but censored",
             },
