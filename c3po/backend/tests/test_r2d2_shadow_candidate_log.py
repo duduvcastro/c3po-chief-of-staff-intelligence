@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import json
+import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,7 @@ from app.database import Database
 from app.r2d2 import R2D2PaperService, _accepted_shadow_candidate, _paper_buy_execution
 from app.r2d2_exit_policy_engine import StudyBar
 from app.r2d2_shadow_candidate_log import (
+    CASCADE_STEPS,
     SPEC_SHA256,
     R2D2ShadowCandidateLog,
     build_observation,
@@ -155,6 +158,102 @@ def test_migration_is_append_only_and_splits_quality_from_capacity() -> None:
     assert migration.count("BEFORE TRUNCATE") == 3
     assert "r2d2_shadow_candidates is append-only" not in migration
     assert "RAISE EXCEPTION '% is append-only', TG_TABLE_NAME" in migration
+
+
+def _cascade_steps_from_sql(path: Path) -> frozenset[str]:
+    migration = path.read_text(encoding="utf-8")
+    match = re.search(
+        r"cascade_step\s+IN\s*\((?P<values>.*?)\)",
+        migration,
+        flags=re.DOTALL,
+    )
+    assert match is not None, f"cascade_step constraint missing from {path.name}"
+    return frozenset(re.findall(r"'([^']+)'", match.group("values")))
+
+
+def _producer_cascade_steps() -> frozenset[str]:
+    def static_string_choices(expression: ast.expr) -> set[str]:
+        if isinstance(expression, ast.Constant) and isinstance(expression.value, str):
+            return {expression.value}
+        if isinstance(expression, ast.IfExp):
+            return (
+                static_string_choices(expression.body)
+                | static_string_choices(expression.orelse)
+            )
+        return set()
+
+    source_path = ROOT / "backend" / "app" / "r2d2.py"
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    steps: set[str] = set()
+    calls = 0
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "observe_shadow_candidate"
+        ):
+            continue
+        calls += 1
+        cascade_keyword = next(
+            (keyword for keyword in node.keywords if keyword.arg == "cascade_step"),
+            None,
+        )
+        assert cascade_keyword is not None, "producer call omitted cascade_step"
+        literal_steps = static_string_choices(cascade_keyword.value)
+        assert literal_steps, "producer cascade_step must remain statically auditable"
+        steps.update(literal_steps)
+    assert calls > 0, "no shadow-candidate producer calls found"
+    return frozenset(steps)
+
+
+def test_producer_allowlist_and_database_constraints_have_exact_step_parity() -> None:
+    producer_steps = _producer_cascade_steps()
+    base_schema = ROOT / "db" / "040_r2d2_shadow_candidate_log.sql"
+    live_amendment = ROOT / "db" / "042_r2d2_shadow_candidate_cascade_steps.sql"
+    base_schema_steps = _cascade_steps_from_sql(base_schema)
+    live_amendment_steps = _cascade_steps_from_sql(live_amendment)
+
+    assert producer_steps == CASCADE_STEPS
+    assert base_schema_steps == CASCADE_STEPS
+    assert live_amendment_steps == CASCADE_STEPS
+    amendment_sql = live_amendment.read_text(encoding="utf-8")
+    constraint_name = "r2d2_shadow_candidates_cascade_step_check"
+    assert f"DROP CONSTRAINT IF EXISTS {constraint_name}" in amendment_sql
+    assert f"ADD CONSTRAINT {constraint_name}" in amendment_sql
+
+
+@pytest.mark.parametrize(
+    ("cascade_step", "reason_id", "rejection_class"),
+    [
+        ("entry_confirmation", "entry_confirmation_pending", "quality"),
+        ("entry_cycle_capacity", "entry_cycle_capacity", "capacity"),
+    ],
+)
+def test_runtime_cascade_steps_serialize_with_their_rejection_class(
+    cascade_step: str,
+    reason_id: str,
+    rejection_class: str,
+) -> None:
+    row = build_observation(
+        experiment_id="00000000-0000-0000-0000-000000000001",
+        cycle_id="00000000-0000-0000-0000-000000000002",
+        observed_at=OBSERVED_AT,
+        candidate=_candidate(),
+        cascade_step=cascade_step,
+        reason_id=reason_id,
+        decision="rejected",
+        rejection_class=rejection_class,
+    )
+
+    assert row["cascade_step"] == cascade_step
+    assert row["reason_id"] == reason_id
+    assert row["quality_rejected"] is (rejection_class == "quality")
+    assert row["capacity_rejected"] is (rejection_class == "capacity")
+    unsigned = {
+        key: value for key, value in row.items()
+        if key not in {"id", "candidate_sha256"}
+    }
+    assert row["candidate_sha256"] == canonical_sha256(unsigned)
 
 
 def test_observation_freezes_point_in_time_without_mutating_candidate() -> None:
