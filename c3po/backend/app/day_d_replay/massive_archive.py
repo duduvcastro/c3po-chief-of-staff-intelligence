@@ -332,7 +332,11 @@ class MassiveFlatFileArchive:
 
     @contextmanager
     def _exclusive_download_lock(self):  # noqa: ANN202 - contextmanager iterator
-        lock_path = self.root / ".massive-download.lock"
+        # The Day-D mount root is intentionally not writable by the host identity
+        # used by supervised one-offs. Keep the global archive lock in the shared
+        # evidence namespace, which is writable without broadening mount access.
+        lock_path = self.root / "evidence" / ".massive-download.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+", encoding="utf-8") as handle:
             try:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
