@@ -275,10 +275,18 @@ def test_workflow_pins_read_only_window_retention_and_frozen_policy() -> None:
     assert "gh pr comment 348" in workflow
     assert 'host_identity="$(id -u):$(id -g)"' in workflow
     assert workflow.count('--user "$host_identity"') == 3
-    remote = workflow.split("<<'REMOTE'", 1)[1].split("\n          REMOTE", 1)[0]
+    study_step = workflow.split("- name: Run production read-only probes", 1)[1].split(
+        "- name: Download reduced artifact", 1,
+    )[0]
+    assert "ServerAliveInterval=30" in study_step
+    assert "ServerAliveCountMax=20" in study_step
+    remote = study_step.split("<<'REMOTE'", 1)[1].split("\n          REMOTE", 1)[0]
     compose_runs = remote.split('"${compose[@]}" run --rm -T')[1:]
     assert len(compose_runs) == 3
     assert all("</dev/null" in command.split("\n\n", 1)[0] for command in compose_runs)
+    assert "com.docker.compose.oneoff=True" in remote
+    assert "com.docker.compose.service=api" in remote
+    assert "refusing overlapping study" in remote
     assert 'test -w "$STUDY_OUTPUT"' in workflow
     assert 'HOST_OUTPUT="$HOST_OUTPUT_ROOT/run-$RUN_ID"' in workflow
     assert "frozen-candidate-e-source.tar.gz.sha256" in workflow

@@ -76,7 +76,10 @@ jobs:
           REVISION: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          ssh -i ~/.ssh/c3po_study "$USER@$HOST" \
+          ssh \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_study "$USER@$HOST" \
             "REVISION='$REVISION' RUN_ID='$RUN_ID' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           umask 077
@@ -116,6 +119,16 @@ jobs:
             "$HOST_OUTPUT/frozen-candidate-e-source.tar.gz.sha256"
 
           compose=(docker compose --env-file .env -f c3po/compose.yml)
+          active_api_oneoffs=$(
+            docker ps \
+              --filter label=com.docker.compose.oneoff=True \
+              --filter label=com.docker.compose.service=api \
+              --format '{{.ID}}'
+          )
+          if [ -n "$active_api_oneoffs" ]; then
+            echo 'Another API one-off container is active; refusing overlapping study.' >&2
+            exit 13
+          fi
           host_identity="$(id -u):$(id -g)"
           "${compose[@]}" run --rm -T --user "$host_identity" \
             -e EXPECTED_IDENTITY="$host_identity" \
