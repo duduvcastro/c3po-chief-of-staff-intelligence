@@ -1,0 +1,133 @@
+{
+  "all_requested_datasets": {
+    "count": 8,
+    "maximum_bytes": 27939168,
+    "mean_bytes": 26872961,
+    "minimum_bytes": 26142628,
+    "p50_bytes": 26745322,
+    "p95_bytes": 27939168,
+    "sum_bytes": 214983688
+  },
+  "campaign": {
+    "complete_sessions": 8,
+    "end_date": "2026-09-02",
+    "head_requests": 8,
+    "non_session_weekdays": [],
+    "partial_sessions": [],
+    "start_date": "2026-08-24",
+    "weekday_candidates": 8
+  },
+  "datasets": {
+    "minute_aggregates": {
+      "count": 8,
+      "maximum_bytes": 27939168,
+      "mean_bytes": 26872961,
+      "minimum_bytes": 26142628,
+      "p50_bytes": 26745322,
+      "p95_bytes": 27939168,
+      "sum_bytes": 214983688
+    }
+  },
+  "downloaded": false,
+  "maximum_session": {
+    "session_date": "2026-09-01",
+    "total_bytes": 27939168
+  },
+  "measured_at": "2026-09-03T06:04:29.329063+00:00",
+  "mode": "read_only_head_only",
+  "quantile_method": "nearest_rank",
+  "raw_trades_quotes": null,
+  "schema_version": "DAY-D-MASSIVE-T0-PLAN-SWEEP-v1",
+  "sessions": [
+    {
+      "artifacts": {
+        "minute_aggregates": {
+          "content_length": 27293076,
+          "object_key": "us_stocks_sip/minute_aggs_v1/2026/08/2026-08-24.csv.gz",
+          "remote_etag": "3e923714c41f52e4b360a557cefe8bb5"
+        }
+      },
+      "session_date": "2026-08-24",
+      "total_bytes": 27293076
+    },
+    {
+      "artifacts": {
+        "minute_aggregates": {
+          "content_length": 26552348,
+          "object_key": "us_stocks_sip/minute_aggs_v1/2026/08/2026-08-25.csv.gz",
+          "remote_etag": "ae361007bf9eec98c31b631b94216be9"
+        }
+      },
+      "session_date": "2026-08-25",
+      "total_bytes": 26552348
+    },
+    {
+      "artifacts": {
+        "minute_aggregates": {
+          "content_length": 26142628,
+          "object_key": "us_stocks_sip/minute_aggs_v1/2026/08/2026-08-26.csv.gz",
+          "remote_etag": "6c737552c18d2c042f2fdb09b8a2f961"
+        }
+      },
+      "session_date": "2026-08-26",
+      "total_bytes": 26142628
+    },
+    {
+      "artifacts": {
+        "minute_aggregates": {
+          "content_length": 26895133,
+          "object_key": "us_stocks_sip/minute_aggs_v1/2026/08/2026-08-27.csv.gz",
+          "remote_etag": "f1d60ff5fdaf9a581fc61b124e5aec21"
+        }
+      },
+      "session_date": "2026-08-27",
+      "total_bytes": 26895133
+    },
+    {
+      "artifacts": {
+        "minute_aggregates": {
+          "content_length": 26745322,
+          "object_key": "us_stocks_sip/minute_aggs_v1/2026/08/2026-08-28.csv.gz",
+          "remote_etag": "3fb4e74bfb19834bd52fe8706ed141aa"
+        }
+      },
+      "session_date": "2026-08-28",
+      "total_bytes": 26745322
+    },
+    {
+      "artifacts": {
+        "minute_aggregates": {
+          "content_length": 26412320,
+          "object_key": "us_stocks_sip/minute_aggs_v1/2026/08/2026-08-31.csv.gz",
+          "remote_etag": "8c2240e1f7742f602bb112e6b19fc09f"
+        }
+      },
+      "session_date": "2026-08-31",
+      "total_bytes": 26412320
+    },
+    {
+      "artifacts": {
+        "minute_aggregates": {
+          "content_length": 27939168,
+          "object_key": "us_stocks_sip/minute_aggs_v1/2026/09/2026-09-01.csv.gz",
+          "remote_etag": "357028565342425a928d55fe66d62091"
+        }
+      },
+      "session_date": "2026-09-01",
+      "total_bytes": 27939168
+    },
+    {
+      "artifacts": {
+        "minute_aggregates": {
+          "content_length": 27003693,
+          "object_key": "us_stocks_sip/minute_aggs_v1/2026/09/2026-09-02.csv.gz",
+          "remote_etag": "45355619d1b4a6baa4a8c06ca25adf22"
+        }
+      },
+      "session_date": "2026-09-02",
+      "total_bytes": 27003693
+    }
+  ],
+  "source_csv_files": 0,
+  "spot_checks": []
+}
