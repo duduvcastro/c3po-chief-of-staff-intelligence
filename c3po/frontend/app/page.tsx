@@ -2441,9 +2441,17 @@ function ProfilePanel({
   onLogout: () => void;
 }) {
   const roleLabel = session.is_admin ? "Proprietário · Administrador" : "Usuário autorizado";
-  const sessionPolicy = session.is_admin
-    ? "Expiração diária"
-    : `Expira após ${Math.round((session.idle_timeout_seconds ?? 3600) / 60)} min de inatividade`;
+  const idleMinutes = session.idle_timeout_seconds
+    ? Math.round(session.idle_timeout_seconds / 60)
+    : null;
+  const idleDuration = idleMinutes === null
+    ? null
+    : idleMinutes % 60 === 0
+      ? `${idleMinutes / 60} ${idleMinutes === 60 ? "hora" : "horas"}`
+      : `${idleMinutes} min`;
+  const sessionPolicy = idleDuration
+    ? `Expira após ${idleDuration} de inatividade`
+    : "Sem expiração por inatividade";
 
   return (
     <>
@@ -2882,32 +2890,85 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
 
     const idleTimeoutMs = session.idle_timeout_seconds * 1000;
     const heartbeatIntervalMs = 5 * 60 * 1000;
+    const heartbeatRetryMs = 30 * 1000;
     let idleTimer = 0;
-    let lastHeartbeatAt = 0;
+    let heartbeatTimer = 0;
+    let activityVersion = 0;
+    let acknowledgedActivityVersion = 0;
+    let lastActivityAt = 0;
+    let lastHeartbeatSucceededAt = 0;
+    let lastHeartbeatAttemptedAt = 0;
     let heartbeatInFlight = false;
+    let sessionExpired = false;
 
-    const expireLocalSession = () => onSessionExpired();
-    const sendActivityHeartbeat = async () => {
-      if (heartbeatInFlight) return;
+    const expireLocalSession = () => {
+      if (sessionExpired) return;
+      sessionExpired = true;
+      window.clearTimeout(idleTimer);
+      window.clearTimeout(heartbeatTimer);
+      void fetch(`${API_URL}/api/v1/auth/logout`, {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
+        keepalive: true
+      }).catch(() => undefined);
+      onSessionExpired();
+    };
+    function scheduleActivityHeartbeat() {
+      window.clearTimeout(heartbeatTimer);
+      if (sessionExpired || acknowledgedActivityVersion >= activityVersion) return;
+      const now = Date.now();
+      const intervalDueAt = lastHeartbeatSucceededAt
+        ? lastHeartbeatSucceededAt + heartbeatIntervalMs
+        : now;
+      const retryDueAt = lastHeartbeatAttemptedAt
+        ? lastHeartbeatAttemptedAt + heartbeatRetryMs
+        : now;
+      heartbeatTimer = window.setTimeout(
+        () => void sendActivityHeartbeat(),
+        Math.max(0, intervalDueAt - now, retryDueAt - now)
+      );
+    }
+    async function sendActivityHeartbeat() {
+      if (sessionExpired || heartbeatInFlight) return;
+      if (!lastActivityAt || Date.now() - lastActivityAt >= idleTimeoutMs) {
+        expireLocalSession();
+        return;
+      }
       heartbeatInFlight = true;
-      lastHeartbeatAt = Date.now();
+      lastHeartbeatAttemptedAt = Date.now();
+      const sentActivityVersion = activityVersion;
       try {
         const response = await fetch(`${API_URL}/api/v1/auth/activity`, {
           method: "POST",
           cache: "no-store",
           credentials: "include"
         });
-        if (response.status === 401) expireLocalSession();
+        if (response.status === 401) {
+          expireLocalSession();
+          return;
+        }
+        if (response.ok) {
+          lastHeartbeatSucceededAt = Date.now();
+          acknowledgedActivityVersion = Math.max(
+            acknowledgedActivityVersion,
+            sentActivityVersion
+          );
+        }
       } catch {
         // A transient network failure must not log out an otherwise valid session.
       } finally {
         heartbeatInFlight = false;
+        scheduleActivityHeartbeat();
       }
-    };
+    }
     const registerActivity = () => {
+      if (sessionExpired) return;
+      activityVersion += 1;
+      lastActivityAt = Date.now();
       window.clearTimeout(idleTimer);
       idleTimer = window.setTimeout(expireLocalSession, idleTimeoutMs);
-      if (Date.now() - lastHeartbeatAt >= heartbeatIntervalMs) void sendActivityHeartbeat();
+      scheduleActivityHeartbeat();
     };
     const handleVisibility = () => {
       if (document.visibilityState === "visible") registerActivity();
@@ -2919,6 +2980,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
 
     return () => {
       window.clearTimeout(idleTimer);
+      window.clearTimeout(heartbeatTimer);
       activityEvents.forEach((eventName) => window.removeEventListener(eventName, registerActivity));
       document.removeEventListener("visibilitychange", handleVisibility);
     };

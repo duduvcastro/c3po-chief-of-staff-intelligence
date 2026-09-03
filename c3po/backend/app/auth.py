@@ -137,6 +137,16 @@ class AuthService:
     def session_hash(token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+    def idle_timeout_seconds(self, email: str) -> int:
+        normalized_email = email.strip().lower()
+        owner_email = self.settings.auth_email.strip().lower()
+        idle_minutes = (
+            self.settings.auth_owner_idle_minutes
+            if normalized_email == owner_email
+            else self.settings.auth_member_idle_minutes
+        )
+        return idle_minutes * 60
+
     @staticmethod
     def describe_client(
         user_agent: str,
@@ -306,6 +316,7 @@ class AuthService:
                 "created_at": now,
                 "last_seen_at": now,
                 "created_ip": requested_ip,
+                "idle_timeout_seconds": self.idle_timeout_seconds(challenge["email"]),
             }
         )
         self.database.touch_access_user_login(challenge["email"], now)
@@ -318,7 +329,9 @@ class AuthService:
         session = self.database.get_session(
             self.session_hash(token),
             now,
-            idle_cutoff=now - timedelta(minutes=self.settings.auth_member_idle_minutes),
+            owner_email=self.settings.auth_email,
+            owner_idle_timeout_seconds=self.settings.auth_owner_idle_minutes * 60,
+            member_idle_timeout_seconds=self.settings.auth_member_idle_minutes * 60,
             touch_activity=touch_activity,
         )
         if not session:
