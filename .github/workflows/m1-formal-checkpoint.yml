@@ -1,0 +1,642 @@
+name: Formal M1 checkpoints
+
+on:
+  schedule:
+    # 23:37 UTC is after 18:00 America/New_York in both EDT and EST.
+    - cron: "37 23 * * *"
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN M1 FORMAL CHECKPOINT READ
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: c3po-m1-formal-checkpoints
+  cancel-in-progress: false
+
+env:
+  PUBLIC_REPOSITORY: duduvcastro/c3po-chief-of-staff-intelligence
+  PRIVATE_REPOSITORY: duduvcastro/c3po-r2d2-reports
+  PRIVATE_STORE_WORKFLOW: m1-formal-private-store.yml
+  PRIVATE_STATE_REF: m1-formal-state
+  BASELINE_RUN_ID: "33022905030"
+  BASELINE_ARTIFACT_NAME: entry-quality-pr257-factual-33022905030
+
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    steps:
+      - name: Require the audited integration switch and protected configuration
+        id: activation
+        env:
+          ENABLED: ${{ vars.C3PO_M1_FORMAL_AUTOMATION_ENABLED }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          AUTHORIZED_HEAD: ${{ vars.C3PO_M1_AUTHORIZED_PUBLIC_HEAD_SHA }}
+          AUTHORIZED_FORMAL_SOURCE: ${{ vars.C3PO_M1_AUTHORIZED_FORMAL_SOURCE_SHA256 }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          AWS_HOST: ${{ secrets.C3PO_AWS_HOST }}
+          AWS_USER: ${{ secrets.C3PO_AWS_USER }}
+          AWS_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          AWS_KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+          TRANSFER_APP_ID: ${{ secrets.C3PO_M1_TRANSFER_APP_ID }}
+          TRANSFER_APP_KEY: ${{ secrets.C3PO_M1_TRANSFER_APP_PRIVATE_KEY }}
+          SIGNING_KEY: ${{ secrets.C3PO_M1_FORMAL_SIGNING_KEY }}
+          HEALTHCHECK_URL: ${{ secrets.C3PO_HEALTHCHECK_M1_FORMAL_URL }}
+        run: |
+          set -euo pipefail
+          if test "$ENABLED" != true; then
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::Formal M1 automation is preparation-only until the audited integration switch is enabled.'
+            exit 0
+          fi
+          echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          test "$GITHUB_REPOSITORY" = "$PUBLIC_REPOSITORY"
+          if test "$GITHUB_EVENT_NAME" = workflow_dispatch; then
+            test "$GITHUB_REF" = refs/heads/main
+            if test "$CONFIRMATION" != 'RUN M1 FORMAL CHECKPOINT READ'; then
+              echo 'The supervised confirmation did not match.' >&2
+              exit 2
+            fi
+          fi
+          [[ "$AUTHORIZED_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$AUTHORIZED_FORMAL_SOURCE" =~ ^[0-9a-f]{64}$ ]]
+          test "$WORKFLOW_SHA" = "$AUTHORIZED_HEAD"
+          for required in AWS_HOST AWS_USER AWS_KEY AWS_KNOWN_HOSTS \
+            TRANSFER_APP_ID TRANSFER_APP_KEY SIGNING_KEY HEALTHCHECK_URL; do
+            if test -z "${!required}"; then
+              echo "Required protected configuration is absent: $required" >&2
+              exit 3
+            fi
+          done
+          [[ "$TRANSFER_APP_ID" =~ ^[0-9]+$ ]]
+          printf 'head_sha=%s\nformal_source_sha256=%s\n' \
+            "$AUTHORIZED_HEAD" "$AUTHORIZED_FORMAL_SOURCE" >> "$GITHUB_OUTPUT"
+
+      - name: Signal the remote dead-man start
+        if: steps.activation.outputs.enabled == 'true'
+        env:
+          HEALTHCHECK_URL: ${{ secrets.C3PO_HEALTHCHECK_M1_FORMAL_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$HEALTHCHECK_URL" =~ ^https://[^[:space:]]+$ ]]
+          curl --fail --silent --show-error --max-time 15 --retry 2 \
+            "${HEALTHCHECK_URL%/}/start"
+
+      - name: Check out the exact audited public source
+        if: steps.activation.outputs.enabled == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.activation.outputs.head_sha }}
+
+      - name: Prove the checked-out public pins
+        if: steps.activation.outputs.enabled == 'true'
+        env:
+          AUTHORIZED_HEAD: ${{ steps.activation.outputs.head_sha }}
+          AUTHORIZED_FORMAL_SOURCE: ${{ steps.activation.outputs.formal_source_sha256 }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$AUTHORIZED_HEAD"
+          observed=$(sha256sum .github/scripts/c3po_m1_formal_checkpoint.py | cut -d ' ' -f 1)
+          test "$observed" = "$AUTHORIZED_FORMAL_SOURCE"
+          python3 .github/scripts/check_sensitive_files.py
+
+      - name: Mint the repository-scoped transfer token
+        if: steps.activation.outputs.enabled == 'true'
+        id: transfer-app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.C3PO_M1_TRANSFER_APP_ID }}
+          private-key: ${{ secrets.C3PO_M1_TRANSFER_APP_PRIVATE_KEY }}
+          owner: duduvcastro
+          repositories: c3po-r2d2-reports
+          permission-actions: write
+          permission-contents: write
+
+      - name: Preflight the private controls and read only the minimal state marker
+        if: steps.activation.outputs.enabled == 'true'
+        id: state
+        env:
+          GH_TOKEN: ${{ steps.transfer-app.outputs.token }}
+          APP_SLUG: ${{ steps.transfer-app.outputs.app-slug }}
+          AUTHORIZED_HEAD: ${{ steps.activation.outputs.head_sha }}
+          AUTHORIZED_FORMAL_SOURCE: ${{ steps.activation.outputs.formal_source_sha256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$RUNNER_TEMP/m1-formal"
+          install -m 700 -d "$root/private-preflight"
+          repo=$(gh api "repos/$PRIVATE_REPOSITORY")
+          test "$(jq -r .private <<< "$repo")" = true
+          test "$(jq -r .full_name <<< "$repo")" = "$PRIVATE_REPOSITORY"
+          [[ "$APP_SLUG" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+          actor="$APP_SLUG[bot]"
+          [[ "$actor" =~ \[bot\]$ ]]
+          main_ref=$(gh api "repos/$PRIVATE_REPOSITORY/git/ref/heads/main")
+          private_main_sha=$(jq -er .object.sha <<< "$main_ref")
+          [[ "$private_main_sha" =~ ^[0-9a-f]{40}$ ]]
+          workflow=$(gh api "repos/$PRIVATE_REPOSITORY/actions/workflows/$PRIVATE_STORE_WORKFLOW")
+          test "$(jq -r .state <<< "$workflow")" = active
+
+          gh api "repos/$PRIVATE_REPOSITORY/contents/.github/scripts/m1_formal_private_ingest.py?ref=$private_main_sha" \
+            --jq .content | tr -d '\n' | base64 --decode \
+            > "$root/private-preflight/ingest.py"
+          ! grep -q 'UNCONFIGURED_' "$root/private-preflight/ingest.py"
+          grep -Fq "$AUTHORIZED_HEAD" "$root/private-preflight/ingest.py"
+          grep -Fq "$AUTHORIZED_FORMAL_SOURCE" "$root/private-preflight/ingest.py"
+          gh api "repos/$PRIVATE_REPOSITORY/contents/.github/m1-formal-authorized-signers?ref=$private_main_sha" \
+            --jq .content | tr -d '\n' | base64 --decode \
+            > "$root/private-preflight/allowed-signers"
+          test "$(grep -cv '^#\|^$' "$root/private-preflight/allowed-signers")" -eq 1
+          grep -Eq '^c3po-m1-formal-public-runner ssh-ed25519 ' \
+            "$root/private-preflight/allowed-signers"
+          ! grep -Eq 'UNCONFIGURED|PRIVATE KEY' "$root/private-preflight/allowed-signers"
+
+          ref=$(gh api "repos/$PRIVATE_REPOSITORY/git/ref/heads/$PRIVATE_STATE_REF")
+          state_commit=$(jq -er .object.sha <<< "$ref")
+          [[ "$state_commit" =~ ^[0-9a-f]{40}$ ]]
+          commit=$(gh api "repos/$PRIVATE_REPOSITORY/git/commits/$state_commit")
+          test "$(jq '.parents | length' <<< "$commit")" -le 1
+          tree_sha=$(jq -er .tree.sha <<< "$commit")
+          tree=$(gh api "repos/$PRIVATE_REPOSITORY/git/trees/$tree_sha?recursive=1")
+          test "$(jq '.tree | length' <<< "$tree")" -eq 1
+          test "$(jq -r '.tree[0].path' <<< "$tree")" = state.json
+          test "$(jq -r '.tree[0].type' <<< "$tree")" = blob
+          test "$(jq -r '.tree[0].mode' <<< "$tree")" = 100644
+          blob_sha=$(jq -er '.tree[0].sha' <<< "$tree")
+          gh api "repos/$PRIVATE_REPOSITORY/git/blobs/$blob_sha" \
+            --jq .content | tr -d '\n' | base64 --decode > "$root/private-state.json"
+          state=$(PYTHONPATH=.github/scripts \
+            python3 .github/scripts/c3po_m1_formal_orchestration.py validate-state \
+              --state "$root/private-state.json")
+          action=$(jq -er .action <<< "$state")
+          checkpoint=$(jq -er .checkpoint <<< "$state")
+          printf 'action=%s\ncheckpoint=%s\napp_actor=%s\nstate_commit=%s\nprivate_main_sha=%s\n' \
+            "$action" "$checkpoint" "$actor" "$state_commit" \
+            "$private_main_sha" >> "$GITHUB_OUTPUT"
+          if test "$action" = NO_WORK; then
+            echo "::notice::Formal M1 state is terminal: $(jq -r .status <<< "$state")"
+          fi
+
+      - name: Configure the read-only production transport and signing key
+        if: steps.activation.outputs.enabled == 'true' && steps.state.outputs.action != 'NO_WORK'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+          SIGNING_KEY: ${{ secrets.C3PO_M1_FORMAL_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_m1_production
+          printf '%s\n' "$SIGNING_KEY" > ~/.ssh/c3po_m1_signing
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/c3po_m1_known_hosts
+          chmod 600 ~/.ssh/c3po_m1_production ~/.ssh/c3po_m1_signing \
+            ~/.ssh/c3po_m1_known_hosts
+          ssh-keygen -y -f ~/.ssh/c3po_m1_production >/tmp/m1-production.pub
+          ssh-keygen -y -f ~/.ssh/c3po_m1_signing >/tmp/m1-signing.pub
+          grep -Eq '^ssh-ed25519 ' /tmp/m1-signing.pub
+          test "$(cat /tmp/m1-production.pub)" != "$(cat /tmp/m1-signing.pub)"
+          ssh-keygen -F "$HOST" -f ~/.ssh/c3po_m1_known_hosts >/dev/null
+
+      - name: Download and verify the pinned factual baseline
+        if: steps.activation.outputs.enabled == 'true' && steps.state.outputs.action != 'NO_WORK'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$RUNNER_TEMP/m1-formal"
+          test ! -e "$root/baseline"
+          gh run download "$BASELINE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$BASELINE_ARTIFACT_NAME" \
+            --dir "$root/baseline"
+          baseline_root="$root/baseline/$BASELINE_RUN_ID"
+          test -s "$baseline_root/study/report.json"
+          (cd "$baseline_root" && sha256sum -c SHA256SUMS)
+          BASELINE="$baseline_root/study/report.json" \
+            PYTHONPATH=.github/scripts python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import c3po_m1_incremental_reducer as reducer
+
+          report = json.loads(Path(os.environ['BASELINE']).read_text(encoding='utf-8'))
+          reducer.verify_baseline(report)
+          PY
+          printf 'C3PO_M1_BASELINE=%s\n' "$baseline_root/study/report.json" >> "$GITHUB_ENV"
+
+      - name: Enumerate finalized policy sessions in a read-only transaction
+        if: steps.activation.outputs.enabled == 'true' && steps.state.outputs.action != 'NO_WORK'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$RUNNER_TEMP/m1-formal"
+          query=.github/scripts/c3po_m1_checkpoint_sessions.sql
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/c3po_m1_known_hosts \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
+            -i ~/.ssh/c3po_m1_production "$USER@$HOST" \
+            "cd /opt/chief-of-staff-digital && \
+             docker compose --env-file .env -f c3po/compose.yml exec -T \
+               -e 'PGOPTIONS=-c role=pg_read_all_data -c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000' \
+               db sh -ceu 'exec psql -X --no-psqlrc -qAt -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\"'" \
+            < "$query" > "$root/sessions.txt"
+          test -s "$root/sessions.txt"
+          test "$(sort -u "$root/sessions.txt" | wc -l | tr -d ' ')" \
+            = "$(wc -l < "$root/sessions.txt" | tr -d ' ')"
+          ! grep -Evq '^20[0-9]{2}-[0-9]{2}-[0-9]{2}$' "$root/sessions.txt"
+
+      - name: Recompute each source session in the existing API container
+        if: steps.activation.outputs.enabled == 'true' && steps.state.outputs.action != 'NO_WORK'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          CHECKPOINT: ${{ steps.state.outputs.checkpoint }}
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$RUNNER_TEMP/m1-formal"
+          query=.github/scripts/c3po_m1_session_snapshot.py
+          query_sha=$(sha256sum "$query" | cut -d ' ' -f 1)
+          install -m 700 -d "$root/snapshots"
+          : > "$root/snapshot-prefix.txt"
+          snapshot_args=()
+          while IFS= read -r session; do
+            [[ "$session" =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]]
+            snapshot="$root/snapshots/session-$session.json"
+            test ! -e "$snapshot"
+            ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/c3po_m1_known_hosts \
+              -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
+              -i ~/.ssh/c3po_m1_production "$USER@$HOST" \
+              "available=\$(awk '/^MemAvailable:/ {print \$2}' /proc/meminfo); \
+               if test \"\$available\" -lt 260000; then \
+                 echo 'M1 preflight refused: MemAvailable below 260000 kB' >&2; exit 75; \
+               fi; \
+               cd /opt/chief-of-staff-digital && \
+               docker compose --env-file .env -f c3po/compose.yml exec -T \
+                 -e 'PGOPTIONS=-c role=pg_read_all_data -c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000' \
+                 -e 'C3PO_EVIDENCE_QUERY_SHA256=$query_sha' \
+                 api sh -ceu 'ulimit -v 393216; exec nice -n 10 python - --session \"$session\"'" \
+              < "$query" > "$snapshot"
+            test -s "$snapshot"
+            test "$(wc -c < "$snapshot")" -le 4194304
+            printf '%s\n' "$session" >> "$root/snapshot-prefix.txt"
+            snapshot_args+=(--session-snapshot "$snapshot")
+            progress=$(PYTHONPATH=.github/scripts \
+              python3 .github/scripts/c3po_m1_formal_orchestration.py \
+                checkpoint-progress \
+                --baseline-report "$C3PO_M1_BASELINE" \
+                --enumerated-sessions "$root/sessions.txt" \
+                --checkpoint "$CHECKPOINT" \
+                "${snapshot_args[@]}")
+            progress_status=$(jq -er .status <<< "$progress")
+            if test "$progress_status" = READY; then
+              test "$(jq -er .measured_session_count <<< "$progress")" = "$CHECKPOINT"
+              break
+            fi
+            test "$progress_status" = NOT_READY
+          done < "$root/sessions.txt"
+
+      - name: Build only an exact ready checkpoint
+        if: steps.activation.outputs.enabled == 'true' && steps.state.outputs.action != 'NO_WORK'
+        id: build
+        env:
+          CHECKPOINT: ${{ steps.state.outputs.checkpoint }}
+          AUTHORIZED_FORMAL_SOURCE: ${{ steps.activation.outputs.formal_source_sha256 }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/m1-formal"
+          mapfile -t snapshots < <(find "$root/snapshots" -maxdepth 1 -type f \
+            -name 'session-*.json' -print | sort)
+          test "${#snapshots[@]}" = "$(wc -l < "$root/snapshot-prefix.txt" | tr -d ' ')"
+          test "${#snapshots[@]}" -le "$(wc -l < "$root/sessions.txt" | tr -d ' ')"
+          common=(
+            --baseline-report "$C3PO_M1_BASELINE"
+            --enumerated-sessions "$root/sessions.txt"
+            --orchestrated
+          )
+          for snapshot in "${snapshots[@]}"; do
+            common+=(--session-snapshot "$snapshot")
+          done
+          prior=()
+          if test "$CHECKPOINT" = 20; then
+            python3 .github/scripts/c3po_m1_formal_checkpoint.py \
+              --checkpoint 15 "${common[@]}" \
+              --output "$root/recomputed-checkpoint-15.json"
+            prior_state=$(PYTHONPATH=.github/scripts \
+              python3 .github/scripts/c3po_m1_formal_orchestration.py \
+                validate-recomputed-prior \
+                --payload "$root/recomputed-checkpoint-15.json" \
+                --state "$root/private-state.json" \
+                --authorized-formal-source-sha256 "$AUTHORIZED_FORMAL_SOURCE")
+            canonical_prior=$(jq -er .canonical_prior_15_artifact_sha256 \
+              <<< "$prior_state")
+            prior=(
+              --prior-15-artifact "$root/recomputed-checkpoint-15.json"
+              --canonical-prior-15-artifact-sha256 "$canonical_prior"
+            )
+          fi
+          set +e
+          python3 .github/scripts/c3po_m1_formal_checkpoint.py \
+            --checkpoint "$CHECKPOINT" "${common[@]}" "${prior[@]}" \
+            --output "$root/checkpoint.json"
+          status=$?
+          set -e
+          if test "$status" -eq 3; then
+            test ! -e "$root/checkpoint.json"
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo "::notice::Formal checkpoint $CHECKPOINT is not ready on the measured-session clock."
+            exit 0
+          fi
+          test "$status" -eq 0
+          test -s "$root/checkpoint.json"
+          artifact_sha=$(jq -er .artifact_sha256 "$root/checkpoint.json")
+          label=$(jq -er .label "$root/checkpoint.json")
+          printf 'ready=true\ncheckpoint=%s\nartifact_sha256=%s\nlabel=%s\n' \
+            "$CHECKPOINT" "$artifact_sha" "$label" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the one-day public handoff artifact
+        if: steps.build.outputs.ready == 'true'
+        id: public-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-formal-checkpoint-${{ steps.build.outputs.checkpoint }}-${{ steps.build.outputs.artifact_sha256 }}-source-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/m1-formal/checkpoint.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Create the private draft transfer and dispatch storage
+        if: steps.build.outputs.ready == 'true'
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ steps.transfer-app.outputs.token }}
+          APP_ACTOR: ${{ steps.state.outputs.app_actor }}
+          PUBLIC_ARTIFACT_ID: ${{ steps.public-artifact.outputs.artifact-id }}
+          CHECKPOINT: ${{ steps.build.outputs.checkpoint }}
+          ARTIFACT_SHA256: ${{ steps.build.outputs.artifact_sha256 }}
+          AUTHORIZED_HEAD: ${{ steps.activation.outputs.head_sha }}
+          AUTHORIZED_FORMAL_SOURCE: ${{ steps.activation.outputs.formal_source_sha256 }}
+          PRIVATE_MAIN_SHA: ${{ steps.state.outputs.private_main_sha }}
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$RUNNER_TEMP/m1-formal"
+          tag="m1-formal-transfer-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$PUBLIC_ARTIFACT_ID"
+          asset="m1-formal-checkpoint-$CHECKPOINT-$ARTIFACT_SHA256.zip"
+          current_main=$(gh api "repos/$PRIVATE_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          test "$current_main" = "$PRIVATE_MAIN_SHA"
+          printf 'tag=%s\napp_actor=%s\n' "$tag" "$APP_ACTOR" >> "$GITHUB_OUTPUT"
+          gh release create "$tag" \
+            --repo "$PRIVATE_REPOSITORY" --target main --draft \
+            --title "Ephemeral formal M1 transfer $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" \
+            --notes 'Ephemeral signed reduced checkpoint; the private store or cleanup deletes it.'
+          releases=$(gh api --paginate \
+            "repos/$PRIVATE_REPOSITORY/releases?per_page=100" --slurp)
+          release=$(jq -c --arg tag "$tag" \
+            '[.[][] | select(.tag_name == $tag)] | if length == 1 then .[0] else error("release cardinality") end' \
+            <<< "$releases")
+          release_id=$(jq -er .id <<< "$release")
+          test "$(jq -r .draft <<< "$release")" = true
+          test "$(jq -r .author.login <<< "$release")" = "$APP_ACTOR"
+          test "$(jq '.assets | length' <<< "$release")" -eq 0
+          printf 'release_id=%s\n' "$release_id" >> "$GITHUB_OUTPUT"
+
+          transfer="$root/transfer"
+          install -m 700 -d "$transfer"
+          install -m 600 "$root/checkpoint.json" "$transfer/checkpoint.json"
+          PYTHONPATH=.github/scripts \
+            python3 .github/scripts/c3po_m1_formal_orchestration.py build-envelope \
+              --payload "$transfer/checkpoint.json" \
+              --checkpoint "$CHECKPOINT" \
+              --source-head-sha "$AUTHORIZED_HEAD" \
+              --authorized-formal-source-sha256 "$AUTHORIZED_FORMAL_SOURCE" \
+              --formal-source .github/scripts/c3po_m1_formal_checkpoint.py \
+              --source-release-id "$release_id" \
+              --source-run-id "$GITHUB_RUN_ID" \
+              --source-run-attempt "$GITHUB_RUN_ATTEMPT" \
+              --public-artifact-id "$PUBLIC_ARTIFACT_ID" \
+              --output "$transfer/envelope.json"
+          ssh-keygen -Y sign -f ~/.ssh/c3po_m1_signing \
+            -n c3po-m1-formal-checkpoint-v1 "$transfer/envelope.json"
+          mv "$transfer/envelope.json.sig" "$transfer/envelope.sig"
+          chmod 600 "$transfer/envelope.sig"
+          test "$(find "$transfer" -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 3
+          ! grep -Eqi 'postgres(?:ql)?://|github_pat_|-----BEGIN .*PRIVATE KEY-----' \
+            "$transfer/checkpoint.json" "$transfer/envelope.json"
+
+          archive="$root/$asset"
+          TRANSFER_ROOT="$root/transfer" ARCHIVE="$archive" python3 - <<'PY'
+          import os
+          import zipfile
+          from pathlib import Path
+
+          source = Path(os.environ['TRANSFER_ROOT'])
+          expected = {'checkpoint.json', 'envelope.json', 'envelope.sig'}
+          if {path.name for path in source.iterdir()} != expected:
+              raise SystemExit('formal transfer file allowlist mismatch')
+          with zipfile.ZipFile(os.environ['ARCHIVE'], 'x', zipfile.ZIP_DEFLATED) as archive:
+              for name in sorted(expected):
+                  archive.write(source / name, name)
+          PY
+          test "$(wc -c < "$archive")" -le 131072
+          gh release upload "$tag" "$archive" --repo "$PRIVATE_REPOSITORY"
+          releases=$(gh api --paginate \
+            "repos/$PRIVATE_REPOSITORY/releases?per_page=100" --slurp)
+          release=$(jq -c --arg tag "$tag" \
+            '[.[][] | select(.tag_name == $tag)] | if length == 1 then .[0] else error("release cardinality") end' \
+            <<< "$releases")
+          test "$(jq -r .id <<< "$release")" = "$release_id"
+          test "$(jq -r .draft <<< "$release")" = true
+          test "$(jq -r .author.login <<< "$release")" = "$APP_ACTOR"
+          test "$(jq '.assets | length' <<< "$release")" -eq 1
+          test "$(jq -r '.assets[0].name' <<< "$release")" = "$asset"
+          test "$(jq -r '.assets[0].uploader.login' <<< "$release")" = "$APP_ACTOR"
+          test "$(jq -r '.assets[0].size' <<< "$release")" = "$(wc -c < "$archive" | tr -d ' ')"
+          payload=$(jq -cn \
+            --arg release_id "$release_id" \
+            --arg source_run_id "$GITHUB_RUN_ID" \
+            --arg source_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg public_artifact_id "$PUBLIC_ARTIFACT_ID" \
+            '{ref:"main",inputs:{confirmation:"STORE FORMAL M1 CHECKPOINT V1",release_id:$release_id,source_run_id:$source_run_id,source_run_attempt:$source_run_attempt,public_artifact_id:$public_artifact_id}}')
+          current_main=$(gh api "repos/$PRIVATE_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          test "$current_main" = "$PRIVATE_MAIN_SHA"
+          gh api --method POST \
+            "repos/$PRIVATE_REPOSITORY/actions/workflows/$PRIVATE_STORE_WORKFLOW/dispatches" \
+            --input - <<< "$payload"
+
+      - name: Wait for the private store and verify its authority
+        if: steps.build.outputs.ready == 'true'
+        id: private-store
+        env:
+          GH_TOKEN: ${{ steps.transfer-app.outputs.token }}
+          APP_ACTOR: ${{ steps.dispatch.outputs.app_actor }}
+          RELEASE_ID: ${{ steps.dispatch.outputs.release_id }}
+          PRIVATE_MAIN_SHA: ${{ steps.state.outputs.private_main_sha }}
+        run: |
+          set -euo pipefail
+          expected="M1 formal transfer $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT release $RELEASE_ID"
+          deadline=$((SECONDS + 900))
+          run_id=
+          while test "$SECONDS" -lt "$deadline"; do
+            runs=$(gh api \
+              "repos/$PRIVATE_REPOSITORY/actions/workflows/$PRIVATE_STORE_WORKFLOW/runs?event=workflow_dispatch&branch=main&per_page=30")
+            matches=$(jq -c --arg title "$expected" --arg actor "$APP_ACTOR" \
+              '[.workflow_runs[] | select(.display_title == $title and .actor.login == $actor)]' \
+              <<< "$runs")
+            test "$(jq length <<< "$matches")" -le 1
+            if test "$(jq length <<< "$matches")" -eq 1; then
+              run_id=$(jq -er '.[0].id' <<< "$matches")
+              status=$(jq -er '.[0].status' <<< "$matches")
+              test "$status" = completed || { sleep 5; continue; }
+              break
+            fi
+            sleep 5
+          done
+          test -n "$run_id"
+          run=$(gh api "repos/$PRIVATE_REPOSITORY/actions/runs/$run_id")
+          test "$(jq -r .conclusion <<< "$run")" = success
+          path=$(jq -r .path <<< "$run")
+          test "${path%%@*}" = ".github/workflows/$PRIVATE_STORE_WORKFLOW"
+          test "$(jq -r .event <<< "$run")" = workflow_dispatch
+          test "$(jq -r .head_branch <<< "$run")" = main
+          test "$(jq -r .head_sha <<< "$run")" = "$PRIVATE_MAIN_SHA"
+          test "$(jq -r .head_repository.full_name <<< "$run")" = "$PRIVATE_REPOSITORY"
+          test "$(jq -r .actor.login <<< "$run")" = "$APP_ACTOR"
+          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the private terminal marker before acknowledging storage
+        if: steps.private-store.outputs.run_id != ''
+        env:
+          GH_TOKEN: ${{ steps.transfer-app.outputs.token }}
+          CHECKPOINT: ${{ steps.build.outputs.checkpoint }}
+          LABEL: ${{ steps.build.outputs.label }}
+          ARTIFACT_SHA256: ${{ steps.build.outputs.artifact_sha256 }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/m1-formal"
+          binding=$(jq -er .checkpoint_binding_sha256 "$root/checkpoint.json")
+          ref=$(gh api "repos/$PRIVATE_REPOSITORY/git/ref/heads/$PRIVATE_STATE_REF")
+          commit=$(gh api "repos/$PRIVATE_REPOSITORY/git/commits/$(jq -er .object.sha <<< "$ref")")
+          test "$(jq '.parents | length' <<< "$commit")" -le 1
+          tree=$(gh api "repos/$PRIVATE_REPOSITORY/git/trees/$(jq -er .tree.sha <<< "$commit")?recursive=1")
+          test "$(jq '.tree | length' <<< "$tree")" -eq 1
+          test "$(jq -r '.tree[0].path' <<< "$tree")" = state.json
+          test "$(jq -r '.tree[0].type' <<< "$tree")" = blob
+          test "$(jq -r '.tree[0].mode' <<< "$tree")" = 100644
+          gh api "repos/$PRIVATE_REPOSITORY/git/blobs/$(jq -er '.tree[0].sha' <<< "$tree")" \
+            --jq .content | tr -d '\n' | base64 --decode > "$root/private-state-after.json"
+          PYTHONPATH=.github/scripts \
+            python3 .github/scripts/c3po_m1_formal_orchestration.py validate-state \
+              --state "$root/private-state-after.json" >/dev/null
+          test "$(jq -r .artifact_sha256 "$root/private-state-after.json")" = "$ARTIFACT_SHA256"
+          test "$(jq -r .checkpoint_binding_sha256 "$root/private-state-after.json")" = "$binding"
+          if test "$CHECKPOINT" = 20; then
+            expected=COMPLETE_20
+          elif test "$LABEL" = M1_CONTINUE_TO_20; then
+            expected=CONTINUE_TO_20
+          else
+            expected=TERMINAL_15
+          fi
+          test "$(jq -r .status "$root/private-state-after.json")" = "$expected"
+
+      - name: Delete any remaining private draft transfer
+        if: always() && steps.public-artifact.outputs.artifact-id != ''
+        env:
+          GH_TOKEN: ${{ steps.transfer-app.outputs.token }}
+          RELEASE_ID: ${{ steps.dispatch.outputs.release_id }}
+          EXPECTED_TAG: m1-formal-transfer-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.public-artifact.outputs.artifact-id }}
+          APP_ACTOR: ${{ steps.state.outputs.app_actor }}
+        run: |
+          set -euo pipefail
+          release=
+          if test -n "$RELEASE_ID"; then
+            if ! release=$(gh api "repos/$PRIVATE_REPOSITORY/releases/$RELEASE_ID" \
+              2>"$RUNNER_TEMP/m1-release.err"); then
+              if ! grep -q 'HTTP 404' "$RUNNER_TEMP/m1-release.err"; then
+                cat "$RUNNER_TEMP/m1-release.err" >&2
+                exit 1
+              fi
+            fi
+          else
+            releases=$(gh api --paginate \
+              "repos/$PRIVATE_REPOSITORY/releases?per_page=100" --slurp)
+            release=$(jq -c --arg tag "$EXPECTED_TAG" \
+              '[.[][] | select(.tag_name == $tag)] | if length <= 1 then (.[0] // empty) else error("release cardinality") end' \
+              <<< "$releases")
+          fi
+          if test -n "$release"; then
+            if test -n "$RELEASE_ID"; then
+              test "$(jq -r .id <<< "$release")" = "$RELEASE_ID"
+            fi
+            test "$(jq -r .draft <<< "$release")" = true
+            test "$(jq -r .tag_name <<< "$release")" = "$EXPECTED_TAG"
+            test "$(jq -r .author.login <<< "$release")" = "$APP_ACTOR"
+            gh api --method DELETE \
+              "repos/$PRIVATE_REPOSITORY/releases/$(jq -er .id <<< "$release")"
+          fi
+          if gh api "repos/$PRIVATE_REPOSITORY/git/ref/tags/$EXPECTED_TAG" \
+            >/dev/null 2>"$RUNNER_TEMP/m1-tag.err"; then
+            gh api --method DELETE \
+              "repos/$PRIVATE_REPOSITORY/git/refs/tags/$EXPECTED_TAG"
+          elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/m1-tag.err"; then
+            cat "$RUNNER_TEMP/m1-tag.err" >&2
+            exit 1
+          fi
+
+      - name: Expunge the public handoff artifact on every outcome
+        if: always() && steps.public-artifact.outputs.artifact-id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.public-artifact.outputs.artifact-id }}
+          EXPECTED_DIGEST: ${{ steps.public-artifact.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          artifact=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID")
+          test "$(jq -r .workflow_run.id <<< "$artifact")" = "$GITHUB_RUN_ID"
+          test "$(jq -r .digest <<< "$artifact")" = "sha256:$EXPECTED_DIGEST"
+          gh api --method DELETE \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID"
+          if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" \
+            >/dev/null 2>"$RUNNER_TEMP/m1-artifact.err"; then
+            echo 'Public formal handoff artifact still exists after deletion.' >&2
+            exit 1
+          fi
+          grep -q 'HTTP 404' "$RUNNER_TEMP/m1-artifact.err"
+
+      - name: Destroy all transient source, payload and key material
+        if: always()
+        run: |
+          find "$RUNNER_TEMP/m1-formal" -type f -exec shred -u {} + 2>/dev/null || true
+          rm -rf -- "$RUNNER_TEMP/m1-formal"
+          find ~/.ssh -maxdepth 1 -type f -name 'c3po_m1_*' \
+            -exec shred -u {} + 2>/dev/null || true
+          rm -f -- /tmp/m1-production.pub /tmp/m1-signing.pub \
+            "$RUNNER_TEMP/m1-release.err" "$RUNNER_TEMP/m1-tag.err" \
+            "$RUNNER_TEMP/m1-artifact.err"
+
+      - name: Complete the remote dead-man signal
+        if: always() && steps.activation.outputs.enabled == 'true'
+        env:
+          HEALTHCHECK_URL: ${{ secrets.C3PO_HEALTHCHECK_M1_FORMAL_URL }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          [[ "$HEALTHCHECK_URL" =~ ^https://[^[:space:]]+$ ]]
+          target="${HEALTHCHECK_URL%/}"
+          if test "$JOB_STATUS" != success; then
+            target="$target/fail"
+          fi
+          curl --fail --silent --show-error --max-time 15 --retry 2 "$target"
