@@ -8,15 +8,24 @@ import pytest
 
 from app.r2d2_candidate_f_backtest import (
     CandidateBacktestError,
+    EXPECTED_SESSIONS,
+    MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION,
+    PRIOR_FAILED_WORKFLOW_RUN_ID,
+    PRIOR_PROBE_REPORT_SHA256,
+    SCHEMA_VERSION as BACKTEST_SCHEMA_VERSION,
     _candidate_f_wrapper,
+    _coverage_shortfalls,
     _json_default,
     _premature_exit_metrics,
+    _require_frozen_coverage,
     _require_sha256,
     SYMBOLS,
+    aggregate_massive_five_minute_rows,
     canonical_sha256 as backtest_sha256,
 )
 from app.r2d2_chandelier_probe import (
     FiveMinuteBar,
+    SCHEMA_VERSION as PROBE_SCHEMA_VERSION,
     TradeAudit,
     aggregate_five_minutes,
     analyze_stop_regret,
@@ -83,19 +92,118 @@ def _episode(*, sell_reason: str = "Tactical profit", sell_price: float = 105.0)
     )
 
 
-def test_five_minute_aggregation_requires_five_contiguous_minutes() -> None:
-    start = datetime(2026, 8, 26, 13, 30, tzinfo=UTC)
+def test_five_minute_aggregation_uses_real_sparse_rows_and_fixed_window() -> None:
+    window = datetime(2026, 8, 26, 13, 30, tzinfo=UTC)
     minutes = [
-        StudyBar("TEST", start + timedelta(minutes=index), 100, 101 + index, 99, 100 + index, 10)
-        for index in range(5)
+        StudyBar("TEST", window + timedelta(minutes=index), 100 + index, 101 + index, 99, 100 + index, 10)
+        for index in (1, 3, 4)
     ]
-    complete = aggregate_five_minutes(minutes)
-    assert len(complete) == 1
-    assert complete[0].open == 100
-    assert complete[0].high == 105
-    assert complete[0].close == 104
-    assert complete[0].volume == 50
-    assert aggregate_five_minutes(minutes[:-1]) == []
+    sparse = aggregate_five_minutes(minutes)
+    assert len(sparse) == 1
+    assert sparse[0].start_at == window
+    assert sparse[0].source_minutes == 3
+    assert sparse[0].open == 101
+    assert sparse[0].high == 105
+    assert sparse[0].low == 99
+    assert sparse[0].close == 104
+    assert sparse[0].volume == 30
+    assert aggregate_five_minutes([]) == []
+
+    candidate = aggregate_massive_five_minute_rows([
+        {
+            "timestamp": bar.start_at,
+            "open": bar.open,
+            "high": bar.high,
+            "low": bar.low,
+            "close": bar.close,
+            "volume": bar.volume,
+        }
+        for bar in minutes
+    ], symbol="TEST")
+    assert candidate == [{
+        "timestamp": sparse[0].start_at,
+        "open": sparse[0].open,
+        "high": sparse[0].high,
+        "low": sparse[0].low,
+        "close": sparse[0].close,
+        "volume": sparse[0].volume,
+        "source_minutes": sparse[0].source_minutes,
+    }]
+
+
+def test_sparse_aggregation_aligns_to_window_and_never_fills_empty_window() -> None:
+    rows = [
+        {
+            "timestamp": datetime(2026, 8, 26, 13, minute, tzinfo=UTC),
+            "open": 100,
+            "high": 102,
+            "low": 99,
+            "close": 101,
+            "volume": 12,
+        }
+        for minute in (31, 41)
+    ]
+    result = aggregate_massive_five_minute_rows(rows, symbol="TEST")
+    assert [row["timestamp"] for row in result] == [
+        datetime(2026, 8, 26, 13, 30, tzinfo=UTC),
+        datetime(2026, 8, 26, 13, 40, tzinfo=UTC),
+    ]
+    assert datetime(2026, 8, 26, 13, 35, tzinfo=UTC) not in {
+        row["timestamp"] for row in result
+    }
+    assert [row["source_minutes"] for row in result] == [1, 1]
+
+
+def test_frozen_coverage_guard_remains_at_seventy_without_attrition() -> None:
+    session = EXPECTED_SESSIONS[0]
+    start = datetime(session.year, session.month, session.day, 13, 30, tzinfo=UTC)
+    bars = {
+        "ADP": [
+            {"timestamp": start + timedelta(minutes=5 * index)}
+            for index in range(MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION - 1)
+        ],
+    }
+    assert len(SYMBOLS) == 40
+    assert len(EXPECTED_SESSIONS) == 10
+    assert MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION == 70
+    assert BACKTEST_SCHEMA_VERSION == "R2D2-CANDIDATE-E-F-BACKTEST-v2"
+    assert PROBE_SCHEMA_VERSION == "R2D2-CHANDELIER-PROBE-v2"
+    assert PRIOR_FAILED_WORKFLOW_RUN_ID == 33714916267
+    assert PRIOR_PROBE_REPORT_SHA256 == (
+        "159b2eca56b8a5e42b0158a2a61409c3fb33589691735aa7fdb2098478ac9191"
+    )
+    assert _coverage_shortfalls(
+        bars,
+        symbols=("ADP",),
+        sessions=(session,),
+    ) == {"ADP": {session.isoformat(): 69}}
+    with pytest.raises(CandidateBacktestError, match="incomplete symbol-session coverage"):
+        _require_frozen_coverage(
+            bars,
+            symbols=("ADP",),
+            sessions=(session,),
+        )
+
+    bars["ADP"].append({"timestamp": start + timedelta(minutes=5 * 69)})
+    _require_frozen_coverage(
+        bars,
+        symbols=("ADP",),
+        sessions=(session,),
+    )
+
+
+def test_v2_reports_pin_superseded_run_provenance() -> None:
+    root = Path(__file__).resolve().parents[3]
+    backtest_source = (
+        root / "c3po" / "backend" / "app" / "r2d2_candidate_f_backtest.py"
+    ).read_text(encoding="utf-8")
+    probe_source = (
+        root / "c3po" / "backend" / "app" / "r2d2_chandelier_probe.py"
+    ).read_text(encoding="utf-8")
+    assert '"prior_failed_workflow_run_id": PRIOR_FAILED_WORKFLOW_RUN_ID' in backtest_source
+    assert '"supersedes": {' in probe_source
+    assert '"workflow_run_id": PRIOR_FAILED_WORKFLOW_RUN_ID' in probe_source
+    assert '"report_sha256": PRIOR_PROBE_REPORT_SHA256' in probe_source
 
 
 def test_atr_and_ratchet_contract_are_independent_of_asserted_business_result() -> None:

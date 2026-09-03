@@ -5,17 +5,19 @@ import csv
 import gzip
 import hashlib
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from app import backtest, r2d2_strategy as strategy
 
 
 NEW_YORK = ZoneInfo("America/New_York")
-SCHEMA_VERSION = "R2D2-CANDIDATE-E-F-BACKTEST-v1"
+SCHEMA_VERSION = "R2D2-CANDIDATE-E-F-BACKTEST-v2"
+PRIOR_FAILED_WORKFLOW_RUN_ID = 33714916267
+PRIOR_PROBE_REPORT_SHA256 = "159b2eca56b8a5e42b0158a2a61409c3fb33589691735aa7fdb2098478ac9191"
 FROZEN_POLICY_COMMIT = "bc79ca195c19bee9b9ef18c3098d28ae6c149597"
 ORIGINAL_HARNESS_RECOVERED_AT = "2026-09-02"
 SYMBOLS = (
@@ -87,8 +89,104 @@ def _source_files(root: Path) -> list[Path]:
     return output
 
 
+def aggregate_massive_five_minute_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    symbol: str,
+) -> list[dict[str, Any]]:
+    """Aggregate the real Massive rows present in each fixed NY five-minute window.
+
+    Massive omits an aggregate when no eligible trade occurred in that minute.  A
+    missing one-minute row therefore is not a synthetic zero-volume observation and
+    must not invalidate the surrounding five-minute window.  We aggregate the one to
+    five real rows that exist, emit no bar for an empty window, and never forward-fill
+    or interpolate a price.
+    """
+    buckets: dict[datetime, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in sorted(rows, key=lambda item: item["timestamp"]):
+        at = row["timestamp"]
+        if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
+            raise CandidateBacktestError(f"Massive timestamp must be timezone-aware for {symbol}")
+        if at.second or at.microsecond:
+            raise CandidateBacktestError(f"Massive timestamp is not minute-aligned for {symbol}: {at}")
+        local = at.astimezone(NEW_YORK)
+        bucket_start = local.replace(
+            minute=local.minute - local.minute % 5,
+            second=0,
+            microsecond=0,
+        ).astimezone(timezone.utc)
+        buckets[bucket_start].append(row)
+
+    output: list[dict[str, Any]] = []
+    for bucket_start, values in sorted(buckets.items()):
+        ordered = sorted(values, key=lambda item: item["timestamp"])
+        minute_starts = [item["timestamp"] for item in ordered]
+        if len(ordered) > 5 or len(set(minute_starts)) != len(minute_starts):
+            raise CandidateBacktestError(
+                f"Massive five-minute window has duplicate or excess rows for "
+                f"{symbol} at {bucket_start}"
+            )
+        output.append({
+            "timestamp": bucket_start,
+            "open": float(ordered[0]["open"]),
+            "high": max(float(item["high"]) for item in ordered),
+            "low": min(float(item["low"]) for item in ordered),
+            "close": float(ordered[-1]["close"]),
+            "volume": sum(float(item["volume"]) for item in ordered),
+            "source_minutes": len(ordered),
+        })
+    return output
+
+
+def _coverage_shortfalls(
+    bars: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    symbols: Sequence[str] = SYMBOLS,
+    sessions: Sequence[date] = EXPECTED_SESSIONS,
+    minimum: int = MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION,
+) -> dict[str, dict[str, int]]:
+    shortfalls: dict[str, dict[str, int]] = {}
+    for symbol in symbols:
+        values = bars.get(symbol, ())
+        counts = {
+            session: sum(
+                item["timestamp"].astimezone(NEW_YORK).date() == session
+                for item in values
+            )
+            for session in sessions
+        }
+        incomplete = {
+            session.isoformat(): count
+            for session, count in counts.items()
+            if count < minimum
+        }
+        if incomplete:
+            shortfalls[symbol] = incomplete
+    return shortfalls
+
+
+def _require_frozen_coverage(
+    bars: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    symbols: Sequence[str] = SYMBOLS,
+    sessions: Sequence[date] = EXPECTED_SESSIONS,
+    minimum: int = MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION,
+) -> None:
+    shortfalls = _coverage_shortfalls(
+        bars,
+        symbols=symbols,
+        sessions=sessions,
+        minimum=minimum,
+    )
+    if shortfalls:
+        raise CandidateBacktestError(
+            "frozen universe has incomplete symbol-session coverage: "
+            + json.dumps(shortfalls, sort_keys=True, separators=(",", ":"))
+        )
+
+
 def _five_minute_bars(root: Path) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
-    minutes: dict[tuple[str, date, int, int], list[dict[str, Any]]] = defaultdict(list)
+    minute_rows: dict[str, list[dict[str, Any]]] = {symbol: [] for symbol in SYMBOLS}
     evidence: list[dict[str, Any]] = []
     seen: set[tuple[str, datetime]] = set()
     for path in _source_files(root):
@@ -131,8 +229,7 @@ def _five_minute_bars(root: Path) -> tuple[dict[str, list[dict[str, Any]]], list
                 if key in seen:
                     raise CandidateBacktestError(f"duplicate minute aggregate: {symbol} {at}")
                 seen.add(key)
-                bucket = local.minute - local.minute % 5
-                minutes[(symbol, local.date(), local.hour, bucket)].append({
+                minute_rows[symbol].append({
                     "timestamp": at,
                     "open": float(row["open"]),
                     "high": float(row["high"]),
@@ -140,43 +237,11 @@ def _five_minute_bars(root: Path) -> tuple[dict[str, list[dict[str, Any]]], list
                     "close": float(row["close"]),
                     "volume": float(row["volume"]),
                 })
-    bars: dict[str, list[dict[str, Any]]] = {symbol: [] for symbol in SYMBOLS}
-    for (symbol, _session, _hour, _minute), values in minutes.items():
-        ordered = sorted(values, key=lambda item: item["timestamp"])
-        if len(ordered) != 5:
-            continue
-        if any(
-            ordered[index]["timestamp"] - ordered[index - 1]["timestamp"]
-            != timedelta(minutes=1)
-            for index in range(1, 5)
-        ):
-            continue
-        bars[symbol].append({
-            "timestamp": ordered[0]["timestamp"],
-            "open": ordered[0]["open"],
-            "high": max(item["high"] for item in ordered),
-            "low": min(item["low"] for item in ordered),
-            "close": ordered[-1]["close"],
-            "volume": sum(item["volume"] for item in ordered),
-        })
-    bars = {symbol: sorted(values, key=lambda item: item["timestamp"]) for symbol, values in bars.items()}
-    for symbol, values in bars.items():
-        counts = {
-            session: sum(
-                item["timestamp"].astimezone(NEW_YORK).date() == session
-                for item in values
-            )
-            for session in EXPECTED_SESSIONS
-        }
-        incomplete = {
-            session.isoformat(): count
-            for session, count in counts.items()
-            if count < MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION
-        }
-        if incomplete:
-            raise CandidateBacktestError(
-                f"frozen universe has incomplete session(s) for {symbol}: {incomplete}"
-            )
+    bars = {
+        symbol: aggregate_massive_five_minute_rows(values, symbol=symbol)
+        for symbol, values in minute_rows.items()
+    }
+    _require_frozen_coverage(bars)
     return bars, evidence
 
 
@@ -313,6 +378,19 @@ def build_report(
     candidate_f = _run_variant(bars, candidate_f=True)
     metrics_e = _metrics(candidate_e, bars)
     metrics_f = _metrics(candidate_f, bars)
+    source_minute_counts = Counter(
+        int(item["source_minutes"])
+        for values in bars.values()
+        for item in values
+    )
+    symbol_session_counts = [
+        sum(
+            item["timestamp"].astimezone(NEW_YORK).date() == session
+            for item in bars[symbol]
+        )
+        for symbol in SYMBOLS
+        for session in EXPECTED_SESSIONS
+    ]
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": generated_at,
@@ -323,7 +401,10 @@ def build_report(
             "symbols": list(SYMBOLS),
             "session_from": SESSION_FROM,
             "session_to": SESSION_TO,
-            "bar_interval": "5m aggregated from checksum-verified one-minute bars",
+            "bar_interval": (
+                "fixed New York 5m windows aggregated from the 1-5 real Massive rows present; "
+                "empty windows omitted; no forward-fill or interpolation"
+            ),
             "starting_capital_usd": STARTING_CAPITAL,
             "max_positions": MAX_POSITIONS,
             "fees_bps": FEES_BPS,
@@ -337,6 +418,12 @@ def build_report(
         "inputs": {
             "usable_symbol_count": len(bars),
             "five_minute_bar_count": sum(len(values) for values in bars.values()),
+            "source_minute_rows_per_five_minute_bar": {
+                str(count): source_minute_counts.get(count, 0)
+                for count in range(1, 6)
+            },
+            "minimum_observed_five_minute_bars_per_symbol_session": min(symbol_session_counts),
+            "maximum_observed_five_minute_bars_per_symbol_session": max(symbol_session_counts),
             "source_manifest_sha256": canonical_sha256(source_evidence),
             "source_sessions": source_evidence,
         },
@@ -378,6 +465,11 @@ def build_report(
             "artifact_class": "aggregate statistics; no raw bars or trades",
             "retention_days": 30,
             "expires_at": generated_at + timedelta(days=30),
+            "prior_failed_workflow_run_id": PRIOR_FAILED_WORKFLOW_RUN_ID,
+            "prior_failure_reason": (
+                "v1 discarded a fixed five-minute window unless Massive emitted all five "
+                "one-minute rows; the provider omits minutes without eligible trades"
+            ),
         },
         "limitations": [
             "The original EODHD response bytes from 20/08 were not retained; the exact frozen harness, symbols and dates are replayed on the checksum-verified Massive archive.",
