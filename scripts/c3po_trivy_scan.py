@@ -37,6 +37,15 @@ def report_sha256(report: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_bytes(payload)).hexdigest()
 
 
+def is_sha256_digest(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and value.startswith("sha256:")
+        and len(value) == 71
+        and all(character in "0123456789abcdef" for character in value[7:])
+    )
+
+
 def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any]) -> dict[str, Any]:
     counts = {severity: 0 for severity in SEVERITIES}
     fix_available = {severity: 0 for severity in SEVERITIES}
@@ -158,17 +167,23 @@ def parse_origin_specs(origin_specs: list[str]) -> dict[str, dict[str, Any]]:
             raise ValueError(f"invalid origin specification: {spec}")
         label, value = spec.split("=", 1)
         parts = value.split("|")
-        if not label or len(parts) != 3 or not all(parts):
+        if not label or len(parts) != 4 or not all(parts):
             raise ValueError(f"invalid origin specification: {spec}")
         if label in origins:
             raise ValueError(f"duplicate origin label: {label}")
-        image_ref, image_id, rootfs = parts
+        image_ref, image_id, config_image_id, rootfs = parts
         rootfs_layers = rootfs.split(",")
-        if not all(rootfs_layers):
+        if (
+            not is_sha256_digest(image_id)
+            or not is_sha256_digest(config_image_id)
+            or not rootfs_layers
+            or not all(is_sha256_digest(layer) for layer in rootfs_layers)
+        ):
             raise ValueError(f"invalid origin specification: {spec}")
         origins[label] = {
             "image_ref": image_ref,
             "image_id": image_id,
+            "config_image_id": config_image_id,
             "rootfs_layers": rootfs_layers,
         }
     return origins
@@ -233,7 +248,16 @@ def verify_origin_identity(
     # The production containerd store exposes a manifest digest while the
     # runner Docker store and Trivy expose a config digest. Ordered DiffIDs are
     # the cross-store content identity; both digest namespaces remain recorded.
-    if image.get("rootfs_layers") != origin["rootfs_layers"]:
+    if image.get("image_id") != origin["config_image_id"]:
+        raise RuntimeError(f"Trivy config image ID does not match archive for {label}")
+    rootfs_layers = image.get("rootfs_layers")
+    if (
+        not isinstance(rootfs_layers, list)
+        or not rootfs_layers
+        or not all(is_sha256_digest(layer) for layer in rootfs_layers)
+    ):
+        raise RuntimeError(f"Trivy ordered RootFS is missing or invalid for {label}")
+    if rootfs_layers != origin["rootfs_layers"]:
         raise RuntimeError(f"scanned ordered RootFS does not match live origin for {label}")
 
 
