@@ -208,12 +208,16 @@ def archive_config_image_ids(
         if item is None:
             raise ValueError(f"Docker archive is missing {reference}")
         config = item.get("Config")
-        if not isinstance(config, str) or not config.endswith(".json"):
-            raise ValueError(f"Docker archive config is invalid for {reference}")
-        digest = config.removesuffix(".json")
+        digest = ""
+        if isinstance(config, str):
+            if "/" not in config and config.endswith(".json"):
+                # Classic Docker image store archive.
+                digest = config.removesuffix(".json")
+            elif config.startswith("blobs/sha256/") and config.count("/") == 2:
+                # Docker's containerd image store emits an OCI-style config path.
+                digest = config.removeprefix("blobs/sha256/")
         if (
-            "/" in digest
-            or len(digest) != 64
+            len(digest) != 64
             or any(character not in "0123456789abcdef" for character in digest)
         ):
             raise ValueError(f"Docker archive config digest is invalid for {reference}")

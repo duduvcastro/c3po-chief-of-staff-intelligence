@@ -206,9 +206,14 @@ def test_docker_archive_manifest_config_ids_are_unique_and_fail_closed() -> None
     scanner = _scanner_module()
     backend_config = "a" * 64
     web_config = "b" * 64
+    database_config = "c" * 64
     manifest = [
         {"Config": f"{backend_config}.json", "RepoTags": ["c3po/backend:production"]},
         {"Config": f"{web_config}.json", "RepoTags": ["c3po/web:production"]},
+        {
+            "Config": f"blobs/sha256/{database_config}",
+            "RepoTags": ["c3po/database:production"],
+        },
     ]
 
     assert scanner.archive_config_image_ids(
@@ -216,10 +221,12 @@ def test_docker_archive_manifest_config_ids_are_unique_and_fail_closed() -> None
         [
             ("backend", "c3po/backend:production"),
             ("web", "c3po/web:production"),
+            ("database", "c3po/database:production"),
         ],
     ) == {
         "backend": f"sha256:{backend_config}",
         "web": f"sha256:{web_config}",
+        "database": f"sha256:{database_config}",
     }
 
     with pytest.raises(ValueError, match="duplicate Docker archive RepoTag"):
@@ -238,6 +245,26 @@ def test_docker_archive_manifest_config_ids_are_unique_and_fail_closed() -> None
     with pytest.raises(ValueError, match="config digest is invalid"):
         scanner.archive_config_image_ids(
             [{"Config": "../bad.json", "RepoTags": ["c3po/backend:production"]}],
+            [("backend", "c3po/backend:production")],
+        )
+    with pytest.raises(ValueError, match="config digest is invalid"):
+        scanner.archive_config_image_ids(
+            [
+                {
+                    "Config": f"blobs/sha256/../{'d' * 64}",
+                    "RepoTags": ["c3po/backend:production"],
+                }
+            ],
+            [("backend", "c3po/backend:production")],
+        )
+    with pytest.raises(ValueError, match="config digest is invalid"):
+        scanner.archive_config_image_ids(
+            [
+                {
+                    "Config": f"blobs/sha512/{'d' * 64}",
+                    "RepoTags": ["c3po/backend:production"],
+                }
+            ],
             [("backend", "c3po/backend:production")],
         )
     with pytest.raises(ValueError, match="manifest must be a list"):
