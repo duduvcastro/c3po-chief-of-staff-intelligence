@@ -121,6 +121,7 @@ jobs:
           compose=(docker compose --env-file .env -f c3po/compose.yml)
           active_api_oneoffs=$(
             docker ps \
+              --filter label=com.docker.compose.project=c3po \
               --filter label=com.docker.compose.oneoff=True \
               --filter label=com.docker.compose.service=api \
               --format '{{.ID}}'
