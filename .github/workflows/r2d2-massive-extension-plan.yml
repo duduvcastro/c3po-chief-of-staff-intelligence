@@ -1,0 +1,290 @@
+name: R2D2 Massive minute extension plan
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type PLAN MASSIVE MINUTE EXTENSION 2026-08-24 2026-09-02
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: r2d2-massive-extension-plan
+  cancel-in-progress: false
+
+jobs:
+  head-only-plan:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Require exact confirmation
+        env:
+          RECEIVED: ${{ inputs.confirmation }}
+        run: |
+          if [ "$RECEIVED" != 'PLAN MASSIVE MINUTE EXTENSION 2026-08-24 2026-09-02' ]; then
+            echo 'Confirmation did not match the approved phrase.' >&2
+            exit 2
+          fi
+
+      - name: Check out audited planner revision
+        uses: actions/checkout@v6
+
+      - name: Configure production transport
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_massive_plan
+          chmod 600 ~/.ssh/c3po_massive_plan
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run HEAD-only extension plan
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          REVISION: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          ssh \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
+            -i ~/.ssh/c3po_massive_plan "$USER@$HOST" \
+            "REVISION='$REVISION' RUN_ID='$RUN_ID' RUN_ATTEMPT='$RUN_ATTEMPT' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+
+          APP_DIR=/opt/chief-of-staff-digital
+          HOST_OUTPUT_ROOT=/mnt/day-d-data/evidence/r2d2-massive-extension-plan-v1
+          HOST_OUTPUT="$HOST_OUTPUT_ROOT/run-$RUN_ID-attempt-$RUN_ATTEMPT"
+          CONTAINER_OUTPUT="/app/day-d-data/evidence/r2d2-massive-extension-plan-v1/run-$RUN_ID-attempt-$RUN_ATTEMPT"
+
+          cd "$APP_DIR"
+          if [ "$(cat .deploy-version 2>/dev/null || true)" != "$REVISION" ]; then
+            echo 'Audited planner revision is not the live deployed revision.' >&2
+            exit 11
+          fi
+          if ! mountpoint -q /mnt/day-d-data; then
+            echo '/mnt/day-d-data is not mounted.' >&2
+            exit 12
+          fi
+          mkdir -p "$HOST_OUTPUT"
+
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          active_api_oneoffs=$(
+            docker ps \
+              --filter label=com.docker.compose.project=c3po \
+              --filter label=com.docker.compose.oneoff=True \
+              --filter label=com.docker.compose.service=api \
+              --format '{{.ID}}'
+          )
+          if [ -n "$active_api_oneoffs" ]; then
+            echo 'Another API one-off container is active; refusing overlap.' >&2
+            exit 13
+          fi
+
+          host_identity="$(id -u):$(id -g)"
+          "${compose[@]}" run --rm -T --no-deps --user "$host_identity" \
+            -e PLAN_SUMMARY="$CONTAINER_OUTPUT/summary.json" \
+            api sh -eu -c '
+              test -w "$(dirname "$PLAN_SUMMARY")"
+              test -w /app/day-d-data/provider=massive/plans
+              python -m app.day_d_replay.massive_plan_sweep \
+                --start-date 2026-08-24 \
+                --end-date 2026-09-02 \
+                --dataset minute_aggregates \
+                --workers 6 \
+                > "$PLAN_SUMMARY"
+            ' </dev/null
+
+          python3 - "$HOST_OUTPUT" "$REVISION" "$RUN_ID" "$RUN_ATTEMPT" <<'PY'
+          import hashlib
+          import json
+          import os
+          import shutil
+          import sys
+          from pathlib import Path
+
+          output = Path(sys.argv[1])
+          revision = sys.argv[2]
+          run_id = int(sys.argv[3])
+          run_attempt = int(sys.argv[4])
+          summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+          container_report = Path(str(summary["report"]))
+          container_root = Path("/app/day-d-data")
+          try:
+              relative_report = container_report.relative_to(container_root)
+          except ValueError as exc:
+              raise SystemExit("planner report escaped the Day-D data root") from exc
+          source_report = Path("/mnt/day-d-data") / relative_report
+          if not source_report.is_file():
+              raise SystemExit(f"planner report is missing: {source_report}")
+          report_path = output / "extension-plan.json"
+          shutil.copyfile(source_report, report_path)
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          expected_sessions = [
+              "2026-08-24",
+              "2026-08-25",
+              "2026-08-26",
+              "2026-08-27",
+              "2026-08-28",
+              "2026-08-31",
+              "2026-09-01",
+              "2026-09-02",
+          ]
+          observed_sessions = [row["session_date"] for row in report["sessions"]]
+          campaign = report["campaign"]
+          if report.get("schema_version") != "DAY-D-MASSIVE-T0-PLAN-SWEEP-v1":
+              raise SystemExit("planner schema mismatch")
+          if report.get("mode") != "read_only_head_only":
+              raise SystemExit("planner mode is not HEAD-only")
+          if report.get("downloaded") is not False or report.get("source_csv_files") != 0:
+              raise SystemExit("planner unexpectedly materialized source data")
+          if campaign.get("start_date") != "2026-08-24" or campaign.get("end_date") != "2026-09-02":
+              raise SystemExit("planner interval mismatch")
+          if campaign.get("complete_sessions") != len(expected_sessions):
+              raise SystemExit("planner did not find exactly eight complete sessions")
+          if campaign.get("partial_sessions") or campaign.get("non_session_weekdays"):
+              raise SystemExit("planner found partial or missing weekday source objects")
+          if observed_sessions != expected_sessions:
+              raise SystemExit(f"planner sessions differ from XNYS contract: {observed_sessions}")
+          if sorted(report.get("datasets", {})) != ["minute_aggregates"]:
+              raise SystemExit("planner included an unapproved dataset")
+
+          def sha256_file(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          manifest = {
+              "schema_version": "R2D2-MASSIVE-MINUTE-EXTENSION-PLAN-v1",
+              "workflow_run_id": run_id,
+              "workflow_run_attempt": run_attempt,
+              "head_revision": revision,
+              "mode": "read_only_head_only",
+              "downloaded": False,
+              "source_csv_files": 0,
+              "expected_sessions": expected_sessions,
+              "complete_session_count": len(observed_sessions),
+              "total_bytes": report["datasets"]["minute_aggregates"]["sum_bytes"],
+              "plan_report_sha256": sha256_file(report_path),
+              "plan_report_source": str(relative_report),
+          }
+          canonical = json.dumps(
+              manifest,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=True,
+              allow_nan=False,
+          ).encode("utf-8")
+          manifest["manifest_sha256"] = hashlib.sha256(canonical).hexdigest()
+          manifest_path = output / "extension-plan-manifest.json"
+          with manifest_path.open("x", encoding="utf-8") as handle:
+              json.dump(manifest, handle, sort_keys=True, indent=2, ensure_ascii=True)
+              handle.write("\n")
+              handle.flush()
+              os.fsync(handle.fileno())
+          PY
+
+          (
+            cd "$HOST_OUTPUT"
+            sha256sum extension-plan.json extension-plan-manifest.json summary.json > SHA256SUMS
+          )
+          chmod 0444 "$HOST_OUTPUT"/*
+          REMOTE
+
+      - name: Download reduced plan evidence
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/r2d2-massive-extension-plan"
+          scp -i ~/.ssh/c3po_massive_plan \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-massive-extension-plan-v1/run-$RUN_ID-attempt-$RUN_ATTEMPT/extension-plan.json" \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-massive-extension-plan-v1/run-$RUN_ID-attempt-$RUN_ATTEMPT/extension-plan-manifest.json" \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-massive-extension-plan-v1/run-$RUN_ID-attempt-$RUN_ATTEMPT/summary.json" \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-massive-extension-plan-v1/run-$RUN_ID-attempt-$RUN_ATTEMPT/SHA256SUMS" \
+            "$RUNNER_TEMP/r2d2-massive-extension-plan/"
+          (cd "$RUNNER_TEMP/r2d2-massive-extension-plan" && sha256sum -c SHA256SUMS)
+          python3 - "$RUNNER_TEMP/r2d2-massive-extension-plan" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          manifest = json.loads(
+              (root / "extension-plan-manifest.json").read_text(encoding="utf-8")
+          )
+          expected_manifest_sha = manifest.pop("manifest_sha256")
+          canonical = json.dumps(
+              manifest,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=True,
+              allow_nan=False,
+          ).encode("utf-8")
+          observed_manifest_sha = hashlib.sha256(canonical).hexdigest()
+          if observed_manifest_sha != expected_manifest_sha:
+              raise SystemExit("extension plan manifest self-hash mismatch")
+          observed_plan_sha = hashlib.sha256(
+              (root / "extension-plan.json").read_bytes()
+          ).hexdigest()
+          if observed_plan_sha != manifest["plan_report_sha256"]:
+              raise SystemExit("extension plan report hash mismatch")
+          expected_sessions = [
+              "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27",
+              "2026-08-28", "2026-08-31", "2026-09-01", "2026-09-02",
+          ]
+          if manifest["expected_sessions"] != expected_sessions:
+              raise SystemExit("extension plan manifest sessions mismatch")
+          PY
+
+      - name: Publish reduced HEAD-only plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: r2d2-massive-extension-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/r2d2-massive-extension-plan
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Annex extension plan to gate agenda
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROOT: ${{ runner.temp }}/r2d2-massive-extension-plan
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - "$ROOT" "$RUN_URL" > "$RUNNER_TEMP/extension-plan-annex.md" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          run_url = sys.argv[2]
+          manifest = json.loads(
+              (root / "extension-plan-manifest.json").read_text(encoding="utf-8")
+          )
+          print("## Plano HEAD-only — extensão Massive para Sondas A/B")
+          print()
+          print(f"- [run e artefato reduzido]({run_url}) — retenção 30 dias")
+          print("- Escopo: oito sessões XNYS, 24/08–02/09; somente minute aggregates.")
+          print(f"- Objetos completos: {manifest['complete_session_count']}/8; "
+                f"bytes planejados: {manifest['total_bytes']}.")
+          print("- Download realizado: **não**; CSVs materializados: **0**.")
+          print(f"- Plan SHA-256: `{manifest['plan_report_sha256']}`; "
+                f"manifest self-hash: `{manifest['manifest_sha256']}`.")
+          print("- Próximo gate: extensão versionada do escopo T0 e do orçamento; "
+                "nenhum download é autorizado por este plano isoladamente.")
+          PY
+          gh pr comment 348 --body-file "$RUNNER_TEMP/extension-plan-annex.md"
