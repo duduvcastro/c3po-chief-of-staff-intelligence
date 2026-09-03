@@ -32,6 +32,10 @@ class StubHttp:
         return self.payload
 
 
+def _epoch_ago(delta: timedelta) -> int:
+    return int((datetime.now(timezone.utc) - delta).timestamp())
+
+
 def test_b3_screening_market_cap_floor_is_750_million() -> None:
     assert MIN_MARKET_CAP == 750_000_000
 
@@ -1535,7 +1539,8 @@ def test_realtime_portfolio_accepts_b3_etf_missing_from_stock_list() -> None:
 
 
 def test_realtime_portfolio_accepts_nasdaq_and_nyse_arca_etfs() -> None:
-    timestamp = 1785859200
+    # Freshness is not under test here; keep the quote inside the production TTL.
+    timestamp = _epoch_ago(timedelta(minutes=15))
     catalog = [
         {"Code": "QQQ", "Name": "Invesco QQQ Trust", "Exchange": "NASDAQ", "Type": "ETF", "Currency": "USD"},
         {"Code": "VOO", "Name": "Vanguard S&P 500 ETF", "Exchange": "NYSE ARCA", "Type": "ETF", "Currency": "USD"},
@@ -1860,7 +1865,8 @@ def test_realtime_portfolio_recomputes_display_change_from_canonical_reference()
 
 
 def test_realtime_portfolio_accepts_otc_common_stock() -> None:
-    timestamp = 1786720920
+    # Freshness is not under test here; keep the quote inside the production TTL.
+    timestamp = _epoch_ago(timedelta(minutes=15))
     catalog = [
         {
             "Code": "MHVYF",
