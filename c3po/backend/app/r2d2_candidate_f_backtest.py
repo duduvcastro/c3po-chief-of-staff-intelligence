@@ -15,7 +15,11 @@ from app import backtest, r2d2_strategy as strategy
 
 
 NEW_YORK = ZoneInfo("America/New_York")
-SCHEMA_VERSION = "R2D2-CANDIDATE-E-F-BACKTEST-v2"
+SCHEMA_VERSION = "R2D2-CANDIDATE-E-F-BACKTEST-v3"
+STUDY_STATUS_COMPLETE = "COMPLETE"
+STUDY_STATUS_BLOCKED = "PARTIAL/BLOCKED"
+BLOCKED_CLASSIFICATION = "BLOCKED_BY_MINIMUM_FIVE_MINUTE_BAR_GATE"
+BLOCKED_EXIT_CODE = 2
 PRIOR_FAILED_WORKFLOW_RUN_ID = 33714916267
 PRIOR_PROBE_REPORT_SHA256 = "159b2eca56b8a5e42b0158a2a61409c3fb33589691735aa7fdb2098478ac9191"
 FROZEN_POLICY_COMMIT = "bc79ca195c19bee9b9ef18c3098d28ae6c149597"
@@ -185,6 +189,43 @@ def _require_frozen_coverage(
         )
 
 
+def _coverage_diagnostic(
+    shortfalls: Mapping[str, Mapping[str, int]],
+) -> dict[str, Any]:
+    diagnostic: dict[str, Any] = {
+        "classification": BLOCKED_CLASSIFICATION,
+        "minimum_formed_five_minute_bars_per_symbol_session": (
+            MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION
+        ),
+        "shortfalls": {
+            symbol: dict(sorted(sessions.items()))
+            for symbol, sessions in sorted(shortfalls.items())
+        },
+        "analysis_interpretable": False,
+        "metrics_emitted": False,
+        "fallback": (
+            "publish this self-hashed PARTIAL/BLOCKED diagnosis, emit no E/F metrics, "
+            "and fail the workflow after evidence publication"
+        ),
+    }
+    diagnostic["diagnostic_sha256"] = canonical_sha256(diagnostic)
+    return diagnostic
+
+
+def _bar_construction_disclosure() -> dict[str, Any]:
+    return {
+        "historical_candidate_e_absolute_metrics_may_diverge": True,
+        "reason": (
+            "the 20/08 report used the superseded five-minute construction; this run "
+            "forms fixed windows from the 1-5 real Massive rows present"
+        ),
+        "paired_e_f_uses_identical_formed_bars": True,
+        "paired_comparison_is_internally_valid_when_complete": True,
+        "material_divergence_requires_candidate_e_reattestation": True,
+        "materiality_is_not_auto_adjudicated": True,
+    }
+
+
 def _five_minute_bars(root: Path) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
     minute_rows: dict[str, list[dict[str, Any]]] = {symbol: [] for symbol in SYMBOLS}
     evidence: list[dict[str, Any]] = []
@@ -241,7 +282,6 @@ def _five_minute_bars(root: Path) -> tuple[dict[str, list[dict[str, Any]]], list
         symbol: aggregate_massive_five_minute_rows(values, symbol=symbol)
         for symbol, values in minute_rows.items()
     }
-    _require_frozen_coverage(bars)
     return bars, evidence
 
 
@@ -371,13 +411,6 @@ def build_report(
 ) -> dict[str, Any]:
     frozen_source_sha256 = _require_sha256(frozen_source_sha256)
     bars, source_evidence = _five_minute_bars(data_root)
-    missing = sorted(set(SYMBOLS) - set(bars))
-    if missing:
-        raise CandidateBacktestError(f"frozen universe missing usable bars: {', '.join(missing)}")
-    candidate_e = _run_variant(bars, candidate_f=False)
-    candidate_f = _run_variant(bars, candidate_f=True)
-    metrics_e = _metrics(candidate_e, bars)
-    metrics_f = _metrics(candidate_f, bars)
     source_minute_counts = Counter(
         int(item["source_minutes"])
         for values in bars.values()
@@ -391,41 +424,117 @@ def build_report(
         for symbol in SYMBOLS
         for session in EXPECTED_SESSIONS
     ]
-    payload: dict[str, Any] = {
+    frozen_harness = {
+        "policy_commit": FROZEN_POLICY_COMMIT,
+        "source_package_sha256": frozen_source_sha256,
+        "recovered_at": ORIGINAL_HARNESS_RECOVERED_AT,
+        "symbols": list(SYMBOLS),
+        "session_from": SESSION_FROM,
+        "session_to": SESSION_TO,
+        "bar_interval": (
+            "fixed New York 5m windows aggregated from the 1-5 real Massive rows present; "
+            "empty windows omitted; no forward-fill or interpolation"
+        ),
+        "starting_capital_usd": STARTING_CAPITAL,
+        "max_positions": MAX_POSITIONS,
+        "fees_bps": FEES_BPS,
+        "slippage_bps": SLIPPAGE_BPS,
+        "lookback_bars": LOOKBACK_BARS,
+        "minimum_five_minute_bars_per_symbol_session": (
+            MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION
+        ),
+        "neutral_fundamentals": True,
+        "candidate_e": "2x ATR initial floor, 2.5x live-ATR Chandelier, 0.03% NAV risk budget",
+        "candidate_f_only_delta": "stop_f = max(previous_stop_f, stop_e)",
+    }
+    inputs = {
+        "usable_symbol_count": sum(bool(values) for values in bars.values()),
+        "five_minute_bar_count": sum(len(values) for values in bars.values()),
+        "source_minute_rows_per_five_minute_bar": {
+            str(count): source_minute_counts.get(count, 0)
+            for count in range(1, 6)
+        },
+        "minimum_observed_five_minute_bars_per_symbol_session": min(
+            symbol_session_counts, default=0,
+        ),
+        "maximum_observed_five_minute_bars_per_symbol_session": max(
+            symbol_session_counts, default=0,
+        ),
+        "source_manifest_sha256": canonical_sha256(source_evidence),
+        "source_sessions": source_evidence,
+    }
+    governance = {
+        "production_policy_changed": False,
+        "external_api_calls": 0,
+        "artifact_class": "aggregate statistics; no raw bars or trades",
+        "retention_days": 30,
+        "expires_at": generated_at + timedelta(days=30),
+        "prior_failed_workflow_run_id": PRIOR_FAILED_WORKFLOW_RUN_ID,
+        "prior_failure_reason": (
+            "v1 discarded a fixed five-minute window unless Massive emitted all five "
+            "one-minute rows; the provider omits minutes without eligible trades"
+        ),
+    }
+    limitations = [
+        "The original EODHD response bytes from 20/08 were not retained; the exact frozen harness, symbols and dates are replayed on the checksum-verified Massive archive.",
+        "Provider-normalization differences mean this run must not be presented as a byte-for-byte rerun of the original Candidate E result.",
+        "The historical engine evaluates completed five-minute closes and does not model the later one-second two-tick watcher.",
+    ]
+    shortfalls = _coverage_shortfalls(
+        bars,
+        symbols=SYMBOLS,
+        sessions=EXPECTED_SESSIONS,
+        minimum=MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION,
+    )
+    if shortfalls:
+        payload: dict[str, Any] = {
+            "schema_version": SCHEMA_VERSION,
+            "generated_at": generated_at,
+            "study_status": STUDY_STATUS_BLOCKED,
+            "analysis_interpretable": False,
+            "frozen_harness": frozen_harness,
+            "inputs": inputs,
+            "bar_construction_disclosure": _bar_construction_disclosure(),
+            "coverage_gate": _coverage_diagnostic(shortfalls),
+            "candidate_e": None,
+            "candidate_f": None,
+            "paired_delta_f_minus_e": None,
+            "candidate_g": {
+                "executed": False,
+                "reason": "E-vs-F was blocked by the unchanged formed-bar coverage gate",
+            },
+            "governance": governance,
+            "limitations": limitations,
+        }
+        payload["report_sha256"] = canonical_sha256(payload)
+        return payload
+
+    _require_frozen_coverage(
+        bars,
+        symbols=SYMBOLS,
+        sessions=EXPECTED_SESSIONS,
+        minimum=MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION,
+    )
+    candidate_e = _run_variant(bars, candidate_f=False)
+    candidate_f = _run_variant(bars, candidate_f=True)
+    metrics_e = _metrics(candidate_e, bars)
+    metrics_f = _metrics(candidate_f, bars)
+    payload = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": generated_at,
-        "frozen_harness": {
-            "policy_commit": FROZEN_POLICY_COMMIT,
-            "source_package_sha256": frozen_source_sha256,
-            "recovered_at": ORIGINAL_HARNESS_RECOVERED_AT,
-            "symbols": list(SYMBOLS),
-            "session_from": SESSION_FROM,
-            "session_to": SESSION_TO,
-            "bar_interval": (
-                "fixed New York 5m windows aggregated from the 1-5 real Massive rows present; "
-                "empty windows omitted; no forward-fill or interpolation"
+        "study_status": STUDY_STATUS_COMPLETE,
+        "analysis_interpretable": True,
+        "frozen_harness": frozen_harness,
+        "inputs": inputs,
+        "bar_construction_disclosure": _bar_construction_disclosure(),
+        "coverage_gate": {
+            "classification": "PASSED",
+            "minimum_formed_five_minute_bars_per_symbol_session": (
+                MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION
             ),
-            "starting_capital_usd": STARTING_CAPITAL,
-            "max_positions": MAX_POSITIONS,
-            "fees_bps": FEES_BPS,
-            "slippage_bps": SLIPPAGE_BPS,
-            "lookback_bars": LOOKBACK_BARS,
-            "minimum_five_minute_bars_per_symbol_session": MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION,
-            "neutral_fundamentals": True,
-            "candidate_e": "2x ATR initial floor, 2.5x live-ATR Chandelier, 0.03% NAV risk budget",
-            "candidate_f_only_delta": "stop_f = max(previous_stop_f, stop_e)",
-        },
-        "inputs": {
-            "usable_symbol_count": len(bars),
-            "five_minute_bar_count": sum(len(values) for values in bars.values()),
-            "source_minute_rows_per_five_minute_bar": {
-                str(count): source_minute_counts.get(count, 0)
-                for count in range(1, 6)
-            },
-            "minimum_observed_five_minute_bars_per_symbol_session": min(symbol_session_counts),
-            "maximum_observed_five_minute_bars_per_symbol_session": max(symbol_session_counts),
-            "source_manifest_sha256": canonical_sha256(source_evidence),
-            "source_sessions": source_evidence,
+            "shortfalls": {},
+            "analysis_interpretable": True,
+            "metrics_emitted": True,
         },
         "candidate_e": metrics_e,
         "candidate_f": metrics_f,
@@ -459,23 +568,8 @@ def build_report(
             "executed": False,
             "reason": "optional extension omitted to preserve a one-variable E-vs-F comparison",
         },
-        "governance": {
-            "production_policy_changed": False,
-            "external_api_calls": 0,
-            "artifact_class": "aggregate statistics; no raw bars or trades",
-            "retention_days": 30,
-            "expires_at": generated_at + timedelta(days=30),
-            "prior_failed_workflow_run_id": PRIOR_FAILED_WORKFLOW_RUN_ID,
-            "prior_failure_reason": (
-                "v1 discarded a fixed five-minute window unless Massive emitted all five "
-                "one-minute rows; the provider omits minutes without eligible trades"
-            ),
-        },
-        "limitations": [
-            "The original EODHD response bytes from 20/08 were not retained; the exact frozen harness, symbols and dates are replayed on the checksum-verified Massive archive.",
-            "Provider-normalization differences mean this run must not be presented as a byte-for-byte rerun of the original Candidate E result.",
-            "The historical engine evaluates completed five-minute closes and does not model the later one-second two-tick watcher.",
-        ],
+        "governance": governance,
+        "limitations": limitations,
     }
     payload["report_sha256"] = canonical_sha256(payload)
     return payload
@@ -507,8 +601,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.output.exists() and args.output.read_bytes() != encoded:
         raise FileExistsError(f"immutable report differs: {args.output}")
     args.output.write_bytes(encoded)
-    print(json.dumps({"report": str(args.output), "report_sha256": payload["report_sha256"]}, sort_keys=True))
-    return 0
+    print(json.dumps({
+        "report": str(args.output),
+        "report_sha256": payload["report_sha256"],
+        "study_status": payload["study_status"],
+    }, sort_keys=True))
+    return BLOCKED_EXIT_CODE if payload["study_status"] == STUDY_STATUS_BLOCKED else 0
 
 
 if __name__ == "__main__":

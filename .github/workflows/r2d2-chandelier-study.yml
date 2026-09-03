@@ -149,6 +149,7 @@ jobs:
             --cutoff-at "$PROBE_INPUT_CUTOFF_AT" \
             </dev/null
 
+          set +e
           "${compose[@]}" run --rm -T --user "$host_identity" \
             -v "$frozen_tmp:/frozen:ro" \
             -e PYTHONPATH=/frozen/c3po/backend \
@@ -157,12 +158,19 @@ jobs:
             --frozen-source-sha256 "$frozen_source_sha256" \
             --output "$CONTAINER_OUTPUT/backtest-e-f.json" \
             </dev/null
+          backtest_exit=$?
+          set -e
+          case "$backtest_exit" in
+            0|2) ;;
+            *) echo "Candidate E/F replay failed unexpectedly with exit $backtest_exit." >&2; exit "$backtest_exit" ;;
+          esac
 
           python3 - \
             "$HOST_OUTPUT" \
             "$PROBE_INPUT_CUTOFF_AT" \
             "$PROBE_LEDGER_ROW_COUNT" \
-            "$PROBE_LEDGER_CANONICAL_SHA256" <<'PY'
+            "$PROBE_LEDGER_CANONICAL_SHA256" \
+            "$backtest_exit" <<'PY'
           import hashlib
           import json
           import sys
@@ -172,6 +180,7 @@ jobs:
           expected_cutoff = sys.argv[2]
           expected_ledger_rows = int(sys.argv[3])
           expected_ledger_sha256 = sys.argv[4]
+          expected_backtest_exit = int(sys.argv[5])
           for name in ("probes-a-b.json", "backtest-e-f.json"):
               payload = json.loads((root / name).read_text(encoding="utf-8"))
               expected = payload.pop("report_sha256")
@@ -203,6 +212,39 @@ jobs:
           backtest = json.loads((root / "backtest-e-f.json").read_text(encoding="utf-8"))
           if frozen_sha != backtest["frozen_harness"]["source_package_sha256"]:
               raise SystemExit("frozen source provenance mismatch")
+          status = backtest.get("study_status")
+          if status == "COMPLETE":
+              if expected_backtest_exit != 0:
+                  raise SystemExit("complete E/F report did not return exit 0")
+              if any(backtest.get(key) is None for key in (
+                  "candidate_e", "candidate_f", "paired_delta_f_minus_e",
+              )):
+                  raise SystemExit("complete E/F report omitted metrics")
+          elif status == "PARTIAL/BLOCKED":
+              if expected_backtest_exit != 2:
+                  raise SystemExit("blocked E/F report did not return exit 2")
+              if any(backtest.get(key) is not None for key in (
+                  "candidate_e", "candidate_f", "paired_delta_f_minus_e",
+              )):
+                  raise SystemExit("blocked E/F report emitted prohibited metrics")
+              gate = dict(backtest.get("coverage_gate") or {})
+              diagnostic_sha256 = gate.pop("diagnostic_sha256", None)
+              diagnostic_observed = hashlib.sha256(json.dumps(
+                  gate,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=True,
+                  allow_nan=False,
+                  default=str,
+              ).encode("utf-8")).hexdigest()
+              if diagnostic_sha256 != diagnostic_observed:
+                  raise SystemExit("blocked E/F coverage diagnostic self-hash mismatch")
+              if gate.get("classification") != "BLOCKED_BY_MINIMUM_FIVE_MINUTE_BAR_GATE":
+                  raise SystemExit("blocked E/F report has unexpected classification")
+              if gate.get("minimum_formed_five_minute_bars_per_symbol_session") != 70:
+                  raise SystemExit("blocked E/F report changed the formed-bar gate")
+          else:
+              raise SystemExit(f"unexpected E/F study status: {status}")
           PY
 
           (
@@ -254,8 +296,6 @@ jobs:
           backtest = json.loads((root / "backtest-e-f.json").read_text(encoding="utf-8"))
           a = probe["probe_a"]
           b = probe["probe_b"]
-          e = backtest["candidate_e"]
-          f = backtest["candidate_f"]
           print("## Anexo factual — Chandelier E×F")
           print()
           print(f"- [run e artefato reduzido]({run_url}) — retenção 30 dias")
@@ -271,22 +311,57 @@ jobs:
           else:
               print(f"- Sonda B: {b['observed_stop_out_count']} stop-outs observados; "
                     "0 elegíveis; recuperação N/D (denominador vazio).")
-          print(f"- Backtest E→F: payoff {e['payoff_ratio']}→{f['payoff_ratio']}; "
-                f"drawdown {e['max_drawdown_percent']}%→{f['max_drawdown_percent']}%; "
-                f"retorno {e['total_return_percent']}%→{f['total_return_percent']}%.")
-          print(f"- Saída precipitada E→F: "
-                f"{e['premature_exit']['premature_exit_percent']}%→"
-                f"{f['premature_exit']['premature_exit_percent']}% "
-                f"(denominadores {e['premature_exit']['eligible_stop_exit_leg_count']}→"
-                f"{f['premature_exit']['eligible_stop_exit_leg_count']}).")
+          if backtest["study_status"] == "COMPLETE":
+              e = backtest["candidate_e"]
+              f = backtest["candidate_f"]
+              print(f"- Backtest E→F: payoff {e['payoff_ratio']}→{f['payoff_ratio']}; "
+                    f"drawdown {e['max_drawdown_percent']}%→{f['max_drawdown_percent']}%; "
+                    f"retorno {e['total_return_percent']}%→{f['total_return_percent']}%.")
+              print(f"- Saída precipitada E→F: "
+                    f"{e['premature_exit']['premature_exit_percent']}%→"
+                    f"{f['premature_exit']['premature_exit_percent']}% "
+                    f"(denominadores {e['premature_exit']['eligible_stop_exit_leg_count']}→"
+                    f"{f['premature_exit']['eligible_stop_exit_leg_count']}).")
+          elif backtest["study_status"] == "PARTIAL/BLOCKED":
+              gate = backtest["coverage_gate"]
+              print("- Backtest E×F: **PARTIAL/BLOCKED** pelo piso inalterado de 70 "
+                    "barras formadas por símbolo/sessão; zero métricas E×F emitidas.")
+              print(f"- Diagnóstico de cobertura: `{gate['diagnostic_sha256']}`; "
+                    f"shortfalls `{json.dumps(gate['shortfalls'], sort_keys=True, separators=(',', ':'))}`.")
+          else:
+              raise SystemExit(f"unexpected E/F study status: {backtest['study_status']}")
           print(f"- Hashes: probes `{probe['report_sha256']}`; backtest `{backtest['report_sha256']}`.")
           print("- Este novo hash das Sondas A/B supersede os resultados N/D do erratum "
                 "`c36ad4fce26c6f681b44c6f86046e2f1c2472da7258c402d947a2785fcae9bab`.")
-          print("- O replay E×F desta execução é controle redundante; o resultado congelado "
-                "`1613674bddd10ae18cc4acf90b5680869fb240a896a78849c907d21fd30629dc` "
-                "permanece o canônico e não é supersedido.")
+          disclosure = backtest["bar_construction_disclosure"]
+          print("- Comparabilidade: a montagem corrigida pode alterar os números absolutos de E "
+                "contra 20/08; E e F usam as mesmas barras formadas, preservando a comparação "
+                "pareada quando completa; divergência material exige re-atestação de E antes "
+                "de qualquer conclusão.")
+          if not disclosure["material_divergence_requires_candidate_e_reattestation"]:
+              raise SystemExit("E/F comparability disclosure lost the re-attestation gate")
           print(f"- Política E congelada: commit `{backtest['frozen_harness']['policy_commit']}`; "
                 f"pacote `{backtest['frozen_harness']['source_package_sha256']}`.")
           print("- Evidência apenas: nenhuma mudança de política ou produção foi autorizada.")
           PY
           gh pr comment 348 --body-file "$RUNNER_TEMP/gate-annex.md"
+
+      - name: Fail closed after publishing blocked E/F diagnosis
+        env:
+          ROOT: ${{ runner.temp }}/r2d2-chandelier-study
+        run: |
+          python3 - "$ROOT" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          backtest = json.loads((root / "backtest-e-f.json").read_text(encoding="utf-8"))
+          status = backtest.get("study_status")
+          if status == "PARTIAL/BLOCKED":
+              raise SystemExit(
+                  "Candidate E/F remains PARTIAL/BLOCKED; evidence was published before this failure."
+              )
+          if status != "COMPLETE":
+              raise SystemExit(f"Unexpected Candidate E/F study status: {status}")
+          PY
