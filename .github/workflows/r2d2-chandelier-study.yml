@@ -244,9 +244,13 @@ jobs:
           print(f"- [run e artefato reduzido]({run_url}) — retenção 30 dias")
           print(f"- Sonda A: {a['eligible_episode_count']} vencedores elegíveis; "
                 f"{a['ratchet_only_exit_count']} cruzamentos exclusivos da catraca.")
-          print(f"- Sonda B: {b['eligible_stop_out_count']} stop-outs elegíveis; "
-                f"{b['recovered_above_entry_percent']}% voltaram acima da entrada e "
-                f"{b['reached_plus_1r_percent']}% chegaram a +1R na mesma sessão.")
+          if b["eligible_stop_out_count"]:
+              print(f"- Sonda B: {b['eligible_stop_out_count']} stop-outs elegíveis; "
+                    f"{b['recovered_above_entry_percent']}% voltaram acima da entrada e "
+                    f"{b['reached_plus_1r_percent']}% chegaram a +1R na mesma sessão.")
+          else:
+              print(f"- Sonda B: {b['observed_stop_out_count']} stop-outs observados; "
+                    "0 elegíveis; recuperação N/D (denominador vazio).")
           print(f"- Backtest E→F: payoff {e['payoff_ratio']}→{f['payoff_ratio']}; "
                 f"drawdown {e['max_drawdown_percent']}%→{f['max_drawdown_percent']}%; "
                 f"retorno {e['total_return_percent']}%→{f['total_return_percent']}%.")
