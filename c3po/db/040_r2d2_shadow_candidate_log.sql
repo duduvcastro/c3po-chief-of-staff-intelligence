@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS r2d2_shadow_candidates (
             'portfolio_capacity',
             'session_reentry_policy',
             'entry_quality',
+            'entry_confirmation',
+            'entry_cycle_capacity',
             'entry_execution'
         )
     ),
