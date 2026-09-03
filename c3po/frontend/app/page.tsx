@@ -8690,12 +8690,20 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const operatingSystem = objectValue(metadata.operating_system);
   const operatingSystemDeadMan = objectValue(operatingSystem.dead_man);
   const productionImages = objectValue(metadata.production_images);
+  const acceptance = objectValue(productionImages.acceptance);
+  const acceptanceCounts = objectValue(acceptance.counts);
+  const rawAcceptanceCounts = objectValue(acceptanceCounts.raw);
+  const acceptedAcceptanceCounts = objectValue(acceptanceCounts.accepted);
+  const pendingAcceptanceCounts = objectValue(acceptanceCounts.pending);
   const remediationLanes = objectValue(metadata.remediation_lanes);
   const remediationLaneItems = Array.isArray(remediationLanes.items)
     ? remediationLanes.items.map(objectValue)
     : [];
   const severities = objectValue(dependabot.by_severity);
-  const imageSeverities = objectValue(productionImages.by_severity);
+  const acceptanceEnabled = acceptance.enabled === true;
+  const imageSeverities = objectValue(
+    acceptanceEnabled ? pendingAcceptanceCounts.by_severity : productionImages.by_severity,
+  );
   const checks = Array.isArray(metadata.governance_checks)
     ? metadata.governance_checks.map(objectValue)
     : [];
@@ -8707,7 +8715,13 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const dependabotLabel = dependabotStatus === "healthy" ? "Operational" : dependabotStatus === "attention" ? "Needs attention" : dependabotStatus === "pending" ? "Aguardando atestado" : "Ação necessária";
   const layerClass = (status: unknown) => status === "healthy" ? "healthy" : status === "offline" ? "offline" : "attention";
   const osPending = operatingSystem.security_updates_pending == null ? null : Number(operatingSystem.security_updates_pending);
-  const imageTotal = productionImages.finding_total == null ? null : Number(productionImages.finding_total);
+  const rawImageTotal = productionImages.finding_total == null ? null : Number(productionImages.finding_total);
+  const imageTotal = acceptanceEnabled
+    ? pendingAcceptanceCounts.total == null ? null : Number(pendingAcceptanceCounts.total)
+    : rawImageTotal;
+  const acceptedImageTotal = acceptanceEnabled && acceptedAcceptanceCounts.total != null
+    ? Number(acceptedAcceptanceCounts.total)
+    : 0;
   const remediationLaneCount = remediationLanes.available === true && typeof remediationLanes.count === "number"
     ? Number(remediationLanes.count)
     : null;
@@ -8722,7 +8736,9 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
     ? "Sem atestado"
     : productionImages.dead_man_configured !== true
       ? "Dead-man ausente"
-      : "Trivy";
+      : acceptedImageTotal > 0
+        ? `${acceptedImageTotal.toLocaleString("pt-BR")} aceito(s)`
+        : "Trivy";
   const knownTotal = hasReport && osPending != null && imageTotal != null
     ? Number(dependabot.open_total ?? 0) + osPending + imageTotal
     : null;
@@ -8767,7 +8783,13 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
             </div>
             <div className="governance-source-block">
               <header><div><span>IMAGENS EM PRODUÇÃO</span><strong>{productionImages.image_count == null ? "Scan semanal" : `${Number(productionImages.image_count)} imagens`}</strong></div><div className="trivy-scanner-identity"><span className="service-logo service-logo-trivy" aria-hidden="true"><TrivyMark /></span><em className={`governance-summary-${layerClass(productionImages.status)} trivy-scanner-badge`}>{productionImagesLabel === "Trivy" ? "Trivy" : `Trivy · ${productionImagesLabel}`}</em></div></header>
-              <div className="governance-source-total"><strong>{imageTotal == null ? "—" : imageTotal.toLocaleString("pt-BR")}</strong><span>ocorrências por imagem{Number(productionImages.unknown ?? 0) > 0 ? ` · ${Number(productionImages.unknown).toLocaleString("pt-BR")} sem severidade` : ""}</span></div>
+              <div className="governance-source-total"><strong>{imageTotal == null ? "—" : imageTotal.toLocaleString("pt-BR")}</strong><span>{acceptanceEnabled ? "pendentes por imagem" : "ocorrências por imagem"}{Number(productionImages.unknown ?? 0) > 0 ? ` · ${Number(productionImages.unknown).toLocaleString("pt-BR")} sem severidade` : ""}</span></div>
+              {acceptanceEnabled && rawImageTotal != null ? (
+                <div className="governance-acceptance-summary">
+                  <span>Bruto Trivy <strong>{Number(rawAcceptanceCounts.total ?? rawImageTotal).toLocaleString("pt-BR")}</strong></span>
+                  <em>Aceito com assinatura <strong>{acceptedImageTotal.toLocaleString("pt-BR")}</strong>{acceptance.nearest_review_at ? ` · revisão ${formatDate(String(acceptance.nearest_review_at))}` : ""}</em>
+                </div>
+              ) : null}
               <dl>
                 {(["critical", "high", "medium", "low"] as const).map((severity) => (
                   <div className={`governance-severity governance-severity-${severity}`} key={severity}>

@@ -90,7 +90,13 @@ class OperationalIncidentService:
             at=datetime.now(timezone.utc),
         )
 
-    def resolve_key(self, incident_key: str, detail: str) -> dict[str, Any] | None:
+    def resolve_key(
+        self,
+        incident_key: str,
+        detail: str,
+        *,
+        at: datetime | None = None,
+    ) -> dict[str, Any] | None:
         incident = self.database.operational_incident_by_key(incident_key)
         if not incident or incident["status"] == "resolved":
             return incident
@@ -99,5 +105,5 @@ class OperationalIncidentService:
             event_type="resolved",
             actor_email="system",
             detail=detail,
-            at=datetime.now(timezone.utc),
+            at=at or datetime.now(timezone.utc),
         )

@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 PAGE = Path(__file__).resolve().parents[2] / "frontend" / "app" / "page.tsx"
+CSS = Path(__file__).resolve().parents[2] / "frontend" / "app" / "globals.css"
 
 
 def _page() -> str:
@@ -65,3 +66,26 @@ def test_attestation_is_not_presented_as_a_regular_panel_refresh() -> None:
     assert '`${API_URL}/api/v1/admin/governance/attest`' in page
     assert '"Gerar novo atestado"' in page
     assert '"Atualizar agora"' not in page[page.index("function HealthView"):page.index("function MetricCard")]
+
+
+def test_cve_acceptance_overlay_uses_pending_headline_and_keeps_raw_amber() -> None:
+    page = _page()
+    css = CSS.read_text(encoding="utf-8")
+    component = page[
+        page.index("function GovernanceVulnerabilityRow"):
+        page.index("function AlertRow")
+    ]
+
+    assert "const acceptanceEnabled = acceptance.enabled === true;" in component
+    assert "pendingAcceptanceCounts.by_severity" in component
+    assert "pendingAcceptanceCounts.total" in component
+    assert '"pendentes por imagem"' in component
+    assert "Bruto Trivy" in component
+    assert "Aceito com assinatura" in component
+    assert "acceptance.nearest_review_at" in component
+    assert "governance-acceptance-summary" in component
+    assert ".governance-acceptance-summary em" in css
+    assert "background: var(--amber-soft)" in css[
+        css.index(".governance-acceptance-summary"):
+        css.index(".governance-acceptance-summary") + 500
+    ]

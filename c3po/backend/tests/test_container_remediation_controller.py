@@ -12,6 +12,8 @@ from typing import Any
 
 import pytest
 
+from app.cve_acceptance import acceptance_entry_sha256
+
 
 ROOT = Path(__file__).resolve().parents[3]
 SCANNER_PATH = ROOT / "scripts" / "c3po_trivy_scan.py"
@@ -20,6 +22,7 @@ DISPATCH_PATH = ROOT / ".github" / "scripts" / "c3po_dispatch_remediation.sh"
 POSITIVE_FIXTURE_PATH = (
     ROOT / "c3po" / "security" / "fixtures" / "container-remediation-positive-v1.json"
 )
+WORKFLOW_PATH = ROOT / ".github" / "workflows" / "container-vulnerability-scan.yml"
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -127,7 +130,10 @@ def test_plan_emits_machine_outputs_and_only_writes_work_when_required(
     trigger_path = tmp_path / "trigger.json"
     body_path = tmp_path / "body.md"
     output_path = tmp_path / "github-output"
+    registry_path = tmp_path / "cve-acceptances.json"
+    archived_registry_path = tmp_path / "archived-cve-acceptances.json"
     report_path.write_text(json.dumps(report), encoding="utf-8")
+    registry_path.write_text("[]\n", encoding="utf-8")
 
     result = controller.plan(Namespace(
         report=report_path,
@@ -136,6 +142,8 @@ def test_plan_emits_machine_outputs_and_only_writes_work_when_required(
         run_url="https://github.com/duduvcastro/c3po/actions/runs/123",
         artifact_name="c3po-production-container-vulnerabilities-123",
         github_output=output_path,
+        acceptance_registry=registry_path,
+        archived_acceptance_registry=archived_registry_path,
     ))
 
     outputs = dict(
@@ -148,8 +156,77 @@ def test_plan_emits_machine_outputs_and_only_writes_work_when_required(
     assert bool(outputs["remediation_key"]) is required
     assert outputs["lane_prefix"] == controller.PRODUCTION_LANE_PREFIX
     assert outputs["dry_run"] == "false"
+    assert outputs["acceptance_archived"] == "0"
     assert trigger_path.exists() is required
     assert body_path.exists() is required
+    assert not archived_registry_path.exists()
+
+
+def test_plan_archives_a_matching_acceptance_in_the_same_rebuild_evidence(
+    tmp_path: Path,
+) -> None:
+    scanner, controller = _modules()
+    report = _report(scanner, critical=1, high=0)
+    report_path = tmp_path / "report.json"
+    trigger_path = tmp_path / "trigger.json"
+    body_path = tmp_path / "body.md"
+    output_path = tmp_path / "github-output"
+    registry_path = tmp_path / "cve-acceptances.json"
+    archived_registry_path = tmp_path / "archived-cve-acceptances.json"
+    entry: dict[str, Any] = {
+        "vulnerability_id": "CVE-CRITICAL-0",
+        "package": "critical-lib",
+        "image": "backend",
+        "target": "debian",
+        "installed_version": "1.0",
+        "justificativa": "sem FixedVersion upstream em 02/09/2026",
+        "accepted_by": ["Dudu", "Fable", "Codex"],
+        "accepted_at": "2026-08-30T20:31:00+00:00",
+        "review_at": "2026-09-29T20:31:00+00:00",
+    }
+    entry["entry_sha256"] = acceptance_entry_sha256(entry)
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    registry_path.write_text(json.dumps([entry]), encoding="utf-8")
+
+    result = controller.plan(Namespace(
+        report=report_path,
+        trigger=trigger_path,
+        pr_body=body_path,
+        run_url="https://github.com/duduvcastro/c3po/actions/runs/123",
+        artifact_name="c3po-production-container-vulnerabilities-123",
+        github_output=output_path,
+        acceptance_registry=registry_path,
+        archived_acceptance_registry=archived_registry_path,
+    ))
+
+    outputs = dict(
+        line.split("=", 1)
+        for line in output_path.read_text(encoding="utf-8").splitlines()
+    )
+    archived = json.loads(archived_registry_path.read_text(encoding="utf-8"))
+    trigger = json.loads(trigger_path.read_text(encoding="utf-8"))
+    assert result == 0
+    assert outputs["acceptance_archived"] == "1"
+    assert trigger["acceptance_entries_archived"] == 1
+    assert archived[0]["archived_at"] == report["generated_at"]
+    assert archived[0]["entry_sha256"] == acceptance_entry_sha256(archived[0])
+    assert "Aceites arquivados no mesmo commit: **1**" in body_path.read_text(
+        encoding="utf-8"
+    )
+    assert "archived_at" not in entry
+
+
+def test_remote_controller_commits_acceptance_archival_only_in_production_lane() -> None:
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert "--acceptance-registry c3po/security/cve-acceptances.json" in workflow
+    assert '--archived-acceptance-registry "$RUNNER_TEMP/cve-acceptances.json"' in workflow
+    assert workflow.count("git add c3po/security/cve-acceptances.json") == 2
+    dry_run_block = workflow[
+        workflow.index("plan-dry-run-positive"):
+        workflow.index("else", workflow.index("plan-dry-run-positive"))
+    ]
+    assert "acceptance-registry" not in dry_run_block
 
 
 def test_positive_dry_run_fixture_is_sealed_scoped_and_actionable(tmp_path: Path) -> None:

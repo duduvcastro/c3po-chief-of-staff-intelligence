@@ -194,6 +194,12 @@ class Database:
                 self._operational_incidents[incident_key] = incident
                 event_type = "opened"
             else:
+                incident.update({
+                    "source": source,
+                    "severity": severity,
+                    "title": title,
+                    "deep_link": deep_link,
+                })
                 current = self.operational_incident_by_key(incident_key)
                 event_type = "reopened" if current and current["status"] == "resolved" else "observed"
                 if current and current.get("evidence_sha256") == evidence_sha256 and event_type == "observed":
@@ -216,6 +222,12 @@ class Database:
             ).fetchone()
             if row:
                 incident_id = row[0]
+                connection.execute(
+                    """UPDATE operational_incidents
+                       SET source = %s, severity = %s, title = %s, deep_link = %s
+                       WHERE id = %s""",
+                    (source, severity, title, deep_link, incident_id),
+                )
                 state = connection.execute(
                     """SELECT event_type FROM operational_incident_events
                        WHERE incident_id = %s

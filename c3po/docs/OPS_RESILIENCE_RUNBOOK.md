@@ -286,8 +286,27 @@ counts are zero.
 
 The Governance card labels image results as finding occurrences per image, not
 unique CVEs. Missing host evidence after 2 hours or image evidence after 36 hours
-is amber, never zero. Repository or image high/critical findings are red and
-emit `governance_critical` through the existing best-effort push path.
+is amber, never zero. With `C3PO_CVE_ACCEPTANCE_LANE_ENABLED=false` (the
+default), repository or image high/critical findings are red and emit
+`governance_critical` through the existing best-effort push path.
+
+When the separately reviewed flag is enabled, the governance v3 attestation
+loads the entry-hashed `c3po/security/cve-acceptances.json` registry. The Trivy
+v2 file and self-hash remain raw. The card headline and incident use pending
+Critical/High occurrences; active signed acceptances are always an amber,
+separately counted overlay with the nearest review time and the raw total still
+visible. At `review_at` (UTC, no more than 30 days after acceptance), the remote
+runner marks the occurrence expired, returns it to pending and opens/reopens a
+deduplicated event on the historical `governance-vulnerability` incident key.
+Registry/hash/join failures fail the governance dead-man closed. There is no API
+write route or auto-accept path. UNKNOWN/TEMP findings have no identity in the
+current raw v2 report, so they remain pending until a separately audited raw
+evidence contract can expose identities safely.
+
+If a signed occurrence gains a `FixedVersion`, it returns to pending on that
+scan. The remediation controller archives the exact matching registry entry in
+the rebuild PR before validation/deploy; do not merge a rebuild that leaves an
+active acceptance for a finding that the new images remove.
 
 ### Manual reboot procedure
 

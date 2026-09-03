@@ -190,6 +190,7 @@ governance_vulnerability = GovernanceVulnerabilityService(
     settings,
     database,
     push_notifications=push_notifications,
+    operational_incidents=operational_incidents,
 )
 SESSION_COOKIE = "c3po_session"
 

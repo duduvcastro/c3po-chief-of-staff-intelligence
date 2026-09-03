@@ -544,6 +544,103 @@ def test_governance_card_never_converts_unverifiable_lanes_to_zero() -> None:
     assert item.metadata["remediation_lanes"]["count"] is None
 
 
+def test_governance_card_exposes_pending_accepted_and_raw_overlay_counts() -> None:
+    service = _service()
+    original = service.database.latest_governance_vulnerability_report
+
+    def acceptance_report():
+        report = original()
+        report["schema"] = "C3PO_GOVERNANCE_VULNERABILITY_REPORT-v3"
+        report["status"] = "attention"
+        report["production_images"].update({
+            "status": "attention",
+            "finding_total": 16,
+            "by_severity": {"critical": 3, "high": 13, "medium": 0, "low": 0},
+            "unknown": 0,
+            "acceptance": {
+                "enabled": True,
+                "signed_spec_sha256": (
+                    "6a9dc31489959c0b5d4bcf7792e59ce6f6b2e7706802e8d2b0db9ac2e09cfd35"
+                ),
+                "registry": {"sha256": "b" * 64},
+                "nearest_review_at": "2026-09-06T00:00:00+00:00",
+                "counts": {
+                    "raw": {
+                        "total": 16,
+                        "by_severity": {
+                            "critical": 3, "high": 13, "medium": 0, "low": 0,
+                        },
+                        "unknown": 0,
+                    },
+                    "accepted": {
+                        "total": 16,
+                        "by_severity": {
+                            "critical": 3, "high": 13, "medium": 0, "low": 0,
+                        },
+                        "unknown": 0,
+                    },
+                    "pending": {
+                        "total": 0,
+                        "by_severity": {
+                            "critical": 0, "high": 0, "medium": 0, "low": 0,
+                        },
+                        "unknown": 0,
+                    },
+                    "expired": {
+                        "total": 0,
+                        "by_severity": {
+                            "critical": 0, "high": 0, "medium": 0, "low": 0,
+                        },
+                        "unknown": 0,
+                    },
+                },
+                "findings": [
+                    {"acceptance_status": "aceito", "severity": severity}
+                    for severity in ["critical"] * 3 + ["high"] * 13
+                ],
+            },
+        })
+        report["report_sha256"] = report_sha256(report)
+        return report
+
+    service.database.latest_governance_vulnerability_report = acceptance_report  # type: ignore[method-assign]
+
+    item = service._governance_vulnerability_health(datetime.now(timezone.utc))
+
+    assert item.status == "attention"
+    assert item.detail == (
+        "Baseline íntegra · repo 0 · SO 0 · "
+        "imagens 0 pendentes · 16 aceitas · 16 brutas"
+    )
+    assert item.metadata["production_images"]["finding_total"] == 16
+    assert item.metadata["production_images"]["acceptance"]["counts"][
+        "pending"
+    ]["total"] == 0
+
+
+def test_governance_card_never_turns_malformed_acceptance_overlay_into_zero() -> None:
+    service = _service()
+    original = service.database.latest_governance_vulnerability_report
+
+    def malformed_report():
+        report = original()
+        report["schema"] = "C3PO_GOVERNANCE_VULNERABILITY_REPORT-v3"
+        report["production_images"]["acceptance"] = {
+            "enabled": True,
+            "counts": {},
+        }
+        report["report_sha256"] = report_sha256(report)
+        return report
+
+    service.database.latest_governance_vulnerability_report = malformed_report  # type: ignore[method-assign]
+
+    item = service._governance_vulnerability_health(datetime.now(timezone.utc))
+
+    assert item.status == "offline"
+    assert item.detail == "Atestado diário com camada de aceite inválida"
+    assert "production_images" not in item.metadata
+
+
 def test_governance_card_describes_the_daily_window_without_claiming_fixed_schedule() -> None:
     service = _service()
     service.database.latest_governance_vulnerability_report = lambda: None  # type: ignore[method-assign]
