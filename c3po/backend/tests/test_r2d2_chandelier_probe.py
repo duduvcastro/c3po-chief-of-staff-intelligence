@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -24,9 +24,13 @@ from app.r2d2_candidate_f_backtest import (
     canonical_sha256 as backtest_sha256,
 )
 from app.r2d2_chandelier_probe import (
+    ChandelierProbeError,
     FiveMinuteBar,
+    INVALID_PROBE_V2_REPORT_SHA256,
+    INVALID_PROBE_V2_WORKFLOW_RUN_ID,
     SCHEMA_VERSION as PROBE_SCHEMA_VERSION,
     TradeAudit,
+    _require_cohort_source_coverage,
     aggregate_five_minutes,
     analyze_stop_regret,
     analyze_winning_episode,
@@ -167,7 +171,7 @@ def test_frozen_coverage_guard_remains_at_seventy_without_attrition() -> None:
     assert len(EXPECTED_SESSIONS) == 10
     assert MIN_FIVE_MINUTE_BARS_PER_SYMBOL_SESSION == 70
     assert BACKTEST_SCHEMA_VERSION == "R2D2-CANDIDATE-E-F-BACKTEST-v2"
-    assert PROBE_SCHEMA_VERSION == "R2D2-CHANDELIER-PROBE-v2"
+    assert PROBE_SCHEMA_VERSION == "R2D2-CHANDELIER-PROBE-v3"
     assert PRIOR_FAILED_WORKFLOW_RUN_ID == 33714916267
     assert PRIOR_PROBE_REPORT_SHA256 == (
         "159b2eca56b8a5e42b0158a2a61409c3fb33589691735aa7fdb2098478ac9191"
@@ -192,7 +196,7 @@ def test_frozen_coverage_guard_remains_at_seventy_without_attrition() -> None:
     )
 
 
-def test_v2_reports_pin_superseded_run_provenance() -> None:
+def test_reports_pin_both_superseded_run_provenances() -> None:
     root = Path(__file__).resolve().parents[3]
     backtest_source = (
         root / "c3po" / "backend" / "app" / "r2d2_candidate_f_backtest.py"
@@ -201,9 +205,102 @@ def test_v2_reports_pin_superseded_run_provenance() -> None:
         root / "c3po" / "backend" / "app" / "r2d2_chandelier_probe.py"
     ).read_text(encoding="utf-8")
     assert '"prior_failed_workflow_run_id": PRIOR_FAILED_WORKFLOW_RUN_ID' in backtest_source
-    assert '"supersedes": {' in probe_source
+    assert INVALID_PROBE_V2_WORKFLOW_RUN_ID == 33716979776
+    assert INVALID_PROBE_V2_REPORT_SHA256 == (
+        "5ffbe91b99e02a9ca88d119dbd00dff621c357f51a806aa6aa0160828689f676"
+    )
+    assert '"supersedes": [' in probe_source
     assert '"workflow_run_id": PRIOR_FAILED_WORKFLOW_RUN_ID' in probe_source
     assert '"report_sha256": PRIOR_PROBE_REPORT_SHA256' in probe_source
+    assert '"workflow_run_id": INVALID_PROBE_V2_WORKFLOW_RUN_ID' in probe_source
+    assert '"report_sha256": INVALID_PROBE_V2_REPORT_SHA256' in probe_source
+
+
+def test_probe_source_coverage_requires_every_cohort_xnys_session() -> None:
+    cohort = (_episode(),)
+    stale_sources = tuple(
+        (date(2026, 8, day), Path(f"/archive/2026-08-{day:02d}.jsonl"))
+        for day in (17, 18, 19, 20, 21)
+    )
+    with pytest.raises(
+        ChandelierProbeError,
+        match="minute aggregate source coverage is missing required session.*2026-07-29",
+    ):
+        _require_cohort_source_coverage(cohort, stale_sources)
+
+    required_dates = tuple(
+        date.fromisoformat(value)
+        for value in (
+            "2026-07-29", "2026-07-30", "2026-07-31",
+            "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07",
+            "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14",
+            "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21",
+            "2026-08-24", "2026-08-25", "2026-08-26",
+        )
+    )
+    complete_sources = tuple(
+        (session, Path(f"/archive/{session.isoformat()}.jsonl"))
+        for session in required_dates
+    )
+    assert _require_cohort_source_coverage(cohort, complete_sources) == required_dates
+
+    missing_prior_session = tuple(
+        item for item in complete_sources if item[0] != date(2026, 8, 24)
+    )
+    with pytest.raises(ChandelierProbeError, match="2026-08-24"):
+        _require_cohort_source_coverage(cohort, missing_prior_session)
+
+
+def test_probe_a_never_treats_absent_or_atrless_path_as_zero_effect() -> None:
+    episode = _episode(sell_price=103.0)
+    absent = analyze_winning_episode(episode, ())
+    assert absent["eligibility"] == "censored_no_observable_price_path"
+    assert absent["counterfactual_f_net_pnl_usd"] is None
+    assert absent["avoidable_giveback_usd"] is None
+
+    one_bar = (
+        FiveMinuteBar(
+            "TEST",
+            datetime(2026, 8, 26, 14, 5, tzinfo=UTC),
+            100,
+            101,
+            99,
+            100,
+            1_000,
+            1,
+        ),
+    )
+    atrless = analyze_winning_episode(episode, one_bar)
+    assert atrless["eligibility"] == "censored_insufficient_atr_path"
+    assert atrless["counterfactual_f_net_pnl_usd"] is None
+    assert atrless["avoidable_giveback_usd"] is None
+
+    partial_history = [
+        FiveMinuteBar(
+            "TEST",
+            datetime(2026, 8, 26, 11, 15, tzinfo=UTC) + timedelta(minutes=5 * index),
+            100,
+            101,
+            99,
+            100,
+            1_000,
+            5,
+        )
+        for index in range(33)
+    ]
+    partial_history.extend((
+        FiveMinuteBar(
+            "TEST", datetime(2026, 8, 26, 14, 0, tzinfo=UTC),
+            100, 120, 99, 119, 1_000, 5,
+        ),
+        FiveMinuteBar(
+            "TEST", datetime(2026, 8, 26, 14, 5, tzinfo=UTC),
+            119, 120, 100, 101, 1_000, 5,
+        ),
+    ))
+    partially_evaluable = analyze_winning_episode(episode, partial_history)
+    assert partially_evaluable["eligibility"] == "censored_insufficient_atr_path"
+    assert partially_evaluable["counterfactual_f_net_pnl_usd"] is None
 
 
 def test_atr_and_ratchet_contract_are_independent_of_asserted_business_result() -> None:
@@ -293,6 +390,35 @@ def test_probe_b_uses_only_strictly_later_same_session_bars() -> None:
     assert row["eligibility"] == "eligible"
     assert row["recovered_above_entry_same_session"] is True
     assert row["reached_plus_1r_same_session"] is True
+
+
+def test_probe_b_distinguishes_missing_session_from_no_later_bar() -> None:
+    episode = _episode(
+        sell_reason="Immediate hard stop at mark -0.8%",
+        sell_price=99.0,
+    )
+    exit_at = episode.closed_at
+    assert exit_at is not None
+    audit = {"sell": TradeAudit("hard_stop", 99.0, 1.0, exit_at)}
+
+    absent = analyze_stop_regret(episode, (), audit)
+    assert absent is not None
+    assert absent["eligibility"] == "censored_no_observable_exit_session_bars"
+
+    exit_bar_only = (
+        StudyBar(
+            "TEST",
+            exit_at.replace(second=0, microsecond=0),
+            99,
+            100,
+            98,
+            99,
+            100,
+        ),
+    )
+    no_later = analyze_stop_regret(episode, exit_bar_only, audit)
+    assert no_later is not None
+    assert no_later["eligibility"] == "censored_no_later_same_session_bar"
 
 
 def test_candidate_f_forwards_monotonic_stop_to_frozen_exit_function() -> None:
@@ -409,6 +535,9 @@ def test_workflow_pins_read_only_window_retention_and_frozen_policy() -> None:
     assert "frozen source provenance mismatch" in workflow
     assert "docker compose up" not in workflow
     assert "docker compose restart" not in workflow
+    assert 'if b["eligible_stop_out_count"]:' in workflow
+    assert "0 elegíveis; recuperação N/D (denominador vazio)." in workflow
+    assert "None%" not in workflow
 
 
 def test_probe_source_pins_database_read_only_and_query_fingerprint() -> None:
@@ -419,3 +548,9 @@ def test_probe_source_pins_database_read_only_and_query_fingerprint() -> None:
     assert 'connection.execute("SET TRANSACTION READ ONLY")' in source
     assert 'connection.execute(\n            "SHOW transaction_read_only"' in source
     assert "QUERY_SHA256 = hashlib.sha256(QUERY_TEXT.encode" in source
+    build_report_source = source.split("def build_report(", 1)[1]
+    assert build_report_source.index(
+        "required_source_sessions = _require_cohort_source_coverage"
+    ) < build_report_source.index("reader.read(sources, symbols)")
+    assert '"source_lookback_session_count": SOURCE_LOOKBACK_SESSIONS' in source
+    assert '"source_coverage_verified": True' in source
