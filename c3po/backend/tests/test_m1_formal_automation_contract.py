@@ -302,6 +302,15 @@ def test_public_workflow_pins_remote_clock_read_only_path_and_ephemeral_channel(
         "EXPECTED_TAG: m1-formal-transfer-${{ github.run_id }}-"
         "${{ github.run_attempt }}-${{ steps.public-artifact.outputs.artifact-id }}"
     ) in workflow
+    cleanup = workflow[
+        workflow.index("Delete any remaining private draft transfer") :
+        workflow.index("Expunge the public handoff artifact on every outcome")
+    ]
+    assert cleanup.index(
+        '"repos/$PRIVATE_REPOSITORY/git/refs/tags/$EXPECTED_TAG"'
+    ) < cleanup.index(
+        '"repos/$PRIVATE_REPOSITORY/releases/$release_to_delete"'
+    )
     assert workflow.index("printf 'tag=%s\\napp_actor=%s\\n'") < workflow.index(
         'gh release create "$tag"'
     )

@@ -562,6 +562,7 @@ jobs:
         run: |
           set -euo pipefail
           release=
+          release_to_delete=
           if test -n "$RELEASE_ID"; then
             if ! release=$(gh api "repos/$PRIVATE_REPOSITORY/releases/$RELEASE_ID" \
               2>"$RUNNER_TEMP/m1-release.err"); then
@@ -584,9 +585,11 @@ jobs:
             test "$(jq -r .draft <<< "$release")" = true
             test "$(jq -r .tag_name <<< "$release")" = "$EXPECTED_TAG"
             test "$(jq -r .author.login <<< "$release")" = "$APP_ACTOR"
-            gh api --method DELETE \
-              "repos/$PRIVATE_REPOSITORY/releases/$(jq -er .id <<< "$release")"
+            release_to_delete=$(jq -er .id <<< "$release")
           fi
+          # Delete the tag first. If deleting the release then fails, the
+          # still-visible draft remains discoverable by the remote watcher;
+          # the reverse order can strand an otherwise unenumerable tag.
           if gh api "repos/$PRIVATE_REPOSITORY/git/ref/tags/$EXPECTED_TAG" \
             >/dev/null 2>"$RUNNER_TEMP/m1-tag.err"; then
             gh api --method DELETE \
@@ -594,6 +597,10 @@ jobs:
           elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/m1-tag.err"; then
             cat "$RUNNER_TEMP/m1-tag.err" >&2
             exit 1
+          fi
+          if test -n "$release_to_delete"; then
+            gh api --method DELETE \
+              "repos/$PRIVATE_REPOSITORY/releases/$release_to_delete"
           fi
 
       - name: Expunge the public handoff artifact on every outcome
