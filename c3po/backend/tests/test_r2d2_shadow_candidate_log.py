@@ -209,7 +209,7 @@ def _producer_cascade_steps() -> frozenset[str]:
 def test_producer_allowlist_and_database_constraints_have_exact_step_parity() -> None:
     producer_steps = _producer_cascade_steps()
     base_schema = ROOT / "db" / "040_r2d2_shadow_candidate_log.sql"
-    live_amendment = ROOT / "db" / "042_r2d2_shadow_candidate_cascade_steps.sql"
+    live_amendment = ROOT / "db" / "043_r2d2_shadow_candidate_cascade_steps.sql"
     base_schema_steps = _cascade_steps_from_sql(base_schema)
     live_amendment_steps = _cascade_steps_from_sql(live_amendment)
 
