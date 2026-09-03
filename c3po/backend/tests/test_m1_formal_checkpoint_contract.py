@@ -116,6 +116,7 @@ def _build(
     *,
     prior: Mapping[str, Any] | None = None,
     enumeration_sha256: str = "a" * 64,
+    orchestrated: bool = False,
 ) -> dict[str, Any] | None:
     sessions = _sessions(len(categories))
     snapshots = [
@@ -131,6 +132,7 @@ def _build(
             prior_15_artifact=prior,
             generated_at=datetime(2026, 9, 17, tzinfo=timezone.utc),
             enumeration_sha256=enumeration_sha256,
+            orchestrated=orchestrated,
         )
 
 
@@ -344,6 +346,75 @@ def test_payload_is_self_hashed_reduced_and_preparation_only() -> None:
     assert result["governance"]["breaker_dml_executed"] is False
     assert result["governance"]["strategy_change_authorized"] is False
     assert len(json.dumps(result).encode()) < 65_536
+
+
+def test_orchestrated_payload_attests_only_the_installed_runner_boundaries() -> None:
+    result = _build(["upper_first"] * 15, 15, orchestrated=True)
+    assert result is not None
+    frozen.verify_self_hash(result, "artifact_sha256")
+    governance = result["governance"]
+    assert governance["transient_destruction_implemented"] is True
+    assert governance["schedule_implemented"] is True
+    assert governance["private_retention_implemented"] is True
+    assert governance["read_only"] is True
+    assert governance["raw_rows_published"] is False
+    assert governance["entry_identifiers_published"] is False
+    assert governance["breaker_dml_executed"] is False
+
+
+def test_checkpoint_20_recomputes_the_same_orchestration_binding() -> None:
+    prior = _build(["upper_first"] * 15, 15, orchestrated=True)
+    assert prior is not None
+    result = _build(
+        ["upper_first"] * 20,
+        20,
+        prior=prior,
+        orchestrated=True,
+    )
+    assert result is not None
+    assert result["governance"]["schedule_implemented"] is True
+
+    with pytest.raises(formal.FormalCheckpointError, match="exact prefix"):
+        _build(
+            ["upper_first"] * 20,
+            20,
+            prior=prior,
+            orchestrated=False,
+        )
+
+
+def test_checkpoint_20_can_bind_a_private_canonical_prior_hash() -> None:
+    categories = ["upper_first"] * 20
+    sessions = _sessions(20)
+    snapshots = [
+        _snapshot(session, category)
+        for session, category in zip(sessions, categories)
+    ]
+    with patch.object(frozen, "verify_baseline"):
+        recomputed = formal.build_formal_checkpoint(
+            _baseline(),
+            snapshots,
+            sessions,
+            checkpoint=15,
+            generated_at=datetime(2026, 9, 23, tzinfo=timezone.utc),
+            enumeration_sha256="a" * 64,
+            orchestrated=True,
+        )
+        assert recomputed is not None
+        canonical = "e" * 64
+        result = formal.build_formal_checkpoint(
+            _baseline(),
+            snapshots,
+            sessions,
+            checkpoint=20,
+            prior_15_artifact=recomputed,
+            canonical_prior_15_artifact_sha256=canonical,
+            generated_at=datetime(2026, 9, 23, tzinfo=timezone.utc),
+            enumeration_sha256="a" * 64,
+            orchestrated=True,
+        )
+    assert result is not None
+    assert result["checkpoint"]["prior_15_artifact_sha256"] == canonical
 
 
 def test_factual_baseline_is_mandatory_and_hash_pinned() -> None:

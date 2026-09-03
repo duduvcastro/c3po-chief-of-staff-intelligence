@@ -1,7 +1,9 @@
 # M1 formal checkpoints — public source contract V1
 
-**Status:** preparation-only; no scheduler, credential, private retention or
-breaker mutation is installed by this contract.
+**Status:** scheduler and transfer implementation prepared but dormant. No
+credential, GitHub App, signing key, integration pin or enable switch is
+installed by this change; the default path performs no production read and no
+external write. Breaker mutation remains outside the contract.
 
 ## Authority and frozen inputs
 
@@ -113,14 +115,18 @@ At session 20:
   `M1_POSITIVE_BOUND_AT_20`;
 - otherwise → `M1_INCONCLUSIVE_AT_20`.
 
-The 20-session calculation requires the complete, self-hashed 15-session
-artifact carrying `M1_CONTINUE_TO_20`; a label string is never sufficient. The
-reader recomputes the exact 15-session prefix from the 20-session inputs and
-requires equality of label, population, bounds, gate, source-evidence hashes
-and frozen-contract hashes. A backfill, snapshot drift or source change in the
-first 15 sessions therefore fails closed instead of letting a stale marker arm
-session 20. The whole enumerator hash is the sole excluded field because that
-file legitimately grows; its selected prefix remains bound by dates and all
+The 20-session calculation requires an authenticated private marker for a
+canonical 15-session artifact carrying `M1_CONTINUE_TO_20`; a label string is
+never sufficient. The public reader recomputes the exact 15-session prefix
+from the 20-session inputs, verifies the recomputation's own self-hash and
+requires its stable checkpoint binding to equal that marker. The resulting 20
+payload records the private canonical 15 artifact hash, not the fresh
+recomputation's time-dependent hash. The private store independently compares
+the 20 payload against the complete canonical 15 artifact retained in Actions.
+A backfill, snapshot drift or source change in the first 15 sessions therefore
+fails closed instead of letting a stale marker arm session 20. The whole
+enumerator hash is the sole excluded binding field because that file
+legitimately grows; its selected prefix remains bound by dates and all
 per-session hashes. A refutation at 15 is terminal for this reader.
 
 The private half must authenticate and deduplicate the submitted 15-session
@@ -145,18 +151,130 @@ The formal payload contains only:
 Entry identifiers, raw measurements, symbols, positions and trade rows are
 prohibited structurally.  Every payload carries a canonical SHA-256 self-hash.
 
-## Deliberately deferred private half
+## Remote runner and activation boundary
 
-A separate audited change in the private evidence repository must provide:
+`.github/workflows/m1-formal-checkpoint.yml` wakes daily at 23:37 UTC, after
+18:00 America/New_York in both daylight and standard time. A supervised manual
+wake requires the exact phrase `RUN M1 FORMAL CHECKPOINT READ` from `main`.
+Both paths run in the protected `production` environment. GitHub cron has no
+strict start-time SLA; a late run still reconstructs the exact measured-session
+prefix rather than shifting the checkpoint. Source sessions are read in
+chronological order and the reader invokes the same `select_exact_prefix`
+semantics after every snapshot; it stops as soon as measured session 15 or 20
+is reached. The complete enumeration remains bound for methodology/hash
+purposes, but no later snapshot is read after the checkpoint boundary.
 
-- the remote schedule and deduplication markers;
-- production secrets in a protected environment;
-- private 30-day artifact retention and expiry wake-up;
-- idempotent publication of the resulting marker.
+The workflow is inert unless all of the following are installed in a separate,
+audited integration step:
 
-Until that separate change is audited, merged and configured,
-`schedule_implemented=false` and `private_retention_implemented=false` remain
-literal in every payload produced here.  Destruction of transient snapshots is
-also an orchestration responsibility; the public contract guarantees that no
-raw row or identifier is **published**, not that a future runner already
-destroyed its inputs.
+- variable `C3PO_M1_FORMAL_AUTOMATION_ENABLED=true`;
+- variables `C3PO_M1_AUTHORIZED_PUBLIC_HEAD_SHA` and
+  `C3PO_M1_AUTHORIZED_FORMAL_SOURCE_SHA256`;
+- existing production transport secrets `C3PO_AWS_HOST`, `C3PO_AWS_USER`,
+  `C3PO_AWS_SSH_KEY` and `C3PO_AWS_KNOWN_HOSTS`;
+- repository-scoped GitHub App secrets `C3PO_M1_TRANSFER_APP_ID` and
+  `C3PO_M1_TRANSFER_APP_PRIVATE_KEY`;
+- dedicated Ed25519 secret `C3PO_M1_FORMAL_SIGNING_KEY`;
+- remote dead-man URL secret `C3PO_HEALTHCHECK_M1_FORMAL_URL`.
+
+There is no PAT. The GitHub App installation token is limited to the private
+evidence repository and requests only Actions/write and Contents/write. The
+signing key is a different key. Missing variables, secrets, private workflow,
+private pin, signer allowlist or pre-seeded state fail closed before any
+production read or evidence upload.
+The scheduled workflow's own `github.workflow_sha`, not only the checked-out
+tree, must equal the authorized public head. Updating the workflow without an
+explicitly updated audited pin therefore fails before the remote read.
+
+When enabled, the runner pings the dead-man `/start` endpoint before any
+production read. Its last step, after release/artifact cleanup and transient
+destruction, sends success or `/fail` from the final job status. A disabled
+workflow is a true no-op: it neither requires nor pings this URL. Thus a missed
+cron or failed cleanup is remotely observable without someone inspecting the
+Actions page. The enabled marker is emitted before the other protected
+configuration checks, so their failures reach `/fail`; a missing or malformed
+dead-man URL still makes the job red but cannot notify the endpoint that is
+itself absent.
+
+The ordinary CLI remains preparation-only and emits
+`schedule_implemented=false`, `private_retention_implemented=false` and
+`transient_destruction_implemented=false`. Only the audited workflow invokes
+`--orchestrated`, which binds all three flags as `true` into the checkpoint and
+its self-hash. This keeps ad-hoc local use from claiming remote controls it did
+not execute.
+
+## Minimal private state machine
+
+The private branch `m1-formal-state` is rooted by an orphan commit and every
+state transition is a linear commit with at most one parent. Every referenced
+tree contains exactly one canonical `state.json`; no checkpoint payload enters
+Git. It must be pre-seeded as `PENDING_15` before activation. Its states are:
+
+- `PENDING_15`: exactly empty hashes/expiry; permits the first checkpoint 15;
+- `CONTINUE_TO_20`: carries only the canonical 15 artifact hash, stable binding
+  and expiry; permits checkpoint 20;
+- `TERMINAL_15`: suppresses every later checkpoint-15 re-emission;
+- `COMPLETE_20`: suppresses every later formal read;
+- `EXPIRED`: a durable tombstone that blocks recomputation and demands review.
+
+An absent branch, extra tree entry, merge commit, malformed state, expired live
+marker or tombstone is never treated as `PENDING_15`. The runner does not infer
+state from calendar time and never reconstructs a deleted checkpoint.
+
+## Expungeable transfer and retention
+
+No public artifact or private release exists while the measured-session clock
+is not ready. For an exact ready checkpoint, the transport sequence is:
+
+1. upload only canonical reduced `checkpoint.json` as a one-day public Actions
+   handoff and capture its immutable artifact id/digest;
+2. create an empty private draft release through the repository-scoped App and
+   capture its release id; its tag is exactly
+   `m1-formal-transfer-<source_run_id>-<source_run_attempt>-<public_artifact_id>`;
+3. build and sign an envelope binding the release id, public run id/attempt,
+   public artifact id, audited source head/hash, checkpoint, stable checkpoint
+   binding and payload hashes;
+4. attach exactly
+   `m1-formal-checkpoint-<15|20>-<artifact_sha256>.zip`, containing only
+   `checkpoint.json`, `envelope.json` and `envelope.sig`;
+5. dispatch `m1-formal-private-store.yml` and wait for its authenticated run;
+6. require the private 30-day Actions artifact and the expected state-machine
+   transition before acknowledging success;
+7. delete the draft release/tag, delete the public handoff artifact on every
+   outcome, and shred baseline, snapshots, recomputation, payload and keys from
+   the ephemeral runner.
+
+The dispatch carries the exact confirmation
+`STORE FORMAL M1 CHECKPOINT V1` plus `release_id`, `source_run_id`,
+`source_run_attempt` and `public_artifact_id`; the signed envelope retains the
+corresponding `source_*` field names and `checkpoint_binding_sha256`. Preflight
+captures the private `main` SHA, reads its pins at that exact revision, and
+accepts the store run only when its `head_sha` is identical. A private workflow
+update between preflight and dispatch therefore fails closed and is retried
+only by a later scheduled run.
+
+Unlike a deleted Git branch, Actions artifacts and draft release assets have
+explicit deletion APIs and observable expiry. The private retention watcher
+reconciles its 30-day artifact and writes `EXPIRED` rather than deleting state.
+The reduced checkpoint is the only transferred data; raw rows, entry ids,
+symbols, positions and credentials never enter either channel.
+
+## Post-audit integration order
+
+1. merge and deploy the audited public source/orchestration and private store;
+2. install the GitHub App on only the required repositories with the documented
+   permissions;
+3. install the dedicated signing key/public allowlist and pin their audited
+   hashes plus the exact public head/formal-source hash privately;
+4. pre-seed the orphan `m1-formal-state` branch as exact `PENDING_15`;
+5. configure the protected public variables/secrets, including the dedicated
+   remote dead-man check, while leaving the enable switch off;
+6. run contract/preflight verification, then enable the switch under owner
+   supervision;
+7. observe one not-ready path proving zero artifact/release, and leave policy
+   admission human.
+
+The factual baseline deadline of 25 September is unchanged. This automation
+does not copy or extend its raw evidence; the private watcher must alert and a
+new audited source still needs separate authority if checkpoint 20 has not
+completed in time.

@@ -464,8 +464,10 @@ def build_formal_checkpoint(
     *,
     checkpoint: int,
     prior_15_artifact: Mapping[str, Any] | None = None,
+    canonical_prior_15_artifact_sha256: str | None = None,
     generated_at: datetime | None = None,
     enumeration_sha256: str,
+    orchestrated: bool = False,
 ) -> dict[str, Any] | None:
     if not HEX_64.fullmatch(enumeration_sha256):
         raise FormalCheckpointError("session enumeration SHA-256 is invalid")
@@ -473,6 +475,12 @@ def build_formal_checkpoint(
         raise FormalCheckpointError("checkpoint 20 is not armed by checkpoint 15")
     if checkpoint == 15 and prior_15_artifact is not None:
         raise FormalCheckpointError("checkpoint 15 must not receive a prior artifact")
+    if checkpoint == 15 and canonical_prior_15_artifact_sha256 is not None:
+        raise FormalCheckpointError("checkpoint 15 must not receive a canonical prior hash")
+    if canonical_prior_15_artifact_sha256 is not None and not HEX_64.fullmatch(
+        canonical_prior_15_artifact_sha256
+    ):
+        raise FormalCheckpointError("canonical checkpoint 15 artifact SHA-256 is invalid")
 
     local_sources = _assert_local_frozen_sources()
     frozen.verify_baseline(baseline)
@@ -488,6 +496,7 @@ def build_formal_checkpoint(
             checkpoint=15,
             generated_at=generated_at,
             enumeration_sha256=enumeration_sha256,
+            orchestrated=orchestrated,
         )
         if recomputed_15 is None:
             raise FormalCheckpointError("checkpoint 15 cannot be recomputed")
@@ -501,7 +510,10 @@ def build_formal_checkpoint(
             raise FormalCheckpointError(
                 "checkpoint 15 artifact does not match the recomputed exact prefix"
             )
-        prior_artifact_sha256 = str(prior["artifact_sha256"])
+        prior_artifact_sha256 = (
+            canonical_prior_15_artifact_sha256
+            or str(prior["artifact_sha256"])
+        )
     selected = select_exact_prefix(baseline, snapshots, checkpoint)
     if selected is None:
         return None
@@ -568,10 +580,10 @@ def build_formal_checkpoint(
             "read_only": True,
             "raw_rows_published": False,
             "entry_identifiers_published": False,
-            "transient_destruction_implemented": False,
+            "transient_destruction_implemented": orchestrated,
             "cross_epoch_pooling": False,
-            "schedule_implemented": False,
-            "private_retention_implemented": False,
+            "schedule_implemented": orchestrated,
+            "private_retention_implemented": orchestrated,
             "breaker_dml_executed": False,
             "strategy_change_authorized": False,
             "v1_terminal_label_requires_m2_when_m1_not_refuted": True,
@@ -591,6 +603,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--enumerated-sessions", required=True, type=Path)
     parser.add_argument("--session-snapshot", required=True, action="append", type=Path)
     parser.add_argument("--prior-15-artifact", type=Path)
+    parser.add_argument("--canonical-prior-15-artifact-sha256")
+    parser.add_argument(
+        "--orchestrated",
+        action="store_true",
+        help=(
+            "attest that the audited remote schedule, transient destruction and "
+            "private retention boundary are active"
+        ),
+    )
     parser.add_argument("--output", required=True, type=Path)
     return parser
 
@@ -638,7 +659,11 @@ def main(argv: list[str] | None = None) -> int:
         sessions,
         checkpoint=args.checkpoint,
         prior_15_artifact=prior_15_artifact,
+        canonical_prior_15_artifact_sha256=(
+            args.canonical_prior_15_artifact_sha256
+        ),
         enumeration_sha256=_file_sha256(args.enumerated_sessions),
+        orchestrated=args.orchestrated,
     )
     if result is None:
         print(
