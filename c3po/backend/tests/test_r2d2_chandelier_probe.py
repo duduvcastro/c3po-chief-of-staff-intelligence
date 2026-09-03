@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from app.r2d2_candidate_f_backtest import (
     CandidateBacktestError,
@@ -551,6 +552,164 @@ def test_workflow_pins_read_only_window_retention_and_frozen_policy() -> None:
     assert 'if b["eligible_stop_out_count"]:' in workflow
     assert "0 elegíveis; recuperação N/D (denominador vazio)." in workflow
     assert "None%" not in workflow
+
+
+def test_workflow_preserves_manual_dispatch_and_adds_exact_remote_cron() -> None:
+    root = Path(__file__).resolve().parents[3]
+    workflow = (
+        root / ".github" / "workflows" / "r2d2-chandelier-study.yml"
+    ).read_text(encoding="utf-8")
+    parsed = yaml.safe_load(workflow)
+    triggers = parsed[True]
+    expected = "89ab28a0d7a718adee5acdcaf06f64dfa1e11de55f87e52ff6232c9c46f327c8"
+
+    assert set(triggers) == {"schedule", "workflow_dispatch"}
+    assert triggers["schedule"] == [{"cron": "15 3 * * *"}]
+    assert parsed["run-name"] == f"R2D2 Chandelier dataset {expected}"
+    confirmation = triggers["workflow_dispatch"]["inputs"]["confirmation"]
+    assert confirmation == {
+        "description": "Type RUN R2D2 CHANDELIER STUDY",
+        "required": True,
+        "type": "string",
+    }
+
+    qualify = parsed["jobs"]["qualify-dataset-run"]
+    manual = next(
+        step
+        for step in qualify["steps"]
+        if step["name"] == "Require exact confirmation for manual dispatch"
+    )
+    trigger = next(
+        step
+        for step in qualify["steps"]
+        if step["name"] == "Admit only the authorized scheduled date"
+    )
+    assert manual["if"] == "github.event_name == 'workflow_dispatch'"
+    assert "RUN R2D2 CHANDELIER STUDY" in manual["run"]
+    assert "exit 2" in manual["run"]
+    assert trigger["id"] == "trigger"
+    assert "TZ=America/Sao_Paulo date +%F" in trigger["run"]
+    assert "2026-09-04" in trigger["run"]
+    assert trigger["run"].count("authorized=true") == 2
+    assert "authorized=false" in trigger["run"]
+    assert parsed["concurrency"] == {
+        "group": "r2d2-chandelier-study",
+        "cancel-in-progress": False,
+    }
+
+
+def test_workflow_preflight_is_fail_closed_and_idempotent_per_dataset() -> None:
+    root = Path(__file__).resolve().parents[3]
+    workflow = (
+        root / ".github" / "workflows" / "r2d2-chandelier-study.yml"
+    ).read_text(encoding="utf-8")
+    parsed = yaml.safe_load(workflow)
+    jobs = parsed["jobs"]
+    qualify = jobs["qualify-dataset-run"]
+    study = jobs["read-only-study"]
+    steps = {step["name"]: step for step in qualify["steps"]}
+    transport = steps["Configure production transport for preflight"]
+    preflight = steps["Validate deployed dataset and claim its single run"]
+    remote_gate = preflight["run"]
+    expected = "89ab28a0d7a718adee5acdcaf06f64dfa1e11de55f87e52ff6232c9c46f327c8"
+    manifest = (
+        "/mnt/day-d-data/evidence/r2d2-massive-minute-extension-download-v1/"
+        "run-33802274083-attempt-1/extension-download-manifest.json"
+    )
+
+    assert preflight["id"] == "preflight"
+    assert qualify["if"] == "github.run_attempt == 1"
+    assert parsed["permissions"]["actions"] == "read"
+    assert transport["if"] == "steps.trigger.outputs.authorized == 'true'"
+    assert preflight["if"] == "steps.trigger.outputs.authorized == 'true'"
+    assert preflight["env"]["EXPECTED_DATASET_MANIFEST_SHA256"] == expected
+    assert preflight["env"]["DATASET_MANIFEST"] == manifest
+    assert "TZ=America/Sao_Paulo date +%H" in remote_gate
+    assert "0[0-7])" in remote_gate
+    assert "00:00-08:00 America/Sao_Paulo" in remote_gate
+    assert "refs/heads/main" in remote_gate
+    assert 'repos/$GITHUB_REPOSITORY/commits/main' in remote_gate
+    assert 'if [ "$main_revision" != "$REVISION" ]' in remote_gate
+    assert "actions/workflows/r2d2-chandelier-study.yml/runs?per_page=100" in remote_gate
+    assert "int(run[\"id\"]) != current_run_id" in remote_gate
+    assert 'run.get("head_branch") == "main"' in remote_gate
+    assert 'run.get("display_title")' in remote_gate
+    assert f'== "R2D2 Chandelier dataset {expected}"' in remote_gate
+    assert 'local.date().isoformat() == "2026-09-04"' in remote_gate
+    assert "0 <= local.hour < 8" in remote_gate
+    assert "actions/runs/$candidate_run/jobs?per_page=100" in remote_gate
+    assert 'step.get("name") == "Run production read-only probes and frozen replay"' in remote_gate
+    assert 'step.get("status") in {"in_progress", "completed"}' in remote_gate
+    assert 'step.get("conclusion") != "skipped"' in remote_gate
+    assert "raise SystemExit(0 if started else 20)" in remote_gate
+    assert 'if [ "$probe_status" -ne 20 ]' in remote_gate
+    assert remote_gate.count("ServerAliveInterval=30") == 2
+    assert remote_gate.count("ServerAliveCountMax=3") == 2
+    assert '"$APP_DIR/.deploy-version"' in remote_gate
+    assert "manifest.pop(\"manifest_sha256\", None)" in remote_gate
+    assert "sort_keys=True" in remote_gate
+    assert 'separators=(\",\", \":\")' in remote_gate
+    assert "ensure_ascii=True" in remote_gate
+    assert "allow_nan=False" in remote_gate
+    assert "claimed != expected or observed != expected" in remote_gate
+    assert "DAY-D-MASSIVE-MINUTE-EXTENSION-DOWNLOAD-v1" in remote_gate
+    assert "dataset=minute_aggregates" in remote_gate
+    assert '"source.csv.gz"' in remote_gate
+    assert 'row.get("content_length")' in remote_gate
+    assert 'row.get("source_sha256")' in remote_gate
+    assert "handle.read(1024 * 1024)" in remote_gate
+    assert "total_bytes != manifest.get(\"downloaded_bytes\")" in remote_gate
+
+    assert 'dataset-$EXPECTED_DATASET_MANIFEST_SHA256.started-run' in remote_gate
+    assert 'printf \'should_run=false\\n\'' in remote_gate
+    assert 'ln "$temporary" "$claim"' in remote_gate
+    assert "Could not create or verify the dataset run claim." in remote_gate
+    assert "printf 'false\\n'" in remote_gate
+    assert "printf 'true\\n'" in remote_gate
+    assert "should_run=%s" in remote_gate
+    assert qualify["outputs"]["should_run"] == "${{ steps.preflight.outputs.should_run }}"
+    assert study["needs"] == "qualify-dataset-run"
+    assert "needs.qualify-dataset-run.outputs.should_run == 'true'" in study["if"]
+    assert "github.run_attempt == 1" in study["if"]
+
+    assert remote_gate.index("claim_status=$(") < remote_gate.index("local_hour=$(")
+    assert remote_gate.index("local_hour=$(") < remote_gate.index("main_revision=$(")
+    assert remote_gate.index("main_revision=$(") < remote_gate.index("actions/workflows/")
+    assert remote_gate.index("actions/workflows/") < remote_gate.index(".deploy-version")
+    assert remote_gate.index(".deploy-version") < remote_gate.index("manifest.pop")
+    assert remote_gate.index("manifest.pop") < remote_gate.index('source.open("rb")')
+    assert remote_gate.index('source.open("rb")') < remote_gate.index('ln "$temporary" "$claim"')
+    assert "docker compose" not in remote_gate
+    assert "gh pr comment" not in remote_gate
+    assert expected in workflow
+
+    study_step = next(
+        step
+        for step in study["steps"]
+        if step["name"] == "Run production read-only probes and frozen replay"
+    )
+    assert study_step["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert 'repos/$GITHUB_REPOSITORY/commits/main' in study_step["run"]
+    assert 'if [ "$main_revision" != "$REVISION" ]' in study_step["run"]
+    assert study_step["run"].index("main_revision=$(") < study_step["run"].index("ssh \\")
+
+    failure = jobs["record-scheduled-failure"]
+    assert failure["needs"] == ["qualify-dataset-run", "read-only-study"]
+    assert "always()" in failure["if"]
+    assert "github.event_name == 'schedule'" in failure["if"]
+    assert "needs.qualify-dataset-run.result == 'failure'" in failure["if"]
+    assert "needs.qualify-dataset-run.result == 'cancelled'" in failure["if"]
+    assert "needs.read-only-study.result == 'failure'" in failure["if"]
+    assert "needs.read-only-study.result == 'cancelled'" in failure["if"]
+    failure_script = failure["steps"][0]["run"]
+    assert "r2d2-chandelier-scheduled-failure:$RUN_ID" in failure_script
+    assert "issues/348/comments" in failure_script
+    assert 'gh api "repos/$GITHUB_REPOSITORY/issues/348/comments"' in failure_script
+    assert failure_script.index("gh api") < failure_script.index('grep -Fx "$marker"')
+    assert "gh pr comment 348" in failure_script
+    assert "[Run e log]($RUN_URL)" in failure_script
+    assert "Manifest self-hash esperado" in failure_script
+    assert failure["steps"][0]["env"]["DATASET_MANIFEST_SHA256"] == expected
 
 
 def test_probe_source_pins_database_read_only_and_query_fingerprint() -> None:
