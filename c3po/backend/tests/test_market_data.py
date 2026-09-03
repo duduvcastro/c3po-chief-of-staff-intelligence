@@ -1535,7 +1535,8 @@ def test_realtime_portfolio_accepts_b3_etf_missing_from_stock_list() -> None:
 
 
 def test_realtime_portfolio_accepts_nasdaq_and_nyse_arca_etfs() -> None:
-    timestamp = 1785859200
+    # Freshness is not under test here; keep the quote inside the production TTL.
+    timestamp = int((datetime.now(timezone.utc) - timedelta(minutes=15)).timestamp())
     catalog = [
         {"Code": "QQQ", "Name": "Invesco QQQ Trust", "Exchange": "NASDAQ", "Type": "ETF", "Currency": "USD"},
         {"Code": "VOO", "Name": "Vanguard S&P 500 ETF", "Exchange": "NYSE ARCA", "Type": "ETF", "Currency": "USD"},
