@@ -8522,6 +8522,20 @@ function serviceLogoKind(name: string, groupKey: SystemHealthGroupKey): ServiceL
   return "generic";
 }
 
+function DependabotMark() {
+  return (
+    <svg viewBox="0 0 100 100" aria-hidden="true">
+      <polygon points="50,2 92,26 92,74 50,98 8,74 8,26" fill="#1E7CE0" />
+      <rect x="46.5" y="17" width="7" height="10" fill="#fff" />
+      <rect x="16" y="41" width="9" height="16" rx="2.5" fill="#fff" />
+      <rect x="75" y="41" width="9" height="16" rx="2.5" fill="#fff" />
+      <rect x="25" y="29" width="50" height="40" rx="9" fill="#fff" />
+      <path d="M33,47 l6.5,6.5 L50,43" stroke="#1E7CE0" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M56,47 l6.5,6.5 L73,43" stroke="#1E7CE0" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function TrivyMark() {
   return (
     <svg viewBox="0 0 100 104" aria-hidden="true">
@@ -8751,7 +8765,7 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
           <div className="governance-open-total"><strong>{knownTotal == null ? "—" : knownTotal.toLocaleString("pt-BR")}</strong><span>alertas, pacotes e ocorrências</span></div>
           <div className="governance-source-list">
             <div className="governance-source-block">
-              <header><div><span>REPOSITÓRIO</span><strong>Dependabot</strong></div><em className={`governance-summary-${dependabotClass}`}>{dependabotLabel}</em></header>
+              <header><div><span>REPOSITÓRIO</span><strong>Dependabot</strong></div><div className="dependabot-scanner-identity"><span className="service-logo service-logo-dependabot" aria-hidden="true"><DependabotMark /></span><em className={`governance-summary-${dependabotClass}`}>{dependabotLabel}</em></div></header>
               <div className="governance-source-total"><strong>{hasReport ? Number(dependabot.open_total ?? 0).toLocaleString("pt-BR") : "—"}</strong><span>abertos</span></div>
               <dl>
                 {(["critical", "high", "medium", "low"] as const).map((severity) => (
