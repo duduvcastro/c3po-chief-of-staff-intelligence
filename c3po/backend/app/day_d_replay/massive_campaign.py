@@ -148,6 +148,51 @@ class MassiveCampaignGuard:
                 f"verified={current}, requested={additional}, pause={self.campaign_pause_bytes}"
             )
 
+    def assert_existing_verified_event(
+        self,
+        artifact: Any,
+        *,
+        source_sha256: str | None,
+    ) -> None:
+        target = self._event_path(str(artifact.bucket), str(artifact.object_key))
+        if not target.exists() and not target.is_symlink():
+            return
+        if target.is_symlink() or not target.is_file():
+            raise CampaignGuardError(
+                f"verified campaign event is not a regular file: {target}"
+            )
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise CampaignGuardError(
+                f"verified campaign event is unreadable: {target}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise CampaignGuardError(
+                f"verified campaign event is malformed: {target}"
+            )
+        expected = {
+            "schema_version": self.schema_version,
+            "bucket": str(artifact.bucket),
+            "object_key": str(artifact.object_key),
+            "dataset": str(artifact.dataset),
+            "session_date": str(artifact.session_date),
+            "verified_bytes": int(artifact.content_length),
+        }
+        if {key: payload.get(key) for key in expected} != expected:
+            raise CampaignGuardError(
+                f"verified campaign event conflicts with frozen artifact: {target}"
+            )
+        event_sha256 = payload.get("sha256")
+        if (
+            source_sha256 is None
+            or not isinstance(event_sha256, str)
+            or event_sha256 != source_sha256
+        ):
+            raise CampaignGuardError(
+                f"verified campaign event checksum differs from local source: {target}"
+            )
+
     def record_verified(self, artifact: Any, *, verified_at: datetime) -> Path:
         if verified_at.tzinfo is None or verified_at.utcoffset() is None:
             raise ValueError("verified_at must be timezone-aware")
@@ -197,10 +242,15 @@ class MassiveCampaignGuard:
         if not self.events_root.exists():
             return total
         for path in self.events_root.glob("*.json"):
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload.get("schema_version") != self.schema_version:
-                raise CampaignGuardError(f"unknown campaign event schema: {path}")
-            total += int(payload["verified_bytes"])
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if payload.get("schema_version") != self.schema_version:
+                    raise ValueError("unknown schema")
+                total += int(payload["verified_bytes"])
+            except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+                raise CampaignGuardError(
+                    f"invalid campaign event ledger entry: {path}"
+                ) from exc
         if total > self.campaign_pause_bytes:
             raise CampaignGuardError("verified campaign bytes exceed the frozen pause threshold")
         return total
@@ -304,7 +354,12 @@ class MassiveCampaignGuard:
             raise CampaignGuardError(f"{label} scope report is missing: {path}")
         if self._sha256_file(path) != expected_sha256:
             raise CampaignGuardError(f"{label} scope report checksum mismatch")
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise CampaignGuardError(
+                f"{label} scope report is not valid JSON"
+            ) from exc
         if (
             payload.get("schema_version") != "DAY-D-MASSIVE-T0-PLAN-SWEEP-v1"
             or payload.get("downloaded") is not False

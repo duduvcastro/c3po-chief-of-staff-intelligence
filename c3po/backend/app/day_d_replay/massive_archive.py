@@ -71,6 +71,66 @@ class ArchivedArtifact:
     reused_existing_file: bool
 
 
+DEFAULT_PER_SESSION_ABORT_BYTES = 25_416_665_942
+DEFAULT_LOCAL_SPOOL_CEILING_BYTES = 76_249_997_826
+
+
+def current_massive_spool_bytes(root: Path) -> int:
+    total = 0
+    for metadata_path in root.glob(
+        "provider=massive/dataset=*/session_date=*/source.csv.gz.metadata.json"
+    ):
+        source_path = metadata_path.with_name("source.csv.gz")
+        if source_path.exists():
+            total += source_path.stat().st_size
+    return total
+
+
+def assert_massive_local_capacity(
+    *,
+    root: Path,
+    artifacts: Sequence[PlannedArtifact],
+    minimum_free_bytes: int,
+    per_session_abort_bytes: int = DEFAULT_PER_SESSION_ABORT_BYTES,
+    local_spool_ceiling_bytes: int = DEFAULT_LOCAL_SPOOL_CEILING_BYTES,
+    drill_headroom_bytes: int = 0,
+    disk_usage: Callable[[str | os.PathLike[str]], Any] = shutil.disk_usage,
+) -> None:
+    session_totals: dict[str, int] = {}
+    required_by_path: dict[Path, int] = {}
+    for artifact in artifacts:
+        session_totals[artifact.session_date] = (
+            session_totals.get(artifact.session_date, 0) + artifact.content_length
+        )
+        local_path = Path(artifact.local_path)
+        if not local_path.exists():
+            required_by_path[local_path] = artifact.content_length
+    for session_date, planned_bytes in sorted(session_totals.items()):
+        limit = max(0, per_session_abort_bytes)
+        if planned_bytes > limit:
+            raise MassiveArchiveError(
+                "per-session byte guard blocked Massive download: "
+                f"session={session_date}, planned={planned_bytes}, limit={limit}"
+            )
+    required_bytes = sum(required_by_path.values())
+    current_spool_bytes = current_massive_spool_bytes(root)
+    ceiling = max(0, local_spool_ceiling_bytes)
+    if current_spool_bytes + required_bytes > ceiling:
+        raise MassiveArchiveError(
+            "local spool guard blocked Massive download: "
+            f"current={current_spool_bytes}, download={required_bytes}, "
+            f"ceiling={ceiling}"
+        )
+    free_bytes = int(disk_usage(root).free)
+    reserve = max(0, minimum_free_bytes)
+    if free_bytes - required_bytes - drill_headroom_bytes < reserve:
+        raise MassiveArchiveError(
+            "disk guard blocked Massive download: "
+            f"free={free_bytes}, download={required_bytes}, "
+            f"drill_headroom={drill_headroom_bytes}, reserve={reserve}"
+        )
+
+
 class MassiveFlatFileArchive:
     """Fail-closed local spool for immutable Massive Flat Files.
 
@@ -87,10 +147,12 @@ class MassiveFlatFileArchive:
         root: Path,
         bucket: str = "flatfiles",
         minimum_free_bytes: int = 20 * 1024**3,
-        per_session_abort_bytes: int = 25_416_665_942,
-        local_spool_ceiling_bytes: int = 76_249_997_826,
+        per_session_abort_bytes: int = DEFAULT_PER_SESSION_ABORT_BYTES,
+        local_spool_ceiling_bytes: int = DEFAULT_LOCAL_SPOOL_CEILING_BYTES,
         campaign_guard: MassiveCampaignGuard | None = None,
         disk_usage: Callable[[str | os.PathLike[str]], Any] = shutil.disk_usage,
+        expected_orphan_parts: frozenset[str] | None = None,
+        locked_write_preflight: Callable[[], None] | None = None,
     ) -> None:
         self.store = store
         self.root = root
@@ -103,6 +165,17 @@ class MassiveFlatFileArchive:
             download_authorized=False,
         )
         self._disk_usage = disk_usage
+        if expected_orphan_parts is not None:
+            for relative in expected_orphan_parts:
+                path = Path(relative)
+                if (
+                    path.is_absolute()
+                    or not path.parts
+                    or any(part in {"", ".", ".."} for part in path.parts)
+                ):
+                    raise ValueError("expected orphan path is not a safe relative path")
+        self._expected_orphan_parts = expected_orphan_parts
+        self._locked_write_preflight = locked_write_preflight
 
     def plan(
         self,
@@ -140,6 +213,7 @@ class MassiveFlatFileArchive:
         session_date: date,
         datasets: Sequence[FlatFileDataset],
         measured_at: datetime | None = None,
+        expected_plan: Sequence[PlannedArtifact] | None = None,
     ) -> Path:
         observed_at = measured_at or datetime.now(timezone.utc)
         if observed_at.tzinfo is None or observed_at.utcoffset() is None:
@@ -151,44 +225,68 @@ class MassiveFlatFileArchive:
                 self.campaign_guard.assert_download_authorized()
             except CampaignGuardError as exc:
                 raise MassiveArchiveError(str(exc)) from exc
+            if self._locked_write_preflight is not None:
+                self._locked_write_preflight()
+            local_plan = tuple(expected_plan) if expected_plan is not None else None
+            requested_datasets = {dataset.value for dataset in datasets}
+            if local_plan is not None:
+                if (
+                    not local_plan
+                    or len(local_plan) != len(requested_datasets)
+                    or {item.session_date for item in local_plan}
+                    != {session_date.isoformat()}
+                    or {item.dataset for item in local_plan} != requested_datasets
+                ):
+                    raise MassiveArchiveError(
+                        "expected local plan differs from the requested session"
+                    )
+                self._assert_expected_local_artifacts(local_plan)
+                try:
+                    self.campaign_guard.assert_projected_bytes(local_plan)
+                except CampaignGuardError as exc:
+                    raise MassiveArchiveError(str(exc)) from exc
+                drill_headroom_bytes = 0
+                if (
+                    session_date in QUALIFICATION_SESSION_DATES
+                    and requested_datasets == QUALIFICATION_TICK_DATASETS
+                ):
+                    drill_headroom_bytes = max(
+                        item.content_length for item in local_plan
+                    )
+                assert_massive_local_capacity(
+                    root=self.root,
+                    artifacts=local_plan,
+                    minimum_free_bytes=self.minimum_free_bytes,
+                    per_session_abort_bytes=self.per_session_abort_bytes,
+                    local_spool_ceiling_bytes=self.local_spool_ceiling_bytes,
+                    drill_headroom_bytes=drill_headroom_bytes,
+                    disk_usage=self._disk_usage,
+                )
+
             plan = self.plan(session_date=session_date, datasets=datasets)
-            try:
-                self.campaign_guard.assert_projected_bytes(plan)
-            except CampaignGuardError as exc:
-                raise MassiveArchiveError(str(exc)) from exc
-            required_bytes = sum(
-                item.content_length for item in plan if not Path(item.local_path).exists()
-            )
-            planned_session_bytes = sum(item.content_length for item in plan)
-            if planned_session_bytes > self.per_session_abort_bytes:
+            if local_plan is not None and plan != local_plan:
                 raise MassiveArchiveError(
-                    "per-session byte guard blocked Massive download: "
-                    f"planned={planned_session_bytes}, limit={self.per_session_abort_bytes}"
+                    "remote Massive metadata differs from the frozen local preflight plan"
                 )
-            current_spool_bytes = self._current_spool_bytes()
-            if current_spool_bytes + required_bytes > self.local_spool_ceiling_bytes:
-                raise MassiveArchiveError(
-                    "local spool guard blocked Massive download: "
-                    f"current={current_spool_bytes}, download={required_bytes}, "
-                    f"ceiling={self.local_spool_ceiling_bytes}"
-                )
-            free_bytes = int(self._disk_usage(self.root).free)
-            requested_datasets = {item.dataset for item in plan}
-            drill_headroom_bytes = 0
-            if (
-                session_date in QUALIFICATION_SESSION_DATES
-                and requested_datasets == QUALIFICATION_TICK_DATASETS
-            ):
-                drill_headroom_bytes = max(item.content_length for item in plan)
-            if (
-                free_bytes - required_bytes - drill_headroom_bytes
-                < self.minimum_free_bytes
-            ):
-                raise MassiveArchiveError(
-                    "disk guard blocked Massive download: "
-                    f"free={free_bytes}, download={required_bytes}, "
-                    f"drill_headroom={drill_headroom_bytes}, "
-                    f"reserve={self.minimum_free_bytes}"
+            if local_plan is None:
+                try:
+                    self.campaign_guard.assert_projected_bytes(plan)
+                except CampaignGuardError as exc:
+                    raise MassiveArchiveError(str(exc)) from exc
+                drill_headroom_bytes = 0
+                if (
+                    session_date in QUALIFICATION_SESSION_DATES
+                    and requested_datasets == QUALIFICATION_TICK_DATASETS
+                ):
+                    drill_headroom_bytes = max(item.content_length for item in plan)
+                assert_massive_local_capacity(
+                    root=self.root,
+                    artifacts=plan,
+                    minimum_free_bytes=self.minimum_free_bytes,
+                    per_session_abort_bytes=self.per_session_abort_bytes,
+                    local_spool_ceiling_bytes=self.local_spool_ceiling_bytes,
+                    drill_headroom_bytes=drill_headroom_bytes,
+                    disk_usage=self._disk_usage,
                 )
 
             archived_items: list[ArchivedArtifact] = []
@@ -220,15 +318,88 @@ class MassiveFlatFileArchive:
             self._atomic_json(manifest_path, manifest)
             return manifest_path
 
-    def _current_spool_bytes(self) -> int:
-        total = 0
-        for metadata_path in self.root.glob(
-            "provider=massive/dataset=*/session_date=*/source.csv.gz.metadata.json"
-        ):
-            source_path = metadata_path.with_name("source.csv.gz")
-            if source_path.exists():
-                total += source_path.stat().st_size
-        return total
+    def _assert_expected_local_artifacts(
+        self,
+        plan: Sequence[PlannedArtifact],
+    ) -> None:
+        """Recheck frozen local state under the archive lock before remote I/O."""
+        for item in plan:
+            try:
+                dataset = FlatFileDataset(item.dataset)
+                session_date = date.fromisoformat(item.session_date)
+            except (ValueError, TypeError) as exc:
+                raise MassiveArchiveError(
+                    "expected local plan contains an invalid artifact identity"
+                ) from exc
+            target = Path(item.local_path)
+            expected_target = self.local_path(dataset, session_date)
+            if target != expected_target:
+                raise MassiveArchiveError(
+                    "expected local plan contains a non-canonical path: "
+                    f"{target}"
+                )
+            metadata_path = self._artifact_metadata_path(target)
+            target_present = target.exists() or target.is_symlink()
+            metadata_present = metadata_path.exists() or metadata_path.is_symlink()
+            if target_present != metadata_present:
+                raise MassiveArchiveError(
+                    "local artifact and immutable metadata must coexist: "
+                    f"{target}"
+                )
+
+            source_sha256: str | None = None
+            if target_present:
+                if target.is_symlink() or not target.is_file():
+                    raise MassiveArchiveError(
+                        f"local artifact is not a regular non-symlink file: {target}"
+                    )
+                if metadata_path.is_symlink() or not metadata_path.is_file():
+                    raise MassiveArchiveError(
+                        "local artifact metadata is not a regular non-symlink file: "
+                        f"{metadata_path}"
+                    )
+                try:
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                    raise MassiveArchiveError(
+                        f"local artifact metadata is unreadable: {metadata_path}"
+                    ) from exc
+                if not isinstance(metadata, dict):
+                    raise MassiveArchiveError(
+                        f"local artifact metadata is malformed: {metadata_path}"
+                    )
+                expected_metadata = {
+                    "schema_version": self.manifest_version,
+                    "bucket": item.bucket,
+                    "object_key": item.object_key,
+                    "content_length": item.content_length,
+                    "remote_etag": item.remote_etag,
+                }
+                if any(
+                    metadata.get(key) != value
+                    for key, value in expected_metadata.items()
+                ):
+                    raise MassiveArchiveError(
+                        "local artifact metadata differs from the frozen plan: "
+                        f"{target}"
+                    )
+                if target.stat().st_size != item.content_length:
+                    raise MassiveArchiveError(
+                        f"local artifact size differs from the frozen plan: {target}"
+                    )
+                source_sha256 = self.sha256_file(target)
+                if metadata.get("sha256") != source_sha256:
+                    raise MassiveArchiveError(
+                        f"local artifact checksum mismatch: {target}"
+                    )
+
+            try:
+                self.campaign_guard.assert_existing_verified_event(
+                    item,
+                    source_sha256=source_sha256,
+                )
+            except CampaignGuardError as exc:
+                raise MassiveArchiveError(str(exc)) from exc
 
     def _download_one(self, item: PlannedArtifact, *, observed_at: datetime) -> ArchivedArtifact:
         target = Path(item.local_path)
@@ -349,10 +520,26 @@ class MassiveFlatFileArchive:
 
     def _quarantine_orphan_parts(self, observed_at: datetime) -> None:
         quarantine_root = self.root / "provider=massive" / "quarantine"
-        orphan_parts = tuple(
-            path for path in self.root.rglob("*.part")
-            if quarantine_root not in path.parents
+        orphan_parts = self._orphan_parts(quarantine_root)
+        for orphan in orphan_parts:
+            if orphan.is_symlink() or not orphan.is_file():
+                raise MassiveArchiveError(
+                    "orphan path is not a regular non-symlink file; refusing remote HEAD: "
+                    f"{orphan.relative_to(self.root)}"
+                )
+        observed = frozenset(
+            str(path.relative_to(self.root)) for path in orphan_parts
         )
+        if (
+            self._expected_orphan_parts is not None
+            and observed != self._expected_orphan_parts
+        ):
+            added = sorted(observed - self._expected_orphan_parts)
+            missing = sorted(self._expected_orphan_parts - observed)
+            raise MassiveArchiveError(
+                "orphan manifest changed after the write preflight; refusing remote HEAD: "
+                f"added={added}, missing={missing}"
+            )
         for orphan in orphan_parts:
             quarantine = self._quarantine_file(
                 orphan,
@@ -365,6 +552,23 @@ class MassiveFlatFileArchive:
                 "original_path": str(orphan),
                 "quarantined_at": observed_at.astimezone(timezone.utc).isoformat(),
             })
+        remaining = self._orphan_parts(quarantine_root)
+        if remaining:
+            raise MassiveArchiveError(
+                "orphan parts appeared while the archive lock was held; refusing remote HEAD: "
+                + ", ".join(
+                    sorted(str(path.relative_to(self.root)) for path in remaining)
+                )
+            )
+        if self._expected_orphan_parts is not None:
+            self._expected_orphan_parts = frozenset()
+
+    def _orphan_parts(self, quarantine_root: Path) -> tuple[Path, ...]:
+        return tuple(sorted(
+            path
+            for path in self.root.rglob("*.part")
+            if quarantine_root not in path.parents
+        ))
 
     def _quarantine_file(
         self,
@@ -385,7 +589,7 @@ class MassiveFlatFileArchive:
             / f"{suffix}-{uuid4().hex}-{source_name}"
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
-        os.link(source, destination)
+        os.link(source, destination, follow_symlinks=False)
         source.unlink()
         return destination
 
