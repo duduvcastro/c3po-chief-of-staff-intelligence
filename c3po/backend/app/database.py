@@ -3,7 +3,7 @@ import hashlib
 import logging
 import re
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -12,6 +12,7 @@ from uuid import uuid4
 from .config import Settings
 
 logger = logging.getLogger(__name__)
+LEGACY_SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
 
 
 class Database:
@@ -1646,18 +1647,26 @@ class Database:
         return cursor.rowcount == 1
 
     def create_session(self, payload: dict[str, Any]) -> None:
+        normalized = {
+            **payload,
+            "idle_timeout_seconds": int(
+                payload.get("idle_timeout_seconds", LEGACY_SESSION_IDLE_TIMEOUT_SECONDS)
+            ),
+        }
         if not self.database_url:
-            self._sessions[payload["token_hash"]] = payload.copy()
+            self._sessions[normalized["token_hash"]] = normalized.copy()
             return
         with self.connection() as connection:
             connection.execute(
                 """
                 INSERT INTO auth_sessions
-                    (id, email, token_hash, expires_at, created_at, last_seen_at, created_ip)
+                    (id, email, token_hash, expires_at, created_at, last_seen_at,
+                     created_ip, idle_timeout_seconds)
                 VALUES (%(id)s, %(email)s, %(token_hash)s, %(expires_at)s,
-                        %(created_at)s, %(last_seen_at)s, %(created_ip)s)
+                        %(created_at)s, %(last_seen_at)s, %(created_ip)s,
+                        %(idle_timeout_seconds)s)
                 """,
-                payload,
+                normalized,
             )
             connection.commit()
 
@@ -1666,36 +1675,112 @@ class Database:
         token_hash: str,
         now: datetime,
         *,
-        idle_cutoff: datetime,
+        owner_email: str,
+        owner_idle_timeout_seconds: int,
+        member_idle_timeout_seconds: int,
         touch_activity: bool = False,
     ) -> dict[str, Any] | None:
+        normalized_owner_email = owner_email.strip().lower()
         if not self.database_url:
             item = self._sessions.get(token_hash)
-            if not item or item["expires_at"] <= now or item.get("revoked_at"):
+            if not item or item.get("revoked_at"):
                 return None
-            if item["last_seen_at"] <= idle_cutoff:
+            if item["expires_at"] <= now:
                 item["revoked_at"] = now
                 return None
+            desired_idle_timeout = (
+                owner_idle_timeout_seconds
+                if str(item["email"]).strip().lower() == normalized_owner_email
+                else member_idle_timeout_seconds
+            )
+            stored_idle_timeout = int(
+                item.get("idle_timeout_seconds", LEGACY_SESSION_IDLE_TIMEOUT_SECONDS)
+            )
+            effective_idle_timeout = min(stored_idle_timeout, desired_idle_timeout)
+            if item["last_seen_at"] + timedelta(seconds=effective_idle_timeout) <= now:
+                item["revoked_at"] = now
+                return None
+            item["idle_timeout_seconds"] = desired_idle_timeout
             if touch_activity:
                 item["last_seen_at"] = now
             return item.copy()
         with self.connection() as connection:
+            connection.execute(
+                """
+                UPDATE auth_sessions
+                SET revoked_at = %s
+                WHERE token_hash = %s
+                  AND revoked_at IS NULL
+                  AND (
+                    expires_at <= %s
+                    OR last_seen_at + (
+                        LEAST(
+                            idle_timeout_seconds,
+                            CASE
+                                WHEN lower(btrim(email)) = %s THEN %s
+                                ELSE %s
+                            END
+                        ) * interval '1 second'
+                    ) <= %s
+                  )
+                """,
+                (
+                    now,
+                    token_hash,
+                    now,
+                    normalized_owner_email,
+                    owner_idle_timeout_seconds,
+                    member_idle_timeout_seconds,
+                    now,
+                ),
+            )
             row = connection.execute(
                 """
                 UPDATE auth_sessions
-                SET last_seen_at = CASE WHEN %s THEN %s ELSE last_seen_at END
+                SET last_seen_at = CASE WHEN %s THEN %s ELSE last_seen_at END,
+                    idle_timeout_seconds = CASE
+                        WHEN lower(btrim(email)) = %s THEN %s
+                        ELSE %s
+                    END
                 WHERE token_hash = %s
                   AND expires_at > %s
                   AND revoked_at IS NULL
-                  AND last_seen_at > %s
-                RETURNING id::text, email, expires_at, created_at, last_seen_at, created_ip
+                  AND last_seen_at + (
+                      LEAST(
+                          idle_timeout_seconds,
+                          CASE
+                              WHEN lower(btrim(email)) = %s THEN %s
+                              ELSE %s
+                          END
+                      ) * interval '1 second'
+                  ) > %s
+                RETURNING id::text, email, expires_at, created_at, last_seen_at,
+                          created_ip, idle_timeout_seconds
                 """,
-                (touch_activity, now, token_hash, now, idle_cutoff),
+                (
+                    touch_activity,
+                    now,
+                    normalized_owner_email,
+                    owner_idle_timeout_seconds,
+                    member_idle_timeout_seconds,
+                    token_hash,
+                    now,
+                    normalized_owner_email,
+                    owner_idle_timeout_seconds,
+                    member_idle_timeout_seconds,
+                    now,
+                ),
             ).fetchone()
             connection.commit()
         if not row:
             return None
-        return dict(zip(("id", "email", "expires_at", "created_at", "last_seen_at", "created_ip"), row))
+        return dict(zip(
+            (
+                "id", "email", "expires_at", "created_at", "last_seen_at",
+                "created_ip", "idle_timeout_seconds",
+            ),
+            row,
+        ))
 
     def revoke_session(self, token_hash: str, now: datetime) -> None:
         if not self.database_url:

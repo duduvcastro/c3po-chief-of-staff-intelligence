@@ -1,15 +1,20 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from app import main as app_main
 from app.auth import AuthService, AuthenticationError, RateLimitError
 from app.config import Settings
 from app.database import Database
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_login_code_email_uses_parser_friendly_plain_text(monkeypatch) -> None:
@@ -390,14 +395,14 @@ def test_allowlisted_member_receives_code_and_permissions_follow_session(monkeyp
     assert session["capabilities"] == ["read"]
 
 
-def test_member_session_expires_after_thirty_minutes_without_human_activity(monkeypatch) -> None:
+def test_member_session_expires_after_one_hour_without_human_activity(monkeypatch) -> None:
     settings = Settings(
         auth_required=True,
         auth_email="eu@eduardocastro.com.br",
         auth_secret="a-secure-test-secret-with-more-than-32-characters",
         auth_cookie_secure=False,
         auth_session_hours=24,
-        auth_member_idle_minutes=30,
+        auth_member_idle_minutes=60,
     )
     database = Database(settings)
     database.ensure_access_owner(settings.auth_email, ["command"])
@@ -421,9 +426,9 @@ def test_member_session_expires_after_thirty_minutes_without_human_activity(monk
     assert delivery is not None
     service.send_code_email(*delivery)
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
-    clock["now"] += timedelta(minutes=29)
+    clock["now"] += timedelta(minutes=59, seconds=59)
     assert service.authenticate(token) is not None
-    clock["now"] += timedelta(minutes=2)
+    clock["now"] += timedelta(seconds=1)
     assert service.authenticate(token) is None
 
 
@@ -434,7 +439,7 @@ def test_human_activity_renews_member_idle_window(monkeypatch) -> None:
         auth_secret="a-secure-test-secret-with-more-than-32-characters",
         auth_cookie_secure=False,
         auth_session_hours=24,
-        auth_member_idle_minutes=30,
+        auth_member_idle_minutes=60,
     )
     database = Database(settings)
     database.ensure_access_owner(settings.auth_email, ["command"])
@@ -458,15 +463,15 @@ def test_human_activity_renews_member_idle_window(monkeypatch) -> None:
     assert delivery is not None
     service.send_code_email(*delivery)
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
-    clock["now"] += timedelta(minutes=20)
+    clock["now"] += timedelta(minutes=50)
     assert service.authenticate(token, touch_activity=True) is not None
-    clock["now"] += timedelta(minutes=29)
+    clock["now"] += timedelta(minutes=59, seconds=59)
     assert service.authenticate(token) is not None
-    clock["now"] += timedelta(minutes=2)
+    clock["now"] += timedelta(seconds=1)
     assert service.authenticate(token) is None
 
 
-def test_owner_session_also_expires_after_thirty_minutes_of_inactivity(monkeypatch) -> None:
+def test_owner_session_expires_after_six_hours_of_inactivity(monkeypatch) -> None:
     settings = Settings(
         auth_required=True,
         auth_email="eu@eduardocastro.com.br",
@@ -474,7 +479,8 @@ def test_owner_session_also_expires_after_thirty_minutes_of_inactivity(monkeypat
         auth_cookie_secure=False,
         auth_session_hours=2,
         auth_owner_session_hours=24,
-        auth_member_idle_minutes=30,
+        auth_owner_idle_minutes=360,
+        auth_member_idle_minutes=60,
     )
     database = Database(settings)
     service = AuthService(settings, database)
@@ -488,9 +494,9 @@ def test_owner_session_also_expires_after_thirty_minutes_of_inactivity(monkeypat
     service.send_code_email(*delivery)
     token, expires_at, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
     assert expires_at == clock["now"] + timedelta(hours=24)
-    clock["now"] += timedelta(minutes=29)
+    clock["now"] += timedelta(hours=5, minutes=59, seconds=59)
     assert service.authenticate(token) is not None
-    clock["now"] += timedelta(minutes=2)
+    clock["now"] += timedelta(seconds=1)
     assert service.authenticate(token) is None
 
 
@@ -501,7 +507,8 @@ def test_human_activity_renews_owner_idle_window(monkeypatch) -> None:
         auth_secret="a-secure-test-secret-with-more-than-32-characters",
         auth_cookie_secure=False,
         auth_owner_session_hours=24,
-        auth_member_idle_minutes=30,
+        auth_owner_idle_minutes=360,
+        auth_member_idle_minutes=60,
     )
     database = Database(settings)
     service = AuthService(settings, database)
@@ -514,12 +521,131 @@ def test_human_activity_renews_owner_idle_window(monkeypatch) -> None:
     assert delivery is not None
     service.send_code_email(*delivery)
     token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
-    clock["now"] += timedelta(minutes=20)
+    clock["now"] += timedelta(hours=5)
     assert service.authenticate(token, touch_activity=True) is not None
-    clock["now"] += timedelta(minutes=29)
+    clock["now"] += timedelta(hours=5, minutes=59, seconds=59)
     assert service.authenticate(token) is not None
-    clock["now"] += timedelta(minutes=2)
+    clock["now"] += timedelta(seconds=1)
     assert service.authenticate(token) is None
+
+
+def test_extended_idle_window_is_bound_only_to_the_configured_owner_email(monkeypatch) -> None:
+    settings = Settings(
+        auth_required=True,
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+        auth_cookie_secure=False,
+        auth_owner_idle_minutes=360,
+        auth_member_idle_minutes=60,
+    )
+    database = Database(settings)
+    database.ensure_access_owner(settings.auth_email, ["command"])
+    database.upsert_access_user(
+        {
+            "email": "another-owner@example.com",
+            "display_name": "Another Owner",
+            "role": "owner",
+            "is_active": True,
+            "permissions": ["command"],
+            "created_by": settings.auth_email,
+        }
+    )
+    service = AuthService(settings, database)
+    monkeypatch.setattr("app.auth.secrets.randbelow", lambda _: 123456)
+
+    challenge_id, _, _, delivery = service.request_code(
+        "another-owner@example.com", "127.0.0.1"
+    )
+    assert delivery is not None
+    token, _, _ = service.verify_code(challenge_id, "123456", "127.0.0.1")
+
+    assert service.idle_timeout_seconds(" EU@EDUARDOCASTRO.COM.BR ") == 6 * 60 * 60
+    assert service.authenticate(token)["idle_timeout_seconds"] == 60 * 60
+
+
+def test_legacy_idle_session_is_upgraded_only_while_still_valid(monkeypatch) -> None:
+    settings = Settings(
+        auth_required=True,
+        auth_email="eu@eduardocastro.com.br",
+        auth_secret="a-secure-test-secret-with-more-than-32-characters",
+        auth_owner_idle_minutes=360,
+        auth_member_idle_minutes=60,
+    )
+    database = Database(settings)
+    database.ensure_access_owner(settings.auth_email, ["command"])
+    service = AuthService(settings, database)
+    created_at = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
+
+    active_token = "legacy-owner-active"
+    database.create_session(
+        {
+            "id": str(uuid4()),
+            "email": settings.auth_email,
+            "token_hash": service.session_hash(active_token),
+            "expires_at": created_at + timedelta(hours=24),
+            "created_at": created_at,
+            "last_seen_at": created_at,
+            "created_ip": "127.0.0.1",
+        }
+    )
+    clock = {"now": created_at + timedelta(minutes=29, seconds=59)}
+    monkeypatch.setattr(service, "now", lambda: clock["now"])
+
+    upgraded = service.authenticate(active_token)
+
+    assert upgraded is not None
+    assert upgraded["idle_timeout_seconds"] == 6 * 60 * 60
+
+    expired_token = "legacy-owner-expired"
+    database.create_session(
+        {
+            "id": str(uuid4()),
+            "email": settings.auth_email,
+            "token_hash": service.session_hash(expired_token),
+            "expires_at": created_at + timedelta(hours=24),
+            "created_at": created_at,
+            "last_seen_at": created_at,
+            "created_ip": "127.0.0.1",
+        }
+    )
+    clock["now"] = created_at + timedelta(minutes=30)
+
+    assert service.authenticate(expired_token) is None
+    assert database._sessions[service.session_hash(expired_token)]["revoked_at"] == clock["now"]
+
+
+def test_runtime_configuration_pins_the_requested_idle_windows() -> None:
+    assert Settings.model_fields["auth_owner_idle_minutes"].default == 360
+    assert Settings.model_fields["auth_member_idle_minutes"].default == 60
+
+    compose = yaml.safe_load((ROOT / "compose.yml").read_text(encoding="utf-8"))
+    environment = compose["services"]["api"]["environment"]
+
+    assert int(environment["C3PO_AUTH_OWNER_IDLE_MINUTES"]) == 360
+    assert int(environment["C3PO_AUTH_MEMBER_IDLE_MINUTES"]) == 60
+
+
+def test_idle_timeout_migration_is_reentrant_and_legacy_safe() -> None:
+    initial_schema = (ROOT / "db" / "001_initial.sql").read_text(encoding="utf-8")
+    migration = (ROOT / "db" / "043_auth_session_idle_policy.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "idle_timeout_seconds INTEGER NOT NULL DEFAULT 1800" in initial_schema
+    assert "ADD COLUMN IF NOT EXISTS idle_timeout_seconds" in migration
+    assert "INTEGER NOT NULL DEFAULT 1800" in migration
+    assert "CHECK (idle_timeout_seconds BETWEEN 60 AND 86400)" in migration
+    assert migration.count("ALTER TABLE auth_sessions") == 1
+    assert "DROP CONSTRAINT" not in migration
+
+
+def test_frontend_never_renews_after_the_local_idle_deadline() -> None:
+    frontend = (ROOT / "frontend" / "app" / "page.tsx").read_text(encoding="utf-8")
+
+    assert "let lastActivityAt = 0;" in frontend
+    assert "Date.now() - lastActivityAt >= idleTimeoutMs" in frontend
+    assert 'fetch(`${API_URL}/api/v1/auth/logout`' in frontend
+    assert "keepalive: true" in frontend
 
 
 def test_unknown_and_suspended_emails_never_receive_code(monkeypatch) -> None:
@@ -587,12 +713,41 @@ def test_member_permissions_are_enforced_by_api_middleware() -> None:
             admin = client.get("/api/v1/admin/access-users")
         assert session.status_code == 200
         assert session.json()["permissions"] == ["weather"]
+        assert session.json()["idle_timeout_seconds"] == 60 * 60
         assert finance.status_code == 403
         assert command.status_code == 403
         assert alerts.status_code == 403
         assert health.status_code == 403
         assert admin.status_code == 403
     finally:
+        app_main.settings.auth_required = previous_required
+
+
+def test_auth_session_reports_six_hour_idle_window_only_for_configured_owner() -> None:
+    token = "configured-owner-session-token"
+    now = datetime.now(timezone.utc)
+    app_main.database.create_session(
+        {
+            "id": str(uuid4()),
+            "email": app_main.settings.auth_email,
+            "token_hash": app_main.auth_service.session_hash(token),
+            "expires_at": now + timedelta(hours=24),
+            "created_at": now,
+            "last_seen_at": now,
+            "created_ip": "127.0.0.1",
+        }
+    )
+    previous_required = app_main.settings.auth_required
+    app_main.settings.auth_required = True
+    try:
+        with TestClient(app_main.app) as client:
+            client.cookies.set(app_main.SESSION_COOKIE, token)
+            session = client.get("/api/v1/auth/session")
+
+        assert session.status_code == 200
+        assert session.json()["idle_timeout_seconds"] == 6 * 60 * 60
+    finally:
+        app_main.auth_service.logout(token)
         app_main.settings.auth_required = previous_required
 
 
@@ -879,7 +1034,12 @@ def test_login_push_alert_identifies_only_the_user(monkeypatch) -> None:
     monkeypatch.setattr(
         app_main.auth_service,
         "authenticate",
-        lambda _token: {"email": "login-push@example.com", "display_name": "Dudu", "role": "owner"},
+        lambda _token: {
+            "email": "login-push@example.com",
+            "display_name": "Dudu",
+            "role": "owner",
+            "idle_timeout_seconds": 60 * 60,
+        },
     )
     monkeypatch.setattr(
         app_main.database,
