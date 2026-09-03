@@ -123,12 +123,13 @@ jobs:
             api sh -eu -c '
               test "$(id -u):$(id -g)" = "$EXPECTED_IDENTITY"
               test -w "$STUDY_OUTPUT"
-            '
+            ' </dev/null
 
           "${compose[@]}" run --rm -T --user "$host_identity" api \
             python -m app.r2d2_chandelier_probe \
             --output "$CONTAINER_OUTPUT/probes-a-b.json" \
-            --query-output "$CONTAINER_OUTPUT/query.sql"
+            --query-output "$CONTAINER_OUTPUT/query.sql" \
+            </dev/null
 
           "${compose[@]}" run --rm -T --user "$host_identity" \
             -v "$frozen_tmp:/frozen:ro" \
@@ -136,7 +137,8 @@ jobs:
             api python /app/app/r2d2_candidate_f_backtest.py \
             --data-root /app/day-d-data \
             --frozen-source-sha256 "$frozen_source_sha256" \
-            --output "$CONTAINER_OUTPUT/backtest-e-f.json"
+            --output "$CONTAINER_OUTPUT/backtest-e-f.json" \
+            </dev/null
 
           python3 - "$HOST_OUTPUT" <<'PY'
           import hashlib
