@@ -38,30 +38,35 @@ def report_sha256(report: dict[str, Any]) -> str:
 def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any]) -> dict[str, Any]:
     counts = {severity: 0 for severity in SEVERITIES}
     fix_available = {severity: 0 for severity in SEVERITIES}
+    fixable_findings: list[dict[str, str]] = []
     fixable_high_critical: list[dict[str, str]] = []
     unfixed_high_critical: list[dict[str, str]] = []
     unknown = 0
     for result in payload.get("Results") or []:
         for vulnerability in result.get("Vulnerabilities") or []:
-            severity = str(vulnerability.get("Severity") or "unknown").lower()
+            severity = str(vulnerability.get("Severity") or "unknown").strip().lower()
             fixed_version = str(vulnerability.get("FixedVersion") or "").strip()
             if severity in counts:
                 counts[severity] += 1
                 if fixed_version:
                     fix_available[severity] += 1
+                    finding = {
+                        "vulnerability_id": str(
+                            vulnerability.get("VulnerabilityID") or "unknown"
+                        ).strip(),
+                        "severity": severity,
+                        "package": str(
+                            vulnerability.get("PkgName") or "unknown"
+                        ).strip(),
+                        "installed_version": str(
+                            vulnerability.get("InstalledVersion") or "unknown"
+                        ).strip(),
+                        "fixed_version": fixed_version,
+                        "target": str(result.get("Target") or "unknown").strip(),
+                    }
+                    fixable_findings.append(finding)
                     if severity in {"critical", "high"}:
-                        fixable_high_critical.append({
-                            "vulnerability_id": str(
-                                vulnerability.get("VulnerabilityID") or "unknown"
-                            ),
-                            "severity": severity,
-                            "package": str(vulnerability.get("PkgName") or "unknown"),
-                            "installed_version": str(
-                                vulnerability.get("InstalledVersion") or "unknown"
-                            ),
-                            "fixed_version": fixed_version,
-                            "target": str(result.get("Target") or "unknown"),
-                        })
+                        fixable_high_critical.append(finding)
                 elif severity in {"critical", "high"}:
                     unfixed_high_critical.append({
                         "vulnerability_id": str(vulnerability.get("VulnerabilityID") or "unknown"),
@@ -81,10 +86,19 @@ def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any])
         "repo_digests": sorted(str(item) for item in metadata.get("RepoDigests") or []),
         "by_severity": counts,
         "fix_available": fix_available,
+        "fixable_findings": sorted(
+            fixable_findings,
+            key=lambda finding: (
+                SEVERITIES.index(finding["severity"]),
+                finding["vulnerability_id"],
+                finding["package"],
+                finding["target"],
+            ),
+        ),
         "fixable_high_critical": sorted(
             fixable_high_critical,
             key=lambda finding: (
-                finding["severity"],
+                SEVERITIES.index(finding["severity"]),
                 finding["vulnerability_id"],
                 finding["package"],
                 finding["target"],

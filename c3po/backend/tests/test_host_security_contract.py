@@ -123,6 +123,20 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
                     "PkgName": "high-lib",
                     "InstalledVersion": "2.0",
                 },
+                {
+                    "VulnerabilityID": "CVE-TEST-MEDIUM",
+                    "Severity": "MEDIUM",
+                    "FixedVersion": "5.0",
+                    "PkgName": "medium-lib",
+                    "InstalledVersion": "4.0",
+                },
+                {
+                    "VulnerabilityID": "CVE-TEST-LOW",
+                    "Severity": "LOW",
+                    "FixedVersion": "7.0",
+                    "PkgName": "low-lib",
+                    "InstalledVersion": "6.0",
+                },
                 {"Severity": "MEDIUM", "FixedVersion": ""},
                 {"Severity": "UNKNOWN", "FixedVersion": ""},
             ],
@@ -131,8 +145,42 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
 
     image = scanner.normalize_trivy_payload("backend", "c3po/backend:production", payload)
 
-    assert image["by_severity"] == {"critical": 1, "high": 2, "medium": 1, "low": 0}
-    assert image["fix_available"] == {"critical": 1, "high": 1, "medium": 0, "low": 0}
+    assert image["by_severity"] == {"critical": 1, "high": 2, "medium": 2, "low": 1}
+    assert image["fix_available"] == {"critical": 1, "high": 1, "medium": 1, "low": 1}
+    assert image["fixable_findings"] == [
+        {
+            "vulnerability_id": "CVE-TEST-CRITICAL",
+            "severity": "critical",
+            "package": "critical-lib",
+            "installed_version": "1.0",
+            "fixed_version": "2.0",
+            "target": "unknown",
+        },
+        {
+            "vulnerability_id": "CVE-TEST-HIGH",
+            "severity": "high",
+            "package": "high-lib",
+            "installed_version": "2.0",
+            "fixed_version": "3.0",
+            "target": "unknown",
+        },
+        {
+            "vulnerability_id": "CVE-TEST-MEDIUM",
+            "severity": "medium",
+            "package": "medium-lib",
+            "installed_version": "4.0",
+            "fixed_version": "5.0",
+            "target": "unknown",
+        },
+        {
+            "vulnerability_id": "CVE-TEST-LOW",
+            "severity": "low",
+            "package": "low-lib",
+            "installed_version": "6.0",
+            "fixed_version": "7.0",
+            "target": "unknown",
+        },
+    ]
     assert image["fixable_high_critical"] == [
         {
             "vulnerability_id": "CVE-TEST-CRITICAL",
@@ -159,7 +207,7 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
         "target": "unknown",
     }]
     assert image["unknown"] == 1
-    assert image["finding_total"] == 5
+    assert image["finding_total"] == 7
     assert scanner.TRIVY_IMAGE == (
         "aquasec/trivy@sha256:"
         "62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969"
@@ -215,6 +263,10 @@ def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
         "gh pr create"
     )
     assert "steps.remediation.outputs.lane_prefix" in controller_source
+    assert "FIXABLE_MEDIUM: ${{ steps.remediation.outputs.medium }}" in daily
+    assert "FIXABLE_LOW: ${{ steps.remediation.outputs.low }}" in daily
+    assert "Remediate $FIXABLE_CRITICAL critical, $FIXABLE_HIGH high, $FIXABLE_MEDIUM medium and $FIXABLE_LOW low" in daily
+    assert daily.count("gh pr create") == 1
     assert controller_source.count("c3po_dispatch_remediation.sh") == 2
     assert remediation_dispatch.count("gh workflow run c3po-pipeline.yml") == 1
     assert "deploy=false" in remediation_dispatch
@@ -368,7 +420,7 @@ def test_positive_controller_dry_run_is_manual_isolated_and_two_phase() -> None:
     assert '"fixture_id": "container-remediation-positive-v1"' in fixture
     assert '"high": 1' in fixture
     assert "Supervised positive controller dry-run" in runbook
-    assert "real** fixable Critical/High finding" in runbook
+    assert "real** fixable finding" in runbook
     assert "Never weaken or bypass `verify-zero`" in runbook
 
 
@@ -381,6 +433,8 @@ def test_automated_remediation_validation_never_deploys_before_approval() -> Non
     assert dispatch["remediation"]["default"] is False
     assert "inputs.deploy" in parsed["jobs"]["deploy-production"]["if"]
     assert "c3po_container_remediation.py verify-zero" in pipeline
+    assert "Require zero fixable findings in automated remediation" in pipeline
+    assert "Require zero fixable findings across all severities" in pipeline
     assert "automation/container-security-rebuild-" in pipeline
     assert "automation/controller-positive-dry-run-" in pipeline
     assert pipeline.count("C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD") == 6

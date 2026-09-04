@@ -227,9 +227,10 @@ weekly checkpoint. After a remediation deployment, operators dispatch this
 workflow immediately instead of waiting for either scheduled execution.
 
 After each successful scan, a second GitHub-hosted job validates the report
-self-hash, scope, dead-man, detailed `FixedVersion` evidence and aggregate
-counts. If Critical or High fixes exist and no remediation lane is already
-open, it creates `automation/container-security-rebuild-<report hash>`, changes
+self-hash, scope, dead-man, detailed `FixedVersion` evidence for every declared
+severity and aggregate counts. If any Critical, High, Medium or Low fix exists
+and no remediation lane is already open, it creates
+`automation/container-security-rebuild-<report hash>`, changes
 the tracked rebuild token, opens one PR and dispatches the five validation gates
 with `deploy=false`. The job is intentionally isolated from the production
 environment and has no SSH key; conversely, the scan job cannot write to the
@@ -239,7 +240,8 @@ controller updates its rebuild token, appends the evidence and re-dispatches
 validation in that same lane instead of opening another.
 
 The generated PR is a work queue, not an approval. It blocks while any fixable
-Critical/High remains in its image scan, never auto-merges and never deploys.
+Critical, High, Medium or Low finding remains in its image scan, never
+auto-merges and never deploys.
 Codex adjusts packages or base digests when a plain rebuild is insufficient;
 Fable performs the independent audit; Dudu only receives the final merge
 authorization request. The dead-man succeeds only after both scan and remote
@@ -271,8 +273,9 @@ Run the exercise in two supervised phases, outside an active production scan:
    merging after preserving its run URLs and artifact hashes.
 
 If `verify-zero` is red during phase 2, stop the exercise. That result means the
-freshly built images contain a **real** fixable Critical/High finding; it is not
-a harness defect and must enter the normal Codex/Fable/Dudu remediation path.
+freshly built images contain a **real** fixable finding in a declared severity;
+it is not a harness defect and must enter the normal Codex/Fable/Dudu
+remediation path.
 Never weaken or bypass `verify-zero` to make the dry-run green.
 
 Both scheduled layers carry their own dead-man evidence. The apt service sends

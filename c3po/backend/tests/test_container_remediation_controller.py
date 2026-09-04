@@ -37,26 +37,31 @@ def _modules() -> tuple[ModuleType, ModuleType]:
     return scanner, controller
 
 
-def _report(scanner: ModuleType, *, critical: int = 1, high: int = 1) -> dict[str, Any]:
+def _report(
+    scanner: ModuleType,
+    *,
+    critical: int = 1,
+    high: int = 1,
+    medium: int = 0,
+    low: int = 0,
+) -> dict[str, Any]:
     findings = []
-    for index in range(critical):
-        findings.append({
-            "vulnerability_id": f"CVE-CRITICAL-{index}",
-            "severity": "critical",
-            "package": "critical-lib",
-            "installed_version": "1.0",
-            "fixed_version": "2.0",
-            "target": "debian",
-        })
-    for index in range(high):
-        findings.append({
-            "vulnerability_id": f"CVE-HIGH-{index}",
-            "severity": "high",
-            "package": "high-lib",
-            "installed_version": "3.0",
-            "fixed_version": "4.0",
-            "target": "debian",
-        })
+    counts = {
+        "critical": critical,
+        "high": high,
+        "medium": medium,
+        "low": low,
+    }
+    for severity, count in counts.items():
+        for index in range(count):
+            findings.append({
+                "vulnerability_id": f"CVE-{severity.upper()}-{index}",
+                "severity": severity,
+                "package": f"{severity}-lib",
+                "installed_version": "1.0",
+                "fixed_version": "2.0",
+                "target": "debian",
+            })
     report = {
         "schema": scanner.SCHEMA,
         "generated_at": "2026-08-30T22:00:00+00:00",
@@ -67,12 +72,18 @@ def _report(scanner: ModuleType, *, critical: int = 1, high: int = 1) -> dict[st
         "scanner": {"name": "Trivy"},
         "images": [{
             "label": "backend",
-            "fixable_high_critical": findings,
+            "fix_available": dict(counts),
+            "fixable_findings": [dict(finding) for finding in findings],
+            "fixable_high_critical": [
+                dict(finding)
+                for finding in findings
+                if finding["severity"] in {"critical", "high"}
+            ],
         }],
-        "by_severity": {"critical": critical, "high": high, "medium": 0, "low": 0},
-        "fix_available": {"critical": critical, "high": high, "medium": 0, "low": 0},
+        "by_severity": dict(counts),
+        "fix_available": dict(counts),
         "unknown": 0,
-        "finding_total": critical + high,
+        "finding_total": sum(counts.values()),
         "errors": [],
     }
     report["report_sha256"] = scanner.report_sha256(report)
@@ -81,7 +92,7 @@ def _report(scanner: ModuleType, *, critical: int = 1, high: int = 1) -> dict[st
 
 def test_controller_builds_a_deduplicable_trigger_and_actionable_pr_body() -> None:
     scanner, controller = _modules()
-    report = _report(scanner)
+    report = _report(scanner, medium=1, low=1)
 
     counts, findings = controller.validate_report(report)
     trigger = controller.build_trigger(
@@ -94,16 +105,49 @@ def test_controller_builds_a_deduplicable_trigger_and_actionable_pr_body() -> No
     body = controller.render_pr_body(trigger)
 
     assert trigger["schema"] == controller.TRIGGER_SCHEMA
-    assert trigger["finding_total"] == 2
+    assert trigger["finding_total"] == 4
     assert len(trigger["remediation_key"]) == 64
     assert trigger["report_sha256"] == report["report_sha256"]
     assert controller.PR_MARKER in body
     assert "CVE-CRITICAL-0" in body
     assert "CVE-HIGH-0" in body
+    assert "CVE-MEDIUM-0" in body
+    assert "CVE-LOW-0" in body
+    assert "Medium fixável: **1**" in body
+    assert "Low fixável: **1**" in body
     assert trigger["remediation_key"] in body
     assert "Não há auto-merge" in body
     assert "Fable audita" in body
     assert "Dudu autoriza" in body
+
+
+def test_medium_and_low_findings_change_the_shared_lane_deduplication_key() -> None:
+    scanner, controller = _modules()
+    prefixes = set()
+    keys = set()
+    for severity in ("high", "medium", "low"):
+        requested = {name: 0 for name in scanner.SEVERITIES}
+        requested[severity] = 1
+        report = _report(
+            scanner,
+            critical=requested["critical"],
+            high=requested["high"],
+            medium=requested["medium"],
+            low=requested["low"],
+        )
+        counts, findings = controller.validate_report(report)
+        trigger = controller.build_trigger(
+            report,
+            counts=counts,
+            findings=findings,
+            run_url="https://github.com/duduvcastro/c3po/actions/runs/123",
+            artifact_name="c3po-production-container-vulnerabilities-123",
+        )
+        prefixes.add(controller.PRODUCTION_LANE_PREFIX)
+        keys.add(trigger["remediation_key"])
+
+    assert prefixes == {"automation/container-security-rebuild-"}
+    assert len(keys) == 3
 
 
 def test_controller_accepts_a_zero_fixable_report_without_opening_work() -> None:
@@ -112,17 +156,26 @@ def test_controller_accepts_a_zero_fixable_report_without_opening_work() -> None
 
     counts, findings = controller.validate_report(report)
 
-    assert counts == {"critical": 0, "high": 0}
+    assert counts == {"critical": 0, "high": 0, "medium": 0, "low": 0}
     assert findings == []
 
 
-@pytest.mark.parametrize("required", [False, True])
+@pytest.mark.parametrize("severity", [None, "critical", "high", "medium", "low"])
 def test_plan_emits_machine_outputs_and_only_writes_work_when_required(
     tmp_path: Path,
-    required: bool,
+    severity: str | None,
 ) -> None:
     scanner, controller = _modules()
-    report = _report(scanner, critical=int(required), high=0)
+    requested = {name: 0 for name in scanner.SEVERITIES}
+    if severity is not None:
+        requested[severity] = 1
+    report = _report(
+        scanner,
+        critical=requested["critical"],
+        high=requested["high"],
+        medium=requested["medium"],
+        low=requested["low"],
+    )
     report_path = tmp_path / "report.json"
     trigger_path = tmp_path / "trigger.json"
     body_path = tmp_path / "body.md"
@@ -143,8 +196,10 @@ def test_plan_emits_machine_outputs_and_only_writes_work_when_required(
         for line in output_path.read_text(encoding="utf-8").splitlines()
     )
     assert result == 0
+    required = severity is not None
     assert outputs["required"] == str(required).lower()
-    assert outputs["critical"] == str(int(required))
+    for name in scanner.SEVERITIES:
+        assert outputs[name] == str(requested[name])
     assert bool(outputs["remediation_key"]) is required
     assert outputs["lane_prefix"] == controller.PRODUCTION_LANE_PREFIX
     assert outputs["dry_run"] == "false"
@@ -161,7 +216,7 @@ def test_positive_dry_run_fixture_is_sealed_scoped_and_actionable(tmp_path: Path
         report,
     )
 
-    assert counts == {"critical": 0, "high": 1}
+    assert counts == {"critical": 0, "high": 1, "medium": 0, "low": 0}
     assert findings[0]["vulnerability_id"] == "C3PO-DRY-RUN-FIXABLE-001"
     trigger_path = tmp_path / "trigger.json"
     body_path = tmp_path / "body.md"
@@ -217,7 +272,9 @@ def test_positive_dry_run_fixture_rejects_tampering_and_production_scope(
         controller.validate_positive_dry_run_fixture(production_path, production_report)
 
 
-def test_zero_gate_accepts_pull_request_scope_without_a_dead_man() -> None:
+def test_zero_gate_accepts_pull_request_scope_without_a_dead_man(
+    tmp_path: Path,
+) -> None:
     scanner, controller = _modules()
     report = _report(scanner, critical=0, high=0)
     report["scope"] = "pull_request_build"
@@ -230,8 +287,37 @@ def test_zero_gate_accepts_pull_request_scope_without_a_dead_man() -> None:
         require_dead_man=False,
     )
 
-    assert counts == {"critical": 0, "high": 0}
+    assert counts == {"critical": 0, "high": 0, "medium": 0, "low": 0}
     assert findings == []
+
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    assert controller.verify_zero(Namespace(report=report_path)) == 0
+
+
+@pytest.mark.parametrize("severity", ["critical", "high", "medium", "low"])
+def test_zero_gate_rejects_every_fixable_severity(
+    tmp_path: Path,
+    severity: str,
+) -> None:
+    scanner, controller = _modules()
+    requested = {name: 0 for name in scanner.SEVERITIES}
+    requested[severity] = 1
+    report = _report(
+        scanner,
+        critical=requested["critical"],
+        high=requested["high"],
+        medium=requested["medium"],
+        low=requested["low"],
+    )
+    report["scope"] = "pull_request_build"
+    report["dead_man_configured"] = False
+    report["report_sha256"] = scanner.report_sha256(report)
+    report_path = tmp_path / f"{severity}.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    with pytest.raises(controller.ReportValidationError, match="fixable findings"):
+        controller.verify_zero(Namespace(report=report_path))
 
 
 @pytest.mark.parametrize("dispatch_succeeds", [False, True])
@@ -354,8 +440,16 @@ def test_dispatch_helper_accepts_only_the_real_and_dry_run_lane_prefixes() -> No
         (lambda report: report.update({"scope": "pull_request_build"}), "production_runtime"),
         (lambda report: report.update({"dead_man_configured": False}), "dead-man"),
         (
-            lambda report: report["images"][0].update({"fixable_high_critical": []}),
+            lambda report: report["images"][0].update({"fixable_findings": []}),
             "detail/count mismatch",
+        ),
+        (
+            lambda report: report["images"][0].update({"fixable_high_critical": []}),
+            "projection mismatch",
+        ),
+        (
+            lambda report: report["fix_available"].update({"medium": 1}),
+            "top-level/image fixable count mismatch",
         ),
     ],
 )
