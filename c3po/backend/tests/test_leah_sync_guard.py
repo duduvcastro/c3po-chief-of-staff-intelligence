@@ -463,3 +463,95 @@ def test_success_that_lands_after_the_deadline_is_never_delivered_to_its_caller(
     state = guard._state("device-1")
     assert state.cooldown_until is None  # ...and it clears the cooldown per contract
     assert guard.run("device-1", dict(payload), lambda: "unused") == "too-late"  # reusable via dedupe
+
+
+class _HookedLock:
+    """Lock that runs a hook the first time the guard's timeout handler enters it."""
+
+    def __init__(self, hook) -> None:  # noqa: ANN001
+        self._lock = threading.Lock()
+        self._hook = hook
+        self._fired = False
+
+    def __enter__(self):
+        self._lock.acquire()
+        # Fire only when the handler enters the lock in the TIMEOUT path (a flight exists
+        # and is still pending) — earlier entries (dedupe/cooldown reads) are ignored.
+        if (
+            not self._fired
+            and threading.current_thread() is threading.main_thread()
+            and self._hook.futures  # type: ignore[attr-defined]
+            and not self._hook.futures[-1].done()  # type: ignore[attr-defined]
+        ):
+            self._fired = True
+            self._hook()
+        return self
+
+    def __exit__(self, *exc):  # noqa: ANN002
+        self._lock.release()
+        return False
+
+
+def test_completion_between_check_and_cooldown_mutation_leaves_no_residual_cooldown() -> None:
+    import time as _time
+
+    clock = FakeClock()
+    guard = LeahSyncGuard(dedupe_window_seconds=0.0, deadline_seconds=0.05, cooldown_seconds=30.0, clock=clock)
+    manual = _ManualExecutor()
+    guard._executor = manual  # type: ignore[assignment]
+    state = guard._state("device-1")
+    completer_started = threading.Event()
+
+    class _Completer:
+        def __init__(self, executor) -> None:  # noqa: ANN001
+            self.futures = executor.futures
+
+        def __call__(self) -> None:
+            complete_late_from_another_thread()
+
+    def complete_late_from_another_thread() -> None:
+        # Fires while the timeout handler HOLDS result_lock: the late completion's _publish
+        # (run by this helper thread) must queue behind the lock and clear the cooldown last.
+        future = manual.futures[-1]
+
+        def completer() -> None:
+            completer_started.set()
+            clock.now += 1.0
+            future.set_result("late-success")  # runs the done-callback -> _publish (blocks on the lock)
+
+        threading.Thread(target=completer, daemon=True).start()
+        assert completer_started.wait(timeout=5)
+        _time.sleep(0.05)  # give the helper time to reach the lock before the handler releases it
+
+    state.result_lock = _HookedLock(_Completer(manual))  # type: ignore[assignment]
+    original_result = Future.result
+
+    def timing_out_result(self, timeout=None):  # noqa: ANN001
+        if getattr(self, "_c3po_timeout_once", False):
+            self._c3po_timeout_once = False
+            raise FutureTimeout()
+        return original_result(self, timeout)
+
+    Future.result = timing_out_result  # type: ignore[method-assign]
+    try:
+        manual_submit = manual.submit
+
+        def submit_flagged(fn, *args, **kwargs):  # noqa: ANN001
+            future = manual_submit(fn, *args, **kwargs)
+            future._c3po_timeout_once = True  # type: ignore[attr-defined]
+            return future
+
+        manual.submit = submit_flagged  # type: ignore[method-assign]
+        with pytest.raises(LeahSyncTimeout):
+            guard.run("device-1", {"items": [{"id": "race"}]}, lambda: "unused")
+    finally:
+        Future.result = original_result  # type: ignore[method-assign]
+    for _ in range(200):
+        if guard.counters.late_completions == 1:
+            break
+        _time.sleep(0.01)
+    assert guard.counters.timeouts == 1
+    assert guard.counters.executed == 1
+    assert guard.counters.late_completions == 1
+    assert state.cooldown_until is None  # the late publication cleared it LAST
+    assert state.cooldown_fingerprint is None

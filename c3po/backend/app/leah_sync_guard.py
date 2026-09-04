@@ -217,20 +217,24 @@ class LeahSyncGuard:
             try:
                 result = future.result(timeout=remaining)
             except FutureTimeout:
-                settled = future.done() and not future.cancelled() and future.exception() is None
+                # ONE transition under result_lock: observe the flight state and, only if it
+                # has not settled, install the cooldown. A completion that lands after this
+                # observation finds its _publish queued behind the lock and clears the
+                # cooldown LAST (Codex reaudit: no residual cooldown after a late success).
+                with state.result_lock:
+                    settled = future.done() and not future.cancelled() and future.exception() is None
+                    if not settled:
+                        state.cooldown_fingerprint = fingerprint
+                        state.cooldown_until = self._clock() + self.cooldown_seconds
                 if settled:
                     # Record the flight's real completion instant (idempotent) and decide by
                     # the flight's own clock: only a completion at or before the deadline may
                     # be delivered. A later one is a hard-deadline miss for THIS caller (504),
-                    # while its publication stays accounted and reusable (Codex reaudit, P1).
+                    # while its publication stays accounted and reusable.
                     self._publish(state, fingerprint, started, future)
                     completed_at = float(getattr(future, "_c3po_completed_at", float("inf")))
                     if completed_at <= deadline_at:
                         return future.result()
-                else:
-                    with state.result_lock:
-                        state.cooldown_fingerprint = fingerprint
-                        state.cooldown_until = self._clock() + self.cooldown_seconds
                 self._count("timeouts")
                 if future.cancel():
                     # Still queued: it never ran and never will (Codex reaudit, P1-1).
