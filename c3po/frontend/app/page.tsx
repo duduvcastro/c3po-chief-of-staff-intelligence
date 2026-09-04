@@ -979,7 +979,11 @@ interface FalconSeed {
   r2d2: R2D2DashboardData | null;
   indices: LiveMarketItem[];
   health: SystemHealthData | null;
+  /** performance-independent wall clock of the aggregate that produced this seed. */
+  seededAt: number;
 }
+
+const FALCON_SEED_MAX_AGE_MS = 15_000;
 
 function mergeFalconIndices(indexPayload: LiveMarketIndexResponse | null, marketPayload: LiveMarketsResponse | null): LiveMarketItem[] {
   if (!indexPayload) return [];
@@ -3184,7 +3188,8 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
         setCommandSeed({
           r2d2: sections?.r2d2 ?? null,
           indices: mergeFalconIndices(sections?.markets_index ?? null, sections?.markets_live ?? null),
-          health: sections?.system_health ?? null
+          health: sections?.system_health ?? null,
+          seededAt: Date.now()
         });
         if (!sections?.alerts && !sections?.navigation_indicators) await refreshNotificationState();
         return;
@@ -3430,6 +3435,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
               portfolio={data?.portfolio ?? []}
               marketProviders={marketProviders}
               systemHealth={systemHealth}
+              commandSeed={commandSeed}
               systemHealthCheckedAt={systemHealthCheckedAt}
               systemHealthRefreshError={systemHealthRefreshError}
               onSystemHealthRefresh={refreshSystemHealth}
@@ -3456,6 +3462,7 @@ function ViewRouter({
   portfolio,
   marketProviders,
   systemHealth,
+  commandSeed,
   systemHealthCheckedAt,
   systemHealthRefreshError,
   onSystemHealthRefresh,
@@ -3470,6 +3477,7 @@ function ViewRouter({
   reports: ReportItem[];
   portfolio: PortfolioItem[];
   marketProviders: MarketDataProvider[];
+  commandSeed: FalconSeed | null;
   systemHealth: SystemHealthData | null;
   systemHealthCheckedAt: string | null;
   systemHealthRefreshError: string;
@@ -4653,9 +4661,10 @@ function MillenniumFalconView({ systemHealth, seed = null }: { systemHealth: Sys
   }, []);
 
   const falconMarketOpen = r2d2?.market_session_open ?? null;
-  usePanelPolling(loadR2D2, { openMs: 2_000, marketOpen: falconMarketOpen, initialLoad: !seed?.r2d2 });
-  usePanelPolling(loadIndices, { openMs: 10_000, marketOpen: falconMarketOpen, initialLoad: !seed?.indices.length });
-  usePanelPolling(loadHealth, { openMs: 60_000, marketOpen: falconMarketOpen, initialLoad: !seed?.health });
+  const seedFresh = Boolean(seed) && Date.now() - (seed?.seededAt ?? 0) < FALCON_SEED_MAX_AGE_MS;
+  usePanelPolling(loadR2D2, { openMs: 2_000, marketOpen: falconMarketOpen, initialLoad: !(seedFresh && seed?.r2d2) });
+  usePanelPolling(loadIndices, { openMs: 10_000, marketOpen: falconMarketOpen, initialLoad: !(seedFresh && seed?.indices.length) });
+  usePanelPolling(loadHealth, { openMs: 60_000, marketOpen: falconMarketOpen, initialLoad: !(seedFresh && seed?.health) });
 
   useEffect(() => {
     if (!systemHealth) return;

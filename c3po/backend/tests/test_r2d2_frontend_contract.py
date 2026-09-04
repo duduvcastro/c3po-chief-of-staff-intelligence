@@ -111,9 +111,12 @@ def test_command_center_opening_uses_one_aggregated_request_and_seeds_the_falcon
     assert "if (!sections?.alerts && !sections?.navigation_indicators) await refreshNotificationState();" in shell
     assert "<MillenniumFalconView systemHealth={systemHealth} seed={commandSeed} />" in shell
     assert "useState<R2D2DashboardData | null>(seed?.r2d2 ?? null)" in falcon
-    assert "initialLoad: !seed?.r2d2" in falcon
-    assert "initialLoad: !seed?.indices.length" in falcon
-    assert "initialLoad: !seed?.health" in falcon
+    assert "const seedFresh = Boolean(seed) && Date.now() - (seed?.seededAt ?? 0) < FALCON_SEED_MAX_AGE_MS;" in falcon
+    assert "initialLoad: !(seedFresh && seed?.r2d2)" in falcon
+    assert "initialLoad: !(seedFresh && seed?.indices.length)" in falcon
+    assert "initialLoad: !(seedFresh && seed?.health)" in falcon
+    assert "commandSeed={commandSeed}" in shell
+    assert "const FALCON_SEED_MAX_AGE_MS = 15_000;" in source
     assert "initialLoad = true }: PanelPollingOptions" in hook
     assert "const hasLoadedRef = useRef(!initialLoad);" in hook
     assert "function mergeFalconIndices(" in source
