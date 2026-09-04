@@ -71,10 +71,16 @@ duração p95 dos ciclos < 30 s, sem regressão funcional ou aumento de erros.
 - As seções rodam **em paralelo** (pool dedicado), chamando os serviços diretamente —
   **nenhuma chamada HTTP interna ao próprio backend**. Uma fonte indisponível fica `null`
   com `section_status[nome] = {status: "error", error}`; o card nunca vira 502 por isso.
-- Permissão por seção espelha o frontend (`alerts` exige `alerts`; indicadores exigem
-  `relations|intelligence`; `reports` exige `command|candidates`; provedores exigem
-  `markets|realtime|candidates|health`; R2D2/mercados exigem `command`); sem permissão a
-  seção é `skipped`.
+- Permissão por seção = a MESMA regra canônica da rota espelhada
+  (`access_control.required_permissions`): R2D2 exige `r2d2`, mercados exigem `markets`,
+  etc. O agregado jamais entrega o que a rota direta recusaria; sem permissão → `skipped`.
+- Deadline compartilhado do leque (`command_center_section_timeout_seconds`, 8 s): fonte
+  pendurada vira `{status: error, error: timeout}` e nunca segura a resposta.
+- Erros são **redigidos**: cliente e log recebem só o nome da classe da exceção.
+- Chave de cache canônica (seções ordenadas) e **limitada** (`command_center_cache_max_entries`,
+  256; expirados expurgados primeiro, depois os de vencimento mais próximo).
+- O agregado **renova a janela de inatividade** no servidor (abrir o app é atividade humana);
+  o mount do frontend não dispara heartbeat imediato.
 - Cache server-side de **10 s** (`command_center_cache_seconds`), single-flight, **segregado
   por usuário e conjunto de permissões** (chave = e-mail + permissões + seções pedidas).
   A seção `r2d2` reutiliza o cache da PR B.
@@ -83,7 +89,10 @@ duração p95 dos ciclos < 30 s, sem regressão funcional ou aumento de erros.
   Millennium Falcon (R2D2, índices, saúde), que só volta a consultar a API no seu próximo
   ciclo de polling (`initialLoad: false`). Conteúdo e estados atuais preservados.
 - **Contrato de abertura**: no máximo **quatro** chamadas — `auth/session`, o agregado,
-  `r2d2/live-positions` e o POST de telemetria de page-load. Heartbeat e `navigation-seen`
-  só disparam por atividade/navegação posterior.
+  `r2d2/live-positions` e o POST de telemetria de page-load. O heartbeat só dispara por
+  atividade real posterior (o primeiro fica para o intervalo regular); `navigation-seen`
+  só por navegação. Limite honesto: sem harness JS no repo, a contagem é pinada por
+  contrato estático — uma medição comportamental exige o rastreador de page-load em
+  produção (`request_count` por abertura), que é exatamente a métrica pós-deploy.
 - Dependência declarada: esta PR é **empilhada** sobre a PR B (reutiliza `read_cache` e
   `usePanelPolling`); merge B → A; cada uma reversível por si.

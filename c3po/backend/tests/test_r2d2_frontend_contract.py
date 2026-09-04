@@ -108,7 +108,7 @@ def test_command_center_opening_uses_one_aggregated_request_and_seeds_the_falcon
     assert "if (needsCommand) {" in shell
     assert "setCommandSeed({" in shell
     assert "mergeFalconIndices(sections?.markets_index ?? null, sections?.markets_live ?? null)" in shell
-    assert "if (!sections?.alerts && !sections?.navigation_indicators) await refreshNotificationState();" in shell
+    assert "if (!sections?.alerts || !sections?.navigation_indicators) await refreshNotificationState();" in shell
     assert "<MillenniumFalconView systemHealth={systemHealth} seed={commandSeed} />" in shell
     assert "useState<R2D2DashboardData | null>(seed?.r2d2 ?? null)" in falcon
     assert "const seedFresh = Boolean(seed) && Date.now() - (seed?.seededAt ?? 0) < FALCON_SEED_MAX_AGE_MS;" in falcon
@@ -120,3 +120,13 @@ def test_command_center_opening_uses_one_aggregated_request_and_seeds_the_falcon
     assert "initialLoad = true }: PanelPollingOptions" in hook
     assert "const hasLoadedRef = useRef(!initialLoad);" in hook
     assert "function mergeFalconIndices(" in source
+
+
+def test_mount_does_not_fire_an_immediate_heartbeat() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+    shell = _source_between(source, "function AppShell", "function MillenniumFalconView")
+    mount = shell[shell.index('document.addEventListener("visibilitychange", handleVisibility);'):]
+    mount = mount[:mount.index("return () => {")]
+    assert "registerActivity();" not in mount
+    assert "lastHeartbeatSucceededAt = Date.now();" in mount
+    assert "idleTimer = window.setTimeout(expireLocalSession, idleTimeoutMs);" in mount

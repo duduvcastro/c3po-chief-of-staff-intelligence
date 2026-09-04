@@ -240,3 +240,17 @@ def test_invalidating_one_key_keeps_the_single_flight_of_another_key() -> None:
     # ...whereas invalidating "b" itself does start a fresh computation.
     cache.invalidate("b")
     assert cache.get("b", lambda: "fresh") == "fresh"
+
+
+def test_max_entries_bounds_dynamic_keys_and_purges_expired_first() -> None:
+    clock = FakeClock()
+    cache = SingleFlightReadCache(lambda: 10.0, clock=clock, max_entries=3)
+    for i in range(3):
+        cache.get(f"k{i}", lambda i=i: i)
+    assert cache.snapshot()["keys"] == ["k0", "k1", "k2"]
+    cache.get("k3", lambda: 3)  # evicts the soonest-expiring entry
+    assert len(cache.snapshot()["keys"]) == 3
+    assert "k3" in cache.snapshot()["keys"]
+    clock.now += 11.0  # everything expired
+    cache.get("k4", lambda: 4)
+    assert cache.snapshot()["keys"] == ["k4"]

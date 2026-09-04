@@ -3089,7 +3089,13 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     const activityEvents: (keyof WindowEventMap)[] = ["pointerdown", "keydown", "touchstart", "scroll"];
     activityEvents.forEach((eventName) => window.addEventListener(eventName, registerActivity, { passive: true }));
     document.addEventListener("visibilitychange", handleVisibility);
-    registerActivity();
+    // Mount is not a heartbeat: the server renews the idle window when the Command Center
+    // aggregate is fetched, so the first POST /auth/activity waits for real activity and
+    // the regular interval (opening contract ≤ 4 calls, Codex audit #374).
+    lastHeartbeatSucceededAt = Date.now();
+    lastActivityAt = Date.now();
+    window.clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(expireLocalSession, idleTimeoutMs);
 
     return () => {
       window.clearTimeout(idleTimer);
@@ -3191,7 +3197,8 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
           health: sections?.system_health ?? null,
           seededAt: Date.now()
         });
-        if (!sections?.alerts && !sections?.navigation_indicators) await refreshNotificationState();
+        // Any missing personalised section falls back to its own refresh (never a silent zero).
+        if (!sections?.alerts || !sections?.navigation_indicators) await refreshNotificationState();
         return;
       }
       const [reportsResponse, providersResponse, systemHealthResponse] = await Promise.all([

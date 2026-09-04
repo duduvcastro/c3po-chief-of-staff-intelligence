@@ -104,9 +104,11 @@ class SingleFlightReadCache:
         ttl_seconds: Callable[[], float],
         *,
         clock: Callable[[], float] = time.monotonic,
+        max_entries: int | None = None,
     ) -> None:
         self._ttl_seconds = ttl_seconds
         self._clock = clock
+        self._max_entries = max_entries if max_entries is None else max(1, int(max_entries))
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}
         self._inflight: dict[str, _InFlight] = {}
@@ -149,12 +151,24 @@ class SingleFlightReadCache:
             raise
         with self._lock:
             if self._epoch == epoch and self._generations.get(key, 0) == generation:
-                self._entries[key] = _Entry(value, started_at + ttl)
+                self._store(key, _Entry(value, started_at + ttl))
             if self._inflight.get(key) is inflight:  # never erase a newer flight
                 self._inflight.pop(key, None)
         inflight.value = value
         inflight.done.set()
         return value
+
+    def _store(self, key: str, entry: _Entry) -> None:
+        """Bounded insert: purge expired entries first, then evict the soonest-expiring
+        ones until the configured ceiling holds (dynamic keys can't grow unbounded)."""
+        now = self._clock()
+        if self._max_entries is not None:
+            for stale_key in [k for k, e in self._entries.items() if e.expires_at <= now and k != key]:
+                del self._entries[stale_key]
+            while len(self._entries) >= self._max_entries and key not in self._entries:
+                victim = min(self._entries, key=lambda k: self._entries[k].expires_at)
+                del self._entries[victim]
+        self._entries[key] = entry
 
     def _fail_flight(self, key: str, inflight: _InFlight, error: BaseException) -> None:
         with self._lock:

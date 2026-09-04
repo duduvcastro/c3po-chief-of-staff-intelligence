@@ -367,7 +367,8 @@ def test_command_center_aggregate_isolates_a_failing_section(monkeypatch) -> Non
         "market_data_providers", "r2d2", "markets_live", "markets_index",
     }
     assert statuses["system_health"]["status"] == "error"
-    assert "probe timeout storm" in statuses["system_health"]["error"]
+    assert statuses["system_health"]["error"] == "RuntimeError"  # redacted: class only
+    assert "probe timeout storm" not in statuses["system_health"]["error"]
     assert payload["sections"]["system_health"] is None
     assert statuses["reports"]["status"] == "ok"
     assert isinstance(payload["sections"]["reports"], list)
@@ -415,3 +416,77 @@ def test_command_center_aggregate_cache_is_segregated_by_actor_and_permissions(m
     assert first.json()["section_status"]["alerts"]["status"] == "ok"
     assert third.json()["section_status"]["alerts"]["status"] == "skipped"  # no 'alerts' permission
     assert third.json()["sections"]["alerts"] is None
+
+
+def test_command_center_sections_follow_the_canonical_route_permissions(monkeypatch) -> None:
+    actors = {
+        "command_only": {"email": "cmd@example.com", "permissions": ["command"], "role": "member"},
+        "with_r2d2": {"email": "r2d2@example.com", "permissions": ["command", "r2d2"], "role": "member"},
+    }
+    current = {"key": "command_only"}
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actors[current["key"]])
+    app_main.command_center_cache.invalidate()
+    with TestClient(app) as client:
+        limited = client.get("/api/v1/command-center", params={"include": "r2d2,markets_live,markets_index,system_health"})
+        current["key"] = "with_r2d2"
+        allowed = client.get("/api/v1/command-center", params={"include": "r2d2,markets_live"})
+    app_main.command_center_cache.invalidate()
+    assert limited.status_code == 200
+    statuses = limited.json()["section_status"]
+    # Same rule as the direct routes: /api/v1/r2d2 needs "r2d2", /api/v1/markets/live needs "markets".
+    assert statuses["r2d2"]["status"] == "skipped"
+    assert statuses["markets_live"]["status"] == "skipped"
+    assert statuses["markets_index"]["status"] == "skipped"
+    assert statuses["system_health"]["status"] in {"ok", "error"}
+    assert limited.json()["sections"]["r2d2"] is None
+    assert allowed.json()["section_status"]["r2d2"]["status"] == "ok"
+    assert allowed.json()["section_status"]["markets_live"]["status"] == "skipped"
+
+
+def test_command_center_hung_section_becomes_a_timeout_without_blocking_the_rest(monkeypatch) -> None:
+    import threading
+
+    release = threading.Event()
+
+    def hung():
+        release.wait(timeout=10)
+        return {"generated_at": datetime.now(timezone.utc).isoformat(), "unread_count": 0, "items": []}
+
+    monkeypatch.setattr(app_main, "build_alert_feed", lambda email: hung())
+    monkeypatch.setattr(app_main.settings, "command_center_section_timeout_seconds", 0.3)
+    app_main.command_center_cache.invalidate()
+    try:
+        with TestClient(app) as client:
+            started = datetime.now(timezone.utc)
+            response = client.get("/api/v1/command-center", params={"include": "alerts,reports"})
+            elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    finally:
+        release.set()
+        app_main.command_center_cache.invalidate()
+    assert response.status_code == 200
+    statuses = response.json()["section_status"]
+    assert statuses["alerts"] == {"status": "error", "duration_ms": 300.0, "error": "timeout"}
+    assert statuses["reports"]["status"] == "ok"
+    assert elapsed < 5
+
+
+def test_command_center_aggregate_renews_the_idle_window(monkeypatch) -> None:
+    touched = {"count": 0}
+    real = app_main.auth_service.authenticate
+
+    def spy(token, touch_activity=False):
+        if touch_activity:
+            touched["count"] += 1
+        return real(token, touch_activity=touch_activity)
+
+    monkeypatch.setattr(app_main.auth_service, "authenticate", spy)
+    monkeypatch.setattr(app_main.settings, "auth_required", True)
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: {"email": "owner@example.com", "permissions": ["command"], "role": "owner"})
+    app_main.command_center_cache.invalidate()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/command-center", params={"include": "reports"})
+    finally:
+        app_main.command_center_cache.invalidate()
+    assert response.status_code == 200
+    assert touched["count"] == 1

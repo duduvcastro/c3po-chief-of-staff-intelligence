@@ -232,6 +232,8 @@ class Settings(BaseSettings):
     r2d2_read_cache_open_seconds: int = Field(default=5, ge=0, le=60)
     r2d2_read_cache_closed_seconds: int = Field(default=30, ge=0, le=600)
     command_center_cache_seconds: int = Field(default=10, ge=0, le=60)
+    command_center_cache_max_entries: int = Field(default=256, ge=1, le=10_000)
+    command_center_section_timeout_seconds: float = Field(default=8.0, ge=0.5, le=60.0)
     leah_sync_dedupe_window_seconds: int = Field(default=30, ge=0, le=600)
     leah_sync_deadline_seconds: int = Field(default=10, ge=1, le=120)
     leah_sync_cooldown_seconds: int = Field(default=30, ge=1, le=600)
