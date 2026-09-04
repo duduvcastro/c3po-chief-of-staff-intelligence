@@ -263,9 +263,16 @@ def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
         "gh pr create"
     )
     assert "steps.remediation.outputs.lane_prefix" in controller_source
-    assert "FIXABLE_MEDIUM: ${{ steps.remediation.outputs.medium }}" in daily
-    assert "FIXABLE_LOW: ${{ steps.remediation.outputs.low }}" in daily
-    assert "Remediate $FIXABLE_CRITICAL critical, $FIXABLE_HIGH high, $FIXABLE_MEDIUM medium and $FIXABLE_LOW low" in daily
+    assert daily.count("PR_TITLE: ${{ steps.remediation.outputs.pr_title }}") == 2
+    assert '--title "$PR_TITLE"' in open_lane_source
+    existing_lane_source = controller_steps[
+        "Keep the existing remediation lane deduplicated"
+    ]["run"]
+    assert 'gh pr edit "${{ steps.existing.outputs.number }}"' in existing_lane_source
+    assert '--title "$PR_TITLE"' in existing_lane_source
+    assert existing_lane_source.index("gh pr edit") < existing_lane_source.index(
+        "c3po_dispatch_remediation.sh"
+    )
     assert daily.count("gh pr create") == 1
     assert controller_source.count("c3po_dispatch_remediation.sh") == 2
     assert remediation_dispatch.count("gh workflow run c3po-pipeline.yml") == 1

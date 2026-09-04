@@ -265,6 +265,15 @@ def _cell(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
 
 
+def render_pr_title(counts: dict[str, int], *, dry_run: bool) -> str:
+    if dry_run:
+        return "[DRY-RUN] Exercise controller with one synthetic high finding"
+    return (
+        f"Remediate {counts['critical']} critical, {counts['high']} high, "
+        f"{counts['medium']} medium and {counts['low']} low container findings"
+    )
+
+
 def render_pr_body(trigger: dict[str, Any]) -> str:
     counts = trigger["fix_available"]
     findings = trigger["findings"]
@@ -387,6 +396,7 @@ def _plan(args: argparse.Namespace, *, dry_run: bool) -> int:
         "remediation_key": remediation_key,
         "lane_prefix": lane_prefix,
         "dry_run": "true" if dry_run else "false",
+        "pr_title": render_pr_title(counts, dry_run=dry_run),
     }
     outputs.update({severity: str(counts[severity]) for severity in FIXABLE_SEVERITIES})
     _append_github_outputs(args.github_output, outputs)

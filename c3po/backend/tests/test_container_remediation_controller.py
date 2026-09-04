@@ -115,6 +115,9 @@ def test_controller_builds_a_deduplicable_trigger_and_actionable_pr_body() -> No
     assert "CVE-LOW-0" in body
     assert "Medium fixável: **1**" in body
     assert "Low fixável: **1**" in body
+    assert controller.render_pr_title(counts, dry_run=False) == (
+        "Remediate 1 critical, 1 high, 1 medium and 1 low container findings"
+    )
     assert trigger["remediation_key"] in body
     assert "Não há auto-merge" in body
     assert "Fable audita" in body
@@ -200,6 +203,10 @@ def test_plan_emits_machine_outputs_and_only_writes_work_when_required(
     assert outputs["required"] == str(required).lower()
     for name in scanner.SEVERITIES:
         assert outputs[name] == str(requested[name])
+    assert outputs["pr_title"] == controller.render_pr_title(
+        requested,
+        dry_run=False,
+    )
     assert bool(outputs["remediation_key"]) is required
     assert outputs["lane_prefix"] == controller.PRODUCTION_LANE_PREFIX
     assert outputs["dry_run"] == "false"
@@ -240,6 +247,9 @@ def test_positive_dry_run_fixture_is_sealed_scoped_and_actionable(tmp_path: Path
     assert outputs["required"] == "true"
     assert outputs["lane_prefix"] == controller.DRY_RUN_LANE_PREFIX
     assert outputs["dry_run"] == "true"
+    assert outputs["pr_title"] == (
+        "[DRY-RUN] Exercise controller with one synthetic high finding"
+    )
     assert trigger["dry_run"] is True
     assert trigger["evidence_scope"] == controller.DRY_RUN_SCOPE
     assert "CONTROLE SINTÉTICO — NÃO É PRODUÇÃO" in body
