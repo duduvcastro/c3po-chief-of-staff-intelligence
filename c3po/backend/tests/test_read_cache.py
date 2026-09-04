@@ -182,3 +182,27 @@ def test_invalidate_during_compute_prevents_the_stale_result_from_repopulating()
     assert results == ["old"]  # the in-flight caller still gets its value
     assert cache.snapshot()["keys"] == []  # ...but the key was not repopulated
     assert cache.get("k", lambda: "fresh") == "fresh"
+
+
+def test_caller_arriving_after_invalidate_never_joins_the_old_flight() -> None:
+    cache = SingleFlightReadCache(lambda: 60.0)
+    started = threading.Event()
+    release = threading.Event()
+
+    def old_compute() -> str:
+        started.set()
+        release.wait(timeout=5)
+        return "old"
+
+    early: list[str] = []
+    leader = threading.Thread(target=lambda: early.append(cache.get("k", old_compute)))
+    leader.start()
+    assert started.wait(timeout=5)
+    cache.invalidate()
+    # Post-invalidation caller: must compute fresh, not coalesce onto the old flight.
+    assert cache.get("k", lambda: "fresh") == "fresh"
+    release.set()
+    leader.join(timeout=5)
+    assert early == ["old"]  # the earlier waiter keeps what it joined
+    assert cache.get("k", lambda: "unused") == "fresh"  # the key holds the fresh value
+    assert cache.snapshot()["inflight"] == []

@@ -75,12 +75,13 @@ class _Entry:
 
 
 class _InFlight:
-    __slots__ = ("done", "value", "error")
+    __slots__ = ("done", "value", "error", "generation")
 
-    def __init__(self) -> None:
+    def __init__(self, generation: int) -> None:
         self.done = threading.Event()
         self.value: Any = None
         self.error: BaseException | None = None
+        self.generation = generation
 
 
 class SingleFlightReadCache:
@@ -117,16 +118,18 @@ class SingleFlightReadCache:
             if entry is not None and entry.expires_at > self._clock():
                 self.counters.hits += 1
                 return entry.value
+            generation = self._generation
             inflight = self._inflight.get(key)
-            if inflight is not None:
+            # Only a flight of the CURRENT generation may be joined: a caller arriving
+            # after invalidate() must never receive the pre-invalidation result.
+            if inflight is not None and inflight.generation == generation:
                 self.counters.coalesced += 1
                 leader = False
             else:
-                inflight = _InFlight()
+                inflight = _InFlight(generation)
                 self._inflight[key] = inflight
                 self.counters.misses += 1
                 leader = True
-            generation = self._generation
             started_at = self._clock()
         if not leader:
             inflight.done.wait()
@@ -142,7 +145,8 @@ class SingleFlightReadCache:
         with self._lock:
             if self._generation == generation:
                 self._entries[key] = _Entry(value, started_at + ttl)
-            self._inflight.pop(key, None)
+            if self._inflight.get(key) is inflight:  # never erase a newer flight
+                self._inflight.pop(key, None)
         inflight.value = value
         inflight.done.set()
         return value
@@ -159,8 +163,10 @@ class SingleFlightReadCache:
         with self._lock:
             if key is None:
                 self._entries.clear()
+                self._inflight.clear()  # earlier waiters keep their own references
             else:
                 self._entries.pop(key, None)
+                self._inflight.pop(key, None)
             self._generation += 1
             self.counters.invalidations += 1
 

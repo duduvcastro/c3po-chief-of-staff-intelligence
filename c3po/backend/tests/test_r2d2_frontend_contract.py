@@ -72,7 +72,8 @@ def test_panel_polling_is_adaptive_and_suspends_when_hidden() -> None:
     # Lifecycle guard (audited on #373): nothing schedules after cleanup, and a tab that
     # is born hidden neither loads nor schedules until it becomes visible.
     assert "let active = true;" in hook
-    assert "const schedule = () => {\n      if (!active) return;" in hook
+    assert 'if (!active || document.visibilityState !== "visible") return;\n      stop();' in hook
+    assert "hasLoadedRef.current = true; // a tab born hidden loads here, exactly once" in hook
     assert "const handleVisibility = () => {\n      if (!active) return;" in hook
     assert 'if (document.visibilityState === "visible") {\n      if (!hasLoadedRef.current) {' in hook
     assert "return () => {\n      active = false;\n      stop();" in hook

@@ -1305,7 +1305,9 @@ function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = 
       timer = 0;
     };
     const schedule = () => {
-      if (!active) return;
+      // Never arm a timer while hidden: a fetch finishing after the tab hid must not
+      // re-create hidden polling (Codex reaudit, P2).
+      if (!active || document.visibilityState !== "visible") return;
       stop();
       timer = window.setTimeout(() => {
         timer = 0;
@@ -1316,6 +1318,7 @@ function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = 
     const handleVisibility = () => {
       if (!active) return;
       if (document.visibilityState === "visible") {
+        hasLoadedRef.current = true; // a tab born hidden loads here, exactly once
         void loadRef.current();
         schedule();
       } else {

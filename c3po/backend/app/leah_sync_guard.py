@@ -64,6 +64,7 @@ class LeahSyncCounters:
     busy_rejected: int = 0
     backoff_rejected: int = 0
     timeouts: int = 0
+    cancelled: int = 0
     errors: int = 0
     total_duration_ms: float = 0.0
     max_duration_ms: float = 0.0
@@ -80,6 +81,7 @@ class LeahSyncCounters:
             "busy_rejected": self.busy_rejected,
             "backoff_rejected": self.backoff_rejected,
             "timeouts": self.timeouts,
+            "cancelled": self.cancelled,
             "errors": self.errors,
             "average_duration_ms": round(average, 3),
             "max_duration_ms": round(self.max_duration_ms, 3),
@@ -206,15 +208,24 @@ class LeahSyncGuard:
             state.inflight = future
             state.inflight_fingerprint = fingerprint
             future.add_done_callback(
-                lambda done, s=state, fp=fingerprint, t0=started: self._on_work_done(s, fp, t0, done)
+                lambda done, s=state, fp=fingerprint, t0=started: self._publish(s, fp, t0, done)
             )
             try:
-                return future.result(timeout=remaining)
+                result = future.result(timeout=remaining)
             except FutureTimeout:
                 self._count("timeouts")
                 with state.result_lock:
                     state.cooldown_fingerprint = fingerprint
                     state.cooldown_until = self._clock() + self.cooldown_seconds
+                    setattr(future, "_c3po_timed_out", True)  # flag lives on the flight itself
+                if future.cancel():
+                    # Still queued: it never ran and never will (Codex reaudit, P1-1).
+                    with state.result_lock:
+                        if state.inflight is future:
+                            state.inflight = None
+                            state.inflight_fingerprint = None
+                        setattr(future, "_c3po_timed_out", False)
+                    self._count("cancelled")
                 logger.warning(
                     "leah sync deadline exceeded identity=%s deadline_s=%.1f counters=%s",
                     identity, self.deadline_seconds, self.snapshot(),
@@ -223,51 +234,66 @@ class LeahSyncGuard:
                     "Sincronização excedeu o prazo do servidor.",
                     retry_after=self.cooldown_seconds,
                 ) from None
-            except BaseException as error:  # noqa: BLE001 - recorded by the done callback
+            except BaseException as error:  # noqa: BLE001 - recorded by _publish
                 if isinstance(error, LeahSyncRejected):
                     raise
+                self._publish(state, fingerprint, started, future)
                 logger.warning(
                     "leah sync failed identity=%s error=%s counters=%s",
                     identity, error.__class__.__name__, self.snapshot(),
                 )
                 raise
+            # Publish synchronously BEFORE releasing the identity lock: the done-callback
+            # may still be pending, and a second identical payload must dedupe against a
+            # result that is already visible (Codex reaudit, P1-3). _publish is idempotent.
+            self._publish(state, fingerprint, started, future)
+            return result
         finally:
             state.lock.release()
 
-    def _on_work_done(
+    def _publish(
         self, state: _IdentityState, fingerprint: str, started: float, future: Future
     ) -> None:
-        """Runs in the worker thread when the work finishes — on time or late."""
+        """Account one finished flight exactly once (caller path or done-callback,
+        whichever comes first). ``late`` is derived from the flight's own state — its
+        caller timed out — never from the momentary presence of a cooldown."""
+        if not future.done():
+            return
         completed = self._clock()
         duration_ms = max(0.0, (completed - started) * 1000.0)
-        error = future.exception()
-        late = False
         with state.result_lock:
+            # Flags live on the Future object: immune to id() reuse after garbage collection.
+            if getattr(future, "_c3po_published", False):
+                return
+            setattr(future, "_c3po_published", True)
+            late = bool(getattr(future, "_c3po_timed_out", False))
             if state.inflight is future:
                 state.inflight = None
                 state.inflight_fingerprint = None
-            if error is None:
-                late = (
-                    state.cooldown_fingerprint == fingerprint
-                    and state.cooldown_until is not None
-                )
-                state.last_fingerprint = fingerprint
-                state.last_result = future.result()
-                state.last_completed_at = completed
-                state.cooldown_fingerprint = None
-                state.cooldown_until = None
+            if future.cancelled():
+                outcome = "cancelled"
             else:
-                state.cooldown_fingerprint = fingerprint
-                state.cooldown_until = completed + self.cooldown_seconds
+                error = future.exception()
+                if error is None:
+                    outcome = "ok"
+                    state.last_fingerprint = fingerprint
+                    state.last_result = future.result()
+                    state.last_completed_at = completed
+                    state.cooldown_fingerprint = None
+                    state.cooldown_until = None
+                else:
+                    outcome = "error"
+                    state.cooldown_fingerprint = fingerprint
+                    state.cooldown_until = completed + self.cooldown_seconds
         with self._registry_lock:
-            if error is None:
+            if outcome == "ok":
                 self.counters.executed += 1
                 if late:
                     self.counters.late_completions += 1
                 self.counters.total_duration_ms += duration_ms
                 self.counters.max_duration_ms = max(self.counters.max_duration_ms, duration_ms)
                 self.counters.last_duration_ms = duration_ms
-            else:
+            elif outcome == "error":
                 self.counters.errors += 1
 
     def snapshot(self) -> dict[str, Any]:

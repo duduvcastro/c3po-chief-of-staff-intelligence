@@ -145,14 +145,20 @@ def test_concurrent_calls_for_one_identity_execute_one_at_a_time() -> None:
             active -= 1
         return "ok"
 
-    threads = [
-        threading.Thread(target=lambda i=i: guard.run("device-1", {"n": i}, work))
-        for i in range(5)
-    ]
+    errors: list[BaseException] = []
+
+    def caller(i: int) -> None:
+        try:
+            guard.run("device-1", {"n": i}, work)
+        except BaseException as error:  # noqa: BLE001
+            errors.append(error)
+
+    threads = [threading.Thread(target=caller, args=(i,)) for i in range(5)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join(timeout=5)
+    assert errors == []
     assert peak == 1
     assert guard.counters.executed == 5
     assert guard.counters.queued >= 1  # distinct payloads waited for the lock
@@ -194,7 +200,8 @@ def test_deadline_covers_the_wait_for_the_identity_lock() -> None:
     with pytest.raises(LeahSyncBusy):
         guard.run("device-1", {"items": [{"id": "b"}]}, lambda: "never")
     elapsed = _time.monotonic() - started
-    assert elapsed < 1.2, f"queue wait was not bounded by the deadline: {elapsed:.3f}s"
+    # Old implementation waited for the slow work (~1.5 s); the bounded queue answers in ~0.3 s.
+    assert elapsed < 0.75, f"queue wait was not bounded by the deadline: {elapsed:.3f}s"
     thread.join(timeout=5)
     assert first_outcome, f"first caller never finished: {guard.snapshot()}"
     assert isinstance(first_outcome[0], LeahSyncTimeout), first_outcome
@@ -237,3 +244,109 @@ def test_coalesced_and_queued_are_counted_separately() -> None:
     assert guard.counters.queued == 1
     assert guard.counters.deduplicated == 1
     assert guard.counters.executed == 2
+
+
+def test_queued_work_is_cancelled_when_its_caller_times_out() -> None:
+    import time as _time
+
+    guard = LeahSyncGuard(dedupe_window_seconds=0.0, deadline_seconds=0.2, cooldown_seconds=30.0, max_workers=1)
+    hold = threading.Event()
+    started_a = threading.Event()
+    ran_b = threading.Event()
+
+    def work_a() -> str:
+        started_a.set()
+        hold.wait(timeout=5)
+        return "a"
+
+    def work_b() -> str:
+        ran_b.set()
+        return "b"
+
+    a_outcome: list[object] = []
+
+    def caller_a() -> None:
+        try:
+            a_outcome.append(guard.run("device-a", {"n": "a"}, work_a))
+        except BaseException as error:  # noqa: BLE001 - A also exceeds the 0.2 s deadline
+            a_outcome.append(error)
+
+    thread = threading.Thread(target=caller_a)
+    thread.start()
+    assert started_a.wait(timeout=5)
+    # B belongs to another identity, so it is not queue-blocked by A's lock — but the single
+    # worker is busy: B's future stays QUEUED and B's caller times out.
+    with pytest.raises(LeahSyncTimeout):
+        guard.run("device-b", {"n": "b"}, work_b)
+    assert guard.counters.cancelled == 1
+    hold.set()
+    thread.join(timeout=5)
+    _time.sleep(0.2)
+    assert not ran_b.is_set()  # cancelled while queued: it never ran, even after the worker freed up
+    assert guard._state("device-b").inflight is None
+    assert isinstance(a_outcome[0], LeahSyncTimeout)  # A ran past its own deadline (running work is not killed)
+    for _ in range(200):
+        if guard.counters.executed == 1:
+            break
+        _time.sleep(0.01)
+    assert guard.counters.executed == 1  # A's late completion is accounted; B never executed
+    assert guard.counters.late_completions == 1
+
+
+def test_result_is_published_before_run_returns_even_if_the_callback_lags() -> None:
+    guard = LeahSyncGuard(dedupe_window_seconds=30.0, deadline_seconds=5.0)
+    gate = threading.Event()
+    original = guard._publish
+    calls = {"work": 0}
+
+    def lagging_publish(state, fingerprint, started, future):
+        # Simulate the done-callback arriving late: only the caller-path publish may run now.
+        if threading.current_thread().name.startswith("leah-sync"):
+            gate.wait(timeout=5)
+        original(state, fingerprint, started, future)
+
+    guard._publish = lagging_publish  # type: ignore[method-assign]
+
+    def work() -> str:
+        calls["work"] += 1
+        return "done"
+
+    payload = {"items": [{"id": "same"}]}
+    assert guard.run("device-1", payload, work) == "done"
+    assert guard.run("device-1", dict(payload), work) == "done"  # must dedupe, not re-execute
+    gate.set()
+    assert calls["work"] == 1
+    assert guard.counters.deduplicated == 1
+    assert guard.counters.executed == 1
+
+
+def test_late_completion_is_classified_by_the_flight_not_by_cooldown() -> None:
+    import time as _time
+
+    clock = FakeClock()
+    guard = _guard(clock, deadline_seconds=0.05)
+    payload = {"items": [{"id": "x"}]}
+
+    def boom() -> None:
+        raise RuntimeError("first attempt fails")
+
+    with pytest.raises(RuntimeError):
+        guard.run("device-1", payload, boom)  # opens a cooldown for this fingerprint
+    clock.now += 31.0  # cooldown over
+    release = threading.Event()
+
+    def slow() -> str:
+        release.wait(timeout=5)
+        return "late"
+
+    with pytest.raises(LeahSyncTimeout):
+        guard.run("device-1", payload, slow)  # times out: flight marked as timed out
+    release.set()
+    for _ in range(400):
+        if guard.counters.late_completions == 1:
+            break
+        _time.sleep(0.01)
+    assert guard.counters.late_completions == 1
+    assert guard.counters.executed == 1
+    state = guard._state("device-1")
+    assert state.cooldown_until is None  # late success clears the residual cooldown
