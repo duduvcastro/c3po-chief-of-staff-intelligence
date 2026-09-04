@@ -107,6 +107,9 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_ip TEXT NOT NULL DEFAULT '',
+    idle_timeout_seconds INTEGER NOT NULL DEFAULT 1800 CHECK (
+        idle_timeout_seconds BETWEEN 60 AND 86400
+    ),
     revoked_at TIMESTAMPTZ
 );
 

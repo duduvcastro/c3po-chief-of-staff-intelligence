@@ -4,15 +4,22 @@ import argparse
 import hashlib
 import json
 import math
-from collections import defaultdict
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
+import exchange_calendars as xcals
+
 from .config import Settings, get_settings
 from .database import Database
+from .r2d2_candidate_f_backtest import (
+    PRIOR_FAILED_WORKFLOW_RUN_ID,
+    PRIOR_PROBE_REPORT_SHA256,
+    aggregate_massive_five_minute_rows,
+)
 from .r2d2_exit_policy_engine import Episode, LedgerFill, PositionState, StudyBar, build_episodes
 from .r2d2_exit_policy_study import (
     MinuteAggregateReader,
@@ -26,7 +33,10 @@ from .r2d2_exit_policy_study import (
 NEW_YORK = ZoneInfo("America/New_York")
 POLICY_EPOCH = "policy-a-resume-2026-08-26"
 POLICY_EPOCH_FROM = datetime.fromisoformat("2026-08-26T13:30:24.983322+00:00")
-SCHEMA_VERSION = "R2D2-CHANDELIER-PROBE-v1"
+SOURCE_LOOKBACK_SESSIONS = 20
+SCHEMA_VERSION = "R2D2-CHANDELIER-PROBE-v3"
+INVALID_PROBE_V2_WORKFLOW_RUN_ID = 33716979776
+INVALID_PROBE_V2_REPORT_SHA256 = "5ffbe91b99e02a9ca88d119dbd00dff621c357f51a806aa6aa0160828689f676"
 EXPERIMENT_QUERY = """
 SELECT id::text, code, status, starting_capital, start_date,
        methodology_version, created_at, updated_at
@@ -149,31 +159,79 @@ def _read_ledger(
     return experiment, fills, audits
 
 
+def _require_cohort_source_coverage(
+    cohort: Sequence[Episode],
+    sources: Sequence[tuple[date, Path]],
+    *,
+    lookback_sessions: int = SOURCE_LOOKBACK_SESSIONS,
+) -> tuple[date, ...]:
+    if not cohort:
+        raise ChandelierProbeError("source coverage requires a non-empty cohort")
+    exit_sessions = [episode.exit_session for episode in cohort if episode.exit_session is not None]
+    if not exit_sessions:
+        raise ChandelierProbeError("source coverage requires closed episodes")
+    first = min(episode.entry_session for episode in cohort)
+    last = max(exit_sessions)
+    calendar = xcals.get_calendar("XNYS")
+    boundaries = {
+        episode.entry_session for episode in cohort
+    } | set(exit_sessions)
+    invalid = sorted(session for session in boundaries if not calendar.is_session(session))
+    if invalid:
+        raise ChandelierProbeError(
+            "cohort contains non-XNYS session date(s): "
+            + ", ".join(session.isoformat() for session in invalid)
+        )
+    if lookback_sessions < 0:
+        raise ChandelierProbeError("source lookback sessions cannot be negative")
+    required_start = calendar.date_to_session(first)
+    for _ in range(lookback_sessions):
+        required_start = calendar.previous_session(required_start)
+    required = tuple(
+        timestamp.date()
+        for timestamp in calendar.sessions_in_range(required_start, last)
+    )
+    available = {session for session, _path in sources}
+    missing = [session for session in required if session not in available]
+    if missing:
+        raise ChandelierProbeError(
+            "minute aggregate source coverage is missing required session(s): "
+            + ", ".join(session.isoformat() for session in missing)
+        )
+    return required
+
+
 def aggregate_five_minutes(bars: Sequence[StudyBar]) -> list[FiveMinuteBar]:
-    buckets: dict[tuple[str, date, int, int], list[StudyBar]] = defaultdict(list)
-    for bar in sorted(bars, key=lambda item: item.start_at):
-        local = bar.start_at.astimezone(NEW_YORK)
-        bucket_minute = local.minute - (local.minute % 5)
-        buckets[(bar.symbol, local.date(), local.hour, bucket_minute)].append(bar)
-    output: list[FiveMinuteBar] = []
-    for values in buckets.values():
-        ordered = sorted(values, key=lambda item: item.start_at)
-        if len(ordered) != 5:
-            continue
-        expected = [ordered[0].start_at + timedelta(minutes=index) for index in range(5)]
-        if [item.start_at for item in ordered] != expected:
-            continue
-        output.append(FiveMinuteBar(
-            symbol=ordered[0].symbol,
-            start_at=ordered[0].start_at,
-            open=ordered[0].open,
-            high=max(item.high for item in ordered),
-            low=min(item.low for item in ordered),
-            close=ordered[-1].close,
-            volume=sum(item.volume for item in ordered),
-            source_minutes=5,
-        ))
-    return sorted(output, key=lambda item: item.start_at)
+    if not bars:
+        return []
+    symbols = {bar.symbol for bar in bars}
+    if len(symbols) != 1:
+        raise ChandelierProbeError("five-minute aggregation requires exactly one symbol")
+    symbol = next(iter(symbols))
+    rows = [
+        {
+            "timestamp": bar.start_at,
+            "open": bar.open,
+            "high": bar.high,
+            "low": bar.low,
+            "close": bar.close,
+            "volume": bar.volume,
+        }
+        for bar in bars
+    ]
+    return [
+        FiveMinuteBar(
+            symbol=symbol,
+            start_at=row["timestamp"],
+            open=row["open"],
+            high=row["high"],
+            low=row["low"],
+            close=row["close"],
+            volume=row["volume"],
+            source_minutes=row["source_minutes"],
+        )
+        for row in aggregate_massive_five_minute_rows(rows, symbol=symbol)
+    ]
 
 
 def atr14_sma(bars: Sequence[FiveMinuteBar], index: int) -> float | None:
@@ -268,7 +326,7 @@ def analyze_winning_episode(
         "counterfactual_f_net_pnl_usd": None,
         "avoidable_giveback_usd": None,
         "f_exit_at": None,
-        "eligibility": "eligible",
+        "eligibility": "pending",
     }
     original_stop = _entry_stop(episode)
     if original_stop is None:
@@ -279,23 +337,32 @@ def analyze_winning_episode(
         return row
     entry = next(fill for fill in episode.fills if fill.side == "BUY")
     ordered = sorted(bars, key=lambda item: item.start_at)
+    episode_path = [
+        (index, bar)
+        for index, bar in enumerate(ordered)
+        if episode.closed_at is not None
+        and bar.start_at + timedelta(minutes=5) > episode.opened_at
+        and bar.start_at + timedelta(minutes=5) <= episode.closed_at
+    ]
+    if not episode_path:
+        row["eligibility"] = "censored_no_observable_price_path"
+        return row
+    atr_by_index: dict[int, float] = {}
+    for index, _bar in episode_path:
+        atr = atr14_sma(ordered, index)
+        if atr is None:
+            row["eligibility"] = "censored_insufficient_atr_path"
+            return row
+        atr_by_index[index] = atr
     high_water = entry.fill_price_local
     ratcheted: float | None = None
     maximum_loosen_bps = 0.0
     loosen_observations = 0
     synthetic_pnl: float | None = None
     synthetic_at: datetime | None = None
-    for index, bar in enumerate(ordered):
+    for index, bar in episode_path:
         bar_end = bar.start_at + timedelta(minutes=5)
-        if (
-            bar_end <= episode.opened_at
-            or episode.closed_at is None
-            or bar_end > episode.closed_at
-        ):
-            continue
-        atr = atr14_sma(ordered, index)
-        if atr is None:
-            continue
+        atr = atr_by_index[index]
         high_water = max(high_water, bar.close)
         stop_e = chandelier_e(
             original_stop=original_stop,
@@ -314,6 +381,7 @@ def analyze_winning_episode(
             synthetic_pnl = _synthetic_exit_pnl(episode, quote=bar.close)
             synthetic_at = bar_end
             break
+    row["eligibility"] = "eligible"
     row.update({
         "maximum_trail_loosen_bps": round(maximum_loosen_bps, 2),
         "trail_loosen_observations": loosen_observations,
@@ -364,10 +432,19 @@ def analyze_stop_regret(
             "eligibility": "censored_nonpositive_initial_r",
         }
     exit_minute = final.executed_at.replace(second=0, microsecond=0)
-    later = [
+    same_session = [
         bar for bar in minute_bars
         if bar.session_date == final.executed_at.astimezone(NEW_YORK).date()
-        and bar.start_at > exit_minute
+    ]
+    if not same_session:
+        return {
+            "episode_token": _episode_token(episode),
+            "exit_session": episode.exit_session.isoformat() if episode.exit_session else None,
+            "eligibility": "censored_no_observable_exit_session_bars",
+        }
+    later = [
+        bar for bar in same_session
+        if bar.start_at > exit_minute
     ]
     if not later:
         return {
@@ -435,7 +512,11 @@ def build_report(
     if not cohort:
         raise ChandelierProbeError("no closed organic epoch-2 US episodes")
     reader = MinuteAggregateReader(settings.day_d_dataset_root)
-    sources = reader.selected_sources(cohort, prior_sessions=20)
+    sources = reader.selected_sources(
+        cohort,
+        prior_sessions=SOURCE_LOOKBACK_SESSIONS,
+    )
+    required_source_sessions = _require_cohort_source_coverage(cohort, sources)
     symbols = {episode.symbol for episode in cohort}
     bars_by_symbol, source_evidence = reader.read(sources, symbols)
     five_by_symbol = {
@@ -462,6 +543,11 @@ def build_report(
     eligible_b = [row for row in probe_b if row["eligibility"] == "eligible"]
     givebacks = [float(row["avoidable_giveback_usd"]) for row in eligible_a]
     loosening = [float(row["maximum_trail_loosen_bps"]) for row in eligible_a]
+    source_minute_counts = Counter(
+        bar.source_minutes
+        for values in five_by_symbol.values()
+        for bar in values
+    )
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": generated_at,
@@ -479,6 +565,24 @@ def build_report(
             "retention_days": 30,
             "expires_at": generated_at + timedelta(days=30),
             "query_sha256": QUERY_SHA256,
+            "supersedes": [
+                {
+                    "workflow_run_id": PRIOR_FAILED_WORKFLOW_RUN_ID,
+                    "report_sha256": PRIOR_PROBE_REPORT_SHA256,
+                    "reason": (
+                        "v1 discarded a fixed five-minute window unless Massive emitted all five "
+                        "one-minute rows; that partial file was never published as an artifact"
+                    ),
+                },
+                {
+                    "workflow_run_id": INVALID_PROBE_V2_WORKFLOW_RUN_ID,
+                    "report_sha256": INVALID_PROBE_V2_REPORT_SHA256,
+                    "reason": (
+                        "v2 did not require source coverage of the cohort sessions and therefore "
+                        "misclassified absent price paths as eligible zero-effect observations"
+                    ),
+                },
+            ],
         },
         "experiment": {
             "code": experiment["code"],
@@ -491,6 +595,19 @@ def build_report(
             "minute_source_manifest_sha256": canonical_sha256(source_evidence),
             "minute_source_first_session": source_evidence[0]["session_date"],
             "minute_source_last_session": source_evidence[-1]["session_date"],
+            "source_lookback_session_count": SOURCE_LOOKBACK_SESSIONS,
+            "required_source_session_count": len(required_source_sessions),
+            "required_source_first_session": required_source_sessions[0].isoformat(),
+            "required_source_last_session": required_source_sessions[-1].isoformat(),
+            "source_coverage_verified": True,
+            "five_minute_aggregation": (
+                "fixed New York windows from the 1-5 real Massive rows present; "
+                "empty windows omitted; no forward-fill or interpolation"
+            ),
+            "source_minute_rows_per_five_minute_bar": {
+                str(count): source_minute_counts.get(count, 0)
+                for count in range(1, 6)
+            },
         },
         "cohort": {
             "constructed_episode_count": len(episodes),
@@ -502,7 +619,10 @@ def build_report(
             "contract": {
                 "e": "max(original_stop, close_high_water - 2.5 * max(ATR14_SMA, close * 0.004))",
                 "f": "max(previous_f, e)",
-                "observation_clock": "completed five-minute close; high-water uses closes like Candidate E",
+                "observation_clock": (
+                    "completed fixed five-minute window from real Massive rows; "
+                    "high-water uses closes like Candidate E"
+                ),
                 "counterfactual_trigger": "first close <= F and > E; fill uses the paper US exit friction",
                 "scope": "winning episodes; scaled/partial episodes reported but censored",
             },

@@ -1,0 +1,313 @@
+name: R2D2 Massive minute extension download
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type DOWNLOAD MASSIVE MINUTE EXTENSION 2026-08-24 2026-09-02
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: r2d2-massive-minute-extension-download
+  cancel-in-progress: false
+
+jobs:
+  download-frozen-extension:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Require exact confirmation
+        env:
+          RECEIVED: ${{ inputs.confirmation }}
+        run: |
+          if [ "$RECEIVED" != 'DOWNLOAD MASSIVE MINUTE EXTENSION 2026-08-24 2026-09-02' ]; then
+            echo 'Confirmation did not match the approved phrase.' >&2
+            exit 2
+          fi
+
+      - name: Check out audited download gate
+        uses: actions/checkout@v6
+
+      - name: Configure production transport
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_massive_extension
+          chmod 600 ~/.ssh/c3po_massive_extension
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Download the exact frozen minute extension
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          REVISION: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          ssh \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_massive_extension "$USER@$HOST" \
+            "REVISION='$REVISION' RUN_ID='$RUN_ID' RUN_ATTEMPT='$RUN_ATTEMPT' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+
+          APP_DIR=/opt/chief-of-staff-digital
+          HOST_OUTPUT_ROOT=/mnt/day-d-data/evidence/r2d2-massive-minute-extension-download-v1
+          HOST_OUTPUT="$HOST_OUTPUT_ROOT/run-$RUN_ID-attempt-$RUN_ATTEMPT"
+          CONTAINER_OUTPUT="/app/day-d-data/evidence/r2d2-massive-minute-extension-download-v1/run-$RUN_ID-attempt-$RUN_ATTEMPT"
+
+          cd "$APP_DIR"
+          if [ "$(cat .deploy-version 2>/dev/null || true)" != "$REVISION" ]; then
+            echo 'Audited download revision is not the live deployed revision.' >&2
+            exit 11
+          fi
+          if ! mountpoint -q /mnt/day-d-data; then
+            echo '/mnt/day-d-data is not mounted.' >&2
+            exit 12
+          fi
+          if [ -e "$HOST_OUTPUT" ]; then
+            echo 'Run-specific output already exists; refusing overwrite.' >&2
+            exit 13
+          fi
+
+          active_api_oneoffs=$(
+            docker ps \
+              --filter label=com.docker.compose.project=c3po \
+              --filter label=com.docker.compose.oneoff=True \
+              --filter label=com.docker.compose.service=api \
+              --format '{{.ID}}'
+          )
+          if [ -n "$active_api_oneoffs" ]; then
+            echo 'Another API one-off container is active; refusing overlap.' >&2
+            exit 14
+          fi
+
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          operational_uid="$(id -u)"
+          operational_gid="$(id -g)"
+          if [ "$operational_uid" -eq 0 ]; then
+            echo 'Operational Massive identity must not be root.' >&2
+            exit 15
+          fi
+          host_identity="$operational_uid:$operational_gid"
+          install -d -m 0700 -- "$HOST_OUTPUT"
+
+          write_preflight=c3po/backend/app/day_d_replay/massive_extension_write_preflight.py
+          provision_list="$(mktemp /tmp/massive-extension-provision.XXXXXX)"
+          privileged_list="$(mktemp /tmp/massive-extension-privileged.XXXXXX)"
+          cleanup_lists() {
+            rm -f -- "$provision_list" "$privileged_list"
+          }
+          trap cleanup_lists EXIT
+          python3 "$write_preflight" list-provision-parent-directories \
+            --root /mnt/day-d-data \
+            --output "$HOST_OUTPUT/extension-download-manifest.json" \
+            > "$provision_list"
+          python3 "$write_preflight" list-privileged-write-directories \
+            --root /mnt/day-d-data \
+            --output "$HOST_OUTPUT/extension-download-manifest.json" \
+            > "$privileged_list"
+
+          provision_failures=()
+          while IFS= read -r path; do
+            if [ -L "$path" ]; then
+              provision_failures+=("$path: parent path is a symlink")
+              continue
+            fi
+            if ! sudo -n install -d -o root -g root -m 0755 -- "$path"; then
+              provision_failures+=("$path: parent provisioning failed")
+              continue
+            fi
+            if [ "$(stat -c '%u:%g:%a' -- "$path")" != '0:0:755' ]; then
+              provision_failures+=("$path: parent identity or mode differs from root:root:0755")
+            fi
+          done < "$provision_list"
+          while IFS= read -r path; do
+            if [ -L "$path" ]; then
+              provision_failures+=("$path: writable path is a symlink")
+              continue
+            fi
+            if ! sudo -n install -d -o "$operational_uid" -g "$operational_gid" \
+              -m 0700 -- "$path"; then
+              provision_failures+=("$path: writable directory provisioning failed")
+              continue
+            fi
+            if [ "$(stat -c '%u:%g:%a' -- "$path")" != "$operational_uid:$operational_gid:700" ]; then
+              provision_failures+=("$path: writable directory identity or mode mismatch")
+            fi
+          done < "$privileged_list"
+          if [ "${#provision_failures[@]}" -ne 0 ]; then
+            echo 'Massive extension directory provisioning failed:' >&2
+            printf ' - %s\n' "${provision_failures[@]}" | sort -u >&2
+            exit 16
+          fi
+
+          COMPOSE_STATUS_STDOUT=0 "${compose[@]}" run --rm -T --no-deps \
+            --pull never \
+            --user "$host_identity" \
+            -e C3PO_DAY_D_HISTORICAL_DOWNLOAD_AUTHORIZED=true \
+            api python -m app.day_d_replay.massive_extension_download \
+              --output "$CONTAINER_OUTPUT/extension-download-manifest.json" \
+              --head-revision "$REVISION" \
+              --workflow-run-id "$RUN_ID" \
+              --workflow-run-attempt "$RUN_ATTEMPT" \
+              --expected-uid "$operational_uid" \
+              --expected-gid "$operational_gid" \
+              </dev/null
+
+          test -s "$HOST_OUTPUT/extension-download-manifest.json"
+          (
+            cd "$HOST_OUTPUT"
+            sha256sum extension-download-manifest.json > SHA256SUMS
+          )
+          chmod 0444 "$HOST_OUTPUT"/*
+          REMOTE
+
+      - name: Download reduced extension evidence
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/r2d2-massive-minute-extension-download"
+          scp -i ~/.ssh/c3po_massive_extension \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-massive-minute-extension-download-v1/run-$RUN_ID-attempt-$RUN_ATTEMPT/extension-download-manifest.json" \
+            "$USER@$HOST:/mnt/day-d-data/evidence/r2d2-massive-minute-extension-download-v1/run-$RUN_ID-attempt-$RUN_ATTEMPT/SHA256SUMS" \
+            "$RUNNER_TEMP/r2d2-massive-minute-extension-download/"
+          (
+            cd "$RUNNER_TEMP/r2d2-massive-minute-extension-download"
+            sha256sum -c SHA256SUMS
+          )
+
+      - name: Verify reduced extension evidence
+        env:
+          ROOT: ${{ runner.temp }}/r2d2-massive-minute-extension-download
+          REVISION: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python3 - "$ROOT" "$REVISION" "$RUN_ID" "$RUN_ATTEMPT" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          revision = sys.argv[2]
+          run_id = int(sys.argv[3])
+          run_attempt = int(sys.argv[4])
+          manifest_path = root / "extension-download-manifest.json"
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          expected_self_hash = manifest.pop("manifest_sha256")
+          canonical = json.dumps(
+              manifest,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=True,
+              allow_nan=False,
+          ).encode("utf-8")
+          if hashlib.sha256(canonical).hexdigest() != expected_self_hash:
+              raise SystemExit("extension download manifest self-hash mismatch")
+          expected_sessions = [
+              "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27",
+              "2026-08-28", "2026-08-31", "2026-09-01", "2026-09-02",
+          ]
+          if manifest.get("schema_version") != "DAY-D-MASSIVE-MINUTE-EXTENSION-DOWNLOAD-v1":
+              raise SystemExit("extension download schema mismatch")
+          if manifest.get("head_revision") != revision:
+              raise SystemExit("extension download revision mismatch")
+          if manifest.get("workflow_run_id") != run_id or manifest.get("workflow_run_attempt") != run_attempt:
+              raise SystemExit("extension download run identity mismatch")
+          if manifest.get("dataset") != "minute_aggregates":
+              raise SystemExit("extension download included another dataset")
+          if [row.get("session_date") for row in manifest.get("sessions", [])] != expected_sessions:
+              raise SystemExit("extension download sessions mismatch")
+          if manifest.get("session_count") != 8 or manifest.get("downloaded_bytes") != 214983688:
+              raise SystemExit("extension download totals mismatch")
+          if manifest.get("plan_report_sha256") != "cf78e15dfd48aa3eaafa2ef27bdc3b65b5f77894e54495e25fa99ab7c11b7a65":
+              raise SystemExit("extension download plan hash mismatch")
+          preflight = manifest.get("write_preflight")
+          if not isinstance(preflight, dict) or preflight.get("status") != "ok":
+              raise SystemExit("extension download write preflight evidence is missing")
+          identity = preflight.get("operational_identity")
+          checked = preflight.get("checked_directories")
+          checked_targets = preflight.get("checked_targets")
+          frozen_artifacts = preflight.get("frozen_artifacts")
+          existing_orphans = preflight.get("existing_orphan_parts")
+          cross_checked = preflight.get("cross_directory_checked")
+          if (
+              preflight.get("frozen_plan_sha256") != manifest["plan_report_sha256"]
+              or preflight.get("network_calls_before_preflight") != 0
+              or not isinstance(identity, dict)
+              or int(identity.get("uid", 0)) <= 0
+              or int(identity.get("gid", -1)) < 0
+              or not isinstance(checked, list)
+              or preflight.get("checked_directory_count") != len(checked)
+              or len(checked) < 22
+              or not isinstance(checked_targets, list)
+              or not isinstance(frozen_artifacts, list)
+              or len(frozen_artifacts) != 8
+              or not isinstance(existing_orphans, list)
+              or not isinstance(cross_checked, list)
+              or preflight.get("checked_target_count") != len(checked_targets)
+              or len(checked_targets) != 76 + len(existing_orphans)
+              or preflight.get("cross_directory_probe_count")
+              != len(cross_checked)
+              or len(cross_checked) != 16 + len(existing_orphans)
+              or preflight.get("locked_preflight_recheck_count") != 8
+          ):
+              raise SystemExit("extension download write preflight evidence is invalid")
+          if manifest.get("raw_files_returned_to_ci") is not False:
+              raise SystemExit("extension download evidence exposed raw files")
+          if manifest.get("evidence_retention_days") != 30:
+              raise SystemExit("extension download retention mismatch")
+          if manifest.get("official_replay_ready") is not False:
+              raise SystemExit("extension download incorrectly admitted official replay")
+          PY
+
+      - name: Publish reduced extension evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: r2d2-massive-minute-extension-download-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/r2d2-massive-minute-extension-download
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Annex completed extension to gate agenda
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROOT: ${{ runner.temp }}/r2d2-massive-minute-extension-download
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - "$ROOT" "$RUN_URL" > "$RUNNER_TEMP/massive-extension-download-annex.md" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          run_url = sys.argv[2]
+          manifest = json.loads(
+              (root / "extension-download-manifest.json").read_text(encoding="utf-8")
+          )
+          print("## Extensão Massive concluída — Sondas A/B")
+          print()
+          print(f"- [run e artefato reduzido]({run_url}) — retenção 30 dias")
+          print("- Dataset: minute aggregates; sessões: 8/8 (24/08–02/09).")
+          print(f"- Bytes baixados e verificados: {manifest['downloaded_bytes']}.")
+          print(f"- Manifest self-hash: `{manifest['manifest_sha256']}`.")
+          print(f"- Evidência reduzida expira em: `{manifest['evidence_expires_at']}`.")
+          print("- Raw permanece no volume Day-D; nenhum CSV foi transferido ao CI.")
+          print("- Próximo passo: reexecutar A/B com cutoff e fingerprint do ledger congelados.")
+          PY
+          gh pr comment 348 --body-file "$RUNNER_TEMP/massive-extension-download-annex.md"

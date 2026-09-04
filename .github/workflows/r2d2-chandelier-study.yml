@@ -1,6 +1,9 @@
 name: R2D2 Chandelier probes and Candidate F backtest
+run-name: R2D2 Chandelier dataset 89ab28a0d7a718adee5acdcaf06f64dfa1e11de55f87e52ff6232c9c46f327c8
 
 on:
+  schedule:
+    - cron: '15 3 * * *'
   workflow_dispatch:
     inputs:
       confirmation:
@@ -9,6 +12,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
   pull-requests: write
 
@@ -17,12 +21,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  read-only-study:
+  qualify-dataset-run:
+    if: github.run_attempt == 1
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 90
+    timeout-minutes: 10
+    outputs:
+      should_run: ${{ steps.preflight.outputs.should_run }}
     steps:
-      - name: Require exact confirmation
+      - name: Require exact confirmation for manual dispatch
+        if: github.event_name == 'workflow_dispatch'
         env:
           RECEIVED: ${{ inputs.confirmation }}
         run: |
@@ -31,6 +39,299 @@ jobs:
             exit 2
           fi
 
+      - name: Admit only the authorized scheduled date
+        id: trigger
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -Eeuo pipefail
+          case "$EVENT_NAME" in
+            workflow_dispatch)
+              printf 'authorized=true\n' >> "$GITHUB_OUTPUT"
+              ;;
+            schedule)
+              local_date=$(TZ=America/Sao_Paulo date +%F)
+              if [ "$local_date" = '2026-09-04' ]; then
+                printf 'authorized=true\n' >> "$GITHUB_OUTPUT"
+              else
+                printf 'authorized=false\n' >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            *)
+              echo 'Unsupported workflow trigger.' >&2
+              exit 3
+              ;;
+          esac
+
+      - name: Configure production transport for preflight
+        if: steps.trigger.outputs.authorized == 'true'
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/c3po_study
+          chmod 600 ~/.ssh/c3po_study
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Validate deployed dataset and claim its single run
+        id: preflight
+        if: steps.trigger.outputs.authorized == 'true'
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+          GH_TOKEN: ${{ github.token }}
+          REVISION: ${{ github.sha }}
+          REF: ${{ github.ref }}
+          RUN_ID: ${{ github.run_id }}
+          EXPECTED_DATASET_MANIFEST_SHA256: 89ab28a0d7a718adee5acdcaf06f64dfa1e11de55f87e52ff6232c9c46f327c8
+          DATASET_MANIFEST: /mnt/day-d-data/evidence/r2d2-massive-minute-extension-download-v1/run-33802274083-attempt-1/extension-download-manifest.json
+        run: |
+          set -Eeuo pipefail
+          claim=/mnt/day-d-data/evidence/r2d2-chandelier-study-v1/idempotency/dataset-$EXPECTED_DATASET_MANIFEST_SHA256.started-run
+          claim_status=$(
+            ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+              -i ~/.ssh/c3po_study "$USER@$HOST" \
+              "if [ -f '$claim' ] && [ ! -L '$claim' ]; then grep -qxF 'dataset_manifest_sha256=$EXPECTED_DATASET_MANIFEST_SHA256' '$claim' && printf present; elif [ ! -e '$claim' ] && [ ! -L '$claim' ]; then printf absent; else exit 16; fi"
+          )
+          case "$claim_status" in
+            present)
+              printf 'should_run=false\n' >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            absent) ;;
+            *) echo 'Dataset run claim has invalid state.' >&2; exit 16 ;;
+          esac
+
+          local_hour=$(TZ=America/Sao_Paulo date +%H)
+          case "$local_hour" in
+            0[0-7]) ;;
+            *)
+              echo 'Heavy study is restricted to 00:00-08:00 America/Sao_Paulo.' >&2
+              exit 10
+              ;;
+          esac
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo 'Chandelier study must run from main.' >&2
+            exit 11
+          fi
+          main_revision=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$main_revision" != "$REVISION" ]; then
+            echo 'Workflow revision is no longer the current main revision.' >&2
+            exit 11
+          fi
+
+          runs_file=$(mktemp)
+          prior_file=$(mktemp)
+          jobs_file=$(mktemp)
+          decision_file=$(mktemp)
+          cleanup() {
+            rm -f -- "$runs_file" "$prior_file" "$jobs_file" "$decision_file"
+          }
+          trap cleanup EXIT
+          gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/r2d2-chandelier-study.yml/runs?per_page=100" \
+            > "$runs_file"
+          python3 - "$runs_file" "$RUN_ID" > "$prior_file" <<'PY'
+          import json
+          import sys
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          current_run_id = int(sys.argv[2])
+          for run in payload.get("workflow_runs", []):
+              created = datetime.fromisoformat(run["created_at"].replace("Z", "+00:00"))
+              local = created.astimezone(ZoneInfo("America/Sao_Paulo"))
+              if (
+                  int(run["id"]) != current_run_id
+                  and run.get("head_branch") == "main"
+                  and run.get("display_title")
+                  == "R2D2 Chandelier dataset 89ab28a0d7a718adee5acdcaf06f64dfa1e11de55f87e52ff6232c9c46f327c8"
+                  and local.date().isoformat() == "2026-09-04"
+                  and 0 <= local.hour < 8
+              ):
+                  print(run["id"])
+          PY
+          prior_run=
+          while IFS= read -r candidate_run; do
+            gh api \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run/jobs?per_page=100" \
+              > "$jobs_file"
+            if python3 - "$jobs_file" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          started = any(
+              step.get("name") == "Run production read-only probes and frozen replay"
+              and step.get("status") in {"in_progress", "completed"}
+              and step.get("conclusion") != "skipped"
+              for job in payload.get("jobs", [])
+              for step in job.get("steps", [])
+          )
+          raise SystemExit(0 if started else 20)
+          PY
+            then
+              prior_run=$candidate_run
+              break
+            else
+              probe_status=$?
+              if [ "$probe_status" -ne 20 ]; then
+                exit "$probe_status"
+              fi
+            fi
+          done < "$prior_file"
+          if [ -n "$prior_run" ]; then
+            printf 'should_run=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+            -i ~/.ssh/c3po_study "$USER@$HOST" \
+            "REVISION='$REVISION' RUN_ID='$RUN_ID' EXPECTED_DATASET_MANIFEST_SHA256='$EXPECTED_DATASET_MANIFEST_SHA256' DATASET_MANIFEST='$DATASET_MANIFEST' bash -s" \
+            > "$decision_file" <<'REMOTE'
+          set -Eeuo pipefail
+          umask 077
+
+          APP_DIR=/opt/chief-of-staff-digital
+          HOST_OUTPUT_ROOT=/mnt/day-d-data/evidence/r2d2-chandelier-study-v1
+          claim_dir="$HOST_OUTPUT_ROOT/idempotency"
+          claim="$claim_dir/dataset-$EXPECTED_DATASET_MANIFEST_SHA256.started-run"
+          if [ -f "$claim" ] && [ ! -L "$claim" ]; then
+            if grep -qxF "dataset_manifest_sha256=$EXPECTED_DATASET_MANIFEST_SHA256" "$claim"; then
+              printf 'false\n'
+              exit 0
+            fi
+            echo 'Dataset run claim has invalid contents.' >&2
+            exit 16
+          fi
+          if [ -e "$claim" ] || [ -L "$claim" ]; then
+            echo 'Dataset run claim is not a safe regular file.' >&2
+            exit 16
+          fi
+
+          local_hour=$(TZ=America/Sao_Paulo date +%H)
+          case "$local_hour" in
+            0[0-7]) ;;
+            *)
+              echo 'Heavy study is restricted to 00:00-08:00 America/Sao_Paulo.' >&2
+              exit 10
+              ;;
+          esac
+          if [ "$(cat "$APP_DIR/.deploy-version" 2>/dev/null || true)" != "$REVISION" ]; then
+            echo 'Current main revision is not the live deployed revision.' >&2
+            exit 11
+          fi
+          if ! mountpoint -q /mnt/day-d-data; then
+            echo '/mnt/day-d-data is not mounted.' >&2
+            exit 12
+          fi
+          if [ ! -f "$DATASET_MANIFEST" ] || [ -L "$DATASET_MANIFEST" ]; then
+            echo 'Frozen Massive extension manifest is unavailable or unsafe.' >&2
+            exit 14
+          fi
+          python3 - "$DATASET_MANIFEST" "$EXPECTED_DATASET_MANIFEST_SHA256" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected = sys.argv[2]
+          claimed = manifest.pop("manifest_sha256", None)
+          canonical = json.dumps(
+              manifest,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=True,
+              allow_nan=False,
+          ).encode("utf-8")
+          observed = hashlib.sha256(canonical).hexdigest()
+          if claimed != expected or observed != expected:
+              raise SystemExit("frozen Massive extension manifest self-hash mismatch")
+
+          expected_sessions = [
+              "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27",
+              "2026-08-28", "2026-08-31", "2026-09-01", "2026-09-02",
+          ]
+          rows = manifest.get("sessions")
+          if (
+              manifest.get("schema_version")
+              != "DAY-D-MASSIVE-MINUTE-EXTENSION-DOWNLOAD-v1"
+              or manifest.get("dataset") != "minute_aggregates"
+              or manifest.get("session_count") != len(expected_sessions)
+              or not isinstance(rows, list)
+              or [row.get("session_date") for row in rows] != expected_sessions
+          ):
+              raise SystemExit("frozen Massive extension manifest scope mismatch")
+
+          data_root = Path("/mnt/day-d-data").resolve()
+          total_bytes = 0
+          for row in rows:
+              session = row["session_date"]
+              source = (
+                  data_root
+                  / "provider=massive"
+                  / "dataset=minute_aggregates"
+                  / f"session_date={session}"
+                  / "source.csv.gz"
+              )
+              if source.is_symlink() or not source.is_file():
+                  raise SystemExit(f"frozen Massive source is unavailable or unsafe: {session}")
+              source.resolve().relative_to(data_root)
+              size = source.stat().st_size
+              digest = hashlib.sha256()
+              with source.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              if size != row.get("content_length") or digest.hexdigest() != row.get("source_sha256"):
+                  raise SystemExit(f"frozen Massive source integrity mismatch: {session}")
+              total_bytes += size
+          if total_bytes != manifest.get("downloaded_bytes"):
+              raise SystemExit("frozen Massive extension byte total mismatch")
+          PY
+
+          install -m 700 -d "$claim_dir"
+          temporary=$(mktemp "$claim_dir/.dataset-claim.XXXXXX")
+          cleanup() { rm -f -- "$temporary"; }
+          trap cleanup EXIT
+          printf 'dataset_manifest_sha256=%s\nrun_id=%s\nrevision=%s\n' \
+            "$EXPECTED_DATASET_MANIFEST_SHA256" "$RUN_ID" "$REVISION" > "$temporary"
+          chmod 0444 "$temporary"
+          if ln "$temporary" "$claim" 2>/dev/null; then
+            printf 'true\n'
+          elif [ -f "$claim" ] && [ ! -L "$claim" ] \
+            && grep -qxF "dataset_manifest_sha256=$EXPECTED_DATASET_MANIFEST_SHA256" "$claim"; then
+            printf 'false\n'
+          else
+            echo 'Could not create or verify the dataset run claim.' >&2
+            exit 16
+          fi
+          REMOTE
+          mapfile -t decisions < "$decision_file"
+          if [ "${#decisions[@]}" -ne 1 ]; then
+            echo 'Remote preflight returned an invalid decision.' >&2
+            exit 15
+          fi
+          should_run=${decisions[0]}
+          case "$should_run" in
+            true|false) printf 'should_run=%s\n' "$should_run" >> "$GITHUB_OUTPUT" ;;
+            *) echo 'Remote preflight returned an invalid decision.' >&2; exit 15 ;;
+          esac
+
+  read-only-study:
+    needs: qualify-dataset-run
+    if: >-
+      needs.qualify-dataset-run.outputs.should_run == 'true' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
       - name: Check out audited study revision
         uses: actions/checkout@v6
 
@@ -71,13 +372,26 @@ jobs:
 
       - name: Run production read-only probes and frozen replay
         env:
+          GH_TOKEN: ${{ github.token }}
           HOST: ${{ secrets.C3PO_AWS_HOST }}
           USER: ${{ secrets.C3PO_AWS_USER }}
           REVISION: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
+          PROBE_INPUT_CUTOFF_AT: '2026-09-03T04:58:39.183354+00:00'
+          PROBE_LEDGER_ROW_COUNT: '1292'
+          PROBE_LEDGER_CANONICAL_SHA256: e641371f2db261556624b57eca930f97d01e5c3951401b18dbe7b13532f01dd8
         run: |
-          ssh -i ~/.ssh/c3po_study "$USER@$HOST" \
-            "REVISION='$REVISION' RUN_ID='$RUN_ID' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          main_revision=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$main_revision" != "$REVISION" ]; then
+            echo 'Current main revision changed after preflight.' >&2
+            exit 11
+          fi
+          ssh \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
+            -i ~/.ssh/c3po_study "$USER@$HOST" \
+            "REVISION='$REVISION' RUN_ID='$RUN_ID' PROBE_INPUT_CUTOFF_AT='$PROBE_INPUT_CUTOFF_AT' PROBE_LEDGER_ROW_COUNT='$PROBE_LEDGER_ROW_COUNT' PROBE_LEDGER_CANONICAL_SHA256='$PROBE_LEDGER_CANONICAL_SHA256' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           umask 077
 
@@ -116,6 +430,17 @@ jobs:
             "$HOST_OUTPUT/frozen-candidate-e-source.tar.gz.sha256"
 
           compose=(docker compose --env-file .env -f c3po/compose.yml)
+          active_api_oneoffs=$(
+            docker ps \
+              --filter label=com.docker.compose.project=c3po \
+              --filter label=com.docker.compose.oneoff=True \
+              --filter label=com.docker.compose.service=api \
+              --format '{{.ID}}'
+          )
+          if [ -n "$active_api_oneoffs" ]; then
+            echo 'Another API one-off container is active; refusing overlapping study.' >&2
+            exit 13
+          fi
           host_identity="$(id -u):$(id -g)"
           "${compose[@]}" run --rm -T --user "$host_identity" \
             -e EXPECTED_IDENTITY="$host_identity" \
@@ -123,12 +448,14 @@ jobs:
             api sh -eu -c '
               test "$(id -u):$(id -g)" = "$EXPECTED_IDENTITY"
               test -w "$STUDY_OUTPUT"
-            '
+            ' </dev/null
 
           "${compose[@]}" run --rm -T --user "$host_identity" api \
             python -m app.r2d2_chandelier_probe \
             --output "$CONTAINER_OUTPUT/probes-a-b.json" \
-            --query-output "$CONTAINER_OUTPUT/query.sql"
+            --query-output "$CONTAINER_OUTPUT/query.sql" \
+            --cutoff-at "$PROBE_INPUT_CUTOFF_AT" \
+            </dev/null
 
           "${compose[@]}" run --rm -T --user "$host_identity" \
             -v "$frozen_tmp:/frozen:ro" \
@@ -136,15 +463,23 @@ jobs:
             api python /app/app/r2d2_candidate_f_backtest.py \
             --data-root /app/day-d-data \
             --frozen-source-sha256 "$frozen_source_sha256" \
-            --output "$CONTAINER_OUTPUT/backtest-e-f.json"
+            --output "$CONTAINER_OUTPUT/backtest-e-f.json" \
+            </dev/null
 
-          python3 - "$HOST_OUTPUT" <<'PY'
+          python3 - \
+            "$HOST_OUTPUT" \
+            "$PROBE_INPUT_CUTOFF_AT" \
+            "$PROBE_LEDGER_ROW_COUNT" \
+            "$PROBE_LEDGER_CANONICAL_SHA256" <<'PY'
           import hashlib
           import json
           import sys
           from pathlib import Path
 
           root = Path(sys.argv[1])
+          expected_cutoff = sys.argv[2]
+          expected_ledger_rows = int(sys.argv[3])
+          expected_ledger_sha256 = sys.argv[4]
           for name in ("probes-a-b.json", "backtest-e-f.json"):
               payload = json.loads((root / name).read_text(encoding="utf-8"))
               expected = payload.pop("report_sha256")
@@ -164,6 +499,12 @@ jobs:
           probe = json.loads((root / "probes-a-b.json").read_text(encoding="utf-8"))
           if query_sha != probe["governance"]["query_sha256"]:
               raise SystemExit("query hash mismatch")
+          if probe.get("input_cutoff_at") != expected_cutoff:
+              raise SystemExit("probe input cutoff mismatch")
+          if probe.get("inputs", {}).get("ledger_row_count") != expected_ledger_rows:
+              raise SystemExit("probe ledger row count mismatch")
+          if probe.get("inputs", {}).get("ledger_canonical_sha256") != expected_ledger_sha256:
+              raise SystemExit("probe ledger canonical hash mismatch")
           frozen_sha = (
               root / "frozen-candidate-e-source.tar.gz.sha256"
           ).read_text(encoding="utf-8").split()[0]
@@ -226,11 +567,18 @@ jobs:
           print("## Anexo factual — Chandelier E×F")
           print()
           print(f"- [run e artefato reduzido]({run_url}) — retenção 30 dias")
+          print(f"- Corte de entrada congelado: `{probe['input_cutoff_at']}`; "
+                f"ledger `{probe['inputs']['ledger_row_count']}` linhas / "
+                f"`{probe['inputs']['ledger_canonical_sha256']}`.")
           print(f"- Sonda A: {a['eligible_episode_count']} vencedores elegíveis; "
                 f"{a['ratchet_only_exit_count']} cruzamentos exclusivos da catraca.")
-          print(f"- Sonda B: {b['eligible_stop_out_count']} stop-outs elegíveis; "
-                f"{b['recovered_above_entry_percent']}% voltaram acima da entrada e "
-                f"{b['reached_plus_1r_percent']}% chegaram a +1R na mesma sessão.")
+          if b["eligible_stop_out_count"]:
+              print(f"- Sonda B: {b['eligible_stop_out_count']} stop-outs elegíveis; "
+                    f"{b['recovered_above_entry_percent']}% voltaram acima da entrada e "
+                    f"{b['reached_plus_1r_percent']}% chegaram a +1R na mesma sessão.")
+          else:
+              print(f"- Sonda B: {b['observed_stop_out_count']} stop-outs observados; "
+                    "0 elegíveis; recuperação N/D (denominador vazio).")
           print(f"- Backtest E→F: payoff {e['payoff_ratio']}→{f['payoff_ratio']}; "
                 f"drawdown {e['max_drawdown_percent']}%→{f['max_drawdown_percent']}%; "
                 f"retorno {e['total_return_percent']}%→{f['total_return_percent']}%.")
@@ -240,8 +588,55 @@ jobs:
                 f"(denominadores {e['premature_exit']['eligible_stop_exit_leg_count']}→"
                 f"{f['premature_exit']['eligible_stop_exit_leg_count']}).")
           print(f"- Hashes: probes `{probe['report_sha256']}`; backtest `{backtest['report_sha256']}`.")
+          print("- Este novo hash das Sondas A/B supersede os resultados N/D do erratum "
+                "`c36ad4fce26c6f681b44c6f86046e2f1c2472da7258c402d947a2785fcae9bab`.")
+          print("- O replay E×F desta execução é controle redundante; o resultado congelado "
+                "`1613674bddd10ae18cc4acf90b5680869fb240a896a78849c907d21fd30629dc` "
+                "permanece o canônico e não é supersedido.")
           print(f"- Política E congelada: commit `{backtest['frozen_harness']['policy_commit']}`; "
                 f"pacote `{backtest['frozen_harness']['source_package_sha256']}`.")
           print("- Evidência apenas: nenhuma mudança de política ou produção foi autorizada.")
           PY
           gh pr comment 348 --body-file "$RUNNER_TEMP/gate-annex.md"
+
+  record-scheduled-failure:
+    needs: [qualify-dataset-run, read-only-study]
+    if: >-
+      always() &&
+      github.event_name == 'schedule' &&
+      (needs.qualify-dataset-run.result == 'failure' ||
+       needs.qualify-dataset-run.result == 'cancelled' ||
+       needs.read-only-study.result == 'failure' ||
+       needs.read-only-study.result == 'cancelled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record the fail-closed run in the gate agenda
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFY_RESULT: ${{ needs.qualify-dataset-run.result }}
+          STUDY_RESULT: ${{ needs.read-only-study.result }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REVISION: ${{ github.sha }}
+          DATASET_MANIFEST_SHA256: 89ab28a0d7a718adee5acdcaf06f64dfa1e11de55f87e52ff6232c9c46f327c8
+        run: |
+          set -Eeuo pipefail
+          marker="<!-- r2d2-chandelier-scheduled-failure:$RUN_ID -->"
+          comments=$(mktemp)
+          body=$(mktemp)
+          cleanup() { rm -f -- "$comments" "$body"; }
+          trap cleanup EXIT
+          gh api "repos/$GITHUB_REPOSITORY/issues/348/comments" --paginate \
+            --jq '.[].body' > "$comments"
+          if grep -Fx "$marker" "$comments" >/dev/null; then
+            exit 0
+          fi
+          printf '%s\n\n' "$marker" > "$body"
+          printf '## Sondas A/B — falha fechada do disparador remoto\n\n' >> "$body"
+          printf '%s\n' "- [Run e log]($RUN_URL)." >> "$body"
+          printf '%s\n' "- Estágios: qualificação \`$QUALIFY_RESULT\`; estudo \`$STUDY_RESULT\`." >> "$body"
+          printf '%s\n' "- Head: \`$REVISION\`." >> "$body"
+          printf '%s\n' "- Manifest self-hash esperado: \`$DATASET_MANIFEST_SHA256\`." >> "$body"
+          printf '%s\n' '- Fail-closed: nenhuma nova tentativa automática deste mandato será feita.' >> "$body"
+          gh pr comment 348 --body-file "$body"

@@ -11,6 +11,7 @@ from app.day_d_replay.massive_archive import (
     FlatFileDataset,
     MassiveArchiveError,
     MassiveFlatFileArchive,
+    PlannedArtifact,
 )
 from app.day_d_replay.massive_campaign import MassiveCampaignGuard
 
@@ -19,8 +20,10 @@ class FakeStore:
     def __init__(self, blobs: dict[str, bytes]) -> None:
         self.blobs = blobs
         self.downloads: list[str] = []
+        self.head_calls = 0
 
     def head_object(self, *, Bucket: str, Key: str) -> dict[str, object]:
+        self.head_calls += 1
         assert Bucket == "flatfiles"
         etag = hashlib.md5(self.blobs[Key]).hexdigest()  # noqa: S324 - provider fixture only
         return {"ContentLength": len(self.blobs[Key]), "ETag": f'"{etag}"'}
@@ -44,6 +47,8 @@ def _archive(
     download_authorized: bool = True,
     per_session_abort_bytes: int = 25_416_665_942,
     local_spool_ceiling_bytes: int = 76_249_997_826,
+    expected_orphan_parts: frozenset[str] | None = None,
+    locked_write_preflight=None,  # noqa: ANN001
 ) -> MassiveFlatFileArchive:
     artifacts: dict[str, dict[str, object]] = {}
     for dataset in FlatFileDataset:
@@ -86,9 +91,12 @@ def _archive(
                 int(item["content_length"]) for item in artifacts.values()
             ),
             campaign_pause_bytes=10_000,
+            include_extension_scope=False,
             require_complete_frozen_scope=False,
         ),
         disk_usage=disk_usage or (lambda _path: SimpleNamespace(free=free)),
+        expected_orphan_parts=expected_orphan_parts,
+        locked_write_preflight=locked_write_preflight,
     )
 
 
@@ -284,7 +292,6 @@ def test_massive_archive_quarantines_download_when_rehead_changes(tmp_path: Path
             self.head_calls = 0
 
         def head_object(self, *, Bucket: str, Key: str) -> dict[str, object]:
-            self.head_calls += 1
             metadata = super().head_object(Bucket=Bucket, Key=Key)
             if self.head_calls > 1:
                 metadata["ETag"] = '"changed-after-plan"'
@@ -310,10 +317,14 @@ def test_massive_archive_quarantines_download_when_rehead_changes(tmp_path: Path
 def test_massive_archive_quarantines_orphan_parts_before_next_download(tmp_path: Path) -> None:
     key = _key(FlatFileDataset.TRADES)
     store = FakeStore({key: b"fresh"})
-    archive = _archive(tmp_path, store)
     orphan = tmp_path / "provider=massive" / "dataset=trades" / ".old-download.part"
     orphan.parent.mkdir(parents=True)
     orphan.write_bytes(b"incomplete")
+    archive = _archive(
+        tmp_path,
+        store,
+        expected_orphan_parts=frozenset({str(orphan.relative_to(tmp_path))}),
+    )
 
     archive.download(
         session_date=date(2026, 8, 21),
@@ -328,12 +339,216 @@ def test_massive_archive_quarantines_orphan_parts_before_next_download(tmp_path:
     assert archive.local_path(FlatFileDataset.TRADES, date(2026, 8, 21)).read_bytes() == b"fresh"
 
 
+def test_massive_archive_rechecks_sealed_orphans_under_lock_before_remote_head(
+    tmp_path: Path,
+) -> None:
+    key = _key(FlatFileDataset.TRADES)
+    store = FakeStore({key: b"fresh"})
+    archive = _archive(tmp_path, store, expected_orphan_parts=frozenset())
+    unexpected = (
+        tmp_path / "provider=massive" / "dataset=trades" / ".unexpected.part"
+    )
+    unexpected.parent.mkdir(parents=True)
+    unexpected.write_bytes(b"appeared-after-preflight")
+
+    with pytest.raises(
+        MassiveArchiveError,
+        match="orphan manifest changed.*refusing remote HEAD",
+    ):
+        archive.download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES,),
+        )
+
+    assert store.head_calls == 0
+    assert unexpected.read_bytes() == b"appeared-after-preflight"
+    assert store.downloads == []
+
+
+def test_expected_plan_runs_campaign_ledger_guard_before_remote_head(
+    tmp_path: Path,
+) -> None:
+    key = _key(FlatFileDataset.TRADES)
+    payload = b"fresh"
+    store = FakeStore({key: payload})
+    archive = _archive(tmp_path, store, expected_orphan_parts=frozenset())
+    events_root = tmp_path / "provider=massive" / "campaign" / "verified-events"
+    events_root.mkdir(parents=True)
+    (events_root / "bad.json").write_text("{not-json", encoding="utf-8")
+    expected = PlannedArtifact(
+        dataset="trades",
+        session_date="2026-08-21",
+        bucket="flatfiles",
+        object_key=key,
+        content_length=len(payload),
+        remote_etag=hashlib.md5(payload).hexdigest(),  # noqa: S324 - provider fixture
+        local_path=str(
+            archive.local_path(FlatFileDataset.TRADES, date(2026, 8, 21))
+        ),
+    )
+
+    with pytest.raises(MassiveArchiveError, match="invalid campaign event ledger"):
+        archive.download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES,),
+            expected_plan=(expected,),
+        )
+
+    assert store.head_calls == 0
+    assert store.downloads == []
+
+
+def test_expected_plan_runs_capacity_guards_before_remote_head(tmp_path: Path) -> None:
+    key = _key(FlatFileDataset.TRADES)
+    payload = b"fresh"
+    store = FakeStore({key: payload})
+    archive = _archive(
+        tmp_path,
+        store,
+        free=1_000,
+        expected_orphan_parts=frozenset(),
+    )
+    expected = PlannedArtifact(
+        dataset="trades",
+        session_date="2026-08-21",
+        bucket="flatfiles",
+        object_key=key,
+        content_length=len(payload),
+        remote_etag=hashlib.md5(payload).hexdigest(),  # noqa: S324 - provider fixture
+        local_path=str(
+            archive.local_path(FlatFileDataset.TRADES, date(2026, 8, 21))
+        ),
+    )
+
+    with pytest.raises(MassiveArchiveError, match="disk guard blocked"):
+        archive.download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES,),
+            expected_plan=(expected,),
+        )
+
+    assert store.head_calls == 0
+    assert store.downloads == []
+
+
+def test_expected_plan_rechecks_local_integrity_under_lock_before_remote_head(
+    tmp_path: Path,
+) -> None:
+    key = _key(FlatFileDataset.TRADES)
+    payload = b"fresh"
+    store = FakeStore({key: payload})
+    archive = _archive(tmp_path, store, expected_orphan_parts=frozenset())
+    target = archive.local_path(FlatFileDataset.TRADES, date(2026, 8, 21))
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"trash")
+    expected_sha256 = hashlib.sha256(payload).hexdigest()
+    archive._artifact_metadata_path(target).write_text(  # noqa: SLF001 - invariant fixture
+        json.dumps({
+            "schema_version": archive.manifest_version,
+            "bucket": "flatfiles",
+            "object_key": key,
+            "content_length": len(payload),
+            "remote_etag": hashlib.md5(payload).hexdigest(),  # noqa: S324
+            "sha256": expected_sha256,
+        }),
+        encoding="utf-8",
+    )
+    expected = PlannedArtifact(
+        dataset="trades",
+        session_date="2026-08-21",
+        bucket="flatfiles",
+        object_key=key,
+        content_length=len(payload),
+        remote_etag=hashlib.md5(payload).hexdigest(),  # noqa: S324
+        local_path=str(target),
+    )
+
+    with pytest.raises(MassiveArchiveError, match="local artifact checksum mismatch"):
+        archive.download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES,),
+            expected_plan=(expected,),
+        )
+
+    assert store.head_calls == 0
+    assert store.downloads == []
+
+
+def test_expected_plan_rejects_duplicate_cardinality_before_remote_head(
+    tmp_path: Path,
+) -> None:
+    key = _key(FlatFileDataset.TRADES)
+    payload = b"fresh"
+    store = FakeStore({key: payload})
+    archive = _archive(tmp_path, store, expected_orphan_parts=frozenset())
+    expected = PlannedArtifact(
+        dataset="trades",
+        session_date="2026-08-21",
+        bucket="flatfiles",
+        object_key=key,
+        content_length=len(payload),
+        remote_etag=hashlib.md5(payload).hexdigest(),  # noqa: S324
+        local_path=str(
+            archive.local_path(FlatFileDataset.TRADES, date(2026, 8, 21))
+        ),
+    )
+
+    with pytest.raises(MassiveArchiveError, match="expected local plan differs"):
+        archive.download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES,),
+            expected_plan=(expected, expected),
+        )
+
+    assert store.head_calls == 0
+    assert store.downloads == []
+
+
+def test_locked_write_preflight_rechecks_revoked_permission_before_remote_head(
+    tmp_path: Path,
+) -> None:
+    key = _key(FlatFileDataset.TRADES)
+    payload = b"fresh"
+    store = FakeStore({key: payload})
+
+    def revoked_permission() -> None:
+        raise PermissionError("write permission revoked after outer preflight")
+
+    archive = _archive(
+        tmp_path,
+        store,
+        expected_orphan_parts=frozenset(),
+        locked_write_preflight=revoked_permission,
+    )
+    expected = PlannedArtifact(
+        dataset="trades",
+        session_date="2026-08-21",
+        bucket="flatfiles",
+        object_key=key,
+        content_length=len(payload),
+        remote_etag=hashlib.md5(payload).hexdigest(),  # noqa: S324
+        local_path=str(
+            archive.local_path(FlatFileDataset.TRADES, date(2026, 8, 21))
+        ),
+    )
+
+    with pytest.raises(PermissionError, match="revoked after outer preflight"):
+        archive.download(
+            session_date=date(2026, 8, 21),
+            datasets=(FlatFileDataset.TRADES,),
+            expected_plan=(expected,),
+        )
+
+    assert store.head_calls == 0
+    assert store.downloads == []
+
+
 def test_massive_archive_refuses_concurrent_download_process(tmp_path: Path) -> None:
     key = _key(FlatFileDataset.TRADES)
     store = FakeStore({key: b"fresh"})
     archive = _archive(tmp_path, store)
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    lock_path = tmp_path / ".massive-download.lock"
+    lock_path = tmp_path / "evidence" / ".massive-download.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     with lock_path.open("a+", encoding="utf-8") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -344,3 +559,17 @@ def test_massive_archive_refuses_concurrent_download_process(tmp_path: Path) -> 
             )
 
     assert store.downloads == []
+
+
+def test_massive_archive_places_lock_in_writable_evidence_namespace(tmp_path: Path) -> None:
+    key = _key(FlatFileDataset.TRADES)
+    store = FakeStore({key: b"fresh"})
+    archive = _archive(tmp_path, store)
+
+    archive.download(
+        session_date=date(2026, 8, 21),
+        datasets=(FlatFileDataset.TRADES,),
+    )
+
+    assert (tmp_path / "evidence" / ".massive-download.lock").is_file()
+    assert not (tmp_path / ".massive-download.lock").exists()

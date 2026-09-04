@@ -35,6 +35,8 @@ services:
       C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
       C3PO_LEGACY_ROOT: /legacy
       C3PO_MIGRATIONS_DIR: /app/db
+      C3PO_AUTH_OWNER_IDLE_MINUTES: "360"
+      C3PO_AUTH_MEMBER_IDLE_MINUTES: "60"
       C3PO_CORS_ORIGINS: http://localhost:8081,http://127.0.0.1:8081,http://localhost:3000,http://127.0.0.1:3000
     volumes:
       - ..:/legacy:ro

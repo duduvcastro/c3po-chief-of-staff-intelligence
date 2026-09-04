@@ -30,8 +30,16 @@ motor.
   época 2; episódios corrigidos ou de `operator_wind_down` não entram.
 - Relato individual: todo episódio vencedor aparece com token SHA-256
   irreversível, sem símbolo, fills ou barras cruas.
-- Relógio: closes completos de cinco minutos; `high_water` usa closes, como o
-  harness original do Candidato E.
+- Cobertura fail-closed: antes de calcular qualquer resultado, o runner exige
+  um arquivo Massive para cada uma das 20 sessões XNYS de lookback e para cada
+  sessão entre a primeira entrada e a última saída da coorte. Ausência de uma
+  sessão aborta o laudo; ausência de trajetória observável ou de ATR suficiente
+  censura o episódio e nunca vira efeito zero.
+- Relógio: janelas fixas de cinco minutos de Nova York; cada barra agrega as
+  1–5 linhas reais emitidas pelo Massive na janela. Minuto sem negócio elegível
+  não gera linha no provedor e não é tratado como corrupção. Janela vazia não
+  gera barra; não há `forward-fill`, interpolação nem preço sintético.
+  `high_water` usa closes, como o harness original do Candidato E.
 - ATR: média simples dos 14 true ranges que `compute_technical_snapshot`
   usava na janela móvel de 40 barras, com o mesmo piso de `0,4%` do preço.
 - Cruzamento atribuível à catraca: primeiro close `<= F` e `> E`. Se também
@@ -54,7 +62,9 @@ motor.
 - Entrada: fill médio ponderado pelas quantidades compradas.
 - `1R`: entrada menos o `stop_price` original persistido no BUY.
 - Saídas: percentual que voltou acima da entrada; percentual que chegou a
-  `+1R`; ambas com denominador elegível explícito.
+  `+1R`; ambas com denominador elegível explícito. Sem barras observáveis do
+  símbolo na sessão da saída, o episódio é censurado; denominador zero é `N/D`,
+  nunca `0%`.
 
 ## Backtest E × F
 
@@ -79,6 +89,25 @@ Os bytes da resposta EODHD usados em 20/08 não foram retidos. A nova execução
 usa as mesmas datas e símbolos sobre o arquivo Massive de um minuto,
 checksumado e agregado para cinco minutos. Essa troca fica no laudo e impede
 qualquer alegação de reprodução byte a byte do número histórico.
+
+A reconstrução usa a semântica publicada pelo Massive: em cada janela fixa de
+cinco minutos, `open` é a primeira linha real, `high/low` são os extremos,
+`close` é a última linha real e `volume` é a soma. O piso de 70 barras por
+símbolo/sessão permanece fail-closed depois da agregação. O run `33714916267`
+usou a implementação v1, que descartava a janela inteira quando uma das cinco
+linhas de minuto não existia; o JSON parcial dessa execução não foi publicado e
+é explicitamente superseded pela execução v2.
+
+O run `33716979776` produziu um backtest E×F válido, mas o seu arquivo de
+minutos terminava em 21/08 enquanto a coorte das Sondas A/B começava em 26/08.
+O laudo v2 das sondas não verificava essa interseção e classificou ausência de
+trajetória como observação elegível de efeito zero. Esses números A/B são
+inválidos e explicitamente superseded pelo schema v3; o backtest E×F do mesmo
+artefato permanece válido porque usa o universo e as sessões congelados de
+06–19/08.
+
+Referências primárias: [Custom Bars (OHLC)](https://www.massive.com/docs/rest/stocks/aggregates/custom-bars)
+e [Why are there missing aggregates?](https://massive.com/knowledge-base/article/why-are-there-missing-aggregates-in-massives-data).
 
 O Candidato G não roda nesta primeira comparação: manter E×F com uma única
 variável reduz ambiguidade. O resultado pode justificar uma nova obra para G,
