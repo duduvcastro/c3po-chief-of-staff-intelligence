@@ -471,22 +471,43 @@ def test_command_center_hung_section_becomes_a_timeout_without_blocking_the_rest
 
 
 def test_command_center_aggregate_renews_the_idle_window(monkeypatch) -> None:
+    from uuid import uuid4
+
+    token = "command-center-aggregate-session-token"
+    now = datetime.now(timezone.utc)
+    app_main.database.ensure_access_owner(app_main.settings.auth_email, ["command"], ["read"])
+    app_main.database.create_session(
+        {
+            "id": str(uuid4()),
+            "email": app_main.settings.auth_email,
+            "token_hash": app_main.auth_service.session_hash(token),
+            "expires_at": now + timedelta(hours=24),
+            "created_at": now,
+            "last_seen_at": now - timedelta(minutes=5),
+            "created_ip": "127.0.0.1",
+        }
+    )
     touched = {"count": 0}
     real = app_main.auth_service.authenticate
 
-    def spy(token, touch_activity=False):
+    def spy(candidate, touch_activity=False):
         if touch_activity:
             touched["count"] += 1
-        return real(token, touch_activity=touch_activity)
+        return real(candidate, touch_activity=touch_activity)
 
     monkeypatch.setattr(app_main.auth_service, "authenticate", spy)
-    monkeypatch.setattr(app_main.settings, "auth_required", True)
-    monkeypatch.setattr(app_main, "current_access_actor", lambda request: {"email": "owner@example.com", "permissions": ["command"], "role": "owner"})
+    previous_required = app_main.settings.auth_required
+    app_main.settings.auth_required = True
     app_main.command_center_cache.invalidate()
     try:
         with TestClient(app) as client:
+            client.cookies.set(app_main.SESSION_COOKIE, token)
             response = client.get("/api/v1/command-center", params={"include": "reports"})
+            session = client.get("/api/v1/auth/session")
     finally:
+        app_main.settings.auth_required = previous_required
         app_main.command_center_cache.invalidate()
+        app_main.auth_service.logout(token)
     assert response.status_code == 200
-    assert touched["count"] == 1
+    assert touched["count"] == 1  # the aggregate opening renewed the idle window server-side
+    assert session.status_code == 200
