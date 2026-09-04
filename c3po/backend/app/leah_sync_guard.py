@@ -217,15 +217,20 @@ class LeahSyncGuard:
             try:
                 result = future.result(timeout=remaining)
             except FutureTimeout:
-                with state.result_lock:
-                    settled = future.done() and not future.cancelled() and future.exception() is None
-                    if not settled:
+                settled = future.done() and not future.cancelled() and future.exception() is None
+                if settled:
+                    # Record the flight's real completion instant (idempotent) and decide by
+                    # the flight's own clock: only a completion at or before the deadline may
+                    # be delivered. A later one is a hard-deadline miss for THIS caller (504),
+                    # while its publication stays accounted and reusable (Codex reaudit, P1).
+                    self._publish(state, fingerprint, started, future)
+                    completed_at = float(getattr(future, "_c3po_completed_at", float("inf")))
+                    if completed_at <= deadline_at:
+                        return future.result()
+                else:
+                    with state.result_lock:
                         state.cooldown_fingerprint = fingerprint
                         state.cooldown_until = self._clock() + self.cooldown_seconds
-                if settled:
-                    # Landed at the deadline edge: deliver it. No 504, no cooldown, no timeout.
-                    self._publish(state, fingerprint, started, future)
-                    return future.result()
                 self._count("timeouts")
                 if future.cancel():
                     # Still queued: it never ran and never will (Codex reaudit, P1-1).
@@ -274,6 +279,7 @@ class LeahSyncGuard:
             if getattr(future, "_c3po_published", False):
                 return
             setattr(future, "_c3po_published", True)
+            setattr(future, "_c3po_completed_at", completed)
             deadline_at = getattr(future, "_c3po_deadline_at", None)
             late = deadline_at is not None and completed > float(deadline_at)
             if state.inflight is future:

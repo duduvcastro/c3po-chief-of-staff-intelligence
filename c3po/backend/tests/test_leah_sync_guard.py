@@ -425,3 +425,41 @@ def test_timeout_and_completion_race_is_classified_by_the_flight_deadline() -> N
     assert guard2.counters.executed == 1
     assert guard2.counters.late_completions == 0
     assert guard2._state("device-2").cooldown_until is None
+
+
+def test_success_that_lands_after_the_deadline_is_never_delivered_to_its_caller() -> None:
+    clock = FakeClock()
+    guard = LeahSyncGuard(dedupe_window_seconds=30.0, deadline_seconds=0.05, cooldown_seconds=30.0, clock=clock)
+    manual = _ManualExecutor()
+    guard._executor = manual  # type: ignore[assignment]
+    original_result = Future.result
+
+    def racy_result(self, timeout=None):  # noqa: ANN001
+        if getattr(self, "_c3po_race_once", False):
+            self._c3po_race_once = False
+            clock.now += 1.0  # the work finishes ~950 ms AFTER the flight's deadline...
+            self.set_result("too-late")
+            raise FutureTimeout()  # ...and the timeout handler inspects it afterwards
+        return original_result(self, timeout)
+
+    Future.result = racy_result  # type: ignore[method-assign]
+    try:
+        manual_submit = manual.submit
+
+        def submit_racy(fn, *args, **kwargs):  # noqa: ANN001
+            future = manual_submit(fn, *args, **kwargs)
+            future._c3po_race_once = True  # type: ignore[attr-defined]
+            return future
+
+        manual.submit = submit_racy  # type: ignore[method-assign]
+        payload = {"items": [{"id": "late"}]}
+        with pytest.raises(LeahSyncTimeout):
+            guard.run("device-1", payload, lambda: "unused")  # hard deadline: 504 for this caller
+    finally:
+        Future.result = original_result  # type: ignore[method-assign]
+    assert guard.counters.timeouts == 1
+    assert guard.counters.executed == 1  # the late publication is still accounted...
+    assert guard.counters.late_completions == 1
+    state = guard._state("device-1")
+    assert state.cooldown_until is None  # ...and it clears the cooldown per contract
+    assert guard.run("device-1", dict(payload), lambda: "unused") == "too-late"  # reusable via dedupe
