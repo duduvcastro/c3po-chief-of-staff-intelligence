@@ -206,3 +206,37 @@ def test_caller_arriving_after_invalidate_never_joins_the_old_flight() -> None:
     assert early == ["old"]  # the earlier waiter keeps what it joined
     assert cache.get("k", lambda: "unused") == "fresh"  # the key holds the fresh value
     assert cache.snapshot()["inflight"] == []
+
+
+def test_invalidating_one_key_keeps_the_single_flight_of_another_key() -> None:
+    cache = SingleFlightReadCache(lambda: 60.0)
+    started = threading.Event()
+    release = threading.Event()
+    computes = {"b": 0}
+
+    def compute_b() -> str:
+        computes["b"] += 1
+        started.set()
+        release.wait(timeout=5)
+        return "b-value"
+
+    results: list[str] = []
+    leader = threading.Thread(target=lambda: results.append(cache.get("b", compute_b)))
+    leader.start()
+    assert started.wait(timeout=5)
+    cache.invalidate("a")  # unrelated key
+    follower = threading.Thread(target=lambda: results.append(cache.get("b", compute_b)))
+    follower.start()
+    for _ in range(100):
+        if cache.counters.coalesced == 1:
+            break
+        threading.Event().wait(0.01)
+    assert cache.counters.coalesced == 1  # the follower joined the in-flight computation
+    release.set()
+    leader.join(timeout=5)
+    follower.join(timeout=5)
+    assert results == ["b-value", "b-value"]
+    assert computes["b"] == 1
+    # ...whereas invalidating "b" itself does start a fresh computation.
+    cache.invalidate("b")
+    assert cache.get("b", lambda: "fresh") == "fresh"

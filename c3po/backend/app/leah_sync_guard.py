@@ -205,6 +205,10 @@ class LeahSyncGuard:
                 )
             started = self._clock()
             future = self._executor.submit(work)
+            # The deadline lives on the flight itself: classification of a completion as
+            # late is a pure comparison (completed_at > deadline_at) and never depends on
+            # which thread — caller or done-callback — gets there first.
+            setattr(future, "_c3po_deadline_at", deadline_at)
             state.inflight = future
             state.inflight_fingerprint = fingerprint
             future.add_done_callback(
@@ -213,18 +217,22 @@ class LeahSyncGuard:
             try:
                 result = future.result(timeout=remaining)
             except FutureTimeout:
-                self._count("timeouts")
                 with state.result_lock:
-                    state.cooldown_fingerprint = fingerprint
-                    state.cooldown_until = self._clock() + self.cooldown_seconds
-                    setattr(future, "_c3po_timed_out", True)  # flag lives on the flight itself
+                    settled = future.done() and not future.cancelled() and future.exception() is None
+                    if not settled:
+                        state.cooldown_fingerprint = fingerprint
+                        state.cooldown_until = self._clock() + self.cooldown_seconds
+                if settled:
+                    # Landed at the deadline edge: deliver it. No 504, no cooldown, no timeout.
+                    self._publish(state, fingerprint, started, future)
+                    return future.result()
+                self._count("timeouts")
                 if future.cancel():
                     # Still queued: it never ran and never will (Codex reaudit, P1-1).
                     with state.result_lock:
                         if state.inflight is future:
                             state.inflight = None
                             state.inflight_fingerprint = None
-                        setattr(future, "_c3po_timed_out", False)
                     self._count("cancelled")
                 logger.warning(
                     "leah sync deadline exceeded identity=%s deadline_s=%.1f counters=%s",
@@ -266,7 +274,8 @@ class LeahSyncGuard:
             if getattr(future, "_c3po_published", False):
                 return
             setattr(future, "_c3po_published", True)
-            late = bool(getattr(future, "_c3po_timed_out", False))
+            deadline_at = getattr(future, "_c3po_deadline_at", None)
+            late = deadline_at is not None and completed > float(deadline_at)
             if state.inflight is future:
                 state.inflight = None
                 state.inflight_fingerprint = None

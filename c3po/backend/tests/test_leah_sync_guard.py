@@ -4,6 +4,8 @@ import threading
 
 import pytest
 
+from concurrent.futures import Future, TimeoutError as FutureTimeout
+
 from app.leah_sync_guard import (
     LeahSyncBackoff,
     LeahSyncBusy,
@@ -95,6 +97,7 @@ def test_deadline_returns_timeout_with_retry_after_and_blocks_retries_while_runn
     assert busy.value.status_code == 503
     assert guard.counters.timeouts == 1
     assert guard.counters.busy_rejected == 1
+    clock.now += 1.0  # fake clock: the completion below lands after the flight's deadline
     release.set()
     # Once the late work completes it is ACCOUNTED (executed + late) and reusable.
     for _ in range(200):
@@ -249,48 +252,50 @@ def test_coalesced_and_queued_are_counted_separately() -> None:
 def test_queued_work_is_cancelled_when_its_caller_times_out() -> None:
     import time as _time
 
+    # Sequence (deterministic): A starts and is held; wait until A's CALLER has already
+    # timed out (its work still held, occupying the single worker); only then submit B,
+    # whose future stays queued and is cancelled by its own timeout; finally release A.
     guard = LeahSyncGuard(dedupe_window_seconds=0.0, deadline_seconds=0.2, cooldown_seconds=30.0, max_workers=1)
     hold = threading.Event()
     started_a = threading.Event()
     ran_b = threading.Event()
+    a_outcome: list[object] = []
 
     def work_a() -> str:
         started_a.set()
-        hold.wait(timeout=5)
+        hold.wait(timeout=10)
         return "a"
 
     def work_b() -> str:
         ran_b.set()
         return "b"
 
-    a_outcome: list[object] = []
-
     def caller_a() -> None:
         try:
             a_outcome.append(guard.run("device-a", {"n": "a"}, work_a))
-        except BaseException as error:  # noqa: BLE001 - A also exceeds the 0.2 s deadline
+        except BaseException as error:  # noqa: BLE001
             a_outcome.append(error)
 
     thread = threading.Thread(target=caller_a)
     thread.start()
     assert started_a.wait(timeout=5)
-    # B belongs to another identity, so it is not queue-blocked by A's lock — but the single
-    # worker is busy: B's future stays QUEUED and B's caller times out.
+    thread.join(timeout=5)  # A's caller times out at 0.2 s while work_a stays held
+    assert isinstance(a_outcome[0], LeahSyncTimeout), a_outcome
+    assert not hold.is_set()
     with pytest.raises(LeahSyncTimeout):
-        guard.run("device-b", {"n": "b"}, work_b)
+        guard.run("device-b", {"n": "b"}, work_b)  # queued behind the held worker -> cancelled
     assert guard.counters.cancelled == 1
-    hold.set()
-    thread.join(timeout=5)
-    _time.sleep(0.2)
-    assert not ran_b.is_set()  # cancelled while queued: it never ran, even after the worker freed up
     assert guard._state("device-b").inflight is None
-    assert isinstance(a_outcome[0], LeahSyncTimeout)  # A ran past its own deadline (running work is not killed)
-    for _ in range(200):
+    hold.set()
+    for _ in range(300):
         if guard.counters.executed == 1:
             break
         _time.sleep(0.01)
-    assert guard.counters.executed == 1  # A's late completion is accounted; B never executed
+    _time.sleep(0.05)
+    assert not ran_b.is_set()  # cancelled while queued: never ran, even after the worker freed up
+    assert guard.counters.executed == 1  # A's late completion is accounted
     assert guard.counters.late_completions == 1
+    assert guard.counters.timeouts == 2
 
 
 def test_result_is_published_before_run_returns_even_if_the_callback_lags() -> None:
@@ -340,7 +345,8 @@ def test_late_completion_is_classified_by_the_flight_not_by_cooldown() -> None:
         return "late"
 
     with pytest.raises(LeahSyncTimeout):
-        guard.run("device-1", payload, slow)  # times out: flight marked as timed out
+        guard.run("device-1", payload, slow)  # times out; the flight carries its deadline
+    clock.now += 1.0  # completion lands after the deadline -> classified late
     release.set()
     for _ in range(400):
         if guard.counters.late_completions == 1:
@@ -350,3 +356,72 @@ def test_late_completion_is_classified_by_the_flight_not_by_cooldown() -> None:
     assert guard.counters.executed == 1
     state = guard._state("device-1")
     assert state.cooldown_until is None  # late success clears the residual cooldown
+
+
+class _ManualExecutor:
+    """Executor whose futures complete only when the test says so."""
+
+    def __init__(self) -> None:
+        self.futures: list[Future] = []
+
+    def submit(self, fn, *args, **kwargs) -> Future:  # noqa: ANN001
+        future: Future = Future()
+        future.set_running_or_notify_cancel()
+        future._c3po_fn = fn  # type: ignore[attr-defined]
+        self.futures.append(future)
+        return future
+
+
+def test_timeout_and_completion_race_is_classified_by_the_flight_deadline() -> None:
+    clock = FakeClock()
+    guard = LeahSyncGuard(dedupe_window_seconds=30.0, deadline_seconds=0.05, cooldown_seconds=30.0, clock=clock)
+    manual = _ManualExecutor()
+    guard._executor = manual  # type: ignore[assignment]
+    payload = {"items": [{"id": "race"}]}
+
+    # 1) Work completes AFTER the caller's timeout: 504 for the caller, then the late
+    #    completion is accounted as late and clears the cooldown (no residual cooldown).
+    with pytest.raises(LeahSyncTimeout):
+        guard.run("device-1", payload, lambda: "unused")
+    future = manual.futures[-1]
+    assert guard.counters.timeouts == 1
+    state = guard._state("device-1")
+    assert state.cooldown_until is not None
+    clock.now += 1.0  # completion lands after the deadline -> late
+    future.set_result("late-result")
+    assert guard.counters.executed == 1
+    assert guard.counters.late_completions == 1
+    assert state.cooldown_until is None  # cleared by the successful (late) publish
+    assert guard.run("device-1", dict(payload), lambda: "unused") == "late-result"  # dedupes
+
+    # 2) Work completes exactly while the timeout fires: the caller is DELIVERED the result
+    #    (no 504, no timeout count, no cooldown) and the flight is not classified as late.
+    guard2 = LeahSyncGuard(dedupe_window_seconds=0.0, deadline_seconds=0.05, cooldown_seconds=30.0, clock=clock)
+    manual2 = _ManualExecutor()
+    guard2._executor = manual2  # type: ignore[assignment]
+    original_result = Future.result
+
+    def racy_result(self, timeout=None):  # noqa: ANN001
+        if getattr(self, "_c3po_race_once", False):
+            self._c3po_race_once = False
+            self.set_result("edge-result")  # completion lands in the timeout window
+            raise FutureTimeout()
+        return original_result(self, timeout)
+
+    Future.result = racy_result  # type: ignore[method-assign]
+    try:
+        manual2_submit = manual2.submit
+
+        def submit_racy(fn, *args, **kwargs):  # noqa: ANN001
+            future = manual2_submit(fn, *args, **kwargs)
+            future._c3po_race_once = True  # type: ignore[attr-defined]
+            return future
+
+        manual2.submit = submit_racy  # type: ignore[method-assign]
+        assert guard2.run("device-2", {"items": []}, lambda: "unused") == "edge-result"
+    finally:
+        Future.result = original_result  # type: ignore[method-assign]
+    assert guard2.counters.timeouts == 0
+    assert guard2.counters.executed == 1
+    assert guard2.counters.late_completions == 0
+    assert guard2._state("device-2").cooldown_until is None

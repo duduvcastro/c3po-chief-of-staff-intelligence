@@ -25,8 +25,9 @@ deploy somente fora do pregão. Duas PRs independentes e reversíveis.
 - Concorrentes na mesma chave compartilham UMA computação; exceções nunca são cacheadas.
 - Cacheia **somente leitura**: nenhuma rota de mutação ou comando passa pelo cache.
 - Validade **ancorada no início da computação** (um snapshot nunca é servido além do TTL
-  contado do seu instante as-of); `invalidate` avança uma geração — computação iniciada antes
-  não repovoa a chave; erro do provedor de TTL derruba o flight e alcança todos os waiters.
+  contado do seu instante as-of); `invalidate(chave)` avança a geração DAQUELA chave (invalidar `a` nunca quebra o
+  single-flight de `b`); `invalidate()` avança a época global — computação iniciada antes não
+  repovoa a chave e chamador posterior nunca coalesce no voo antigo; erro do provedor de TTL derruba o flight e alcança todos os waiters.
 - Invalidação explícita (`invalidate`). Limite honesto: os trades acontecem no processo do
   worker, que não alcança o cache do processo da API — o TTL de 5 s em pregão é o teto de
   defasagem de um dashboard lido logo após um trade. Não existem rotas de mutação do R2D2 na
@@ -36,7 +37,9 @@ deploy somente fora do pregão. Duas PRs independentes e reversíveis.
 - uma execução simultânea por identidade de dispositivo (concorrentes esperam);
 - payload idêntico (fingerprint canônico) dentro de **30 s** devolve o resultado já calculado;
 - payload alterado nunca é descartado;
-- deadline rígido de **10 s** END-TO-END (conta desde a entrada, inclui a espera na fila
+- deadline rígido de **10 s** END-TO-END gravado no próprio voo (`completed_at > deadline_at`
+  classifica conclusão tardia de forma atômica; conclusão que pousa na borda do prazo é
+  entregue ao chamador, sem 504 nem cooldown) (conta desde a entrada, inclui a espera na fila
   do dispositivo; fila que estoura → 503 + `Retry-After`; execução que estoura → 504); o trabalho em
   curso não é interrompido (interromper no meio de um upsert deixaria estado parcial), mas
   fica registrado como em voo: uma nova tentativa recebe 503 + `Retry-After` em vez de

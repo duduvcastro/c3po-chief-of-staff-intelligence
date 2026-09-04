@@ -75,13 +75,14 @@ class _Entry:
 
 
 class _InFlight:
-    __slots__ = ("done", "value", "error", "generation")
+    __slots__ = ("done", "value", "error", "epoch", "generation")
 
-    def __init__(self, generation: int) -> None:
+    def __init__(self, epoch: int, generation: int) -> None:
         self.done = threading.Event()
         self.value: Any = None
         self.error: BaseException | None = None
-        self.generation = generation
+        self.epoch = epoch          # bumped by invalidate() without a key
+        self.generation = generation  # bumped by invalidate(key) for THIS key only
 
 
 class SingleFlightReadCache:
@@ -109,7 +110,8 @@ class SingleFlightReadCache:
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}
         self._inflight: dict[str, _InFlight] = {}
-        self._generation = 0
+        self._epoch = 0
+        self._generations: dict[str, int] = {}
         self.counters = ReadCacheCounters()
 
     def get(self, key: str, compute: Callable[[], T]) -> T:
@@ -118,15 +120,18 @@ class SingleFlightReadCache:
             if entry is not None and entry.expires_at > self._clock():
                 self.counters.hits += 1
                 return entry.value
-            generation = self._generation
+            epoch = self._epoch
+            generation = self._generations.get(key, 0)
             inflight = self._inflight.get(key)
-            # Only a flight of the CURRENT generation may be joined: a caller arriving
-            # after invalidate() must never receive the pre-invalidation result.
-            if inflight is not None and inflight.generation == generation:
+            # Only a flight of the CURRENT epoch AND key generation may be joined: a caller
+            # arriving after an invalidation of THIS key (or of everything) must never
+            # receive the pre-invalidation result — while invalidating another key must
+            # never break this key's single-flight (per-key generations).
+            if inflight is not None and inflight.epoch == epoch and inflight.generation == generation:
                 self.counters.coalesced += 1
                 leader = False
             else:
-                inflight = _InFlight(generation)
+                inflight = _InFlight(epoch, generation)
                 self._inflight[key] = inflight
                 self.counters.misses += 1
                 leader = True
@@ -143,7 +148,7 @@ class SingleFlightReadCache:
             self._fail_flight(key, inflight, error)
             raise
         with self._lock:
-            if self._generation == generation:
+            if self._epoch == epoch and self._generations.get(key, 0) == generation:
                 self._entries[key] = _Entry(value, started_at + ttl)
             if self._inflight.get(key) is inflight:  # never erase a newer flight
                 self._inflight.pop(key, None)
@@ -164,10 +169,11 @@ class SingleFlightReadCache:
             if key is None:
                 self._entries.clear()
                 self._inflight.clear()  # earlier waiters keep their own references
+                self._epoch += 1
             else:
                 self._entries.pop(key, None)
                 self._inflight.pop(key, None)
-            self._generation += 1
+                self._generations[key] = self._generations.get(key, 0) + 1
             self.counters.invalidations += 1
 
     def snapshot(self) -> dict[str, Any]:
@@ -175,6 +181,7 @@ class SingleFlightReadCache:
             return {
                 "keys": sorted(self._entries),
                 "inflight": sorted(self._inflight),
-                "generation": self._generation,
+                "epoch": self._epoch,
+                "generations": dict(self._generations),
                 **self.counters.snapshot(),
             }
