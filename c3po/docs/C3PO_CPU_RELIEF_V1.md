@@ -75,7 +75,15 @@ duração p95 dos ciclos < 30 s, sem regressão funcional ou aumento de erros.
   (`access_control.required_permissions`): R2D2 exige `r2d2`, mercados exigem `markets`,
   etc. O agregado jamais entrega o que a rota direta recusaria; sem permissão → `skipped`.
 - Deadline compartilhado do leque (`command_center_section_timeout_seconds`, 8 s): fonte
-  pendurada vira `{status: error, error: timeout}` e nunca segura a resposta.
+  pendurada vira `{status: error, error: timeout}` e nunca segura a resposta; trabalho ainda
+  enfileirado ao vencer o prazo é cancelado.
+- **Admissão por seção**: no máximo UM produtor em voo por seção (semáforo por nome); uma fonte
+  travada ocupa um slot e um worker, nunca o pool — seções saudáveis continuam respondendo.
+- **Seções vivas fora do cache do agregado** (`r2d2`, `markets_live`, `markets_index`): resolvidas
+  a cada chamada pelos seus próprios caches — o agregado nunca fica mais velho que a rota direta
+  (teto de 5 s do R2D2 preservado).
+- **Renovação da sessão na abertura**: o `GET /auth/session` do boot renova a janela de inatividade
+  para TODO perfil; o agregado não renova mais nada; o mount do frontend não dispara heartbeat.
 - Erros são **redigidos**: cliente e log recebem só o nome da classe da exceção.
 - Chave de cache canônica (seções ordenadas) e **limitada** (`command_center_cache_max_entries`,
   256; expirados expurgados primeiro, depois os de vencimento mais próximo).

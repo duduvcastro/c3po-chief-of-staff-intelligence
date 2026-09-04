@@ -470,44 +470,158 @@ def test_command_center_hung_section_becomes_a_timeout_without_blocking_the_rest
     assert elapsed < 5
 
 
-def test_command_center_aggregate_renews_the_idle_window(monkeypatch) -> None:
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+
+
+@pytest.fixture
+def isolated_command_center(monkeypatch):
+    executor = ThreadPoolExecutor(max_workers=len(app_main.COMMAND_CENTER_SECTIONS))
+    release = threading.Event()
+    monkeypatch.setattr(app_main, "_command_center_executor", executor)
+    monkeypatch.setattr(app_main.settings, "command_center_section_timeout_seconds", 0.05)
+    monkeypatch.setattr(app_main.settings, "auth_required", False)
+    monkeypatch.setattr(app_main, "_command_center_base", lambda: app_main.CommandCenterResponse.model_construct())
+    monkeypatch.setattr(app_main, "command_center_cache", app_main.SingleFlightReadCache(lambda: 60.0, max_entries=256))
+    monkeypatch.setattr(app_main, "_command_center_section_slots", {name: threading.Semaphore(1) for name in app_main.COMMAND_CENTER_SECTIONS})
+    try:
+        yield executor, release
+    finally:
+        release.set()
+        executor.shutdown(wait=True, cancel_futures=True)
+
+
+def test_healthy_reports_survive_repeated_hung_alerts(monkeypatch, isolated_command_center) -> None:
+    """Codex contraproof (#374 P1): a hung source must occupy one slot, not the pool."""
+    executor, release = isolated_command_center
+    running: list[bool] = []
+    reports: list[bool] = []
+    actor = {"email": "first@example.test", "permissions": ["command", "alerts"]}
+
+    def hung_alerts():
+        running.append(True)
+        assert release.wait(5)
+        return {"items": [], "unread_count": 0}
+
+    def healthy_reports():
+        reports.append(True)
+        return {"items": []}
+
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actor)
+    monkeypatch.setattr(app_main, "_command_center_section_producers", lambda current: {
+        "alerts": hung_alerts,
+        "reports": healthy_reports,
+    })
+    for number in range(8):
+        actor["email"] = f"actor-{number}@example.test"
+        result = app_main.command_center(None, include="alerts")
+        assert result.section_status["alerts"].error == "timeout"
+    actor["email"] = "healthy@example.test"
+    result = app_main.command_center(None, include="reports")
+    assert result.section_status["reports"].status == "ok"
+    assert len(running) == 1  # only ONE hung worker ever admitted
+    assert reports == [True]
+
+
+def test_actual_r2d2_singleflight_waiters_do_not_exhaust_the_aggregate_pool(monkeypatch, isolated_command_center) -> None:
+    """Codex contraproof (#374 P1): coalesced waiters behind a hung dashboard must not fill the pool."""
+    executor, release = isolated_command_center
+    actor = {"email": "a@example.test", "permissions": ["command", "r2d2"]}
+    healthy: list[bool] = []
+
+    def hung_dashboard():
+        assert release.wait(5)
+        return app_main.R2D2DashboardResponse.model_construct()
+
+    def healthy_history():
+        healthy.append(True)
+        return []
+
+    monkeypatch.setattr(app_main, "r2d2_read_cache", app_main.SingleFlightReadCache(lambda: 60.0))
+    monkeypatch.setattr(app_main.r2d2, "dashboard", hung_dashboard)
+    monkeypatch.setattr(app_main.legacy, "report_history", healthy_history)
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actor)
+    for number in range(8):
+        actor["email"] = f"actor-{number}@example.test"
+        result = app_main.command_center(None, include="r2d2")
+        assert result.section_status["r2d2"].error == "timeout"
+    actor["email"] = "healthy@example.test"
+    result = app_main.command_center(None, include="reports")
+    assert result.section_status["reports"].status == "ok"
+    assert healthy == [True]
+
+
+@pytest.mark.parametrize("has_command", [True, False])
+def test_boot_renews_valid_session_near_idle_expiry(monkeypatch, has_command) -> None:
+    """Codex contraproof (#374 P2): opening the app renews the idle window for EVERY role."""
     from uuid import uuid4
 
-    token = "command-center-aggregate-session-token"
-    now = datetime.now(timezone.utc)
-    app_main.database.ensure_access_owner(app_main.settings.auth_email, ["command"], ["read"])
-    app_main.database.create_session(
-        {
-            "id": str(uuid4()),
-            "email": app_main.settings.auth_email,
-            "token_hash": app_main.auth_service.session_hash(token),
-            "expires_at": now + timedelta(hours=24),
-            "created_at": now,
-            "last_seen_at": now - timedelta(minutes=5),
-            "created_ip": "127.0.0.1",
-        }
-    )
-    touched = {"count": 0}
-    real = app_main.auth_service.authenticate
-
-    def spy(candidate, touch_activity=False):
-        if touch_activity:
-            touched["count"] += 1
-        return real(candidate, touch_activity=touch_activity)
-
-    monkeypatch.setattr(app_main.auth_service, "authenticate", spy)
-    previous_required = app_main.settings.auth_required
-    app_main.settings.auth_required = True
-    app_main.command_center_cache.invalidate()
+    token = f"idle-boot-{uuid4()}"
+    email = f"{uuid4()}@example.test"
+    clock = {"now": datetime.now(timezone.utc)}
+    idle = app_main.settings.auth_member_idle_minutes * 60
+    last_seen = clock["now"] - timedelta(seconds=idle - 30)
+    permissions = ["candidates"] + (["command"] if has_command else [])
+    monkeypatch.setattr(app_main.settings, "auth_required", True)
+    monkeypatch.setattr(app_main.auth_service, "now", lambda: clock["now"])
+    monkeypatch.setattr(app_main.market_data, "health", lambda: [])
+    monkeypatch.setattr(app_main.legacy, "report_history", lambda: [])
+    health = app_main.system_health._startup_degraded_response(clock["now"])
+    monkeypatch.setattr(app_main.system_health, "snapshot", lambda: health)
+    monkeypatch.setattr(app_main, "command_center_cache", app_main.SingleFlightReadCache(lambda: 60.0))
+    app_main.database.upsert_access_user({
+        "email": email, "display_name": "Audit", "role": "member", "is_active": True,
+        "permissions": permissions, "capabilities": ["read"], "created_by": app_main.settings.auth_email,
+    })
+    token_hash = app_main.auth_service.session_hash(token)
+    app_main.database.create_session({
+        "id": str(uuid4()), "email": email, "token_hash": token_hash,
+        "expires_at": clock["now"] + timedelta(hours=24), "created_at": last_seen,
+        "last_seen_at": last_seen, "created_ip": "127.0.0.1", "idle_timeout_seconds": idle,
+    })
     try:
         with TestClient(app) as client:
             client.cookies.set(app_main.SESSION_COOKIE, token)
-            response = client.get("/api/v1/command-center", params={"include": "reports"})
             session = client.get("/api/v1/auth/session")
+            assert session.status_code == 200 and session.json()["authenticated"]
+            urls = (
+                ["/api/v1/command-center?include=reports,market_data_providers,system_health"]
+                if has_command else
+                ["/api/v1/reports", "/api/v1/market-data/providers", "/api/v1/system-health"]
+            )
+            statuses = [client.get(url).status_code for url in urls]
+            assert statuses == [200] * len(urls)
+            touched = app_main.database._sessions[token_hash]["last_seen_at"] > last_seen
+            clock["now"] += timedelta(seconds=31)
+            after = client.get("/api/v1/auth/session")
+            assert touched and after.json()["authenticated"]
     finally:
-        app_main.settings.auth_required = previous_required
-        app_main.command_center_cache.invalidate()
-        app_main.auth_service.logout(token)
-    assert response.status_code == 200
-    assert touched["count"] == 1  # the aggregate opening renewed the idle window server-side
-    assert session.status_code == 200
+        app_main.database._sessions.pop(token_hash, None)
+        app_main.database.delete_access_user(email)
+
+
+def test_outer_aggregate_does_not_extend_r2d2_snapshot_past_inner_ttl(monkeypatch, isolated_command_center) -> None:
+    """Codex contraproof (#374 P2): the aggregate returns exactly what the direct route returns."""
+    clock = {"now": 0.0}
+    calls: list[float] = []
+    actor = {"email": "actor@example.test", "permissions": ["command", "r2d2"]}
+
+    def dashboard():
+        calls.append(clock["now"])
+        return app_main.R2D2DashboardResponse.model_construct(starting_capital_usd=float(len(calls)))
+
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actor)
+    monkeypatch.setattr(app_main.r2d2, "dashboard", dashboard)
+    monkeypatch.setattr(app_main, "r2d2_read_cache", app_main.SingleFlightReadCache(lambda: 5.0, clock=lambda: clock["now"]))
+    monkeypatch.setattr(app_main, "command_center_cache", app_main.SingleFlightReadCache(lambda: 10.0, clock=lambda: clock["now"], max_entries=256))
+    first_direct = app_main.r2d2_dashboard()
+    clock["now"] = 4.9
+    first_aggregate = app_main.command_center(None, include="r2d2")
+    assert first_aggregate.sections.r2d2 is first_direct
+    clock["now"] = 14.8
+    direct_now = app_main.r2d2_dashboard()
+    aggregate_now = app_main.command_center(None, include="r2d2")
+    assert aggregate_now.sections.r2d2 is direct_now
+    assert len(calls) == 2

@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 import asyncio
+import threading
 from typing import Callable
 import time
 from concurrent.futures import ThreadPoolExecutor, wait as wait_futures
@@ -219,6 +220,16 @@ COMMAND_CENTER_SECTIONS: tuple[str, ...] = (
 _command_center_executor = ThreadPoolExecutor(
     max_workers=len(COMMAND_CENTER_SECTIONS), thread_name_prefix="command-center"
 )
+# Sections whose payload is LIVE data with its own freshness contract: they are resolved
+# on every aggregate call through their own caches and never stored in the aggregate
+# cache (Codex reaudit #374: the outer TTL must not extend the R2D2 5 s ceiling).
+COMMAND_CENTER_LIVE_SECTIONS: frozenset[str] = frozenset({"r2d2", "markets_live", "markets_index"})
+# Admission control: at most ONE in-flight producer per section across all callers. A hung
+# source therefore occupies one slot (and one pool worker) instead of the whole pool, and
+# healthy sections keep executing (Codex reaudit #374, P1).
+_command_center_section_slots: dict[str, threading.Semaphore] = {
+    name: threading.Semaphore(1) for name in COMMAND_CENTER_SECTIONS
+}
 push_notifications = PushNotificationService(settings, database)
 operational_incidents = OperationalIncidentService(database)
 governance_vulnerability = GovernanceVulnerabilityService(
@@ -707,7 +718,9 @@ def auth_session(request: Request) -> AuthSessionResponse:
                 "browser": auth_service.describe_client(request.headers.get("user-agent", "")).get("browser"),
             },
         )
-    session = auth_service.authenticate(request.cookies.get(SESSION_COOKIE))
+    # Opening the app IS human activity: the boot-time session read renews the idle window
+    # for every role, so no client needs an immediate heartbeat on mount (Codex reaudit #374).
+    session = auth_service.authenticate(request.cookies.get(SESSION_COOKIE), touch_activity=True)
     if not session:
         return AuthSessionResponse(authenticated=False)
     return authenticated_session_response(request, session)
@@ -1185,25 +1198,35 @@ def _run_command_center_section(
     return name, value, CommandCenterSectionStatus(status="ok", duration_ms=round(duration_ms, 3))
 
 
-def _assemble_command_center(actor: dict, requested: tuple[str, ...]) -> CommandCenterResponse:
-    base = _command_center_base()
+def _run_command_center_sections(
+    actor: dict, requested: tuple[str, ...]
+) -> tuple[dict[str, object], dict[str, CommandCenterSectionStatus]]:
     producers = _command_center_section_producers(actor)
     statuses: dict[str, CommandCenterSectionStatus] = {}
     values: dict[str, object] = {}
     futures = {}
+    timeout = float(settings.command_center_section_timeout_seconds)
     for name in requested:
         if not _command_center_section_permitted(actor, name):
             statuses[name] = CommandCenterSectionStatus(status="skipped")
             continue
-        futures[name] = _command_center_executor.submit(
-            _run_command_center_section, name, producers[name]
-        )
-    # One shared deadline for the whole fan-out: a hung source becomes an error
-    # section and never holds the response hostage (Codex audit, #374 P1).
-    timeout = float(settings.command_center_section_timeout_seconds)
+        slot = _command_center_section_slots[name]
+        if not slot.acquire(blocking=False):
+            # A previous producer for this section is still running past its own deadline:
+            # do not queue another one behind it — report the section as timed out now.
+            statuses[name] = CommandCenterSectionStatus(
+                status="error", duration_ms=0.0, error="timeout",
+            )
+            continue
+        future = _command_center_executor.submit(_run_command_center_section, name, producers[name])
+        future.add_done_callback(lambda _done, s=slot: s.release())
+        futures[name] = future
+    # One shared deadline for the whole fan-out: a hung source becomes an error section and
+    # never holds the response hostage; work that has not even started is cancelled.
     wait_futures(list(futures.values()), timeout=timeout)
     for name, future in futures.items():
         if not future.done():
+            future.cancel()  # releases the slot via the done-callback if it was still queued
             logger.warning("command-center section %s exceeded %.1fs", name, timeout)
             statuses[name] = CommandCenterSectionStatus(
                 status="error", duration_ms=round(timeout * 1000.0, 3), error="timeout",
@@ -1216,6 +1239,13 @@ def _assemble_command_center(actor: dict, requested: tuple[str, ...]) -> Command
         if name == "reports" and isinstance(value, dict):
             value = value.get("items") or []
         values[name] = value
+    return values, statuses
+
+
+def _assemble_command_center(actor: dict, requested: tuple[str, ...]) -> CommandCenterResponse:
+    """Cacheable part of the aggregate (everything except the live sections)."""
+    base = _command_center_base()
+    values, statuses = _run_command_center_sections(actor, requested)
     return base.model_copy(update={
         "sections": CommandCenterSections(**values),
         "section_status": statuses,
@@ -1231,13 +1261,24 @@ def command_center(
     if not requested:
         return _command_center_base()
     actor = current_access_actor(request)
-    if settings.auth_required:
-        # Opening the Command Center IS human activity: renew the idle window here so the
-        # frontend does not need an immediate heartbeat on mount (opening contract ≤ 4 calls).
-        auth_service.authenticate(request.cookies.get(SESSION_COOKIE), touch_activity=True)
     permissions = ",".join(sorted(actor.get("permissions") or []))
-    cache_key = f"{actor['email']}|{permissions}|{','.join(requested)}"
-    return command_center_cache.get(cache_key, lambda: _assemble_command_center(actor, requested))
+    cacheable = tuple(name for name in requested if name not in COMMAND_CENTER_LIVE_SECTIONS)
+    live = tuple(name for name in requested if name in COMMAND_CENTER_LIVE_SECTIONS)
+    if cacheable:
+        cache_key = f"{actor['email']}|{permissions}|{','.join(cacheable)}"
+        response = command_center_cache.get(cache_key, lambda: _assemble_command_center(actor, cacheable))
+    else:
+        response = _command_center_base().model_copy(update={"sections": CommandCenterSections(), "section_status": {}})
+    if not live:
+        return response
+    # Live sections ride their OWN caches (R2D2: 5 s in session / 30 s closed) and are never
+    # stored in the aggregate cache, so the aggregate can never be staler than the direct route.
+    live_values, live_statuses = _run_command_center_sections(actor, live)
+    sections = (response.sections or CommandCenterSections()).model_copy(update=live_values)
+    return response.model_copy(update={
+        "sections": sections,
+        "section_status": {**response.section_status, **live_statuses},
+    })
 
 def build_alert_feed(email: str) -> dict:
     snapshot = legacy.read()

@@ -3089,9 +3089,10 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     const activityEvents: (keyof WindowEventMap)[] = ["pointerdown", "keydown", "touchstart", "scroll"];
     activityEvents.forEach((eventName) => window.addEventListener(eventName, registerActivity, { passive: true }));
     document.addEventListener("visibilitychange", handleVisibility);
-    // Mount is not a heartbeat: the server renews the idle window when the Command Center
-    // aggregate is fetched, so the first POST /auth/activity waits for real activity and
-    // the regular interval (opening contract ≤ 4 calls, Codex audit #374).
+    // Mount is not a heartbeat: the boot-time GET /auth/session (which put this shell on
+    // screen with a 200) already renewed the idle window server-side for every role, so the
+    // first POST /auth/activity waits for real activity and the regular interval
+    // (opening contract ≤ 4 calls, Codex audits #374).
     lastHeartbeatSucceededAt = Date.now();
     lastActivityAt = Date.now();
     window.clearTimeout(idleTimer);
