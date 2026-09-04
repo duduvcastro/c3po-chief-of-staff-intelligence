@@ -89,9 +89,9 @@ def test_r2d2_pollers_use_the_shared_polling_policy() -> None:
     assert "usePanelPolling(load, {" in live
     assert "marketOpen: telemetry?.market_session_open ?? null" in live
     assert "window.setInterval(" not in falcon
-    assert "usePanelPolling(loadR2D2, { openMs: 2_000, marketOpen: falconMarketOpen });" in falcon
-    assert "usePanelPolling(loadIndices, { openMs: 10_000, marketOpen: falconMarketOpen });" in falcon
-    assert "usePanelPolling(loadHealth, { openMs: 60_000, marketOpen: falconMarketOpen });" in falcon
+    assert "usePanelPolling(loadR2D2, { openMs: 2_000, marketOpen: falconMarketOpen, initialLoad: !(seedFresh && seed?.r2d2) });" in falcon
+    assert "usePanelPolling(loadIndices, { openMs: 10_000, marketOpen: falconMarketOpen, initialLoad: !(seedFresh && seed?.indices.length) });" in falcon
+    assert "usePanelPolling(loadHealth, { openMs: 60_000, marketOpen: falconMarketOpen, initialLoad: !(seedFresh && seed?.health) });" in falcon
     assert "usePanelPolling(load, { openMs: 2_000, marketOpen: data?.market_session_open ?? null });" in rising
     assert "market_session_open?: boolean;" in source
 
