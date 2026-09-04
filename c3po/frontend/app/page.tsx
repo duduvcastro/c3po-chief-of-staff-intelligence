@@ -284,6 +284,7 @@ interface R2D2DashboardData {
   daily_return_percent: number;
   daily_pnl_date: string | null;
   open_positions: number;
+  market_session_open?: boolean;
   stats: {
     closed_days: number;
     positive_days: number;
@@ -399,6 +400,7 @@ interface R2D2DashboardData {
 interface R2D2LivePositionsData {
   generated_at: string;
   refresh_seconds: number;
+  market_session_open?: boolean;
   nav_usd: number;
   cash_usd: number;
   gross_exposure_usd: number;
@@ -1268,48 +1270,115 @@ function shouldAcceptSystemHealthSnapshot(current: SystemHealthData | null, cand
   return candidateTimestamp >= currentTimestamp;
 }
 
+const MARKET_CLOSED_POLL_MS = 60_000;
+
+type PanelPollingOptions = {
+  /** Interval while the market session is open (or unknown) and the tab is visible. */
+  openMs: number;
+  /** Minimum interval while the market session is closed and the tab is visible. */
+  closedMs?: number;
+  /** null = unknown yet (treated as open); false = closed → slow polling. */
+  marketOpen: boolean | null;
+};
+
+/**
+ * Panel polling policy (C3PO_CPU_RELIEF_V1, PR B):
+ * - market open + tab visible: `openMs`;
+ * - tab hidden: polling suspended (timer cleared, no requests);
+ * - market closed + tab visible: at least MARKET_CLOSED_POLL_MS;
+ * - tab visible again: one immediate refresh, then a single fresh timer (never two).
+ */
+function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = MARKET_CLOSED_POLL_MS, marketOpen }: PanelPollingOptions) {
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const hasLoadedRef = useRef(false);
+
+  useEffect(() => {
+    const intervalMs = marketOpen === false ? Math.max(closedMs, MARKET_CLOSED_POLL_MS) : Math.max(250, openMs);
+    // `active` is the lifecycle guard: once the effect is cleaned up (unmount or option
+    // change) nothing in this closure may schedule again — not even a fetch that was in
+    // flight when the cleanup ran (audited on #373: ghost polling).
+    let active = true;
+    let timer = 0;
+    const stop = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = 0;
+    };
+    const schedule = () => {
+      // Never arm a timer while hidden: a fetch finishing after the tab hid must not
+      // re-create hidden polling (Codex reaudit, P2).
+      if (!active || document.visibilityState !== "visible") return;
+      stop();
+      timer = window.setTimeout(() => {
+        timer = 0;
+        if (!active || document.visibilityState !== "visible") return;
+        void Promise.resolve(loadRef.current()).finally(schedule);
+      }, intervalMs);
+    };
+    const handleVisibility = () => {
+      if (!active) return;
+      if (document.visibilityState === "visible") {
+        hasLoadedRef.current = true; // a tab born hidden loads here, exactly once
+        void loadRef.current();
+        schedule();
+      } else {
+        stop();
+      }
+    };
+    if (document.visibilityState === "visible") {
+      if (!hasLoadedRef.current) {
+        hasLoadedRef.current = true;
+        void loadRef.current();
+      }
+      schedule();
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      active = false;
+      stop();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [openMs, closedMs, marketOpen]);
+}
+
 function useR2D2LivePositions() {
   const [telemetry, setTelemetry] = useState<R2D2LivePositionsData | null>(null);
   const requestInFlight = useRef(false);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      if (requestInFlight.current) return;
-      requestInFlight.current = true;
-      try {
-        const response = await fetch(`${API_URL}/api/v1/r2d2/live-positions`, {
-          cache: "no-store",
-          credentials: "include"
-        });
-        if (!response.ok) return;
-        const payload: R2D2LivePositionsData = await response.json();
-        if (!mounted) return;
-        setTelemetry((current) => {
-          if (current && Date.parse(payload.generated_at) < Date.parse(current.generated_at)) return current;
-          return payload;
-        });
-      } catch {
-        // Keep the last valid marks visible while the full dashboard remains available.
-      } finally {
-        requestInFlight.current = false;
-      }
-    };
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-
-    void load();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
-    }, 1_000);
-    document.addEventListener("visibilitychange", handleVisibility);
+    mountedRef.current = true;
     return () => {
-      mounted = false;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", handleVisibility);
+      mountedRef.current = false;
     };
   }, []);
+
+  const load = useCallback(async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
+    try {
+      const response = await fetch(`${API_URL}/api/v1/r2d2/live-positions`, {
+        cache: "no-store",
+        credentials: "include"
+      });
+      if (!response.ok) return;
+      const payload: R2D2LivePositionsData = await response.json();
+      if (!mountedRef.current) return;
+      setTelemetry((current) => {
+        if (current && Date.parse(payload.generated_at) < Date.parse(current.generated_at)) return current;
+        return payload;
+      });
+    } catch {
+      // Keep the last valid marks visible while the full dashboard remains available.
+    } finally {
+      requestInFlight.current = false;
+    }
+  }, []);
+
+  usePanelPolling(load, {
+    openMs: Math.max(1_000, (telemetry?.refresh_seconds ?? 1) * 1_000),
+    marketOpen: telemetry?.market_session_open ?? null
+  });
 
   return telemetry;
 }
@@ -3768,20 +3837,7 @@ function R2D2RisingView() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
-    }, 2_000);
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [load]);
+  usePanelPolling(load, { openMs: 2_000, marketOpen: data?.market_session_open ?? null });
 
   if (!data) return error ? <div className="error-banner"><AlertTriangle size={16} />{error}</div> : <LoadingState />;
 
@@ -4538,6 +4594,11 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
     }
   }, []);
 
+  const falconMarketOpen = r2d2?.market_session_open ?? null;
+  usePanelPolling(loadR2D2, { openMs: 2_000, marketOpen: falconMarketOpen });
+  usePanelPolling(loadIndices, { openMs: 10_000, marketOpen: falconMarketOpen });
+  usePanelPolling(loadHealth, { openMs: 60_000, marketOpen: falconMarketOpen });
+
   useEffect(() => {
     if (!systemHealth) return;
     const candidate = systemHealth;
@@ -4546,17 +4607,8 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
 
   useEffect(() => {
     mountedRef.current = true;
-    void loadR2D2();
-    void loadIndices();
-    void loadHealth();
-    const r2d2Timer = window.setInterval(() => document.visibilityState === "visible" && void loadR2D2(), 2_000);
-    const marketTimer = window.setInterval(() => document.visibilityState === "visible" && void loadIndices(), 10_000);
-    const healthTimer = window.setInterval(() => document.visibilityState === "visible" && void loadHealth(), 60_000);
     return () => {
       mountedRef.current = false;
-      window.clearInterval(r2d2Timer);
-      window.clearInterval(marketTimer);
-      window.clearInterval(healthTimer);
     };
   }, [loadHealth, loadIndices, loadR2D2]);
 

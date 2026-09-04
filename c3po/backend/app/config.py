@@ -229,6 +229,11 @@ class Settings(BaseSettings):
     # EODHD account contract: 50 base symbols plus the active 500-symbol add-on,
     # shared across all markets in the R2D2 stream.
     r2d2_ws_max_symbols: int = 550
+    r2d2_read_cache_open_seconds: int = Field(default=5, ge=0, le=60)
+    r2d2_read_cache_closed_seconds: int = Field(default=30, ge=0, le=600)
+    leah_sync_dedupe_window_seconds: int = Field(default=30, ge=0, le=600)
+    leah_sync_deadline_seconds: int = Field(default=10, ge=1, le=120)
+    leah_sync_cooldown_seconds: int = Field(default=30, ge=1, le=600)
     r2d2_ws_rotation_grace_cycles: int = 3
     r2d2_ws_rotation_core_percent: float = 50.0
     r2d2_microstructure_raw_capture_enabled: bool = False

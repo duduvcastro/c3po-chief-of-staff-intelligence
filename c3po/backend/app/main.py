@@ -33,6 +33,7 @@ from .config import get_settings
 from .database import Database
 from .legacy import LegacySummaryReader
 from .leah_cloud import LeahAuthenticationError, LeahCloudService
+from .leah_sync_guard import LeahSyncGuard, LeahSyncRejected
 from .investor_relations import InvestorRelationsService
 from .ir_valuation import InvestorRelationsValuationProcessor
 from .market_data import LiveMarketsService, MarketDataService, RealtimeMarketsService
@@ -45,6 +46,7 @@ from .push_notifications import PushNotificationService
 from .operational_incidents import OperationalIncidentService
 from .governance_vulnerability import GovernanceVulnerabilityService
 from .r2d2 import R2D2PaperService
+from .read_cache import MarketSessionClock, SingleFlightReadCache
 from .open_finance import OpenFinanceService, PluggyRequestError
 from .official_fundamentals import ensure_builtin_official_fundamentals
 from .code_census import CodeCensusService
@@ -184,6 +186,21 @@ one_pagers.set_us_screener(us_screener)
 chewie_fundamentals = ChewieFundamentalsService(settings, database, market_data.http)
 r2d2 = R2D2PaperService(settings, database, realtime_markets, b3_screener, one_pagers)
 leah_cloud = LeahCloudService(settings, database)
+leah_sync_guard = LeahSyncGuard(
+    dedupe_window_seconds=settings.leah_sync_dedupe_window_seconds,
+    deadline_seconds=settings.leah_sync_deadline_seconds,
+    cooldown_seconds=settings.leah_sync_cooldown_seconds,
+)
+r2d2_session_clock = MarketSessionClock()
+
+
+def _r2d2_read_cache_ttl_seconds() -> float:
+    if r2d2_session_clock.is_open():
+        return float(settings.r2d2_read_cache_open_seconds)
+    return float(settings.r2d2_read_cache_closed_seconds)
+
+
+r2d2_read_cache = SingleFlightReadCache(_r2d2_read_cache_ttl_seconds)
 push_notifications = PushNotificationService(settings, database)
 operational_incidents = OperationalIncidentService(database)
 governance_vulnerability = GovernanceVulnerabilityService(
@@ -956,7 +973,17 @@ def sync_leah_agent(payload: LeahAgentSyncRequest, request: Request) -> LeahAgen
         device = leah_cloud.authenticate_device(request.headers.get("authorization"))
     except LeahAuthenticationError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
-    result = leah_cloud.sync(device, payload.model_dump())
+    body = payload.model_dump()
+    try:
+        result = leah_sync_guard.run(
+            str(device["id"]), body, lambda: leah_cloud.sync(device, body)
+        )
+    except LeahSyncRejected as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
     return LeahAgentSyncResponse(
         cursor=result["cursor"],
         items=[leah_item_response(item) for item in result["items"]],
@@ -1657,12 +1684,14 @@ def chewie_fundamentals_report(market: str, symbol: str) -> FileResponse:
 
 @app.get("/api/v1/r2d2", response_model=R2D2DashboardResponse)
 def r2d2_dashboard() -> R2D2DashboardResponse:
-    return r2d2.dashboard()
+    # Read-only payload shared by every poller; single-flight + session-aware TTL
+    # (C3PO_CPU_RELIEF_V1, PR B). Never caches a mutation.
+    return r2d2_read_cache.get("dashboard", r2d2.dashboard)
 
 
 @app.get("/api/v1/r2d2/live-positions", response_model=R2D2LivePositionsResponse)
 def r2d2_live_positions() -> R2D2LivePositionsResponse:
-    return r2d2.live_positions()
+    return r2d2_read_cache.get("live_positions", r2d2.live_positions)
 
 
 @app.post("/api/v1/feedback", response_model=FeedbackResponse, status_code=201)

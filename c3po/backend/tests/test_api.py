@@ -249,3 +249,80 @@ def test_navigation_indicators_clear_feed_badges_when_opened() -> None:
         app_main.database._ir_events = original_events
         app_main.database._ir_security_map = original_security_map
         app_main.database._valuation_changes = original_valuation_changes
+
+
+def test_r2d2_reads_are_served_from_the_single_flight_cache(monkeypatch) -> None:
+    calls = {"dashboard": 0, "live": 0}
+    real_dashboard = app_main.r2d2.dashboard
+    real_live = app_main.r2d2.live_positions
+
+    def counted_dashboard():
+        calls["dashboard"] += 1
+        return real_dashboard()
+
+    def counted_live():
+        calls["live"] += 1
+        return real_live()
+
+    monkeypatch.setattr(app_main.r2d2, "dashboard", counted_dashboard)
+    monkeypatch.setattr(app_main.r2d2, "live_positions", counted_live)
+    monkeypatch.setattr(app_main, "_r2d2_read_cache_ttl_seconds", lambda: 60.0)
+    monkeypatch.setattr(app_main.r2d2_read_cache, "_ttl_seconds", app_main._r2d2_read_cache_ttl_seconds)
+    app_main.r2d2_read_cache.invalidate()
+    with TestClient(app) as client:
+        first = client.get("/api/v1/r2d2")
+        second = client.get("/api/v1/r2d2")
+        live_first = client.get("/api/v1/r2d2/live-positions")
+        live_second = client.get("/api/v1/r2d2/live-positions")
+    app_main.r2d2_read_cache.invalidate()
+
+    assert first.status_code == second.status_code == 200
+    assert live_first.status_code == live_second.status_code == 200
+    assert first.json() == second.json()
+    assert live_first.json() == live_second.json()
+    assert calls == {"dashboard": 1, "live": 1}
+    assert isinstance(first.json()["market_session_open"], bool)
+    assert isinstance(live_first.json()["market_session_open"], bool)
+
+
+def test_r2d2_read_cache_ttl_follows_the_market_session(monkeypatch) -> None:
+    monkeypatch.setattr(app_main.r2d2_session_clock, "is_open", lambda now=None: True)
+    assert app_main._r2d2_read_cache_ttl_seconds() == float(app_main.settings.r2d2_read_cache_open_seconds)
+    monkeypatch.setattr(app_main.r2d2_session_clock, "is_open", lambda now=None: False)
+    assert app_main._r2d2_read_cache_ttl_seconds() == float(app_main.settings.r2d2_read_cache_closed_seconds)
+    assert app_main.settings.r2d2_read_cache_open_seconds == 5
+    assert app_main.settings.r2d2_read_cache_closed_seconds == 30
+
+
+def test_leah_sync_guard_rejections_map_to_retry_after_responses(monkeypatch) -> None:
+    from app.leah_sync_guard import LeahSyncBusy, LeahSyncTimeout
+
+    monkeypatch.setattr(
+        app_main.leah_cloud, "authenticate_device",
+        lambda authorization: {"id": "device-1", "owner_email": "eduardo@example.com"},
+    )
+    outcomes = iter([
+        LeahSyncTimeout("prazo", retry_after=30),
+        LeahSyncBusy("ocupado", retry_after=30),
+        {"cursor": datetime.now(timezone.utc), "items": []},
+    ])
+
+    def fake_run(identity, body, work):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(app_main.leah_sync_guard, "run", fake_run)
+    with TestClient(app) as client:
+        headers = {"Authorization": "Bearer device-token"}
+        timeout = client.post("/api/v1/leah/agent/sync", json={"items": []}, headers=headers)
+        busy = client.post("/api/v1/leah/agent/sync", json={"items": []}, headers=headers)
+        ok = client.post("/api/v1/leah/agent/sync", json={"items": []}, headers=headers)
+
+    assert timeout.status_code == 504
+    assert timeout.headers["retry-after"] == "30"
+    assert busy.status_code == 503
+    assert busy.headers["retry-after"] == "30"
+    assert ok.status_code == 200
+    assert ok.json()["items"] == []

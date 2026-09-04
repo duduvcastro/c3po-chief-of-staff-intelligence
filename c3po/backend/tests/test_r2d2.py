@@ -1210,6 +1210,7 @@ def test_r2d2_loss_sale_returns_full_net_proceeds_to_cash() -> None:
 
 
 def test_r2d2_dashboard_api_contract() -> None:
+    app_main.r2d2_read_cache.invalidate()
     with TestClient(app_main.app) as client:
         response = client.get("/api/v1/r2d2")
 
@@ -1414,6 +1415,7 @@ def test_r2d2_episode_summary_consolidates_partial_legs_and_exclusions() -> None
 
 
 def test_r2d2_live_positions_api_contract() -> None:
+    app_main.r2d2_read_cache.invalidate()
     with TestClient(app_main.app) as client:
         response = client.get("/api/v1/r2d2/live-positions")
 
@@ -1422,7 +1424,7 @@ def test_r2d2_live_positions_api_contract() -> None:
     assert payload["refresh_seconds"] == 1
     assert payload["open_positions"] == len(payload["positions"])
     assert set(payload) == {
-        "generated_at", "refresh_seconds", "nav_usd", "cash_usd",
+        "generated_at", "refresh_seconds", "market_session_open", "nav_usd", "cash_usd",
         "gross_exposure_usd", "open_positions", "positions",
     }
 
