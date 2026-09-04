@@ -94,3 +94,26 @@ def test_r2d2_pollers_use_the_shared_polling_policy() -> None:
     assert "usePanelPolling(loadHealth, { openMs: 60_000, marketOpen: falconMarketOpen });" in falcon
     assert "usePanelPolling(load, { openMs: 2_000, marketOpen: data?.market_session_open ?? null });" in rising
     assert "market_session_open?: boolean;" in source
+
+
+def test_command_center_opening_uses_one_aggregated_request_and_seeds_the_falcon() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+    shell = _source_between(source, "function AppShell", "function MillenniumFalconView")
+    falcon = _source_between(source, "function MillenniumFalconView", "function FalconMetric")
+    hook = _source_between(source, "function usePanelPolling", "function useR2D2LivePositions")
+
+    assert 'const COMMAND_CENTER_INCLUDE = "alerts,navigation_indicators,system_health,reports,market_data_providers,r2d2,markets_live,markets_index";' in source
+    assert "fetch(`${API_URL}/api/v1/command-center?include=${COMMAND_CENTER_INCLUDE}`" in shell
+    assert "fetch(`${API_URL}/api/v1/command-center`, {" not in shell
+    assert "if (needsCommand) {" in shell
+    assert "setCommandSeed({" in shell
+    assert "mergeFalconIndices(sections?.markets_index ?? null, sections?.markets_live ?? null)" in shell
+    assert "if (!sections?.alerts && !sections?.navigation_indicators) await refreshNotificationState();" in shell
+    assert "<MillenniumFalconView systemHealth={systemHealth} seed={commandSeed} />" in shell
+    assert "useState<R2D2DashboardData | null>(seed?.r2d2 ?? null)" in falcon
+    assert "initialLoad: !seed?.r2d2" in falcon
+    assert "initialLoad: !seed?.indices.length" in falcon
+    assert "initialLoad: !seed?.health" in falcon
+    assert "initialLoad = true }: PanelPollingOptions" in hook
+    assert "const hasLoadedRef = useRef(!initialLoad);" in hook
+    assert "function mergeFalconIndices(" in source

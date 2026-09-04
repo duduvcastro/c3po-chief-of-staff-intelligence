@@ -231,6 +231,7 @@ class Settings(BaseSettings):
     r2d2_ws_max_symbols: int = 550
     r2d2_read_cache_open_seconds: int = Field(default=5, ge=0, le=60)
     r2d2_read_cache_closed_seconds: int = Field(default=30, ge=0, le=600)
+    command_center_cache_seconds: int = Field(default=10, ge=0, le=60)
     leah_sync_dedupe_window_seconds: int = Field(default=30, ge=0, le=600)
     leah_sync_deadline_seconds: int = Field(default=10, ge=1, le=120)
     leah_sync_cooldown_seconds: int = Field(default=30, ge=1, le=600)

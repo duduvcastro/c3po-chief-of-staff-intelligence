@@ -1296,6 +1296,8 @@ class CommandCenterResponse(BaseModel):
     decision_queue: list[dict[str, str]]
     integrations: list[IntegrationHealth]
     provenance: Provenance
+    sections: "CommandCenterSections | None" = None
+    section_status: dict[str, "CommandCenterSectionStatus"] = Field(default_factory=dict)
 
 
 class FeedbackRequest(BaseModel):
@@ -1461,3 +1463,29 @@ class AccessUserListResponse(BaseModel):
     items: list[AccessUser]
     available_permissions: list[AccessPermission]
     available_capabilities: list[AccessCapability]
+
+
+class CommandCenterSectionStatus(BaseModel):
+    status: Literal["ok", "error", "skipped"]
+    duration_ms: float = Field(default=0, ge=0)
+    error: str | None = None
+
+
+class CommandCenterSections(BaseModel):
+    """Sub-payloads assembled server-side for the Command Center opening.
+
+    Every field is independent: a failed or skipped source leaves ``None`` here
+    and an explanation in ``CommandCenterResponse.section_status``.
+    """
+
+    alerts: dict[str, Any] | None = None
+    navigation_indicators: NavigationIndicatorsResponse | None = None
+    system_health: SystemHealthResponse | None = None
+    reports: list[dict[str, Any]] | None = None
+    market_data_providers: list[MarketDataProviderHealth] | None = None
+    r2d2: R2D2DashboardResponse | None = None
+    markets_live: LiveMarketsResponse | None = None
+    markets_index: LiveMarketIndexResponse | None = None
+
+
+CommandCenterResponse.model_rebuild()

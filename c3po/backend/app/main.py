@@ -1,6 +1,10 @@
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 import asyncio
+from typing import Callable
+import time
+from concurrent.futures import ThreadPoolExecutor
+import logging
 import hashlib
 import ipaddress
 import re
@@ -69,6 +73,8 @@ from .schemas import (
     ChewieFundamentalsResponse,
     ChewieSearchResponse,
     CommandCenterResponse,
+    CommandCenterSectionStatus,
+    CommandCenterSections,
     FeedbackRequest,
     FeedbackResponse,
     LoginCodeRequest,
@@ -148,6 +154,7 @@ def _current_summary_context(now: datetime | None = None) -> tuple[str, str, str
     return greeting, f"{summary_name} - {local_now:%d/%m/%Y}", local_now.strftime("%d/%m/%Y")
 
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 init_sentry(settings, service_name="api")
 database = Database(settings)
@@ -201,6 +208,16 @@ def _r2d2_read_cache_ttl_seconds() -> float:
 
 
 r2d2_read_cache = SingleFlightReadCache(_r2d2_read_cache_ttl_seconds)
+command_center_cache = SingleFlightReadCache(
+    lambda: float(settings.command_center_cache_seconds)
+)
+COMMAND_CENTER_SECTIONS: tuple[str, ...] = (
+    "alerts", "navigation_indicators", "system_health", "reports",
+    "market_data_providers", "r2d2", "markets_live", "markets_index",
+)
+_command_center_executor = ThreadPoolExecutor(
+    max_workers=len(COMMAND_CENTER_SECTIONS), thread_name_prefix="command-center"
+)
 push_notifications = PushNotificationService(settings, database)
 operational_incidents = OperationalIncidentService(database)
 governance_vulnerability = GovernanceVulnerabilityService(
@@ -1068,13 +1085,12 @@ def open_finance_snapshot(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
 
-@app.get("/api/v1/command-center", response_model=CommandCenterResponse)
-def command_center() -> CommandCenterResponse:
+def _command_center_base() -> CommandCenterResponse:
     snapshot = legacy.read()
     generated_at = snapshot["generated_at"]
     age_hours = max(0, (datetime.now().astimezone() - generated_at).total_seconds() / 3600)
-    status = "fresh" if age_hours <= 16 else "stale"
-    quality = 95 if status == "fresh" else 72
+    status_label = "fresh" if age_hours <= 16 else "stale"
+    quality = 95 if status_label == "fresh" else 72
     greeting, report_title, report_date = _current_summary_context()
     snapshot["report_title"] = report_title
     snapshot["report_date"] = report_date
@@ -1087,10 +1103,117 @@ def command_center() -> CommandCenterResponse:
             as_of=generated_at,
             collected_at=datetime.now().astimezone(),
             quality=quality,
-            status=status,
+            status=status_label,
         ),
     )
 
+
+def _parse_command_center_include(include: str | None) -> tuple[str, ...]:
+    if not include:
+        return ()
+    requested: list[str] = []
+    for raw in include.split(","):
+        name = raw.strip()
+        if not name:
+            continue
+        if name not in COMMAND_CENTER_SECTIONS:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Unknown command-center section: {name}",
+            )
+        if name not in requested:
+            requested.append(name)
+    return tuple(requested)
+
+
+def _command_center_section_producers(actor: dict) -> dict[str, tuple[bool, Callable[[], object]]]:
+    """Section name -> (permitted for this actor, producer).
+
+    Producers call the services directly; the aggregate never issues HTTP
+    requests to its own backend (C3PO_CPU_RELIEF_V1, PR A).
+    """
+    permissions = set(actor.get("permissions") or [])
+    email = str(actor["email"])
+    command_allowed = "command" in permissions
+    return {
+        "alerts": ("alerts" in permissions, lambda: build_alert_feed(email)),
+        "navigation_indicators": (
+            bool({"relations", "intelligence"} & permissions),
+            lambda: _navigation_indicators_for(actor),
+        ),
+        "system_health": (True, system_health.snapshot),
+        "reports": (
+            bool({"command", "candidates"} & permissions),
+            lambda: {"items": legacy.report_history()},
+        ),
+        "market_data_providers": (
+            bool({"markets", "realtime", "candidates", "health"} & permissions),
+            market_data.health,
+        ),
+        "r2d2": (
+            command_allowed,
+            lambda: r2d2_read_cache.get("dashboard", r2d2.dashboard),
+        ),
+        "markets_live": (command_allowed, live_markets.snapshot),
+        "markets_index": (command_allowed, live_markets.index_snapshot),
+    }
+
+
+def _run_command_center_section(
+    name: str, producer: Callable[[], object]
+) -> tuple[str, object | None, CommandCenterSectionStatus]:
+    started = time.perf_counter()
+    try:
+        value = producer()
+    except Exception as error:  # noqa: BLE001 - one source must never take the card down
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        logger.warning("command-center section %s failed: %s", name, error)
+        message = str(error)[:200] or error.__class__.__name__
+        return name, None, CommandCenterSectionStatus(
+            status="error", duration_ms=round(duration_ms, 3), error=message,
+        )
+    duration_ms = (time.perf_counter() - started) * 1000.0
+    return name, value, CommandCenterSectionStatus(status="ok", duration_ms=round(duration_ms, 3))
+
+
+def _assemble_command_center(actor: dict, requested: tuple[str, ...]) -> CommandCenterResponse:
+    base = _command_center_base()
+    producers = _command_center_section_producers(actor)
+    statuses: dict[str, CommandCenterSectionStatus] = {}
+    values: dict[str, object] = {}
+    futures = []
+    for name in requested:
+        permitted, producer = producers[name]
+        if not permitted:
+            statuses[name] = CommandCenterSectionStatus(status="skipped")
+            continue
+        futures.append(_command_center_executor.submit(_run_command_center_section, name, producer))
+    for future in futures:
+        name, value, section_status = future.result()
+        statuses[name] = section_status
+        if value is None:
+            continue
+        if name == "reports" and isinstance(value, dict):
+            value = value.get("items") or []
+        values[name] = value
+    return base.model_copy(update={
+        "sections": CommandCenterSections(**values),
+        "section_status": statuses,
+    })
+
+
+@app.get("/api/v1/command-center", response_model=CommandCenterResponse)
+def command_center(
+    request: Request,
+    include: str | None = Query(default=None, max_length=300),
+) -> CommandCenterResponse:
+    requested = _parse_command_center_include(include)
+    if not requested:
+        return _command_center_base()
+    actor = current_access_actor(request)
+    permissions = ",".join(sorted(actor.get("permissions") or []))
+    cache_key = f"{actor['email']}|{permissions}|{','.join(requested)}"
+    return command_center_cache.get(cache_key, lambda: _assemble_command_center(actor, requested))
 
 def build_alert_feed(email: str) -> dict:
     snapshot = legacy.read()
@@ -1211,9 +1334,7 @@ def mark_alerts_read(payload: AlertReadRequest, request: Request) -> AlertReadRe
     return AlertReadResponse(marked_read=marked, read_at=read_at)
 
 
-@app.get("/api/v1/navigation-indicators", response_model=NavigationIndicatorsResponse)
-def navigation_indicators(request: Request) -> NavigationIndicatorsResponse:
-    actor = current_access_actor(request)
+def _navigation_indicators_for(actor: dict) -> NavigationIndicatorsResponse:
     permissions = set(actor.get("permissions") or [])
     feed_keys = [key for key in ("relations", "intelligence") if key in permissions]
     seen_by_feed = database.navigation_feed_seen_at(actor["email"], feed_keys)
@@ -1233,6 +1354,11 @@ def navigation_indicators(request: Request) -> NavigationIndicatorsResponse:
             last_seen_at=last_seen_at,
         )
     return NavigationIndicatorsResponse(generated_at=generated_at, feeds=feeds)
+
+
+@app.get("/api/v1/navigation-indicators", response_model=NavigationIndicatorsResponse)
+def navigation_indicators(request: Request) -> NavigationIndicatorsResponse:
+    return _navigation_indicators_for(current_access_actor(request))
 
 
 @app.post("/api/v1/navigation-seen", response_model=NavigationSeenResponse)

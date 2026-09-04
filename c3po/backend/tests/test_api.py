@@ -326,3 +326,92 @@ def test_leah_sync_guard_rejections_map_to_retry_after_responses(monkeypatch) ->
     assert busy.headers["retry-after"] == "30"
     assert ok.status_code == 200
     assert ok.json()["items"] == []
+
+
+def test_command_center_without_include_keeps_the_legacy_contract(monkeypatch) -> None:
+    calls = {"health": 0}
+    real = app_main.system_health.snapshot
+
+    def counted():
+        calls["health"] += 1
+        return real()
+
+    monkeypatch.setattr(app_main.system_health, "snapshot", counted)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/command-center")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sections"] is None
+    assert payload["section_status"] == {}
+    assert calls == {"health": 0}
+
+
+def test_command_center_aggregate_isolates_a_failing_section(monkeypatch) -> None:
+    def broken():
+        raise RuntimeError("probe timeout storm")
+
+    monkeypatch.setattr(app_main.system_health, "snapshot", broken)
+    app_main.command_center_cache.invalidate()
+    app_main.r2d2_read_cache.invalidate()
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/command-center",
+            params={"include": "alerts,navigation_indicators,system_health,reports,market_data_providers,r2d2,markets_live,markets_index"},
+        )
+    app_main.command_center_cache.invalidate()
+    assert response.status_code == 200
+    payload = response.json()
+    statuses = payload["section_status"]
+    assert set(statuses) == {
+        "alerts", "navigation_indicators", "system_health", "reports",
+        "market_data_providers", "r2d2", "markets_live", "markets_index",
+    }
+    assert statuses["system_health"]["status"] == "error"
+    assert "probe timeout storm" in statuses["system_health"]["error"]
+    assert payload["sections"]["system_health"] is None
+    assert statuses["reports"]["status"] == "ok"
+    assert isinstance(payload["sections"]["reports"], list)
+    assert statuses["r2d2"]["status"] == "ok"
+    assert payload["sections"]["r2d2"]["starting_capital_usd"] == 1_000_000
+    assert statuses["alerts"]["status"] == "ok"
+    assert "unread_count" in payload["sections"]["alerts"]
+    for name, item in statuses.items():
+        assert item["status"] in {"ok", "error", "skipped"}, name
+        assert item["duration_ms"] >= 0
+    assert payload["report_title"].endswith(datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y"))
+
+
+def test_command_center_aggregate_rejects_unknown_sections() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/v1/command-center", params={"include": "alerts,shell_exec"})
+    assert response.status_code == 422
+
+
+def test_command_center_aggregate_cache_is_segregated_by_actor_and_permissions(monkeypatch) -> None:
+    calls = {"reports": 0}
+    real_history = app_main.legacy.report_history
+
+    def counted():
+        calls["reports"] += 1
+        return real_history()
+
+    monkeypatch.setattr(app_main.legacy, "report_history", counted)
+    actors = {
+        "owner": {"email": "owner@example.com", "permissions": ["command", "alerts", "candidates"], "role": "owner"},
+        "member": {"email": "member@example.com", "permissions": ["command"], "role": "member"},
+    }
+    current = {"key": "owner"}
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actors[current["key"]])
+    monkeypatch.setattr(app_main.command_center_cache, "_ttl_seconds", lambda: 60.0)
+    app_main.command_center_cache.invalidate()
+    with TestClient(app) as client:
+        first = client.get("/api/v1/command-center", params={"include": "reports,alerts"})
+        second = client.get("/api/v1/command-center", params={"include": "reports,alerts"})
+        current["key"] = "member"
+        third = client.get("/api/v1/command-center", params={"include": "reports,alerts"})
+    app_main.command_center_cache.invalidate()
+    assert first.status_code == second.status_code == third.status_code == 200
+    assert calls["reports"] == 2  # owner computed once (cached), member computed once
+    assert first.json()["section_status"]["alerts"]["status"] == "ok"
+    assert third.json()["section_status"]["alerts"]["status"] == "skipped"  # no 'alerts' permission
+    assert third.json()["sections"]["alerts"] is None

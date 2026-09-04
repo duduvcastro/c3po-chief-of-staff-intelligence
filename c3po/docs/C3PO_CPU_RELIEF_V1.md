@@ -61,3 +61,29 @@ usuário).
 Uma sessão completa com as mesmas seis queries do laudo e os gráficos do Lightsail. Critério
 para liberar a Obra B: CPU p95 em pregão < 60%, burst não chega ao piso e fecha ≥ 20%,
 duração p95 dos ciclos < 30 s, sem regressão funcional ou aumento de erros.
+
+## PR A — Command Center agregado
+
+- `GET /api/v1/command-center` é estendido **aditivamente**: sem `include`, o contrato é o
+  mesmo de sempre; com `?include=a,b,...` (nomes fixos: `alerts`, `navigation_indicators`,
+  `system_health`, `reports`, `market_data_providers`, `r2d2`, `markets_live`,
+  `markets_index`; nome desconhecido → 422) o payload ganha `sections` + `section_status`.
+- As seções rodam **em paralelo** (pool dedicado), chamando os serviços diretamente —
+  **nenhuma chamada HTTP interna ao próprio backend**. Uma fonte indisponível fica `null`
+  com `section_status[nome] = {status: "error", error}`; o card nunca vira 502 por isso.
+- Permissão por seção espelha o frontend (`alerts` exige `alerts`; indicadores exigem
+  `relations|intelligence`; `reports` exige `command|candidates`; provedores exigem
+  `markets|realtime|candidates|health`; R2D2/mercados exigem `command`); sem permissão a
+  seção é `skipped`.
+- Cache server-side de **10 s** (`command_center_cache_seconds`), single-flight, **segregado
+  por usuário e conjunto de permissões** (chave = e-mail + permissões + seções pedidas).
+  A seção `r2d2` reutiliza o cache da PR B.
+- Frontend: a abertura do Command Center passa a fazer **uma** requisição agregada, distribui
+  o conteúdo (relatórios, provedores, saúde, contador de alertas, indicadores) e **semeia** a
+  Millennium Falcon (R2D2, índices, saúde), que só volta a consultar a API no seu próximo
+  ciclo de polling (`initialLoad: false`). Conteúdo e estados atuais preservados.
+- **Contrato de abertura**: no máximo **quatro** chamadas — `auth/session`, o agregado,
+  `r2d2/live-positions` e o POST de telemetria de page-load. Heartbeat e `navigation-seen`
+  só disparam por atividade/navegação posterior.
+- Dependência declarada: esta PR é **empilhada** sobre a PR B (reutiliza `read_cache` e
+  `usePanelPolling`); merge B → A; cada uma reversível por si.
