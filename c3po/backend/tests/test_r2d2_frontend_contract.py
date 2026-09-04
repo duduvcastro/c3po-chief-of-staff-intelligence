@@ -56,3 +56,33 @@ def test_learning_curve_window_and_every_label_derive_from_one_constant() -> Non
     start = falcon.index("LEARNING_MOVING_AVERAGE_WINDOW = 10")
     learning_section = falcon[start : falcon.index("r2d2-learning-ma-dot") + 2000]
     assert re.findall(r"MM5|m[óo]vel de 5|m[óo]vel \(5d\)|m[óo]vel 5 dias", learning_section) == []
+
+
+def test_panel_polling_is_adaptive_and_suspends_when_hidden() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+    hook = _source_between(source, "function usePanelPolling", "function useR2D2LivePositions")
+
+    assert "const MARKET_CLOSED_POLL_MS = 60_000;" in source
+    assert 'marketOpen === false ? Math.max(closedMs, MARKET_CLOSED_POLL_MS)' in hook
+    assert 'if (document.visibilityState !== "visible") return;' in hook
+    assert "document.addEventListener(\"visibilitychange\", handleVisibility);" in hook
+    assert "} else {\n        stop();" in hook
+    assert "void loadRef.current();\n        schedule();" in hook
+    assert "stop();\n      timer = window.setTimeout(" in hook
+
+
+def test_r2d2_pollers_use_the_shared_polling_policy() -> None:
+    source = PAGE.read_text(encoding="utf-8")
+    live = _source_between(source, "function useR2D2LivePositions", "function MillenniumFalconIcon")
+    falcon = _source_between(source, "function MillenniumFalconView", "function FalconMetric")
+    rising = _source_between(source, "function R2D2RisingView", "function R2D2Ticker")
+
+    assert "window.setInterval(" not in live
+    assert "usePanelPolling(load, {" in live
+    assert "marketOpen: telemetry?.market_session_open ?? null" in live
+    assert "window.setInterval(" not in falcon
+    assert "usePanelPolling(loadR2D2, { openMs: 2_000, marketOpen: falconMarketOpen });" in falcon
+    assert "usePanelPolling(loadIndices, { openMs: 10_000, marketOpen: falconMarketOpen });" in falcon
+    assert "usePanelPolling(loadHealth, { openMs: 60_000, marketOpen: falconMarketOpen });" in falcon
+    assert "usePanelPolling(load, { openMs: 2_000, marketOpen: data?.market_session_open ?? null });" in rising
+    assert "market_session_open?: boolean;" in source

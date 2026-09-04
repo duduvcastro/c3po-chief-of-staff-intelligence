@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals
 
+from .read_cache import MarketSessionClock
+
 from .config import Settings
 from .database import Database
 from .market_data.b3_screener import B3ScreenerService
@@ -2339,6 +2341,14 @@ class R2D2PaperService:
             ))
         return position_models, cash, exposure, nav
 
+    @property
+    def _market_session_clock(self) -> MarketSessionClock:
+        clock = getattr(self, "_market_session_clock_instance", None)
+        if clock is None:
+            clock = MarketSessionClock()
+            self._market_session_clock_instance = clock
+        return clock
+
     def live_positions(self) -> R2D2LivePositionsResponse:
         experiment = self.repo.experiment(self.settings.r2d2_experiment_code)
         if experiment is None:
@@ -2349,6 +2359,7 @@ class R2D2PaperService:
         return R2D2LivePositionsResponse(
             generated_at=now,
             refresh_seconds=1,
+            market_session_open=self._market_session_clock.is_open(now),
             nav_usd=round(nav, 2),
             cash_usd=round(cash, 2),
             gross_exposure_usd=round(exposure, 2),
@@ -2461,6 +2472,7 @@ class R2D2PaperService:
         today = datetime.now(SAO_PAULO).date()
         learning = self._learning_state or self._ensure_daily_learning(experiment, today)
         return R2D2DashboardResponse(
+            market_session_open=self._market_session_clock.is_open(now),
             experiment_code=experiment["code"], status=experiment["status"],
             entries_paused=bool(experiment.get("entries_paused")),
             entries_paused_at=experiment.get("entries_paused_at"),

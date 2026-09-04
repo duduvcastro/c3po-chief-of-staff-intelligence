@@ -807,6 +807,7 @@ class R2D2Position(BaseModel):
 class R2D2LivePositionsResponse(BaseModel):
     generated_at: datetime
     refresh_seconds: int = Field(default=1, ge=1)
+    market_session_open: bool = True
     nav_usd: float
     cash_usd: float
     gross_exposure_usd: float
@@ -917,6 +918,7 @@ class R2D2DashboardResponse(BaseModel):
     daily_return_percent: float
     daily_pnl_date: str | None
     open_positions: int
+    market_session_open: bool = True
     stats: R2D2SummaryStats
     today_episode_stats: R2D2EpisodeStats
     track_record: list[R2D2TrackPoint]
