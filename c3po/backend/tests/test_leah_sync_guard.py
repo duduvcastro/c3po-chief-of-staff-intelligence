@@ -167,22 +167,25 @@ def test_fingerprint_is_canonical() -> None:
 def test_deadline_covers_the_wait_for_the_identity_lock() -> None:
     import time as _time
 
-    guard = LeahSyncGuard(dedupe_window_seconds=0.0, deadline_seconds=0.2, cooldown_seconds=30.0)
-    release = threading.Event()
+    # First caller: deadline 0.3 s, work sleeps 1.5 s -> it times out (504) and releases
+    # the identity lock at ~0.3 s while its work keeps running (in flight).
+    # Second caller (different payload) arrives while the lock is held: its budget must
+    # bound the QUEUE wait too, so it answers 503 well before the slow work completes.
+    guard = LeahSyncGuard(dedupe_window_seconds=0.0, deadline_seconds=0.3, cooldown_seconds=30.0)
     holding = threading.Event()
 
     def slow() -> str:
         holding.set()
-        release.wait(timeout=5)
+        _time.sleep(1.5)
         return "slow"
 
-    first_error: list[BaseException] = []
+    first_outcome: list[object] = []
 
     def first_caller() -> None:
         try:
-            guard.run("device-1", {"items": [{"id": "a"}]}, slow)
+            first_outcome.append(guard.run("device-1", {"items": [{"id": "a"}]}, slow))
         except BaseException as error:  # noqa: BLE001
-            first_error.append(error)
+            first_outcome.append(error)
 
     thread = threading.Thread(target=first_caller)
     thread.start()
@@ -191,12 +194,18 @@ def test_deadline_covers_the_wait_for_the_identity_lock() -> None:
     with pytest.raises(LeahSyncBusy):
         guard.run("device-1", {"items": [{"id": "b"}]}, lambda: "never")
     elapsed = _time.monotonic() - started
-    assert elapsed < 1.0  # bounded by the 0.2 s deadline, not by the slow work
-    release.set()
+    assert elapsed < 1.2, f"queue wait was not bounded by the deadline: {elapsed:.3f}s"
     thread.join(timeout=5)
-    assert isinstance(first_error[0], LeahSyncTimeout)
+    assert first_outcome, f"first caller never finished: {guard.snapshot()}"
+    assert isinstance(first_outcome[0], LeahSyncTimeout), first_outcome
     assert guard.counters.busy_rejected == 1
-    assert guard.counters.queued == 0
+    assert guard.counters.timeouts == 1
+    # The slow work still completes and is accounted as a late completion.
+    for _ in range(400):
+        if guard.counters.late_completions == 1:
+            break
+        _time.sleep(0.01)
+    assert guard.counters.late_completions == 1
 
 
 def test_coalesced_and_queued_are_counted_separately() -> None:
