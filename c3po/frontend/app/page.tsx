@@ -3941,7 +3941,7 @@ function R2D2RisingView() {
     return { ...item, start };
   });
   const learningCurve = data.learning_curve;
-  const LEARNING_MOVING_AVERAGE_WINDOW = 5;
+  const LEARNING_MOVING_AVERAGE_WINDOW = 10;
   const learningMovingAverage = learningCurve.map((_, index) => {
     const window = learningCurve.slice(Math.max(0, index - (LEARNING_MOVING_AVERAGE_WINDOW - 1)), index + 1);
     return window.reduce((sum, point) => sum + point.positive_percent, 0) / window.length;
@@ -4207,7 +4207,7 @@ function R2D2RisingView() {
           <div><Brain size={18} /><h2>Learning Curve</h2></div>
           {learningCurve.length ? (
             <div className="r2d2-learning-summary">
-              <span>Média móvel (5d)<strong>{learningLastMovingAverage.toFixed(1)}%</strong></span>
+              <span>{`Média móvel (${LEARNING_MOVING_AVERAGE_WINDOW}d)`}<strong>{learningLastMovingAverage.toFixed(1)}%</strong></span>
               <span>Dias operados<strong>{learningCurve.length}</strong></span>
               <small className={`r2d2-learning-trend-${learningTrendTone}`}>{learningTrendLabel}</small>
             </div>
@@ -4222,7 +4222,7 @@ function R2D2RisingView() {
               width={learningChartWidth}
               height={LEARNING_CHART_HEIGHT}
               role="img"
-              aria-label="Curva de aprendizado: percentuais diários de operações positivas e negativas, com linha de média móvel de 5 dias para as operações positivas"
+              aria-label={`Curva de aprendizado: percentuais diários de operações positivas e negativas, com linha de média móvel de ${LEARNING_MOVING_AVERAGE_WINDOW} dias para as operações positivas`}
             >
               {[0, 25, 50, 75, 100].map((tick) => {
                 const y = LEARNING_PLOT_TOP + LEARNING_PLOT_HEIGHT - (tick / 100) * LEARNING_PLOT_HEIGHT;
@@ -4277,7 +4277,7 @@ function R2D2RisingView() {
               ) : null}
               {learningMovingAveragePoints.map((point, index) => (
                 <circle key={`ma-${learningCurve[index].session_date}`} cx={point.x} cy={point.y} r={2.5} className="r2d2-learning-ma-dot">
-                  <title>{`Média móvel 5 dias em ${learningCurve[index].session_date}: ${learningMovingAverage[index].toFixed(1)}%`}</title>
+                  <title>{`Média móvel ${LEARNING_MOVING_AVERAGE_WINDOW} dias em ${learningCurve[index].session_date}: ${learningMovingAverage[index].toFixed(1)}%`}</title>
                 </circle>
               ))}
               {learningMovingAveragePoints.length ? (
@@ -4290,7 +4290,7 @@ function R2D2RisingView() {
                   <rect x={learningChartWidth - 178} y={9.5} width={7} height={7} rx={1.5} className="r2d2-learning-legend-negative" />
                   <text x={learningChartWidth - 167} y={13} className="r2d2-learning-legend-label">Negativas</text>
                   <circle cx={learningChartWidth - 92} cy={13} r={3.5} className="r2d2-learning-ma-dot" />
-                  <text x={learningChartWidth - 84} y={13} className="r2d2-learning-ma-label">{`MM5 ${learningLastMovingAverage.toFixed(1)}%`}</text>
+                  <text x={learningChartWidth - 84} y={13} className="r2d2-learning-ma-label">{`MM${LEARNING_MOVING_AVERAGE_WINDOW} ${learningLastMovingAverage.toFixed(1)}%`}</text>
                 </g>
               ) : null}
             </svg>
