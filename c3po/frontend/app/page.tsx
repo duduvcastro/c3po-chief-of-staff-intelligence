@@ -1295,20 +1295,26 @@ function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = 
 
   useEffect(() => {
     const intervalMs = marketOpen === false ? Math.max(closedMs, MARKET_CLOSED_POLL_MS) : Math.max(250, openMs);
+    // `active` is the lifecycle guard: once the effect is cleaned up (unmount or option
+    // change) nothing in this closure may schedule again — not even a fetch that was in
+    // flight when the cleanup ran (audited on #373: ghost polling).
+    let active = true;
     let timer = 0;
     const stop = () => {
       if (timer) window.clearTimeout(timer);
       timer = 0;
     };
     const schedule = () => {
+      if (!active) return;
       stop();
       timer = window.setTimeout(() => {
         timer = 0;
-        if (document.visibilityState !== "visible") return;
+        if (!active || document.visibilityState !== "visible") return;
         void Promise.resolve(loadRef.current()).finally(schedule);
       }, intervalMs);
     };
     const handleVisibility = () => {
+      if (!active) return;
       if (document.visibilityState === "visible") {
         void loadRef.current();
         schedule();
@@ -1316,13 +1322,16 @@ function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = 
         stop();
       }
     };
-    if (!hasLoadedRef.current) {
-      hasLoadedRef.current = true;
-      void loadRef.current();
+    if (document.visibilityState === "visible") {
+      if (!hasLoadedRef.current) {
+        hasLoadedRef.current = true;
+        void loadRef.current();
+      }
+      schedule();
     }
-    if (document.visibilityState === "visible") schedule();
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
+      active = false;
       stop();
       document.removeEventListener("visibilitychange", handleVisibility);
     };

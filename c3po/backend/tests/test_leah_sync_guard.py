@@ -96,12 +96,14 @@ def test_deadline_returns_timeout_with_retry_after_and_blocks_retries_while_runn
     assert guard.counters.timeouts == 1
     assert guard.counters.busy_rejected == 1
     release.set()
-    # Once the late work completes, its result is absorbed and identical payloads dedupe.
-    for _ in range(100):
-        state = guard._state("device-1")
-        if state.inflight is not None and state.inflight.done():
+    # Once the late work completes it is ACCOUNTED (executed + late) and reusable.
+    for _ in range(200):
+        if guard.counters.late_completions == 1:
             break
         threading.Event().wait(0.01)
+    assert guard.counters.executed == 1
+    assert guard.counters.late_completions == 1
+    assert guard.counters.last_duration_ms >= 0.0  # fake clock: duration is measured, not asserted
     assert guard.run("device-1", payload, lambda: "fresh") == "late"
     assert guard.counters.deduplicated == 1
 
@@ -153,9 +155,76 @@ def test_concurrent_calls_for_one_identity_execute_one_at_a_time() -> None:
         thread.join(timeout=5)
     assert peak == 1
     assert guard.counters.executed == 5
-    assert guard.counters.coalesced >= 1
+    assert guard.counters.queued >= 1  # distinct payloads waited for the lock
+    assert guard.counters.coalesced == 0
 
 
 def test_fingerprint_is_canonical() -> None:
     assert payload_fingerprint({"b": 1, "a": [1, 2]}) == payload_fingerprint({"a": [1, 2], "b": 1})
     assert payload_fingerprint({"a": 1}) != payload_fingerprint({"a": 2})
+
+
+def test_deadline_covers_the_wait_for_the_identity_lock() -> None:
+    import time as _time
+
+    guard = LeahSyncGuard(dedupe_window_seconds=0.0, deadline_seconds=0.2, cooldown_seconds=30.0)
+    release = threading.Event()
+    holding = threading.Event()
+
+    def slow() -> str:
+        holding.set()
+        release.wait(timeout=5)
+        return "slow"
+
+    first_error: list[BaseException] = []
+
+    def first_caller() -> None:
+        try:
+            guard.run("device-1", {"items": [{"id": "a"}]}, slow)
+        except BaseException as error:  # noqa: BLE001
+            first_error.append(error)
+
+    thread = threading.Thread(target=first_caller)
+    thread.start()
+    assert holding.wait(timeout=5)
+    started = _time.monotonic()
+    with pytest.raises(LeahSyncBusy):
+        guard.run("device-1", {"items": [{"id": "b"}]}, lambda: "never")
+    elapsed = _time.monotonic() - started
+    assert elapsed < 1.0  # bounded by the 0.2 s deadline, not by the slow work
+    release.set()
+    thread.join(timeout=5)
+    assert isinstance(first_error[0], LeahSyncTimeout)
+    assert guard.counters.busy_rejected == 1
+    assert guard.counters.queued == 0
+
+
+def test_coalesced_and_queued_are_counted_separately() -> None:
+    guard = LeahSyncGuard(dedupe_window_seconds=30.0, deadline_seconds=5.0)
+    gate = threading.Event()
+
+    def work() -> str:
+        gate.wait(timeout=5)
+        return "done"
+
+    same = {"items": [{"id": "same"}]}
+    results: list[str] = []
+    leader = threading.Thread(target=lambda: results.append(guard.run("device-1", same, work)))
+    leader.start()
+    for _ in range(100):
+        if guard._state("device-1").lock.locked():
+            break
+        threading.Event().wait(0.005)
+    follower_same = threading.Thread(target=lambda: results.append(guard.run("device-1", dict(same), lambda: "unused")))
+    follower_other = threading.Thread(target=lambda: results.append(guard.run("device-1", {"items": [{"id": "other"}]}, lambda: "other")))
+    follower_same.start()
+    follower_other.start()
+    threading.Event().wait(0.05)
+    gate.set()
+    for thread in (leader, follower_same, follower_other):
+        thread.join(timeout=5)
+    assert sorted(results) == ["done", "done", "other"]
+    assert guard.counters.coalesced == 1
+    assert guard.counters.queued == 1
+    assert guard.counters.deduplicated == 1
+    assert guard.counters.executed == 2

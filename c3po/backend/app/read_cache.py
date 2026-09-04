@@ -9,8 +9,8 @@ the same exception, and exceptions are never cached.
 
 Invalidation is explicit (``invalidate``). Trades executed by the R2D2 worker
 live in another process and cannot call ``invalidate`` here: the market-session
-TTL is the hard bound on how stale a dashboard read can be while the market is
-open.
+TTL, measured from the instant the cached computation STARTED, is the hard bound
+on how stale a dashboard read can be while the market is open.
 """
 
 from __future__ import annotations
@@ -84,7 +84,18 @@ class _InFlight:
 
 
 class SingleFlightReadCache:
-    """Per-key TTL cache where concurrent misses share exactly one computation."""
+    """Per-key TTL cache where concurrent misses share exactly one computation.
+
+    Guarantees (audited on #373):
+    * validity is anchored at the moment the computation STARTED, so an entry is
+      never older than the TTL measured from its as-of instant, however long the
+      computation took;
+    * ``invalidate`` bumps a generation token; a computation that started before
+      the invalidation returns its value to its waiters but never repopulates the
+      key;
+    * every exit path (compute error, TTL provider error) clears the in-flight
+      marker and propagates the same failure to every waiter — nothing hangs.
+    """
 
     def __init__(
         self,
@@ -97,6 +108,7 @@ class SingleFlightReadCache:
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}
         self._inflight: dict[str, _InFlight] = {}
+        self._generation = 0
         self.counters = ReadCacheCounters()
 
     def get(self, key: str, compute: Callable[[], T]) -> T:
@@ -114,27 +126,34 @@ class SingleFlightReadCache:
                 self._inflight[key] = inflight
                 self.counters.misses += 1
                 leader = True
+            generation = self._generation
+            started_at = self._clock()
         if not leader:
             inflight.done.wait()
             if inflight.error is not None:
                 raise inflight.error
             return inflight.value
         try:
+            ttl = max(0.0, float(self._ttl_seconds()))
             value = compute()
         except BaseException as error:  # noqa: BLE001 - propagated to every waiter
-            with self._lock:
-                self.counters.errors += 1
-                self._inflight.pop(key, None)
-            inflight.error = error
-            inflight.done.set()
+            self._fail_flight(key, inflight, error)
             raise
-        ttl = max(0.0, float(self._ttl_seconds()))
         with self._lock:
-            self._entries[key] = _Entry(value, self._clock() + ttl)
+            if self._generation == generation:
+                self._entries[key] = _Entry(value, started_at + ttl)
             self._inflight.pop(key, None)
         inflight.value = value
         inflight.done.set()
         return value
+
+    def _fail_flight(self, key: str, inflight: _InFlight, error: BaseException) -> None:
+        with self._lock:
+            self.counters.errors += 1
+            if self._inflight.get(key) is inflight:
+                self._inflight.pop(key, None)
+        inflight.error = error
+        inflight.done.set()
 
     def invalidate(self, key: str | None = None) -> None:
         with self._lock:
@@ -142,6 +161,7 @@ class SingleFlightReadCache:
                 self._entries.clear()
             else:
                 self._entries.pop(key, None)
+            self._generation += 1
             self.counters.invalidations += 1
 
     def snapshot(self) -> dict[str, Any]:
@@ -149,5 +169,6 @@ class SingleFlightReadCache:
             return {
                 "keys": sorted(self._entries),
                 "inflight": sorted(self._inflight),
+                "generation": self._generation,
                 **self.counters.snapshot(),
             }

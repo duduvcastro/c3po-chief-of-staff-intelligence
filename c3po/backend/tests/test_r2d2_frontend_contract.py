@@ -69,6 +69,14 @@ def test_panel_polling_is_adaptive_and_suspends_when_hidden() -> None:
     assert "} else {\n        stop();" in hook
     assert "void loadRef.current();\n        schedule();" in hook
     assert "stop();\n      timer = window.setTimeout(" in hook
+    # Lifecycle guard (audited on #373): nothing schedules after cleanup, and a tab that
+    # is born hidden neither loads nor schedules until it becomes visible.
+    assert "let active = true;" in hook
+    assert "const schedule = () => {\n      if (!active) return;" in hook
+    assert 'if (!active || document.visibilityState !== "visible") return;' in hook
+    assert "const handleVisibility = () => {\n      if (!active) return;" in hook
+    assert 'if (document.visibilityState === "visible") {\n      if (!hasLoadedRef.current) {' in hook
+    assert "return () => {\n      active = false;\n      stop();" in hook
 
 
 def test_r2d2_pollers_use_the_shared_polling_policy() -> None:

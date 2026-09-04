@@ -126,3 +126,59 @@ def test_market_session_clock_follows_the_xnys_regular_session() -> None:
     # Saturday 2026-09-05 and Labor Day 2026-09-07 are not sessions.
     assert clock.is_open(datetime(2026, 9, 5, 15, 0, tzinfo=timezone.utc)) is False
     assert clock.is_open(datetime(2026, 9, 7, 15, 0, tzinfo=timezone.utc)) is False
+
+
+def test_ttl_provider_failure_clears_the_flight_and_reaches_every_waiter() -> None:
+    calls = {"ttl": 0}
+
+    def ttl() -> float:
+        calls["ttl"] += 1
+        if calls["ttl"] == 1:
+            raise RuntimeError("calendar unavailable")
+        return 60.0
+
+    cache = SingleFlightReadCache(ttl)
+    with pytest.raises(RuntimeError):
+        cache.get("k", lambda: "value")
+    assert cache.snapshot()["inflight"] == []
+    assert cache.counters.errors == 1
+    # The key is not poisoned: the next call computes normally.
+    assert cache.get("k", lambda: "recovered") == "recovered"
+
+
+def test_validity_is_anchored_at_the_start_of_the_computation() -> None:
+    clock = FakeClock()
+    cache = SingleFlightReadCache(lambda: 5.0, clock=clock)
+    calls: list[int] = []
+
+    def slow_compute() -> str:
+        calls.append(1)
+        clock.now += 10.0  # the computation itself took 10 s
+        return f"snapshot-{len(calls)}"
+
+    assert cache.get("dashboard", slow_compute) == "snapshot-1"
+    # Anchored at start (t=1000, ttl 5): already expired when the compute finished at t=1010.
+    assert cache.get("dashboard", slow_compute) == "snapshot-2"
+    assert calls == [1, 1]
+
+
+def test_invalidate_during_compute_prevents_the_stale_result_from_repopulating() -> None:
+    cache = SingleFlightReadCache(lambda: 60.0)
+    started = threading.Event()
+    release = threading.Event()
+
+    def compute() -> str:
+        started.set()
+        release.wait(timeout=5)
+        return "old"
+
+    results: list[str] = []
+    leader = threading.Thread(target=lambda: results.append(cache.get("k", compute)))
+    leader.start()
+    assert started.wait(timeout=5)
+    cache.invalidate()  # a trade/command happened while the old snapshot was computing
+    release.set()
+    leader.join(timeout=5)
+    assert results == ["old"]  # the in-flight caller still gets its value
+    assert cache.snapshot()["keys"] == []  # ...but the key was not repopulated
+    assert cache.get("k", lambda: "fresh") == "fresh"
