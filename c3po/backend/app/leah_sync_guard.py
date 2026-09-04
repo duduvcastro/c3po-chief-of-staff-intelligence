@@ -36,7 +36,7 @@ class LeahSyncRejected(RuntimeError):
 
     status_code = 503
 
-    def __init__(self, message: str, *, retry_after: int) -> None:
+    def __init__(self, message: str, *, retry_after: float) -> None:
         super().__init__(message)
         self.retry_after = max(1, int(retry_after))
 
