@@ -4,7 +4,7 @@ import asyncio
 import threading
 from typing import Callable
 import time
-from concurrent.futures import ThreadPoolExecutor, wait as wait_futures
+from concurrent.futures import Future, ThreadPoolExecutor, wait as wait_futures
 import logging
 import hashlib
 import ipaddress
@@ -51,7 +51,7 @@ from .push_notifications import PushNotificationService
 from .operational_incidents import OperationalIncidentService
 from .governance_vulnerability import GovernanceVulnerabilityService
 from .r2d2 import R2D2PaperService
-from .read_cache import MarketSessionClock, SingleFlightReadCache
+from .read_cache import MarketSessionClock, ReadCacheWaitTimeout, SingleFlightReadCache
 from .open_finance import OpenFinanceService, PluggyRequestError
 from .official_fundamentals import ensure_builtin_official_fundamentals
 from .code_census import CodeCensusService
@@ -1198,14 +1198,27 @@ def _run_command_center_section(
     return name, value, CommandCenterSectionStatus(status="ok", duration_ms=round(duration_ms, 3))
 
 
-def _run_command_center_sections(
-    actor: dict, requested: tuple[str, ...]
-) -> tuple[dict[str, object], dict[str, CommandCenterSectionStatus]]:
+_SectionFuture = Future[tuple[str, object | None, CommandCenterSectionStatus]]
+
+
+def _command_center_deadline() -> float:
+    """Absolute (monotonic) deadline of ONE aggregate request. Every wait inside the request
+    — live sections, cacheable sections and even joining a cacheable computation another
+    request already started — spends only what is left of this single budget, so a call can
+    never take two budgets in sequence (Codex reaudit #374 `d960c0d`, P2)."""
+    return time.monotonic() + float(settings.command_center_section_timeout_seconds)
+
+
+def _command_center_remaining(deadline_at: float) -> float:
+    return max(0.0, deadline_at - time.monotonic())
+
+
+def _submit_command_center_sections(
+    actor: dict, requested: tuple[str, ...], statuses: dict[str, CommandCenterSectionStatus],
+) -> dict[str, _SectionFuture]:
+    """Admission control + submission. Never waits: the caller collects against the deadline."""
     producers = _command_center_section_producers(actor)
-    statuses: dict[str, CommandCenterSectionStatus] = {}
-    values: dict[str, object] = {}
-    futures = {}
-    timeout = float(settings.command_center_section_timeout_seconds)
+    futures: dict[str, _SectionFuture] = {}
     for name in requested:
         if not _command_center_section_permitted(actor, name):
             statuses[name] = CommandCenterSectionStatus(status="skipped")
@@ -1221,15 +1234,26 @@ def _run_command_center_sections(
         future = _command_center_executor.submit(_run_command_center_section, name, producers[name])
         future.add_done_callback(lambda _done, s=slot: s.release())
         futures[name] = future
-    # One shared deadline for the whole fan-out: a hung source becomes an error section and
-    # never holds the response hostage; work that has not even started is cancelled.
-    wait_futures(list(futures.values()), timeout=timeout)
+    return futures
+
+
+def _collect_command_center_sections(
+    futures: dict[str, _SectionFuture],
+    statuses: dict[str, CommandCenterSectionStatus],
+    deadline_at: float,
+) -> dict[str, object]:
+    """Wait until the REQUEST deadline (never a fresh timeout): a hung source becomes an error
+    section and never holds the response hostage; work that has not started is cancelled."""
+    values: dict[str, object] = {}
+    if futures:
+        wait_futures(list(futures.values()), timeout=_command_center_remaining(deadline_at))
+    budget = float(settings.command_center_section_timeout_seconds)
     for name, future in futures.items():
         if not future.done():
             future.cancel()  # releases the slot via the done-callback if it was still queued
-            logger.warning("command-center section %s exceeded %.1fs", name, timeout)
+            logger.warning("command-center section %s exceeded the %.1fs request deadline", name, budget)
             statuses[name] = CommandCenterSectionStatus(
-                status="error", duration_ms=round(timeout * 1000.0, 3), error="timeout",
+                status="error", duration_ms=round(budget * 1000.0, 3), error="timeout",
             )
             continue
         _, value, section_status = future.result()
@@ -1239,16 +1263,49 @@ def _run_command_center_sections(
         if name == "reports" and isinstance(value, dict):
             value = value.get("items") or []
         values[name] = value
+    return values
+
+
+def _run_command_center_sections(
+    actor: dict, requested: tuple[str, ...], *, deadline_at: float | None = None,
+) -> tuple[dict[str, object], dict[str, CommandCenterSectionStatus]]:
+    if deadline_at is None:
+        deadline_at = _command_center_deadline()
+    statuses: dict[str, CommandCenterSectionStatus] = {}
+    futures = _submit_command_center_sections(actor, requested, statuses)
+    values = _collect_command_center_sections(futures, statuses, deadline_at)
     return values, statuses
 
 
-def _assemble_command_center(actor: dict, requested: tuple[str, ...]) -> CommandCenterResponse:
+def _assemble_command_center(
+    actor: dict, requested: tuple[str, ...], *, deadline_at: float | None = None,
+) -> CommandCenterResponse:
     """Cacheable part of the aggregate (everything except the live sections)."""
     base = _command_center_base()
-    values, statuses = _run_command_center_sections(actor, requested)
+    values, statuses = _run_command_center_sections(actor, requested, deadline_at=deadline_at)
     return base.model_copy(update={
         "sections": CommandCenterSections(**values),
         "section_status": statuses,
+    })
+
+
+def _command_center_unavailable(actor: dict, requested: tuple[str, ...]) -> CommandCenterResponse:
+    """Cacheable group when its content could not be obtained within the request deadline
+    (another request's single-flight computation still running): every permitted section is
+    reported as a timeout and NOTHING is cached, so the next request simply retries."""
+    budget = float(settings.command_center_section_timeout_seconds)
+    statuses = {
+        name: (
+            CommandCenterSectionStatus(
+                status="error", duration_ms=round(budget * 1000.0, 3), error="timeout",
+            )
+            if _command_center_section_permitted(actor, name)
+            else CommandCenterSectionStatus(status="skipped")
+        )
+        for name in requested
+    }
+    return _command_center_base().model_copy(update={
+        "sections": CommandCenterSections(), "section_status": statuses,
     })
 
 
@@ -1264,21 +1321,45 @@ def command_center(
     permissions = ",".join(sorted(actor.get("permissions") or []))
     cacheable = tuple(name for name in requested if name not in COMMAND_CENTER_LIVE_SECTIONS)
     live = tuple(name for name in requested if name in COMMAND_CENTER_LIVE_SECTIONS)
-    if cacheable:
-        cache_key = f"{actor['email']}|{permissions}|{','.join(cacheable)}"
-        response = command_center_cache.get(cache_key, lambda: _assemble_command_center(actor, cacheable))
-    else:
-        response = _command_center_base().model_copy(update={"sections": CommandCenterSections(), "section_status": {}})
-    if not live:
-        return response
+    deadline_at = _command_center_deadline()
     # Live sections ride their OWN caches (R2D2: 5 s in session / 30 s closed) and are never
     # stored in the aggregate cache, so the aggregate can never be staler than the direct route.
-    live_values, live_statuses = _run_command_center_sections(actor, live)
+    # They are submitted BEFORE the cacheable group so both groups run concurrently under the
+    # same absolute deadline (two sequential budgets are not one budget — Codex, P2).
+    live_statuses: dict[str, CommandCenterSectionStatus] = {}
+    live_futures = _submit_command_center_sections(actor, live, live_statuses) if live else {}
+    try:
+        if cacheable:
+            cache_key = f"{actor['email']}|{permissions}|{','.join(cacheable)}"
+            try:
+                response = command_center_cache.get(
+                    cache_key,
+                    lambda: _assemble_command_center(actor, cacheable, deadline_at=deadline_at),
+                    wait_timeout=_command_center_remaining(deadline_at),
+                )
+            except ReadCacheWaitTimeout:
+                logger.warning(
+                    "command-center cacheable sections %s exceeded the request deadline while "
+                    "joining a computation already in flight", ",".join(cacheable),
+                )
+                response = _command_center_unavailable(actor, cacheable)
+        else:
+            response = _command_center_base().model_copy(
+                update={"sections": CommandCenterSections(), "section_status": {}},
+            )
+    except BaseException:
+        for future in live_futures.values():
+            future.cancel()
+        raise
+    if not live:
+        return response
+    live_values = _collect_command_center_sections(live_futures, live_statuses, deadline_at)
     sections = (response.sections or CommandCenterSections()).model_copy(update=live_values)
     return response.model_copy(update={
         "sections": sections,
         "section_status": {**response.section_status, **live_statuses},
     })
+
 
 def build_alert_feed(email: str) -> dict:
     snapshot = legacy.read()

@@ -74,9 +74,12 @@ duração p95 dos ciclos < 30 s, sem regressão funcional ou aumento de erros.
 - Permissão por seção = a MESMA regra canônica da rota espelhada
   (`access_control.required_permissions`): R2D2 exige `r2d2`, mercados exigem `markets`,
   etc. O agregado jamais entrega o que a rota direta recusaria; sem permissão → `skipped`.
-- Deadline compartilhado do leque (`command_center_section_timeout_seconds`, 8 s): fonte
-  pendurada vira `{status: error, error: timeout}` e nunca segura a resposta; trabalho ainda
-  enfileirado ao vencer o prazo é cancelado.
+- **Um único prazo por request** (`command_center_section_timeout_seconds`, 8 s, deadline
+  absoluto): as seções vivas são submetidas ANTES do grupo cacheável e os dois grupos correm
+  em paralelo sob o mesmo prazo; toda espera — inclusive entrar num cálculo cacheável já em
+  voo de outro request (`wait_timeout` do single-flight) — gasta só o orçamento restante.
+  Fonte pendurada vira `{status: error, error: timeout}` e nunca segura a resposta; trabalho
+  ainda enfileirado ao vencer o prazo é cancelado (reauditoria Codex `d960c0d`, P2).
 - **Admissão por seção**: no máximo UM produtor em voo por seção (semáforo por nome); uma fonte
   travada ocupa um slot e um worker, nunca o pool — seções saudáveis continuam respondendo.
 - **Seções vivas fora do cache do agregado** (`r2d2`, `markets_live`, `markets_index`): resolvidas
@@ -87,8 +90,6 @@ duração p95 dos ciclos < 30 s, sem regressão funcional ou aumento de erros.
 - Erros são **redigidos**: cliente e log recebem só o nome da classe da exceção.
 - Chave de cache canônica (seções ordenadas) e **limitada** (`command_center_cache_max_entries`,
   256; expirados expurgados primeiro, depois os de vencimento mais próximo).
-- O agregado **renova a janela de inatividade** no servidor (abrir o app é atividade humana);
-  o mount do frontend não dispara heartbeat imediato.
 - Cache server-side de **10 s** (`command_center_cache_seconds`), single-flight, **segregado
   por usuário e conjunto de permissões** (chave = e-mail + permissões + seções pedidas).
   A seção `r2d2` reutiliza o cache da PR B.

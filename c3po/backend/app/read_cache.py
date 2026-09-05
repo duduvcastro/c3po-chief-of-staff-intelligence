@@ -48,6 +48,16 @@ class MarketSessionClock:
         return open_at <= moment < close_at
 
 
+class ReadCacheWaitTimeout(TimeoutError):
+    """Raised to a FOLLOWER whose ``wait_timeout`` elapsed before the in-flight computation
+    it joined finished. The computation itself is untouched: the leader still receives its
+    value and the key is still populated for later readers."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"read cache: computation for {key!r} still in flight after the wait timeout")
+        self.key = key
+
+
 @dataclass
 class ReadCacheCounters:
     hits: int = 0
@@ -55,6 +65,7 @@ class ReadCacheCounters:
     coalesced: int = 0
     errors: int = 0
     invalidations: int = 0
+    wait_timeouts: int = 0
 
     def snapshot(self) -> dict[str, int]:
         return {
@@ -63,6 +74,7 @@ class ReadCacheCounters:
             "coalesced": self.coalesced,
             "errors": self.errors,
             "invalidations": self.invalidations,
+            "wait_timeouts": self.wait_timeouts,
         }
 
 
@@ -116,7 +128,10 @@ class SingleFlightReadCache:
         self._generations: dict[str, int] = {}
         self.counters = ReadCacheCounters()
 
-    def get(self, key: str, compute: Callable[[], T]) -> T:
+    def get(self, key: str, compute: Callable[[], T], *, wait_timeout: float | None = None) -> T:
+        """``wait_timeout`` bounds ONLY a follower's wait for a computation another caller is
+        already running (``ReadCacheWaitTimeout`` when it elapses); a leader always runs its
+        own ``compute`` to completion so the flight it owns never hangs its waiters."""
         with self._lock:
             entry = self._entries.get(key)
             if entry is not None and entry.expires_at > self._clock():
@@ -139,7 +154,11 @@ class SingleFlightReadCache:
                 leader = True
             started_at = self._clock()
         if not leader:
-            inflight.done.wait()
+            timeout = None if wait_timeout is None else max(0.0, float(wait_timeout))
+            if not inflight.done.wait(timeout):
+                with self._lock:
+                    self.counters.wait_timeouts += 1
+                raise ReadCacheWaitTimeout(key)
             if inflight.error is not None:
                 raise inflight.error
             return inflight.value

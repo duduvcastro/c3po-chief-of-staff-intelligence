@@ -471,6 +471,7 @@ def test_command_center_hung_section_becomes_a_timeout_without_blocking_the_rest
 
 
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -625,3 +626,73 @@ def test_outer_aggregate_does_not_extend_r2d2_snapshot_past_inner_ttl(monkeypatc
     aggregate_now = app_main.command_center(None, include="r2d2")
     assert aggregate_now.sections.r2d2 is direct_now
     assert len(calls) == 2
+
+
+def test_live_and_cacheable_sections_share_one_request_deadline(monkeypatch, isolated_command_center) -> None:
+    """Codex contraproof (#374 P2, d960c0d): a mixed call whose cacheable AND live sources are
+    both hung must answer within ONE budget, and the live group must start concurrently with
+    the cacheable group instead of after it."""
+    executor, release = isolated_command_center
+    actor = {"email": "mixed@example.test", "permissions": ["command", "alerts", "r2d2"]}
+    starts: dict[str, float] = {}
+
+    def hung(name: str):
+        starts[name] = time.perf_counter()
+        assert release.wait(5)
+        return None
+
+    monkeypatch.setattr(app_main.settings, "command_center_section_timeout_seconds", 0.2)
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actor)
+    monkeypatch.setattr(app_main, "_command_center_section_producers", lambda current: {
+        "alerts": lambda: hung("alerts"),
+        "r2d2": lambda: hung("r2d2"),
+    })
+    started = time.perf_counter()
+    result = app_main.command_center(None, include="alerts,r2d2")
+    elapsed = time.perf_counter() - started
+    assert result.section_status["alerts"].error == "timeout"
+    assert result.section_status["r2d2"].error == "timeout"
+    assert elapsed < 0.35, elapsed  # one budget of 0.2 s, not two in sequence
+    assert abs(starts["r2d2"] - starts["alerts"]) < 0.1, starts  # concurrent start
+
+
+def test_follower_of_a_cacheable_computation_in_flight_keeps_its_own_deadline(monkeypatch, isolated_command_center) -> None:
+    """Codex reaudit (#374 P2): obtaining the cacheable content also spends only the remaining
+    budget — a request that joins another request's single-flight cannot wait past its own
+    deadline; it answers `timeout` for the cacheable sections, caches nothing, and the leader's
+    result still lands in the cache for the next caller."""
+    executor, release = isolated_command_center
+    actor = {"email": "follower@example.test", "permissions": ["command", "reports"]}
+    entered = threading.Event()
+    base_calls: list[bool] = []
+
+    def base():
+        base_calls.append(True)
+        if len(base_calls) == 1:  # only the leader's flight is stuck
+            entered.set()
+            assert release.wait(5)
+        return app_main.CommandCenterResponse.model_construct()
+
+    monkeypatch.setattr(app_main.settings, "command_center_section_timeout_seconds", 0.2)
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actor)
+    monkeypatch.setattr(app_main, "_command_center_base", base)
+    monkeypatch.setattr(app_main, "_command_center_section_producers", lambda current: {
+        "reports": lambda: {"items": []},
+    })
+    leader_result: list = []
+    leader = threading.Thread(target=lambda: leader_result.append(app_main.command_center(None, include="reports")))
+    leader.start()
+    assert entered.wait(2)
+    started = time.perf_counter()
+    follower = app_main.command_center(None, include="reports")
+    elapsed = time.perf_counter() - started
+    assert elapsed < 0.35, elapsed
+    assert follower.section_status["reports"].error == "timeout"
+    assert follower.sections.reports is None
+    assert app_main.command_center_cache.counters.wait_timeouts == 1
+    assert app_main.command_center_cache.snapshot()["keys"] == []  # nothing cached by the follower
+    release.set()
+    leader.join(5)
+    assert leader_result and leader_result[0].section_status["reports"].status == "ok"
+    assert app_main.command_center(None, include="reports").section_status["reports"].status == "ok"
+    assert app_main.command_center_cache.counters.hits == 1
