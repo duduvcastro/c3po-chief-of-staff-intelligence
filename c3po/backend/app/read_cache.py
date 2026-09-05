@@ -48,6 +48,16 @@ class MarketSessionClock:
         return open_at <= moment < close_at
 
 
+class ReadCacheWaitTimeout(TimeoutError):
+    """Raised to a FOLLOWER whose ``wait_timeout`` elapsed before the in-flight computation
+    it joined finished. The computation itself is untouched: the leader still receives its
+    value and the key is still populated for later readers."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"read cache: computation for {key!r} still in flight after the wait timeout")
+        self.key = key
+
+
 @dataclass
 class ReadCacheCounters:
     hits: int = 0
@@ -55,6 +65,7 @@ class ReadCacheCounters:
     coalesced: int = 0
     errors: int = 0
     invalidations: int = 0
+    wait_timeouts: int = 0
 
     def snapshot(self) -> dict[str, int]:
         return {
@@ -63,6 +74,7 @@ class ReadCacheCounters:
             "coalesced": self.coalesced,
             "errors": self.errors,
             "invalidations": self.invalidations,
+            "wait_timeouts": self.wait_timeouts,
         }
 
 
@@ -104,9 +116,11 @@ class SingleFlightReadCache:
         ttl_seconds: Callable[[], float],
         *,
         clock: Callable[[], float] = time.monotonic,
+        max_entries: int | None = None,
     ) -> None:
         self._ttl_seconds = ttl_seconds
         self._clock = clock
+        self._max_entries = max_entries if max_entries is None else max(1, int(max_entries))
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}
         self._inflight: dict[str, _InFlight] = {}
@@ -114,7 +128,10 @@ class SingleFlightReadCache:
         self._generations: dict[str, int] = {}
         self.counters = ReadCacheCounters()
 
-    def get(self, key: str, compute: Callable[[], T]) -> T:
+    def get(self, key: str, compute: Callable[[], T], *, wait_timeout: float | None = None) -> T:
+        """``wait_timeout`` bounds ONLY a follower's wait for a computation another caller is
+        already running (``ReadCacheWaitTimeout`` when it elapses); a leader always runs its
+        own ``compute`` to completion so the flight it owns never hangs its waiters."""
         with self._lock:
             entry = self._entries.get(key)
             if entry is not None and entry.expires_at > self._clock():
@@ -137,7 +154,11 @@ class SingleFlightReadCache:
                 leader = True
             started_at = self._clock()
         if not leader:
-            inflight.done.wait()
+            timeout = None if wait_timeout is None else max(0.0, float(wait_timeout))
+            if not inflight.done.wait(timeout):
+                with self._lock:
+                    self.counters.wait_timeouts += 1
+                raise ReadCacheWaitTimeout(key)
             if inflight.error is not None:
                 raise inflight.error
             return inflight.value
@@ -149,12 +170,24 @@ class SingleFlightReadCache:
             raise
         with self._lock:
             if self._epoch == epoch and self._generations.get(key, 0) == generation:
-                self._entries[key] = _Entry(value, started_at + ttl)
+                self._store(key, _Entry(value, started_at + ttl))
             if self._inflight.get(key) is inflight:  # never erase a newer flight
                 self._inflight.pop(key, None)
         inflight.value = value
         inflight.done.set()
         return value
+
+    def _store(self, key: str, entry: _Entry) -> None:
+        """Bounded insert: purge expired entries first, then evict the soonest-expiring
+        ones until the configured ceiling holds (dynamic keys can't grow unbounded)."""
+        now = self._clock()
+        if self._max_entries is not None:
+            for stale_key in [k for k, e in self._entries.items() if e.expires_at <= now and k != key]:
+                del self._entries[stale_key]
+            while len(self._entries) >= self._max_entries and key not in self._entries:
+                victim = min(self._entries, key=lambda k: self._entries[k].expires_at)
+                del self._entries[victim]
+        self._entries[key] = entry
 
     def _fail_flight(self, key: str, inflight: _InFlight, error: BaseException) -> None:
         with self._lock:

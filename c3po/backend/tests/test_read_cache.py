@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.read_cache import MarketSessionClock, SingleFlightReadCache
+from app.read_cache import MarketSessionClock, ReadCacheWaitTimeout, SingleFlightReadCache
 
 
 class FakeClock:
@@ -33,6 +33,7 @@ def test_entry_is_served_until_the_ttl_supplied_at_compute_time_expires() -> Non
     assert cache.get("dashboard", compute) == {"n": 2}
     assert cache.counters.snapshot() == {
         "hits": 1, "misses": 2, "coalesced": 0, "errors": 0, "invalidations": 0,
+        "wait_timeouts": 0,
     }
 
 
@@ -240,3 +241,47 @@ def test_invalidating_one_key_keeps_the_single_flight_of_another_key() -> None:
     # ...whereas invalidating "b" itself does start a fresh computation.
     cache.invalidate("b")
     assert cache.get("b", lambda: "fresh") == "fresh"
+
+
+def test_max_entries_bounds_dynamic_keys_and_purges_expired_first() -> None:
+    clock = FakeClock()
+    cache = SingleFlightReadCache(lambda: 10.0, clock=clock, max_entries=3)
+    for i in range(3):
+        cache.get(f"k{i}", lambda i=i: i)
+    assert cache.snapshot()["keys"] == ["k0", "k1", "k2"]
+    cache.get("k3", lambda: 3)  # evicts the soonest-expiring entry
+    assert len(cache.snapshot()["keys"]) == 3
+    assert "k3" in cache.snapshot()["keys"]
+    clock.now += 11.0  # everything expired
+    cache.get("k4", lambda: 4)
+    assert cache.snapshot()["keys"] == ["k4"]
+
+
+def test_follower_wait_timeout_raises_without_touching_the_flight() -> None:
+    """A follower may bound how long it waits for a computation it did not start (#374 P2:
+    every wait of an aggregate request spends only the remaining budget). The leader and the
+    key it populates are unaffected; the timeout is neither an error nor a cached value."""
+    started = threading.Event()
+    release = threading.Event()
+    results: list[str] = []
+
+    def compute() -> str:
+        started.set()
+        assert release.wait(5)
+        return "value"
+
+    cache = SingleFlightReadCache(lambda: 60.0)
+    leader = threading.Thread(target=lambda: results.append(cache.get("k", compute)))
+    leader.start()
+    assert started.wait(2)
+    with pytest.raises(ReadCacheWaitTimeout) as raised:
+        cache.get("k", compute, wait_timeout=0.05)
+    assert raised.value.key == "k"
+    assert cache.counters.wait_timeouts == 1
+    assert cache.counters.errors == 0
+    assert cache.snapshot()["inflight"] == ["k"]  # the flight is still the leader's
+    release.set()
+    leader.join(5)
+    assert results == ["value"]
+    assert cache.get("k", lambda: "other") == "value"  # populated by the leader, served as a hit
+    assert cache.counters.hits == 1

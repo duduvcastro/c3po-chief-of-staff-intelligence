@@ -955,6 +955,45 @@ interface RealtimePortfolioSymbolSearchResponse {
   errors: string[];
 }
 
+interface CommandCenterSectionStatus {
+  status: "ok" | "error" | "skipped";
+  duration_ms: number;
+  error?: string | null;
+}
+
+interface CommandCenterSections {
+  alerts?: AlertsData | null;
+  navigation_indicators?: NavigationIndicatorsData | null;
+  system_health?: SystemHealthData | null;
+  reports?: ReportItem[] | null;
+  market_data_providers?: MarketDataProvider[] | null;
+  r2d2?: R2D2DashboardData | null;
+  markets_live?: LiveMarketsResponse | null;
+  markets_index?: LiveMarketIndexResponse | null;
+}
+
+/** Sections the Command Center opening asks for in ONE request (C3PO_CPU_RELIEF_V1, PR A). */
+const COMMAND_CENTER_INCLUDE = "alerts,navigation_indicators,system_health,reports,market_data_providers,r2d2,markets_live,markets_index";
+
+interface FalconSeed {
+  r2d2: R2D2DashboardData | null;
+  indices: LiveMarketItem[];
+  health: SystemHealthData | null;
+  /** performance-independent wall clock of the aggregate that produced this seed. */
+  seededAt: number;
+}
+
+const FALCON_SEED_MAX_AGE_MS = 15_000;
+
+function mergeFalconIndices(indexPayload: LiveMarketIndexResponse | null, marketPayload: LiveMarketsResponse | null): LiveMarketItem[] {
+  if (!indexPayload) return [];
+  const promotedSymbols = ["Nikkei", "Shanghai", "DAX"];
+  const promoted = promotedSymbols
+    .map((symbol) => (marketPayload?.groups["Future Index"] ?? []).find((item) => item.symbol === symbol))
+    .filter((item): item is LiveMarketItem => Boolean(item));
+  return [...indexPayload.items, ...promoted];
+}
+
 interface CommandCenterData {
   generated_at: string;
   report_title: string;
@@ -975,6 +1014,8 @@ interface CommandCenterData {
     quality: number;
     status: "fresh" | "stale" | "unavailable";
   };
+  sections?: CommandCenterSections | null;
+  section_status?: Record<string, CommandCenterSectionStatus>;
 }
 
 interface AlertItem {
@@ -1279,6 +1320,8 @@ type PanelPollingOptions = {
   closedMs?: number;
   /** null = unknown yet (treated as open); false = closed → slow polling. */
   marketOpen: boolean | null;
+  /** false = the caller already has fresh data (seeded); skip the immediate first load. */
+  initialLoad?: boolean;
 };
 
 /**
@@ -1288,10 +1331,10 @@ type PanelPollingOptions = {
  * - market closed + tab visible: at least MARKET_CLOSED_POLL_MS;
  * - tab visible again: one immediate refresh, then a single fresh timer (never two).
  */
-function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = MARKET_CLOSED_POLL_MS, marketOpen }: PanelPollingOptions) {
+function usePanelPolling(load: () => Promise<void> | void, { openMs, closedMs = MARKET_CLOSED_POLL_MS, marketOpen, initialLoad = true }: PanelPollingOptions) {
   const loadRef = useRef(load);
   loadRef.current = load;
-  const hasLoadedRef = useRef(false);
+  const hasLoadedRef = useRef(!initialLoad);
 
   useEffect(() => {
     const intervalMs = marketOpen === false ? Math.max(closedMs, MARKET_CLOSED_POLL_MS) : Math.max(250, openMs);
@@ -2838,6 +2881,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
   const [financeRefreshKey, setFinanceRefreshKey] = useState(0);
   const [activeAlertCount, setActiveAlertCount] = useState(0);
   const [navigationIndicators, setNavigationIndicators] = useState<NavigationIndicatorsData | null>(null);
+  const [commandSeed, setCommandSeed] = useState<FalconSeed | null>(null);
   const ActiveViewIcon = viewIcons[activeView];
 
   const completePageLoadMeasurement = useCallback((tracker: NonNullable<typeof pageLoadTrackerRef.current>) => {
@@ -3045,7 +3089,14 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
     const activityEvents: (keyof WindowEventMap)[] = ["pointerdown", "keydown", "touchstart", "scroll"];
     activityEvents.forEach((eventName) => window.addEventListener(eventName, registerActivity, { passive: true }));
     document.addEventListener("visibilitychange", handleVisibility);
-    registerActivity();
+    // Mount is not a heartbeat: the boot-time GET /auth/session (which put this shell on
+    // screen with a 200) already renewed the idle window server-side for every role, so the
+    // first POST /auth/activity waits for real activity and the regular interval
+    // (opening contract ≤ 4 calls, Codex audits #374).
+    lastHeartbeatSucceededAt = Date.now();
+    lastActivityAt = Date.now();
+    window.clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(expireLocalSession, idleTimeoutMs);
 
     return () => {
       window.clearTimeout(idleTimer);
@@ -3124,18 +3175,42 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
       const needsCommand = allowed.has("command");
       const needsReports = allowed.has("command") || allowed.has("candidates");
       const needsProviders = allowed.has("markets") || allowed.has("realtime") || allowed.has("candidates") || allowed.has("health");
-      const [commandResponse, reportsResponse, providersResponse, systemHealthResponse] = await Promise.all([
-        needsCommand ? fetch(`${API_URL}/api/v1/command-center`, { cache: "no-store", credentials: "include" }) : Promise.resolve(null),
+      if (needsCommand) {
+        // One aggregated request replaces the ~20-call fan-out of the Command Center opening.
+        const response = await fetch(`${API_URL}/api/v1/command-center?include=${COMMAND_CENTER_INCLUDE}`, { cache: "no-store", credentials: "include" });
+        if (response.status === 401) {
+          onSessionExpired();
+          return;
+        }
+        if (!response.ok) throw new Error(`API ${response.status}`);
+        const payload = await response.json() as CommandCenterData;
+        setData(payload);
+        const sections = payload.sections ?? null;
+        if (sections?.reports) setReports(sections.reports);
+        if (sections?.market_data_providers) setMarketProviders(sections.market_data_providers);
+        if (sections?.system_health) acceptSystemHealth(sections.system_health);
+        else if (payload.section_status?.system_health?.error) setSystemHealthRefreshError(payload.section_status.system_health.error);
+        if (sections?.alerts) setActiveAlertCount(sections.alerts.unread_count ?? sections.alerts.items.filter((item) => !item.is_read).length);
+        if (sections?.navigation_indicators) setNavigationIndicators(sections.navigation_indicators);
+        setCommandSeed({
+          r2d2: sections?.r2d2 ?? null,
+          indices: mergeFalconIndices(sections?.markets_index ?? null, sections?.markets_live ?? null),
+          health: sections?.system_health ?? null,
+          seededAt: Date.now()
+        });
+        // Any missing personalised section falls back to its own refresh (never a silent zero).
+        if (!sections?.alerts || !sections?.navigation_indicators) await refreshNotificationState();
+        return;
+      }
+      const [reportsResponse, providersResponse, systemHealthResponse] = await Promise.all([
         needsReports ? fetch(`${API_URL}/api/v1/reports`, { cache: "no-store", credentials: "include" }) : Promise.resolve(null),
         needsProviders ? fetch(`${API_URL}/api/v1/market-data/providers`, { cache: "no-store", credentials: "include" }) : Promise.resolve(null),
         fetch(`${API_URL}/api/v1/system-health`, { cache: "no-store", credentials: "include" })
       ]);
-      if ([commandResponse, reportsResponse, providersResponse, systemHealthResponse].some((response) => response?.status === 401)) {
+      if ([reportsResponse, providersResponse, systemHealthResponse].some((response) => response?.status === 401)) {
         onSessionExpired();
         return;
       }
-      if (commandResponse && !commandResponse.ok) throw new Error(`API ${commandResponse.status}`);
-      if (commandResponse) setData(await commandResponse.json());
       if (reportsResponse?.ok) {
         const reportPayload = await reportsResponse.json();
         setReports(reportPayload.items ?? []);
@@ -3368,6 +3443,7 @@ function AppShell({ session, onLogout, onSessionExpired }: { session: AuthSessio
               portfolio={data?.portfolio ?? []}
               marketProviders={marketProviders}
               systemHealth={systemHealth}
+              commandSeed={commandSeed}
               systemHealthCheckedAt={systemHealthCheckedAt}
               systemHealthRefreshError={systemHealthRefreshError}
               onSystemHealthRefresh={refreshSystemHealth}
@@ -3394,6 +3470,7 @@ function ViewRouter({
   portfolio,
   marketProviders,
   systemHealth,
+  commandSeed,
   systemHealthCheckedAt,
   systemHealthRefreshError,
   onSystemHealthRefresh,
@@ -3408,6 +3485,7 @@ function ViewRouter({
   reports: ReportItem[];
   portfolio: PortfolioItem[];
   marketProviders: MarketDataProvider[];
+  commandSeed: FalconSeed | null;
   systemHealth: SystemHealthData | null;
   systemHealthCheckedAt: string | null;
   systemHealthRefreshError: string;
@@ -3439,7 +3517,7 @@ function ViewRouter({
   if (activeView === "matrix") return <MatrixPowerView />;
   if (activeView === "chewie") return <ChewieFundamentalsView />;
   if (activeView === "onepager") return <OnePagerView canGenerate={canGenerateOnePagers} />;
-  if (activeView === "command") return <MillenniumFalconView systemHealth={systemHealth} />;
+  if (activeView === "command") return <MillenniumFalconView systemHealth={systemHealth} seed={commandSeed} />;
   return <LoadingState />;
 }
 
@@ -4535,11 +4613,11 @@ function C3POOpeningView({ onEnter }: { onEnter: () => void }) {
   );
 }
 
-function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData | null }) {
-  const [r2d2, setR2d2] = useState<R2D2DashboardData | null>(null);
+function MillenniumFalconView({ systemHealth, seed = null }: { systemHealth: SystemHealthData | null; seed?: FalconSeed | null }) {
+  const [r2d2, setR2d2] = useState<R2D2DashboardData | null>(seed?.r2d2 ?? null);
   const liveTelemetry = useR2D2LivePositions();
-  const [indices, setIndices] = useState<LiveMarketItem[]>([]);
-  const [health, setHealth] = useState<SystemHealthData | null>(null);
+  const [indices, setIndices] = useState<LiveMarketItem[]>(seed?.indices ?? []);
+  const [health, setHealth] = useState<SystemHealthData | null>(seed?.health ?? null);
   const [error, setError] = useState("");
   const mountedRef = useRef(true);
   const r2d2RequestInFlight = useRef(false);
@@ -4570,11 +4648,7 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
       if (!indexResponse.ok || !marketResponse.ok) throw new Error(`Markets API ${indexResponse.ok ? marketResponse.status : indexResponse.status}`);
       const indexPayload: LiveMarketIndexResponse = await indexResponse.json();
       const marketPayload: LiveMarketsResponse = await marketResponse.json();
-      const promotedSymbols = ["Nikkei", "Shanghai", "DAX"];
-      const promoted = promotedSymbols
-        .map((symbol) => (marketPayload.groups["Future Index"] ?? []).find((item) => item.symbol === symbol))
-        .filter((item): item is LiveMarketItem => Boolean(item));
-      if (mountedRef.current) setIndices([...indexPayload.items, ...promoted]);
+      if (mountedRef.current) setIndices(mergeFalconIndices(indexPayload, marketPayload));
     } catch (requestError) {
       if (mountedRef.current) setError(requestError instanceof Error ? requestError.message : "Indices unavailable");
     } finally {
@@ -4595,9 +4669,10 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
   }, []);
 
   const falconMarketOpen = r2d2?.market_session_open ?? null;
-  usePanelPolling(loadR2D2, { openMs: 2_000, marketOpen: falconMarketOpen });
-  usePanelPolling(loadIndices, { openMs: 10_000, marketOpen: falconMarketOpen });
-  usePanelPolling(loadHealth, { openMs: 60_000, marketOpen: falconMarketOpen });
+  const seedFresh = Boolean(seed) && Date.now() - (seed?.seededAt ?? 0) < FALCON_SEED_MAX_AGE_MS;
+  usePanelPolling(loadR2D2, { openMs: 2_000, marketOpen: falconMarketOpen, initialLoad: !(seedFresh && seed?.r2d2) });
+  usePanelPolling(loadIndices, { openMs: 10_000, marketOpen: falconMarketOpen, initialLoad: !(seedFresh && seed?.indices.length) });
+  usePanelPolling(loadHealth, { openMs: 60_000, marketOpen: falconMarketOpen, initialLoad: !(seedFresh && seed?.health) });
 
   useEffect(() => {
     if (!systemHealth) return;
