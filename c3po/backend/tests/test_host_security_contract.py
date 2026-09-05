@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import re
 
+import pytest
 import yaml
 
 
@@ -39,6 +41,11 @@ def _scanner_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _sha256(character: str) -> str:
+    assert len(character) == 1 and character in "0123456789abcdef"
+    return f"sha256:{character * 64}"
 
 
 def test_host_policy_is_security_only_and_never_reboots_automatically() -> None:
@@ -99,7 +106,11 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
     scanner = _scanner_module()
     payload = {
         "ArtifactName": "c3po/backend:production",
-        "Metadata": {"ImageID": "sha256:test", "RepoDigests": ["repo@sha256:test"]},
+        "Metadata": {
+            "ImageID": "sha256:test",
+            "DiffIDs": ["sha256:layer-a", "sha256:layer-b"],
+            "RepoDigests": ["repo@sha256:test"],
+        },
         "Results": [{
             "Vulnerabilities": [
                 {
@@ -156,8 +167,10 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
         "severity": "high",
         "package": "sample-lib",
         "installed_version": "1.0",
+        "fixed_version": "",
         "target": "unknown",
     }]
+    assert image["rootfs_layers"] == ["sha256:layer-a", "sha256:layer-b"]
     assert image["unknown"] == 1
     assert image["finding_total"] == 5
     assert scanner.TRIVY_IMAGE == (
@@ -165,6 +178,112 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
         "62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969"
     )
     assert scanner.TRIVY_VERSION == "0.74.0"
+
+
+def test_trivy_v074_diffids_are_the_ordered_cross_store_identity() -> None:
+    scanner = _scanner_module()
+    config_image_id = _sha256("a")
+    runtime_image_id = _sha256("b")
+    rootfs_layers = [_sha256("c"), _sha256("d")]
+    image = scanner.normalize_trivy_payload(
+        "database",
+        "c3po/database:production-scan",
+        {
+            "Metadata": {
+                "ImageID": config_image_id,
+                "DiffIDs": rootfs_layers,
+            },
+            "Results": [],
+        },
+    )
+    live_origin = {
+        "image_ref": "c3po/database:production",
+        "image_id": runtime_image_id,
+        "config_image_id": config_image_id,
+        "rootfs_layers": rootfs_layers,
+    }
+
+    scanner.verify_origin_identity(image, live_origin)
+    assert image["image_id"] != live_origin["image_id"]
+    with pytest.raises(RuntimeError, match="scanned ordered RootFS"):
+        scanner.verify_origin_identity(
+            image,
+            {**live_origin, "rootfs_layers": list(reversed(rootfs_layers))},
+        )
+    with pytest.raises(RuntimeError, match="Trivy config image ID"):
+        scanner.verify_origin_identity(
+            {**image, "image_id": ""},
+            live_origin,
+        )
+
+
+def test_docker_archive_manifest_config_ids_are_unique_and_fail_closed() -> None:
+    scanner = _scanner_module()
+    backend_config = "a" * 64
+    web_config = "b" * 64
+    database_config = "c" * 64
+    manifest = [
+        {"Config": f"{backend_config}.json", "RepoTags": ["c3po/backend:production"]},
+        {"Config": f"{web_config}.json", "RepoTags": ["c3po/web:production"]},
+        {
+            "Config": f"blobs/sha256/{database_config}",
+            "RepoTags": ["c3po/database:production"],
+        },
+    ]
+
+    assert scanner.archive_config_image_ids(
+        manifest,
+        [
+            ("backend", "c3po/backend:production"),
+            ("web", "c3po/web:production"),
+            ("database", "c3po/database:production"),
+        ],
+    ) == {
+        "backend": f"sha256:{backend_config}",
+        "web": f"sha256:{web_config}",
+        "database": f"sha256:{database_config}",
+    }
+
+    with pytest.raises(ValueError, match="duplicate Docker archive RepoTag"):
+        scanner.archive_config_image_ids(
+            manifest + [{"Config": f"{'c' * 64}.json", "RepoTags": ["c3po/web:production"]}],
+            [("backend", "c3po/backend:production")],
+        )
+    with pytest.raises(ValueError, match="duplicate requested image reference"):
+        scanner.archive_config_image_ids(
+            manifest,
+            [
+                ("backend", "c3po/backend:production"),
+                ("backend-copy", "c3po/backend:production"),
+            ],
+        )
+    with pytest.raises(ValueError, match="config digest is invalid"):
+        scanner.archive_config_image_ids(
+            [{"Config": "../bad.json", "RepoTags": ["c3po/backend:production"]}],
+            [("backend", "c3po/backend:production")],
+        )
+    with pytest.raises(ValueError, match="config digest is invalid"):
+        scanner.archive_config_image_ids(
+            [
+                {
+                    "Config": f"blobs/sha256/../{'d' * 64}",
+                    "RepoTags": ["c3po/backend:production"],
+                }
+            ],
+            [("backend", "c3po/backend:production")],
+        )
+    with pytest.raises(ValueError, match="config digest is invalid"):
+        scanner.archive_config_image_ids(
+            [
+                {
+                    "Config": f"blobs/sha512/{'d' * 64}",
+                    "RepoTags": ["c3po/backend:production"],
+                }
+            ],
+            [("backend", "c3po/backend:production")],
+        )
+    with pytest.raises(ValueError, match="manifest must be a list"):
+        scanner.archive_config_image_ids({}, [("backend", "c3po/backend:production")])
 
 
 def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
@@ -226,26 +345,74 @@ def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:
     lifecycle = jobs["complete-trivy-dead-man"]
     assert lifecycle["needs"] == ["scan-production-images", "remediation-controller"]
     assert lifecycle["environment"] == "production"
-    assert 'docker save c3po/backend:production c3po/web:production "$db_image_ref"' in daily
-    assert "{{.Image}}|{{.Config.Image}}" in daily
-    assert "C3PO_DB_IMAGE_ID" in daily
-    assert "C3PO_DB_IMAGE_REF" in daily
-    assert "C3PO_DB_SCAN_REF" in daily
-    assert "C3PO_DB_ROOTFS" in daily
-    assert daily.count("docker image inspect --format '{{.Id}}'") == 1
-    assert daily.count("""docker image inspect --format '{{join .RootFS.Layers ","}}'""") == 3
-    assert '"$db_image_ref")" = "$db_image_id"' in daily
+    assert 'docker save "$backend_image_ref" "$web_image_ref" "$database_image_ref"' in daily
+    compose = yaml.safe_load((ROOT / "c3po" / "compose.yml").read_text(encoding="utf-8"))
+    configured_backend_services = {
+        name
+        for name, service in compose["services"].items()
+        if service.get("image") == "c3po/backend:production"
+    }
+    expected_backend_services = {
+        "api",
+        "investor-relations-worker",
+        "valuation-worker",
+        "server-usage-worker",
+        "r2d2-worker",
+        "r2d2-shadow-candidate-worker",
+    }
+    assert configured_backend_services == expected_backend_services
+    backend_blocks = re.findall(
+        r"backend_services=\(\n(?P<services>(?:\s+[a-z0-9-]+\n)+)\s+\)",
+        daily,
+    )
+    assert len(backend_blocks) == 2
+    for block in backend_blocks:
+        assert {line.strip() for line in block.splitlines()} == configured_backend_services
+    assert daily.count(
+        "C3PO_EXPORT_ERROR=expected exactly one running container for %s"
+    ) == 2
+    assert daily.count("C3PO_EXPORT_ERROR=backend runtime identity diverged for %s") == 2
+    assert "C3PO_EXPORT_ERROR=runtime identity changed during export for %s" in daily
+    assert "C3PO_EXPORT_ERROR=image tag changed during export for %s" in daily
+    assert daily.index("docker save") < daily.index("assert_container_unchanged")
+    assert "production image export failed before evidence was sealed" in daily
+    assert daily.count('for service in "${backend_services[@]}"') == 3
+    assert "emit_metadata web web" in daily
+    assert "emit_metadata database db" in daily
+    for prefix in ("C3PO_BACKEND", "C3PO_WEB", "C3PO_DATABASE"):
+        assert f"{prefix}_IMAGE_ID" in daily
+        assert f"{prefix}_IMAGE_REF" in daily
+        assert f"{prefix}_CONFIG_IMAGE_ID" in daily
+        assert f"{prefix}_ROOTFS" in daily
+    assert daily.count("docker inspect --format '{{.Image}}'") == 8
+    assert daily.count("docker inspect --format '{{.Config.Image}}'") == 8
+    assert daily.count("docker image inspect --format '{{.Id}}'") == 8
+    assert daily.count("""docker image inspect --format '{{join .RootFS.Layers ","}}'""") == 4
+    assert '"$image_ref")" = "$image_id"' in daily
+    assert "C3PO_RUNTIME_BACKEND_ID" in daily
+    assert "C3PO_RUNTIME_WEB_ID" in daily
+    assert "C3PO_RUNTIME_DATABASE_ID" in daily
+    assert "C3PO_ARCHIVE_SHA256" in daily
+    assert 'sha256sum "$RUNNER_TEMP/c3po-production-images.tar.gz"' in daily
+    assert "manifest.json" in daily
+    assert "archive_config_image_ids" in daily
+    assert "entries = {" not in daily
+    assert "C3PO_LOADED_BACKEND_ID" in daily
+    assert "C3PO_LOADED_WEB_ID" in daily
+    assert "C3PO_LOADED_DATABASE_ID" in daily
     assert "docker rmi" not in daily
     assert daily.count("docker tag") == 1
-    assert 'docker tag "$db_match" "$db_scan_ref"' in daily
-    assert "docker image inspect c3po/backend:production c3po/web:production >/dev/null" in daily
-    assert "docker images --no-trunc --format '{{.ID}}'" in daily
-    assert 'test -n "$db_rootfs"' in daily
-    assert 'test -n "$db_match"' in daily
-    assert "ambiguous database image RootFS match" in daily
-    assert '"$db_scan_ref")" = "$db_rootfs"' in daily
-    assert '--image "database=$C3PO_DB_SCAN_REF"' in daily
-    assert '--origin "database=$C3PO_DB_IMAGE_REF|$C3PO_DB_IMAGE_ID|$C3PO_DB_ROOTFS"' in daily
+    assert 'docker tag "$loaded_id" "$scan_ref"' in daily
+    assert "loaded $label image identity does not match the live container" in daily
+    assert '"$scan_ref")" = "$expected_loaded_id"' in daily
+    assert '"$scan_ref")" = "$expected_rootfs"' in daily
+    assert "--image backend=c3po/backend:production-scan" in daily
+    assert "--image web=c3po/web:production-scan" in daily
+    assert "--image database=c3po/database:production-scan" in daily
+    assert '--origin "backend=$C3PO_BACKEND_IMAGE_REF|$C3PO_BACKEND_IMAGE_ID|$C3PO_BACKEND_CONFIG_IMAGE_ID|$C3PO_BACKEND_ROOTFS"' in daily
+    assert '--origin "web=$C3PO_WEB_IMAGE_REF|$C3PO_WEB_IMAGE_ID|$C3PO_WEB_CONFIG_IMAGE_ID|$C3PO_WEB_ROOTFS"' in daily
+    assert '--origin "database=$C3PO_DATABASE_IMAGE_REF|$C3PO_DATABASE_IMAGE_ID|$C3PO_DATABASE_CONFIG_IMAGE_ID|$C3PO_DATABASE_ROOTFS"' in daily
+    assert '--transport-sha256 "$C3PO_IMAGE_ARCHIVE_SHA256"' in daily
     assert "Scan the production images off-host" in daily
     assert "scripts/c3po_trivy_scan.py" in daily
     assert "C3PO_HEALTHCHECK_TRIVY_URL" in daily
@@ -396,7 +563,7 @@ def test_trivy_report_attests_its_own_dead_man_configuration() -> None:
 
     report = scanner.build_report(
         ["backend=c3po/backend:production"],
-        scope="production_runtime",
+        scope="unit_test",
         revision="test",
         dead_man_configured=True,
     )
@@ -406,54 +573,318 @@ def test_trivy_report_attests_its_own_dead_man_configuration() -> None:
     assert report["report_sha256"] == scanner.report_sha256(report)
 
 
-def test_trivy_report_carries_database_origin_identity() -> None:
+def test_trivy_report_carries_all_production_origin_identities() -> None:
     scanner = _scanner_module()
-    scanner.scan_image = lambda label, reference, _work: scanner.normalize_trivy_payload(
-        label,
-        reference,
-        {"ArtifactName": reference, "Metadata": {}, "Results": []},
-    )
+    origins = {
+        "backend": {
+            "image_ref": "c3po/backend:production",
+            "image_id": _sha256("1"),
+            "config_image_id": _sha256("2"),
+            "rootfs_layers": [_sha256("3"), _sha256("4")],
+        },
+        "web": {
+            "image_ref": "c3po/web:production",
+            "image_id": _sha256("5"),
+            "config_image_id": _sha256("6"),
+            "rootfs_layers": [_sha256("7")],
+        },
+        "database": {
+            "image_ref": "c3po/database:production",
+            "image_id": _sha256("8"),
+            "config_image_id": _sha256("9"),
+            "rootfs_layers": [_sha256("a"), _sha256("b")],
+        },
+    }
+
+    def scan(label: str, reference: str, _work: Path) -> dict[str, object]:
+        origin = origins[label]
+        return scanner.normalize_trivy_payload(
+            label,
+            reference,
+            {
+                "ArtifactName": reference,
+                "Metadata": {
+                    "ImageID": origin["config_image_id"],
+                    "DiffIDs": origin["rootfs_layers"],
+                },
+                "Results": [],
+            },
+        )
+
+    scanner.scan_image = scan
 
     report = scanner.build_report(
         [
-            "backend=c3po/backend:production",
+            "backend=c3po/backend:production-scan",
+            "web=c3po/web:production-scan",
             "database=c3po/database:production-scan",
         ],
         scope="production_runtime",
         revision="test",
         dead_man_configured=True,
         origin_specs=[
-            "database=postgres:16.15-alpine3.24@sha256:cf78|sha256:cf78|sha256:aaa,sha256:bbb"
+            (
+                f"{label}={origin['image_ref']}|{origin['image_id']}|"
+                f"{origin['config_image_id']}|"
+                f"{','.join(origin['rootfs_layers'])}"
+            )
+            for label, origin in origins.items()
         ],
+        transport_sha256="a" * 64,
     )
 
     by_label = {image["label"]: image for image in report["images"]}
-    assert by_label["backend"]["origin"] is None
-    assert by_label["database"]["origin"] == {
-        "image_ref": "postgres:16.15-alpine3.24@sha256:cf78",
-        "image_id": "sha256:cf78",
-        "rootfs_layers": ["sha256:aaa", "sha256:bbb"],
+    assert set(by_label) == {"backend", "web", "database"}
+    for label, origin in origins.items():
+        assert by_label[label]["origin"] == origin
+        assert by_label[label]["image_id"] == origin["config_image_id"]
+        assert by_label[label]["image_id"] != origin["image_id"]
+        assert by_label[label]["rootfs_layers"] == origin["rootfs_layers"]
+    assert report["source_transport"] == {
+        "kind": "verified_docker_archive",
+        "sha256": "a" * 64,
     }
     assert report["report_sha256"] == scanner.report_sha256(report)
 
-    try:
+
+def test_trivy_production_origins_fail_closed_when_missing_duplicate_or_mismatched() -> None:
+    scanner = _scanner_module()
+    image_specs = [
+        "backend=c3po/backend:production-scan",
+        "web=c3po/web:production-scan",
+        "database=c3po/database:production-scan",
+    ]
+    config_ids = {
+        "backend": _sha256("2"),
+        "web": _sha256("4"),
+        "database": _sha256("6"),
+    }
+    rootfs_layers = {
+        "backend": _sha256("3"),
+        "web": _sha256("5"),
+        "database": _sha256("7"),
+    }
+    complete_origins = [
+        (
+            f"{label}=c3po/{label}:production|{_sha256(runtime)}|"
+            f"{config_ids[label]}|{rootfs_layers[label]}"
+        )
+        for label, runtime in (("backend", "1"), ("web", "3"), ("database", "5"))
+    ]
+
+    with pytest.raises(ValueError, match="production image labels without an origin"):
         scanner.build_report(
-            ["backend=c3po/backend:production"],
+            image_specs,
             scope="production_runtime",
             revision="test",
-            origin_specs=["database=ref|id|rootfs"],
+            origin_specs=complete_origins[:-1],
         )
-    except ValueError as error:
-        assert "origin labels without a scanned image" in str(error)
-    else:
-        raise AssertionError("unknown origin label must be rejected")
 
-    try:
+    with pytest.raises(ValueError, match="duplicate origin label: backend"):
+        scanner.parse_origin_specs([complete_origins[0], complete_origins[0]])
+
+    with pytest.raises(ValueError, match="origin labels without a scanned image"):
+        scanner.build_report(
+            ["backend=c3po/backend:production"],
+            scope="unit_test",
+            revision="test",
+            origin_specs=[
+                f"database=ref|{_sha256('1')}|{_sha256('2')}|{_sha256('3')}"
+            ],
+        )
+
+    with pytest.raises(ValueError, match="invalid origin specification"):
         scanner.parse_origin_specs(["database=ref|id-sem-rootfs"])
-    except ValueError as error:
-        assert "invalid origin specification" in str(error)
-    else:
-        raise AssertionError("malformed origin specification must be rejected")
+
+    with pytest.raises(ValueError, match="requires exactly backend, web and database"):
+        scanner.build_report(
+            image_specs[:-1],
+            scope="production_runtime",
+            revision="test",
+            origin_specs=complete_origins[:-1],
+        )
+
+    with pytest.raises(ValueError, match="requires a verified transport sha256"):
+        scanner.build_report(
+            image_specs,
+            scope="production_runtime",
+            revision="test",
+            origin_specs=complete_origins,
+        )
+
+    with pytest.raises(ValueError, match="transport sha256 is not lowercase hexadecimal"):
+        scanner.build_report(
+            image_specs,
+            scope="production_runtime",
+            revision="test",
+            origin_specs=complete_origins,
+            transport_sha256="not-a-sha256",
+        )
+
+    def mismatched_scan(label: str, reference: str, _work: Path) -> dict[str, object]:
+        return scanner.normalize_trivy_payload(
+            label,
+            reference,
+            {
+                "Metadata": {
+                    "ImageID": config_ids[label],
+                    "DiffIDs": [_sha256("f")],
+                },
+                "Results": [],
+            },
+        )
+
+    scanner.scan_image = mismatched_scan
+    report = scanner.build_report(
+        image_specs,
+        scope="production_runtime",
+        revision="test",
+        origin_specs=complete_origins,
+        transport_sha256="b" * 64,
+    )
+    assert report["scan_status"] == "error"
+    assert report["images"] == []
+    assert len(report["errors"]) == 3
+    assert all(
+        "scanned ordered RootFS does not match live origin" in row["error"]
+        for row in report["errors"]
+    )
+    assert report["by_severity"] == {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    assert report["finding_total"] == 0
+    assert report["report_sha256"] == scanner.report_sha256(report)
+
+    def missing_id_scan(label: str, reference: str, _work: Path) -> dict[str, object]:
+        return scanner.normalize_trivy_payload(
+            label,
+            reference,
+            {
+                "Metadata": {"DiffIDs": [rootfs_layers[label]]},
+                "Results": [],
+            },
+        )
+
+    scanner.scan_image = missing_id_scan
+    report = scanner.build_report(
+        image_specs,
+        scope="production_runtime",
+        revision="test",
+        origin_specs=complete_origins,
+        transport_sha256="c" * 64,
+    )
+    assert report["scan_status"] == "error"
+    assert len(report["errors"]) == 3
+    assert all("Trivy config image ID does not match archive" in row["error"] for row in report["errors"])
+
+
+def test_provenance_additions_preserve_raw_counts_and_report_self_hash() -> None:
+    scanner = _scanner_module()
+    identity = {
+        "backend": (_sha256("1"), _sha256("2"), _sha256("3")),
+        "web": (_sha256("4"), _sha256("5"), _sha256("6")),
+        "database": (_sha256("7"), _sha256("8"), _sha256("9")),
+    }
+    origins = {
+        label: (
+            f"{label}=c3po/{label}:production|{runtime_id}|{config_id}|{rootfs}"
+        )
+        for label, (runtime_id, config_id, rootfs) in identity.items()
+    }
+
+    def scan(label: str, reference: str, _work: Path) -> dict[str, object]:
+        vulnerabilities = []
+        if label == "backend":
+            vulnerabilities = [
+                {
+                    "VulnerabilityID": "CVE-UNFIXED",
+                    "Severity": "HIGH",
+                    "PkgName": "unfixed",
+                    "InstalledVersion": "1",
+                    "FixedVersion": None,
+                },
+                {
+                    "VulnerabilityID": "CVE-FIXABLE",
+                    "Severity": "CRITICAL",
+                    "PkgName": "fixable",
+                    "InstalledVersion": "1",
+                    "FixedVersion": "2",
+                },
+            ]
+        elif label == "web":
+            vulnerabilities = [{"VulnerabilityID": "CVE-MEDIUM", "Severity": "MEDIUM"}]
+        return scanner.normalize_trivy_payload(
+            label,
+            reference,
+            {
+                "Metadata": {
+                    "ImageID": identity[label][1],
+                    "DiffIDs": [identity[label][2]],
+                },
+                "Results": [{"Target": label, "Vulnerabilities": vulnerabilities}],
+            },
+        )
+
+    scanner.scan_image = scan
+    report = scanner.build_report(
+        [
+            "backend=c3po/backend:production-scan",
+            "web=c3po/web:production-scan",
+            "database=c3po/database:production-scan",
+        ],
+        scope="production_runtime",
+        revision="test",
+        origin_specs=list(origins.values()),
+        transport_sha256="c" * 64,
+    )
+
+    assert report["scan_status"] == "complete"
+    assert report["by_severity"] == {"critical": 1, "high": 1, "medium": 1, "low": 0}
+    assert report["fix_available"] == {"critical": 1, "high": 0, "medium": 0, "low": 0}
+    assert report["unknown"] == 0
+    assert report["finding_total"] == 3
+    backend = next(image for image in report["images"] if image["label"] == "backend")
+    assert backend["finding_total"] == 2
+    assert backend["unfixed_high_critical"][0]["fixed_version"] == ""
+    assert report["report_sha256"] == scanner.report_sha256(report)
+
+
+def test_unfixed_high_critical_normalizes_missing_and_empty_fixed_version() -> None:
+    scanner = _scanner_module()
+    payload = {
+        "Metadata": {"ImageID": "sha256:test", "DiffIDs": ["sha256:layer"]},
+        "Results": [{
+            "Target": "debian",
+            "Vulnerabilities": [
+                {
+                    "VulnerabilityID": "CVE-MISSING",
+                    "Severity": "HIGH",
+                    "PkgName": "missing",
+                    "InstalledVersion": "1",
+                },
+                {
+                    "VulnerabilityID": "CVE-NULL",
+                    "Severity": "CRITICAL",
+                    "PkgName": "null",
+                    "InstalledVersion": "2",
+                    "FixedVersion": None,
+                },
+                {
+                    "VulnerabilityID": "CVE-EMPTY",
+                    "Severity": "HIGH",
+                    "PkgName": "empty",
+                    "InstalledVersion": "3",
+                    "FixedVersion": "   ",
+                },
+            ],
+        }],
+    }
+
+    image = scanner.normalize_trivy_payload("backend", "backend:test", payload)
+
+    assert image["by_severity"] == {"critical": 1, "high": 2, "medium": 0, "low": 0}
+    assert image["fix_available"] == {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    assert len(image["unfixed_high_critical"]) == 3
+    assert {finding["fixed_version"] for finding in image["unfixed_high_critical"]} == {""}
+    assert image["finding_total"] == 3
 
 
 def test_trivy_container_does_not_leave_root_owned_runner_cache() -> None:
