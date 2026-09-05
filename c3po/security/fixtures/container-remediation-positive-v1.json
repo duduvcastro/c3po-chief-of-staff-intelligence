@@ -33,6 +33,16 @@
         "low": 0,
         "medium": 0
       },
+      "fixable_findings": [
+        {
+          "fixed_version": "2",
+          "installed_version": "1",
+          "package": "c3po-positive-control",
+          "severity": "high",
+          "target": "synthetic-controller-fixture",
+          "vulnerability_id": "C3PO-DRY-RUN-FIXABLE-001"
+        }
+      ],
       "fixable_high_critical": [
         {
           "fixed_version": "2",
@@ -52,7 +62,7 @@
       "unknown": 0
     }
   ],
-  "report_sha256": "80941aa211fa2e812402dcaa6b3beb7eb3cd571301dc28dbd8c0e0cad24084ff",
+  "report_sha256": "f7fbf1498e30dc3765bb0ed49927f8abaf6479c157f80fccb7241514cdd8f2e6",
   "scan_status": "complete",
   "scanner": {
     "image": "synthetic-positive-control",

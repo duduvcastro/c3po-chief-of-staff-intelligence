@@ -18,7 +18,7 @@ on:
         default: true
         type: boolean
       remediation:
-        description: Require zero fixable critical/high findings
+        description: Require zero fixable findings across all severities
         required: true
         default: false
         type: boolean
@@ -229,7 +229,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Require zero fixable C/H in automated remediation
+      - name: Require zero fixable findings in automated remediation
         if: >-
           (github.event_name == 'workflow_dispatch' && inputs.remediation) ||
           (github.event_name == 'pull_request' &&
