@@ -3,18 +3,31 @@
 Produces private JSON files for the V2 file port (contract `R2D2_V2_DATA_PORT_V1.md`,
 revision 2, of the shadow generator) from the provider's end-of-day endpoints:
 
-- `V2_CAUSAL_REGISTRY_V1`: the provider's US exchange symbol list captured after
-  the official close of D-1, restricted to NYSE/NASDAQ, with the provider's
-  instrument type mapped to the contract vocabulary (`COMMON_STOCK`, `ETF`, ...).
-  ADR is not distinguishable in the provider's list; common stocks are reported
-  as `COMMON_STOCK` and this limitation is declared in the file.
-- `V2_CAUSAL_DAILY_CONTRACT_V1`: for every registry symbol, the raw OHLCV bars of
-  the last 20 official sessions up to D-1 (bulk end-of-day endpoint, one call per
-  session) and the splits effective inside that window (bulk splits endpoint),
-  `adjustment = RAW_UNADJUSTED`, per-bar `source_at`/`available_at` = the receipt
-  instant of the provider response that contained the bar.
+- `V2_CAUSAL_REGISTRY_V1` (`registry.json`): the provider's US exchange symbol list
+  captured after the official close of D-1, restricted to NYSE/NASDAQ, with the
+  provider's instrument type mapped to the contract vocabulary (`COMMON_STOCK`,
+  `ETF`, ...). ADR is not distinguishable in the provider's list; common stocks
+  are reported as `COMMON_STOCK` and this limitation is declared in the receipt.
+- `V2_CAUSAL_DAILY_CONTRACT_V1` (`daily_contract.json`): for every registry symbol,
+  the raw OHLCV bars of the last 20 official sessions up to D-1 (bulk end-of-day
+  endpoint, one call per session) and the splits effective inside that window
+  (bulk splits endpoint), `adjustment = RAW_UNADJUSTED`, per-bar `source_at` /
+  `available_at` = the receipt instant of the provider response with the bar.
 - Per-instrument `daily` components (61 official sessions + full split history)
   for the names of a causal list, consumed by the 10:00 ET snapshot assembler.
+
+The two port documents carry exactly the fields the signed reader accepts; the
+producer's own evidence (payload hashes, counts, conflicts, unreadable rows) is
+written to a separate private receipt file (`*.receipt.json`) bound to the
+document by its SHA-256. Coverage booleans are conclusions, never defaults:
+
+- a symbol's `coverage_verified` is true only when all sessions of its window
+  have exactly one readable bar and no conflicting duplicate;
+- `split_coverage_verified` is true only when every split row of the response
+  that is (or may be) relevant to the symbol was readable; an unreadable row is
+  never dropped to manufacture "no splits" — it makes the coverage unknown;
+- a response received before the close of the last session it is supposed to
+  describe is refused; sessions must be the official, unique, ordered window.
 
 Nothing here decides eligibility, builds the list, publishes receipts or opens a
 websocket. Timestamps are receipt instants observed by this producer, never
@@ -28,7 +41,6 @@ import argparse
 import hashlib
 import json
 import os
-import sys
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -39,10 +51,13 @@ from typing import Any, Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 PRODUCER = "fable-eodhd-daily"
-PRODUCER_VERSION = "v1"
+PRODUCER_VERSION = "v2"
 REGISTRY_SCHEMA = "V2_CAUSAL_REGISTRY_V1"
 DAILY_SCHEMA = "V2_CAUSAL_DAILY_CONTRACT_V1"
 COMPONENT_SCHEMA = "V2_INSTRUMENT_DAILY_COMPONENT_V1"
+RECEIPT_SCHEMA = "V2_PRODUCER_RECEIPT_V1"
+REGISTRY_FIELDS = frozenset({"schema", "source_id", "source_at", "available_at", "captured_at", "coverage_verified", "instruments"})
+DAILY_FIELDS = frozenset({"schema", "source_id", "source_at", "available_at", "instruments"})
 NEW_YORK = ZoneInfo("America/New_York")
 ALLOWED_EXCHANGES = ("NYSE", "NASDAQ")
 TYPE_MAP = {
@@ -60,10 +75,18 @@ class ProducerError(RuntimeError):
 
 # ---------------------------------------------------------------- calendar (XNYS, official sessions)
 
+def _xnys():
+    import exchange_calendars
+    return exchange_calendars.get_calendar("XNYS")
+
+
+def is_session(day: date) -> bool:
+    return bool(_xnys().is_session(day.isoformat()))
+
+
 def xnys_sessions_ending(last_session: date, count: int) -> tuple[date, ...]:
     """The `count` official XNYS sessions ending at `last_session` inclusive; `last_session` must be a session."""
-    import exchange_calendars
-    calendar = exchange_calendars.get_calendar("XNYS")
+    calendar = _xnys()
     if not calendar.is_session(last_session.isoformat()):
         raise ProducerError("LAST_SESSION_NOT_OFFICIAL")
     window = calendar.sessions_window(last_session.isoformat(), -count)
@@ -74,8 +97,7 @@ def xnys_sessions_ending(last_session: date, count: int) -> tuple[date, ...]:
 
 
 def previous_session(day: date) -> date:
-    import exchange_calendars
-    calendar = exchange_calendars.get_calendar("XNYS")
+    calendar = _xnys()
     session = calendar.date_to_session(day.isoformat(), direction="previous")
     if session.date() == day and calendar.is_session(day.isoformat()):
         session = calendar.previous_session(session)
@@ -83,15 +105,23 @@ def previous_session(day: date) -> date:
 
 
 def session_open(day: date) -> datetime:
-    import exchange_calendars
-    calendar = exchange_calendars.get_calendar("XNYS")
-    return calendar.session_open(day.isoformat()).to_pydatetime().astimezone(timezone.utc)
+    return _xnys().session_open(day.isoformat()).to_pydatetime().astimezone(timezone.utc)
 
 
 def session_close(day: date) -> datetime:
-    import exchange_calendars
-    calendar = exchange_calendars.get_calendar("XNYS")
-    return calendar.session_close(day.isoformat()).to_pydatetime().astimezone(timezone.utc)
+    return _xnys().session_close(day.isoformat()).to_pydatetime().astimezone(timezone.utc)
+
+
+def _official_window(sessions: Sequence[date], count: int, code: str) -> tuple[date, ...]:
+    """The caller's window must be exactly the official, unique, ordered sessions ending at its last element."""
+    window = tuple(sessions)
+    try:
+        official = xnys_sessions_ending(window[-1], count) if window and isinstance(window[-1], date) else ()
+    except ProducerError:
+        official = ()
+    if len(window) != count or window != official:
+        raise ProducerError(code)
+    return window
 
 
 # ---------------------------------------------------------------- provider transport (raw bytes + receipt instant)
@@ -159,6 +189,16 @@ def _symbol_ok(code: Any) -> bool:
     return isinstance(code, str) and 1 <= len(code) <= 20 and code[0] in set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") and all(c in SYMBOL_RE_ALLOWED for c in code)
 
 
+def _date_of(value: Any) -> date | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.isoformat() == value else None
+
+
 def parse_split_factor(text: Any) -> float | None:
     """EODHD split text 'new/old' (e.g. '4.000000/1.000000') -> new/old as float, None if invalid."""
     if not isinstance(text, str) or "/" not in text:
@@ -168,7 +208,7 @@ def parse_split_factor(text: Any) -> float | None:
         new, old = Decimal(left.strip()), Decimal(right.strip())
     except (InvalidOperation, ValueError):
         return None
-    if new <= 0 or old <= 0:
+    if not new.is_finite() or not old.is_finite() or new <= 0 or old <= 0:
         return None
     return float(Fraction(new) / Fraction(old))
 
@@ -196,10 +236,14 @@ def write_private(path: Path, payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _receipt(document: str, **fields: Any) -> dict[str, Any]:
+    return {"schema": RECEIPT_SCHEMA, "producer": PRODUCER, "version": PRODUCER_VERSION, "document": document, **fields}
+
+
 # ---------------------------------------------------------------- registry (V2_CAUSAL_REGISTRY_V1)
 
-def build_registry(response: Response, *, previous_close: datetime) -> dict[str, Any]:
-    """Map the provider's US symbol list to the registry contract; only NYSE/NASDAQ rows are kept."""
+def build_registry(response: Response, *, previous_close: datetime) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Map the provider's US symbol list to the registry contract (port document, receipt); only NYSE/NASDAQ rows are kept."""
     rows = response.json()
     if not isinstance(rows, list) or not rows:
         raise ProducerError("REGISTRY_EMPTY")
@@ -227,16 +271,18 @@ def build_registry(response: Response, *, previous_close: datetime) -> dict[str,
         counts["kept"] += 1
     instruments.sort(key=lambda item: item["symbol"])
     stamp = _iso(response.received_at)
-    return {"schema": REGISTRY_SCHEMA, "source_id": "eodhd-exchange-symbol-list-US", "source_at": stamp, "available_at": stamp,
-            "captured_at": stamp, "coverage_verified": True, "instruments": instruments,
-            "producer_note": {"producer": PRODUCER, "version": PRODUCER_VERSION, "provider_payload_sha256": response.sha256,
-                              "adr_distinction": "NOT_AVAILABLE_IN_PROVIDER_LIST: common stocks reported as COMMON_STOCK",
-                              "counts": counts}}
+    document = {"schema": REGISTRY_SCHEMA, "source_id": "eodhd-exchange-symbol-list-US", "source_at": stamp, "available_at": stamp,
+                "captured_at": stamp, "coverage_verified": True, "instruments": instruments}
+    assert set(document) == REGISTRY_FIELDS
+    receipt = _receipt("registry", provider_payload_sha256=response.sha256, received_at=stamp, counts=counts,
+                       adr_distinction="NOT_AVAILABLE_IN_PROVIDER_LIST: common stocks reported as COMMON_STOCK")
+    return document, receipt
 
 
 # ---------------------------------------------------------------- daily contract (V2_CAUSAL_DAILY_CONTRACT_V1)
 
 def _bar(item: Mapping[str, Any], session: date, received_at: datetime) -> dict[str, Any] | None:
+    """A complete regular-session bar; the caller guarantees `received_at` is after the session close."""
     values = [_number(item.get(key)) for key in ("open", "high", "low", "close", "volume")]
     if any(value is None for value in values):
         return None
@@ -249,18 +295,32 @@ def _bar(item: Mapping[str, Any], session: date, received_at: datetime) -> dict[
             "source_at": stamp, "available_at": stamp, "complete": True, "regular_session": True}
 
 
+def _distinct(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Identical duplicate rows count once; rows that differ are a conflict for the caller to record."""
+    unique: dict[bytes, Mapping[str, Any]] = {}
+    for row in rows:
+        try:
+            unique.setdefault(canonical(row), row)
+        except (TypeError, ValueError):
+            unique[repr(row).encode()] = row
+    return list(unique.values())
+
+
 def build_daily_contract(registry: Mapping[str, Any], bulk_by_session: Mapping[date, Response],
-                         splits_by_session: Mapping[date, Response], *, sessions: Sequence[date], previous_close: datetime) -> dict[str, Any]:
-    """Assemble the 20-session raw bars and window splits for every registry symbol."""
-    if tuple(sessions) != tuple(sorted(set(sessions))) or len(sessions) != LIQUIDITY_SESSIONS:
-        raise ProducerError("LIQUIDITY_WINDOW_INVALID")
-    if set(bulk_by_session) != set(sessions) or set(splits_by_session) != set(sessions):
+                         splits_by_session: Mapping[date, Response], *, sessions: Sequence[date],
+                         previous_close: datetime) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Assemble the 20-session raw bars and window splits for every registry symbol (port document, receipt)."""
+    window = _official_window(sessions, LIQUIDITY_SESSIONS, "LIQUIDITY_WINDOW_INVALID")
+    if set(bulk_by_session) != set(window) or set(splits_by_session) != set(window):
         raise ProducerError("BULK_RESPONSES_INCOMPLETE")
     symbols = [item["symbol"] for item in registry["instruments"]]
-    bars: dict[str, list[dict[str, Any]]] = {symbol: [] for symbol in symbols}
+    bars: dict[str, dict[date, dict[str, Any]]] = {symbol: {} for symbol in symbols}
     splits: dict[str, list[dict[str, Any]]] = {symbol: [] for symbol in symbols}
+    conflicts: dict[str, list[str]] = {}
+    invalid_splits: dict[str, list[dict[str, str]]] = {}
+    unattributable: dict[str, int] = {}
     latest_receipt = previous_close
-    for session in sessions:
+    for session in window:
         response = bulk_by_session[session]
         if response.received_at <= session_close(session):
             raise ProducerError("BULK_RECEIVED_BEFORE_SESSION_CLOSE")
@@ -268,59 +328,89 @@ def build_daily_contract(registry: Mapping[str, Any], bulk_by_session: Mapping[d
         rows = response.json()
         if not isinstance(rows, list):
             raise ProducerError("BULK_PAYLOAD_INVALID")
+        grouped: dict[str, list[Mapping[str, Any]]] = {}
         for row in rows:
             if not isinstance(row, dict):
                 continue
             code = row.get("code")
             if not isinstance(code, str) or code not in bars or row.get("date") != session.isoformat():
                 continue
-            bar = _bar(row, session, response.received_at)
+            grouped.setdefault(code, []).append(row)
+        for code, group in grouped.items():
+            distinct = _distinct(group)
+            if len(distinct) > 1:
+                conflicts.setdefault(code, []).append(session.isoformat())
+                continue
+            bar = _bar(distinct[0], session, response.received_at)
             if bar is not None:
-                bars[code].append(bar)
+                bars[code][session] = bar
         split_response = splits_by_session[session]
         latest_receipt = max(latest_receipt, split_response.received_at)
         split_rows = split_response.json()
         if not isinstance(split_rows, list):
             raise ProducerError("BULK_SPLITS_PAYLOAD_INVALID")
         for row in split_rows:
-            if not isinstance(row, dict):
+            code = row.get("code") if isinstance(row, dict) else None
+            if not isinstance(code, str):
+                # A row that cannot be attributed to a symbol may belong to any of them: coverage becomes unknown for all.
+                unattributable[session.isoformat()] = unattributable.get(session.isoformat(), 0) + 1
                 continue
-            code = row.get("code")
+            if code not in splits:
+                continue
+            assert isinstance(row, dict)
             factor = parse_split_factor(row.get("split"))
-            if not isinstance(code, str) or code not in splits or factor is None or row.get("date") != session.isoformat():
+            if factor is None or row.get("date") != session.isoformat():
+                invalid_splits.setdefault(code, []).append({"session": session.isoformat(),
+                                                             "reason": "FACTOR_UNREADABLE" if factor is None else "DATE_MISMATCH"})
                 continue
             stamp = _iso(split_response.received_at)
             splits[code].append({"factor": factor, "effective_at": _iso(session_open(session)), "source_at": stamp, "available_at": stamp})
     stamp = _iso(latest_receipt)
     instruments = []
+    complete = 0
     for symbol in symbols:
+        covered = len(bars[symbol]) == LIQUIDITY_SESSIONS and symbol not in conflicts
+        complete += int(covered)
         instruments.append({"symbol": symbol, "daily": {
-            "bars": bars[symbol], "splits": splits[symbol], "adjustment": "RAW_UNADJUSTED",
-            "coverage_verified": True, "split_coverage_verified": True, "source_at": stamp, "available_at": stamp}})
-    return {"schema": DAILY_SCHEMA, "source_id": "eodhd-eod-bulk-last-day-US", "source_at": stamp, "available_at": stamp,
-            "instruments": instruments,
-            "producer_note": {"producer": PRODUCER, "version": PRODUCER_VERSION, "sessions": [s.isoformat() for s in sessions],
-                              "bulk_payload_sha256": {s.isoformat(): bulk_by_session[s].sha256 for s in sessions},
-                              "splits_payload_sha256": {s.isoformat(): splits_by_session[s].sha256 for s in sessions},
-                              "split_effective_convention": "official session open of the provider's split date",
-                              "complete_bars": sum(len(bars[s]) == LIQUIDITY_SESSIONS for s in symbols), "symbols": len(symbols)}}
+            "bars": [bars[symbol][session] for session in window if session in bars[symbol]], "splits": splits[symbol],
+            "adjustment": "RAW_UNADJUSTED", "coverage_verified": covered,
+            "split_coverage_verified": symbol not in invalid_splits and not unattributable,
+            "source_at": stamp, "available_at": stamp}})
+    document = {"schema": DAILY_SCHEMA, "source_id": "eodhd-eod-bulk-last-day-US", "source_at": stamp, "available_at": stamp, "instruments": instruments}
+    assert set(document) == DAILY_FIELDS
+    receipt = _receipt("daily_contract", sessions=[s.isoformat() for s in window],
+                       bulk_payload_sha256={s.isoformat(): bulk_by_session[s].sha256 for s in window},
+                       splits_payload_sha256={s.isoformat(): splits_by_session[s].sha256 for s in window},
+                       split_effective_convention="official session open of the provider's split date",
+                       counts={"symbols": len(symbols), "complete_bars": complete, "bar_conflicts": len(conflicts),
+                               "symbols_with_unreadable_splits": len(invalid_splits), "unattributable_split_rows": sum(unattributable.values())},
+                       bar_conflicts=conflicts, unreadable_split_rows=invalid_splits, unattributable_split_rows=unattributable)
+    return document, receipt
 
 
 # ---------------------------------------------------------------- per-instrument 61-bar component (snapshot input)
 
 def build_instrument_component(symbol: str, eod: Response, splits: Response, *, sessions: Sequence[date]) -> dict[str, Any]:
     """The `daily` component of one snapshot instrument: exactly the 61 official sessions, full split history."""
-    if len(sessions) != ATR_SESSIONS:
-        raise ProducerError("ATR_WINDOW_INVALID")
+    window = _official_window(sessions, ATR_SESSIONS, "ATR_WINDOW_INVALID")
+    last_close = session_close(window[-1])
+    if eod.received_at <= last_close or splits.received_at <= last_close:
+        raise ProducerError("EOD_RECEIVED_BEFORE_SESSION_CLOSE")
     rows = eod.json()
     if not isinstance(rows, list):
         raise ProducerError("EOD_PAYLOAD_INVALID")
-    by_date = {row.get("date"): row for row in rows if isinstance(row, dict) and isinstance(row.get("date"), str)}
-    bars = []
-    missing = []
-    for session in sessions:
-        row = by_date.get(session.isoformat())
-        bar = _bar(row, session, eod.received_at) if row is not None else None
+    wanted = {session.isoformat() for session in window}
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        if isinstance(row, dict) and isinstance(row.get("date"), str) and row["date"] in wanted:
+            grouped.setdefault(row["date"], []).append(row)
+    bars, missing, conflicts = [], [], []
+    for session in window:
+        group = _distinct(grouped.get(session.isoformat(), []))
+        if len(group) > 1:
+            conflicts.append(session.isoformat())
+            continue
+        bar = _bar(group[0], session, eod.received_at) if group else None
         if bar is None:
             missing.append(session.isoformat())
         else:
@@ -328,31 +418,36 @@ def build_instrument_component(symbol: str, eod: Response, splits: Response, *, 
     split_rows = splits.json()
     if not isinstance(split_rows, list):
         raise ProducerError("SPLITS_PAYLOAD_INVALID")
-    split_items = []
-    for row in split_rows:
+    split_items: list[dict[str, Any]] = []
+    unreadable: list[dict[str, Any]] = []
+    stamp = _iso(splits.received_at)
+    for index, row in enumerate(split_rows):
+        reason = None
+        factor: float | None = None
+        effective: date | None = None
         if not isinstance(row, dict):
+            reason = "ROW_NOT_OBJECT"
+        else:
+            factor = parse_split_factor(row.get("split"))
+            effective = _date_of(row.get("date"))
+            if factor is None:
+                reason = "FACTOR_UNREADABLE"
+            elif effective is None:
+                reason = "DATE_UNREADABLE"
+            elif not is_session(effective):
+                reason = "DATE_NOT_AN_OFFICIAL_SESSION"
+        if reason is not None:
+            unreadable.append({"index": index, "reason": reason})
             continue
-        factor = parse_split_factor(row.get("split"))
-        try:
-            effective = date.fromisoformat(str(row.get("date")))
-        except ValueError:
-            continue
-        if factor is None:
-            continue
-        stamp = _iso(splits.received_at)
-        try:
-            effective_at = _iso(session_open(effective))
-        except Exception:  # a split dated on a non-session day: keep the calendar day at 09:30 New York
-            effective_at = _iso(datetime.combine(effective, datetime.min.time(), NEW_YORK).replace(hour=9, minute=30))
-        split_items.append({"factor": factor, "effective_at": effective_at, "source_at": stamp, "available_at": stamp})
-    stamp = _iso(max(eod.received_at, splits.received_at))
+        assert factor is not None and effective is not None
+        split_items.append({"factor": factor, "effective_at": _iso(session_open(effective)), "source_at": stamp, "available_at": stamp})
     component = {"bars": bars, "splits": split_items, "adjustment": "RAW_UNADJUSTED",
-                 "coverage_verified": not missing, "split_coverage_verified": True,
-                 "source_at": _iso(eod.received_at), "available_at": stamp}
+                 "coverage_verified": not missing and not conflicts, "split_coverage_verified": not unreadable,
+                 "source_at": _iso(eod.received_at), "available_at": _iso(max(eod.received_at, splits.received_at))}
     return {"schema": COMPONENT_SCHEMA, "symbol": symbol, "daily": component,
-            "producer_note": {"producer": PRODUCER, "version": PRODUCER_VERSION, "missing_sessions": missing,
-                              "eod_payload_sha256": eod.sha256, "splits_payload_sha256": splits.sha256,
-                              "sessions": [sessions[0].isoformat(), sessions[-1].isoformat()]}}
+            "receipt": _receipt("instrument_daily_component", missing_sessions=missing, conflicting_sessions=conflicts,
+                                unreadable_split_rows=unreadable, eod_payload_sha256=eod.sha256, splits_payload_sha256=splits.sha256,
+                                sessions=[window[0].isoformat(), window[-1].isoformat()])}
 
 
 # ---------------------------------------------------------------- orchestration
@@ -365,15 +460,20 @@ def produce_causal_inputs(fetch: Fetcher, *, session_date: date, output_dir: Pat
     if clock <= close:
         raise ProducerError("PREVIOUS_SESSION_NOT_CLOSED")
     sessions = xnys_sessions_ending(previous, LIQUIDITY_SESSIONS)
-    registry = build_registry(fetch("/api/exchange-symbol-list/US", {}), previous_close=close)
+    registry, registry_receipt = build_registry(fetch("/api/exchange-symbol-list/US", {}), previous_close=close)
     bulk = {session: fetch("/api/eod-bulk-last-day/US", {"date": session.isoformat()}) for session in sessions}
     splits = {session: fetch("/api/eod-bulk-last-day/US", {"date": session.isoformat(), "type": "splits"}) for session in sessions}
-    daily = build_daily_contract(registry, bulk, splits, sessions=sessions, previous_close=close)
-    registry_sha = write_private(output_dir / "registry.json", canonical(registry))
-    daily_sha = write_private(output_dir / "daily_contract.json", canonical(daily))
-    return {"session_date": session_date.isoformat(), "previous_session": previous.isoformat(), "registry_sha256": registry_sha,
-            "daily_contract_sha256": daily_sha, "registry_symbols": len(registry["instruments"]),
-            "complete_bars": daily["producer_note"]["complete_bars"], "output_dir": str(output_dir)}
+    daily, daily_receipt = build_daily_contract(registry, bulk, splits, sessions=sessions, previous_close=close)
+    hashes: dict[str, str] = {}
+    for name, document, receipt in (("registry", registry, registry_receipt), ("daily_contract", daily, daily_receipt)):
+        hashes[name] = write_private(output_dir / f"{name}.json", canonical(document))
+        bound = {**receipt, "document_file": f"{name}.json", "document_sha256": hashes[name], "session_date": session_date.isoformat()}
+        hashes[name + "_receipt"] = write_private(output_dir / f"{name}.receipt.json", canonical(bound))
+    return {"session_date": session_date.isoformat(), "previous_session": previous.isoformat(),
+            "registry_sha256": hashes["registry"], "registry_receipt_sha256": hashes["registry_receipt"],
+            "daily_contract_sha256": hashes["daily_contract"], "daily_contract_receipt_sha256": hashes["daily_contract_receipt"],
+            "registry_symbols": len(registry["instruments"]), "complete_bars": daily_receipt["counts"]["complete_bars"],
+            "bar_conflicts": daily_receipt["counts"]["bar_conflicts"], "output_dir": str(output_dir)}
 
 
 def produce_instrument_components(fetch: Fetcher, symbols: Sequence[str], *, session_date: date, output_dir: Path) -> dict[str, Any]:
@@ -388,7 +488,7 @@ def produce_instrument_components(fetch: Fetcher, symbols: Sequence[str], *, ses
         eod = fetch(f"/api/eod/{symbol}.US", {"period": "d", "from": sessions[0].isoformat(), "to": sessions[-1].isoformat()})
         splits = fetch(f"/api/splits/{symbol}.US", {"from": "1990-01-01"})
         component = build_instrument_component(symbol, eod, splits, sessions=sessions)
-        if not component["daily"]["coverage_verified"]:
+        if not (component["daily"]["coverage_verified"] and component["daily"]["split_coverage_verified"]):
             incomplete.append(symbol)
         written[symbol] = write_private(output_dir / "daily_61" / f"{symbol}.json", canonical(component))
     return {"session_date": session_date.isoformat(), "symbols": len(symbols), "incomplete": incomplete, "component_sha256": written}

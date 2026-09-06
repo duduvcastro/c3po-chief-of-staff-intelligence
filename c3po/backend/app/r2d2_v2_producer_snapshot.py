@@ -10,15 +10,26 @@ Publishes `snapshot.json` (schema `V2_SHADOW_SOURCE_SNAPSHOT_V2`, contract
 - quotes from the provider's `us-quote` websocket feed, subscribed only for the
   list; each tick keeps its own clocks: `bid_source_at = ask_source_at` = the
   tick timestamp `t`, `received_at` = local receipt instant, `available_at` =
-  the assembly instant of the snapshot that carries it;
-- `daily` from `components/<D>/daily_61/<symbol>.json` (producer 1/2), `risk`
-  from `components/<D>/risk.json` and `earnings` from
-  `components/<D>/earnings.json` (other producers); a missing component is
-  represented explicitly as an invalid response (`risk.value = null`,
-  `earnings.coverage_verified = false`), never invented;
+  the assembly instant of the snapshot that carries it. A tick is accepted only
+  with a finite, positive clock not later than its receipt; anything else is
+  rejected with a counted reason and never replaces the last causal quote;
+- `daily` from `components/<D>/daily_61/<symbol>.json` (producer 1/3), `risk`
+  from `components/<D>/risk.json` (`V2_RISK_COMPONENTS_V1`: `{schema,
+  session_date, symbols:{SYMBOL:{value, producer, source_at, available_at}}}`)
+  and `earnings` from `components/<D>/earnings.json` (producer 3/3,
+  `V2_EARNINGS_COMPONENTS_V2`). Component files are re-read at every publication
+  (unchanged files are not re-parsed), so a response that lands during the
+  window is carried by the next snapshot. A component that has NOT arrived is
+  published as PENDING: exact port fields, `source_at = available_at = null`,
+  so the collector's `input_complete` stays false and the name stays pending;
+  the assembly clock is never used as a component receipt. A component that
+  arrived and concluded invalid (e.g. `coverage_verified = false` with its own
+  clocks) is passed through unchanged;
 - publication by private atomic rename roughly once per second inside
   [10:00:00, 10:01:00) New York, envelope `sequence` increasing, raw tick tape
-  kept in a private NDJSON file whose SHA-256 is the `provenance.payload_sha256`.
+  kept in a private NDJSON file whose SHA-256 is the `provenance.payload_sha256`;
+- the tick consumer is supervised: a failure is reported in the result and the
+  run is not declared `CAPTURED`.
 
 No eligibility decision, no order, no access to the V1 engine or its stream.
 OFF by default (`C3PO_R2D2_V2_PRODUCERS_ENABLED=true` required). The provider
@@ -30,19 +41,21 @@ import argparse
 import asyncio
 import hashlib
 import json
+import math
 import os
-import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Mapping
+from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
-from .r2d2_v2_producer_daily import ProducerError, canonical, write_private
+from .r2d2_v2_producer_daily import COMPONENT_SCHEMA as DAILY_COMPONENT_SCHEMA, REGISTRY_SCHEMA, ProducerError, canonical, write_private
 
 PRODUCER = "fable-eodhd-snapshot"
-PRODUCER_VERSION = "v1"
+PRODUCER_VERSION = "v2"
 SNAPSHOT_SCHEMA = "V2_SHADOW_SOURCE_SNAPSHOT_V2"
+RISK_SCHEMA = "V2_RISK_COMPONENTS_V1"
+EARNINGS_SCHEMA = "V2_EARNINGS_COMPONENTS_V2"
 MANIFEST_SHA = "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0"
 AMENDMENT_SHA = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
 NEW_YORK = ZoneInfo("America/New_York")
@@ -51,10 +64,26 @@ CAPTURE_CLOSE = time(10, 1)
 WARMUP_SECONDS = 30
 PUBLISH_INTERVAL_SECONDS = 1.0
 MAX_SYMBOLS = 550
+DAILY_KEYS = frozenset({"bars", "splits", "adjustment", "coverage_verified", "split_coverage_verified", "source_at", "available_at"})
+RISK_KEYS = frozenset({"value", "producer", "source_at", "available_at"})
+EARNINGS_KEYS = frozenset({"coverage_verified", "window_start", "window_end", "events", "source_at", "available_at"})
+STATUS_CAPTURED = "CAPTURED"
+STATUS_EMPTY = "CAPTURE_EMPTY"
+STATUS_DEGRADED = "CAPTURE_DEGRADED_CONSUMER_FAILED"
 
 
 def _iso(at: datetime) -> str:
     return at.astimezone(timezone.utc).isoformat()
+
+
+def _parse(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def capture_window(session_date: date) -> tuple[datetime, datetime]:
@@ -89,30 +118,108 @@ def _read_json(path: Path) -> Any | None:
         return None
 
 
+Reader = Callable[[Path], Any]
+
+
 @dataclass(frozen=True)
 class Components:
     daily: Mapping[str, Mapping[str, Any]]
     risk: Mapping[str, Mapping[str, Any]]
     earnings: Mapping[str, Mapping[str, Any]]
     registry: Mapping[str, Mapping[str, Any]]
+    diagnostics: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+    def diagnostic_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for codes in self.diagnostics.values():
+            for code in codes:
+                counts[code] = counts.get(code, 0) + 1
+        return counts
 
 
-def load_components(root: Path, session_date: date, symbols: list[str]) -> Components:
+def _component_map(document: Any, *, schema: str, session: str, keys: frozenset[str], symbols: Sequence[str], label: str,
+                   note: Callable[[str, str], None]) -> dict[str, Mapping[str, Any]]:
+    if document is None:
+        for symbol in symbols:
+            note(symbol, f"{label}_COMPONENT_ABSENT")
+        return {}
+    if not (isinstance(document, dict) and document.get("schema") == schema and document.get("session_date") == session
+            and isinstance(document.get("symbols"), dict)):
+        for symbol in symbols:
+            note(symbol, f"{label}_DOCUMENT_INVALID")
+        return {}
+    result: dict[str, Mapping[str, Any]] = {}
+    for symbol in symbols:
+        component = document["symbols"].get(symbol)
+        if component is None:
+            note(symbol, f"{label}_COMPONENT_ABSENT")
+        elif not isinstance(component, dict) or set(component) != keys:
+            note(symbol, f"{label}_COMPONENT_INVALID")
+        else:
+            result[symbol] = component
+    return result
+
+
+def load_components(root: Path, session_date: date, symbols: Sequence[str], *, read: Reader = _read_json) -> Components:
+    """Validated component maps for the listed symbols; every absence or invalid file is a per-symbol diagnostic."""
     base = root / "components" / session_date.isoformat()
+    session = session_date.isoformat()
+    diagnostics: dict[str, list[str]] = {}
+
+    def note(symbol: str, code: str) -> None:
+        diagnostics.setdefault(symbol, []).append(code)
+
     daily: dict[str, Mapping[str, Any]] = {}
     for symbol in symbols:
-        item = _read_json(base / "daily_61" / f"{symbol}.json")
-        if isinstance(item, dict) and item.get("symbol") == symbol and isinstance(item.get("daily"), dict):
-            daily[symbol] = item["daily"]
-    risk = _read_json(base / "risk.json")
-    earnings = _read_json(base / "earnings.json")
-    registry_file = _read_json(base / "registry.json")
+        item = read(base / "daily_61" / f"{symbol}.json")
+        if item is None:
+            note(symbol, "DAILY_COMPONENT_ABSENT")
+            continue
+        component = item.get("daily") if isinstance(item, dict) else None
+        if not (isinstance(item, dict) and item.get("schema") == DAILY_COMPONENT_SCHEMA and item.get("symbol") == symbol
+                and isinstance(component, dict) and set(component) == DAILY_KEYS):
+            note(symbol, "DAILY_COMPONENT_INVALID")
+            continue
+        daily[symbol] = component
+    risk = _component_map(read(base / "risk.json"), schema=RISK_SCHEMA, session=session, keys=RISK_KEYS, symbols=symbols, label="RISK", note=note)
+    earnings = _component_map(read(base / "earnings.json"), schema=EARNINGS_SCHEMA, session=session, keys=EARNINGS_KEYS, symbols=symbols,
+                              label="EARNINGS", note=note)
+    registry_file = read(base / "registry.json")
     registry: dict[str, Mapping[str, Any]] = {}
-    if isinstance(registry_file, dict):
-        for row in registry_file.get("instruments", []):
+    if isinstance(registry_file, dict) and registry_file.get("schema") == REGISTRY_SCHEMA and isinstance(registry_file.get("instruments"), list):
+        for row in registry_file["instruments"]:
             if isinstance(row, dict) and isinstance(row.get("symbol"), str):
                 registry[row["symbol"]] = row
-    return Components(daily=daily, risk=risk if isinstance(risk, dict) else {}, earnings=earnings if isinstance(earnings, dict) else {}, registry=registry)
+    for symbol in symbols:
+        if symbol not in registry:
+            note(symbol, "REGISTRY_ROW_ABSENT")
+    return Components(daily=daily, risk=risk, earnings=earnings, registry=registry,
+                      diagnostics={symbol: tuple(codes) for symbol, codes in diagnostics.items()})
+
+
+class ComponentLoader:
+    """Re-reads the component files on every call; a file with the same inode, size and mtime is not re-parsed."""
+
+    def __init__(self, root: Path, session_date: date, symbols: Sequence[str]) -> None:
+        self.root, self.session_date, self.symbols = root, session_date, list(symbols)
+        self._cache: dict[Path, tuple[tuple[int, int, int], Any]] = {}
+
+    def read(self, path: Path) -> Any | None:
+        try:
+            stat = os.stat(path)
+        except OSError:
+            self._cache.pop(path, None)
+            return None
+        signature = (stat.st_ino, stat.st_size, stat.st_mtime_ns)
+        cached = self._cache.get(path)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        value = _read_json(path)
+        self._cache[path] = (signature, value)
+        return value
+
+    def __call__(self) -> Components:
+        return load_components(self.root, self.session_date, self.symbols, read=self.read)
 
 
 # ---------------------------------------------------------------- quote state
@@ -126,38 +233,57 @@ class Quote:
     raw: str
 
 
+def _price(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        return None
+    return float(value)
+
+
 @dataclass
 class QuoteBook:
-    """Latest quote per symbol from the raw tick tape; later ticks never regress the clock."""
+    """Latest causal quote per symbol from the raw tick tape; invalid or future ticks never replace it."""
     quotes: dict[str, Quote] = field(default_factory=dict)
     tape: list[str] = field(default_factory=list)
     updates: dict[str, int] = field(default_factory=dict)
+    rejected: dict[str, int] = field(default_factory=dict)
+
+    def _reject(self, reason: str) -> None:
+        self.rejected[reason] = self.rejected.get(reason, 0) + 1
 
     def record(self, payload: str, received_at: datetime, allowed: set[str]) -> str | None:
         self.tape.append(payload)
         try:
+            return self._record(payload, received_at, allowed)
+        except Exception:  # one payload can never stop the consumer; the reason is counted
+            self._reject("PAYLOAD_ERROR")
+            return None
+
+    def _record(self, payload: str, received_at: datetime, allowed: set[str]) -> str | None:
+        try:
             item = json.loads(payload)
         except ValueError:
+            self._reject("NOT_JSON")
             return None
         if not isinstance(item, dict):
+            self._reject("NOT_OBJECT")
             return None
         symbol = str(item.get("s") or "").strip().upper()
         if symbol not in allowed:
+            self._reject("SYMBOL_NOT_LISTED")
             return None
         stamp = item.get("t")
-        if isinstance(stamp, bool) or not isinstance(stamp, (int, float)):
+        if isinstance(stamp, bool) or not isinstance(stamp, (int, float)) or not math.isfinite(stamp) or stamp <= 0:
+            self._reject("TICK_CLOCK_INVALID")
             return None
-        tick_ms = int(stamp)
-        if tick_ms <= 0:
+        tick_at = datetime.fromtimestamp(stamp / 1000, tz=timezone.utc)
+        if tick_at > received_at:
+            self._reject("TICK_IN_FUTURE")
             return None
-        bid = item.get("bp") if isinstance(item.get("bp"), (int, float)) and not isinstance(item.get("bp"), bool) else None
-        ask = item.get("ap") if isinstance(item.get("ap"), (int, float)) and not isinstance(item.get("ap"), bool) else None
-        tick_at = datetime.fromtimestamp(tick_ms / 1000, tz=timezone.utc)
         current = self.quotes.get(symbol)
         if current is not None and tick_at < current.tick_at:
+            self._reject("TICK_REGRESSES")
             return None
-        self.quotes[symbol] = Quote(float(bid) if bid is not None and bid > 0 else None,
-                                    float(ask) if ask is not None and ask > 0 else None, tick_at, received_at, payload)
+        self.quotes[symbol] = Quote(_price(item.get("bp")), _price(item.get("ap")), tick_at, received_at, payload)
         self.updates[symbol] = self.updates.get(symbol, 0) + 1
         return symbol
 
@@ -167,21 +293,21 @@ class QuoteBook:
 
 # ---------------------------------------------------------------- snapshot assembly (pure)
 
-def _invalid_risk(now_iso: str) -> dict[str, Any]:
-    return {"value": None, "producer": "component-missing", "source_at": now_iso, "available_at": now_iso}
-
-
-def _invalid_earnings(now_iso: str) -> dict[str, Any]:
-    return {"coverage_verified": False, "window_start": now_iso, "window_end": now_iso, "events": [], "source_at": now_iso, "available_at": now_iso}
-
-
-def _invalid_daily(now_iso: str) -> dict[str, Any]:
+def pending_daily() -> dict[str, Any]:
     return {"bars": [], "splits": [], "adjustment": "RAW_UNADJUSTED", "coverage_verified": False, "split_coverage_verified": False,
-            "source_at": now_iso, "available_at": now_iso}
+            "source_at": None, "available_at": None}
 
 
-def assemble_snapshot(symbols: list[str], book: QuoteBook, components: Components, *, now: datetime, sequence: int) -> dict[str, Any]:
-    """One complete universe row per listed symbol; nulls where no quote yet; components as prepared."""
+def pending_risk() -> dict[str, Any]:
+    return {"value": None, "producer": "component-pending", "source_at": None, "available_at": None}
+
+
+def pending_earnings() -> dict[str, Any]:
+    return {"coverage_verified": False, "window_start": None, "window_end": None, "events": [], "source_at": None, "available_at": None}
+
+
+def assemble_snapshot(symbols: Sequence[str], book: QuoteBook, components: Components, *, now: datetime, sequence: int) -> dict[str, Any]:
+    """One complete universe row per listed symbol; nulls where no quote yet; components as prepared or PENDING."""
     now_iso = _iso(now)
     instruments = []
     for symbol in symbols:
@@ -189,20 +315,26 @@ def assemble_snapshot(symbols: list[str], book: QuoteBook, components: Component
         registry = components.registry.get(symbol, {})
         market = registry.get("market") if isinstance(registry.get("market"), str) else None
         security_type = registry.get("security_type") if isinstance(registry.get("security_type"), str) else None
+        daily = components.daily.get(symbol)
+        risk = components.risk.get(symbol)
+        earnings = components.earnings.get(symbol)
+        # Row clocks describe this row: earliest source clock among its present pieces, else the assembly instant.
+        clocks = [quote.tick_at] if quote else []
+        clocks.extend(at for at in (_parse(component.get("source_at")) for component in (daily, risk, earnings) if component) if at is not None)
         row: dict[str, Any] = {
             "symbol": symbol,
             "market": market,
             "security_type": security_type,
             "classification_verified": registry.get("classification_verified") is True,
             "sequence": book.updates.get(symbol, 0),
-            "source_at": _iso(quote.tick_at) if quote else now_iso,
+            "source_at": _iso(min(clocks)) if clocks else now_iso,
             "available_at": now_iso,
             "quote": ({"bid": quote.bid, "ask": quote.ask, "bid_source_at": _iso(quote.tick_at), "ask_source_at": _iso(quote.tick_at),
                        "received_at": _iso(quote.received_at), "available_at": now_iso} if quote else
                       {"bid": None, "ask": None, "bid_source_at": None, "ask_source_at": None, "received_at": None, "available_at": now_iso}),
-            "daily": dict(components.daily.get(symbol) or _invalid_daily(now_iso)),
-            "risk": dict(components.risk.get(symbol) or _invalid_risk(now_iso)),
-            "earnings": dict(components.earnings.get(symbol) or _invalid_earnings(now_iso)),
+            "daily": dict(daily) if daily is not None else pending_daily(),
+            "risk": dict(risk) if risk is not None else pending_risk(),
+            "earnings": dict(earnings) if earnings is not None else pending_earnings(),
         }
         instruments.append(row)
     body = {
@@ -220,6 +352,7 @@ def assemble_snapshot(symbols: list[str], book: QuoteBook, components: Component
 # ---------------------------------------------------------------- feed and loop
 
 TickSource = Callable[[list[str]], AsyncIterator[tuple[str, datetime]]]
+ComponentSource = Components | Callable[[], Components]
 
 
 async def eodhd_quote_ticks(symbols: list[str], *, token: str, stop_at: datetime) -> AsyncIterator[tuple[str, datetime]]:
@@ -246,11 +379,12 @@ async def eodhd_quote_ticks(symbols: list[str], *, token: str, stop_at: datetime
             await asyncio.sleep(1)
 
 
-async def run_capture(*, root: Path, epoch: str, session_date: date, symbols: list[str], components: Components,
+async def run_capture(*, root: Path, epoch: str, session_date: date, symbols: list[str], components: ComponentSource,
                       ticks: TickSource, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                       sleep: Callable[[float], Awaitable[None]] = asyncio.sleep, publish_interval: float = PUBLISH_INTERVAL_SECONDS) -> dict[str, Any]:
-    """Consume ticks from warm-up to the window close; publish snapshot.json inside the window."""
+    """Consume ticks from warm-up to the window close; publish snapshot.json inside the window with freshly loaded components."""
     open_at, close_at = capture_window(session_date)
+    load: Callable[[], Components] = components if callable(components) else (lambda: components)  # type: ignore[assignment]
     book = QuoteBook()
     allowed = set(symbols)
     sequence = 0
@@ -261,29 +395,32 @@ async def run_capture(*, root: Path, epoch: str, session_date: date, symbols: li
     tape_fd = os.open(tape_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
     tape = os.fdopen(tape_fd, "a", encoding="utf-8")
     next_publish = open_at
-    stopped = False
+    consumer_error: str | None = None
+    last_components: Components | None = None
 
     async def consume() -> None:
-        nonlocal stopped
         async for payload, received in ticks(symbols):
             tape.write(json.dumps({"received_at": _iso(received), "payload": payload}) + "\n")
             book.record(payload, received, allowed)
             if clock() >= close_at:
                 break
-        stopped = True
 
     consumer = asyncio.ensure_future(consume())
     try:
         while True:
             now = clock()
-            if now >= close_at or stopped:
+            if now >= close_at:
                 break
-            if now >= next_publish and now < close_at:
+            if consumer_error is None and consumer.done() and not consumer.cancelled() and consumer.exception() is not None:
+                consumer_error = type(consumer.exception()).__name__
+            if now >= next_publish:
                 sequence += 1
-                body = assemble_snapshot(symbols, book, components, now=now, sequence=sequence)
+                last_components = load()
+                body = assemble_snapshot(symbols, book, last_components, now=now, sequence=sequence)
                 digest = write_private(root / "snapshot.json", canonical(body))
                 published.append({"sequence": sequence, "available_at": body["available_at"], "sha256": digest,
-                                  "quoted": sum(1 for s in symbols if s in book.quotes), "self_sha256": body["self_sha256"]})
+                                  "quoted": sum(1 for s in symbols if s in book.quotes), "self_sha256": body["self_sha256"],
+                                  "component_diagnostics": last_components.diagnostic_counts()})
                 next_publish = now + timedelta(seconds=publish_interval)
             await sleep(0.05)
     finally:
@@ -295,8 +432,11 @@ async def run_capture(*, root: Path, epoch: str, session_date: date, symbols: li
         tape.flush()
         os.fsync(tape.fileno())
         tape.close()
+    status = STATUS_DEGRADED if consumer_error else (STATUS_CAPTURED if published else STATUS_EMPTY)
     return {"epoch": epoch, "session_date": session_date.isoformat(), "symbols": len(symbols), "published": published,
+            "status": status, "consumer_error": consumer_error, "rejected_ticks": dict(book.rejected),
             "tape_sha256": book.tape_sha256(), "tape_file": str(tape_path), "quoted_symbols": sum(1 for s in symbols if s in book.quotes),
+            "component_diagnostics": {symbol: list(codes) for symbol, codes in (last_components.diagnostics.items() if last_components else [])},
             "window": [_iso(open_at), _iso(close_at)]}
 
 
@@ -315,7 +455,7 @@ def main(argv: list[str] | None = None) -> int:
         raise ProducerError("PROVIDER_TOKEN_MISSING")
     root, epoch, session_date = Path(args.root), args.epoch, date.fromisoformat(args.session_date)
     symbols = read_causal_symbols(root, epoch, session_date)
-    components = load_components(root, session_date, symbols)
+    loader = ComponentLoader(root, session_date, symbols)
     open_at, close_at = capture_window(session_date)
     start_at = open_at - timedelta(seconds=WARMUP_SECONDS)
     now = datetime.now(timezone.utc)
@@ -329,10 +469,12 @@ def main(argv: list[str] | None = None) -> int:
     def ticks(names: list[str]) -> AsyncIterator[tuple[str, datetime]]:
         return eodhd_quote_ticks(names, token=token, stop_at=close_at)
 
-    result = asyncio.run(run_capture(root=root, epoch=epoch, session_date=session_date, symbols=symbols, components=components, ticks=ticks))
-    result["status"] = "CAPTURED"
-    print(json.dumps({k: v for k, v in result.items() if k != "published"} | {"publications": len(result["published"])}, sort_keys=True))
-    return 0
+    result = asyncio.run(run_capture(root=root, epoch=epoch, session_date=session_date, symbols=symbols, components=loader, ticks=ticks))
+    summary = {k: v for k, v in result.items() if k not in ("published", "component_diagnostics")}
+    summary["publications"] = len(result["published"])
+    summary["component_diagnostics"] = result["published"][-1]["component_diagnostics"] if result["published"] else {}
+    print(json.dumps(summary, sort_keys=True))
+    return 0 if result["status"] == STATUS_CAPTURED else 1
 
 
 if __name__ == "__main__":
