@@ -73,9 +73,12 @@ def test_causal_symbols_and_components_are_read_and_validated(tmp_path: Path) ->
     _write(base / "daily_61" / "AAA.json", {"schema": "V2_INSTRUMENT_DAILY_COMPONENT_V1", "symbol": "AAA", "daily": {**DAILY_AAA, "extra": 1}})
     _write(base / "earnings.json", {"schema": "V2_EARNINGS_COMPONENTS_V2", "session_date": D.isoformat(), "symbols": {"AAA": {"coverage_verified": True}}})
     components = snap.load_components(root, D, ["AAA", "BBB"])
-    assert components.daily == {} and components.risk == {} and components.earnings == {}
+    # a document of another session is not a response for D (absent); a response present with an invalid shape is CONCLUDED
+    assert components.risk == {} and components.daily == {"AAA": {**DAILY_AAA, "extra": 1}} and components.earnings == {"AAA": {"coverage_verified": True}}
     assert components.diagnostics["AAA"] == ("DAILY_COMPONENT_INVALID", "RISK_DOCUMENT_INVALID", "EARNINGS_COMPONENT_INVALID")
     assert components.diagnostics["BBB"] == ("DAILY_COMPONENT_ABSENT", "RISK_DOCUMENT_INVALID", "EARNINGS_COMPONENT_ABSENT")
+    _write(base / "daily_61" / "AAA.json", {"schema": "OTHER", "symbol": "AAA", "daily": DAILY_AAA})
+    assert "AAA" not in snap.load_components(root, D, ["AAA"]).daily  # not attributable: no response
 
 
 def test_quote_book_accepts_only_finite_causal_ticks_and_never_raises() -> None:
@@ -136,11 +139,14 @@ def test_assembled_snapshot_matches_the_port_shape_and_keeps_absent_components_p
     assert all(component["source_at"] is None and component["available_at"] is None for component in (bbb["daily"], bbb["risk"], bbb["earnings"]))
     assert datetime.fromisoformat(bbb["source_at"]) == now  # nothing arrived for this row: its clocks describe the assembly only
     assert datetime.fromisoformat(body["source_at"]) == tick_at and datetime.fromisoformat(body["available_at"]) == now
-    # a component that arrived and concluded invalid keeps its own clocks and verdict
+    # a component that arrived and concluded invalid keeps its own clocks and verdict, whatever its shape
     concluded = {**DAILY_AAA, "coverage_verified": False, "bars": []}
     _write(root / "components" / D.isoformat() / "daily_61" / "BBB.json", {"schema": "V2_INSTRUMENT_DAILY_COMPONENT_V1", "symbol": "BBB", "daily": concluded})
+    _write(root / "components" / D.isoformat() / "risk.json", {"schema": "V2_RISK_COMPONENTS_V1", "session_date": D.isoformat(),
+                                                                "symbols": {"AAA": RISK_AAA, "BBB": {**RISK_AAA, "extra": "field"}}})
     body = snap.assemble_snapshot(["AAA", "BBB"], book, snap.load_components(root, D, ["AAA", "BBB"]), now=now, sequence=8)
-    assert next(r for r in body["universe"]["instruments"] if r["symbol"] == "BBB")["daily"] == concluded
+    bbb = next(r for r in body["universe"]["instruments"] if r["symbol"] == "BBB")
+    assert bbb["daily"] == concluded and bbb["risk"] == {**RISK_AAA, "extra": "field"}  # concluded invalid: carried, never PENDING
 
 
 def _clock_and_sleep():
@@ -197,6 +203,25 @@ def test_run_capture_publishes_inside_the_window_reloads_components_and_keeps_th
     assert len(lines) == 4 and all(set(line) == {"received_at", "payload"} for line in lines)
     assert stat.S_IMODE(os.stat(tape).st_mode) == 0o600
     assert snapshot["provenance"]["payload_sha256"] == hashlib.sha256("\n".join(l["payload"] for l in lines).encode()).hexdigest()
+
+
+def test_consumer_failure_right_before_the_cutoff_is_still_a_failure(tmp_path: Path) -> None:
+    root = _root(tmp_path, ["AAA"])
+    components = snap.load_components(root, D, ["AAA"])
+    clock_at, clock, sleep = _clock_and_sleep()
+
+    async def ticks(symbols: list[str]) -> AsyncIterator[tuple[str, datetime]]:
+        at = OPEN_AT + timedelta(seconds=5)
+        while clock_at["now"] < at:
+            await asyncio.sleep(0)
+        yield _tick("AAA", 10.0, 10.1, at), at
+        while clock_at["now"] < CLOSE_AT:  # fail only once the window has closed: after the loop's last inspection
+            await asyncio.sleep(0)
+        raise RuntimeError("feed broke at the cutoff")
+
+    result = asyncio.run(snap.run_capture(root=root, epoch=EPOCH, session_date=D, symbols=["AAA"], components=components,
+                                          ticks=ticks, clock=clock, sleep=sleep, publish_interval=10.0))
+    assert result["status"] == "CAPTURE_DEGRADED_CONSUMER_FAILED" and result["consumer_error"] == "RuntimeError"
 
 
 def test_run_capture_reports_a_failed_consumer_instead_of_declaring_capture(tmp_path: Path) -> None:

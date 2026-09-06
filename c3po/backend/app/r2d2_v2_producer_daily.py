@@ -351,13 +351,14 @@ def build_daily_contract(registry: Mapping[str, Any], bulk_by_session: Mapping[d
             raise ProducerError("BULK_SPLITS_PAYLOAD_INVALID")
         for row in split_rows:
             code = row.get("code") if isinstance(row, dict) else None
-            if not isinstance(code, str):
-                # A row that cannot be attributed to a symbol may belong to any of them: coverage becomes unknown for all.
+            if not _symbol_ok(code):
+                # A row whose identity is missing, empty or invalid cannot be attributed to a symbol and may belong
+                # to any of them: split coverage becomes unknown for every symbol of this response.
                 unattributable[session.isoformat()] = unattributable.get(session.isoformat(), 0) + 1
                 continue
+            assert isinstance(code, str) and isinstance(row, dict)
             if code not in splits:
                 continue
-            assert isinstance(row, dict)
             factor = parse_split_factor(row.get("split"))
             if factor is None or row.get("date") != session.isoformat():
                 invalid_splits.setdefault(code, []).append({"session": session.isoformat(),

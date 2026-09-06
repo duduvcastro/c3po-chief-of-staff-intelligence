@@ -50,12 +50,12 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from .r2d2_v2_producer_daily import COMPONENT_SCHEMA as DAILY_COMPONENT_SCHEMA, REGISTRY_SCHEMA, ProducerError, canonical, write_private
+from .r2d2_v2_producer_earnings import COMPONENT_KEYS as EARNINGS_KEYS, SCHEMA as EARNINGS_SCHEMA
 
 PRODUCER = "fable-eodhd-snapshot"
-PRODUCER_VERSION = "v2"
+PRODUCER_VERSION = "v3"
 SNAPSHOT_SCHEMA = "V2_SHADOW_SOURCE_SNAPSHOT_V2"
 RISK_SCHEMA = "V2_RISK_COMPONENTS_V1"
-EARNINGS_SCHEMA = "V2_EARNINGS_COMPONENTS_V2"
 MANIFEST_SHA = "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0"
 AMENDMENT_SHA = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
 NEW_YORK = ZoneInfo("America/New_York")
@@ -66,7 +66,6 @@ PUBLISH_INTERVAL_SECONDS = 1.0
 MAX_SYMBOLS = 550
 DAILY_KEYS = frozenset({"bars", "splits", "adjustment", "coverage_verified", "split_coverage_verified", "source_at", "available_at"})
 RISK_KEYS = frozenset({"value", "producer", "source_at", "available_at"})
-EARNINGS_KEYS = frozenset({"coverage_verified", "window_start", "window_end", "events", "source_at", "available_at"})
 STATUS_CAPTURED = "CAPTURED"
 STATUS_EMPTY = "CAPTURE_EMPTY"
 STATUS_DEGRADED = "CAPTURE_DEGRADED_CONSUMER_FAILED"
@@ -123,9 +122,11 @@ Reader = Callable[[Path], Any]
 
 @dataclass(frozen=True)
 class Components:
-    daily: Mapping[str, Mapping[str, Any]]
-    risk: Mapping[str, Mapping[str, Any]]
-    earnings: Mapping[str, Mapping[str, Any]]
+    """Per-symbol component responses. A key present with an invalid shape is a CONCLUDED invalid response
+    (passed through unchanged, with a diagnostic); a key absent is a response that has not arrived (PENDING)."""
+    daily: Mapping[str, Any]
+    risk: Mapping[str, Any]
+    earnings: Mapping[str, Any]
     registry: Mapping[str, Mapping[str, Any]]
     diagnostics: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
@@ -138,7 +139,9 @@ class Components:
 
 
 def _component_map(document: Any, *, schema: str, session: str, keys: frozenset[str], symbols: Sequence[str], label: str,
-                   note: Callable[[str, str], None]) -> dict[str, Mapping[str, Any]]:
+                   note: Callable[[str, str], None]) -> dict[str, Any]:
+    """A document that is not attributable to this session (absent, other schema/session) means no response yet.
+    A response present for the symbol is concluded, valid or not: it is passed through unchanged, never replaced by PENDING."""
     if document is None:
         for symbol in symbols:
             note(symbol, f"{label}_COMPONENT_ABSENT")
@@ -148,20 +151,20 @@ def _component_map(document: Any, *, schema: str, session: str, keys: frozenset[
         for symbol in symbols:
             note(symbol, f"{label}_DOCUMENT_INVALID")
         return {}
-    result: dict[str, Mapping[str, Any]] = {}
+    result: dict[str, Any] = {}
     for symbol in symbols:
-        component = document["symbols"].get(symbol)
-        if component is None:
+        if symbol not in document["symbols"]:
             note(symbol, f"{label}_COMPONENT_ABSENT")
-        elif not isinstance(component, dict) or set(component) != keys:
+            continue
+        component = document["symbols"][symbol]
+        if not isinstance(component, dict) or set(component) != keys:
             note(symbol, f"{label}_COMPONENT_INVALID")
-        else:
-            result[symbol] = component
+        result[symbol] = component
     return result
 
 
 def load_components(root: Path, session_date: date, symbols: Sequence[str], *, read: Reader = _read_json) -> Components:
-    """Validated component maps for the listed symbols; every absence or invalid file is a per-symbol diagnostic."""
+    """Component responses for the listed symbols; every absence or invalid response is a per-symbol diagnostic."""
     base = root / "components" / session_date.isoformat()
     session = session_date.isoformat()
     diagnostics: dict[str, list[str]] = {}
@@ -169,17 +172,18 @@ def load_components(root: Path, session_date: date, symbols: Sequence[str], *, r
     def note(symbol: str, code: str) -> None:
         diagnostics.setdefault(symbol, []).append(code)
 
-    daily: dict[str, Mapping[str, Any]] = {}
+    daily: dict[str, Any] = {}
     for symbol in symbols:
         item = read(base / "daily_61" / f"{symbol}.json")
         if item is None:
             note(symbol, "DAILY_COMPONENT_ABSENT")
             continue
-        component = item.get("daily") if isinstance(item, dict) else None
-        if not (isinstance(item, dict) and item.get("schema") == DAILY_COMPONENT_SCHEMA and item.get("symbol") == symbol
-                and isinstance(component, dict) and set(component) == DAILY_KEYS):
-            note(symbol, "DAILY_COMPONENT_INVALID")
+        if not (isinstance(item, dict) and item.get("schema") == DAILY_COMPONENT_SCHEMA and item.get("symbol") == symbol and "daily" in item):
+            note(symbol, "DAILY_DOCUMENT_INVALID")  # not attributable to this symbol: no response
             continue
+        component = item["daily"]
+        if not isinstance(component, dict) or set(component) != DAILY_KEYS:
+            note(symbol, "DAILY_COMPONENT_INVALID")
         daily[symbol] = component
     risk = _component_map(read(base / "risk.json"), schema=RISK_SCHEMA, session=session, keys=RISK_KEYS, symbols=symbols, label="RISK", note=note)
     earnings = _component_map(read(base / "earnings.json"), schema=EARNINGS_SCHEMA, session=session, keys=EARNINGS_KEYS, symbols=symbols,
@@ -303,11 +307,19 @@ def pending_risk() -> dict[str, Any]:
 
 
 def pending_earnings() -> dict[str, Any]:
-    return {"coverage_verified": False, "window_start": None, "window_end": None, "events": [], "source_at": None, "available_at": None}
+    return {"coverage_verified": False, "window_start": None, "window_end": None, "events": [], "source_at": None, "available_at": None,
+            "policy": None, "evidence": None, "exclusion": None}
+
+
+def _present(value: Any, pending: Callable[[], dict[str, Any]]) -> Any:
+    """A concluded response is carried as it came (valid or not); only a response that has not arrived is PENDING."""
+    if value is None:
+        return pending()
+    return dict(value) if isinstance(value, dict) else value
 
 
 def assemble_snapshot(symbols: Sequence[str], book: QuoteBook, components: Components, *, now: datetime, sequence: int) -> dict[str, Any]:
-    """One complete universe row per listed symbol; nulls where no quote yet; components as prepared or PENDING."""
+    """One complete universe row per listed symbol; nulls where no quote yet; components as they arrived or PENDING."""
     now_iso = _iso(now)
     instruments = []
     for symbol in symbols:
@@ -320,7 +332,8 @@ def assemble_snapshot(symbols: Sequence[str], book: QuoteBook, components: Compo
         earnings = components.earnings.get(symbol)
         # Row clocks describe this row: earliest source clock among its present pieces, else the assembly instant.
         clocks = [quote.tick_at] if quote else []
-        clocks.extend(at for at in (_parse(component.get("source_at")) for component in (daily, risk, earnings) if component) if at is not None)
+        clocks.extend(at for at in (_parse(component.get("source_at")) for component in (daily, risk, earnings) if isinstance(component, dict))
+                      if at is not None)
         row: dict[str, Any] = {
             "symbol": symbol,
             "market": market,
@@ -332,9 +345,9 @@ def assemble_snapshot(symbols: Sequence[str], book: QuoteBook, components: Compo
             "quote": ({"bid": quote.bid, "ask": quote.ask, "bid_source_at": _iso(quote.tick_at), "ask_source_at": _iso(quote.tick_at),
                        "received_at": _iso(quote.received_at), "available_at": now_iso} if quote else
                       {"bid": None, "ask": None, "bid_source_at": None, "ask_source_at": None, "received_at": None, "available_at": now_iso}),
-            "daily": dict(daily) if daily is not None else pending_daily(),
-            "risk": dict(risk) if risk is not None else pending_risk(),
-            "earnings": dict(earnings) if earnings is not None else pending_earnings(),
+            "daily": _present(daily, pending_daily),
+            "risk": _present(risk, pending_risk),
+            "earnings": _present(earnings, pending_earnings),
         }
         instruments.append(row)
     body = {
@@ -424,11 +437,16 @@ async def run_capture(*, root: Path, epoch: str, session_date: date, symbols: li
                 next_publish = now + timedelta(seconds=publish_interval)
             await sleep(0.05)
     finally:
-        consumer.cancel()
+        # The consumer's fate is read AFTER it has finished: a failure between the last inspection and the
+        # cutoff is a failure, an intentional cancellation is not.
+        if not consumer.done():
+            consumer.cancel()
         try:
             await consumer
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError:
             pass
+        except Exception as exc:
+            consumer_error = consumer_error or type(exc).__name__
         tape.flush()
         os.fsync(tape.fileno())
         tape.close()
