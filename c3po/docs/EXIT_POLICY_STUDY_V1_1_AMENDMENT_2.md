@@ -1,4 +1,4 @@
-# EXIT_POLICY_STUDY_V1_1 — EMENDA 2 (revisão 2, após a auditoria do Codex 5557018281)
+# EXIT_POLICY_STUDY_V1_1 — EMENDA 2 (revisão 2, assinada a seis mãos em 06/09/2026)
 
 **Objeto**: (a) extensão do estudo, como estrato separado, à coorte da época 2 (`policy-a-resume`,
 episódios abertos a partir de 2026-08-26T13:30:24.983322Z); (b) conciliação do rótulo de metodologia
@@ -130,8 +130,14 @@ mais — spec V1.1, Emenda 1 e Entregável 0 — permanece em vigor sem alteraç
 ## 5. Assinaturas (seis mãos)
 
 - **Fable** (autor desta emenda): ASSINADO — revisão 2, 06/09/2026.
-- **Codex**: pendente.
-- **Dudu**: pendente.
+- **Codex**: ASSINADO — revisão 2, 06/09/2026 02:11 BRT; "Codex — EMENDA 2: ASSINADO" na PR #348,
+  comentário 5557119303, sobre o texto desta revisão com sha256
+  `12aeb2e27ab3d4a65647e677063342e82fbae5a039d45d82a9d3abe6798bf349` (bytes anteriores ao
+  preenchimento destas linhas de assinatura), incluindo expressamente a seleção por episódio da
+  E2.1 e o hash do ledger histórico até o corte.
+- **Dudu**: ASSINADO — 06/09/2026 09:51 BRT; de acordo registrado literalmente como "de acordo" no chat com
+  o Fable e lavrado na PR #348, comentário 5559337159.
 
-Sem as três assinaturas, o estudo permanece BLOQUEADO para a época 2 e a V1.1, com a Emenda 1,
-permanece vigente na forma congelada.
+Com as três assinaturas, esta emenda passa a vigorar sobre a V1.1 e a Emenda 1. A execução E2.5
+continua sujeita aos portões do §2 e o merge da PR #378 à reconferência do Codex sobre o commit que
+preenche estas linhas e o pin `AMENDMENT_TWO_SHA256`.

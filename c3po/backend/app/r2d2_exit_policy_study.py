@@ -48,7 +48,7 @@ FROZEN_METHODOLOGY = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
 # exit evaluation function bodies match the frozen commit, but operational
 # helpers differ (Amendment 2 §1.3): no runtime equivalence is claimed. Any
 # other cohort start or label fails closed; the epoch-1 path is unchanged.
-AMENDMENT_TWO_SHA256 = "12aeb2e27ab3d4a65647e677063342e82fbae5a039d45d82a9d3abe6798bf349"
+AMENDMENT_TWO_SHA256 = "0266ee821edc94bee1d55d39614c6948d623963cb6dc3bc27e111c492776e7f0"
 EPOCH_TWO_METHODOLOGY = "R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY"
 EPOCH_TWO_COHORT_START = datetime(2026, 8, 26, 13, 30, 24, 983322, tzinfo=timezone.utc)
 REPORT_SCHEMA_VERSION = "EXIT-POLICY-STUDY-V1.1-REPORT-v2"
