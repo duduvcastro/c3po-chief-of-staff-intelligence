@@ -202,3 +202,17 @@ of the hash.
 
 The signature does not authorize later stages. Each later stage requires its
 own objective gate and explicit approval.
+
+## Registro append-only — 2026-09-06: v1 refutada por decisão do dono
+
+- Veredito `V1_REFUTED_BY_OWNER_DECISION` (ato a seis mãos `R2D2_V1_DEATH_ACT_2026-09-06.md`, sha256
+  `c3ccc72af58b3f39a339c3d47b0e7b8936c7bdf0b9bdade2c205b62732cf856a`; adendo com a assinatura do Codex,
+  errata −2,45 % sobre US$ 946.576,74 e recibo do breaker). Assinaturas: Dudu (#348 5560020187), Fable,
+  Codex (#348 5560111179).
+- Números: 13/13 sessões negativas nas duas épocas (−US$ 39.092 e −US$ 23.412,81, paper); M1 interino
+  p̂ 45,90 % (IC 95 % [40,15; 53,80], UCB 98,75 % 55,28 %, 8 sessões, inconclusivo); estudo de saída da
+  época 2 sob a Emenda 2: PILOTO, gate PASS, seis IC 95 % incluindo zero (público `b097d465…`).
+- Executado em 2026-09-06T15:08:12.902742Z: breaker `entries_paused = true` (operador "Dudu via Fable",
+  evento `r2d2.entries_paused`), status/época/metodologia preservados; sem liquidação, sem promoção.
+- Sucessão: V2 por pré-registro, shadow prospectivo (≥ 15 sessões + maturação) e critério de morte
+  próprio (`R2D2_V2_SPEC_V0.md`, `R2D2_V2_PROTOCOLO_ANALISE_1.md`); sem pooling com a v1.
