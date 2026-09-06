@@ -23,7 +23,10 @@ Acceptance (closure): for every scenario with at least one true null, the
 one-sided Clopper-Pearson upper bound (confidence 1 - 0.01/K, K = 121) of each
 marginal false-GO rate must be <= 1/120 and of the family-wise error rate
 <= 0.05. Estimability, coverage and power are published, never gate acceptance.
-The adverse-missingness check of the data gate is separate and not part of K.
+A run is the certifying matrix only with all 28 scenarios and exactly
+M = 50,000 (addendum E2); any other size is development. The adverse-missingness
+check of the data gate is separate and not part of K; its gate counters are
+aggregated within each cohort prefix, like every reading.
 """
 from __future__ import annotations
 
@@ -38,6 +41,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from statistics import NormalDist
+from typing import Callable, Iterable
 
 import numpy as np
 
@@ -52,7 +56,9 @@ MC_CONFIDENCE_ERROR = 0.01
 K_METRICS = 121
 MARGINAL_LIMIT = 1.0 / 120.0
 FWER_LIMIT = 0.05
-DEFAULT_REPETITIONS = 50_000
+CERTIFYING_REPETITIONS = 50_000  # addendum E2: exactly this M certifies; nothing else does
+DEFAULT_REPETITIONS = CERTIFYING_REPETITIONS
+SCENARIO_COUNT = 28
 RESOLUTION_DEFAULT = 0.8
 AMBIGUOUS_CONDITIONAL = 0.25  # of unresolved episodes; the rest are time/event exits
 ADVERSE_HIDE_LOWER = 0.25
@@ -106,7 +112,7 @@ def scenario_matrix() -> list[Scenario]:
         Scenario("D2_S3", "D2", 0.5, 0.5, 0.0, resolution_e=0.2, resolution_c=0.9),
         Scenario("D2_S4", "D2", 0.5, 0.5, 0.0, heavy_tail_h3=True),
     ]
-    assert len(scenarios) == 28
+    assert len(scenarios) == SCENARIO_COUNT
     return scenarios
 
 
@@ -137,7 +143,11 @@ def _ar1(rng: np.random.Generator, phi: float, shape: tuple[int, ...]) -> np.nda
 
 
 def simulate_repetition(scenario: Scenario, repetition: int) -> list[dict]:
-    """One trajectory: 30 scheduled entry sessions, observation to session 39, layer-A outcomes."""
+    """One trajectory: 30 scheduled entry sessions, observation to session 39, layer-A outcomes.
+
+    Every row carries all `est.SESSION_FIELDS` explicitly (gate counters are
+    zeros in the 28 inference scenarios) plus the descriptive categories.
+    """
     rho, kappa, w, phi = STRUCTURES[scenario.structure]
     rng = np.random.default_rng(external_seed(scenario.scenario_id, repetition))
     eps = rng.standard_normal(SESSIONS_TRAJECTORY + 9)
@@ -179,7 +189,7 @@ def simulate_repetition(scenario: Scenario, repetition: int) -> list[dict]:
         rows.append({"upper_e": upper_e, "lower_e": lower_e, "upper_c": upper_c, "lower_c": lower_c,
                      "ambiguous_e": amb_e, "time_event_e": NAMES_PER_ARM - upper_e - lower_e - amb_e,
                      "ambiguous_c": amb_c, "time_event_c": n_c - upper_c - lower_c - amb_c,
-                     "unobservable_e": 0, "unobservable_c": 0,
+                     "unobservable_e": 0, "unobservable_c": 0, "indeterminate_pnl": 0,
                      "pnl_sum_usd": float(pnl[t]), "pnl_count": 1})
     return rows
 
@@ -193,12 +203,17 @@ def common_weights(n: int) -> np.ndarray:
     return _WEIGHTS[n]
 
 
-def run_procedure(rows: list[dict], **gate: int) -> dict[int, dict]:
-    """Exact decision sequence on one trajectory (reading 30 only without joint approval at 20)."""
-    first = est.read_cohort(est.cohort_from_sessions(rows, 20, **gate), common_weights(20))
+def run_procedure(rows: list[dict]) -> dict[int, dict]:
+    """Exact decision sequence on one full trajectory (reading 30 only without joint approval at 20).
+
+    Gate counters come from the rows and are aggregated within each cohort
+    prefix by `cohort_from_sessions`; the trajectory is complete, so both
+    cohorts are mature (sessions completed = 39).
+    """
+    first = est.read_cohort(est.cohort_from_sessions(rows, 20), common_weights(20), sessions_completed=SESSIONS_TRAJECTORY)
     executed = {20: first}
     if not first["joint_approval"]:
-        executed[30] = est.read_cohort(est.cohort_from_sessions(rows, 30, **gate), common_weights(30))
+        executed[30] = est.read_cohort(est.cohort_from_sessions(rows, 30), common_weights(30), sessions_completed=SESSIONS_TRAJECTORY)
     return executed
 
 
@@ -284,9 +299,11 @@ def clopper_pearson_upper(successes: int, trials: int, confidence: float) -> flo
 
 
 def _rate(count: int, trials: int) -> dict:
-    rate = count / trials if trials else None
+    if trials <= 0:
+        return {"count": count, "trials": trials, "rate": None, "mc_standard_error": None}
+    rate = count / trials
     return {"count": count, "trials": trials, "rate": rate,
-            "mc_standard_error": (math.sqrt(rate * (1.0 - rate) / trials) if trials else None)}
+            "mc_standard_error": math.sqrt(rate * (1.0 - rate) / trials)}
 
 
 def summarize_scenario(scenario: Scenario, counters: dict[str, int], confidence: float) -> dict:
@@ -334,45 +351,60 @@ def summarize_scenario(scenario: Scenario, counters: dict[str, int], confidence:
     }
 
 
-def adverse_missingness_trial(repetitions: int, *, hide_lower: float = ADVERSE_HIDE_LOWER, hide_upper: float = ADVERSE_HIDE_UPPER) -> dict:
+def adverse_missingness_trial(repetitions: int, *, hide_lower: float = ADVERSE_HIDE_LOWER, hide_upper: float = ADVERSE_HIDE_UPPER,
+                              hide_sessions: Iterable[int] | None = None) -> dict:
     """Closure: D2 under 000, hide each lower with probability 0.25 (upper 0.0) after the fact.
 
     The oracle keeps the synthetic original as truth; the estimator receives the
-    hidden version with the hidden episodes counted as `unobservable` and must
-    block promotion through the data gate. The naive counterfactual (same
-    hidden counts with the gate ignored) is published only to show the
-    selection bias the gate prevents; it is not a legitimate inference.
+    hidden version with the hidden episodes counted as `unobservable` on their
+    own session, so each cohort prefix aggregates only its own missingness. The
+    check passes when every executed reading is gate-blocked exactly when its
+    prefix contains hidden episodes. `hide_sessions` restricts the hiding to
+    given 0-based session indices (counter-proof: hiding only in sessions
+    21-30 must leave cohort 20 open and block cohort 30). The naive
+    counterfactual (same hidden counts with the gate ignored) is published only
+    to show the selection bias the gate prevents; it is not an inference.
     """
     scenario = scenario_by_id("D2_000")
-    gate_blocked = 0
+    allowed = set(range(SESSIONS_ENTRY)) if hide_sessions is None else set(hide_sessions)
+    consistent = 0
+    blocked_by_reading = {20: 0, 30: 0}
+    executed_by_reading = {20: 0, 30: 0}
     hidden_total = 0
     naive_approvals = {f"{h}@{k}": 0 for h in est.HYPOTHESES for k in READINGS}
     naive_joint = 0
     for r in range(repetitions):
         rows = simulate_repetition(scenario, r)
         rng = np.random.default_rng(external_seed("D2_000_ADVERSE", r))
-        for row in rows:
+        for index, row in enumerate(rows):
+            if index not in allowed:
+                continue
             for arm in ("e", "c"):
                 h_lower = int(rng.binomial(row[f"lower_{arm}"], hide_lower))
                 h_upper = int(rng.binomial(row[f"upper_{arm}"], hide_upper))
                 row[f"lower_{arm}"] -= h_lower
                 row[f"upper_{arm}"] -= h_upper
                 row[f"unobservable_{arm}"] += h_lower + h_upper
-        hidden_e = sum(row["unobservable_e"] for row in rows)
-        hidden_c = sum(row["unobservable_c"] for row in rows)
-        hidden_total += hidden_e + hidden_c
-        gated = run_procedure(rows, unobservable_e=hidden_e, unobservable_c=hidden_c)
-        blocked = all(not reading["joint_approval"] and all("DATA_GATE_BLOCKED" in h["reasons"] for h in reading["hypotheses"].values())
-                      for reading in gated.values())
-        gate_blocked += int(blocked)
-        naive = run_procedure(rows)  # gate ignored: oracle diagnostic only
-        for k, reading in naive.items():
+        hidden_total += sum(row["unobservable_e"] + row["unobservable_c"] for row in rows)
+        gated = run_procedure(rows)
+        ok = True
+        for k, reading in gated.items():
+            executed_by_reading[k] += 1
+            hidden_in_prefix = sum(row["unobservable_e"] + row["unobservable_c"] for row in rows[:k])
+            blocked = (not reading["data_gate"]["open"]) and all("DATA_GATE_BLOCKED" in h["reasons"] for h in reading["hypotheses"].values())
+            blocked_by_reading[k] += int(blocked)
+            ok &= blocked == (hidden_in_prefix > 0) and (not reading["joint_approval"] or hidden_in_prefix == 0)
+        consistent += int(ok)
+        naive_rows = [{**row, "unobservable_e": 0, "unobservable_c": 0} for row in rows]  # gate ignored: oracle diagnostic only
+        for k, reading in run_procedure(naive_rows).items():
             for h, result in reading["hypotheses"].items():
                 naive_approvals[f"{h}@{k}"] += int(result["status"] == "APPROVED")
             naive_joint += int(reading["joint_approval"])
     return {"scenario_id": "D2_000", "hide_lower": hide_lower, "hide_upper": hide_upper, "repetitions": repetitions,
-            "hidden_episodes_total": hidden_total, "gate_blocked": gate_blocked, "gate_blocked_rate": gate_blocked / repetitions,
-            "pass": gate_blocked == repetitions,
+            "hide_sessions": None if hide_sessions is None else sorted(allowed),
+            "hidden_episodes_total": hidden_total,
+            "gate_blocked_by_reading": blocked_by_reading, "readings_executed": executed_by_reading,
+            "consistent_repetitions": consistent, "pass": consistent == repetitions,
             "naive_without_gate_diagnostic": {"approvals": {key: value / repetitions for key, value in naive_approvals.items()},
                                               "joint_certification_rate": naive_joint / repetitions}}
 
@@ -383,7 +415,8 @@ def _source_sha256(module) -> str:
 
 
 def run_calibration(repetitions: int = DEFAULT_REPETITIONS, scenario_ids: list[str] | None = None, *,
-                    workers: int = 1, chunk: int = 1_000, adverse_repetitions: int = 0, log=None) -> dict:
+                    workers: int = 1, chunk: int = 1_000, adverse_repetitions: int = 0,
+                    log: Callable[[str], None] | None = None) -> dict:
     scenarios = scenario_matrix()
     if scenario_ids:
         wanted = set(scenario_ids)
@@ -421,13 +454,14 @@ def run_calibration(repetitions: int = DEFAULT_REPETITIONS, scenario_ids: list[s
     with_null = [r for r in results if r["fwer"] is not None]
     n_marginal = sum(len(r["marginal_false_go"]) for r in results)
     adverse = adverse_missingness_trial(adverse_repetitions) if adverse_repetitions > 0 else None
-    full_matrix = len(results) == 28 and repetitions >= DEFAULT_REPETITIONS
+    full_matrix = len(results) == SCENARIO_COUNT and repetitions == CERTIFYING_REPETITIONS
     k_observed = n_marginal + len(with_null)
     return {
         "schema": "R2D2_V2_CALIBRATION_REPORT_v1",
         "protocol_id": PROTOCOL_ID,
         "layer": "A",
         "repetitions_per_scenario": repetitions,
+        "certifying_repetitions": CERTIFYING_REPETITIONS,
         "scenario_count": len(results),
         "k_metrics_declared": K_METRICS,
         "k_metrics_observed": k_observed,
@@ -454,7 +488,8 @@ def run_calibration(repetitions: int = DEFAULT_REPETITIONS, scenario_ids: list[s
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Synthetic calibration of the V2 certification procedure (layer A, no real data).")
-    parser.add_argument("--repetitions", type=int, default=DEFAULT_REPETITIONS, help="external repetitions per scenario (M)")
+    parser.add_argument("--repetitions", type=int, default=DEFAULT_REPETITIONS,
+                        help="external repetitions per scenario (M); only exactly 50,000 with all 28 scenarios is a certifying run")
     parser.add_argument("--scenario", action="append", help="restrict to scenario ids (repeatable); default: all 28")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--chunk", type=int, default=1_000)

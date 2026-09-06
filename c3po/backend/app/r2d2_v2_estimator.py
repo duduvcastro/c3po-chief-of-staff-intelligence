@@ -14,6 +14,13 @@ hypothesis NOT_ESTIMABLE. Every decision LCB is the Hyndman-Fan type 7 quantile
 over the full sorted vector of 10,000 values (-inf propagates in H3). Original
 counts and every reason for non-approval are published.
 
+Inputs are never coerced: every per-session field must be present (an empty
+day is explicit zeros, never an absence), counts are non-negative integers
+(no bool, text or fraction), P&L is a finite number, data-gate counters are
+explicit integers aggregated within each cohort prefix. The certifying entry
+point (`certify`) requires the sessions completed (maturation proof), cohort
+keys equal to the cohort length and cohort 30 extending cohort 20 exactly.
+
 RNG pin: the internal bootstrap uses CPython `random.Random` (MT19937) seeded
 with 20260824 and `randrange(n)` for the block starts. No I/O, no app imports,
 no price logic: the caller proves the cohort statistics; this module decides.
@@ -39,6 +46,11 @@ NULL_THRESHOLDS = {"R1": 0.0, "H1": 0.5, "H3": 0.0}
 UNDEFINED_VALUES = {"R1": -1.0, "H1": 0.0, "H3": -math.inf}
 INTERNAL_RNG = "CPython random.Random (MT19937) seed 20260824, randrange(n) block starts"
 
+COUNT_FIELDS = ("upper_e", "lower_e", "upper_c", "lower_c", "pnl_count")
+GATE_FIELDS = ("unobservable_e", "unobservable_c", "indeterminate_pnl")
+MONEY_FIELDS = ("pnl_sum_usd",)
+SESSION_FIELDS = COUNT_FIELDS + MONEY_FIELDS + GATE_FIELDS
+
 STATE_CERTIFIED = "V2_SHADOW_CERTIFIED_CANDIDATE"
 STATE_CONTINUE = "CONTINUE_TO_COHORT30"
 STATE_FAILED = "V2_CERTIFICATION_FAILED"
@@ -53,6 +65,24 @@ class EstimatorError(ValueError):
 def _require(condition: bool, code: str) -> None:
     if not condition:
         raise EstimatorError(code)
+
+
+def _is_int(value: object) -> bool:
+    return isinstance(value, (int, np.integer)) and not isinstance(value, (bool, np.bool_))
+
+
+def _as_count(value: object, code: str = "INVALID_COUNT_TYPE") -> int:
+    _require(_is_int(value), code)
+    count = int(value)  # type: ignore[arg-type]
+    _require(count >= 0, "NEGATIVE_COUNT")
+    return count
+
+
+def _as_money(value: object) -> float:
+    _require(isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(value, (bool, np.bool_)), "INVALID_MONEY_TYPE")
+    money = float(value)  # type: ignore[arg-type]
+    _require(math.isfinite(money), "PNL_NOT_FINITE")
+    return money
 
 
 def maturation_session(cohort_sessions: int, horizon: int = HORIZON_SESSIONS) -> int:
@@ -110,10 +140,11 @@ class CohortStatistics:
     """Sufficient statistics per scheduled entry session of one finalized cohort.
 
     Arrays are aligned by scheduled entry session (index 0 = first session);
-    sessions without candidates carry zeros. Research arms: eligible (E) and
-    valid-risk controls (C), counts of upper_first / lower_first among resolved
-    episodes. Portfolio: sum of net P&L in USD and number of episodes with a
-    known P&L. Data-gate inputs (§3.4) are counted, never imputed.
+    sessions without candidates carry explicit zeros. Research arms: eligible
+    (E) and valid-risk controls (C), counts of upper_first / lower_first among
+    resolved episodes. Portfolio: sum of net P&L in USD and number of episodes
+    with a known P&L. Data-gate counters (§3.4) are explicit totals of the
+    cohort prefix, never imputed and never defaulted.
     """
 
     upper_e: np.ndarray
@@ -122,19 +153,23 @@ class CohortStatistics:
     lower_c: np.ndarray
     pnl_sum_usd: np.ndarray
     pnl_count: np.ndarray
-    unobservable_e: int = 0
-    unobservable_c: int = 0
-    indeterminate_pnl: int = 0
+    unobservable_e: int
+    unobservable_c: int
+    indeterminate_pnl: int
 
     def __post_init__(self) -> None:
-        arrays = (self.upper_e, self.lower_e, self.upper_c, self.lower_c, self.pnl_sum_usd, self.pnl_count)
-        n = self.upper_e.shape[0]
-        _require(all(a.ndim == 1 and a.shape[0] == n for a in arrays), "COHORT_SHAPE")
+        counts = (self.upper_e, self.lower_e, self.upper_c, self.lower_c, self.pnl_count)
+        n = self.upper_e.shape[0] if isinstance(self.upper_e, np.ndarray) else -1
         _require(n in COHORT_SESSIONS, "COHORT_SIZE")
-        for a in (self.upper_e, self.lower_e, self.upper_c, self.lower_c, self.pnl_count):
+        for a in counts:
+            _require(isinstance(a, np.ndarray) and a.ndim == 1 and a.shape[0] == n, "COHORT_SHAPE")
+            _require(a.dtype.kind in "iu", "INVALID_COUNT_DTYPE")
             _require(bool(np.all(a >= 0)), "NEGATIVE_COUNT")
+        _require(isinstance(self.pnl_sum_usd, np.ndarray) and self.pnl_sum_usd.ndim == 1 and self.pnl_sum_usd.shape[0] == n, "COHORT_SHAPE")
+        _require(self.pnl_sum_usd.dtype.kind == "f", "INVALID_MONEY_DTYPE")
         _require(bool(np.all(np.isfinite(self.pnl_sum_usd))), "PNL_NOT_FINITE")
-        _require(min(self.unobservable_e, self.unobservable_c, self.indeterminate_pnl) >= 0, "NEGATIVE_COUNT")
+        for counter in (self.unobservable_e, self.unobservable_c, self.indeterminate_pnl):
+            _as_count(counter, "INVALID_COUNTER")
 
     @property
     def sessions(self) -> int:
@@ -148,6 +183,18 @@ class CohortStatistics:
         """Relabel E<->C (counter-proof: the R1 contrast must flip sign under common draws)."""
         return CohortStatistics(self.upper_c, self.lower_c, self.upper_e, self.lower_e, self.pnl_sum_usd, self.pnl_count,
                                 self.unobservable_c, self.unobservable_e, self.indeterminate_pnl)
+
+    def extends(self, shorter: "CohortStatistics") -> bool:
+        """True when this cohort's first sessions are exactly `shorter` and its gate counters are not smaller."""
+        m = shorter.sessions
+        if m > self.sessions:
+            return False
+        pairs = ((self.upper_e, shorter.upper_e), (self.lower_e, shorter.lower_e), (self.upper_c, shorter.upper_c),
+                 (self.lower_c, shorter.lower_c), (self.pnl_count, shorter.pnl_count), (self.pnl_sum_usd, shorter.pnl_sum_usd))
+        if not all(np.array_equal(longer[:m], short) for longer, short in pairs):
+            return False
+        return (self.unobservable_e >= shorter.unobservable_e and self.unobservable_c >= shorter.unobservable_c
+                and self.indeterminate_pnl >= shorter.indeterminate_pnl)
 
 
 def _ratio(numerator: np.ndarray, denominator: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -186,13 +233,15 @@ def bootstrap_replicas(stats: CohortStatistics, weights: np.ndarray) -> dict:
 
 
 def read_cohort(stats: CohortStatistics, weights: np.ndarray | None = None, *, sessions_completed: int | None = None) -> dict:
-    """One reading of one mature cohort. Public aggregates only.
+    """One reading of one cohort. Public aggregates only.
 
-    `sessions_completed` (scheduled entry sessions already fully observed) lets
-    the caller prove maturation: reading cohort N before session N + 9 is refused.
+    Non-certifying entry point: `sessions_completed` (scheduled entry sessions
+    already fully observed) is optional here and mandatory in `certify`; when
+    given, reading cohort N before session N + 9 is refused.
     """
     n = stats.sessions
     if sessions_completed is not None:
+        _require(_is_int(sessions_completed), "SESSIONS_COMPLETED_INVALID")
         _require(sessions_completed >= maturation_session(n), "COHORT_NOT_MATURE")
     if weights is None:
         weights = circular_block_weights(n)
@@ -249,15 +298,22 @@ def read_cohort(stats: CohortStatistics, weights: np.ndarray | None = None, *, s
     }
 
 
-def certify(cohorts: Mapping[int, CohortStatistics], *, sessions_completed: int | None = None) -> dict:
-    """Sequential decision (§4, §7): read cohort 20; stop if jointly approved; else read 30 once.
+def certify(cohorts: Mapping[int, CohortStatistics], *, sessions_completed: int) -> dict:
+    """Certifying decision (§4, §7): read cohort 20; stop if jointly approved; else read 30 once.
 
-    Only cohorts 20 and 30 exist. With cohort 30 not yet available the state is
-    CONTINUE_TO_COHORT30 (no partial GO carried over). The result never
-    authorizes promotion: certification is a separate order of the desk.
+    Requires the maturation proof (`sessions_completed`), cohort keys equal to
+    the cohort length, and cohort 30 extending cohort 20 exactly (same first
+    20 sessions, gate counters not smaller). Only cohorts 20 and 30 exist; with
+    cohort 30 not yet available the state is CONTINUE_TO_COHORT30 (no partial
+    GO carried over). The result never authorizes promotion.
     """
+    _require(_is_int(sessions_completed), "SESSIONS_COMPLETED_REQUIRED")
     _require(set(cohorts) <= set(COHORT_SESSIONS), "UNKNOWN_COHORT")
     _require(20 in cohorts, "COHORT_20_REQUIRED")
+    for key, cohort in cohorts.items():
+        _require(isinstance(cohort, CohortStatistics) and cohort.sessions == key, "COHORT_KEY_MISMATCH")
+    if 30 in cohorts:
+        _require(cohorts[30].extends(cohorts[20]), "COHORT_PREFIX_MISMATCH")
     readings = {20: read_cohort(cohorts[20], sessions_completed=sessions_completed)}
     reasons: list[str] = []
     if readings[20]["joint_approval"]:
@@ -278,22 +334,33 @@ def certify(cohorts: Mapping[int, CohortStatistics], *, sessions_completed: int 
                 + ([f"{STATE_GATE_BLOCKED}:{','.join(gate_blocked)}"] if gate_blocked else [])
             state = STATE_FAILED if failed else (STATE_NOT_ESTIMABLE if not_estimable else STATE_GATE_BLOCKED)
     return {"schema": "R2D2_V2_CERTIFICATION_v1", "state": state, "certified_at_cohort": certified_at,
+            "sessions_completed": sessions_completed,
             "readings_executed": sorted(readings), "readings": readings, "reasons": reasons,
             "no_partial_go_across_cohorts": True, "third_reading_allowed": False, "promotion_authorized": False}
 
 
-def cohort_from_sessions(rows: Sequence[Mapping[str, float]], cohort_sessions: int, **gate: int) -> CohortStatistics:
-    """Build statistics from per-session dicts (keys: upper_e, lower_e, upper_c, lower_c, pnl_sum_usd, pnl_count)."""
+def cohort_from_sessions(rows: Sequence[Mapping[str, object]], cohort_sessions: int) -> CohortStatistics:
+    """Build the statistics of the first `cohort_sessions` rows (one row per scheduled entry session).
+
+    Every row must carry all of `SESSION_FIELDS` explicitly: counts as
+    non-negative integers, `pnl_sum_usd` as a finite number, and the data-gate
+    counters of that session. Gate counters are summed within the cohort
+    prefix. Nothing is defaulted or coerced.
+    """
+    _require(_is_int(cohort_sessions), "COHORT_SIZE")
     _require(len(rows) >= cohort_sessions, "NOT_ENOUGH_SESSIONS")
     take = rows[:cohort_sessions]
-
-    def col(key: str, dtype) -> np.ndarray:
-        return np.asarray([row.get(key, 0) for row in take], dtype=dtype)
-
+    columns: dict[str, list[int]] = {key: [] for key in COUNT_FIELDS + GATE_FIELDS}
+    money: list[float] = []
+    for row in take:
+        _require(isinstance(row, Mapping) and all(key in row for key in SESSION_FIELDS), "MISSING_FIELD")
+        for key in COUNT_FIELDS + GATE_FIELDS:
+            columns[key].append(_as_count(row[key]))
+        money.append(_as_money(row["pnl_sum_usd"]))
     return CohortStatistics(
-        upper_e=col("upper_e", np.int64), lower_e=col("lower_e", np.int64),
-        upper_c=col("upper_c", np.int64), lower_c=col("lower_c", np.int64),
-        pnl_sum_usd=col("pnl_sum_usd", float), pnl_count=col("pnl_count", np.int64),
-        unobservable_e=int(gate.get("unobservable_e", 0)), unobservable_c=int(gate.get("unobservable_c", 0)),
-        indeterminate_pnl=int(gate.get("indeterminate_pnl", 0)),
+        upper_e=np.asarray(columns["upper_e"], dtype=np.int64), lower_e=np.asarray(columns["lower_e"], dtype=np.int64),
+        upper_c=np.asarray(columns["upper_c"], dtype=np.int64), lower_c=np.asarray(columns["lower_c"], dtype=np.int64),
+        pnl_sum_usd=np.asarray(money, dtype=float), pnl_count=np.asarray(columns["pnl_count"], dtype=np.int64),
+        unobservable_e=sum(columns["unobservable_e"]), unobservable_c=sum(columns["unobservable_c"]),
+        indeterminate_pnl=sum(columns["indeterminate_pnl"]),
     )
