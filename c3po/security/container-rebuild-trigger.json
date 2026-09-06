@@ -1,36 +1,144 @@
 {
-  "artifact_name": "c3po-production-container-vulnerabilities-33587089986",
+  "artifact_name": "c3po-production-container-vulnerabilities-34000214097",
   "dry_run": false,
   "evidence_scope": "production_runtime",
-  "finding_total": 2,
+  "finding_total": 14,
   "findings": [
     {
-      "fixed_version": "2.8.4-r0",
-      "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
+      "fixed_version": "2.42.3-r0",
+      "image": "database",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
       "severity": "high",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-66046"
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-53612"
     },
     {
-      "fixed_version": "2.8.4-r0",
+      "fixed_version": "2.42.3-r0",
       "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
       "severity": "high",
       "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-76641"
+      "vulnerability_id": "CVE-2026-53612"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "database",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-53613"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "web",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-53613"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "database",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-53614"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "web",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-53614"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "database",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-76642"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "web",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-76642"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "database",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-78408"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "web",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-78408"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "database",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-78409"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "web",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-78409"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "database",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/database:production-scan (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-78410"
+    },
+    {
+      "fixed_version": "2.42.3-r0",
+      "image": "web",
+      "installed_version": "2.42.1-r0",
+      "package": "libuuid",
+      "severity": "high",
+      "target": "c3po/web:production (alpine 3.24.1)",
+      "vulnerability_id": "CVE-2026-78410"
     }
   ],
   "fix_available": {
     "critical": 0,
-    "high": 2
+    "high": 14
   },
-  "generated_at": "2026-09-02T03:28:47.063426+00:00",
-  "remediation_key": "614ce1e7b4892afaa29a0e98735dc8f7772936198517505365c7abd17a34312a",
-  "report_sha256": "1d07350e1caeaede55611698158eabffefe731f8753ea95c2f1b06251c40c58c",
-  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/33587089986",
+  "generated_at": "2026-09-06T00:03:14.462989+00:00",
+  "remediation_key": "63e72d532947964278c968bf157ab50172ca1149a88d5aa3d4ec460a57907312",
+  "report_sha256": "6ceb11914e50d3bb729b8c9596bd2577b67bcf3090fc71c65f87f7e1440bc684",
+  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/34000214097",
   "schema": "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1",
-  "source_revision": "7bc70899db6088afcd303b4c490f08d88a2758ce"
+  "source_revision": "20b8fabb7d464382add0703e8289ae97f89627d7"
 }
