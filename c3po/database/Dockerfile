@@ -10,7 +10,7 @@ FROM postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b676793
 
 ARG C3PO_SECURITY_REBUILD=bootstrap
 RUN test -n "$C3PO_SECURITY_REBUILD" \
-    && apk upgrade --no-cache libcrypto3 libssl3
+    && apk upgrade --no-cache libcrypto3 libssl3 libuuid
 COPY --from=gosu-build /go/bin/gosu /usr/local/bin/gosu
 RUN gosu --version \
     && gosu nobody true

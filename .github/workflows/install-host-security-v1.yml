@@ -185,7 +185,8 @@ jobs:
               'report_sha256': report['report_sha256'],
           }, sort_keys=True))
           PY
-          docker compose --env-file /opt/chief-of-staff-digital/.env \
+          C3PO_BUILD_SHA="$(cat /opt/chief-of-staff-digital/.deploy-version)" \
+            docker compose --env-file /opt/chief-of-staff-digital/.env \
             -f /opt/chief-of-staff-digital/c3po/compose.yml \
             up -d --force-recreate api server-usage-worker
           rm -f \
