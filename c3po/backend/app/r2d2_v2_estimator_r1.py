@@ -13,10 +13,13 @@ to spec V2 V1 rev 2 (manifest 01d25890…), signed by Codex, Dudu and Fable on 0
   d_b is never imputed and batches are never dropped or merged.
 - Estimand, one per cohort: theta_n = E[(1/k) sum_b d_b | A_n], equal batch
   weights. The pooled contrast (ratio of totals) is published as descriptive only.
-- Decision: LCB = theta_hat - t_{k-1, 1-alpha} * s / sqrt(k), alpha = 1/120,
-  exact Student t (regularized incomplete beta); approve iff LCB > 0, the data
-  gate (§3.4) is open and the sample is in A_n. Two readings (40 then 60 once),
-  no partial GO, no third reading. Approval means V2_FILTER_CERTIFIED_R1 only:
+- Decision: LCB = theta_hat - t_{k-1, 1-alpha_nom} * s / sqrt(k) with the exact
+  Student t (regularized incomplete beta). ADENDO A (sha256 ef988aa7…, signed six
+  hands 06/09/2026, option A2.1) fixes a conservative nominal quantile
+  alpha_nom = 1/240 while the error targets of the calibration stay at 1/120
+  per reading and 2/120 for the sequence. Approve iff LCB > 0, the data gate
+  (§3.4) is open and the sample is in A_n. Two readings (40 then 60 once), no
+  partial GO, no third reading. Approval means V2_FILTER_CERTIFIED_R1 only:
   filter discrimination, never economic expectancy or p_E > 0.5.
 - H1 and H3 are descriptive (same batch scheme; informative intervals only).
 
@@ -39,7 +42,10 @@ from .r2d2_v2_estimator import (  # shared strict validators and vocabulary
 )
 
 EMENDA_1_REV2_SHA256 = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
-ALPHA = 1.0 / 120.0
+ADENDO_A_SHA256 = "ef988aa734f4115ccfda698dfaa64a881f8bdcbb82f1c652523a9f6add5eba30"
+ALPHA_TARGET = 1.0 / 120.0  # error target per reading (calibration acceptance; unchanged by ADENDO A)
+ALPHA_NOMINAL = 1.0 / 240.0  # nominal quantile of the decision LCB (ADENDO A, option A2.1)
+ALPHA = ALPHA_NOMINAL  # quantile actually used by the decision rule
 HORIZON_SESSIONS = 10
 BATCH_SESSIONS = 10
 COHORT_SESSIONS = (40, 60)
@@ -250,7 +256,8 @@ def read_cohort(stats: BatchCohortStatistics, *, sessions_completed: int | None 
     estimable = not missing
     gate_open = stats.data_gate_open()
     reasons: list[str] = []
-    r1: dict = {"hypothesis": "R1", "threshold": THRESHOLD, "alpha": ALPHA, "k": k, "batch_sessions": BATCH_SESSIONS,
+    r1: dict = {"hypothesis": "R1", "threshold": THRESHOLD, "alpha_nominal": ALPHA_NOMINAL, "alpha_target": ALPHA_TARGET,
+                "k": k, "batch_sessions": BATCH_SESSIONS,
                 "estimand": "theta_n = E[(1/k) sum_b (p_E,b - p_C,b) | A_n] (equal batch weights, conditional on estimability)",
                 "estimability_event_holds": estimable, "batches_without_denominator": missing}
     if estimable:
@@ -285,7 +292,7 @@ def read_cohort(stats: BatchCohortStatistics, *, sessions_completed: int | None 
           else {"hypothesis": "H3", "decisive": False, **_t_interval([float(v) for v in pnl_values], ALPHA)})
     return {
         "schema": "R2D2_V2_R1_COHORT_READING_v1",
-        "emenda_1_sha256": EMENDA_1_REV2_SHA256,
+        "emenda_1_sha256": EMENDA_1_REV2_SHA256, "adendo_a_sha256": ADENDO_A_SHA256,
         "cohort_sessions": n, "maturation_session": maturation_session(n), "sessions_completed": sessions_completed,
         "batches": batches,
         "resolved": {"E": total_e, "C": total_c, "portfolio_episodes": int(stats.pnl_count.sum())},
@@ -328,7 +335,7 @@ def certify(cohorts: Mapping[int, BatchCohortStatistics], *, sessions_completed:
                 state = STATE_NOT_ESTIMABLE
             else:
                 state = STATE_GATE_BLOCKED
-    return {"schema": "R2D2_V2_R1_CERTIFICATION_v1", "emenda_1_sha256": EMENDA_1_REV2_SHA256, "state": state,
+    return {"schema": "R2D2_V2_R1_CERTIFICATION_v1", "emenda_1_sha256": EMENDA_1_REV2_SHA256, "adendo_a_sha256": ADENDO_A_SHA256, "state": state,
             "certified_at_cohort": certified_at, "sessions_completed": sessions_completed,
             "readings_executed": sorted(readings), "readings": readings, "reasons": reasons,
             "no_partial_go_across_cohorts": True, "third_reading_allowed": False,

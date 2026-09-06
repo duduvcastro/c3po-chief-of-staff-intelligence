@@ -1,17 +1,19 @@
-"""R2D2 V2 — EMENDA 1 calibration (annex B rev 2): the batch-means R1 procedure on layer-A truth.
+"""R2D2 V2 — EMENDA 1 calibration (annex B rev 2 + ADENDO A): batch-means R1 procedure on layer-A truth.
 
-Contract: EMENDA 1 rev 2 §5 (sha256 3a25b992…). Protocol C3PO-V2-CAL-2; external seed per
-(scenario, repetition r) = big-endian integer of the first 16 bytes of
-SHA-256("C3PO-V2-CAL-2|<scenario_id>|<r>"), r = 0..M-1, in numpy.random.default_rng
-(PCG64). Trajectories of 69 sessions (entries 1..60, observation to 69). Same
-layer-A generator as the signed closure (Z moving sum of 10, stationary AR(1)
-phi = 0.8, U marginal N(0,1), resolution 0.8 with 0.75/0.25 split, 20 names per
-arm; H3 descriptive uses E01 with V_t = -U_E01,t). Fixed order of external draws
-per repetition: eps, A, W_E, W_C, eta_E, eta_C, resolution E, resolution C,
-ambiguous E, ambiguous C, then (S5 only) names per session n_E,t and n_C,t ~
-discrete uniform {2..20} for t = 1..60, E first then C, then (S6 only) the empty
-session indicator ~ Bernoulli(0.2) per scheduled session t = 1..60. Scenarios
-without S5/S6 do not consume those draws.
+Contract: EMENDA 1 rev 2 §5 (sha256 3a25b992…) and ADENDO A (sha256 ef988aa7…, option
+A2.1: nominal quantile alpha_nom = 1/240, error targets unchanged, new seeds).
+Certifying protocol C3PO-V2-CAL-3; external seed per (scenario, repetition r) =
+big-endian integer of the first 16 bytes of SHA-256("<protocol>|<scenario_id>|<r>"),
+r = 0..M-1, in numpy.random.default_rng (PCG64). Any other protocol id (tests,
+development) never certifies. Trajectories of 69 sessions (entries 1..60,
+observation to 69). Same layer-A generator as the signed closure (Z moving sum
+of 10, stationary AR(1) phi = 0.8, U marginal N(0,1), resolution 0.8 with a
+0.75/0.25 split, 20 names per arm; H3 descriptive uses E01 with V_t = -U_E01,t).
+Fixed order of external draws per repetition: eps, A, W_E, W_C, eta_E, eta_C,
+resolution E, resolution C, ambiguous E, ambiguous C, then (S5 only) names per
+session n_E,t and n_C,t ~ discrete uniform {2..20} for t = 1..60, E first then C,
+then (S6 only) the empty-session indicator ~ Bernoulli(0.2) per scheduled
+session t = 1..60. Scenarios without S5/S6 do not consume those draws.
 
 Frozen scenario list (12): D0_000, D1_000, D2_000 (boundary nulls), D0_100,
 D1_100, D2_100 (delta = +0.10), D2_S1 (0.4/0.6), D2_S2 (two controls only on
@@ -21,9 +23,13 @@ Error metrics K = 27: for each of the 9 null scenarios, false GO at reading 40,
 false GO at reading 60 (denominator = all repetitions) and sequence error (false
 GO in any executed reading). Clopper-Pearson one-sided upper bounds at
 confidence 1 - 0.01/27; acceptance requires upper <= 1/120 per reading and
-upper <= 2/120 for the sequence in every null scenario. Power, estimability
-P(A_n), coverage and stopping are published, never as criteria. Only exactly
-M = 50,000 with the frozen list and the adverse gate check is a certifying run.
+upper <= 2/120 for the sequence in every null scenario. Estimability is
+published marginally over all trajectories (A_40; A_60 from the batch
+denominators of the full trajectory, without executing a decision after a GO at
+40) and, for reading 60, also conditionally on continuation; coverage is
+conditional on execution and estimability, labelled as such. Power and stopping
+are published, never as criteria. Only exactly M = 50,000 with the frozen list,
+the certifying protocol and the adverse gate check is a certifying run.
 """
 from __future__ import annotations
 
@@ -45,7 +51,7 @@ import numpy as np
 from . import r2d2_v2_estimator_r1 as est
 from .r2d2_v2_calibration import STRUCTURES, EXTERNAL_RNG, _ar1, _rate, _source_sha256, clopper_pearson_upper
 
-PROTOCOL_ID = "C3PO-V2-CAL-2"
+PROTOCOL_ID = "C3PO-V2-CAL-3"  # certifying protocol (ADENDO A); CAL-2 was consumed by the development trials
 SIGMA_USD = 100.0
 NAMES_PER_ARM = 20
 SESSIONS_ENTRY = 60
@@ -53,8 +59,8 @@ SESSIONS_TRAJECTORY = 69
 READINGS = (40, 60)
 MC_CONFIDENCE_ERROR = 0.01
 K_METRICS = 27
-PER_READING_LIMIT = 1.0 / 120.0
-SEQUENCE_LIMIT = 2.0 / 120.0
+PER_READING_LIMIT = est.ALPHA_TARGET
+SEQUENCE_LIMIT = 2.0 * est.ALPHA_TARGET
 CERTIFYING_REPETITIONS = 50_000
 DEFAULT_REPETITIONS = CERTIFYING_REPETITIONS
 RESOLUTION_DEFAULT = 0.8
@@ -115,15 +121,15 @@ def scenario_by_id(scenario_id: str) -> Scenario:
     raise KeyError(scenario_id)
 
 
-def external_seed(scenario_id: str, repetition: int) -> int:
-    digest = hashlib.sha256(f"{PROTOCOL_ID}|{scenario_id}|{repetition}".encode("utf-8")).digest()
+def external_seed(scenario_id: str, repetition: int, protocol_id: str = PROTOCOL_ID) -> int:
+    digest = hashlib.sha256(f"{protocol_id}|{scenario_id}|{repetition}".encode("utf-8")).digest()
     return int.from_bytes(digest[:16], "big")
 
 
-def simulate_repetition(scenario: Scenario, repetition: int) -> list[dict]:
+def simulate_repetition(scenario: Scenario, repetition: int, *, protocol_id: str = PROTOCOL_ID) -> list[dict]:
     """One trajectory: 60 scheduled entry sessions, observation to 69; nine explicit fields per row."""
     rho, kappa, w, phi = STRUCTURES[scenario.structure]
-    rng = np.random.default_rng(external_seed(scenario.scenario_id, repetition))
+    rng = np.random.default_rng(external_seed(scenario.scenario_id, repetition, protocol_id))
     eps = rng.standard_normal(SESSIONS_TRAJECTORY + 9)
     z = np.convolve(eps, np.ones(10), mode="valid") / math.sqrt(10.0)
     a = _ar1(rng, phi, (SESSIONS_TRAJECTORY,)) if w < 1.0 else np.zeros(SESSIONS_TRAJECTORY)
@@ -168,6 +174,11 @@ def simulate_repetition(scenario: Scenario, repetition: int) -> list[dict]:
     return rows
 
 
+def estimability(rows: list[dict], cohort: int) -> bool:
+    """A_n from the batch denominators alone (no decision executed)."""
+    return all(b["d"] is not None for b in est.batch_statistics(est.cohort_from_sessions(rows, cohort)))
+
+
 def run_procedure(rows: list[dict]) -> dict[int, dict]:
     """Exact decision sequence on one full trajectory (both cohorts mature at 69)."""
     first = est.read_cohort(est.cohort_from_sessions(rows, 40), sessions_completed=SESSIONS_TRAJECTORY)
@@ -178,18 +189,22 @@ def run_procedure(rows: list[dict]) -> dict[int, dict]:
 
 
 def _empty_counters() -> dict[str, int]:
-    counters = {"repetitions": 0, "reading_60_executed": 0, "sequence_false_go": 0}
+    counters = {"repetitions": 0, "reading_60_executed": 0, "sequence_false_go": 0, "a40_marginal": 0, "a60_marginal": 0}
     for k in READINGS:
         for key in ("approved", "false_go", "not_estimable", "estimable", "covered", "gate_blocked"):
             counters[f"{key}@{k}"] = 0
     return counters
 
 
-def run_chunk(scenario_id: str, start: int, stop: int) -> dict[str, int]:
+def run_chunk(scenario_id: str, start: int, stop: int, protocol_id: str = PROTOCOL_ID) -> dict[str, int]:
     scenario = scenario_by_id(scenario_id)
     counters = _empty_counters()
     for r in range(start, stop):
-        readings = run_procedure(simulate_repetition(scenario, r))
+        rows = simulate_repetition(scenario, r, protocol_id=protocol_id)
+        # Marginal estimability over every trajectory, from the denominators only.
+        counters["a40_marginal"] += int(estimability(rows, 40))
+        counters["a60_marginal"] += int(estimability(rows, 60))
+        readings = run_procedure(rows)
         counters["repetitions"] += 1
         any_false = False
         for k, reading in readings.items():
@@ -238,16 +253,25 @@ def summarize_scenario(scenario: Scenario, counters: dict[str, int], confidence:
         "all_error_checks_pass": (all(v["pass"] for v in errors.values()) if errors else None),
         "power": {f"approved@{k}": counters[f"approved@{k}"] / m for k in READINGS} | {"certified_any": (counters["approved@40"] + counters["approved@60"]) / m},
         "stopping": {"stopped_at_40": _rate(counters["approved@40"], m), "reading_60_executed": _rate(counters["reading_60_executed"], m)},
-        "estimability": {f"P(A_{k})": (counters[f"estimable@{k}"] / executed[k] if executed[k] else None) for k in READINGS}
-                        | {f"not_estimable@{k}": counters[f"not_estimable@{k}"] for k in READINGS},
-        "coverage_conditional_on_estimable": {f"@{k}": (counters[f"covered@{k}"] / counters[f"estimable@{k}"] if counters[f"estimable@{k}"] else None) for k in READINGS},
+        "estimability": {
+            "P(A_40)": _rate(counters["a40_marginal"], m),
+            "P(A_60)": _rate(counters["a60_marginal"], m),
+            "P(A_60 | reading 60 executed)": _rate(counters["estimable@60"], executed[60]),
+            "not_estimable_at_executed_reading": {f"@{k}": counters[f"not_estimable@{k}"] for k in READINGS},
+            "note": "P(A_n) are marginal over all repetitions, from the batch denominators; the conditional rate refers to trajectories without a GO at 40",
+        },
+        "coverage_conditional_on_execution_and_estimability": {
+            "@40 | A_40": (counters["covered@40"] / counters["estimable@40"] if counters["estimable@40"] else None),
+            "@60 | no GO at 40, A_60": (counters["covered@60"] / counters["estimable@60"] if counters["estimable@60"] else None),
+            "counts": {f"@{k}": {"covered": counters[f"covered@{k}"], "estimable_executed": counters[f"estimable@{k}"]} for k in READINGS},
+        },
         "gate_blocked": {f"@{k}": counters[f"gate_blocked@{k}"] for k in READINGS},
     }
 
 
 def adverse_missingness_trial(repetitions: int, *, hide_lower: float = ADVERSE_HIDE_LOWER, hide_upper: float = ADVERSE_HIDE_UPPER,
-                              hide_sessions: Iterable[int] | None = None) -> dict:
-    """D2_000 with each lower hidden with probability 0.25 on its own session; gate must block per prefix."""
+                              hide_sessions: Iterable[int] | None = None, protocol_id: str = PROTOCOL_ID) -> dict:
+    """D2_000 with each lower hidden with probability 0.25 on its own session; the gate must block per prefix."""
     scenario = scenario_by_id("D2_000")
     allowed = set(range(SESSIONS_ENTRY)) if hide_sessions is None else set(hide_sessions)
     consistent = 0
@@ -255,8 +279,8 @@ def adverse_missingness_trial(repetitions: int, *, hide_lower: float = ADVERSE_H
     executed_by_reading = {40: 0, 60: 0}
     hidden_total = 0
     for r in range(repetitions):
-        rows = simulate_repetition(scenario, r)
-        rng = np.random.default_rng(external_seed("D2_000_ADVERSE", r))
+        rows = simulate_repetition(scenario, r, protocol_id=protocol_id)
+        rng = np.random.default_rng(external_seed("D2_000_ADVERSE", r, protocol_id))
         for index, row in enumerate(rows):
             if index not in allowed:
                 continue
@@ -275,15 +299,15 @@ def adverse_missingness_trial(repetitions: int, *, hide_lower: float = ADVERSE_H
             blocked_by_reading[k] += int(blocked)
             ok &= blocked == (hidden_in_prefix > 0) and (not reading["approved"] or hidden_in_prefix == 0)
         consistent += int(ok)
-    return {"scenario_id": "D2_000", "hide_lower": hide_lower, "hide_upper": hide_upper, "repetitions": repetitions,
-            "hide_sessions": None if hide_sessions is None else sorted(allowed), "hidden_episodes_total": hidden_total,
-            "gate_blocked_by_reading": blocked_by_reading, "readings_executed": executed_by_reading,
-            "consistent_repetitions": consistent, "pass": consistent == repetitions}
+    return {"scenario_id": "D2_000", "protocol_id": protocol_id, "hide_lower": hide_lower, "hide_upper": hide_upper,
+            "repetitions": repetitions, "hide_sessions": None if hide_sessions is None else sorted(allowed),
+            "hidden_episodes_total": hidden_total, "gate_blocked_by_reading": blocked_by_reading,
+            "readings_executed": executed_by_reading, "consistent_repetitions": consistent, "pass": consistent == repetitions}
 
 
 def run_calibration(repetitions: int = DEFAULT_REPETITIONS, scenario_ids: list[str] | None = None, *,
                     workers: int = 1, chunk: int = 1_000, adverse_repetitions: int = 0,
-                    log: Callable[[str], None] | None = None) -> dict:
+                    protocol_id: str = PROTOCOL_ID, log: Callable[[str], None] | None = None) -> dict:
     scenarios = list(FROZEN_SCENARIOS)
     if scenario_ids:
         wanted = set(scenario_ids)
@@ -292,7 +316,7 @@ def run_calibration(repetitions: int = DEFAULT_REPETITIONS, scenario_ids: list[s
             raise KeyError(sorted(missing))
         scenarios = [s for s in scenarios if s.scenario_id in wanted]
     started = time.monotonic()
-    tasks = [(s.scenario_id, start, min(start + chunk, repetitions)) for s in scenarios for start in range(0, repetitions, chunk)]
+    tasks = [(s.scenario_id, start, min(start + chunk, repetitions), protocol_id) for s in scenarios for start in range(0, repetitions, chunk)]
     chunks_per_scenario = math.ceil(repetitions / chunk)
     parts: dict[str, list[dict[str, int]]] = {s.scenario_id: [] for s in scenarios}
     elapsed: dict[str, float] = {}
@@ -305,8 +329,8 @@ def run_calibration(repetitions: int = DEFAULT_REPETITIONS, scenario_ids: list[s
                 log(f"{scenario_id} done at {elapsed[scenario_id]:.1f}s")
 
     if workers <= 1:
-        for scenario_id, start, stop in tasks:
-            record(scenario_id, run_chunk(scenario_id, start, stop))
+        for scenario_id, start, stop, protocol in tasks:
+            record(scenario_id, run_chunk(scenario_id, start, stop, protocol))
     else:
         with ProcessPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(run_chunk, *task): task for task in tasks}
@@ -321,18 +345,20 @@ def run_calibration(repetitions: int = DEFAULT_REPETITIONS, scenario_ids: list[s
     nulls = [r for r in results if r["error_metrics"] is not None]
     k_observed = 3 * len(nulls)
     frozen_list = [s.scenario_id for s in scenarios] == list(FROZEN_SCENARIO_IDS)
+    certifying_protocol = protocol_id == PROTOCOL_ID
     full_matrix = frozen_list and repetitions == CERTIFYING_REPETITIONS
-    adverse = adverse_missingness_trial(adverse_repetitions) if adverse_repetitions > 0 else None
+    adverse = adverse_missingness_trial(adverse_repetitions, protocol_id=protocol_id) if adverse_repetitions > 0 else None
     return {
-        "schema": "R2D2_V2_CALIBRATION_R1_REPORT_v1", "protocol_id": PROTOCOL_ID, "layer": "A",
-        "emenda_1_sha256": est.EMENDA_1_REV2_SHA256,
+        "schema": "R2D2_V2_CALIBRATION_R1_REPORT_v2", "protocol_id": protocol_id, "certifying_protocol_id": PROTOCOL_ID, "layer": "A",
+        "emenda_1_sha256": est.EMENDA_1_REV2_SHA256, "adendo_a_sha256": est.ADENDO_A_SHA256,
         "repetitions_per_scenario": repetitions, "certifying_repetitions": CERTIFYING_REPETITIONS,
         "scenario_count": len(results), "frozen_scenario_ids": list(FROZEN_SCENARIO_IDS), "frozen_list_used": frozen_list,
         "k_metrics_declared": K_METRICS, "k_metrics_observed": k_observed, "mc_confidence_per_metric": confidence,
         "method": {"estimator": "batch-means Student t, batches of 10 scheduled sessions, equal batch weights",
-                   "alpha": est.ALPHA, "cohorts": list(est.COHORT_SESSIONS), "maturation": [est.maturation_session(n) for n in est.COHORT_SESSIONS],
-                   "t_quantiles": {"df3": est.student_t_quantile(3, 1 - est.ALPHA), "df5": est.student_t_quantile(5, 1 - est.ALPHA)}},
-        "external_rng": {"engine": EXTERNAL_RNG, "seed_rule": "int.from_bytes(sha256(f'{PROTOCOL_ID}|{scenario_id}|{r}')[:16], 'big')",
+                   "alpha_nominal": est.ALPHA_NOMINAL, "alpha_target": est.ALPHA_TARGET, "sequence_limit": SEQUENCE_LIMIT,
+                   "cohorts": list(est.COHORT_SESSIONS), "maturation": [est.maturation_session(n) for n in est.COHORT_SESSIONS],
+                   "t_quantiles_nominal": {"df3": est.student_t_quantile(3, 1 - est.ALPHA_NOMINAL), "df5": est.student_t_quantile(5, 1 - est.ALPHA_NOMINAL)}},
+        "external_rng": {"engine": EXTERNAL_RNG, "seed_rule": "int.from_bytes(sha256(f'{protocol_id}|{scenario_id}|{r}')[:16], 'big')",
                          "draw_order": ["eps", "A", "W_E", "W_C", "eta_E", "eta_C", "resolution_E", "resolution_C", "ambiguous_E", "ambiguous_C",
                                         "S5:n_E,t (t=1..60)", "S5:n_C,t (t=1..60)", "S6:empty_t (t=1..60)"]},
         "environment": {"python": sys.version.split()[0], "numpy": np.__version__, "platform": platform.platform(),
@@ -341,33 +367,36 @@ def run_calibration(repetitions: int = DEFAULT_REPETITIONS, scenario_ids: list[s
         "acceptance": {
             "every_false_go_upper_le_1_over_120": all(v["pass"] for r in nulls for key, v in r["error_metrics"].items() if key != "sequence"),
             "every_sequence_upper_le_2_over_120": all(r["error_metrics"]["sequence"]["pass"] for r in nulls),
-            "full_matrix": full_matrix,
+            "full_matrix": full_matrix, "certifying_protocol": certifying_protocol,
             "k_matches_declared": (k_observed == K_METRICS) if full_matrix else None,
             "adverse_missingness_gate": adverse["pass"] if adverse else None,
-            "certifying_run": bool(full_matrix and k_observed == K_METRICS and adverse is not None),
+            "certifying_run": bool(full_matrix and certifying_protocol and k_observed == K_METRICS and adverse is not None),
         },
         "adverse_missingness_check": adverse, "scenarios": results, "elapsed_seconds": round(time.monotonic() - started, 3),
     }
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="EMENDA 1 calibration (C3PO-V2-CAL-2) of the batch-means R1 procedure; layer A, no real data.")
+    parser = argparse.ArgumentParser(description="EMENDA 1 + ADENDO A calibration of the batch-means R1 procedure; layer A, no real data.")
     parser.add_argument("--repetitions", type=int, default=DEFAULT_REPETITIONS, help="M per scenario; only exactly 50,000 with the frozen list certifies")
     parser.add_argument("--scenario", action="append", help="restrict to frozen scenario ids (development only)")
+    parser.add_argument("--protocol-id", type=str, default=PROTOCOL_ID, help="seed protocol; anything but the certifying id is development")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--chunk", type=int, default=1_000)
     parser.add_argument("--adverse-repetitions", type=int, default=0)
     parser.add_argument("--output", type=str, required=True)
     args = parser.parse_args(argv)
     report = run_calibration(args.repetitions, args.scenario, workers=args.workers, chunk=args.chunk,
-                             adverse_repetitions=args.adverse_repetitions, log=lambda line: print(line, file=sys.stderr, flush=True))
+                             adverse_repetitions=args.adverse_repetitions, protocol_id=args.protocol_id,
+                             log=lambda line: print(line, file=sys.stderr, flush=True))
     encoded = json.dumps(report, sort_keys=True, indent=2, allow_nan=False)
     report["report_sha256"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
     with open(args.output, "w", encoding="utf-8") as handle:
         json.dump(report, handle, sort_keys=True, indent=2, allow_nan=False)
         handle.write("\n")
-    print(json.dumps({"scenarios": report["scenario_count"], "repetitions": args.repetitions, "elapsed_seconds": report["elapsed_seconds"],
-                      "acceptance": report["acceptance"], "report_sha256": report["report_sha256"]}, sort_keys=True))
+    print(json.dumps({"scenarios": report["scenario_count"], "repetitions": args.repetitions, "protocol_id": args.protocol_id,
+                      "elapsed_seconds": report["elapsed_seconds"], "acceptance": report["acceptance"],
+                      "report_sha256": report["report_sha256"]}, sort_keys=True))
     return 0
 
 
