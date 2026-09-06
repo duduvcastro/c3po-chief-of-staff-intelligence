@@ -210,7 +210,8 @@ def test_causal_list_fixes_names_even_when_snapshot_contains_extra_name(monkeypa
     collector._capture(state, [], session, data, utc(OPEN), causal=causal())
     assert set(session["candidates"]) == {INSTRUMENT}
     assert len(state["ledger"]["research"]) == 1
-    assert "NOT_IN_CAUSAL_LIST" in session["diagnostics"]
+    assert "SNAPSHOT_OUTSIDE_CAUSAL_LIST" in session["diagnostics"]
+    assert "NOT_IN_CAUSAL_LIST" not in session["diagnostics"]
 
 
 def test_late_list_is_programmed_zero_and_never_loads_snapshot():
@@ -276,17 +277,19 @@ def test_list_verification_is_cached_only_after_commit_and_state_is_compact(monk
     assert "private_raw_registry" in str(collector.store.journal(EPOCH))
 
 
-def test_pending_private_input_moves_to_journal_and_survives_compact_restart(monkeypatch):
+def test_pending_private_input_is_transient_until_last_journal_archive(monkeypatch):
     fake_evaluations(monkeypatch)
     collector, state, session = setup_state(position=False)
     data = batch(complete=False, private_fixture="PRIVATE_SYNTHETIC_PAYLOAD")
     journals = []
     collector._capture(state, journals, session, data, utc(OPEN), causal=causal())
-    assert "PRIVATE_SYNTHETIC_PAYLOAD" not in str(state)
+    assert "PRIVATE_SYNTHETIC_PAYLOAD" in str(state["sessions"][DAY]["pending"])
     assert "PRIVATE_SYNTHETIC_PAYLOAD" in str(journals)
     receipt = session["pending"][INSTRUMENT]["receipt"]
     collector._close_capture(state, journals, session, utc(OPEN)+timedelta(minutes=1))
     assert journals[-2]["pending_receipt"] == receipt
+    assert "PRIVATE_SYNTHETIC_PAYLOAD" in str(journals[-2]["last_pending_full_observation"])
+    assert "PRIVATE_SYNTHETIC_PAYLOAD" not in str(state)
     assert session["candidates"][INSTRUMENT]["status"] == "DATA_INELIGIBLE"
 
 
@@ -385,3 +388,18 @@ def test_explicit_producer_gap_before_any_position_blocks_that_name_only(monkeyp
     assert len(state['ledger']['research']) == 1
     assert not state['ledger']['portfolio']
     assert collector._admission_block(state, DAY, 'US:OTHER') is None
+
+
+def test_pending_material_reversion_has_unique_receipts_and_only_first_full_row(monkeypatch):
+    fake_evaluations(monkeypatch)
+    collector, state, session = setup_state(position=False)
+    journals = []
+    for index, value in enumerate((1, 2, 1)):
+        collector._capture(state, journals, session, batch(complete=False, quote_fixture=value),
+                           utc(OPEN)+timedelta(seconds=index), causal=causal())
+    pending_records = [row for row in journals if row['type'].startswith('CANDIDATE_PENDING')]
+    assert len(pending_records) == 3
+    assert len({row['journal_key'] for row in pending_records}) == 3
+    assert pending_records[0]['material_sha256'] == pending_records[2]['material_sha256']
+    assert sum('observation' in row for row in pending_records) == 1
+    assert session['pending'][INSTRUMENT]['revision'] == 3

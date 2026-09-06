@@ -188,3 +188,105 @@ def test_cohort_export_retains_zero_days_and_does_not_hide_missing_session(rig):
     assert "SYNTHA" not in str(result)
     with pytest.raises(ShadowIntegrityError, match="COHORT_NOT_MATURE"):
         export_cohort(state, 60, now=final, calendar=collector.calendar)
+
+
+def republish(root, snapshot, now, sequence):
+    snapshot.update(source_at=now.isoformat(), available_at=now.isoformat(), sequence=sequence)
+    snapshot['provenance']['payload_sha256'] = digest(snapshot['universe']['instruments'])
+    write(root / 'snapshot.json', snapshot)
+
+
+def private_records(store, kind, instrument='US:SYNTHA'):
+    return [row['payload'] for row in store.journal(EPOCH)
+            if row['payload']['type'] == kind and row['payload'].get('instrument_key') == instrument]
+
+
+def test_other_name_republication_does_not_duplicate_pending_full_evidence(rig):
+    collector, store, root, snapshot, now = rig
+    first, other = snapshot['universe']['instruments']
+    first['quote']['ask'] = None
+    republish(root, snapshot, now, 0)
+    collector.cycle(now)
+    original = store.read(EPOCH)['state']['sessions'][DAY.isoformat()]['pending']['US:SYNTHA']
+    other['quote']['bid'] = 99.94
+    republish(root, snapshot, now+timedelta(seconds=1), 1)
+    collector.cycle(now+timedelta(seconds=1))
+    latest = store.read(EPOCH)['state']['sessions'][DAY.isoformat()]['pending']['US:SYNTHA']
+    assert original['evaluation_sha256'] != latest['evaluation_sha256']
+    assert original['latest_observation']['batch_receipt'] != latest['latest_observation']['batch_receipt']
+    assert original['material_sha256'] == latest['material_sha256']
+    assert original['receipt'] == latest['receipt']
+    assert len(private_records(store, 'CANDIDATE_PENDING')) == 1
+    assert not private_records(store, 'CANDIDATE_PENDING_CHANGE')
+    # At the boundary do not read another snapshot, even if it would be complete.
+    first['quote']['ask'] = 100.05
+    close = collector.calendar.details(DAY)['capture_close']
+    republish(root, snapshot, close, 2)
+    collector.source.snapshot = lambda *_: pytest.fail('10:01 must never retry the quote')
+    collector.cycle(close)
+    closed = store.read(EPOCH)['state']['sessions'][DAY.isoformat()]
+    assert closed['candidates']['US:SYNTHA']['status'] == 'DATA_INELIGIBLE'
+    assert not closed['pending']
+    tail = private_records(store, 'CANDIDATE_INCOMPLETE')[0]
+    assert tail['first_pending_receipt'] == original['receipt']
+    assert tail['last_pending_observation']['observed_at'] == (now+timedelta(seconds=1)).isoformat()
+    assert digest(tail['last_pending_full_observation']['evaluation']) == latest['evaluation_sha256']
+    assert tail['last_pending_full_observation']['source']['quote']['ask'] is None
+
+
+def test_sixty_material_quote_changes_bound_full_pending_rows_and_preserve_restart(rig):
+    collector, store, root, snapshot, now = rig
+    start = collector.calendar.details(DAY)['capture_open']
+    target = snapshot['universe']['instruments'][0]
+    for row in snapshot['universe']['instruments']:
+        row.update(source_at=start.isoformat(), available_at=start.isoformat())
+        for component in ('daily', 'risk', 'earnings'):
+            row[component].update(source_at=start.isoformat(), available_at=start.isoformat())
+        row['earnings']['window_start'] = start.isoformat()
+    target['earnings']['available_at'] = None
+    for index in range(60):
+        at = start+timedelta(seconds=index)
+        bid = 99.90 + index*0.0001
+        target.update(source_at=at.isoformat(), available_at=at.isoformat())
+        target['quote'].update(bid=bid, ask=bid+0.10, bid_source_at=at.isoformat(),
+            ask_source_at=at.isoformat(), received_at=at.isoformat(), available_at=at.isoformat())
+        republish(root, snapshot, at, index)
+        if index == 30:
+            collector = ShadowCollector(store, FileShadowSource(root,
+                causal_receipt_verifier=collector.source._causal_receipt_verifier),
+                collector.release, calendar=collector.calendar)
+        collector.cycle(at)
+    first = private_records(store, 'CANDIDATE_PENDING')
+    changes = private_records(store, 'CANDIDATE_PENDING_CHANGE')
+    assert len(first) == 1 and len(changes) == 59
+    assert all('observation' not in row and 'bars' not in str(row) for row in changes)
+    assert all(len(canonical(row)) < 3000 for row in changes)
+    pending = store.read(EPOCH)['state']['sessions'][DAY.isoformat()]['pending']['US:SYNTHA']
+    assert pending['revision'] == 60
+    last_source_sha = digest(pending['latest_full_observation']['source'])
+    collector.source.snapshot = lambda *_: pytest.fail('closed window must not read a final quote')
+    collector.cycle(start+timedelta(minutes=1))
+    tail = private_records(store, 'CANDIDATE_INCOMPLETE')[0]
+    assert digest(tail['last_pending_full_observation']['source']) == last_source_sha
+    assert tail['last_pending_full_observation']['source']['quote']['bid'] == 99.90 + 59*0.0001
+    assert tail['last_pending_observation']['observed_at'] == (start+timedelta(seconds=59)).isoformat()
+    assert tail['first_pending_receipt'] == first[0]['journal_key'].split(':')[-1]
+    assert len(first) + int('last_pending_full_observation' in tail) == 2
+    assert not store.read(EPOCH)['state']['sessions'][DAY.isoformat()]['pending']
+
+
+def test_first_complete_candidate_archives_last_pending_input_once(rig):
+    collector, store, root, snapshot, now = rig
+    target = snapshot['universe']['instruments'][0]
+    target['quote']['ask'] = None
+    republish(root, snapshot, now, 0)
+    collector.cycle(now)
+    target['quote']['ask'] = 100.05
+    republish(root, snapshot, now+timedelta(seconds=1), 1)
+    collector.cycle(now+timedelta(seconds=1))
+    record = private_records(store, 'CANDIDATE')[0]
+    assert record['last_pending_full_observation']['source']['quote']['ask'] is None
+    assert record['observation']['source']['quote']['ask'] == 100.05
+    assert 'US:SYNTHA' not in store.read(EPOCH)['state']['sessions'][DAY.isoformat()]['pending']
+    assert len(private_records(store, 'CANDIDATE_PENDING')) == 1
+    assert len(private_records(store, 'CANDIDATE')) == 1

@@ -28,9 +28,10 @@ ser auditado; o parser não certifica sua veracidade nem sua licença de dados.
 
 ## Armazenamento e publicação
 
-A raiz é exclusiva da época de coleta e configurada pelo operador. O esquema de
-arquivos não contém uma chave `epoch`; portanto, misturar épocas numa raiz não
-é um mecanismo suportado de migração de dados.
+A raiz é exclusiva da época de coleta e configurada pelo operador. Os envelopes
+de snapshot e de eventos não contêm uma chave `epoch`; o compromisso da lista
+causal contém. Misturar épocas numa raiz não é um mecanismo suportado de
+migração de dados.
 
 ```text
 <raiz-privada-da-epoca>/
@@ -294,6 +295,11 @@ manifesto/emenda/cadastro/diário/lista, calendário, corte, seleção, exclusõ
 cobertura. Raw em base64 e símbolos são privados. Só contagens e hashes podem
 ir à saída pública; não se alega cobertura integral das bolsas.
 
+`NOT_IN_CAUSAL_LIST` no compromisso é a contagem contratual de nomes filtrados
+menos os selecionados. Na captura, instrumentos que o snapshot contém fora
+da lista têm a contagem separada `SNAPSHOT_OUTSIDE_CAUSAL_LIST`; ela não muda
+o denominador nem a cobertura do cadastro que construiu a lista.
+
 Os dois recibos têm exatamente `event_id`, `event_type`, `occurred_at`, `payload`:
 
 - `r2d2.v2.causal_list_built`: ocorrido no instante da construção em D−1,
@@ -312,6 +318,20 @@ Não basta escrever horários nesses arquivos. `FileShadowSource` exige um
 faz somente SELECT; não cria um evento que estaria faltando nem backdata um
 registro. O produtor futuro precisa persistir os eventos factuais e publicar
 antes de finalizar o envelope. Esse produtor ainda requer integração/auditoria.
+
+O SELECT por UUID e a igualdade dos campos não provam que a autoridade é
+imutável. A declaração de prontidão assinada pelas fontes deve identificar o
+emissor, seu código e a proteção dos recibos somente por acréscimo: identidade
+emissora com INSERT/SELECT, sem UPDATE/DELETE, com evidência de que não reescreve
+eventos nem retrodata `occurred_at`. O instante é capturado durante o evento
+real; UUID, vínculo e recibo só são devolvidos depois do commit. Restaurar dados
+ou corrigir um erro não permite inventar um evento anterior em D−1.
+
+Essa proteção é um portão pendente de integração e auditoria, não uma
+propriedade garantida pela tabela legada ou pela migração 045. O helper legado
+`Database.record_audit_event` usa o horário default do banco e não retorna UUID;
+ele, sozinho, não implementa o contrato desse emissor dedicado. O emissor
+auditado deve satisfazer os horários e o vínculo sem editar o carimbo depois.
 
 O coletor fixa uma lista verificada por sessão. Compromisso, publicação ou
 recebimento fora da janela não permite substituir retroativamente a lista;
@@ -364,7 +384,7 @@ Exemplo **PRIVATE / SYNTHETIC**, com hash correto. Seu nome seria
 ```
 
 A porta retorna o corpo preservado, mais `event_id`, `source_id`, `source_at`,
-`envelope_available_at`, `sequence`, `provenance`, `manifest_sha`, `self_sha256` e
+`envelope_available_at`, `sequence`, `provenance`, `manifest_sha`, `amendment_sha`, `self_sha256` e
 `envelope_sha256`. O `available_at` do evento não é sobrescrito pelo recibo do
 envelope. Ao aplicar a evidência, o coletor conserva a disponibilidade da fonte
 como `source_available_at` e registra como disponibilidade do motor o instante

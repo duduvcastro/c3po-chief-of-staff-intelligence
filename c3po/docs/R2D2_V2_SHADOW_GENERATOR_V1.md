@@ -14,9 +14,14 @@ O head inicial da PR #383, `9e486283`, preserva a implementação original 20/30
 A nova revisão usa 40/60, maturação 49/69 e lista causal limitada em D−1;
 a mudança exige nova época e novos recibos, sem reinterpretar estado antigo.
 
-Estado do método: `SIGNED_PENDING_CALIBRATION`. O candidato antigo da #381
-foi formalmente reprovado em CAL-1 (117/121 métricas); o [laudo reproduzido](https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/issues/348#issuecomment-5562239425)
-não aprova o método emendado. O estimador/calibrador do Fable permanece
+Estado do método: **CAL-3 aceita no domínio registrado da camada A**, com
+[reprodução independente completa e DE ACORDO do Codex](https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/issues/348#issuecomment-5562539504):
+12 cenários × 50.000, 27/27 métricas aprovadas e adverso 5.000. O recibo de
+aceitação tem SHA `a8ca442074b7a9c910d8bc24acc324d07df2f09dc008311f724ab275258507d2`.
+Isso não certifica R1 prospectiva, resultado econômico, fontes ou coleta. O
+candidato antigo da #381 foi formalmente reprovado em CAL-1 (117/121 métricas),
+com [laudo reproduzido](https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/issues/348#issuecomment-5562239425).
+O estimador/calibrador do Fable permanece
 separado e não é importado nem executado pelo coletor.
 
 ## Entrega e fronteiras
@@ -107,6 +112,13 @@ classificado, fechamento D−1 ≥5, ADV20 de D−20…D−1 ≥15M, ordenação
 decrescente/símbolo ascendente, N_cut550 fixo por época. O denominador é o
 cadastro filtrado; não se alega cobertura sobre nomes fora dele. O parser
 confere o arquivo e os recibos de construção/publicação contra `audit_events`.
+Esse SELECT comprova correspondência atual, não imutabilidade histórica.
+A prontidão das fontes precisa evidenciar armazenamento dos recibos somente
+por acréscimo, sem UPDATE/DELETE pela identidade emissora, carimbo factual sem
+retrodatação e devolução do recibo após commit. O emissor e essa proteção ainda
+não foram integrados ou demonstrados nesta PR; o leitor não torna a tabela
+legada imutável. A auditoria da prontidão deve conferir esses pontos antes de
+qualquer captura DIAGNOSTIC ou CERTIFIED.
 Ausência ou atraso não substitui a lista por outra escolhida às 10h; a sessão
 continua contada. Nenhum input anterior à sessão 1 entra na certificação.
 Identidade de nome é `US:SYMBOL`, inclusive após transferência entre
@@ -135,9 +147,19 @@ PostgreSQL, com lock por época, versão, SHA do estado e journal encadeado por
 hash. IDs repetidos com mesmos bytes são idempotentes; conteúdo diferente
 para o mesmo ID é erro. Um lote de ledger copia/valida o estado uma vez;
 erro invalida o lote e a transação não publica resultados parciais. Avaliações
-completas/proveniência ficam no journal; candidatos no estado mantêm resumos
-e hashes. Polling sem transição útil conserva versão/estado e evita UPDATE
-de JSONB, mantendo verificação de integridade e lock.
+completas/proveniência ficam no journal; candidatos congelados no estado
+mantêm resumos e hashes. Polling sem transição útil conserva versão/estado
+e evita UPDATE de JSONB, mantendo verificação de integridade e lock.
+
+Enquanto um candidato está pendente, o journal conserva a primeira observação
+integral e registra mudanças intermediárias por recibos compactos. A última
+observação integral fica temporariamente no estado privado para sobreviver a
+reinício; ao completar ou fechar a janela, ela é arquivada no journal e removida
+do estado. São no máximo duas observações **pendentes** integrais por nome;
+a captura completa definitiva é uma evidência separada. Republicar o snapshot
+por mudança de outro nome não duplica as 61 barras do pendente. Essa escolha
+limita o volume do journal, mas aumenta transitoriamente o estado durante a
+janela; não resolve nem qualifica a capacidade da época inteira em PostgreSQL.
 
 Ruptura de sequência de eventos, intervalo ausente de barras, falta de fonte
 ou evidência de negócios desatualizada gera DATA_GAP. Cotação/MARK fresca
@@ -188,8 +210,9 @@ pode usar adjusted_close; não há calendário prospectivo de earnings com
 cobertura verificável. Só esses objetos atuais produziriam zero elegíveis.
 Não houve consulta a provedores nem conclusão sobre seus planos/entitlements.
 
-Antes de qualquer coleta ainda faltam os produtores, seus recibos de cobertura,
-auditoria cruzada, calibração aceita e ordem/liberação. Antes de ligar o modo
+Antes da coleta CERTIFIED ainda faltam os produtores, seus recibos de cobertura,
+auditoria cruzada e ordem/liberação; a calibração CAL-3 aceita não substitui
+esses portões. Antes de ligar o modo
 DIAGNOSTIC faltam seu produtor de inputs/lista, auditoria e ordem própria.
 Também são portões operacionais: integração em PostgreSQL real, dimensionamento
 da época/journal, teste de carga com o universo previsto e o protocolo auditado

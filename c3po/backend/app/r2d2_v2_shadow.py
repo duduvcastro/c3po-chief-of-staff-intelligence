@@ -234,6 +234,45 @@ def _compact_evaluation(evaluation: dict) -> dict:
             "reasons": evaluation.get("reasons", []), "evaluation_sha256": digest(evaluation)}
 
 
+def _pending_material(name: str, row: dict, evaluation: dict, batch: dict, now: datetime) -> tuple[str, dict]:
+    """Separate candidate evidence from polling/global-envelope changes.
+
+    The full row and all economic results/reasons remain material. Only the
+    collector's observation clocks and universe envelope hash/clocks are
+    excluded; producer identity/version and calendar identity remain pinned.
+    The omitted values are retained in the last-observation context. The last
+    full pending input lives only in the current capture window's state and is
+    archived on completion/close; intermediate changes never repeat 61 bars.
+    """
+    material = dict(evaluation)
+    clocks = {key: material.pop(key) for key in ("decision_at", "opened_at") if key in material}
+    provenance = material.get("provenance")
+    observed_provenance = {}
+    if isinstance(provenance, dict):
+        material["provenance"] = dict(provenance)
+        for component, omitted in (("universe", ("sha256", "source_at", "available_at")),
+                                   ("calendar", ("source_at", "available_at"))):
+            value = provenance.get(component)
+            if isinstance(value, dict):
+                observed_provenance[component] = dict(value)
+                material["provenance"][component] = {key: item for key, item in value.items() if key not in omitted}
+    source_sha = digest(row)
+    fingerprint = digest({"schema": "V2_PENDING_MATERIAL_V1", "instrument": name,
+                          "source_row_sha256": source_sha, "evaluation": material})
+    context = {"observed_at": now.isoformat(), "batch_receipt": batch.get("envelope_sha256"),
+               "source_row_sha256": source_sha, "evaluation_sha256": digest(evaluation),
+               "evaluation_clocks": clocks, "evaluation_provenance": observed_provenance}
+    return fingerprint, context
+
+
+def _pending_tail(previous: dict) -> dict:
+    """Archive the last private input once, before clearing transient state."""
+    return {"first_pending_receipt": previous.get("first_receipt", previous.get("receipt")),
+            "pending_receipt": previous.get("receipt"), "pending_material_sha256": previous.get("material_sha256"),
+            "last_pending_observation": previous.get("latest_observation"),
+            "last_pending_full_observation": previous.get("latest_full_observation")}
+
+
 class ShadowCollector:
     def __init__(self, store, source, release: Release, *, calendar: ShadowCalendar | None = None, clock=None):
         self.store, self.source, self.release = store, source, release
@@ -587,8 +626,8 @@ class ShadowCollector:
         selected = set(names)
         rows = [row for row in all_rows if _instrument(row) in selected]
         extra_count = len(all_rows) - len(rows)
-        if extra_count and "NOT_IN_CAUSAL_LIST" not in session["diagnostics"]:
-            _diagnostic(state, journals, session, "NOT_IN_CAUSAL_LIST", now)
+        if extra_count and "SNAPSHOT_OUTSIDE_CAUSAL_LIST" not in session["diagnostics"]:
+            _diagnostic(state, journals, session, "SNAPSHOT_OUTSIDE_CAUSAL_LIST", now)
             journals.append({"journal_key": "outside-list:" + session["date"], "type": "CAUSAL_EXCLUSION_COUNT",
                              "session": session["date"], "count": extra_count})
         prepared = []
@@ -605,17 +644,40 @@ class ShadowCollector:
                 prepared.append((available, tie_hash, name, observation))
             else:
                 compact = _compact_evaluation(evaluation)
-                receipt = digest([name, compact["evaluation_sha256"], batch.get("envelope_sha256")])
-                if session["pending"].get(name, {}).get("receipt") != receipt:
-                    journals.append({"journal_key": "pending:" + session["date"] + ":" + receipt,
-                        "type": "CANDIDATE_PENDING", "instrument_key": name, "observation": observation})
-                    session["pending"][name] = {**compact, "receipt": receipt}
+                material_sha, latest = _pending_material(name, row, evaluation, batch, now)
+                previous = session["pending"].get(name, {})
+                revision = previous.get("revision", 0)
+                receipt = previous.get("receipt")
+                if previous.get("material_sha256") != material_sha:
+                    revision += 1
+                    # A return to an earlier material state is another observed
+                    # transition, not a conflicting reuse of its journal key.
+                    receipt = digest([name, material_sha, revision])
+                    record = {"journal_key": "pending:" + session["date"] + ":" + receipt,
+                        "type": "CANDIDATE_PENDING_CHANGE" if previous else "CANDIDATE_PENDING",
+                        "instrument_key": name, "material_sha256": material_sha,
+                        "revision": revision, "observed_at": now.isoformat()}
+                    if previous:
+                        # Quote changes can arrive each second while earnings
+                        # remain pending. Preserve their evidence commitments
+                        # without reserializing daily history into the journal.
+                        record.update(first_pending_receipt=previous.get("first_receipt"),
+                                      previous_pending_receipt=previous.get("receipt"),
+                                      evaluation=compact, observation_context=latest)
+                    else:
+                        record["observation"] = observation
+                    journals.append(record)
+                session["pending"][name] = {**compact, "receipt": receipt, "material_sha256": material_sha,
+                    "revision": revision, "first_receipt": previous.get("first_receipt", receipt),
+                    "latest_observation": latest, "latest_full_observation": observation}
         for _, episode, name, observation in sorted(prepared, key=lambda item: item[:3]):
-            session["pending"].pop(name, None)
+            previous = session["pending"].pop(name, {})
             evaluation = observation["evaluation"]
             session["candidates"][name] = _compact_evaluation(evaluation)
             record = {"journal_key": "candidate:" + session["date"] + ":" + digest(name), "type": "CANDIDATE",
                       "episode_key": episode, "instrument_key": name, "observation": observation}
+            if previous:
+                record.update(_pending_tail(previous))
             if state["ledger"] is not None and evaluation["arm"] is not None:
                 before_terminal = set(state["ledger"]["terminal_reasons"])
                 kwargs: dict[str, Any] = dict(episode_key=episode,
@@ -645,7 +707,7 @@ class ShadowCollector:
             session["candidates"][name] = _compact_evaluation(evaluation)
             journals.append({"journal_key": "candidate:" + session["date"] + ":" + digest(name),
                 "type": "CANDIDATE_INCOMPLETE", "instrument_key": name,
-                "pending_receipt": previous.get("receipt"), "evaluation": evaluation})
+                **_pending_tail(previous), "evaluation": evaluation})
         session["pending"] = {}
         session["capture_closed"] = True
         journals.append({"journal_key": "capture-close:" + session["date"], "type": "CAPTURE_CLOSED",
