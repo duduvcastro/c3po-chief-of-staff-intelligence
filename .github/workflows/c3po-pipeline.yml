@@ -201,6 +201,51 @@ jobs:
           docker run --rm --entrypoint gosu c3po/database:pr-validation \
             nobody true
 
+      - name: Exercise the backend image runtime (Alpine)
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation)
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/backend-runtime"
+          docker image inspect c3po/backend:pr-validation \
+            > "$RUNNER_TEMP/backend-runtime/image-inspect.json"
+          docker image inspect c3po/backend:pr-validation --format '{{.Id}} {{.Architecture}} {{.Os}}' \
+            | tee "$RUNNER_TEMP/backend-runtime/image-id.txt"
+          docker run --rm --network none --entrypoint python c3po/backend:pr-validation \
+            -B -m pip check \
+            | tee "$RUNNER_TEMP/backend-runtime/pip-check.log"
+          docker run --rm --network none --entrypoint python \
+            -e PYTHONPATH=/app \
+            -e C3PO_SMOKE_NON_PRODUCTION=1 \
+            -e "C3PO_SMOKE_SOURCE_HEAD=$GITHUB_SHA" \
+            c3po/backend:pr-validation -B /app/tests/alpine_runtime_smoke.py \
+            | tee "$RUNNER_TEMP/backend-runtime/smoke.json"
+          docker run --rm --network none --entrypoint python \
+            --volume "$GITHUB_WORKSPACE:/legacy:ro" --workdir /app \
+            c3po/backend:pr-validation \
+            -B -m pytest -q -p no:cacheprovider --import-mode=importlib -o pythonpath=/app \
+            /legacy/c3po/backend/tests/test_api.py \
+            /legacy/c3po/backend/tests/test_read_cache.py \
+            /legacy/c3po/backend/tests/test_r2d2_risk_monitor.py \
+            /legacy/c3po/backend/tests/test_r2d2_delayed_quote_protection.py \
+            /legacy/c3po/backend/tests/test_market_data.py \
+            /legacy/c3po/backend/tests/test_r2d2_exit_policy_truth.py \
+            | tee "$RUNNER_TEMP/backend-runtime/pytest.log"
+
+      - name: Publish backend runtime check
+        if: >-
+          always() &&
+          (github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation))
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: c3po-backend-runtime-check-${{ github.sha }}
+          path: ${{ runner.temp }}/backend-runtime
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Scan pull-request images with pinned Trivy
         if: >-
           github.event_name == 'pull_request' ||
