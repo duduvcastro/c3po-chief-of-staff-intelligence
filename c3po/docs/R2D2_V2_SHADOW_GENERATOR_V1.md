@@ -1,14 +1,23 @@
 # Gerador shadow V2 — implementação para auditoria, desativada
 
-Esta implementação corresponde ao manifesto assinado
-`01d258903c060660a51ad48e7506903d038b0fa6901142456e06c7858350c359`
-da spec V2 V1 revisão 2 e adendo E. O parecer e as assinaturas estão na
-[#348](https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/issues/348#issuecomment-5561678194).
-A emenda 1 está em revisão separada; seus parâmetros de 40/60, lista limitada
-e método t não foram incorporados a este código. O exportador do contrato
-vigente usa 20/30, maturação 29/39. Mudar o contrato exige novo manifesto,
-adaptação auditada e nova época. O estimador/calibrador está na PR #381 e não
-é importado nem executado pelo coletor.
+Esta revisão implementa a EMENDA 1 revisão 2 com ADENDO A, texto da emenda
+`3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4`,
+sob o conjunto de três assinaturas
+`eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0`.
+O ADENDO A `ef988aa734f4115ccfda698dfaa64a881f8bdcbb82f1c652523a9f6add5eba30`
+foi fechado na [#348, comentário 5562392133](https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/issues/348#issuecomment-5562392133):
+quantil nominal 1/240, validação CAL-3 e alvos de erro 1/120 e 2/120 preservados.
+Os inputs não mudam pelo ajuste do quantil; o manifesto e a liberação vinculam
+o conjunto final. CAL-1 e CAL-2 não habilitam essa liberação.
+A emenda prevalece sobre o manifesto original `01d25890…0c359` onde o altera.
+O head inicial da PR #383, `9e486283`, preserva a implementação original 20/30.
+A nova revisão usa 40/60, maturação 49/69 e lista causal limitada em D−1;
+a mudança exige nova época e novos recibos, sem reinterpretar estado antigo.
+
+Estado do método: `SIGNED_PENDING_CALIBRATION`. O candidato antigo da #381
+foi formalmente reprovado em CAL-1 (117/121 métricas); o [laudo reproduzido](https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/issues/348#issuecomment-5562239425)
+não aprova o método emendado. O estimador/calibrador do Fable permanece
+separado e não é importado nem executado pelo coletor.
 
 ## Entrega e fronteiras
 
@@ -25,7 +34,9 @@ BUY. Nenhuma posição, ordem, controle V1 ou `entries_paused` é lida/alterada.
 O worker não chama `Database.initialize()`, pois essa rotina também executa
 backfills de outros módulos. As duas tabelas da migração
 `045_r2d2_v2_shadow.sql` são próprias da V2; a migração não foi executada em
-produção nesta entrega. Não há serviço novo no compose, automação ou deploy.
+produção nesta entrega. A confirmação dos recibos da lista consulta somente os
+eventos de auditoria pelos IDs, sem criá-los ou reescrever horários.
+Não há serviço novo no compose, automação ou deploy.
 
 ## Modos e autorização de execução
 
@@ -37,29 +48,36 @@ produção nesta entrega. Não há serviço novo no compose, automação ou depl
   reaproveitada como coorte certificadora.
 - CERTIFIED é apenas o nome do caminho que **exige liberação após calibração**;
   não é um veredito do coletor. Requer código auditado, fontes auditadas e
-  calibração ACCEPTED. Nenhum recibo de liberação acompanha esta PR. O smoke
-  do método vigente reprovou; portanto não há liberação certificadora atual.
+  calibração CAL-3 ACCEPTED. Nenhum recibo de liberação acompanha esta PR;
+  não há liberação certificadora atual.
 
 Para uma execução futura autorizada, o operador controla um arquivo privado
-`R2D2_V2_RELEASE_V1`, com os seguintes campos:
+`R2D2_V2_RELEASE_V2`, com os seguintes campos:
 
 | Campo | Exigência |
 | --- | --- |
-| `schema`, `manifest_sha` | Schema exato e manifesto acima |
-| `epoch` | Prefixo `R2D2-V2-SHADOW-`, identidade nova por liberação/modo |
+| `schema`, `manifest_sha`, `signed_manifest_sha`, `amendment_sha` | Schema V2 e hashes exatos do conjunto/emenda acima |
+| `epoch` | `R2D2-V2-SHADOW-` em CERTIFIED; `R2D2-V2-DIAG-` em DIAGNOSTIC; época nova |
 | `mode` | DIAGNOSTIC ou CERTIFIED |
-| `first_session`, `approved_at` | Sessão oficial declarada antes da abertura; aprovação causal |
-| `code_revision` | SHA Git completo, igual ao `C3PO_BUILD_SHA` em execução |
-| `code_audit_sha`, `authorization_ref` | Hash do parecer e referência da ordem/delegação |
-| `source_audit_sha` | Obrigatório no caminho CERTIFIED |
-| `calibration_sha`, `calibration_status` | Hash do laudo e ACCEPTED no caminho CERTIFIED |
+| `first_session`, `approved_at` | Sessão oficial, aprovação causal antes da abertura |
+| `code_revision` | SHA Git completo, igual ao `C3PO_BUILD_SHA` |
+| `code_audit_sha`, `authorization_ref` | Parecer e ordem/delegação |
+| `source_audit_sha`, `source_codex_signature_sha`, `source_fable_signature_sha` | Parecer e duas assinaturas de prontidão das fontes em CERTIFIED |
+| `calibration_protocol`, `calibration_sha`, `calibration_status`, `calibration_acceptance_sha` | CAL-3, laudo ACCEPTED e sua aceitação em CERTIFIED |
+| `readiness_sha`, `readiness_at`, `readiness_publication_at`, `deploy_completed_at` | Prontidão publicada e deploy anterior a ela, em CERTIFIED |
+
+A sessão 1 confirmatória é a primeira abertura oficial posterior à declaração
+`readiness_at`. Aprovação/publicação tardias não movem essa data para outra
+sessão: o recibo deve chegar antes daquela primeira abertura ou é recusado.
+DIAGNOSTIC tem autorização e época próprias, sem iniciar ou alimentar coorte.
 
 O SHA256 dos **bytes** do arquivo é fixado em
 `C3PO_R2D2_V2_SHADOW_RELEASE_SHA`; o caminho fica em
 `C3PO_R2D2_V2_SHADOW_RELEASE_FILE`. O arquivo é privado, regular e não symlink.
 O recibo é uma atestação operacional cujo conteúdo deve ser conferido no rito;
 o hash detecta troca de bytes, não autentica sozinho assinaturas externas.
-Mesmo manifesto/modo com outro recibo requer época nova. Falta, troca de
+Mesmo manifesto/modo com outro recibo requer época nova. Os bytes são relidos
+a cada ciclo para detectar revogação, sem reconstruir DB/calendário/fonte. Falta, troca de
 hash/revisão ou erro de integridade interrompe o processo, com rollback da
 observação corrente. Não há fallback em memória quando habilitado.
 
@@ -80,14 +98,18 @@ ausente pode completar dentro da janela; no encerramento sua ausência é contad
 
 Calendário XNYS via exchange_calendars, com versão e hash por sessão, define
 61 sessões prévias, dez sessões de horizonte incluindo a entrada e fechamento
-oficial (inclusive dias curtos). ATR14 é Wilder em 60 TRs; ADV20 usa turnover
+oficial menos cinco minutos para a saída de maturidade, inclusive dias curtos. ATR14 é Wilder em 60 TRs; ADV20 usa turnover
 bruto das últimas vinte sessões. Não existe adjusted_close ou fallback de risco.
 O corte é `44.10596901963097`, sem arredondamento ou conversão de texto/bool.
 
-O universo observado é fixado na primeira resposta com cobertura verificada
-da janela. Mudança posterior é registrada, sem adicionar nomes escondidos.
-Este comportamento é o contrato atual; não implementa a lista D−1 proposta
-na emenda. Identidade de nome é `US:SYMBOL`, inclusive após transferência entre
+A lista observada vem de compromisso verificável em D−1: cadastro NYSE/Nasdaq
+classificado, fechamento D−1 ≥5, ADV20 de D−20…D−1 ≥15M, ordenação por ADV
+decrescente/símbolo ascendente, N_cut550 fixo por época. O denominador é o
+cadastro filtrado; não se alega cobertura sobre nomes fora dele. O parser
+confere o arquivo e os recibos de construção/publicação contra `audit_events`.
+Ausência ou atraso não substitui a lista por outra escolhida às 10h; a sessão
+continua contada. Nenhum input anterior à sessão 1 entra na certificação.
+Identidade de nome é `US:SYMBOL`, inclusive após transferência entre
 NYSE e Nasdaq. O hash de desempate é literalmente
 `SHA256(epoch + '|' + data_sessao + '|' + simbolo)`, só para disponibilidade
 simultânea; a sequência de admissão fica no journal.
@@ -97,7 +119,10 @@ nome/data. A carteira aplica custos, risco de 0,02% do NAV, caps, caixa,
 restrições por nome e perda diária. Bloquear carteira por cobertura não apaga
 pesquisa; N/D nunca se converte em zero. A6 é modelagem explícita de fill de
 barreira; ambiguidade em pesquisa não recebe silenciosamente o stop-first
-conservador usado na carteira. Fonte tardia não reescreve caixa já registrado.
+conservador usado na carteira. Ordem não observável entre barreira e intenção
+de tempo/evento tem motivo `EVENT_BARRIER_ORDER_UNRESOLVED` e categoria
+`unobservable`, com N/D e gate fechado; `ambiguous` reserva-se a S×T.
+Fonte tardia não reescreve caixa já registrado.
 
 ## Evidências, observabilidade e armazenamento
 
@@ -109,7 +134,10 @@ O estado e os registros de uma observação são confirmados na mesma transaçã
 PostgreSQL, com lock por época, versão, SHA do estado e journal encadeado por
 hash. IDs repetidos com mesmos bytes são idempotentes; conteúdo diferente
 para o mesmo ID é erro. Um lote de ledger copia/valida o estado uma vez;
-erro invalida o lote e a transação não publica resultados parciais.
+erro invalida o lote e a transação não publica resultados parciais. Avaliações
+completas/proveniência ficam no journal; candidatos no estado mantêm resumos
+e hashes. Polling sem transição útil conserva versão/estado e evita UPDATE
+de JSONB, mantendo verificação de integridade e lock.
 
 Ruptura de sequência de eventos, intervalo ausente de barras, falta de fonte
 ou evidência de negócios desatualizada gera DATA_GAP. Cotação/MARK fresca
@@ -117,11 +145,14 @@ não substitui cobertura de negócios para verificar barreiras. A tolerância
 de 90 segundos é de transporte para barras de um minuto, **não** extensão da
 janela de entrada, do horizonte ou da regra de idade <=10s das cotações.
 Ela não permite pular um intervalo de barra: um buraco declarado bloqueia
-imediatamente. Um trade que fecha episódio não apaga hiato anterior.
+imediatamente. Um trade que fecha episódio não apaga hiato anterior. As lacunas têm escopo
+por sessão/instrumento; evidência válida posterior pode restaurar observação
+e admissão, mas não apaga a categoria unobservable dos episódios atingidos.
+O export examina as lacunas e episódios do prefixo da coorte.
 
 O preço do arquivo preserva `source_available_at`; o ledger usa o recebimento
 pelo coletor. Os relógios de sessão vêm do calendário, não de arquivos externos.
-Depois das trinta datas programadas de entrada, os episódios/recebíveis
+Depois das sessenta datas programadas de entrada, os episódios/recebíveis
 pendentes continuam monitorados, inclusive para registrar breach do horizonte.
 Todos os dias programados, com zero elegíveis ou processo indisponível, ficam
 representados. Campos públicos são agregados e hashes; IDs/inputs/fita são privados.
@@ -129,8 +160,8 @@ representados. Campos públicos são agregados e hashes; IDs/inputs/fita são pr
 ## Interface com o estimador
 
 `export_cohort(state, size, now=..., calendar=...)` exige modo CERTIFIED, tamanho
-20/30 e maturação no fechamento da sessão29/39. Não calcula bootstrap nem
-veredito. `--export-cohort 20 --output <arquivo_novo>` grava resultado privado
+40/60 e maturação no fechamento da sessão49/69. Não calcula bootstrap nem
+veredito. `--export-cohort 40 --output <arquivo_novo>` grava resultado privado
 0600 sem substituir arquivo existente. O export contém manifesto, liberação,
 época, revisão, calendário, datas, hash, veto e gate de cobertura.
 
@@ -141,9 +172,12 @@ episódios e pendentes, `portfolio_pnl_usd_sum`, `portfolio_episode_count`,
 não tiver resultado identificado; seu denominador continua presente. O
 adaptador do estimador deve rejeitar gate fechado/null, nunca convertê-los em zero.
 
-Nenhum adaptador para a API da #381 é ativado nesta entrega. Mudanças de
-coortes/estimando pela emenda exigem novo schema/revisão e auditoria conjunta,
-preservando a época original.
+O adaptador puro `r2d2_v2_inference_input` recusa sessão não finalizada,
+pendente, P&L null, gate fechado, tipos inválidos e prefixo incoerente. Ele
+mapeia as nove colunas por sessão e soma batches contíguos de dez sessões
+programadas, preservando dias zero. Não calcula t, LCB, p, poder ou veredito;
+contagem zero não autoriza imputar o contraste de um batch indefinido.
+A integração com o estimador emendado passa pela auditoria cruzada.
 
 ## Dependências para ativação
 

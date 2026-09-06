@@ -18,10 +18,10 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.r2d2_v2_calendar import ShadowCalendar
-from app.r2d2_v2_shadow import Release, ShadowCollector, export_cohort, public_summary
+from app.r2d2_v2_shadow import AMENDMENT_SHA, SIGNED_MANIFEST_SHA, Release, ShadowCollector, export_cohort, public_summary
 from app.r2d2_v2_sources import MANIFEST_SHA
 from app.r2d2_v2_store import (
-    MemoryShadowStore, PostgresShadowStore, ShadowIntegrityError, canonical, digest,
+    MemoryShadowStore, PostgresShadowStore, ShadowIntegrityError, canonical, digest, utc,
 )
 from app import r2d2_v2_shadow_worker as worker
 
@@ -165,10 +165,17 @@ def calendar():
 
 
 def release_body(mode='CERTIFIED'):
-    return {'schema':'R2D2_V2_RELEASE_V1','manifest_sha':MANIFEST_SHA,'epoch':EPOCH,
+    return {'schema':'R2D2_V2_RELEASE_V2','manifest_sha':MANIFEST_SHA,
+            'signed_manifest_sha':SIGNED_MANIFEST_SHA,'amendment_sha':AMENDMENT_SHA,
+            'epoch':EPOCH if mode == 'CERTIFIED' else 'R2D2-V2-DIAG-SYNTHETIC-TEST',
             'mode':mode,'first_session':'2026-09-08','approved_at':'2026-09-06T19:00:00+00:00',
             'code_revision':BUILD,'code_audit_sha':'c'*64,'authorization_ref':'synthetic-owner-approval',
-            'calibration_status':'ACCEPTED','calibration_sha':'d'*64,'source_audit_sha':'e'*64}
+            'calibration_status':'ACCEPTED','calibration_protocol':'C3PO-V2-CAL-3',
+            'calibration_sha':'d'*64,'calibration_acceptance_sha':'1'*64,'source_audit_sha':'e'*64,
+            'source_codex_signature_sha':'2'*64,'source_fable_signature_sha':'3'*64,
+            'readiness_sha':'4'*64,'readiness_at':'2026-09-06T18:00:00+00:00',
+            'readiness_publication_at':'2026-09-06T18:05:00+00:00',
+            'deploy_completed_at':'2026-09-06T17:00:00+00:00'}
 
 
 def verify(body, calendar, **kwargs):
@@ -235,14 +242,14 @@ def test_diagnostic_release_has_no_ledger_clock_or_certifiable_cohort(calendar):
     state = collector._initial()
     assert state['ledger'] is None and state['mode'] == 'DIAGNOSTIC'
     assert public_summary(state)['cohort_clock_started'] is False
-    for size in (20,30):
+    for size in (40,60):
         with pytest.raises(ShadowIntegrityError, match='COHORT_NOT_AUTHORIZED'):
             export_cohort(state,size,now=NOW,calendar=calendar)
     certified = verify(release_body(),calendar)
     store = MemoryShadowStore()
     store.atomic(diagnostic.epoch,state,lambda s:(s,[],{}),NOW)
     with pytest.raises(ShadowIntegrityError, match='RELEASE_REQUIRES_NEW_EPOCH'):
-        store.atomic(certified.epoch,{**state,'release_sha':certified.receipt_sha},lambda s:(s,[],{}),NOW)
+        store.atomic(diagnostic.epoch,{**state,'release_sha':certified.receipt_sha},lambda s:(s,[],{}),NOW)
 
 
 def test_calendar_has_exact_windows_holidays_dst_and_early_close(calendar):
@@ -252,7 +259,7 @@ def test_calendar_has_exact_windows_holidays_dst_and_early_close(calendar):
     assert details['previous_sessions'][-1] == date(2026,9,4)
     assert not calendar.is_session(date(2026,9,7))
     assert len(details['horizon_sessions']) == 10 and details['horizon_sessions'][0] == first
-    assert len(calendar.sessions(first,39)) == 39
+    assert len(calendar.sessions(first,69)) == 69
     assert details['capture_open'].hour == 14
     assert calendar.details(date(2026,11,2))['capture_open'].hour == 15
     early = calendar.details(date(2026,11,27))
@@ -354,3 +361,41 @@ def test_store_rejects_initial_epoch_different_from_transaction_namespace(backen
         assert store.read(EPOCH) is None
     else:
         assert connection.commits==0
+
+
+@pytest.mark.parametrize('field', ['amendment_sha', 'signed_manifest_sha', 'calibration_acceptance_sha',
+    'source_codex_signature_sha', 'source_fable_signature_sha', 'readiness_sha'])
+def test_amendment_release_requires_each_signed_pin(calendar, field):
+    body = release_body(); body.pop(field)
+    with pytest.raises(ShadowIntegrityError):
+        verify(body, calendar)
+
+
+def test_cal1_or_old_release_never_authorizes_amended_collection(calendar):
+    for change in ({'calibration_protocol':'C3PO-V2-CAL-1'},
+                   {'calibration_protocol':'C3PO-V2-CAL-2'}, {'schema':'R2D2_V2_RELEASE_V1'},
+                   {'manifest_sha':'9d67945aaa9b02943ec560a22d4aa8c02c7740a575cd2c82ce4989dc71f34f09'}):
+        with pytest.raises(ShadowIntegrityError):
+            verify(release_body() | change, calendar)
+
+
+def test_invalid_calendar_first_session_is_a_controlled_integrity_error(calendar):
+    with pytest.raises(ShadowIntegrityError, match='CALENDAR_SESSION_INVALID'):
+        verify(release_body() | {'first_session':'2026-09-07'}, calendar)
+
+
+def test_readiness_fixes_first_open_and_late_publication_cannot_shift_it(calendar):
+    late = utc('2026-09-09T12:00:00Z')
+    body = release_body() | {'first_session':'2026-09-09', 'approved_at':late.isoformat(),
+                            'readiness_publication_at':late.isoformat()}
+    data = canonical(body)
+    with pytest.raises(ShadowIntegrityError, match='READINESS_FIRST_SESSION_MISMATCH'):
+        Release.verify(data, sha256(data).hexdigest(), now=late, build_sha=BUILD, calendar=calendar)
+    assert calendar.first_open_after(utc('2026-09-08T13:30:00Z')) == date(2026,9,9)
+
+
+def test_diagnostic_prefix_cannot_be_reused_as_certified_or_reverse(calendar):
+    with pytest.raises(ShadowIntegrityError, match='RELEASE_NAMESPACE_MISMATCH'):
+        verify(release_body('DIAGNOSTIC') | {'epoch':EPOCH}, calendar)
+    with pytest.raises(ShadowIntegrityError, match='RELEASE_NAMESPACE_MISMATCH'):
+        verify(release_body() | {'epoch':'R2D2-V2-DIAG-SYNTHETIC'}, calendar)

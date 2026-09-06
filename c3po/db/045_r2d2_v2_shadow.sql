@@ -1,7 +1,7 @@
 -- V2 is isolated from R2D2 positions, orders, V1 candidate logs and controls.
 -- Runtime collector never executes schema migrations or changes V1 state.
 CREATE TABLE IF NOT EXISTS r2d2_v2_shadow_epochs (
-    epoch TEXT PRIMARY KEY CHECK (epoch LIKE 'R2D2-V2-SHADOW-%'),
+    epoch TEXT PRIMARY KEY CHECK (epoch ~ '^R2D2-V2-(SHADOW|DIAG)-[A-Za-z0-9_-]{1,80}$'),
     manifest_sha TEXT NOT NULL CHECK (manifest_sha ~ '^[0-9a-f]{64}$'),
     state JSONB NOT NULL,
     state_sha TEXT NOT NULL CHECK (state_sha ~ '^[0-9a-f]{64}$'),

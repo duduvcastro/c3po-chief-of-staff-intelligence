@@ -16,7 +16,7 @@ def digest(value):
 
 
 def sealed(payload):
-    envelope = {"schema": sources.SNAPSHOT_SCHEMA, "manifest_sha": sources.MANIFEST_SHA,
+    envelope = {"schema": sources.SNAPSHOT_SCHEMA, "manifest_sha": sources.MANIFEST_SHA, "amendment_sha": sources.AMENDMENT_SHA,
                 "source_id": "audited-fixture", "provenance": {"producer": "fixture", "version": "v1", "payload_sha256": "a" * 64},
                 "source_at": AT, "available_at": AT, "sequence": 1, **payload}
     envelope.pop("self_sha256", None)
@@ -36,7 +36,7 @@ def instrument():
         day += timedelta(days=1)
     return {"symbol": "SYNTH", "market": "NASDAQ", "security_type": "COMMON_STOCK", "classification_verified": True,
             "sequence": 1, "source_at": AT, "available_at": AT,
-            "quote": {"bid": 100, "ask": 100.1, "bid_source_at": AT, "ask_source_at": AT, "available_at": AT},
+            "quote": {"bid": 100, "ask": 100.1, "bid_source_at": AT, "ask_source_at": AT, "received_at": AT, "available_at": AT},
             "daily": {"bars": bars, "splits": [], "adjustment": "RAW_UNADJUSTED", "coverage_verified": True,
                       "split_coverage_verified": True, "source_at": AT, "available_at": AT},
             "risk": {"value": 44, "producer": "fixture-risk", "source_at": AT, "available_at": AT},
@@ -371,3 +371,45 @@ def test_existing_inventory_never_falls_back_to_provider_or_promotes_future():
     assert result["universe"]["instruments"] == []
     assert "secret" not in json.dumps(result)
     assert len(result["diagnostics"]) == 2
+
+
+@pytest.mark.parametrize("change", [
+    lambda quote: quote.pop("received_at"),
+    lambda quote: quote.update(received_at="2026-09-08T13:59:59Z"),
+    lambda quote: quote.update(received_at="2026-09-08T14:00:01Z"),
+    lambda quote: quote.update(received_at="2026-09-08T14:00:06Z"),
+])
+def test_explicit_quote_receipt_decision_chain_fail_closed_preserves_input(source_dir, change):
+    raw = instrument()
+    change(raw["quote"])
+    snapshot(source_dir, raw)
+    row = sources.FileShadowSource(source_dir).snapshot(NOW)["universe"]["instruments"][0]
+    assert row["data_available"] is False
+    assert row["quote"] == raw["quote"]
+
+
+@pytest.mark.parametrize("change,expected", [
+    ({"schema": "V2_SHADOW_SOURCE_SNAPSHOT_V1"}, "SCHEMA_MISMATCH"),
+    ({"manifest_sha": sources.BASE_MANIFEST_SHA}, "MANIFEST_MISMATCH"),
+    ({"amendment_sha": "a" * 64}, "AMENDMENT_MISMATCH"),
+])
+def test_old_signed_contract_cannot_be_promoted_to_amended_schema(source_dir, change, expected):
+    snapshot(source_dir, **change)
+    result = sources.FileShadowSource(source_dir).snapshot(NOW)
+    assert result["status"] == "MISSING"
+    assert result["diagnostics"] == [{"code": expected}]
+
+
+def test_snapshot_raw_envelope_digest_is_computed_once(source_dir, monkeypatch):
+    snapshot(source_dir)
+    raw = (source_dir / "snapshot.json").read_bytes()
+    original = hashlib.sha256
+    calls = []
+    def tracked(data=b""):
+        if data == raw:
+            calls.append(1)
+        return original(data)
+    monkeypatch.setattr(sources.hashlib, "sha256", tracked)
+    result = sources.FileShadowSource(source_dir).snapshot(NOW)
+    assert calls == [1]
+    assert result["envelope_sha256"] == original(raw).hexdigest()

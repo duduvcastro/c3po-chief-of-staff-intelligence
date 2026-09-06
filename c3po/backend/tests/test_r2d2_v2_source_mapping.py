@@ -8,9 +8,10 @@ import json
 import pytest
 
 from app.r2d2_v2_calendar import NEW_YORK, ShadowCalendar
+from app.r2d2_v2_causal_list import DAILY_SCHEMA, REGISTRY_SCHEMA, build_commitment, digest
 from app.r2d2_v2_contract import RISK_C75, evaluate_candidate, input_complete
 from app.r2d2_v2_shadow import Release, ShadowCollector, candidate_inputs
-from app.r2d2_v2_sources import FileShadowSource, MANIFEST_SHA, SNAPSHOT_SCHEMA, canonical
+from app.r2d2_v2_sources import FileShadowSource, MANIFEST_SHA, AMENDMENT_SHA, SNAPSHOT_SCHEMA, canonical
 from app.r2d2_v2_store import MemoryShadowStore
 
 DAY = date(2026, 9, 8)
@@ -40,7 +41,7 @@ def raw_instrument(calendar, now):
                      "volume": 150_000., "complete": True, "regular_session": True, "source_at": close, "available_at": close})
     return {"symbol": "SYNTHETIC", "market": "NASDAQ", "security_type": "COMMON_STOCK", "classification_verified": True,
         "sequence": 0, "source_at": stamp, "available_at": stamp,
-        "quote": {"bid": 99.95, "ask": 100.05, "bid_source_at": stamp, "ask_source_at": stamp, "available_at": stamp},
+        "quote": {"bid": 99.95, "ask": 100.05, "bid_source_at": stamp, "ask_source_at": stamp, "received_at": stamp, "available_at": stamp},
         "daily": {"bars": bars, "splits": [], "adjustment": "RAW_UNADJUSTED", "coverage_verified": True,
                   "split_coverage_verified": True, "source_at": stamp, "available_at": stamp},
         "risk": {"value": RISK_C75, "producer": "synthetic-risk", "source_at": stamp, "available_at": stamp},
@@ -50,7 +51,7 @@ def raw_instrument(calendar, now):
 
 
 def publish(spool, row, now, sequence=0):
-    envelope = {"schema": SNAPSHOT_SCHEMA, "manifest_sha": MANIFEST_SHA, "source_id": "synthetic-audited-producer",
+    envelope = {"schema": SNAPSHOT_SCHEMA, "manifest_sha": MANIFEST_SHA, "amendment_sha": AMENDMENT_SHA, "source_id": "synthetic-audited-producer",
                 "source_at": now.isoformat(), "available_at": now.isoformat(), "sequence": sequence,
                 "provenance": {"producer": "synthetic", "version": "fixture-v1", "payload_sha256": hashlib.sha256(canonical(row)).hexdigest()},
                 "universe": {"coverage_verified": True, "instruments": [row]}}
@@ -78,11 +79,39 @@ def diagnostic_collector(spool, calendar, monkeypatch):
         raise AssertionError("DIAGNOSTIC must not access the research/portfolio/event ledger")
     for name in ("new_portfolio", "register_candidate", "apply_events", "export_session_statistics"):
         monkeypatch.setattr(module, name, forbidden)
-    source = FileShadowSource(spool)
-    monkeypatch.setattr(source, "events", forbidden)
-    release = Release(epoch="R2D2-V2-SHADOW-source-mapping-fixture", mode="DIAGNOSTIC", first_session=DAY,
+    release = Release(epoch="R2D2-V2-DIAG-source-mapping-fixture", mode="DIAGNOSTIC", first_session=DAY,
                       approved_at=datetime(2026, 9, 6, 12, tzinfo=timezone.utc),
                       code_revision="f" * 40, receipt_sha="a" * 64)
+    built = calendar.details(calendar.details(DAY)["previous_sessions"][-1])["close"] + timedelta(minutes=5)
+    capture = calendar.details(DAY)["capture_open"]
+    raw_daily = raw_instrument(calendar, capture)["daily"]
+    raw_daily.update(source_at=built.isoformat(), available_at=built.isoformat())
+    registry = {"schema": REGISTRY_SCHEMA, "source_id": "synthetic-registry", "source_at": built.isoformat(),
+        "available_at": built.isoformat(), "captured_at": built.isoformat(), "coverage_verified": True,
+        "instruments": [{"symbol": "SYNTHETIC", "market": "NASDAQ", "security_type": "COMMON_STOCK", "classification_verified": True}]}
+    daily = {"schema": DAILY_SCHEMA, "source_id": "synthetic-daily", "source_at": built.isoformat(),
+        "available_at": built.isoformat(), "instruments": [{"symbol": "SYNTHETIC", "daily": raw_daily}]}
+    commitment = build_commitment(epoch=release.epoch, day=DAY, built_at=built, registry_bytes=canonical(registry),
+                                  daily_bytes=canonical(daily), calendar=calendar)
+    binding = {key: commitment[key] for key in ("epoch", "session", "manifest_sha", "amendment_sha", "list_sha256", "n_cut")}
+    binding["commitment_sha256"] = digest(commitment)
+    audit = {"event_id": "synthetic-build", "event_type": "r2d2.v2.causal_list_built", "occurred_at": built.isoformat(), "payload": binding}
+    publication = {"event_id": "synthetic-publication", "event_type": "r2d2.v2.causal_list_published",
+        "occurred_at": (built + timedelta(seconds=1)).isoformat(), "payload": {**binding, "build_audit_event_id": audit["event_id"],
+            "channel": "relay", "publication_reference": "synthetic", "published_at": (built + timedelta(seconds=1)).isoformat()}}
+    envelope = {"commitment": commitment, "audit_receipt": audit, "publication_receipt": publication}
+    parent = spool / "causal_list" / release.epoch
+    parent.mkdir(parents=True, mode=0o700)
+    parent.parent.chmod(0o700)
+    target = parent / (DAY.isoformat() + ".json")
+    target.write_bytes(canonical(envelope))
+    target.chmod(0o600)
+    persisted = {item["event_id"]: deepcopy(item) for item in (audit, publication)}
+    def verifier(receipt, expected):
+        return persisted.get(receipt["event_id"]) == receipt and {key: receipt[key] for key in expected} == expected
+    source = FileShadowSource(spool, causal_receipt_verifier=verifier)
+    monkeypatch.setattr(source, "events", forbidden)
+    assert source.causal_list(release.epoch, DAY, capture, calendar)["status"] == "AVAILABLE"
     store = MemoryShadowStore()
     return ShadowCollector(store, source, release, calendar=calendar), store, release
 
@@ -225,7 +254,7 @@ def test_diagnostic_freezes_first_complete_null_score_and_never_creates_ledger(s
     saved = store.read(release.epoch)["state"]
     frozen = deepcopy(saved["sessions"][DAY.isoformat()]["candidates"][INSTRUMENT])
     assert saved["ledger"] is None and not saved["event_receipts"]
-    assert frozen["status"] == "DATA_INELIGIBLE" and frozen["input_complete"] is True
+    assert frozen["status"] == "DATA_INELIGIBLE"
     later = now + timedelta(seconds=1)
     publish(spool, raw_instrument(calendar, later), later, sequence=1)
     collector.cycle(later)
@@ -234,6 +263,8 @@ def test_diagnostic_freezes_first_complete_null_score_and_never_creates_ledger(s
     candidates = [r["payload"] for r in store.journal(release.epoch) if r["payload"]["type"] == "CANDIDATE"]
     assert len(candidates) == 1
     assert candidates[0]["observation"]["source"]["risk"]["value"] is None
+    assert candidates[0]["observation"]["evaluation"]["input_complete"] is True
+    assert frozen["evaluation_sha256"] == digest(candidates[0]["observation"]["evaluation"])
     assert "research" not in candidates[0] and "admission" not in candidates[0]
     assert first["mode"] == "DIAGNOSTIC" and first["cohort_clock_started"] is False
     assert first["production_orders"] is False and first["certification_computed"] is False
@@ -257,7 +288,10 @@ def test_diagnostic_can_complete_missing_quote_inside_window_once(spool, calenda
     session = state["sessions"][DAY.isoformat()]
     assert session["pending"] == {} and len(session["candidates"]) == 1
     assert session["candidates"][INSTRUMENT]["status"] == "ELIGIBLE"
-    assert session["candidates"][INSTRUMENT]["decision_at"] == later.isoformat()
+    observed = [r["payload"] for r in store.journal(release.epoch) if r["payload"]["type"] == "CANDIDATE"]
+    assert len(observed) == 1
+    assert observed[0]["observation"]["evaluation"]["decision_at"] == later.isoformat()
+    assert session["candidates"][INSTRUMENT]["evaluation_sha256"] == digest(observed[0]["observation"]["evaluation"])
     assert state["ledger"] is None
 
 
@@ -274,11 +308,15 @@ def test_window_close_freezes_missing_quote_and_never_uses_arriving_price(spool,
     session = state["sessions"][DAY.isoformat()]
     assert session["capture_closed"] is True and session["pending"] == {}
     frozen = session["candidates"][INSTRUMENT]
-    assert frozen["status"] == "DATA_INELIGIBLE" and frozen["input_complete"] is False
+    assert frozen["status"] == "DATA_INELIGIBLE"
     assert "CAPTURE_WINDOW_INCOMPLETE" in frozen["reasons"]
-    candidates = [r["payload"] for r in store.journal(release.epoch) if r["payload"]["type"].startswith("CANDIDATE")]
+    candidates = [r["payload"] for r in store.journal(release.epoch) if r["payload"]["type"] == "CANDIDATE_INCOMPLETE"]
     assert len(candidates) == 1 and candidates[0]["type"] == "CANDIDATE_INCOMPLETE"
-    assert candidates[0]["observation"]["source"]["quote"]["bid"] is None
+    pending = [r["payload"] for r in store.journal(release.epoch) if r["payload"]["type"] == "CANDIDATE_PENDING"]
+    assert len(pending) == 1
+    assert pending[0]["observation"]["source"]["quote"]["bid"] is None
+    assert pending[0]["observation"]["evaluation"]["input_complete"] is False
+    assert candidates[0]["pending_receipt"] is not None
     collector.cycle(detail["capture_close"] + timedelta(seconds=1))
     assert store.read(release.epoch)["state"]["sessions"][DAY.isoformat()]["candidates"][INSTRUMENT] == frozen
     assert state["ledger"] is None
@@ -326,3 +364,33 @@ def test_real_thanksgiving_early_close_is_used_for_maturity(spool, calendar):
     assert detail["horizon_close"].astimezone(NEW_YORK).hour == 13
     assert row["data_available"] is True and result.status == "ELIGIBLE"
     assert result.maturity_at.astimezone(NEW_YORK).isoformat() == "2026-11-27T12:55:00-05:00"
+
+
+def test_mapping_reuses_sealed_universe_hash_without_rehashing_batch(spool, calendar, monkeypatch):
+    from app import r2d2_v2_shadow as module
+    now = calendar.details(DAY)["capture_open"]
+    publish(spool, raw_instrument(calendar, now), now)
+    batch = FileShadowSource(spool).snapshot(now)
+    original = module.digest
+    def bounded_digest(value):
+        assert value is not batch, "A mapper must never rehash the whole universe per instrument"
+        return original(value)
+    monkeypatch.setattr(module, "digest", bounded_digest)
+    result = module.candidate_inputs(batch["universe"]["instruments"][0], batch, now, calendar)
+    assert result.source_hashes["universe"] == batch["envelope_sha256"]
+
+
+@pytest.mark.parametrize("change", [
+    lambda q: q.update(received_at=None),
+    lambda q: q.update(received_at="2026-09-08T13:59:59Z"),
+    lambda q: q.update(received_at="2026-09-08T14:00:01Z"),
+])
+def test_completed_quote_clock_failure_freezes_data_not_retry(spool, calendar, change):
+    now = calendar.details(DAY)["capture_open"]
+    raw = raw_instrument(calendar, now)
+    change(raw["quote"])
+    _, _, row, inputs, evaluation = mapped(spool, calendar, now, raw)
+    assert row["data_available"] is False
+    assert input_complete(inputs) and evaluation.complete
+    assert evaluation.status == "DATA_INELIGIBLE"
+    assert inputs.source_issues

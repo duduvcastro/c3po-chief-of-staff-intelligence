@@ -1,17 +1,19 @@
-# R2D2 V2 — contrato da porta de dados por arquivos, V1
+# R2D2 V2 — contrato da porta de dados por arquivos, revisão 2
 
 Esta porta é uma interface privada de evidência, implementada em
 [`r2d2_v2_sources.py`](../backend/app/r2d2_v2_sources.py). O mapeamento e o
 congelamento pertencem a [`r2d2_v2_shadow.py`](../backend/app/r2d2_v2_shadow.py),
 e a interpretação econômica a [`r2d2_v2_contract.py`](../backend/app/r2d2_v2_contract.py)
 e [`r2d2_v2_portfolio.py`](../backend/app/r2d2_v2_portfolio.py).
-O manifesto documental é `01d258903c060660a51ad48e7506903d038b0fa6901142456e06c7858350c359`.
+O manifesto das três assinaturas é `eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0`,
+incluindo o ADENDO A (CAL-3, quantil nominal1/240), com a emenda `3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4`.
 
 O código não inclui produtor de mercado auditado, publicação de arquivos, ACK,
 rotação automática ou autorização de ativação. `capabilities()` mantém
 `production_ready=false` e três contratos de produtor pendentes:
 
-1. Universo completo e verificável às 10:00 ET, com bid/ask causais de idade ≤10 s.
+1. Lista causal D−1 (cadastro limitado, N_cut550) e respostas de todos os
+   seus nomes às 10:00 ET, com bid/ask causais de idade ≤10 s.
 2. Exatas 61 barras diárias OHLCV de sessões oficiais, em unidades históricas sem
    ajuste, cobertura de splits conhecidos e insumos suficientes para ADV20/ATR14.
 3. Calendário de earnings com cobertura verificável até o vencimento, incluindo
@@ -33,6 +35,7 @@ arquivos não contém uma chave `epoch`; portanto, misturar épocas numa raiz n�
 ```text
 <raiz-privada-da-epoca>/
   snapshot.json
+  causal_list/<epoch>/<YYYY-MM-DD>.json
   events/
     <event_id>.<self_sha256>.json
 ```
@@ -54,7 +57,8 @@ Limites da implementação:
 | Objeto | Limite |
 | --- | ---: |
 | `snapshot.json` | 64 MiB |
-| Instrumentos no universo | 10.000 |
+| Limite defensivo do parser de snapshot | 10.000 |
+| Nomes selecionados na lista causal | 550 |
 | Cada evento | 64 KiB |
 | Entradas em `events/`, incluindo temporários | 4.096 |
 
@@ -68,8 +72,9 @@ campos mais `universe` no snapshot ou `event_id` e `event` no evento.
 
 | Campo | Contrato |
 | --- | --- |
-| `schema` | `V2_SHADOW_SOURCE_SNAPSHOT_V1` ou `V2_SHADOW_SOURCE_EVENT_V1` |
+| `schema` | `V2_SHADOW_SOURCE_SNAPSHOT_V2` ou `V2_SHADOW_SOURCE_EVENT_V2` |
 | `manifest_sha` | O SHA integral do manifesto acima |
+| `amendment_sha` | O SHA integral da emenda acima |
 | `source_id` | Identidade estável do produtor; token de até 96 caracteres |
 | `provenance` | Exatamente `producer`, `version`, `payload_sha256` |
 | `source_at` | Timestamp da evidência de origem, com timezone explícito |
@@ -118,8 +123,8 @@ certificado. Os nomes, preços e recibos desta página são exclusivamente sint�
 
 ```json
 {
-  "schema": "V2_SHADOW_SOURCE_SNAPSHOT_V1",
-  "manifest_sha": "01d258903c060660a51ad48e7506903d038b0fa6901142456e06c7858350c359",
+  "schema": "V2_SHADOW_SOURCE_SNAPSHOT_V2",
+  "manifest_sha": "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0",
   "source_id": "synthetic-producer-v1",
   "provenance": {
     "producer": "synthetic",
@@ -133,7 +138,8 @@ certificado. Os nomes, preços e recibos desta página são exclusivamente sint�
     "coverage_verified": false,
     "instruments": []
   },
-  "self_sha256": "01c63c875fba865b88618291152eecf574fcb9e1046681594828d721d34ca9fc"
+  "amendment_sha": "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4",
+  "self_sha256": "c389b7fd9a795dd8f4361ccf0a9efe68ab83bc8f9d42346dc3195e5a751b858e"
 }
 ```
 
@@ -156,7 +162,8 @@ Não constituem um candidato elegível.
     "ask": 100.05,
     "bid_source_at": "2026-09-08T14:00:00+00:00",
     "ask_source_at": "2026-09-08T14:00:00+00:00",
-    "available_at": "2026-09-08T14:00:00+00:00"
+    "available_at": "2026-09-08T14:00:00+00:00",
+    "received_at": "2026-09-08T14:00:00+00:00"
   },
   "daily": {
     "bars": [],
@@ -187,7 +194,7 @@ Não constituem um candidato elegível.
 | Componente | Conteúdo e condições |
 | --- | --- |
 | Identidade | `symbol`, `market` (`NYSE`/`NASDAQ`), `security_type`, `classification_verified` explícito, `sequence`, `source_at`, `available_at` |
-| `quote` | Exatamente `bid`, `ask`, `bid_source_at`, `ask_source_at`, `available_at`; preços positivos, `bid <= ask`; cada relógio de origem ≤ recebimento e idade ≤10 s na decisão |
+| `quote` | Exatamente `bid`, `ask`, `bid_source_at`, `ask_source_at`, `received_at`, `available_at`; preços positivos, `bid <= ask`; cada relógio de origem ≤ recebimento e idade ≤10 s na decisão |
 | `daily` | Exatamente `bars`, `splits`, `adjustment`, `coverage_verified`, `split_coverage_verified`, `source_at`, `available_at` |
 | `risk` | Exatamente `value`, `producer`, `source_at`, `available_at`; score numérico nativo finito em [0,100] para ser válido; resposta `null` preservada como inválida |
 | `earnings` | Exatamente `coverage_verified`, `window_start`, `window_end`, `events`, `source_at`, `available_at`; cada evento tem `event_at` e `available_at` |
@@ -247,12 +254,12 @@ antes do vencimento é insuficiente. Eventos conhecidos na decisão ou exatament
 no vencimento pertencem ao intervalo de exclusão; um evento depois dele não
 pertence. Cada `available_at` individual precisa ser causal, além do recibo do
 calendário completo. Datas sem horário não devem receber um horário inventado:
-a V1 da porta requer `event_at` explícito; qualquer futura extensão precisará
+a porta requer `event_at` explícito; qualquer futura extensão precisará
 distinguir a granularidade da fonte.
 
 ### Completo, inválido e ainda ausente
 
-O retorno `V2_SHADOW_SOURCE_BATCH_V1` acrescenta recibos, `status` e `diagnostics`.
+O retorno `V2_SHADOW_SOURCE_BATCH_V2` acrescenta recibos, `status` e `diagnostics`.
 Cada instrumento reconhecido preserva seu payload bruto completo, mesmo inválido,
 com `data_available=false` e códigos diagnósticos. Esses campos derivados não
 são campos do envelope produzido.
@@ -265,6 +272,58 @@ Cobertura diária falsa e disponibilidade futura de earnings não são convertid
 em `ELIGIBLE` apenas porque os outros campos estão preenchidos. O fechamento de
 captura é exclusivo em 10:01 ET e conserva as lacunas como dados inelegíveis.
 
+## Lista causal D−1 e fonte independente dos recibos
+
+`r2d2_v2_causal_list.build_commitment` é puro: recebe bytes exatos de cadastro
+`V2_CAUSAL_REGISTRY_V1` e diário `V2_CAUSAL_DAILY_CONTRACT_V1`, preserva-os no
+compromisso privado e seleciona a lista. Não consulta mercado, publica arquivo
+ou escreve `audit_events`. A verificação refaz a seleção a partir dos bytes
+preservados, não de feeds atuais.
+
+O cadastro é capturado após o fechamento da sessão anterior, com cobertura e
+classificação explícitas. NYSE/Nasdaq e `COMMON_STOCK`/`COMMON_STOCK_ADR` formam
+o denominador filtrado. A janela de ADV contém exatamente as últimas vinte
+sessões oficiais completas até D−1, inclusive. Fecha ≥5 e ADV ≥15M qualificam;
+ordenar por ADV decrescente e símbolo ascendente, cortar em550 fixos por época.
+Um nome com20–60 barras pode integrar a lista e depois ser inelegível na entrada
+por faltar a janela61 do ATR. Não confundir os dois gates.
+
+O envelope de `causal_list/<epoch>/<D>.json` contém `commitment`, `audit_receipt`
+e `publication_receipt`. O compromisso vincula época, sessão, hashes de
+manifesto/emenda/cadastro/diário/lista, calendário, corte, seleção, exclusões e
+cobertura. Raw em base64 e símbolos são privados. Só contagens e hashes podem
+ir à saída pública; não se alega cobertura integral das bolsas.
+
+Os dois recibos têm exatamente `event_id`, `event_type`, `occurred_at`, `payload`:
+
+- `r2d2.v2.causal_list_built`: ocorrido no instante da construção em D−1,
+  após o fechamento anterior e antes00hET deD; payload vincula época, sessão,
+  manifesto, emenda, compromisso, lista e corte.
+- `r2d2.v2.causal_list_published`: confirma publicação anterior às10hETD;
+  acrescenta ID do evento de construção, canal `relay`/`github_issue_348`,
+  referência e `published_at`. A publicação precede sua ocorrência auditada,
+  que pode ser posterior às10h; o recibo deve estar disponível antes da decisão
+  real do coletor, sem retroagir o relógio de captura.
+
+Não basta escrever horários nesses arquivos. `FileShadowSource` exige um
+`causal_receipt_verifier(receipt, expected)` independente; sem ele o resultado
+é MISSING. O worker injeta `PostgresCausalReceiptVerifier`, que consulta
+`audit_events` pelo UUID e compara ação, instante e payload aos recibos. Ele
+faz somente SELECT; não cria um evento que estaria faltando nem backdata um
+registro. O produtor futuro precisa persistir os eventos factuais e publicar
+antes de finalizar o envelope. Esse produtor ainda requer integração/auditoria.
+
+O coletor fixa uma lista verificada por sessão. Compromisso, publicação ou
+recebimento fora da janela não permite substituir retroativamente a lista;
+a sessão sem candidatos continua no calendário programado. O cache em memória
+não é prova de D−1: a prova vem dos bytes e dos eventos independentes, verificados
+novamente após reinício.
+
+O `received_at` da cotação é explícito: cada origem ≤ recebimento ≤ disponibilidade.
+O `decision_at` factual é registrado pelo coletor após I/O e lock e revalida a
+idade das duas origens. Ele não é fornecido pelo produtor, nem copiado de mtime
+ou da data de sessão.
+
 ## Eventos de preço e corporativos
 
 Os arquivos têm o nome exato `event_id.self_sha256.json`. O corpo `event` contém
@@ -274,12 +333,12 @@ separada do instante de origem. A porta não cria eventos a partir de uma cotaç
 isolada nem converte anúncio de dividendo em direito econômico.
 
 Exemplo **PRIVATE / SYNTHETIC**, com hash correto. Seu nome seria
-`fixture-trade-0000.9761fab934438f552648333911de8309c696863d26b2b1ae6c71364adaa3c9b9.json`.
+`fixture-trade-0000.d5336231c03965aca37f7a0c7a482797f0930ef409b59b952398b1f33abd79d4.json`.
 
 ```json
 {
-  "schema": "V2_SHADOW_SOURCE_EVENT_V1",
-  "manifest_sha": "01d258903c060660a51ad48e7506903d038b0fa6901142456e06c7858350c359",
+  "schema": "V2_SHADOW_SOURCE_EVENT_V2",
+  "manifest_sha": "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0",
   "source_id": "synthetic-producer-v1",
   "provenance": {
     "producer": "synthetic",
@@ -299,7 +358,8 @@ Exemplo **PRIVATE / SYNTHETIC**, com hash correto. Seu nome seria
     "price": 100.0,
     "regular": true
   },
-  "self_sha256": "9761fab934438f552648333911de8309c696863d26b2b1ae6c71364adaa3c9b9"
+  "amendment_sha": "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4",
+  "self_sha256": "d5336231c03965aca37f7a0c7a482797f0930ef409b59b952398b1f33abd79d4"
 }
 ```
 

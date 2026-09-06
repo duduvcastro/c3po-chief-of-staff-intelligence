@@ -21,7 +21,9 @@ from .r2d2_v2_portfolio import PortfolioBatch, apply_events, export_session_stat
 from .r2d2_v2_sources import MANIFEST_SHA
 from .r2d2_v2_store import ShadowIntegrityError, canonical, digest, utc, validate_epoch
 
-SCHEMA = "R2D2_V2_SHADOW_STATE_V1"
+SCHEMA = "R2D2_V2_SHADOW_STATE_V2"
+AMENDMENT_SHA = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
+SIGNED_MANIFEST_SHA = "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0"
 
 
 def _hash(value) -> bool:
@@ -36,21 +38,36 @@ class Release:
     approved_at: datetime
     code_revision: str
     receipt_sha: str
+    readiness_sha: str | None = None
 
     @classmethod
     def verify(cls, data: bytes, expected_sha: str, *, now: datetime, build_sha: str,
                calendar: ShadowCalendar) -> Release:
         if not _hash(expected_sha) or sha256(data).hexdigest() != expected_sha:
             raise ShadowIntegrityError("RELEASE_HASH_MISMATCH")
-        body = json.loads(data)
-        if body.get("schema") != "R2D2_V2_RELEASE_V1" or body.get("manifest_sha") != MANIFEST_SHA:
+        try:
+            body = json.loads(data)
+        except (ValueError, TypeError) as exc:
+            raise ShadowIntegrityError("RELEASE_INVALID") from exc
+        if (not isinstance(body, dict) or body.get("schema") != "R2D2_V2_RELEASE_V2"
+                or body.get("manifest_sha") != SIGNED_MANIFEST_SHA
+                or body.get("signed_manifest_sha") != SIGNED_MANIFEST_SHA
+                or body.get("amendment_sha") != AMENDMENT_SHA):
             raise ShadowIntegrityError("RELEASE_POLICY_MISMATCH")
         epoch, mode = body.get("epoch"), body.get("mode")
+        if not isinstance(epoch, str):
+            raise ShadowIntegrityError("EPOCH_INVALID")
         validate_epoch(epoch)
-        if mode not in {"DIAGNOSTIC", "CERTIFIED"}:
+        if not isinstance(mode, str) or mode not in {"DIAGNOSTIC", "CERTIFIED"}:
             raise ShadowIntegrityError("RELEASE_MODE_INVALID")
-        approved = utc(body["approved_at"])
-        first = date.fromisoformat(body["first_session"])
+        prefix = "R2D2-V2-DIAG-" if mode == "DIAGNOSTIC" else "R2D2-V2-SHADOW-"
+        if not epoch.startswith(prefix):
+            raise ShadowIntegrityError("RELEASE_NAMESPACE_MISMATCH")
+        try:
+            approved = utc(body["approved_at"])
+            first = date.fromisoformat(body["first_session"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ShadowIntegrityError("RELEASE_CLOCK_INVALID") from exc
         if not approved <= utc(now) or not approved < calendar.details(first)["open"]:
             raise ShadowIntegrityError("RELEASE_MUST_PRECEDE_FIRST_SESSION")
         revision = body.get("code_revision")
@@ -58,10 +75,23 @@ class Release:
                 or revision != build_sha or not _hash(body.get("code_audit_sha"))
                 or not isinstance(body.get("authorization_ref"), str) or not body["authorization_ref"].strip()):
             raise ShadowIntegrityError("RELEASE_CODE_OR_AUTHORIZATION_UNVERIFIED")
-        if mode == "CERTIFIED" and (body.get("calibration_status") != "ACCEPTED"
-                or not _hash(body.get("calibration_sha")) or not _hash(body.get("source_audit_sha"))):
-            raise ShadowIntegrityError("CALIBRATION_AND_SOURCES_REQUIRED")
-        return cls(epoch, mode, first, approved, revision, expected_sha)
+        if mode == "CERTIFIED":
+            approvals = ("calibration_sha", "calibration_acceptance_sha", "source_audit_sha",
+                         "source_codex_signature_sha", "source_fable_signature_sha", "readiness_sha")
+            if (body.get("calibration_status") != "ACCEPTED"
+                    or body.get("calibration_protocol") != "C3PO-V2-CAL-3"
+                    or any(not _hash(body.get(key)) for key in approvals)):
+                raise ShadowIntegrityError("CALIBRATION_AND_SOURCES_REQUIRED")
+            try:
+                ready, published, deployed = (utc(body[key]) for key in
+                    ("readiness_at", "readiness_publication_at", "deploy_completed_at"))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ShadowIntegrityError("READINESS_CLOCK_INVALID") from exc
+            opening = calendar.details(first)["open"]
+            if (not deployed <= ready <= published <= utc(now) or approved < ready
+                    or published >= opening or first != calendar.first_open_after(ready)):
+                raise ShadowIntegrityError("READINESS_FIRST_SESSION_MISMATCH")
+        return cls(epoch, mode, first, approved, revision, expected_sha, body.get("readiness_sha"))
 
 
 def _dt(value):
@@ -102,7 +132,13 @@ def candidate_inputs(row: dict, batch: dict, now: datetime, calendar: ShadowCale
     available = {name: _dt(item.get("available_at")) for name, item in component.items()}
     sources = {name: f"{producer}.{name}" for name in component if isinstance(producer, str) and producer}
     versions = {name: version for name in component if isinstance(version, str)}
-    hashes = {name: digest(item) for name, item in component.items()}
+    # The source validates this hash once over the envelope. Hashing all 550
+    # instruments again for each individual name was quadratic in input bytes.
+    envelope_sha = batch.get("envelope_sha256")
+    if not isinstance(envelope_sha, str) or not _hash(envelope_sha):
+        raise ShadowIntegrityError("SNAPSHOT_ENVELOPE_HASH_REQUIRED")
+    hashes = {name: digest(item) for name, item in component.items() if name != "universe"}
+    hashes["universe"] = envelope_sha
     sources["calendar"], versions["calendar"], hashes["calendar"] = (
         "exchange_calendars.XNYS", calendar.version, detail["sha256"])
     bars = []
@@ -122,6 +158,14 @@ def candidate_inputs(row: dict, batch: dict, now: datetime, calendar: ShadowCale
     earnings_at = tuple(at for at in earnings_clocks if at is not None)
     issues = [item["code"] for item in row.get("diagnostics", [])
               if isinstance(item, dict) and isinstance(item.get("code"), str)]
+    received = _dt(quote.get("received_at"))
+    q_available = _dt(quote.get("available_at"))
+    clocks = [_dt(quote.get(key)) for key in ("bid_source_at", "ask_source_at")]
+    if (received is None or q_available is None
+            or not received <= q_available <= now
+            or any(at is None or not at <= received or now - at > timedelta(seconds=10) for at in clocks)
+            or now - received > timedelta(seconds=10) or now - q_available > timedelta(seconds=10)):
+        issues.append("QUOTE_RECEIPT_NOT_CAUSAL_OR_STALE")
     if daily.get("coverage_verified") is not True:
         issues.append("DAILY_COVERAGE_UNVERIFIED")
     if any(at is None for at in earnings_clocks):
@@ -162,92 +206,174 @@ def _diagnostic(state: dict, journals: list, session: dict, code: str, now: date
                          "type": "DIAGNOSTIC", "session": session["date"], "code": code})
 
 
+class _LazyPortfolio:
+    """Do not copy or hash the ledger on an observation with no ledger change."""
+    def __init__(self, state):
+        self.host = state
+        self.batch = None
+
+    def _get(self):
+        if self.batch is None:
+            self.batch = PortfolioBatch(self.host["ledger"])
+            self.host["ledger"] = self.batch.state
+        return self.batch
+
+    def event(self, event):
+        return self._get().event(event)
+
+    def register(self, **kwargs):
+        return self._get().register(**kwargs)
+
+    def finish(self):
+        return self.batch.finish() if self.batch is not None else self.host["ledger"]
+
+
+def _compact_evaluation(evaluation: dict) -> dict:
+    """The immutable journal retains the full evaluation and private inputs."""
+    return {"status": evaluation.get("status"), "arm": evaluation.get("arm"),
+            "reasons": evaluation.get("reasons", []), "evaluation_sha256": digest(evaluation)}
+
+
 class ShadowCollector:
     def __init__(self, store, source, release: Release, *, calendar: ShadowCalendar | None = None, clock=None):
         self.store, self.source, self.release = store, source, release
         self.calendar = calendar or ShadowCalendar()
         self.clock = clock or (lambda: datetime.now(timezone.utc))
-        self.schedule = self.calendar.sessions(release.first_session, 39)
+        self.schedule = self.calendar.sessions(release.first_session, 69)
+        self.schedule_index = {day: index for index, day in enumerate(self.schedule)}
+        self._causal_cache: dict[date, dict] = {}
 
     def _initial(self) -> dict:
-        return {"schema": SCHEMA, "epoch": self.release.epoch, "manifest_sha": MANIFEST_SHA,
+        return {"schema": SCHEMA, "epoch": self.release.epoch, "manifest_sha": SIGNED_MANIFEST_SHA,
+                "signed_manifest_sha": SIGNED_MANIFEST_SHA, "amendment_sha": AMENDMENT_SHA,
+                "readiness_sha": self.release.readiness_sha,
                 "mode": self.release.mode, "release_sha": self.release.receipt_sha,
                 "code_revision": self.release.code_revision, "first_session": self.release.first_session.isoformat(),
                 "calendar_version": self.calendar.version, "schedule": [d.isoformat() for d in self.schedule],
                 "sessions": {}, "ledger": new_portfolio() if self.release.mode == "CERTIFIED" else None,
-                "last_cycle_at": None, "event_receipts": {}, "event_sequences": {}, "data_issues": [],
+                "last_cycle_at": None, "last_session": None, "event_receipts": {}, "event_sequences": {},
+                "data_issues": [], "active_data_issues": {}, "watch_episodes": {}, "instrument_episodes": {},
+                "terminal_veto_history": [],
                 "clock_receipts": [], "last_price_at": {}, "coverage_until": {}, "gap_episode_receipts": {}, "cycle_count": 0}
 
-    def cycle(self, now: datetime | None = None) -> dict:
-        """One observation; explicit clocks are for deterministic offline tests.
+    def _capture_window(self, now):
+        day = now.astimezone(NEW_YORK).date()
+        if not self.calendar.is_session(day) or now < self.release.approved_at:
+            return False
+        if self.release.mode == "CERTIFIED" and not 0 <= self.schedule_index.get(day, -1) < 60:
+            return False
+        detail = self.calendar.details(day)
+        return detail["capture_open"] <= now < detail["capture_close"]
 
-The worker uses the real clock again *inside* the transaction, after file reads
-and lock acquisition. Waiting cannot manufacture a decision in a past window.
-"""
+    def cycle(self, now: datetime | None = None) -> dict:
+        """Observe inputs only in their window; recheck the actual clock after I/O."""
         live = now is None
         now = utc(self.clock() if live else now)
-        batch = self.source.snapshot(now)
+        in_window = self._capture_window(now)
+        day = now.astimezone(NEW_YORK).date()
+        # Lists are checked before a snapshot. A late list schedules zero entries
+        # and cannot cause even an incidental snapshot read for that session.
+        causal = self._causal_cache.get(day) if in_window else None
+        if in_window and causal is None:
+            causal = self.source.causal_list(self.release.epoch, day, now, self.calendar)
+        batch = self.source.snapshot(now) if in_window and causal is not None and causal.get("status") == "AVAILABLE" else None
         events = self.source.events(now) if self.release.mode == "CERTIFIED" else []
         event_diagnostics = getattr(self.source, "last_event_diagnostics", []) if self.release.mode == "CERTIFIED" else []
-        return self.store.atomic(self.release.epoch, self._initial(),
+        result = self.store.atomic(self.release.epoch, self._initial(),
             lambda state: self._cycle(state, batch, events, event_diagnostics,
-                                      utc(self.clock()) if live else now), now)
+                                      utc(self.clock()) if live else now, causal=causal), now)
+        if causal is not None and causal.get("status") == "AVAILABLE":
+            # Only after atomic journal persistence discard the raw registry and
+            # daily bytes. Restart re-verifies the file + external receipts;
+            # subsequent polls consume this immutable commitment, never mtime.
+            keep = {"status", "symbols", "list_sha256", "commitment_sha256", "registry_sha256",
+                    "daily_contract_sha256", "built_at", "publication_at", "cutoff_at", "decision_at",
+                    "n_cut", "counts", "coverage", "diagnostics", "envelope_sha256"}
+            self._causal_cache = {day: {key: value for key, value in causal.items() if key in keep}}
+        return result
 
-    def _cycle(self, state, batch, events, event_diagnostics, now):
+    def _cycle(self, state, batch, events, event_diagnostics, now, *, causal=None):
         if state["calendar_version"] != self.calendar.version:
             raise ShadowIntegrityError("CALENDAR_VERSION_CHANGED")
         if state["last_cycle_at"] and now < utc(state["last_cycle_at"]):
             raise ShadowIntegrityError("COLLECTOR_CLOCK_REVERSED")
         journals = []
-        portfolio = PortfolioBatch(state["ledger"]) if state["ledger"] is not None else None
-        if portfolio is not None:
-            state["ledger"] = portfolio.state
+        portfolio = _LazyPortfolio(state) if state["ledger"] is not None else None
         active_day = now.astimezone(NEW_YORK).date()
-        # Persist all elapsed official days. Monitoring can continue beyond the
-        # planned 39 sessions when an exit/receivable is still unresolved.
-        elapsed = self.calendar.calendar.sessions_in_range(self.release.first_session.isoformat(), active_day.isoformat()) \
-            if active_day >= self.release.first_session else []
+        if self.release.mode == "DIAGNOSTIC":
+            # No retrospective zero sessions, maturity clocks, or shadow ledger
+            # are created in DIAG. Its only sessions are actual input attempts.
+            days = (active_day,) if self._capture_window(now) else ()
+            if state["last_session"]:
+                last = state["sessions"][state["last_session"]]
+                last_day = date.fromisoformat(last["date"])
+                if not last["capture_closed"] and last_day not in days:
+                    days = (last_day,) + days
+        else:
+            # Revisit only the last processed day (possibly still open), then
+            # elapsed new official days. Normal polling never walks the epoch.
+            first = date.fromisoformat(state["last_session"]) if state["last_session"] else self.release.first_session
+            days = self.calendar.between(first, active_day)
         events_processed = False
-        for index, stamp in enumerate(elapsed):
-            day = stamp.date()
+        touched = False
+        for day in days:
             detail = self.calendar.details(day)
             if detail["open"] > now:
                 break
             key = day.isoformat()
-            session = state["sessions"].setdefault(key, {"date": key, "entry_session": index < 30,
-                "calendar_sha": detail["sha256"], "capture_closed": False, "universe": None,
-                "universe_sha": None, "candidates": {}, "pending": {}, "diagnostics": [], "attempts": 0})
+            index = self.schedule_index.get(day, 69)
+            if key not in state["sessions"]:
+                state["sessions"][key] = {"date": key, "entry_session": index < 60,
+                    "calendar_sha": detail["sha256"], "capture_closed": False, "universe": None,
+                    "universe_sha": None, "causal_list": None, "programmed_zero_reason": None,
+                    "candidates": {}, "pending": {}, "diagnostics": [], "attempts": 0}
+                touched = True
+            session = state["sessions"][key]
             if state["ledger"] is not None:
                 self._clock(state, journals, "SESSION_OPEN", key, detail["open"], now, portfolio=portfolio)
             if day == active_day:
                 self._events(state, journals, events, event_diagnostics, now, key, portfolio=portfolio)
                 events_processed = True
-            if day == active_day and index < 30 and detail["capture_open"] <= now < detail["capture_close"]:
-                self._capture(state, journals, session, batch, now, portfolio=portfolio)
+            if day == active_day and self._capture_window(now) and not session["capture_closed"]:
+                self._capture(state, journals, session, batch or {}, now, portfolio=portfolio, causal=causal)
+                touched = True
             if now >= detail["capture_close"] and not session["capture_closed"]:
-                if index < 30:
+                if index < 60 or self.release.mode == "DIAGNOSTIC":
                     self._close_capture(state, journals, session, now)
                 else:
                     session["capture_closed"] = True
+                    touched = True
             if state["ledger"] is not None and now >= detail["close"]:
                 if day < active_day and "SESSION_CLOSE:" + key not in state["clock_receipts"]:
                     self._gap(state, journals, now, key, "COLLECTOR_MISSED_SESSION_CLOSE", portfolio=portfolio)
                 self._clock(state, journals, "SESSION_CLOSE", key, detail["close"], now, portfolio=portfolio)
+            state["last_session"] = key
         if not events_processed and state["ledger"] is not None and state["ledger"]["session"]:
             self._events(state, journals, events, event_diagnostics, now, state["ledger"]["session"], portfolio=portfolio)
         if portfolio is not None:
             state["ledger"] = portfolio.finish()
-        state["last_cycle_at"] = now.isoformat()
-        state["cycle_count"] += 1
+        if journals or touched:
+            state["last_cycle_at"] = now.isoformat()
+            state["cycle_count"] += 1
         response = public_summary(state)
+        response["observed_at"] = now.isoformat()
         return state, journals, response
 
     @staticmethod
     def _apply(state, events, portfolio):
+        before = set(state["ledger"]["terminal_reasons"])
         if portfolio is not None:
-            return [portfolio.event(event) for event in events]
-        state["ledger"], result = apply_events(state["ledger"], events)
+            result = [portfolio.event(event) for event in events]
+        else:
+            state["ledger"], result = apply_events(state["ledger"], events)
+        if events:
+            ShadowCollector._record_terminal(state, before, events[-1]["available_at"], events[-1]["session"])
         return result
+
+    @staticmethod
+    def _record_terminal(state, before, observed_at, session):
+        for reason in sorted(set(state["ledger"]["terminal_reasons"]) - before):
+            state["terminal_veto_history"].append({"reason": reason, "observed_at": observed_at, "session": session})
 
     def _clock(self, state, journals, kind, session, at, now, *, portfolio=None):
         key = kind + ":" + session
@@ -259,26 +385,64 @@ and lock acquisition. Waiting cannot manufacture a decision in a past window.
         state["clock_receipts"].append(key)
         journals.append({"journal_key": "clock:" + key, "type": "CLOCK", "event": event})
 
-    def _gap(self, state, journals, now, session, reason, *, gap_at=None, portfolio=None):
-        key = session + ":" + reason
-        known = key in state["data_issues"]
-        if not known:
-            state["data_issues"].append(key)
+    def _gap(self, state, journals, now, session, reason, *, gap_at=None, instrument=None, portfolio=None):
+        scope = instrument or "*"
+        base_key = session + ":" + scope + ":" + reason
+        active = state["active_data_issues"].get(base_key)
+        # A second outage after demonstrated restoration is a new factual
+        # occurrence; an old recovery receipt cannot exempt future failures.
+        repeated = active is not None and bool(active["restored_instruments"])
+        key = (base_key + ":" + now.isoformat()) if repeated else active["key"] if active else base_key
+        known = key in state["gap_episode_receipts"]
         known_gap = utc(gap_at) if gap_at else now
+        if not known:
+            issue = {"key": key, "session": session, "instrument": scope, "reason": reason,
+                     "at": known_gap.isoformat()}
+            state["data_issues"].append(issue)
+            state["active_data_issues"][base_key] = {**issue, "restored_instruments": []}
         affected = [r for r in state["ledger"]["research"].values()
-                    if r["status"] == "OPEN" or utc(r["opened_at"]) <= known_gap <
-                    utc(r["exit_at"] or (r["exit_interval"] or [None, now.isoformat()])[1])]
+                    if (instrument is None or r["instrument_key"] == instrument)
+                    and (r["status"] == "OPEN" or utc(r["opened_at"]) <= known_gap <
+                         utc(r["exit_at"] or (r["exit_interval"] or [None, now.isoformat()])[1]))]
         prior = state["gap_episode_receipts"].setdefault(key, [])
         new_episodes = sorted(r["episode_key"] for r in affected if r["episode_key"] not in prior)
         if known and not new_episodes:
             return
         prior.extend(new_episodes)
         batch_key = digest([key, new_episodes])
-        events = [{"event_id": "gap:" + digest([batch_key, name]), "type": "DATA_GAP", "session": session,
+        gap_events = [{"event_id": "gap:" + digest([batch_key, name]), "type": "DATA_GAP", "session": session,
                    "instrument_key": name, "reason": reason, "at": known_gap.isoformat(), "available_at": now.isoformat()}
                   for name in sorted({r["instrument_key"] for r in affected if r["episode_key"] in new_episodes})]
-        self._apply(state, events, portfolio)
-        journals.append({"journal_key": "gap:" + batch_key, "type": "DATA_GAP", "reason": reason, "events": events})
+        self._apply(state, gap_events, portfolio)
+        journals.append({"journal_key": "gap:" + batch_key, "type": "DATA_GAP", "session": session,
+                         "instrument": scope, "reason": reason, "events": gap_events})
+
+    def _restore(self, state, journals, event, now, session):
+        # A fresh complete regular bar proves a new observable interval. It
+        # restores admission for this name; it never repairs an old episode.
+        if (event["type"] != "BAR" or event.get("regular") is not True
+                or event.get("coverage_complete") is not True
+                or utc(event["at"]).astimezone(NEW_YORK).date().isoformat() != session
+                or not timedelta(0) <= now - utc(event["end_at"]) <= timedelta(seconds=90)):
+            return
+        name = event["instrument_key"]
+        for key, issue in state["active_data_issues"].items():
+            if (issue["session"] == session and issue["instrument"] in ("*", name)
+                    and name not in issue["restored_instruments"] and utc(event["at"]) >= utc(issue["at"])):
+                issue["restored_instruments"].append(name)
+                journals.append({"journal_key": "recovery:" + digest([key, name, event["event_id"]]),
+                    "type": "ADMISSION_OBSERVABILITY_RESTORED", "session": session,
+                    "instrument": name, "gap_key": key, "bar_event_id": event["event_id"],
+                    "available_at": now.isoformat()})
+
+    @staticmethod
+    def _admission_block(state, session, name):
+        # A past-session outage remains attached to its affected episodes. A
+        # newly verified D−1 list + complete fresh snapshot starts a new session
+        # observation; no epoch-global flag can veto all subsequent entries.
+        return "COLLECTION_DATA_GATE_BLOCKED" if any(
+            issue["session"] == session and issue["instrument"] in ("*", name)
+            and name not in issue["restored_instruments"] for issue in state["active_data_issues"].values()) else None
 
     def _events(self, state, journals, events, diagnostics, now, session, *, portfolio=None):
         if state["ledger"] is None:
@@ -308,7 +472,7 @@ and lock acquisition. Waiting cannot manufacture a decision in a past window.
         pending.sort(key=lambda e: (utc(e["available_at"]), utc(e["at"]), priority.get(e["type"], 10), e["sequence"], e["event_id"]))
         for item in pending:
             raw = {k: v for k, v in item.items() if k not in {"source_id", "source_at", "sequence", "provenance",
-                    "manifest_sha", "self_sha256", "envelope_sha256", "envelope_available_at"}}
+                    "manifest_sha", "amendment_sha", "self_sha256", "envelope_sha256", "envelope_available_at"}}
             if utc(raw["available_at"]) > now or utc(raw["at"]) > utc(raw["available_at"]):
                 raise ShadowIntegrityError("EVENT_NOT_CAUSAL")
             # Producer receipt and collector receipt are both archived. A file
@@ -328,21 +492,35 @@ and lock acquisition. Waiting cannot manufacture a decision in a past window.
                 event = None
             if event is not None:
                 name = event["instrument_key"]
-                episodes = [r for r in state["ledger"]["research"].values() if r["instrument_key"] == name]
+                episodes = [state["ledger"]["research"][key] for key in state["instrument_episodes"].get(name, [])]
+                episodes = [record for record in episodes if record["status"] == "OPEN"
+                    or (record["exit_at"] or (record["exit_interval"] or [None, None])[1]) is not None
+                    and utc(record["exit_at"] or record["exit_interval"][1]) >= utc(event["at"])]
+                if event["type"] == "DATA_GAP":
+                    self._gap(state, journals, now, session, "PRODUCER_DATA_GAP", gap_at=utc(event["at"]),
+                              instrument=name, portfolio=portfolio)
                 if episodes and event["type"] in {"TRADE", "BAR"} and event.get("regular") is True:
                     at = utc(event["at"])
                     opening = self.calendar.details(at.astimezone(NEW_YORK).date())["open"]
-                    coverage = max(utc(state["coverage_until"].get(name, min(r["opened_at"] for r in episodes))), opening)
+                    first_entry = min(utc(r["opened_at"]) for r in episodes)
+                    coverage = max(utc(state["coverage_until"].get(name, first_entry)), opening, first_entry)
                     # A first print after a missing interval cannot close the
                     # position and thereby erase the preceding data failure.
                     if at - coverage > timedelta(seconds=90):
-                        self._gap(state, journals, now, session, "LIVE_EVIDENCE_STALE", gap_at=coverage, portfolio=portfolio)
+                        self._gap(state, journals, now, session, "LIVE_EVIDENCE_STALE", gap_at=coverage,
+                                  instrument=name, portfolio=portfolio)
                     if event["type"] == "BAR" and event.get("coverage_complete") is True:
                         if at > coverage:
-                            self._gap(state, journals, now, session, "BAR_COVERAGE_GAP", gap_at=coverage, portfolio=portfolio)
+                            self._gap(state, journals, now, session, "BAR_COVERAGE_GAP", gap_at=coverage,
+                                      instrument=name, portfolio=portfolio)
                         elif utc(event["end_at"]) > coverage:
                             state["coverage_until"][name] = event["end_at"]
                 result = self._apply(state, [event], portfolio)
+                if event["type"] == "BAR" and event.get("regular") is True and event.get("coverage_complete") is True:
+                    old = state["coverage_until"].get(name)
+                    if old is None or utc(event["end_at"]) > utc(old):
+                        state["coverage_until"][name] = event["end_at"]
+                self._restore(state, journals, event, now, session)
                 if event["type"] in {"BAR", "TRADE", "QUOTE", "MARK"}:
                     state["last_price_at"][event["instrument_key"]] = event.get("end_at", event["at"])
             else:
@@ -351,35 +529,68 @@ and lock acquisition. Waiting cannot manufacture a decision in a past window.
             journals.append({"journal_key": "event:" + item["event_id"], "type": "SOURCE_EVENT",
                              "source": item, "applied_event": event, "result": result})
         # Missing cycles or stale evidence are data failures, not zero returns.
-        for record in state["ledger"]["research"].values():
-            last = utc(state["coverage_until"].get(record["instrument_key"], record["opened_at"]))
+        for episode in tuple(state["watch_episodes"]):
+            record = state["ledger"]["research"][episode]
+            last = max(utc(state["coverage_until"].get(record["instrument_key"], record["opened_at"])),
+                       utc(record["opened_at"]))
             terminal = record["exit_at"] or (record["exit_interval"] or [None, None])[1]
-            if terminal and last >= utc(terminal):
+            if (terminal and last >= utc(terminal)) or record["category"] == "unobservable":
+                state["watch_episodes"].pop(episode)
                 continue
             day = now.astimezone(NEW_YORK).date()
             if self.calendar.is_session(day):
                 detail = self.calendar.details(day)
                 if min(now, detail["close"]) - max(last, detail["open"]) > timedelta(seconds=90):
-                    self._gap(state, journals, now, session, "LIVE_EVIDENCE_STALE", gap_at=max(last, detail["open"]), portfolio=portfolio)
-                    break
+                    self._gap(state, journals, now, session, "LIVE_EVIDENCE_STALE", gap_at=max(last, detail["open"]),
+                              instrument=record["instrument_key"], portfolio=portfolio)
 
-    def _capture(self, state, journals, session, batch, now, *, portfolio=None):
+    def _capture(self, state, journals, session, batch, now, *, portfolio=None, causal=None):
         session["attempts"] += 1
+        causal = causal or {}
+        codes = [_object(item).get("code") for item in causal.get("diagnostics", [])]
+        if "CAUSAL_LIST_LATE" in codes:
+            session.update(universe=[], universe_sha=digest([]), capture_closed=True,
+                           programmed_zero_reason="CAUSAL_LIST_LATE")
+            _diagnostic(state, journals, session, "CAUSAL_LIST_LATE", now)
+            journals.append({"journal_key": "capture-close:" + session["date"], "type": "PROGRAMMED_ZERO",
+                "session": session["date"], "reason": "CAUSAL_LIST_LATE", "source": causal})
+            return
+        if causal.get("status") != "AVAILABLE":
+            _diagnostic(state, journals, session, "CAUSAL_LIST_UNVERIFIED", now)
+            return
+        symbols = causal.get("symbols")
+        if (not isinstance(symbols, list) or any(not isinstance(name, str) for name in symbols)
+                or len(symbols) != len(set(symbols)) or len(symbols) > 550 or causal.get("n_cut") != 550
+                or not _hash(causal.get("list_sha256")) or not _hash(causal.get("commitment_sha256"))):
+            raise ShadowIntegrityError("CAUSAL_LIST_INVALID")
+        names = ["US:" + name for name in symbols]
+        if session["universe"] is None:
+            session["universe"], session["universe_sha"] = names, causal["list_sha256"]
+            session["causal_list"] = {key: causal.get(key) for key in ("list_sha256", "commitment_sha256",
+                "registry_sha256", "daily_contract_sha256", "built_at", "publication_at", "cutoff_at", "n_cut", "counts", "coverage")}
+            journals.append({"journal_key": "universe:" + session["date"], "type": "CAUSAL_UNIVERSE",
+                             "session": session["date"], "causal_list": causal})
+        elif (names != session["universe"] or causal["list_sha256"] != session["universe_sha"]
+                or causal["commitment_sha256"] != session["causal_list"]["commitment_sha256"]):
+            _diagnostic(state, journals, session, "CAUSAL_LIST_CHANGED_WITHIN_SESSION", now)
+            return
         universe = _object(batch.get("universe"))
         if batch.get("status") != "AVAILABLE" or universe.get("coverage_verified") is not True:
             _diagnostic(state, journals, session, "UNIVERSE_COVERAGE_UNVERIFIED", now)
             return
-        rows = universe.get("instruments", [])
-        names = sorted(_instrument(row) for row in rows)
-        if len(names) != len(set(names)):
+        all_rows = universe.get("instruments", [])
+        if not isinstance(all_rows, list):
+            raise ShadowIntegrityError("UNIVERSE_INVALID")
+        observed_names = [_instrument(row) for row in all_rows]
+        if len(observed_names) != len(set(observed_names)):
             raise ShadowIntegrityError("UNIVERSE_DUPLICATE")
-        if session["universe"] is None:
-            session["universe"], session["universe_sha"] = names, digest(names)
-            journals.append({"journal_key": "universe:" + session["date"], "type": "UNIVERSE",
-                             "session": session["date"], "names": names, "source_receipt": batch.get("envelope_sha256")})
-        elif names != session["universe"]:
-            _diagnostic(state, journals, session, "UNIVERSE_CHANGED_WITHIN_WINDOW", now)
-            return
+        selected = set(names)
+        rows = [row for row in all_rows if _instrument(row) in selected]
+        extra_count = len(all_rows) - len(rows)
+        if extra_count and "NOT_IN_CAUSAL_LIST" not in session["diagnostics"]:
+            _diagnostic(state, journals, session, "NOT_IN_CAUSAL_LIST", now)
+            journals.append({"journal_key": "outside-list:" + session["date"], "type": "CAUSAL_EXCLUSION_COUNT",
+                             "session": session["date"], "count": extra_count})
         prepared = []
         for row in rows:
             name = _instrument(row)
@@ -387,31 +598,39 @@ and lock acquisition. Waiting cannot manufacture a decision in a past window.
                 continue
             inputs = candidate_inputs(row, batch, now, self.calendar)
             evaluation = evaluate_candidate(inputs).to_dict()
-            session["pending"][name] = {"evaluation": evaluation, "source": row,
-                                         "batch_receipt": batch.get("envelope_sha256")}
+            observation = {"evaluation": evaluation, "source": row, "batch_receipt": batch.get("envelope_sha256")}
             if input_complete(inputs):
                 available = max(t for key, t in inputs.available_at.items() if t is not None and key != "calendar")
                 tie_hash = sha256(f"{self.release.epoch}|{session['date']}|{row['symbol']}".encode()).hexdigest()
-                prepared.append((available, tie_hash, name))
-        # Hash resolves only simultaneous availability; eligibility never ranks.
-        for _, episode, name in sorted(prepared):
-            observation = session["pending"].pop(name)
+                prepared.append((available, tie_hash, name, observation))
+            else:
+                compact = _compact_evaluation(evaluation)
+                receipt = digest([name, compact["evaluation_sha256"], batch.get("envelope_sha256")])
+                if session["pending"].get(name, {}).get("receipt") != receipt:
+                    journals.append({"journal_key": "pending:" + session["date"] + ":" + receipt,
+                        "type": "CANDIDATE_PENDING", "instrument_key": name, "observation": observation})
+                    session["pending"][name] = {**compact, "receipt": receipt}
+        for _, episode, name, observation in sorted(prepared, key=lambda item: item[:3]):
+            session["pending"].pop(name, None)
             evaluation = observation["evaluation"]
-            session["candidates"][name] = evaluation
+            session["candidates"][name] = _compact_evaluation(evaluation)
             record = {"journal_key": "candidate:" + session["date"] + ":" + digest(name), "type": "CANDIDATE",
                       "episode_key": episode, "instrument_key": name, "observation": observation}
             if state["ledger"] is not None and evaluation["arm"] is not None:
-                blocked = "COLLECTION_DATA_GATE_BLOCKED" if state["data_issues"] else None
+                before_terminal = set(state["ledger"]["terminal_reasons"])
                 kwargs: dict[str, Any] = dict(episode_key=episode,
                     instrument_key=name, session=session["date"], opened_at=now.isoformat(),
                     maturity_at=evaluation["maturity_at"], geometry=evaluation["geometry"], arm=evaluation["arm"],
-                    admission_block_reason=blocked)
+                    admission_block_reason=self._admission_block(state, session["date"], name))
                 if portfolio is not None:
                     research, admission = portfolio.register(**kwargs)
                 else:
                     state["ledger"], research, admission = register_candidate(state["ledger"], **kwargs)
                 record.update(research=research, admission=admission)
+                self._record_terminal(state, before_terminal, now.isoformat(), session["date"])
                 state["coverage_until"].setdefault(name, now.isoformat())
+                state["watch_episodes"][episode] = name
+                state["instrument_episodes"].setdefault(name, []).append(episode)
             journals.append(record)
 
     def _close_capture(self, state, journals, session, now):
@@ -420,14 +639,13 @@ and lock acquisition. Waiting cannot manufacture a decision in a past window.
         for name in session["universe"] or []:
             if name in session["candidates"]:
                 continue
-            observation = session["pending"].get(name, {})
-            evaluation = observation.get("evaluation", {})
-            evaluation.update(status="DATA_INELIGIBLE", arm=None, research_eligible=False, portfolio_eligible=False)
-            evaluation["reasons"] = list(dict.fromkeys(evaluation.get("reasons", []) + ["CAPTURE_WINDOW_INCOMPLETE"]))
-            session["candidates"][name] = evaluation
+            previous = session["pending"].get(name, {})
+            evaluation = {"status": "DATA_INELIGIBLE", "arm": None,
+                "reasons": list(dict.fromkeys(previous.get("reasons", []) + ["CAPTURE_WINDOW_INCOMPLETE"]))}
+            session["candidates"][name] = _compact_evaluation(evaluation)
             journals.append({"journal_key": "candidate:" + session["date"] + ":" + digest(name),
-                             "type": "CANDIDATE_INCOMPLETE", "instrument_key": name, "observation": observation,
-                             "evaluation": evaluation})
+                "type": "CANDIDATE_INCOMPLETE", "instrument_key": name,
+                "pending_receipt": previous.get("receipt"), "evaluation": evaluation})
         session["pending"] = {}
         session["capture_closed"] = True
         journals.append({"journal_key": "capture-close:" + session["date"], "type": "CAPTURE_CLOSED",
@@ -438,17 +656,26 @@ and lock acquisition. Waiting cannot manufacture a decision in a past window.
 def public_summary(state: dict) -> dict:
     """No symbols, private identifiers, input values, or statistical verdicts."""
     sessions = []
+    current = state.get("last_session") or max(state["sessions"], default=None)
+    current_names = (state["sessions"].get(current, {}).get("universe") or [])
+    active_issues = [issue for issue in state["active_data_issues"].values()
+        if issue["session"] == current and (
+            issue["instrument"] not in issue["restored_instruments"] if issue["instrument"] != "*"
+            else not current_names or not set(current_names).issubset(issue["restored_instruments"]))]
     for session in state["sessions"].values():
         reasons = Counter(reason for c in session["candidates"].values() for reason in c.get("reasons", []))
         sessions.append({"session_date": session["date"], "entry_session": session["entry_session"],
             "capture_closed": session["capture_closed"], "universe_count": len(session["universe"]) if session["universe"] is not None else None,
             "snapshot_attempts": session["attempts"], "frozen_count": len(session["candidates"]),
-            "reason_counts": dict(reasons), "diagnostics": session["diagnostics"]})
-    return {"schema": "R2D2_V2_COLLECTOR_STATUS_V1", "epoch": state["epoch"], "manifest_sha": state["manifest_sha"],
+            "reason_counts": dict(reasons), "diagnostics": session["diagnostics"],
+            "programmed_zero_reason": session.get("programmed_zero_reason")})
+    return {"schema": "R2D2_V2_COLLECTOR_STATUS_V2", "epoch": state["epoch"], "manifest_sha": state["manifest_sha"],
+            "amendment_sha": state["amendment_sha"],
             "mode": state["mode"], "last_cycle_at": state["last_cycle_at"], "sessions": sessions,
             "cohort_clock_started": state["mode"] == "CERTIFIED" and bool(state["sessions"]),
-            "data_gate_unknown": bool(state["data_issues"]),
+            "data_gate_unknown": bool(active_issues), "data_gate_scope": "CURRENT_SESSION_OBSERVATION",
             "data_issue_count": len(state["data_issues"]),
+            "active_data_issue_count": len(active_issues),
             "certification_computed": False, "production_orders": False}
 
 
@@ -458,7 +685,9 @@ def export_cohort(state: dict, size: int, *, now: datetime, calendar: ShadowCale
 This does not compute a bootstrap or authorize a GO. Every programmed session,
 including zero days, remains in order. Diagnostic epochs cannot be promoted.
 """
-    if state["mode"] != "CERTIFIED" or size not in (20, 30):
+    if (state["mode"] != "CERTIFIED" or not state["epoch"].startswith("R2D2-V2-SHADOW-")
+            or size not in (40, 60) or state["manifest_sha"] != SIGNED_MANIFEST_SHA
+            or state["amendment_sha"] != AMENDMENT_SHA):
         raise ShadowIntegrityError("COHORT_NOT_AUTHORIZED")
     schedule = state["schedule"]
     maturity_day = date.fromisoformat(schedule[size + 8])
@@ -466,16 +695,33 @@ including zero days, remains in order. Diagnostic epochs cannot be promoted.
         raise ShadowIntegrityError("COHORT_NOT_MATURE")
     rows = []
     coverage_unknown = False
-    for day in schedule[:size]:
+    def veto_through(cutoff):
+        history = state.get("terminal_veto_history", [])
+        known = {item["reason"] for item in history if _dt(item.get("observed_at")) is not None}
+        # An untimed old reason is unknown and blocking; never infer it happened
+        # after a reading. New V2 transitions record their actual first receipt.
+        return (bool(set(state["ledger"]["terminal_reasons"]) - known)
+                or any(_dt(item.get("observed_at")) is None or utc(item["observed_at"]) <= cutoff for item in history))
+    for index, day in enumerate(schedule[:size], 1):
         capture = state["sessions"].get(day)
         unknown = (not capture or not capture["capture_closed"] or capture["universe"] is None
-                   or "UNIVERSE_CHANGED_WITHIN_WINDOW" in capture["diagnostics"])
+                   or "CAUSAL_LIST_CHANGED_WITHIN_SESSION" in capture["diagnostics"])
         coverage_unknown |= unknown
         stats = export_session_statistics(state["ledger"], day)
-        rows.append({**stats, "capture_coverage_unknown": unknown})
-    result = {"schema": "R2D2_V2_COHORT_EXPORT_V1", "epoch": state["epoch"], "manifest_sha": state["manifest_sha"],
+        # Session rows have their own fixed N10 observation horizon, so later
+        # epoch-global vetoes cannot mutate the frozen forty-session prefix.
+        stats["terminal_veto"] = veto_through(calendar.details(date.fromisoformat(day))["horizon_close"])
+        rows.append({**stats, "capture_coverage_unknown": unknown, "programmed_session_index": index})
+    completed = sum(calendar.details(date.fromisoformat(day))["close"] <= utc(now) for day in schedule)
+    result = {"schema": "R2D2_V2_COHORT_EXPORT_V2", "epoch": state["epoch"], "manifest_sha": state["manifest_sha"],
+        "amendment_sha": state["amendment_sha"], "signed_manifest_sha": state["signed_manifest_sha"],
+        "readiness_sha": state["readiness_sha"], "programmed_sessions": schedule, "sessions_completed": completed,
+        "maturity_session_index": size + 9, "certification_target": "V2_FILTER_CERTIFIED_R1",
+        "certificate_scope": "R1_DISCRIMINATION_ONLY",
         "release_sha": state["release_sha"], "code_revision": state["code_revision"], "cohort_size": size,
         "calendar_version": state["calendar_version"], "maturity_session": maturity_day.isoformat(), "sessions": rows,
-        "data_gate_unknown": coverage_unknown or bool(state["data_issues"]) or any(r["data_gate_unknown"] for r in rows),
-        "terminal_veto": bool(state["ledger"]["terminal_reasons"]), "statistical_verdict": "NOT_COMPUTED"}
+        "data_gate_unknown": coverage_unknown or any(r["data_gate_unknown"] for r in rows),
+        "terminal_veto": veto_through(calendar.details(maturity_day)["close"]),
+        "observation_cutoff_at": calendar.details(maturity_day)["close"].isoformat(),
+        "statistical_verdict": "NOT_COMPUTED"}
     return {**result, "sha256": digest(result)}

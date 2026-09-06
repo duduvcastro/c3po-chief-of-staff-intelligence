@@ -260,13 +260,55 @@ def test_same_instant_stop_beats_time_intent_and_charges_one_exit():
     assert portfolio_summary(state)["cash_identity_passed"]
 
 
-def test_event_inside_bar_with_touch_does_not_invent_chronology():
-    state, _, _ = candidate()
-    state = apply(state, event("EARNINGS", at="2026-09-08T14:01:30+00:00", earnings_at="2026-09-15T12:00:00+00:00"))
-    state = apply(state, bar(2, low=95.0))
-    assert state["research"]["a"]["category"] == "ambiguous"
+@pytest.mark.parametrize("cause", ["EARNINGS", "MATURITY"])
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+@pytest.mark.parametrize("low,high", [(95.0, 101.0), (99.0, 110.0), (95.0, 110.0)])
+def test_event_inside_bar_with_touch_does_not_invent_chronology(cause, arm, low, high):
+    when = "2026-09-08T14:01:30+00:00"
+    state, _, _ = candidate(arm=arm, maturity_at=when if cause == "MATURITY" else MATURITY)
+    values = {"earnings_at": "2026-09-15T12:00:00+00:00"} if cause == "EARNINGS" else {}
+    state = apply(state, event(cause, at=when, **values))
+    state = apply(state, bar(2, low=low, high=high))
+    research = state["research"]["a"]
+    assert research["category"] == "unobservable"
+    assert research["exit_price"] is None and research["exit_at"] is None
+    assert research["accounting_unknown"] and research["order_unknown"]
+    assert research["exit_cause"] == "EVENT_BARRIER_ORDER_UNRESOLVED"
+    stats = export_session_statistics(state, SESSION)
+    assert stats["arms"][arm]["unobservable"] == 1
+    assert stats["arms"][arm]["ambiguous"] == 0
+    assert stats["arms"][arm]["upper_first"] == stats["arms"][arm]["lower_first"] == 0
+    assert stats["data_gate_unknown"]
+    if arm == "CONTROL":
+        assert not state["portfolio"] and stats["finalized"]
+        return
     assert state["portfolio"]["a"]["status"] == "OPEN"
+    assert stats["portfolio_pnl_usd_sum"] is None and not stats["finalized"]
     assert portfolio_summary(state)["nav_usd"] is None
+    state = apply(state, quote(3, at="2026-09-08T14:02:01+00:00"))
+    later = export_session_statistics(state, SESSION)
+    assert later["finalized"] and later["portfolio_pnl_usd_sum"] is None
+    assert later["data_gate_unknown"]  # A later quote cannot reconstruct the missing order.
+
+
+@pytest.mark.parametrize("cause", ["EARNINGS", "MATURITY"])
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+@pytest.mark.parametrize("opening,category,price", [(90.0, "lower_first", 90.0),
+                                                    (110.0, "upper_first", geometry()["T"])])
+def test_demonstrated_bar_open_precedes_intent_inside_interval(cause, arm, opening, category, price):
+    when = "2026-09-08T14:01:30+00:00"
+    state, _, _ = candidate(arm=arm, maturity_at=when if cause == "MATURITY" else MATURITY)
+    values = {"earnings_at": "2026-09-15T12:00:00+00:00"} if cause == "EARNINGS" else {}
+    state = apply(state, event(cause, at=when, **values))
+    state = apply(state, bar(2, open=opening, low=85.0, high=115.0, close=100.0))
+    research = state["research"]["a"]
+    assert research["category"] == category and research["exit_price"] == price
+    assert research["exit_at"] == "2026-09-08T14:01:00+00:00"
+    assert not research["order_unknown"] and not research["accounting_unknown"]
+    assert not export_session_statistics(state, SESSION)["data_gate_unknown"]
+    if arm == "ELIGIBLE":
+        assert state["portfolio"]["a"]["exit_price"] == price
+        assert portfolio_summary(state)["cash_identity_passed"]
 
 
 def test_gap_is_economic_dividend_adjusted_and_gains_do_not_offset_losses():

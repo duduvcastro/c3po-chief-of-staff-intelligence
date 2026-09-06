@@ -5,7 +5,7 @@ from datetime import date, datetime, time
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 
-from .r2d2_v2_store import digest, utc
+from .r2d2_v2_store import ShadowIntegrityError, digest, utc
 
 NEW_YORK = ZoneInfo("America/New_York")
 
@@ -17,10 +17,21 @@ class ShadowCalendar:
         self.version = exchange_calendars.__version__
 
     def is_session(self, day: date) -> bool:
-        return bool(self.calendar.is_session(day.isoformat()))
+        try:
+            return bool(self.calendar.is_session(day.isoformat()))
+        except Exception as exc:
+            raise ShadowIntegrityError("CALENDAR_SESSION_INVALID") from exc
 
     @lru_cache(maxsize=160)
     def details(self, day: date) -> dict:
+        try:
+            return self._details(day)
+        except ShadowIntegrityError:
+            raise
+        except Exception as exc:
+            raise ShadowIntegrityError("CALENDAR_SESSION_INVALID") from exc
+
+    def _details(self, day: date) -> dict:
         cal = self.calendar
         session = cal.date_to_session(day.isoformat(), direction="none")
         previous = cal.previous_session(session)
@@ -37,8 +48,33 @@ class ShadowCalendar:
         return result
 
     def sessions(self, first: date, count: int) -> tuple[date, ...]:
-        session = self.calendar.date_to_session(first.isoformat(), direction="none")
-        return tuple(t.date() for t in self.calendar.sessions_window(session, count))
+        try:
+            if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+                raise ValueError("invalid count")
+            session = self.calendar.date_to_session(first.isoformat(), direction="none")
+            return tuple(t.date() for t in self.calendar.sessions_window(session, count))
+        except Exception as exc:
+            raise ShadowIntegrityError("CALENDAR_SESSION_INVALID") from exc
+
+    def first_open_after(self, at: datetime) -> date:
+        """The next official opening strictly after the observed readiness."""
+        try:
+            at = utc(at)
+            day = at.astimezone(NEW_YORK).date()
+            session = self.calendar.date_to_session(day.isoformat(), direction="next")
+            if utc(self.calendar.session_open(session).to_pydatetime()) <= at:
+                session = self.calendar.next_session(session)
+            return session.date()
+        except Exception as exc:
+            raise ShadowIntegrityError("CALENDAR_SESSION_INVALID") from exc
+
+    def between(self, first: date, last: date) -> tuple[date, ...]:
+        if first > last:
+            return ()
+        try:
+            return tuple(t.date() for t in self.calendar.sessions_in_range(first.isoformat(), last.isoformat()))
+        except Exception as exc:
+            raise ShadowIntegrityError("CALENDAR_SESSION_INVALID") from exc
 
     def regular(self, at: datetime, *, end: datetime | None = None) -> bool:
         at = utc(at)

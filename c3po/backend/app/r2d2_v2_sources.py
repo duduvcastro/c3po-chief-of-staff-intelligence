@@ -29,15 +29,17 @@ from pathlib import Path
 import re
 import stat
 from threading import RLock
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Callable
 from zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
     from .database import Database
 
-MANIFEST_SHA = "01d258903c060660a51ad48e7506903d038b0fa6901142456e06c7858350c359"
-SNAPSHOT_SCHEMA = "V2_SHADOW_SOURCE_SNAPSHOT_V1"
-EVENT_SCHEMA = "V2_SHADOW_SOURCE_EVENT_V1"
+BASE_MANIFEST_SHA = "01d258903c060660a51ad48e7506903d038b0fa6901142456e06c7858350c359"
+MANIFEST_SHA = "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0"
+AMENDMENT_SHA = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
+SNAPSHOT_SCHEMA = "V2_SHADOW_SOURCE_SNAPSHOT_V2"
+EVENT_SCHEMA = "V2_SHADOW_SOURCE_EVENT_V2"
 MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
 MAX_EVENT_BYTES = 64 * 1024
 MAX_EVENT_FILES = 4096
@@ -46,7 +48,7 @@ NY = ZoneInfo("America/New_York")
 _TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}\Z")
 _SYMBOL = re.compile(r"[A-Z0-9][A-Z0-9.-]{0,19}\Z")
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
-_META = {"schema", "manifest_sha", "source_id", "provenance", "source_at", "available_at", "sequence", "self_sha256"}
+_META = {"schema", "manifest_sha", "amendment_sha", "source_id", "provenance", "source_at", "available_at", "sequence", "self_sha256"}
 
 
 class SourceUnavailable(ValueError):
@@ -102,7 +104,9 @@ def capabilities() -> dict[str, Any]:
     return {"file_envelope_port": True, "production_ready": False,
             "legacy_inventory_diagnostic_only": True,
             "missing_producer_contracts": ["causal_bid_ask_universe_10et", "daily_61_ohlc_splits_known_adv20", "earnings_verified_coverage"],
-            "activation_blocked_until_audited_producer": True}
+            "activation_blocked_until_audited_producer": True,
+            "causal_list_requires_external_audit_and_publication": True,
+            "event_ack_rotation_supported": False, "event_file_limit": MAX_EVENT_FILES}
 
 
 def _load_json(data: bytes) -> dict[str, Any]:
@@ -128,6 +132,7 @@ def _metadata(envelope: dict[str, Any], schema: str, now: datetime) -> None:
     _require(set(envelope) == _META | extra, "ENVELOPE_FIELDS")
     _require(envelope.get("schema") == schema, "SCHEMA_MISMATCH")
     _require(envelope.get("manifest_sha") == MANIFEST_SHA, "MANIFEST_MISMATCH")
+    _require(envelope.get("amendment_sha") == AMENDMENT_SHA, "AMENDMENT_MISMATCH")
     _require(_token(envelope.get("source_id")), "SOURCE_ID_INVALID")
     _require(type(envelope.get("sequence")) is int and envelope["sequence"] >= 0, "SEQUENCE_INVALID")
     provenance = envelope.get("provenance")
@@ -186,13 +191,15 @@ def _instrument(row: dict[str, Any], now: datetime, envelope_available: datetime
     _require(type(row["sequence"]) is int and row["sequence"] >= 0, "INSTRUMENT_SEQUENCE_INVALID")
     _, available = _causal(row, envelope_available)
     quote = row["quote"]
-    _require(isinstance(quote, dict) and set(quote) == {"bid", "ask", "bid_source_at", "ask_source_at", "available_at"}, "QUOTE_MISSING")
+    _require(isinstance(quote, dict) and set(quote) == {"bid", "ask", "bid_source_at", "ask_source_at", "received_at", "available_at"}, "QUOTE_MISSING")
     _require(_number(quote["bid"], positive=True) and _number(quote["ask"], positive=True) and quote["ask"] >= quote["bid"], "QUOTE_INVALID")
     quote_available = _time(quote["available_at"])
-    _require(quote_available <= available, "QUOTE_AVAILABLE_FUTURE")
+    # The collector supplies the factual decision clock as now; no producer decision is inferred.
+    received = _time(quote["received_at"])
+    _require(received <= quote_available <= now and quote_available <= available, "QUOTE_RECEIPT_OR_DECISION_REVERSED")
     for key in ("bid_source_at", "ask_source_at"):
         source = _time(quote[key])
-        _require(source <= quote_available and 0 <= (now - source).total_seconds() <= 10, "QUOTE_STALE_OR_FUTURE")
+        _require(source <= received and 0 <= (now - source).total_seconds() <= 10, "QUOTE_STALE_OR_FUTURE")
     daily = row["daily"]
     _require(isinstance(daily, dict) and set(daily) == {"bars", "splits", "adjustment", "coverage_verified", "split_coverage_verified", "source_at", "available_at"}, "DAILY_MISSING")
     _causal(daily, available)
@@ -233,17 +240,46 @@ def _instrument(row: dict[str, Any], now: datetime, envelope_available: datetime
 
 
 class FileShadowSource:
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path, *, causal_receipt_verifier: Callable[[dict[str, Any], dict[str, Any]], bool] | None = None) -> None:
         self.root = Path(os.path.abspath(root))
+        self._causal_receipt_verifier = causal_receipt_verifier
         self._event_hashes: dict[str, str] = {}
         self._lock = RLock()
         self.last_event_diagnostics: list[dict[str, str]] = []
 
     capabilities = staticmethod(capabilities)
 
+    def causal_list(self, epoch: str, day: date | str, now: datetime, calendar: Any) -> dict[str, Any]:
+        """Read a private immutable D-1 commitment; external receipts are mandatory."""
+        from .r2d2_v2_causal_list import validate_commitment
+        missing = {"status": "MISSING", "symbols": [], "diagnostics": []}
+        try:
+            _require(_token(epoch) and epoch not in {".", ".."}, "CAUSAL_EPOCH_INVALID")
+            day = date.fromisoformat(day) if isinstance(day, str) else day
+            _require(type(day) is date, "CAUSAL_SESSION_INVALID")
+            fd = _open_directory(self.root)
+            try:
+                for part in ("causal_list", epoch):
+                    child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                    os.close(fd)
+                    fd = child
+                    _private_directory(fd)
+                data = _read_file(fd, day.isoformat() + ".json", MAX_SNAPSHOT_BYTES)
+            finally:
+                os.close(fd)
+            result = validate_commitment(_load_json(data), epoch=epoch, day=day, now=now,
+                calendar=calendar, receipt_verifier=self._causal_receipt_verifier)
+            result["envelope_sha256"] = hashlib.sha256(data).hexdigest()
+            return result
+        except SourceUnavailable as exc:
+            missing["diagnostics"] = [{"code": str(exc)}]
+        except (OSError, ValueError, TypeError, KeyError, OverflowError):
+            missing["diagnostics"] = [{"code": "CAUSAL_LIST_MISSING_OR_MALFORMED"}]
+        return missing
+
     def snapshot(self, now: datetime) -> dict[str, Any]:
         now = _now(now)
-        missing = {"schema": "V2_SHADOW_SOURCE_BATCH_V1", "status": "MISSING", "manifest_sha": MANIFEST_SHA,
+        missing = {"schema": "V2_SHADOW_SOURCE_BATCH_V2", "status": "MISSING", "manifest_sha": MANIFEST_SHA, "amendment_sha": AMENDMENT_SHA,
                    "universe": {"coverage_verified": False, "instruments": []}, "diagnostics": []}
         try:
             fd = _open_directory(self.root)
@@ -269,7 +305,7 @@ class FileShadowSource:
                     instruments.append({**row, "data_available": False, "diagnostics": [{"code": str(exc)}]})
                 except (ValueError, TypeError, KeyError, OverflowError):
                     instruments.append({**row, "data_available": False, "diagnostics": [{"code": "INSTRUMENT_MALFORMED"}]})
-            return {"schema": "V2_SHADOW_SOURCE_BATCH_V1", "status": "AVAILABLE", "manifest_sha": MANIFEST_SHA,
+            return {"schema": "V2_SHADOW_SOURCE_BATCH_V2", "status": "AVAILABLE", "manifest_sha": MANIFEST_SHA, "amendment_sha": AMENDMENT_SHA,
                     **{k: envelope[k] for k in ("source_id", "provenance", "source_at", "available_at", "sequence", "self_sha256")},
                     "envelope_sha256": hashlib.sha256(data).hexdigest(),
                     "universe": {"coverage_verified": True, "instruments": instruments}, "diagnostics": []}
@@ -316,7 +352,7 @@ class FileShadowSource:
                             found[identity] = {**envelope["event"], "event_id": identity, "source_id": envelope["source_id"],
                                                "source_at": envelope["source_at"], "envelope_available_at": envelope["available_at"],
                                                "sequence": envelope["sequence"], "provenance": envelope["provenance"],
-                                               "manifest_sha": MANIFEST_SHA, "self_sha256": envelope["self_sha256"],
+                                               "manifest_sha": MANIFEST_SHA, "amendment_sha": AMENDMENT_SHA, "self_sha256": envelope["self_sha256"],
                                                "envelope_sha256": digest}
                         except SourceUnavailable as exc:
                             self.last_event_diagnostics.append({"code": str(exc)})

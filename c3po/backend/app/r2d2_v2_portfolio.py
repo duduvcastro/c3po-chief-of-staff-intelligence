@@ -436,10 +436,17 @@ def _apply_bar(state: dict[str, Any], record: dict[str, Any], event: Mapping[str
     lower, upper = prices["low"] <= g["S"], prices["high"] >= g["T"]
     intent = record["intent"]
     if intent:
-        if _time(start) < _time(intent["at"]) < _time(end) and (lower or upper):
+        if (_time(start) < _time(intent["at"]) < _time(end)
+                and g["S"] < prices["open"] < g["T"] and (lower or upper)):
             _flag(record, "EVENT_BARRIER_ORDER_UNRESOLVED", order=True)
             if record["kind"] == "RESEARCH":
-                _ambiguous_research(record, available, [start, end])
+                # The ambiguous category is reserved for an unresolved S/T pair.
+                # A competing TIME/EVENT intent cannot identify even that pair's
+                # terminal order; retain the explicit cause and unknown P&L.
+                record.update(status="CLOSED", category="unobservable",
+                              exit_available_at=available, exit_interval=[start, end],
+                              exit_cause="EVENT_BARRIER_ORDER_UNRESOLVED",
+                              fill_evidence="UNIDENTIFIED_EXECUTION", accounting_unknown=True)
             return
         if (_time(intent["at"]) < _time(start) or
                 (_time(intent["at"]) == _time(start) and g["S"] < prices["open"] < g["T"])):

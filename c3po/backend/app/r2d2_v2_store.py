@@ -36,7 +36,7 @@ def utc(value: datetime | str) -> datetime:
 
 
 def validate_epoch(epoch: str) -> None:
-    if not isinstance(epoch, str) or not re.fullmatch(r"R2D2-V2-SHADOW-[A-Za-z0-9_-]{1,80}", epoch):
+    if not isinstance(epoch, str) or not re.fullmatch(r"R2D2-V2-(?:SHADOW|DIAG)-[A-Za-z0-9_-]{1,80}", epoch):
         raise ShadowIntegrityError("EPOCH_INVALID")
 
 
@@ -44,6 +44,13 @@ def _namespace(epoch: str, state: dict) -> None:
     validate_epoch(epoch)
     if state.get("epoch") != epoch:
         raise ShadowIntegrityError("EPOCH_NAMESPACE_MISMATCH")
+    mode = state.get("mode")
+    if "mode" in state:
+        if not isinstance(mode, str) or mode not in {"DIAGNOSTIC", "CERTIFIED"}:
+            raise ShadowIntegrityError("EPOCH_MODE_INVALID")
+        prefix = "R2D2-V2-DIAG-" if mode == "DIAGNOSTIC" else "R2D2-V2-SHADOW-"
+        if not epoch.startswith(prefix):
+            raise ShadowIntegrityError("EPOCH_MODE_NAMESPACE_MISMATCH")
 
 
 def _transition(row: dict, transition: Callable, now: datetime):
@@ -54,6 +61,14 @@ def _transition(row: dict, transition: Callable, now: datetime):
     if (state["epoch"], state["manifest_sha"], state["release_sha"]) != (
             row["state"]["epoch"], row["manifest_sha"], row["state"]["release_sha"]):
         raise ShadowIntegrityError("EPOCH_IDENTITY_CHANGED")
+    if ("mode" in state, state.get("mode")) != ("mode" in row["state"], row["state"].get("mode")):
+        raise ShadowIntegrityError("EPOCH_MODE_CHANGED")
+    _namespace(row["state"]["epoch"], state)
+    state_sha = digest(state)
+    if not payloads and state_sha == row["state_sha"]:
+        # Empty polling is still serialized and integrity checked, but does not
+        # rewrite the epoch JSONB, increment its version or manufacture evidence.
+        return row, [], response
     head = row["journal_head"]
     sequence = row["sequence"]
     records = []
@@ -64,7 +79,6 @@ def _transition(row: dict, transition: Callable, now: datetime):
                   "payload": payload, "previous_sha": head}
         record["record_sha"] = head = digest(record)
         records.append(record)
-    state_sha = digest(state)
     updated = {**row, "state": state, "state_sha": state_sha,
                "version": row["version"] + 1, "journal_head": head, "sequence": sequence,
                "updated_at": recorded_at.isoformat()}
@@ -144,10 +158,11 @@ class PostgresShadowStore:
                     VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s)""",
                     (epoch, record["sequence"], record["journal_key"], utc(record["recorded_at"]),
                      canonical(record["payload"]).decode(), record["previous_sha"], record["record_sha"]))
-            connection.execute("""UPDATE r2d2_v2_shadow_epochs SET
-                state=%s::jsonb,state_sha=%s,version=%s,journal_head=%s,updated_at=%s WHERE epoch=%s""",
-                (canonical(updated["state"]).decode(), updated["state_sha"], updated["version"],
-                 updated["journal_head"], utc(updated["updated_at"]), epoch))
+            if updated["version"] != row["version"]:
+                connection.execute("""UPDATE r2d2_v2_shadow_epochs SET
+                    state=%s::jsonb,state_sha=%s,version=%s,journal_head=%s,updated_at=%s WHERE epoch=%s""",
+                    (canonical(updated["state"]).decode(), updated["state_sha"], updated["version"],
+                     updated["journal_head"], utc(updated["updated_at"]), epoch))
             connection.commit()
             return response
 
