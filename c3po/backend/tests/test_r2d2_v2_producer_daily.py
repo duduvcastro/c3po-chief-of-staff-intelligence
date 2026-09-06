@@ -94,10 +94,13 @@ def test_daily_contract_assembles_20_sessions_raw_with_window_splits() -> None:
             rows.append(_bar_row("AAA", session, volume=1000 + index))  # identical duplicate: counts once
         bulk[session] = _response(rows, received)
         splits[session] = _response([{"code": "AAA", "date": session.isoformat(), "split": "2.000000/1.000000"}] if index == 10 else [], received + timedelta(seconds=5))
-    contract, receipt = prod.build_daily_contract(_registry(["AAA", "BBB", "CCC"]), bulk, splits, sessions=sessions, previous_close=prod.session_close(PREVIOUS))
+    registry = _registry(["AAA", "BBB", "CCC"])
+    registry["instruments"].append({"symbol": "ETF1", "market": "NYSE", "security_type": "ETF", "classification_verified": True})
+    contract, receipt = prod.build_daily_contract(registry, bulk, splits, sessions=sessions, previous_close=prod.session_close(PREVIOUS))
     assert contract["schema"] == "V2_CAUSAL_DAILY_CONTRACT_V1"
     assert set(contract) == prod.DAILY_FIELDS == {"schema", "source_id", "source_at", "available_at", "instruments"}
     by_symbol = {item["symbol"]: item["daily"] for item in contract["instruments"]}
+    assert set(by_symbol) == {"AAA", "BBB", "CCC"}  # classes the builder excludes by classification get no daily rows (size)
     aaa = by_symbol["AAA"]
     assert set(aaa) == {"bars", "splits", "adjustment", "coverage_verified", "split_coverage_verified", "source_at", "available_at"}
     assert aaa["adjustment"] == "RAW_UNADJUSTED" and len(aaa["bars"]) == 20 and aaa["coverage_verified"] is True and aaa["split_coverage_verified"] is True

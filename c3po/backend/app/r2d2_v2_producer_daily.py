@@ -66,6 +66,7 @@ TYPE_MAP = {
 }
 LIQUIDITY_SESSIONS = 20
 ATR_SESSIONS = 61
+DAILY_ELIGIBLE_TYPES = ("COMMON_STOCK", "COMMON_STOCK_ADR")  # the only classes the signed list builder selects
 SYMBOL_RE_ALLOWED = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
 
 
@@ -313,7 +314,9 @@ def build_daily_contract(registry: Mapping[str, Any], bulk_by_session: Mapping[d
     window = _official_window(sessions, LIQUIDITY_SESSIONS, "LIQUIDITY_WINDOW_INVALID")
     if set(bulk_by_session) != set(window) or set(splits_by_session) != set(window):
         raise ProducerError("BULK_RESPONSES_INCOMPLETE")
-    symbols = [item["symbol"] for item in registry["instruments"]]
+    # Daily rows only for the security types the signed list builder can select; every other registry row is
+    # CLASSIFICATION_EXCLUDED by the builder before it needs daily data (measured: 9,010 rows = 43 MB vs 6,001 = 29 MB).
+    symbols = [item["symbol"] for item in registry["instruments"] if item.get("security_type") in DAILY_ELIGIBLE_TYPES]
     bars: dict[str, dict[date, dict[str, Any]]] = {symbol: {} for symbol in symbols}
     splits: dict[str, list[dict[str, Any]]] = {symbol: [] for symbol in symbols}
     conflicts: dict[str, list[str]] = {}
