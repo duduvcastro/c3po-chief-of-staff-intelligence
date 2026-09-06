@@ -1,16 +1,17 @@
-FROM python:3.12-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217
+# Alpine base (same family as the web and database images): no perl, and a
+# util-linux with the fixes Debian trixie has not shipped yet. All compiled
+# dependencies in requirements.txt publish musllinux wheels.
+FROM python:3.12-alpine3.24@sha256:b64631e04e4920160c50fbe8d8df828f7f35f06f425cb44aa09bca53e708a35a
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
 ARG C3PO_SECURITY_REBUILD=bootstrap
+# tzdata: zoneinfo for America/Sao_Paulo and America/New_York (ZoneInfo).
+# libstdc++/libgcc: runtime for the numpy/pandas/pydantic-core musl wheels.
 RUN test -n "$C3PO_SECURITY_REBUILD" \
-    && apt-get update \
-    && apt-get install --yes --no-install-recommends --only-upgrade \
-        libssl3t64 \
-        openssl \
-        openssl-provider-legacy \
-    && rm -rf /var/lib/apt/lists/*
+    && apk upgrade --no-cache \
+    && apk add --no-cache tzdata libstdc++ libgcc
 
 WORKDIR /app
 
