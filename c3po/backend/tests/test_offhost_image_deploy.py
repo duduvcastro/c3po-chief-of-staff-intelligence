@@ -138,11 +138,14 @@ def test_fixable_high_and_critical_runtime_findings_have_explicit_upgrades() -> 
     database = DATABASE_DOCKERFILE.read_text(encoding="utf-8")
     requirements = BACKEND_REQUIREMENTS.read_text(encoding="utf-8")
 
-    assert "apt-get install --yes --no-install-recommends --only-upgrade" in backend
+    # The backend runs on Alpine (same family as web/database): the whole base
+    # is upgraded at build time, so Debian-only packages without a fix (perl,
+    # util-linux, ncurses, ...) no longer ship in the runtime image.
+    assert "python:3.12-alpine3.24@sha256:" in backend
+    assert "apt-get" not in backend
+    assert "apk upgrade --no-cache" in backend
     assert backend.count("C3PO_SECURITY_REBUILD") == 3
-    assert {"libssl3t64", "openssl", "openssl-provider-legacy"} <= set(
-        backend.split()
-    )
+    assert {"tzdata", "libstdc++", "libgcc"} <= set(backend.split())
     assert "cryptography>=50,<51" in requirements
     assert "apk upgrade --no-cache libcrypto3 libssl3 libexpat" in frontend
     assert frontend.count("C3PO_SECURITY_REBUILD") == 2
