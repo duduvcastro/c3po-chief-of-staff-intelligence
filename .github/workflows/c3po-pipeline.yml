@@ -206,7 +206,11 @@ jobs:
           github.event_name == 'pull_request' ||
           (github.event_name == 'workflow_dispatch' && inputs.remediation)
         working-directory: ${{ github.workspace }}
+        # `shell: bash` runs with `-eo pipefail`, so a failing docker/pip/smoke/
+        # pytest producer fails the step even though the output goes through tee.
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/backend-runtime"
           docker image inspect c3po/backend:pr-validation \
             > "$RUNNER_TEMP/backend-runtime/image-inspect.json"
