@@ -219,7 +219,7 @@ jobs:
           sudo systemctl daemon-reload
           sudo systemctl enable --now c3po-postgres-backup.timer
 
-          docker compose --env-file .env -f c3po/compose.yml up -d --force-recreate \
+          C3PO_BUILD_SHA="$deployed" docker compose --env-file .env -f c3po/compose.yml up -d --force-recreate \
             api investor-relations-worker valuation-worker server-usage-worker r2d2-worker
 
           sleep 10
