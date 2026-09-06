@@ -711,3 +711,325 @@ def test_v3_evidence_ledger_contract_hash_is_pinned() -> None:
     ledger = Path(__file__).resolve().parents[2] / "docs" / "V3_EVIDENCE_LEDGER.md"
 
     assert hashlib.sha256(ledger.read_bytes()).hexdigest() == V3_EVIDENCE_LEDGER_SHA256
+
+
+EPOCH_TWO_SESSION_OFFSET = 7  # SESSION_OPEN + 7 days = 2026-08-27 13:30Z, inside epoch 2
+
+# Shape of the frozen V1.1 outputs before Amendment 2 (base cd6683b1). The
+# epoch-1 stratum must keep exactly these keys so its bytes do not drift.
+BASE_FROZEN_CONTRACT_KEYS = [
+    "spec",
+    "amendment_one",
+    "deliverable_zero",
+    "policy_commit",
+    "methodology",
+    "bootstrap_seed",
+    "bootstrap_iterations",
+    "bootstrap_session_timezone",
+    "realized_accounting_timezone",
+    "terminal_horizon_sessions",
+    "intrabar_precedence",
+    "activation_delay",
+]
+BASE_PLAN_KEYS = [
+    "command",
+    "read_only",
+    "external_api_calls",
+    "report_written",
+    "spec",
+    "amendment_one",
+    "deliverable_zero",
+    "experiment_id",
+    "ledger_rows",
+    "episodes",
+    "episode_construction",
+    "minute_sources",
+    "minute_source_count",
+    "frozen_input_contract",
+    "bootstrap_seed",
+    "bootstrap_iterations",
+    "run_window",
+]
+
+
+def _patch_frozen_documents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    pin_amendment_two: bool = True,
+) -> dict[str, Path]:
+    from app import r2d2_exit_policy_study as study
+
+    docs: dict[str, Path] = {}
+    for name, constant, body in (
+        ("spec", "SPEC_SHA256", b"frozen spec\n"),
+        ("amendment", "AMENDMENT_ONE_SHA256", b"signed amendment\n"),
+        ("deliverable", "DELIVERABLE_ZERO_SHA256", b"approved deliverable\n"),
+        ("amendment_two", "AMENDMENT_TWO_SHA256", b"signed amendment two\n"),
+    ):
+        path = tmp_path / f"{name}.md"
+        path.write_bytes(body)
+        if name != "amendment_two" or pin_amendment_two:
+            monkeypatch.setattr(study, constant, hashlib.sha256(body).hexdigest())
+        docs[name] = path
+    return docs
+
+
+def _round_trip(buy: LedgerFill, *, fill_id: str, at: datetime) -> LedgerFill:
+    average_cost = (buy.gross_value_usd + buy.fees_usd) / buy.quantity
+    return _sell(
+        average_cost=average_cost,
+        fill_id=fill_id,
+        at=at,
+        signal=100.5,
+        quantity=buy.quantity,
+        symbol=buy.symbol,
+    )
+
+
+def _patch_epoch_two_ledger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    methodology: str,
+    straddling: bool = False,
+) -> Settings:
+    from app import r2d2_exit_policy_study as study
+
+    epoch_two_open = SESSION_OPEN + timedelta(days=EPOCH_TWO_SESSION_OFFSET)
+    assert epoch_two_open >= study.EPOCH_TWO_COHORT_START
+    legacy_buy = _buy(fill_id="legacy-buy", quantity=10)
+    legacy_sell = _round_trip(
+        legacy_buy, fill_id="legacy-sell", at=SESSION_OPEN + timedelta(minutes=2),
+    )
+    buy = _buy(fill_id="epoch-two-buy", at=epoch_two_open, quantity=10)
+    sell = _round_trip(buy, fill_id="epoch-two-sell", at=epoch_two_open + timedelta(minutes=2))
+    fills = [legacy_buy, legacy_sell, buy, sell]
+    if straddling:
+        # Opened before the signed instant, closed inside epoch 2: excluded and counted.
+        straddle_buy = _buy(
+            fill_id="straddle-buy",
+            at=study.EPOCH_TWO_COHORT_START - timedelta(days=1),
+            quantity=5,
+            symbol="STRD",
+        )
+        fills += [
+            straddle_buy,
+            _round_trip(
+                straddle_buy,
+                fill_id="straddle-sell",
+                at=epoch_two_open + timedelta(minutes=1),
+            ),
+        ]
+    bars = [
+        _bar(0, open_=100.0, high=100.2, low=99.9, close=100.1, session_offset=EPOCH_TWO_SESSION_OFFSET),
+        _bar(1, open_=100.2, high=100.7, low=100.0, close=100.5, session_offset=EPOCH_TWO_SESSION_OFFSET),
+        _bar(2, open_=100.3, high=100.6, low=100.2, close=100.4, session_offset=EPOCH_TWO_SESSION_OFFSET),
+    ]
+    source = tmp_path / "epoch-two-source.csv.gz"
+    source.write_bytes(b"not read by the patched reader")
+    monkeypatch.setattr(
+        study.LedgerReader,
+        "read",
+        lambda self, code: ({
+            "id": "experiment",
+            "code": code,
+            "status": "running",
+            "starting_capital": 1_000_000.0,
+            "start_date": date(2026, 8, 17),
+            "methodology_version": methodology,
+        }, list(fills)),
+    )
+    monkeypatch.setattr(
+        study.MinuteAggregateReader,
+        "selected_sources",
+        lambda self, episodes: [(epoch_two_open.date(), source)],
+    )
+    monkeypatch.setattr(
+        study.MinuteAggregateReader,
+        "read",
+        lambda self, sources, symbols: ({"TEST": bars}, [{
+            "session_date": epoch_two_open.date().isoformat(),
+            "path": source.name,
+            "size_bytes": source.stat().st_size,
+            "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        }]),
+    )
+    return Settings(
+        database_url="",
+        day_d_dataset_root=tmp_path,
+        r2d2_experiment_code="R2D2-90D-001",
+    )
+
+
+def _epoch_two_kwargs(docs: dict[str, Path]) -> dict[str, object]:
+    from app import r2d2_exit_policy_study as study
+
+    return {
+        "generated_at": datetime(2026, 9, 6, 5, tzinfo=UTC),
+        "spec_path": docs["spec"],
+        "amendment_path": docs["amendment"],
+        "deliverable_path": docs["deliverable"],
+        "amendment_two_path": docs["amendment_two"],
+        "cohort_start_at": study.EPOCH_TWO_COHORT_START,
+    }
+
+
+@pytest.mark.parametrize(
+    "methodology",
+    ["R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR", "R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY"],
+)
+def test_epoch_two_stratum_accepts_both_labels_only_with_signed_amendment_two(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    methodology: str,
+) -> None:
+    from app import r2d2_exit_policy_study as study
+
+    docs = _patch_frozen_documents(tmp_path, monkeypatch)
+    settings = _patch_epoch_two_ledger(tmp_path, monkeypatch, methodology=methodology)
+
+    report = build_report(settings=settings, **_epoch_two_kwargs(docs))
+
+    assert report["analysis_interpretable"] is True
+    # The frozen ledger input is the whole ledger up to the cutoff (unchanged);
+    # the stratum is selected at episode level.
+    assert report["inputs"]["ledger"]["row_count"] == 4
+    assert "input_start_at" not in report["inputs"]["ledger"]
+    assert report["cohort"]["constructed_episode_count"] == 1
+    assert report["cohort"]["construction"]["pre_cohort_episodes_excluded"] == 1
+    contract = report["frozen_contract"]["methodology_contract"]
+    assert contract["stratum"] == "epoch-2"
+    assert contract["observed_methodology"] == methodology
+    assert contract["accepted_methodologies"] == [
+        "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR",
+        "R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY",
+    ]
+    assert contract["cohort_start_at"] == study.EPOCH_TWO_COHORT_START
+    assert contract["pooling_across_strata_authorized"] is False
+    assert report["frozen_contract"]["amendment_two"]["sha256"] == hashlib.sha256(
+        docs["amendment_two"].read_bytes()
+    ).hexdigest()
+    assert report["frozen_contract"]["methodology"] == study.FROZEN_METHODOLOGY
+    assert report["governance"]["strategy_change_authorized"] is False
+
+
+def test_epoch_two_stratum_excludes_and_counts_episodes_straddling_the_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    docs = _patch_frozen_documents(tmp_path, monkeypatch)
+    settings = _patch_epoch_two_ledger(
+        tmp_path,
+        monkeypatch,
+        methodology="R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY",
+        straddling=True,
+    )
+
+    report = build_report(settings=settings, **_epoch_two_kwargs(docs))
+
+    assert report["analysis_interpretable"] is True
+    assert report["inputs"]["ledger"]["row_count"] == 6
+    assert report["cohort"]["constructed_episode_count"] == 1
+    assert report["cohort"]["construction"]["pre_cohort_episodes_excluded"] == 2
+    assert report["cohort"]["construction"]["open_episodes"] == 0
+
+
+def test_epoch_one_stratum_keeps_base_output_shape_and_preflight_behaviour(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import r2d2_exit_policy_study as study
+    from app.r2d2_exit_policy_study import build_plan
+
+    docs = _patch_frozen_documents(tmp_path, monkeypatch)
+    legacy = {
+        "generated_at": datetime(2026, 9, 6, 5, tzinfo=UTC),
+        "spec_path": docs["spec"],
+        "amendment_path": docs["amendment"],
+        "deliverable_path": docs["deliverable"],
+    }
+
+    settings = _patch_epoch_two_ledger(tmp_path, monkeypatch, methodology=study.FROZEN_METHODOLOGY)
+    report = build_report(settings=settings, **legacy)
+    assert list(report["frozen_contract"]) == BASE_FROZEN_CONTRACT_KEYS
+    assert "pre_cohort_episodes_excluded" not in report["cohort"]["construction"]
+    assert report["cohort"]["constructed_episode_count"] == 2
+    plan = build_plan(
+        settings=settings,
+        spec_path=docs["spec"],
+        amendment_path=docs["amendment"],
+        deliverable_path=docs["deliverable"],
+    )
+    assert list(plan) == BASE_PLAN_KEYS
+
+    # The legacy preflight never checked the label: a V28 experiment still plans.
+    settings = _patch_epoch_two_ledger(
+        tmp_path,
+        monkeypatch,
+        methodology="R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY",
+    )
+    plan = build_plan(
+        settings=settings,
+        spec_path=docs["spec"],
+        amendment_path=docs["amendment"],
+        deliverable_path=docs["deliverable"],
+    )
+    assert list(plan) == BASE_PLAN_KEYS
+    assert plan["episodes"] == 2
+
+    # ... while the legacy report keeps rejecting it, exactly as before.
+    with pytest.raises(ExitPolicyStudyError, match="does not match the frozen policy"):
+        build_report(settings=settings, **legacy)
+
+    # Supplying Amendment 2 without selecting the stratum is an operator error.
+    with pytest.raises(ExitPolicyStudyError, match="without --cohort-start-at"):
+        build_report(settings=settings, amendment_two_path=docs["amendment_two"], **legacy)
+
+
+def test_epoch_two_stratum_rejects_unsigned_cohort_start_and_unknown_label(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import r2d2_exit_policy_study as study
+
+    docs = _patch_frozen_documents(tmp_path, monkeypatch)
+    settings = _patch_epoch_two_ledger(
+        tmp_path,
+        monkeypatch,
+        methodology="R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY",
+    )
+    kwargs = _epoch_two_kwargs(docs)
+
+    with pytest.raises(ExitPolicyStudyError, match="not the signed Amendment 2 epoch-2 start"):
+        build_report(
+            settings=settings,
+            **{**kwargs, "cohort_start_at": study.EPOCH_TWO_COHORT_START + timedelta(seconds=1)},
+        )
+
+    settings = _patch_epoch_two_ledger(tmp_path, monkeypatch, methodology="R2D2-HYBRID-V29-OTHER")
+    with pytest.raises(ExitPolicyStudyError, match="does not match the frozen policy"):
+        build_report(settings=settings, **kwargs)
+
+
+def test_epoch_two_stratum_fails_closed_on_amendment_two_hash_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    docs = _patch_frozen_documents(tmp_path, monkeypatch, pin_amendment_two=False)
+    settings = _patch_epoch_two_ledger(
+        tmp_path,
+        monkeypatch,
+        methodology="R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY",
+    )
+
+    with pytest.raises(ExitPolicyStudyError, match="Amendment 2 hash mismatch"):
+        build_report(settings=settings, **_epoch_two_kwargs(docs))
+
+
+def test_amendment_two_hash_is_pinned() -> None:
+    from app import r2d2_exit_policy_study as study
+
+    amendment = Path(__file__).resolve().parents[2] / "docs" / "EXIT_POLICY_STUDY_V1_1_AMENDMENT_2.md"
+
+    assert hashlib.sha256(amendment.read_bytes()).hexdigest() == study.AMENDMENT_TWO_SHA256

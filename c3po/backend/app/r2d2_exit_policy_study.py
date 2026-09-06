@@ -42,6 +42,15 @@ AMENDMENT_ONE_SHA256 = "3001ed9eba15d684f7dcd74d91a940e7603ae4d5a342b53655b2fd1e
 DELIVERABLE_ZERO_SHA256 = "ae83428ac0444329efc7405e06078c144b575a0909699e15b16ce5a26de20098"
 FROZEN_POLICY_COMMIT = "39ff427fd2f1fa0f42141776921a63651508495f"
 FROZEN_METHODOLOGY = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
+# Amendment 2 (six hands): the epoch-2 stratum (`policy-a-resume`) is analysed
+# separately, selecting episodes opened at or after the audited resume instant,
+# and accepts the V28 label introduced by PR #346 (entry capacity sizing). The
+# exit evaluation function bodies match the frozen commit, but operational
+# helpers differ (Amendment 2 §1.3): no runtime equivalence is claimed. Any
+# other cohort start or label fails closed; the epoch-1 path is unchanged.
+AMENDMENT_TWO_SHA256 = "0266ee821edc94bee1d55d39614c6948d623963cb6dc3bc27e111c492776e7f0"
+EPOCH_TWO_METHODOLOGY = "R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY"
+EPOCH_TWO_COHORT_START = datetime(2026, 8, 26, 13, 30, 24, 983322, tzinfo=timezone.utc)
 REPORT_SCHEMA_VERSION = "EXIT-POLICY-STUDY-V1.1-REPORT-v2"
 LEDGER_CANDIDATE_SCHEMA_VERSION = "V3-EVIDENCE-LEDGER-CANDIDATE-v1"
 V3_EVIDENCE_LEDGER_SHA256 = (
@@ -232,6 +241,26 @@ def require_frozen_document(path: Path, expected_sha256: str, name: str) -> dict
             f"{name} hash mismatch: expected {expected_sha256}, observed {observed}"
         )
     return {"path": str(path), "sha256": observed, "size_bytes": path.stat().st_size}
+
+
+def _require_amendment_two(
+    c3po_root: Path,
+    amendment_two_path: Path | None,
+    cohort_start_at: datetime | None,
+) -> dict[str, Any] | None:
+    """Amendment 2 is only loaded (and then required) for the epoch-2 stratum."""
+    if cohort_start_at is None:
+        if amendment_two_path is not None:
+            raise ExitPolicyStudyError(
+                "Amendment 2 was supplied without --cohort-start-at; "
+                "the epoch-1 stratum runs on the frozen V1.1 contract alone"
+            )
+        return None
+    return require_frozen_document(
+        amendment_two_path or c3po_root / "docs" / "EXIT_POLICY_STUDY_V1_1_AMENDMENT_2.md",
+        AMENDMENT_TWO_SHA256,
+        "signed EXIT_POLICY_STUDY_V1.1 Amendment 2",
+    )
 
 
 class LedgerReader:
@@ -471,6 +500,65 @@ def _frozen_ledger_input(
     return selected, evidence
 
 
+def _methodology_contract(
+    experiment: Mapping[str, Any],
+    *,
+    cohort_start_at: datetime | None,
+    amendment_two: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Fail-closed methodology contract per stratum (spec + Amendment 2)."""
+    observed = str(experiment.get("methodology_version"))
+    if cohort_start_at is None:
+        accepted = frozenset({FROZEN_METHODOLOGY})
+        stratum = "epoch-1"
+    else:
+        if cohort_start_at != EPOCH_TWO_COHORT_START:
+            raise ExitPolicyStudyError(
+                "cohort start is not the signed Amendment 2 epoch-2 start: "
+                f"expected {EPOCH_TWO_COHORT_START.isoformat()}, "
+                f"observed {cohort_start_at.isoformat()}"
+            )
+        if amendment_two is None:
+            raise ExitPolicyStudyError(
+                "signed EXIT_POLICY_STUDY_V1.1 Amendment 2 is required for the epoch-2 cohort"
+            )
+        accepted = frozenset({FROZEN_METHODOLOGY, EPOCH_TWO_METHODOLOGY})
+        stratum = "epoch-2"
+    if observed not in accepted:
+        raise ExitPolicyStudyError(
+            "experiment methodology does not match the frozen policy: "
+            f"{observed}"
+        )
+    return {
+        "stratum": stratum,
+        "observed_methodology": observed,
+        "accepted_methodologies": sorted(accepted),
+        "cohort_start_at": cohort_start_at,
+        "pooling_across_strata_authorized": False,
+    }
+
+
+def _select_stratum(
+    episodes: Sequence[Episode],
+    construction_counts: Mapping[str, int],
+    *,
+    cohort_start_at: datetime | None,
+) -> tuple[list[Episode], dict[str, int]]:
+    """Amendment 2 E2.1: keep only episodes opened at or after the cohort start.
+
+    Episodes opened before the instant — including the ones straddling the
+    boundary — are excluded from the stratum and counted, never censored
+    silently and never allowed to abort the run.
+    """
+    if cohort_start_at is None:
+        return list(episodes), dict(construction_counts)
+    selected = [episode for episode in episodes if episode.opened_at >= cohort_start_at]
+    return selected, {
+        **construction_counts,
+        "pre_cohort_episodes_excluded": len(episodes) - len(selected),
+    }
+
+
 def _base_cohort(episodes: Sequence[Episode], latest_bar_session: date) -> tuple[list[Episode], dict[str, int]]:
     counts: dict[str, int] = {
         "open": 0,
@@ -638,6 +726,8 @@ def build_report(
     input_cutoff_at: datetime | None = None,
     expected_ledger_sha256: str | None = None,
     expected_minute_manifest_sha256: str | None = None,
+    amendment_two_path: Path | None = None,
+    cohort_start_at: datetime | None = None,
 ) -> dict[str, Any]:
     generated_at = (generated_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     c3po_root = Path(__file__).resolve().parents[2]
@@ -656,6 +746,7 @@ def build_report(
         DELIVERABLE_ZERO_SHA256,
         "approved Deliverable 0",
     )
+    amendment_two = _require_amendment_two(c3po_root, amendment_two_path, cohort_start_at)
     database = Database(settings)
     experiment, all_fills = LedgerReader(database).read(settings.r2d2_experiment_code)
     fills, ledger_evidence = _frozen_ledger_input(
@@ -663,12 +754,15 @@ def build_report(
         cutoff_at=input_cutoff_at,
         expected_sha256=expected_ledger_sha256,
     )
-    if str(experiment.get("methodology_version")) != FROZEN_METHODOLOGY:
-        raise ExitPolicyStudyError(
-            "experiment methodology does not match the frozen policy: "
-            f"{experiment.get('methodology_version')}"
-        )
-    episodes, construction_counts = build_episodes(fills)
+    methodology_contract = _methodology_contract(
+        experiment,
+        cohort_start_at=cohort_start_at,
+        amendment_two=amendment_two,
+    )
+    episodes, construction_counts = _select_stratum(
+        *build_episodes(fills),
+        cohort_start_at=cohort_start_at,
+    )
     aggregate_reader = MinuteAggregateReader(settings.day_d_dataset_root)
     sources = aggregate_reader.selected_sources(episodes)
     symbols = {
@@ -821,6 +915,11 @@ def build_report(
             "A policy with fewer than 15 observed sessions remains PILOT and cannot move production.",
         ],
     }
+    if cohort_start_at is not None:
+        # Amendment 2 metadata is emitted only for the epoch-2 stratum so the
+        # epoch-1 report stays byte-identical to the frozen V1.1 runner output.
+        report["frozen_contract"]["amendment_two"] = amendment_two
+        report["frozen_contract"]["methodology_contract"] = methodology_contract
     report["ledger_candidate_lines"] = _exit_ledger_candidate_lines(
         common_gate=common_gate,
         panel_i=panel_i,
@@ -839,6 +938,8 @@ def build_plan(
     input_cutoff_at: datetime | None = None,
     expected_ledger_sha256: str | None = None,
     expected_minute_manifest_sha256: str | None = None,
+    amendment_two_path: Path | None = None,
+    cohort_start_at: datetime | None = None,
 ) -> dict[str, Any]:
     c3po_root = Path(__file__).resolve().parents[2]
     spec = require_frozen_document(
@@ -856,6 +957,7 @@ def build_plan(
         DELIVERABLE_ZERO_SHA256,
         "approved Deliverable 0",
     )
+    amendment_two = _require_amendment_two(c3po_root, amendment_two_path, cohort_start_at)
     database = Database(settings)
     experiment, all_fills = LedgerReader(database).read(settings.r2d2_experiment_code)
     fills, ledger_evidence = _frozen_ledger_input(
@@ -863,9 +965,21 @@ def build_plan(
         cutoff_at=input_cutoff_at,
         expected_sha256=expected_ledger_sha256,
     )
-    episodes, construction = build_episodes(fills)
+    methodology_contract = None
+    if cohort_start_at is not None:
+        # The legacy preflight never checked the label; the contract is only
+        # applied when the epoch-2 stratum is explicitly selected.
+        methodology_contract = _methodology_contract(
+            experiment,
+            cohort_start_at=cohort_start_at,
+            amendment_two=amendment_two,
+        )
+    episodes, construction = _select_stratum(
+        *build_episodes(fills),
+        cohort_start_at=cohort_start_at,
+    )
     sources = MinuteAggregateReader(settings.day_d_dataset_root).selected_sources(episodes)
-    return {
+    plan: dict[str, Any] = {
         "command": "plan",
         "read_only": True,
         "external_api_calls": 0,
@@ -888,6 +1002,10 @@ def build_plan(
         "bootstrap_iterations": BOOTSTRAP_ITERATIONS,
         "run_window": "00:00-08:00 America/Sao_Paulo",
     }
+    if cohort_start_at is not None:
+        plan["amendment_two"] = amendment_two
+        plan["methodology_contract"] = methodology_contract
+    return plan
 
 
 def require_off_hours(at: datetime) -> None:
@@ -914,6 +1032,8 @@ def _parser() -> argparse.ArgumentParser:
         child.add_argument("--input-cutoff-at", type=_aware)
         child.add_argument("--expected-ledger-sha256")
         child.add_argument("--expected-minute-manifest-sha256")
+        child.add_argument("--amendment-two", type=Path)
+        child.add_argument("--cohort-start-at", type=_aware)
         if command == "run":
             child.add_argument("--output", type=Path, required=True)
     return parser
@@ -931,6 +1051,8 @@ def main(argv: list[str] | None = None) -> int:
             input_cutoff_at=args.input_cutoff_at,
             expected_ledger_sha256=args.expected_ledger_sha256,
             expected_minute_manifest_sha256=args.expected_minute_manifest_sha256,
+            amendment_two_path=args.amendment_two,
+            cohort_start_at=args.cohort_start_at,
         )
         print(json.dumps(_json_ready(payload), sort_keys=True, indent=2))
         return 0
@@ -945,6 +1067,8 @@ def main(argv: list[str] | None = None) -> int:
         input_cutoff_at=args.input_cutoff_at,
         expected_ledger_sha256=args.expected_ledger_sha256,
         expected_minute_manifest_sha256=args.expected_minute_manifest_sha256,
+        amendment_two_path=args.amendment_two,
+        cohort_start_at=args.cohort_start_at,
     )
     write_immutable_json(args.output, payload)
     print(json.dumps({
