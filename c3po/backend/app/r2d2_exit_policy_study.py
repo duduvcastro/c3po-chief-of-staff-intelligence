@@ -43,10 +43,12 @@ DELIVERABLE_ZERO_SHA256 = "ae83428ac0444329efc7405e06078c144b575a0909699e15b16ce
 FROZEN_POLICY_COMMIT = "39ff427fd2f1fa0f42141776921a63651508495f"
 FROZEN_METHODOLOGY = "R2D2-HYBRID-V27-15M-LIQUIDITY-FLOOR"
 # Amendment 2 (six hands): the epoch-2 stratum (`policy-a-resume`) is analysed
-# separately, starting at the audited resume instant, and accepts the V28 label
-# introduced by PR #346 (entry capacity sizing; exit functions AST-identical to
-# the frozen policy commit). Any other cohort start or label fails closed.
-AMENDMENT_TWO_SHA256 = "c31ef5df66c24f71abe8df5718ee3b226dc82d3e869a1765f612bece40ebfd16"
+# separately, selecting episodes opened at or after the audited resume instant,
+# and accepts the V28 label introduced by PR #346 (entry capacity sizing). The
+# exit evaluation function bodies match the frozen commit, but operational
+# helpers differ (Amendment 2 §1.3): no runtime equivalence is claimed. Any
+# other cohort start or label fails closed; the epoch-1 path is unchanged.
+AMENDMENT_TWO_SHA256 = "12aeb2e27ab3d4a65647e677063342e82fbae5a039d45d82a9d3abe6798bf349"
 EPOCH_TWO_METHODOLOGY = "R2D2-HYBRID-V28-DERIVED-PORTFOLIO-CAPACITY"
 EPOCH_TWO_COHORT_START = datetime(2026, 8, 26, 13, 30, 24, 983322, tzinfo=timezone.utc)
 REPORT_SCHEMA_VERSION = "EXIT-POLICY-STUDY-V1.1-REPORT-v2"
@@ -247,7 +249,12 @@ def _require_amendment_two(
     cohort_start_at: datetime | None,
 ) -> dict[str, Any] | None:
     """Amendment 2 is only loaded (and then required) for the epoch-2 stratum."""
-    if cohort_start_at is None and amendment_two_path is None:
+    if cohort_start_at is None:
+        if amendment_two_path is not None:
+            raise ExitPolicyStudyError(
+                "Amendment 2 was supplied without --cohort-start-at; "
+                "the epoch-1 stratum runs on the frozen V1.1 contract alone"
+            )
         return None
     return require_frozen_document(
         amendment_two_path or c3po_root / "docs" / "EXIT_POLICY_STUDY_V1_1_AMENDMENT_2.md",
@@ -474,23 +481,15 @@ def _frozen_ledger_input(
     *,
     cutoff_at: datetime | None,
     expected_sha256: str | None,
-    start_at: datetime | None = None,
 ) -> tuple[list[LedgerFill], dict[str, Any]]:
     selected = [
         fill for fill in fills
-        if (start_at is None or fill.executed_at >= start_at)
-        and (cutoff_at is None or fill.executed_at <= cutoff_at)
+        if cutoff_at is None or fill.executed_at <= cutoff_at
     ]
     evidence = _ledger_evidence(selected)
-    filters: list[str] = []
-    if start_at is not None:
-        filters.append(f"executed_at >= {start_at.isoformat()}")
-        evidence["input_start_at"] = start_at
     if cutoff_at is not None:
-        filters.append(f"executed_at <= {cutoff_at.isoformat()}")
+        evidence["filter"] = f"executed_at <= {cutoff_at.isoformat()}"
         evidence["input_cutoff_at"] = cutoff_at
-    if filters:
-        evidence["filter"] = " and ".join(filters)
     if expected_sha256 is not None and evidence["canonical_json_sha256"] != expected_sha256:
         raise ExitPolicyStudyError(
             "frozen ledger hash mismatch: "
@@ -536,6 +535,27 @@ def _methodology_contract(
         "accepted_methodologies": sorted(accepted),
         "cohort_start_at": cohort_start_at,
         "pooling_across_strata_authorized": False,
+    }
+
+
+def _select_stratum(
+    episodes: Sequence[Episode],
+    construction_counts: Mapping[str, int],
+    *,
+    cohort_start_at: datetime | None,
+) -> tuple[list[Episode], dict[str, int]]:
+    """Amendment 2 E2.1: keep only episodes opened at or after the cohort start.
+
+    Episodes opened before the instant — including the ones straddling the
+    boundary — are excluded from the stratum and counted, never censored
+    silently and never allowed to abort the run.
+    """
+    if cohort_start_at is None:
+        return list(episodes), dict(construction_counts)
+    selected = [episode for episode in episodes if episode.opened_at >= cohort_start_at]
+    return selected, {
+        **construction_counts,
+        "pre_cohort_episodes_excluded": len(episodes) - len(selected),
     }
 
 
@@ -733,14 +753,16 @@ def build_report(
         all_fills,
         cutoff_at=input_cutoff_at,
         expected_sha256=expected_ledger_sha256,
-        start_at=cohort_start_at,
     )
     methodology_contract = _methodology_contract(
         experiment,
         cohort_start_at=cohort_start_at,
         amendment_two=amendment_two,
     )
-    episodes, construction_counts = build_episodes(fills)
+    episodes, construction_counts = _select_stratum(
+        *build_episodes(fills),
+        cohort_start_at=cohort_start_at,
+    )
     aggregate_reader = MinuteAggregateReader(settings.day_d_dataset_root)
     sources = aggregate_reader.selected_sources(episodes)
     symbols = {
@@ -838,8 +860,6 @@ def build_report(
             "deliverable_zero": deliverable,
             "policy_commit": FROZEN_POLICY_COMMIT,
             "methodology": FROZEN_METHODOLOGY,
-            "amendment_two": amendment_two,
-            "methodology_contract": methodology_contract,
             "bootstrap_seed": BOOTSTRAP_SEED,
             "bootstrap_iterations": BOOTSTRAP_ITERATIONS,
             "bootstrap_session_timezone": "America/New_York",
@@ -895,6 +915,11 @@ def build_report(
             "A policy with fewer than 15 observed sessions remains PILOT and cannot move production.",
         ],
     }
+    if cohort_start_at is not None:
+        # Amendment 2 metadata is emitted only for the epoch-2 stratum so the
+        # epoch-1 report stays byte-identical to the frozen V1.1 runner output.
+        report["frozen_contract"]["amendment_two"] = amendment_two
+        report["frozen_contract"]["methodology_contract"] = methodology_contract
     report["ledger_candidate_lines"] = _exit_ledger_candidate_lines(
         common_gate=common_gate,
         panel_i=panel_i,
@@ -939,16 +964,22 @@ def build_plan(
         all_fills,
         cutoff_at=input_cutoff_at,
         expected_sha256=expected_ledger_sha256,
-        start_at=cohort_start_at,
     )
-    methodology_contract = _methodology_contract(
-        experiment,
+    methodology_contract = None
+    if cohort_start_at is not None:
+        # The legacy preflight never checked the label; the contract is only
+        # applied when the epoch-2 stratum is explicitly selected.
+        methodology_contract = _methodology_contract(
+            experiment,
+            cohort_start_at=cohort_start_at,
+            amendment_two=amendment_two,
+        )
+    episodes, construction = _select_stratum(
+        *build_episodes(fills),
         cohort_start_at=cohort_start_at,
-        amendment_two=amendment_two,
     )
-    episodes, construction = build_episodes(fills)
     sources = MinuteAggregateReader(settings.day_d_dataset_root).selected_sources(episodes)
-    return {
+    plan: dict[str, Any] = {
         "command": "plan",
         "read_only": True,
         "external_api_calls": 0,
@@ -956,8 +987,6 @@ def build_plan(
         "spec": spec,
         "amendment_one": amendment,
         "deliverable_zero": deliverable,
-        "amendment_two": amendment_two,
-        "methodology_contract": methodology_contract,
         "experiment_id": str(experiment["id"]),
         "ledger_rows": len(fills),
         "episodes": len(episodes),
@@ -973,6 +1002,10 @@ def build_plan(
         "bootstrap_iterations": BOOTSTRAP_ITERATIONS,
         "run_window": "00:00-08:00 America/Sao_Paulo",
     }
+    if cohort_start_at is not None:
+        plan["amendment_two"] = amendment_two
+        plan["methodology_contract"] = methodology_contract
+    return plan
 
 
 def require_off_hours(at: datetime) -> None:
