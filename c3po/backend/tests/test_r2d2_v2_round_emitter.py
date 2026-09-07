@@ -505,3 +505,66 @@ def test_a_closed_round_identity_is_never_reused_and_a_partial_retry_is_undone_n
                                         "published": published, "quarantined": [], "started_at": _iso(NOW)}))
     outcomes = emitter.recover_rounds(root3, now=NOW + timedelta(minutes=5))
     assert outcomes[0]["commit"] == "rolled_back" and _tape(root3)["final"] == [] and ".attempt-" in Path(outcomes[0]["receipt"]).name
+
+
+def _crash_after_receipt(monkeypatch: pytest.MonkeyPatch):
+    """The process dies right after the COMPLETE receipt is retained and before the journal is removed."""
+    real = emitter._retain
+
+    def crashing(*args, **kwargs):
+        real(*args, **kwargs)
+        raise OSError("simulated crash before the journal was removed")
+
+    monkeypatch.setattr(emitter, "_retain", crashing)
+    return real
+
+
+def test_a_final_that_cannot_be_verified_at_recovery_is_an_inconsistency_with_evidence_never_an_undisposed_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R4 (Codex 5576042705): complete receipt + journal left by a crash, then a final deliberately grown past the
+    # per-file limit. Recovery must not die with FILE_TOO_LARGE leaving the journal behind: the attempt is undone behind the
+    # guard, the unverifiable bytes are preserved as evidence, the original receipt is untouched, an attempt receipt is
+    # written, the identity is closed, and a second recovery is a no-op. The verifiable exit is a new instant.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_retain = _crash_after_receipt(monkeypatch)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(emitter, "_retain", real_retain)
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    retained = emitter._retained_path(root / "rounds", journal["receipt"])
+    before = retained.read_bytes()
+    assert json.loads(before)["commit"] == "complete" and len(_tape(root)["final"]) == 4 and _tape(root)["guard"] == []
+    victim = root / "events" / journal["files"][0]["name"]
+    grown = victim.read_bytes() + b" " * emitter.MAX_EVENT_BYTES
+    victim.write_bytes(grown)  # past the per-file limit: _read_at refuses it (FILE_TOO_LARGE) instead of hashing a prefix
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    assert outcomes[0]["commit"] == "rolled_back" and outcomes[0]["corrupt"] == [journal["files"][0]["name"]]
+    attempt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    assert ".attempt-" in Path(outcomes[0]["receipt"]).name and attempt["recovery"]["retained_commit_before"] == "complete"
+    corrupt = attempt["recovery"]["corrupt"]
+    assert corrupt[0]["observed"] == "unreadable:FILE_TOO_LARGE" and Path(corrupt[0]["evidence"]).read_bytes() == grown
+    assert "unverifiable finals preserved as evidence" in attempt["note"] and retained.read_bytes() == before
+    assert _tape(root) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root) == []
+    assert emitter.recover_rounds(root, now=NOW + timedelta(minutes=3)) == []  # second recovery: nothing pending, nothing rewritten
+    assert emitter._attempt_receipts(root / "rounds", journal["receipt"]) == [Path(outcomes[0]["receipt"])]
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_IDENTITY_CLOSED"):
+        emitter.emit_round(document, episodes, root, now=NOW)  # the identity is closed by its attempt receipt
+    assert _tape(root) == {"guard": [], "final": [], "temp": []} and retained.read_bytes() == before
+    fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=4))  # the verifiable exit: a new instant
+    assert fresh["commit"] == "complete" and fresh["new_files"] == 4
+    # the same disposition when a final is not a regular file (a symlink: refused by O_NOFOLLOW as an OS error, not hashed)
+    root2 = tmp_path / "source2"
+    _crash_after_receipt(monkeypatch)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root2, now=NOW)
+    monkeypatch.setattr(emitter, "_retain", real_retain)
+    journal2 = json.loads((root2 / "rounds" / emitter.pending_rounds(root2)[0]).read_bytes())
+    victim2 = root2 / "events" / journal2["files"][1]["name"]
+    victim2.unlink()
+    victim2.symlink_to(tmp_path / "elsewhere.json")
+    outcomes2 = emitter.recover_rounds(root2, now=NOW + timedelta(minutes=5))
+    corrupt2 = json.loads(Path(outcomes2[0]["receipt"]).read_bytes())["recovery"]["corrupt"]
+    assert outcomes2[0]["commit"] == "rolled_back" and corrupt2[0]["observed"].startswith("unreadable:") and Path(corrupt2[0]["evidence"]).is_symlink()
+    assert _tape(root2) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root2) == []
+    assert emitter.recover_rounds(root2, now=NOW + timedelta(minutes=6)) == []
+

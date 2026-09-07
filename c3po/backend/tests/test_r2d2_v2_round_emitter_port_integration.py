@@ -16,7 +16,7 @@ events_module = pytest.importorskip("app.r2d2_v2_earnings_events")
 from app import r2d2_v2_round_emitter as emitter  # noqa: E402
 from app import r2d2_v2_round_runner as runner  # noqa: E402
 from tests.test_r2d2_v2_round_emitter import (MATURITY, NOW, OPENED, RECEIVED, _component, _crash_between_links, _document, _episode, _event,  # noqa: E402
-                                              _known, _rolled_back_identity, _standard, _tape)
+                                              _crash_after_receipt, _known, _rolled_back_identity, _standard, _tape)
 from tests.test_r2d2_v2_round_runner import PUBLISHED, _Ticker, _fetch  # noqa: E402
 
 
@@ -184,3 +184,30 @@ def test_a_closed_identity_retry_never_leaves_a_silent_subset_for_the_reader(tmp
     assert outcomes[0]["commit"] == "rolled_back"
     assert source.events(NOW + timedelta(minutes=5)) == [] and source.last_event_diagnostics == []  # zero and clean, never a subset
     assert retained.read_bytes() == before
+
+
+def test_an_unverifiable_final_never_blocks_the_reader_forever(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R4 against the real reader: complete round + journal (crash before the journal was removed), then a final grown
+    # past the per-file limit. Before recovery the reader refuses the whole tape (SOURCE_SIZE_LIMIT); recovery must dispose of
+    # it — zero events, clean, twice — the closed identity is refused, and the exit (a new instant) is read clean.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_retain = _crash_after_receipt(monkeypatch)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(emitter, "_retain", real_retain)
+    source = sources.FileShadowSource(root)
+    assert len(source.events(NOW + timedelta(minutes=1))) == 4 and source.last_event_diagnostics == []  # the complete round reads fine
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    victim = root / "events" / journal["files"][0]["name"]
+    victim.write_bytes(victim.read_bytes() + b" " * emitter.MAX_EVENT_BYTES)
+    assert source.events(NOW + timedelta(minutes=2)) == [] and any(d["code"] == "SOURCE_SIZE_LIMIT" for d in source.last_event_diagnostics)
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=3))
+    assert outcomes[0]["commit"] == "rolled_back" and emitter.recover_rounds(root, now=NOW + timedelta(minutes=4)) == []
+    assert source.events(NOW + timedelta(minutes=5)) == [] and source.last_event_diagnostics == []  # zero and clean, twice
+    assert source.events(NOW + timedelta(minutes=6)) == [] and source.last_event_diagnostics == []
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_IDENTITY_CLOSED"):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=7))
+    assert fresh["new_files"] == 4 and len(source.events(NOW + timedelta(minutes=8))) == 4 and source.last_event_diagnostics == []
+

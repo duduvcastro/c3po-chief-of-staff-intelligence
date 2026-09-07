@@ -507,6 +507,55 @@ def _attempt_receipt_path(rounds_dir: Path, receipt: Mapping[str, Any], started_
     return rounds_dir / f"{receipt['round_session']}.{receipt['round_id']}.attempt-{compact}.json"
 
 
+def _attempt_receipts(rounds_dir: Path, receipt: Mapping[str, Any]) -> list[Path]:
+    """The dated attempt receipts of this round identity (written by recovery when the identity already had a receipt)."""
+    prefix = f"{receipt['round_session']}.{receipt['round_id']}.attempt-"
+    return sorted(path for path in rounds_dir.iterdir() if path.name.startswith(prefix) and path.name.endswith(".json") and path.is_file())
+
+
+def _identity_closed(rounds_dir: Path, receipt: Mapping[str, Any]) -> bool:
+    """A round identity is closed for good once ANY of its receipts — the retained one or a later attempt receipt — says it
+    was rolled back (A-R3, A-R4): it is never re-emitted; a new instant is a new identity."""
+    if _retained_commit(rounds_dir, receipt) in CLOSED_COMMITS:
+        return True
+    for path in _attempt_receipts(rounds_dir, receipt):
+        try:
+            attempt = json.loads(path.read_bytes())
+        except (OSError, ValueError) as error:
+            raise RoundEmitterError("RETAINED_RECEIPT_UNREADABLE") from error
+        if isinstance(attempt, dict) and attempt.get("commit") in CLOSED_COMMITS:
+            return True
+    return False
+
+
+def _observed_sha256(dir_fd: int, entry: str) -> str:
+    """What recovery can VERIFY about a tape entry: its whole-file hash, or why it cannot be verified (A-R4). A refusal —
+    oversized, changed during the read, not a regular file, I/O error — is an observation with a disposition, never an
+    exception that leaves the journal behind."""
+    try:
+        return sha256_hex(_read_at(dir_fd, entry, MAX_EVENT_BYTES))
+    except RoundEmitterError as error:
+        return f"unreadable:{error}"
+    except OSError as error:
+        return f"unreadable:{type(error).__name__}:{error.errno}"
+
+
+def _preserve_evidence(rounds_dir: Path, round_id: str, events_fd: int, corrupt: Sequence[dict[str, Any]]) -> None:
+    """Move unverifiable/corrupt tape entries of a round to ``rounds/recovery/<round_id>/`` (never accepted, never lost)."""
+    evidence_dir = rounds_dir / RECOVERY_DIR / round_id
+    _private_dir(rounds_dir / RECOVERY_DIR)
+    _private_dir(evidence_dir)
+    evidence_fd = _open_private_dir(evidence_dir)
+    try:
+        for item in corrupt:
+            target = f"{item['kind']}-{item['entry'].lstrip('.')}"
+            os.rename(item["entry"], target, src_dir_fd=events_fd, dst_dir_fd=evidence_fd)
+            item["evidence"] = str(evidence_dir / target)
+        _fsync_fd(evidence_fd)
+    finally:
+        os.close(evidence_fd)
+
+
 def _retain(rounds_dir: Path, receipt: Mapping[str, Any], *, commit: str, files: Sequence[Mapping[str, Any]], quarantined: Sequence[Mapping[str, Any]],
             events_after: int, now: datetime, note: str | None = None, recovery: Mapping[str, Any] | None = None) -> Path:
     retained = {**receipt, "commit": commit, "published": [dict(item) for item in files], "published_count": len(files),
@@ -563,8 +612,7 @@ def publish_round(root: Path, receipt: Mapping[str, Any], envelopes: Sequence[Ma
     # A round identity (round_id = hash of the receipt core, published_at included) is used ONCE (A-R3): an identity whose
     # retained receipt says it was rolled back is closed for good — re-emitting it could otherwise crash half-way and be
     # mistaken by recovery for the earlier, already-retained attempt. A new instant is a new identity.
-    closed = _retained_commit(rounds_dir, receipt)
-    _require(closed not in CLOSED_COMMITS, "ROUND_IDENTITY_CLOSED")
+    _require(not _identity_closed(rounds_dir, receipt), "ROUND_IDENTITY_CLOSED")
     valid: list[tuple[str, bytes, str]] = []
     quarantined: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -668,6 +716,9 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
     * a staged (or linked) file whose bytes do not match — truncated, corrupt — is never accepted: it is MOVED to
       ``rounds/recovery/<round_id>/`` as evidence (hash observed vs expected recorded), the round is rolled back
       behind the guard, and the tape is released;
+    * a final that cannot be VERIFIED at recovery (oversized, changed during the read, not a regular file, I/O error) is an
+      inconsistency, never an exception left undisposed: the attempt is undone behind the guard, the unverifiable bytes are
+      moved to the evidence directory and the identity is closed by its attempt receipt (A-R4);
     * quarantine records planned by the journal are checked on disk and listed in the receipt (never reset to zero).
     The guard is removed only at the end, so the reader never sees a partial round. Each outcome leaves a receipt."""
     outcomes: list[dict[str, Any]] = []
@@ -682,25 +733,45 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
         events_fd = _open_private_dir(events_dir)
         try:
             retained_commit = _retained_commit(rounds_dir, receipt)
-            finals_intact = retained_commit in COMPLETE_COMMITS and all(
-                _exists_at(events_fd, item["name"]) and sha256_hex(_read_at(events_fd, item["name"], MAX_EVENT_BYTES)) == item["sha256"]
-                for item in journal["files"])
+            closed = _identity_closed(rounds_dir, receipt)
+            missing: list[str] = []
+            corrupt: list[dict[str, Any]] = []
+            note: str | None = None
+            absent: list[str] = []
+            if retained_commit is not None or closed:
+                # every final the journal planned is VERIFIED by a whole-file read; a verification failure is an observation
+                # with a disposition (A-R4), never an exception that leaves the journal (and the tape) behind
+                for item in journal["files"]:
+                    if not _exists_at(events_fd, item["name"]):
+                        absent.append(item["name"])
+                        continue
+                    observed = _observed_sha256(events_fd, item["name"])
+                    if observed != item["sha256"]:
+                        corrupt.append({"kind": "final", "entry": item["name"], "name": item["name"], "expected_sha256": item["sha256"], "observed": observed})
+            finals_intact = retained_commit in COMPLETE_COMMITS and not closed and not absent and not corrupt
             if finals_intact:
                 # crash after a COMPLETE receipt was retained and every final is present and intact: never rewrite the receipt (A-R2)
                 for item in journal["files"]:
                     _unlink_at(events_fd, item["temp"])
                 _unlink_at(events_fd, str(journal.get("guard") or _guard_name(round_id)))
                 _fsync_fd(events_fd)
-                commit, note, missing, corrupt = "already_retained", None, [], []
-            elif retained_commit is not None:
-                # a receipt exists but does not prove a complete commit with intact finals (A-R3): this attempt is undone behind
-                # the guard — never a silent subset — and gets its own attempt receipt; the original receipt is never rewritten
+                commit = "already_retained"
+            elif retained_commit is not None or closed:
+                # a receipt exists but does not prove a complete commit with verified finals (A-R3, A-R4): this attempt is undone
+                # behind the guard — never a silent subset — unverifiable bytes are preserved as evidence, and the outcome goes
+                # to its own attempt receipt; the original receipt is never rewritten
+                if corrupt:
+                    _preserve_evidence(rounds_dir, round_id, events_fd, corrupt)
                 for item in journal["files"]:
                     _unlink_at(events_fd, item["name"])
                     _unlink_at(events_fd, item["temp"])
                 _unlink_at(events_fd, str(journal.get("guard") or _guard_name(round_id)))
                 _fsync_fd(events_fd)
-                commit, note, missing, corrupt = "rolled_back", f"identity already retained as '{retained_commit}': this attempt undone", [], []
+                missing = absent
+                commit = "rolled_back"
+                note = "; ".join(filter(None, [f"identity already retained as '{retained_commit or 'closed by an attempt receipt'}': this attempt undone",
+                                               "finals absent at recovery: " + ", ".join(absent) if absent else "",
+                                               "unverifiable finals preserved as evidence for: " + ", ".join(sorted({c["name"] for c in corrupt})) if corrupt else ""]))
             else:
                 missing, corrupt = [], []
                 linkable: list[Mapping[str, Any]] = []
@@ -708,10 +779,7 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
                     for kind, entry in (("final", item["name"]), ("temp", item["temp"])):
                         if not _exists_at(events_fd, entry):
                             continue
-                        try:
-                            observed = sha256_hex(_read_at(events_fd, entry, MAX_EVENT_BYTES))
-                        except RoundEmitterError as error:
-                            observed = f"unreadable:{error}"
+                        observed = _observed_sha256(events_fd, entry)
                         if observed != item["sha256"]:
                             corrupt.append({"kind": kind, "entry": entry, "name": item["name"], "expected_sha256": item["sha256"], "observed": observed})
                     if not _exists_at(events_fd, item["name"]) and not _exists_at(events_fd, item["temp"]):
@@ -720,19 +788,8 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
                         linkable.append(item)
                 if corrupt or missing:
                     # controlled, audited rollback: corrupt bytes are preserved as evidence, never accepted into the tape
-                    evidence_dir = rounds_dir / RECOVERY_DIR / round_id
                     if corrupt:
-                        _private_dir(rounds_dir / RECOVERY_DIR)
-                        _private_dir(evidence_dir)
-                        evidence_fd = _open_private_dir(evidence_dir)
-                        try:
-                            for item in corrupt:
-                                target = f"{item['kind']}-{item['entry'].lstrip('.')}"
-                                os.rename(item["entry"], target, src_dir_fd=events_fd, dst_dir_fd=evidence_fd)
-                                item["evidence"] = str(evidence_dir / target)
-                            _fsync_fd(evidence_fd)
-                        finally:
-                            os.close(evidence_fd)
+                        _preserve_evidence(rounds_dir, round_id, events_fd, corrupt)
                     for item in journal["files"]:
                         _unlink_at(events_fd, item["name"])
                     commit = "rolled_back"
@@ -741,7 +798,7 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
                 else:
                     for item in linkable:
                         os.link(item["temp"], item["name"], src_dir_fd=events_fd, dst_dir_fd=events_fd)
-                    commit, note = "recovered", None
+                    commit = "recovered"
                 _fsync_fd(events_fd)
                 for item in journal["files"]:
                     _unlink_at(events_fd, item["temp"])
