@@ -121,16 +121,33 @@ state and `Last Ping` are the authoritative arming evidence.
 
 ## Sentry
 
-Sentry Developer is default-off when `C3PO_SENTRY_DSN` is empty. When enabled:
+Sentry is default-off when `C3PO_SENTRY_DSN` is empty. When enabled:
 
 - only the official `sentry.io` SaaS DSN is accepted;
 - `send_default_pii=false`;
 - query strings, cookies, request environment, user context, authorization,
   tokens, secrets, passwords, session identifiers, and DSNs are removed;
-- local variables and traces are disabled;
+- local variables, request bodies, profiling, replay and Sentry logs are disabled;
+- errors retain their own sample rate (`C3PO_SENTRY_SAMPLE_RATE=1.0`);
+- performance tracing is separately opt-in, with an SDK-enforced maximum of
+  1% (`C3PO_SENTRY_TRACES_SAMPLE_RATE`, standalone SDK default `0`, production
+  compose default `0.01`). Health and background telemetry endpoints are not
+  sampled; upstream sampling decisions cannot override the ceiling;
+- trace payloads pass through the event scrubber; SQL text is removed and
+  tracing headers are not propagated to external providers;
 - events carry the deployed build SHA and service name.
 
 API and worker containers must be recreated after the DSN is installed.
+The static browser bundle receives the public ingestion DSN from the existing
+`production` environment secret `C3PO_SENTRY_DSN` during the production build.
+This DSN is intended for SDK ingestion and must never be replaced with a Sentry
+auth token. Changing browser settings requires rebuilding the web image.
+
+The browser SDK captures uncaught errors, rejected promises and React error
+boundaries. Browser performance starts with sampled page loads/navigation;
+background HTTP polling does not generate browser spans. The service tag is
+`web`, while the API uses `api`. See `SENTRY_TEAM_OPERATIONS.md` for quotas,
+privacy limits and how to prove ingestion and notification separately.
 
 ## Storm Troops controls
 

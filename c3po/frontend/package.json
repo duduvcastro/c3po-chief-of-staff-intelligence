@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:observability": "node --experimental-strip-types --test tests/sentry-privacy.test.mjs"
   },
   "dependencies": {
+    "@sentry/react": "10.73.0",
     "lucide-react": "^0.468.0",
     "next": "^15.5.0",
     "react": "^19.1.0",
