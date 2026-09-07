@@ -158,6 +158,23 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
         "installed_version": "1.0",
         "target": "unknown",
     }]
+    # Every occurrence is listed with its fix, including the ones the scanner cannot rate.
+    assert [(o["severity"], o["vulnerability_id"], o["package"], o["fixed_version"]) for o in image["occurrences"]] == [
+        ("critical", "CVE-TEST-CRITICAL", "critical-lib", "2.0"),
+        ("high", "CVE-TEST-1", "sample-lib", ""),
+        ("high", "CVE-TEST-HIGH", "high-lib", "3.0"),
+        ("medium", "unknown", "unknown", ""),
+        ("unknown", "unknown", "unknown", ""),
+    ]
+    assert image["unknown"] == 1 and image["unknown_fix_available"] == 0
+    rated_later = dict(payload)
+    rated_later["Results"] = [{"Target": "lib/apk/db/installed", "Vulnerabilities": [
+        {"VulnerabilityID": "CVE-2026-80256", "Severity": "UNKNOWN", "FixedVersion": "8.22.0-r0", "PkgName": "libcurl", "InstalledVersion": "8.21.0-r0"},
+    ]}]
+    unrated = scanner.normalize_trivy_payload("web", "c3po/web:production", rated_later)
+    assert unrated["unknown"] == 1 and unrated["unknown_fix_available"] == 1 and unrated["finding_total"] == 1
+    assert unrated["occurrences"] == [{"vulnerability_id": "CVE-2026-80256", "severity": "unknown", "package": "libcurl",
+                                       "installed_version": "8.21.0-r0", "fixed_version": "8.22.0-r0", "target": "lib/apk/db/installed"}]
     assert image["unknown"] == 1
     assert image["finding_total"] == 5
     assert scanner.TRIVY_IMAGE == (
@@ -165,6 +182,46 @@ def test_trivy_normalizer_counts_occurrences_and_fixable_findings() -> None:
         "62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969"
     )
     assert scanner.TRIVY_VERSION == "0.74.0"
+
+
+def test_trivy_normalizer_orders_every_list_canonically_over_all_identity_fields() -> None:
+    # The report self-hash covers these lists, so the scanner's output order must not leak
+    # into them; two occurrences that differ only in installed version stay distinct and
+    # ordered, and a duplicated occurrence is kept twice (sorted, never deduplicated).
+    scanner = _scanner_module()
+
+    def payload(severity: str, installed_versions: list[str]) -> dict:
+        return {
+            "ArtifactName": "c3po/web:production",
+            "Metadata": {},
+            "Results": [{
+                "Target": "lib/apk/db/installed",
+                "Vulnerabilities": [
+                    {"VulnerabilityID": "CVE-2026-1", "Severity": severity, "FixedVersion": "1.2",
+                     "PkgName": "libx", "InstalledVersion": version}
+                    for version in installed_versions
+                ],
+            }],
+        }
+
+    for severity in ("MEDIUM", "HIGH", "UNKNOWN"):
+        forward = scanner.normalize_trivy_payload("web", "c3po/web:production", payload(severity, ["1.0", "1.1"]))
+        reverse = scanner.normalize_trivy_payload("web", "c3po/web:production", payload(severity, ["1.1", "1.0"]))
+        assert forward == reverse
+        assert [item["installed_version"] for item in forward["occurrences"]] == ["1.0", "1.1"]
+        if severity == "HIGH":
+            assert [item["installed_version"] for item in forward["fixable_high_critical"]] == ["1.0", "1.1"]
+        assert scanner.report_sha256({"images": [forward]}) == scanner.report_sha256({"images": [reverse]})
+        twice = scanner.normalize_trivy_payload("web", "c3po/web:production", payload(severity, ["1.0", "1.0"]))
+        assert len(twice["occurrences"]) == 2
+        assert scanner.report_sha256({"images": [twice]}) != scanner.report_sha256({"images": [forward]})
+
+    # unfixed critical/high findings carry no fixed_version and are ordered by the same rule
+    unfixed = payload("HIGH", ["1.1", "1.0"])
+    for vulnerability in unfixed["Results"][0]["Vulnerabilities"]:
+        vulnerability["FixedVersion"] = ""
+    image = scanner.normalize_trivy_payload("web", "c3po/web:production", unfixed)
+    assert [item["installed_version"] for item in image["unfixed_high_critical"]] == ["1.0", "1.1"]
 
 
 def test_trivy_scans_are_non_blocking_and_scheduled_off_host() -> None:

@@ -216,8 +216,9 @@ jobs:
             > "$RUNNER_TEMP/backend-runtime/image-inspect.json"
           docker image inspect c3po/backend:pr-validation --format '{{.Id}} {{.Architecture}} {{.Os}}' \
             | tee "$RUNNER_TEMP/backend-runtime/image-id.txt"
+          # `pip check` runs at build time (Dockerfile); the runtime image must not carry pip at all.
           docker run --rm --network none --entrypoint python c3po/backend:pr-validation \
-            -B -m pip check \
+            -B -c 'import importlib.util, sys; absent = importlib.util.find_spec("pip") is None; print("pip check ran at build time; pip absent from runtime image:", absent); sys.exit(0 if absent else 1)' \
             | tee "$RUNNER_TEMP/backend-runtime/pip-check.log"
           docker run --rm --network none --entrypoint python \
             -e PYTHONPATH=/app \
