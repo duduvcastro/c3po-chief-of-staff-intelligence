@@ -31,11 +31,20 @@ def _iso(at: datetime) -> str:
     return at.astimezone(timezone.utc).isoformat()
 
 
-def _component(events: list[dict] | None = None, reasons: list[str] | None = None) -> dict:
+def _known(item: dict, classification: str = "EXCLUDES") -> dict:
+    """The producer's ``evidence.known_events`` shape for a port-shaped event."""
+    marker = {"AMC": "AfterMarket", "BMO": "BeforeMarket"}.get(item["granularity"], "None")
+    return {"event_date": item["event_date"], "granularity": item["granularity"], "event_at": item.get("event_at"), "available_at": item["available_at"],
+            "provider_marker": marker, "source": "calendar", "classification": classification}
+
+
+def _component(events: list[dict] | None = None, reasons: list[str] | None = None, known: list[dict] | None = None) -> dict:
+    """``events`` = the port-shaped, admission-horizon list; ``evidence.known_events`` = everything known (default: the same facts)."""
     return {"coverage_verified": not reasons, "window_start": _iso(CALENDAR_AT), "window_end": "2026-09-15T20:00:00+00:00",
-            "events": events or [], "source_at": _iso(CALENDAR_AT), "available_at": _iso(HISTORY_AT),
+            "events": [dict(item) for item in (events or [])], "source_at": _iso(CALENDAR_AT), "available_at": _iso(HISTORY_AT),
             "policy": {"rule": "EXCLUSION_RULE_V1", "amendment": AMENDMENT, "amendment_sha": AMENDMENT_SHA, "producer": "fable-eodhd-earnings", "version": "v3"},
-            "evidence": {"calendar_payload_sha256": CAL_SHA, "history_payload_sha256": HIST_SHA},
+            "evidence": {"calendar_payload_sha256": CAL_SHA, "history_payload_sha256": HIST_SHA,
+                         "known_events": known if known is not None else [_known(item) for item in (events or [])]},
             "exclusion": {"excluded": bool(reasons), "reasons": reasons or []}}
 
 
@@ -132,6 +141,25 @@ def test_events_are_built_per_live_instrument_with_windows_and_stable_identities
     assert emitter.earnings_event_id("US:AAA", "2026-09-12") != fact["earnings_event_id"] and emitter.revision_sha256(moved) != fact["revision_sha256"]
 
 
+def test_facts_come_from_the_known_events_not_only_the_admission_horizon() -> None:
+    # C-F385-8-1: a fact dated before the round session but inside the live window (opened 01/09) is known to the producer
+    # (evidence.known_events, classification OUTSIDE_HORIZON) and absent from the admission-horizon `events`; it must be observed.
+    early = _known(_event("2026-09-03", "BMO"), classification="OUTSIDE_HORIZON")
+    inside = _event("2026-09-10")
+    document = _document({"AAA": _component([inside], known=[early, _known(inside)])})
+    episodes = [_episode("AAA")]
+    receipt = emitter.build_receipt(document, episodes, published_at=NOW)
+    envelopes = emitter.build_events(document, episodes, receipt)
+    assert sorted(e["event"]["event_date"] for e in envelopes) == ["2026-09-03", "2026-09-10"]
+    for envelope in envelopes:
+        emitter.validate_envelope(envelope, now=NOW)
+    # a component without the known list is a producer defect: the whole round is refused (nothing published)
+    broken = _document({"AAA": _component([inside])})
+    del broken["symbols"]["AAA"]["evidence"]["known_events"]
+    with pytest.raises(emitter.RoundEmitterError, match="COMPONENT_KNOWN_EVENTS_MISSING"):
+        emitter.build_events(broken, episodes, emitter.build_receipt(broken, episodes, published_at=NOW))
+
+
 def test_two_episodes_of_the_same_instrument_share_the_widest_window() -> None:
     document = _document({"AAA": _component([_event("2026-09-25")])})
     episodes = [_episode("AAA"), _episode("AAA", opened_at=OPENED + timedelta(days=5), maturity_at=MATURITY + timedelta(days=9))]
@@ -176,7 +204,7 @@ def test_publish_is_atomic_private_idempotent_and_names_files_by_identity_and_ha
 def test_invalid_envelopes_are_quarantined_and_never_reach_the_tape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     document, episodes = _standard()
     # an event whose provider reception predates the round: AT_BEFORE_ROUND — quarantined, the rest of the round is published
-    document["symbols"]["AAA"]["events"].append(_event("2026-09-12", available_at=RECEIVED - timedelta(minutes=1)))
+    document["symbols"]["AAA"]["evidence"]["known_events"].append(_known(_event("2026-09-12", available_at=RECEIVED - timedelta(minutes=1))))
     root = tmp_path / "source"
     summary = emitter.emit_round(document, episodes, root, now=NOW)
     assert summary["published"] == 4 and summary["quarantined"] == 1

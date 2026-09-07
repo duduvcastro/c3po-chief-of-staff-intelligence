@@ -10,6 +10,10 @@ plus the inventory of LIVE episodes into ``V2_SHADOW_SOURCE_EVENT_V2`` envelopes
   strictly after the official XNYS close of that session (a non-session date is refused);
 * one **observation window per instrument** = [earliest ``opened_at`` of its live episodes (NY date),
   latest ``maturity_at`` (NY date) + 15 days], the coverage the collector demands (``window_covers``);
+* one **EARNINGS** envelope per fact the producer knows for the name inside that window — taken from
+  ``evidence.known_events`` (calendar + scheduled history, whatever their admission-horizon classification), NOT
+  from the admission-horizon ``events`` list: a fact dated inside a live episode's window but before the round
+  session (discovered late) must still reach the collector, whose exit-by-event rule is about the live episode;
 * ``earnings_event_id`` stable for the same fact (``ern:<instrument_key>:<event_date>``: the provider exposes no
   period key, so a rescheduled date is a NEW fact id and the old one remains in the tape — conservative by design);
 * ``revision_sha256`` over {earnings_event_id, event_date, granularity, event_at} (same rule as the collector);
@@ -228,9 +232,21 @@ def _component_failure(component: Mapping[str, Any] | None) -> str | None:
     return None
 
 
+def _known_facts(component: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """Every fact the producer knows for the name (``evidence.known_events``: calendar + scheduled history, with
+    their classification), not only the ones inside the admission horizon: an event dated inside a live episode's
+    window but before the round session must still reach the collector. A component without the list is a
+    producer defect and refuses the whole round before any write."""
+    evidence = component.get("evidence")
+    known = evidence.get("known_events") if isinstance(evidence, Mapping) else None
+    _require(isinstance(known, list) and all(isinstance(item, Mapping) for item in known), "COMPONENT_KNOWN_EVENTS_MISSING")
+    assert isinstance(known, list)
+    return known
+
+
 def build_events(document: Mapping[str, Any], episodes: Sequence[Episode], receipt: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """One envelope per live-episode fact: EARNINGS per known event inside the instrument's window, or ONE
-    EARNINGS_OBSERVATION_FAILED per instrument whose observation failed. Clean instruments emit nothing (the
+    """One envelope per live-episode fact: EARNINGS per known event (``_known_facts``) inside the instrument's window,
+    or ONE EARNINGS_OBSERVATION_FAILED per instrument whose observation failed. Clean instruments emit nothing (the
     receipt records them). Envelopes are complete but NOT yet validated: ``validate_envelope`` decides tape or quarantine."""
     windows = receipt["observation_windows"]
     round_session, round_received_at, round_id = receipt["round_session"], receipt["round_received_at"], receipt["round_id"]
@@ -262,9 +278,7 @@ def build_events(document: Mapping[str, Any], episodes: Sequence[Episode], recei
                                       source_at=(component or {}).get("source_at") or at))
             continue
         assert component is not None
-        for item in component.get("events", []):
-            if not isinstance(item, Mapping):
-                continue
+        for item in _known_facts(component):
             event_date = str(item.get("event_date"))
             if not (window[0] <= event_date <= window[1]):
                 continue  # outside every live episode of this instrument: not an observation for the tape
