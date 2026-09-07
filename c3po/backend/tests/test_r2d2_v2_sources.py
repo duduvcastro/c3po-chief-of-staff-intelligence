@@ -6,6 +6,8 @@ import json
 import pytest
 
 from app import r2d2_v2_sources as sources
+from tests.test_r2d2_v2_earnings_policy import component
+from tests.v2_earnings_fixtures import observation
 
 NOW = datetime(2026, 9, 8, 14, 0, 5, tzinfo=timezone.utc)
 AT = "2026-09-08T14:00:00+00:00"
@@ -40,8 +42,7 @@ def instrument():
             "daily": {"bars": bars, "splits": [], "adjustment": "RAW_UNADJUSTED", "coverage_verified": True,
                       "split_coverage_verified": True, "source_at": AT, "available_at": AT},
             "risk": {"value": 44, "producer": "fixture-risk", "source_at": AT, "available_at": AT},
-            "earnings": {"coverage_verified": True, "window_start": "2026-09-08T00:00:00Z", "window_end": "2026-10-01T00:00:00Z",
-                         "events": [], "source_at": AT, "available_at": AT}}
+            "earnings": component(decision_at=NOW, available_at=datetime.fromisoformat(AT))}
 
 
 @pytest.fixture
@@ -82,7 +83,7 @@ def event_body(kind="TRADE", **changes):
     if kind.startswith("SESSION_"):
         body.pop("instrument_key")
     body.update(changes)
-    return body
+    return observation(body) if kind == "EARNINGS" else body
 
 
 def write_event(root, body=None, identity="evt-1", **changes):

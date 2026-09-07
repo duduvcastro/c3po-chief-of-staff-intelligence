@@ -1,6 +1,6 @@
-"""Strict, pure collector-to-inference boundary for signed amendment 1 rev 2.
+"""Strict, pure collector-to-inference boundary for signed E1 rev2 + E3 rev3.
 
-No estimator, calendar discovery, clock, I/O or application imports. The caller
+No estimator, calendar discovery, clock or I/O; only pure package constants. The caller
 retains the hashed collector export (including all five outcome categories).
 This module only validates finalized sufficient statistics and groups the fixed
 calendar into ten-session batches. Empty sessions stay in their original slots;
@@ -16,6 +16,11 @@ import json
 import math
 import re
 from typing import Any, Mapping
+
+from .r2d2_v2_earnings_package import (
+    EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA, EXPORT_SCHEMA,
+    INFERENCE_SCHEMA, implementation_contract_sha,
+)
 
 MANIFEST_SHA = "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0"
 AMENDMENT_SHA = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
@@ -110,6 +115,10 @@ class InferenceInput:
     epoch: str
     manifest_sha: str
     amendment_sha: str
+    earnings_amendment_sha: str
+    earnings_closed_manifest_sha: str
+    implementation_contract_sha: str
+    implementation_package_sha: str
     release_sha: str
     readiness_sha: str
     code_revision: str
@@ -140,8 +149,12 @@ class InferenceInput:
                             "last_programmed_session_index": offset + 10,
                             "session_dates": list(self.programmed_sessions[offset:offset + 10]),
                             "statistics": totals})
-        return {"schema": "R2D2_V2_INFERENCE_INPUT_V2", "epoch": self.epoch,
+        return {"schema": INFERENCE_SCHEMA, "epoch": self.epoch,
                 "manifest_sha": self.manifest_sha, "amendment_sha": self.amendment_sha,
+                "earnings_amendment_sha": self.earnings_amendment_sha,
+                "earnings_closed_manifest_sha": self.earnings_closed_manifest_sha,
+                "implementation_contract_sha": self.implementation_contract_sha,
+                "implementation_package_sha": self.implementation_package_sha,
                 "release_sha": self.release_sha, "readiness_sha": self.readiness_sha,
                 "code_revision": self.code_revision, "calendar_version": self.calendar_version,
                 "source_export_sha256": self.source_export_sha256,
@@ -195,10 +208,18 @@ def adapt_collector_export(export: Mapping[str, object]) -> InferenceInput:
     source = _mapping(export, "COHORT_EXPORT_REQUIRED")
     checksum = _hash(source.get("sha256"))
     _require(_digest({k: v for k, v in source.items() if k != "sha256"}) == checksum, "EXPORT_HASH_MISMATCH")
-    _require(source.get("schema") == "R2D2_V2_COHORT_EXPORT_V2", "COHORT_SCHEMA_MISMATCH")
+    _require(source.get("schema") == EXPORT_SCHEMA, "COHORT_SCHEMA_MISMATCH")
     _require(source.get("manifest_sha") == source.get("signed_manifest_sha") == MANIFEST_SHA,
              "SIGNED_MANIFEST_MISMATCH")
     _require(source.get("amendment_sha") == AMENDMENT_SHA, "SIGNED_AMENDMENT_MISMATCH")
+    _require(source.get("earnings_amendment_sha") == EARNINGS_AMENDMENT_SHA
+             and source.get("earnings_closed_manifest_sha") == EARNINGS_CLOSED_MANIFEST_SHA,
+             "SIGNED_EARNINGS_AMENDMENT_MISMATCH")
+    contract_sha = implementation_contract_sha()
+    _require(source.get("implementation_contract_sha") == contract_sha, "EARNINGS_CONTRACT_MISMATCH")
+    # Actual installed bytes are checked by Release.verify / ShadowCollector.
+    # This pure adapter preserves that commitment, and never reads local files.
+    package_sha = _hash(source.get("implementation_package_sha"))
     _require(source.get("statistical_verdict") == "NOT_COMPUTED", "COLLECTOR_VERDICT_FORBIDDEN")
     for flag in ("data_gate_unknown", "terminal_veto"):
         _require(source.get(flag) is False, "COHORT_GATE_BLOCKED_OR_MISSING")
@@ -221,7 +242,10 @@ def adapt_collector_export(export: Mapping[str, object]) -> InferenceInput:
     revision = _text(source.get("code_revision"), "CODE_REVISION_REQUIRED")
     _require(_REVISION.fullmatch(revision) is not None, "CODE_REVISION_REQUIRED")
     return InferenceInput(epoch=_text(source.get("epoch"), "EPOCH_REQUIRED"), manifest_sha=MANIFEST_SHA,
-                          amendment_sha=AMENDMENT_SHA, release_sha=_hash(source.get("release_sha")),
+                          amendment_sha=AMENDMENT_SHA, earnings_amendment_sha=EARNINGS_AMENDMENT_SHA,
+                          earnings_closed_manifest_sha=EARNINGS_CLOSED_MANIFEST_SHA,
+                          implementation_contract_sha=contract_sha, implementation_package_sha=package_sha,
+                          release_sha=_hash(source.get("release_sha")),
                           readiness_sha=_hash(source.get("readiness_sha")), code_revision=revision,
                           calendar_version=_text(source.get("calendar_version"), "CALENDAR_VERSION_REQUIRED"),
                           programmed_sessions=schedule, sessions_completed=completed, sessions=rows,
@@ -236,7 +260,9 @@ def validate_cohort_prefix(first: InferenceInput, second: InferenceInput) -> Non
     second reading is allowed after the first decision and prohibits a third.
     """
     _require(first.cohort_size == 40 and second.cohort_size == 60, "COHORT_PAIR_REQUIRED")
-    for name in ("epoch", "manifest_sha", "amendment_sha", "release_sha", "readiness_sha",
+    for name in ("epoch", "manifest_sha", "amendment_sha", "earnings_amendment_sha",
+                 "earnings_closed_manifest_sha", "implementation_contract_sha", "implementation_package_sha",
+                 "release_sha", "readiness_sha",
                  "code_revision", "calendar_version", "programmed_sessions"):
         _require(getattr(first, name) == getattr(second, name), "COHORT_IDENTITY_MISMATCH")
     _require(first.sessions_completed <= second.sessions_completed, "MATURITY_CLOCK_REGRESSED")

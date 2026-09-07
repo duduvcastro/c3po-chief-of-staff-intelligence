@@ -7,9 +7,12 @@ import json
 
 import pytest
 
+from tests.test_r2d2_v2_earnings_policy import component as earnings_component
+
 from app.r2d2_v2_calendar import NEW_YORK, ShadowCalendar
 from app.r2d2_v2_causal_list import DAILY_SCHEMA, REGISTRY_SCHEMA, build_commitment, digest
 from app.r2d2_v2_contract import RISK_C75, evaluate_candidate, input_complete
+from tests.v2_earnings_fixtures import package_pins
 from app.r2d2_v2_shadow import Release, ShadowCollector, candidate_inputs
 from app.r2d2_v2_sources import FileShadowSource, MANIFEST_SHA, AMENDMENT_SHA, SNAPSHOT_SCHEMA, canonical
 from app.r2d2_v2_store import MemoryShadowStore
@@ -45,10 +48,20 @@ def raw_instrument(calendar, now):
         "daily": {"bars": bars, "splits": [], "adjustment": "RAW_UNADJUSTED", "coverage_verified": True,
                   "split_coverage_verified": True, "source_at": stamp, "available_at": stamp},
         "risk": {"value": RISK_C75, "producer": "synthetic-risk", "source_at": stamp, "available_at": stamp},
-        "earnings": {"coverage_verified": True, "window_start": stamp,
-                     "window_end": (detail["horizon_close"] - timedelta(minutes=5)).isoformat(),
-                     "events": [], "source_at": stamp, "available_at": stamp}}
+        "earnings": earnings_component(decision_at=now,
+            maturity_at=detail["horizon_close"]-timedelta(minutes=5), available_at=now)}
 
+
+
+def _with_earnings_at(row, at, available, classification):
+    item = {"event_date": at.astimezone(NEW_YORK).date().isoformat(), "granularity": "INSTANT",
+            "event_at": at.isoformat(), "available_at": available.isoformat(),
+            "source": "calendar", "classification": classification}
+    row["earnings"]["evidence"]["known_events"] = [item]
+    row["earnings"]["evidence"]["cadence_applicable"] = False
+    row["earnings"]["events"] = [{k: item[k] for k in ("event_date", "granularity", "event_at", "available_at")}]
+    excluded = classification == "EXCLUDES"
+    row["earnings"]["exclusion"] = {"excluded": excluded, "reasons": ["EARNINGS_WITHIN_HORIZON"] if excluded else []}
 
 def publish(spool, row, now, sequence=0):
     envelope = {"schema": SNAPSHOT_SCHEMA, "manifest_sha": MANIFEST_SHA, "amendment_sha": AMENDMENT_SHA, "source_id": "synthetic-audited-producer",
@@ -81,7 +94,7 @@ def diagnostic_collector(spool, calendar, monkeypatch):
         monkeypatch.setattr(module, name, forbidden)
     release = Release(epoch="R2D2-V2-DIAG-source-mapping-fixture", mode="DIAGNOSTIC", first_session=DAY,
                       approved_at=datetime(2026, 9, 6, 12, tzinfo=timezone.utc),
-                      code_revision="f" * 40, receipt_sha="a" * 64)
+                      code_revision="f" * 40, receipt_sha="a" * 64, **package_pins())
     built = calendar.details(calendar.details(DAY)["previous_sessions"][-1])["close"] + timedelta(minutes=5)
     capture = calendar.details(DAY)["capture_open"]
     raw_daily = raw_instrument(calendar, capture)["daily"]
@@ -176,8 +189,8 @@ def test_earnings_coverage_must_reach_exact_maturity_instant(spool, calendar, de
     _, _, _, inputs, result = mapped(spool, calendar, now, raw)
     assert input_complete(inputs)
     assert result.status == expected
-    assert inputs.earnings_coverage_verified is (delta >= 0)
-    assert ("EARNINGS_COVERAGE_UNVERIFIED" in result.reasons) == (delta < 0)
+    assert inputs.earnings_component == raw["earnings"]
+    assert ("EARNINGS_EVIDENCE_INVALID" in result.reasons) == (delta < 0)
 
 
 def test_earnings_window_start_cannot_be_widened_to_midnight(spool, calendar):
@@ -185,17 +198,18 @@ def test_earnings_window_start_cannot_be_widened_to_midnight(spool, calendar):
     raw = raw_instrument(calendar, now)
     raw["earnings"]["window_start"] = (now + timedelta(microseconds=1)).isoformat()
     _, _, _, inputs, result = mapped(spool, calendar, now, raw)
-    assert input_complete(inputs) and not inputs.earnings_coverage_verified
-    assert result.status == "DATA_INELIGIBLE" and "EARNINGS_COVERAGE_UNVERIFIED" in result.reasons
+    assert input_complete(inputs) and inputs.earnings_component == raw["earnings"]
+    assert result.status == "DATA_INELIGIBLE" and "EARNINGS_EVIDENCE_INVALID" in result.reasons
 
 
-@pytest.mark.parametrize("offset,expected", [(0, "INELIGIBLE"), (1, "ELIGIBLE")])
+@pytest.mark.parametrize("offset,expected", [(0, "DATA_INELIGIBLE"), (1, "ELIGIBLE")])
 def test_known_earnings_at_maturity_included_but_one_microsecond_after_excluded(spool, calendar, offset, expected):
     now = calendar.details(DAY)["capture_open"]
     raw = raw_instrument(calendar, now)
     maturity = calendar.details(DAY)["horizon_close"] - timedelta(minutes=5)
     raw["earnings"]["window_end"] = (maturity + timedelta(seconds=1)).isoformat()
-    raw["earnings"]["events"] = [{"event_at": (maturity + timedelta(microseconds=offset)).isoformat(), "available_at": now.isoformat()}]
+    _with_earnings_at(raw, maturity + timedelta(microseconds=offset), now,
+        "EXCLUDES" if offset == 0 else "AFTER_MATURITY")
     _, _, row, inputs, result = mapped(spool, calendar, now, raw)
     assert row["data_available"] is True and input_complete(inputs)
     assert result.status == expected
@@ -347,8 +361,7 @@ def test_future_availability_of_earnings_item_cannot_be_hidden_by_calendar_recei
     raw = raw_instrument(calendar, now)
     maturity = calendar.details(DAY)["horizon_close"] - timedelta(minutes=5)
     raw["earnings"]["window_end"] = (maturity + timedelta(seconds=2)).isoformat()
-    raw["earnings"]["events"] = [{"event_at": (maturity + timedelta(seconds=1)).isoformat(),
-                                    "available_at": (now + timedelta(seconds=1)).isoformat()}]
+    _with_earnings_at(raw, maturity + timedelta(seconds=1), now + timedelta(seconds=1), "AFTER_MATURITY")
     _, _, row, inputs, result = mapped(spool, calendar, now, raw)
     assert row["data_available"] is False and input_complete(inputs)
     assert result.status == "DATA_INELIGIBLE"
@@ -394,3 +407,40 @@ def test_completed_quote_clock_failure_freezes_data_not_retry(spool, calendar, c
     assert input_complete(inputs) and evaluation.complete
     assert evaluation.status == "DATA_INELIGIBLE"
     assert inputs.source_issues
+
+
+@pytest.mark.parametrize("risk", [20., 60.])
+def test_mapper_preserves_producer_verdict_for_independent_recomputation(spool, calendar, risk):
+    now = calendar.details(DAY)["capture_open"] + timedelta(seconds=37)
+    raw = raw_instrument(calendar, now)
+    raw["risk"]["value"] = risk
+    _with_earnings_at(raw, now, now, "EXCLUDES")
+    raw["earnings"]["exclusion"] = {"excluded": False, "reasons": []}
+    _, _, row, inputs, result = mapped(spool, calendar, now, raw)
+    assert row["data_available"] is False and input_complete(inputs)
+    assert inputs.earnings_component == raw["earnings"]
+    assert result.status == "DATA_INELIGIBLE" and result.arm is None
+    assert "EARNINGS_EVIDENCE_INVALID" in result.reasons
+
+
+def test_earnings_declared_horizon_cannot_replace_independent_calendar(spool, calendar):
+    now = calendar.details(DAY)["capture_open"]
+    raw = raw_instrument(calendar, now)
+    actual = calendar.details(DAY)["horizon_close"] - timedelta(minutes=5)
+    raw["earnings"] = earnings_component(decision_at=now, maturity_at=actual-timedelta(days=1), available_at=now)
+    _, _, row, inputs, result = mapped(spool, calendar, now, raw)
+    # The port validates the declaration, but the independent calendar rejects it.
+    assert row["data_available"] is True and input_complete(inputs)
+    assert result.status == "DATA_INELIGIBLE" and result.arm is None
+    assert "EARNINGS_EVIDENCE_INVALID" in result.reasons
+
+
+def test_mapper_cannot_promote_legacy_coverage_into_signed_policy(spool, calendar):
+    now = calendar.details(DAY)["capture_open"]
+    raw = raw_instrument(calendar, now)
+    raw["earnings"] = {key: raw["earnings"][key] for key in
+        ("coverage_verified", "window_start", "window_end", "events", "source_at", "available_at")}
+    _, _, row, inputs, result = mapped(spool, calendar, now, raw)
+    assert row["data_available"] is False and input_complete(inputs)
+    assert inputs.earnings_component == raw["earnings"]
+    assert result.status == "DATA_INELIGIBLE" and "EARNINGS_EVIDENCE_INVALID" in result.reasons

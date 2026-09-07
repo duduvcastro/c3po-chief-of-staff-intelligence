@@ -32,6 +32,10 @@ from threading import RLock
 from typing import Any, TYPE_CHECKING, Callable
 from zoneinfo import ZoneInfo
 
+from .r2d2_v2_earnings_policy import validate_earnings_component
+from .r2d2_v2_earnings_events import EARNINGS_FIELDS, FAILURE_FIELDS, validate_observation
+from .r2d2_v2_earnings_policy import EarningsPolicyError
+
 if TYPE_CHECKING:
     from .database import Database
 
@@ -228,14 +232,15 @@ def _instrument(row: dict[str, Any], now: datetime, envelope_available: datetime
     _causal(risk, available)
     _require(_number(risk["value"]) and risk["value"] <= 100 and _token(risk["producer"]), "RISK_INVALID")
     earnings = row["earnings"]
-    _require(isinstance(earnings, dict) and set(earnings) == {"coverage_verified", "window_start", "window_end", "events", "source_at", "available_at"}, "EARNINGS_MISSING")
+    _require(isinstance(earnings, dict), "EARNINGS_EVIDENCE_INVALID")
     _causal(earnings, available)
-    _require(earnings["coverage_verified"] is True, "EARNINGS_COVERAGE_UNVERIFIED")
-    beginning, end = _time(earnings["window_start"]), _time(earnings["window_end"])
-    _require(beginning <= available <= end and isinstance(earnings["events"], list), "EARNINGS_COVERAGE_WINDOW")
-    for event in earnings["events"]:
-        _require(isinstance(event, dict) and set(event) == {"event_at", "available_at"}, "EARNINGS_EVENT_INVALID")
-        _require(beginning <= _time(event["event_at"]) <= end and _time(event["available_at"]) <= available, "EARNINGS_EVENT_NOT_CAUSAL")
+    evidence = earnings.get("evidence")
+    _require(isinstance(evidence, dict), "EARNINGS_EVIDENCE_INVALID")
+    # This read port can validate only the declared horizon. The candidate gate
+    # recomputes again against its independently supplied official calendar.
+    assessed = validate_earnings_component(earnings, decision_at=now,
+        maturity_at=_time(evidence.get("maturity_at")))
+    _require(assessed.valid, "EARNINGS_EVIDENCE_INVALID")
     return {**row, "data_available": True, "diagnostics": []}
 
 
@@ -389,14 +394,15 @@ def _validate_event(event: Any, through: datetime) -> None:
         "TRADE": {"price", "regular"}, "MARK": {"price", "regular"},
         "QUOTE": {"bid", "ask", "bid_at", "ask_at", "regular"},
         "SPLIT": {"factor"}, "DIVIDEND_ENTITLEMENT": {"entitlement_id", "net_per_share"},
-        "DIVIDEND_PAYMENT": {"entitlement_id"}, "EARNINGS": {"earnings_at"},
+        "DIVIDEND_PAYMENT": {"entitlement_id"}, "EARNINGS": EARNINGS_FIELDS,
+        "EARNINGS_OBSERVATION_FAILED": FAILURE_FIELDS,
         "MATURITY": set(), "DATA_GAP": {"reason"}, "SESSION_OPEN": set(), "SESSION_CLOSE": set(),
     }
     kind = event.get("type")
     _require(isinstance(kind, str) and kind in shapes, "EVENT_KIND_OR_FIELDS")
     if kind.startswith("SESSION_"):
         common = common - {"instrument_key"}
-    optional = {"trades"} if kind == "BAR" else set()
+    optional = {"trades"} if kind == "BAR" else {"event_at"} if kind == "EARNINGS" else set()
     required = common | shapes[kind]
     _require(required <= set(event) <= (required | optional), "EVENT_KIND_OR_FIELDS")
     if not kind.startswith("SESSION_"):
@@ -434,8 +440,11 @@ def _validate_event(event: Any, through: datetime) -> None:
         _require(_token(event["entitlement_id"]), "EVENT_ENTITLEMENT_INVALID")
         if kind == "DIVIDEND_ENTITLEMENT":
             _require(event["net_per_share"] is None or _number(event["net_per_share"]), "EVENT_DIVIDEND_INVALID")
-    elif kind == "EARNINGS":
-        _time(event["earnings_at"])  # receipt time is not the scheduled announcement time
+    elif kind in {"EARNINGS", "EARNINGS_OBSERVATION_FAILED"}:
+        try:
+            validate_observation(event, detected_at=through)
+        except EarningsPolicyError:
+            raise SourceUnavailable("EARNINGS_OBSERVATION_INVALID") from None
     elif kind == "DATA_GAP":
         _require(_token(event["reason"]), "EVENT_GAP_REASON_INVALID")
 

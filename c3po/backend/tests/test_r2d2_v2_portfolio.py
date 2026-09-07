@@ -3,6 +3,7 @@ import copy
 import json
 
 import pytest
+from tests.v2_earnings_fixtures import observation
 
 from app.r2d2_v2_portfolio import (
     PortfolioInputError, SELL_FACTOR, apply_event, apply_events,
@@ -34,7 +35,8 @@ def event(kind, n=1, *, at="2026-09-08T14:01:00+00:00", available_at=None,
                 available_at=available_at or at, session=session)
     if not kind.startswith("SESSION_"):
         base["instrument_key"] = instrument
-    return {**base, **values}
+    result = {**base, **values}
+    return observation(result) if kind == "EARNINGS" else result
 
 
 def bar(n=1, **kw):

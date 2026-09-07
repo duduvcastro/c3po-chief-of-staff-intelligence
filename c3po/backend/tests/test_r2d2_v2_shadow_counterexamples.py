@@ -4,6 +4,7 @@ from hashlib import sha256
 from types import SimpleNamespace
 
 import pytest
+from tests.v2_earnings_fixtures import observation, package_pins
 
 from app import r2d2_v2_shadow as shadow
 from app.r2d2_v2_calendar import ShadowCalendar
@@ -26,7 +27,7 @@ def geometry():
 
 def setup_state(*, position=True):
     release = shadow.Release(EPOCH, "CERTIFIED", date(2026, 9, 8),
-        datetime(2026, 9, 7, tzinfo=timezone.utc), "a"*40, "b"*64)
+        datetime(2026, 9, 7, tzinfo=timezone.utc), "a"*40, "b"*64, **package_pins())
     collector = shadow.ShadowCollector(MemoryShadowStore(), None, release, calendar=ShadowCalendar())
     state = collector._initial()
     state["clock_receipts"] = ["SESSION_OPEN:" + DAY]
@@ -49,7 +50,8 @@ def source_event(kind, *, at, sequence=0, **fields):
     result = {"event_id": f"synthetic-{sequence}", "envelope_sha256": str(sequence % 10)*64,
         "type": kind, "at": at, "available_at": at, "session": DAY,
         "instrument_key": INSTRUMENT, "source_id": "synthetic-source", "sequence": sequence}
-    return {**result, **fields}
+    body = {**result, **fields}
+    return observation(body) if kind == "EARNINGS" else body
 
 
 def test_gap_before_new_terminal_event_cannot_disappear_when_episode_closes():
@@ -271,7 +273,7 @@ def test_list_verification_is_cached_only_after_commit_and_state_is_compact(monk
     assert source.calls == 1
     state = collector.store.read(EPOCH)["state"]
     candidate = state["sessions"][DAY]["candidates"][INSTRUMENT]
-    assert set(candidate) == {"status", "arm", "reasons", "evaluation_sha256"}
+    assert set(candidate) == {"status", "arm", "reasons", "evaluation_sha256", "risk_stratum"}
     assert "private_raw_registry" not in str(state)
     assert "private_raw_registry" not in str(collector._causal_cache)
     assert "private_raw_registry" in str(collector.store.journal(EPOCH))

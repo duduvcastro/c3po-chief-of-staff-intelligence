@@ -57,11 +57,16 @@ Não há serviço novo no compose, automação ou deploy.
   não há liberação certificadora atual.
 
 Para uma execução futura autorizada, o operador controla um arquivo privado
-`R2D2_V2_RELEASE_V2`, com os seguintes campos:
+`R2D2_V2_RELEASE_V3`, com os seguintes campos. A E3 rev3 exige também os
+pins e os três consentimentos do novo pacote descritos em
+[`R2D2_V2_EARNINGS_PACKAGE_V1.md`](R2D2_V2_EARNINGS_PACKAGE_V1.md);
+os modelos são drafts e não autorizam ativação:
 
 | Campo | Exigência |
 | --- | --- |
-| `schema`, `manifest_sha`, `signed_manifest_sha`, `amendment_sha` | Schema V2 e hashes exatos do conjunto/emenda acima |
+| `schema`, `manifest_sha`, `signed_manifest_sha`, `amendment_sha` | Schema V3 e hashes exatos do conjunto/E1 acima |
+| `earnings_amendment_sha`, `earnings_closed_manifest_sha` | E3 rev3 e manifesto normativo E3 fechado exatos |
+| `implementation_contract_sha`, `implementation_package_sha`, `package_consents` | Contrato e bytes instalados, com três consentimentos formais vinculados ao mesmo pacote/auditorias/prontidão |
 | `epoch` | `R2D2-V2-SHADOW-` em CERTIFIED; `R2D2-V2-DIAG-` em DIAGNOSTIC; época nova |
 | `mode` | DIAGNOSTIC ou CERTIFIED |
 | `first_session`, `approved_at` | Sessão oficial, aprovação causal antes da abertura |

@@ -4,6 +4,8 @@ from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 
 import pytest
+from tests.test_r2d2_v2_earnings_policy import component
+from tests.v2_earnings_fixtures import package_pins
 
 from app.r2d2_v2_calendar import ShadowCalendar
 from app.r2d2_v2_causal_list import DAILY_SCHEMA, REGISTRY_SCHEMA, build_commitment
@@ -83,14 +85,13 @@ def rig(tmp_path):
             daily=dict(bars=daily, splits=[], adjustment="RAW_UNADJUSTED", coverage_verified=True,
                        split_coverage_verified=True, source_at=stamp, available_at=stamp),
             risk=dict(value=risk, producer="synthetic", source_at=stamp, available_at=stamp),
-            earnings=dict(coverage_verified=True, window_start=stamp, window_end="2026-10-01T00:00:00Z",
-                          events=[], source_at=stamp, available_at=stamp)))
+            earnings=component(decision_at=now, maturity_at=calendar.details(now.date())["horizon_close"] - timedelta(minutes=5), available_at=now)))
     snapshot = dict(schema="V2_SHADOW_SOURCE_SNAPSHOT_V2", manifest_sha=MANIFEST_SHA, amendment_sha=AMENDMENT_SHA,
         source_id="synthetic", source_at=now.isoformat(), available_at=now.isoformat(), sequence=0,
         provenance=dict(producer="synthetic", version="v1", payload_sha256=digest(rows)),
         universe=dict(coverage_verified=True, instruments=rows))
     write(root / "snapshot.json", snapshot)
-    release = Release(EPOCH, "CERTIFIED", DAY, utc("2026-09-06T18:00:00Z"), "a" * 40, "b" * 64)
+    release = Release(EPOCH, "CERTIFIED", DAY, utc("2026-09-06T18:00:00Z"), "a" * 40, "b" * 64, **package_pins())
     store = MemoryShadowStore()
     collector = ShadowCollector(store, causal_source(root, calendar, rows), release, calendar=calendar)
     return collector, store, root, snapshot, now
