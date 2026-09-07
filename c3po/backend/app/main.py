@@ -481,10 +481,15 @@ def resolve_operational_incident(
 @app.post("/api/v1/admin/governance/attest")
 def run_governance_attestation(request: Request) -> dict:
     require_owner(request)
-    _, report = governance_vulnerability.run_supervised(settings.legacy_root)
     # The consolidated system-health snapshot is cached; the panel that just asked
     # for a new attestation must not keep showing the previous one for a minute.
-    system_health.invalidate()
+    # `run_supervised` persists the revision BEFORE it may still raise (e.g. an
+    # unverifiable lane query), so the invalidation runs on every path after the
+    # owner's authorization, preserving the original error.
+    try:
+        _, report = governance_vulnerability.run_supervised(settings.legacy_root)
+    finally:
+        system_health.invalidate()
     return {
         "status": report["status"],
         "session_date": report["session_date"],

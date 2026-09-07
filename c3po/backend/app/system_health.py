@@ -56,45 +56,55 @@ class SystemHealthService:
         self.external_get = external_get or httpx.get
         self.backblaze_client = backblaze_client
         self.disk_usage = disk_usage or shutil.disk_usage
-        self._cached_at: datetime | None = None
-        self._cached_response: SystemHealthResponse | None = None
+        # One immutable (timestamp, response) entry: readers take it in a single read,
+        # so freshness and payload always come from the same version of the cache.
+        self._cache: tuple[datetime, SystemHealthResponse] | None = None
         self._refresh_lock = Lock()
 
     def invalidate(self) -> None:
         """Drop the cached snapshot so the next read recomputes it.
 
-        Called after a supervised governance attestation: the panel that just
-        asked for a new attestation must not keep reading the previous one for
-        the remainder of the cache window.
+        Called after a supervised governance attestation (also when it raised
+        after persisting a revision): the panel that just asked for a new
+        attestation must not keep reading the previous one for the remainder of
+        the cache window. The cache entry is replaced atomically (see `_cache`),
+        so a concurrent reader either sees the old consistent entry or none —
+        never a half-cleared one.
         """
-        with self._refresh_lock:
-            self._cached_at = None
-            self._cached_response = None
+        self._cache = None
+
+    def _cached(self) -> tuple[datetime, SystemHealthResponse] | None:
+        """One consistent read of the cache entry: freshness and payload come from
+        the same (timestamp, response) pair, whatever `invalidate` does meanwhile."""
+        return self._cache
 
     def snapshot(self, *, force: bool = False) -> SystemHealthResponse:
         now = datetime.now(timezone.utc)
-        if not force and self._cache_is_fresh(now):
-            return self._cached_response
+        entry = self._cached()
+        if not force and self._entry_is_fresh(entry, now):
+            return entry[1]  # type: ignore[index]
 
         acquired = self._refresh_lock.acquire(blocking=force)
         if not acquired:
-            if self._cached_response is not None:
-                return self._cached_response
+            entry = self._cached()
+            if entry is not None:
+                return entry[1]
             acquired = self._refresh_lock.acquire(
                 timeout=self.settings.system_health_probe_timeout_seconds + 0.25
             )
-            if acquired and self._cached_response is not None:
+            entry = self._cached()
+            if acquired and entry is not None:
                 self._refresh_lock.release()
-                return self._cached_response
+                return entry[1]
             if not acquired:
                 return self._startup_degraded_response(now)
 
         try:
-            if not force and self._cache_is_fresh(now):
-                return self._cached_response
+            entry = self._cached()
+            if not force and self._entry_is_fresh(entry, now):
+                return entry[1]  # type: ignore[index]
             response = self._refresh_snapshot(now)
-            self._cached_at = now
-            self._cached_response = response
+            self._cache = (now, response)
             return response
         finally:
             self._refresh_lock.release()
@@ -291,12 +301,8 @@ class SystemHealthService:
         )
         return response
 
-    def _cache_is_fresh(self, now: datetime) -> bool:
-        return bool(
-            self._cached_at
-            and self._cached_response
-            and (now - self._cached_at).total_seconds() < self.cache_seconds
-        )
+    def _entry_is_fresh(self, entry: tuple[datetime, SystemHealthResponse] | None, now: datetime) -> bool:
+        return entry is not None and (now - entry[0]).total_seconds() < self.cache_seconds
 
     def _run_probes(
         self,

@@ -81,8 +81,81 @@ def test_system_health_invalidate_forces_a_recomputation() -> None:
     assert first is second and len(refreshes) == 1  # cached inside the window
 
     service.invalidate()
-    assert service._cached_response is None and service._cached_at is None
+    assert service._cache is None
 
     third = service.snapshot()
     assert third is not first and len(refreshes) == 2
     assert refreshes[1].tzinfo is timezone.utc
+
+
+def test_a_reader_interleaved_with_invalidate_never_gets_none() -> None:
+    # C390-1: freshness and payload come from one immutable entry; an invalidate landing between the
+    # freshness test and the read of a concurrent GET cannot turn the response into None.
+    import threading
+
+    settings = SimpleNamespace(system_health_probe_timeout_seconds=1)
+    service = SystemHealthService(settings, None, None, None, None, None, cache_seconds=60)
+    service._refresh_snapshot = lambda now: SimpleNamespace(generated_at=now)  # type: ignore[method-assign]
+    service.snapshot()
+    original = service._cached
+
+    def interleaved():  # the reader took its entry; the invalidation lands right after
+        entry = original()
+        service.invalidate()
+        return entry
+
+    service._cached = interleaved  # type: ignore[method-assign]
+    assert service.snapshot() is not None
+    service._cached = original  # type: ignore[method-assign]
+    # brute force: readers and invalidators racing for real
+    failures: list[str] = []
+    stop = threading.Event()
+
+    def reader() -> None:
+        while not stop.is_set():
+            if service.snapshot() is None:
+                failures.append("None")
+
+    def invalidator() -> None:
+        while not stop.is_set():
+            service.invalidate()
+
+    threads = [threading.Thread(target=reader) for _ in range(4)] + [threading.Thread(target=invalidator) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    threading.Event().wait(0.5)
+    stop.set()
+    for thread in threads:
+        thread.join(timeout=5)
+    assert failures == []
+
+
+def test_attestation_route_invalidates_even_when_the_run_raises_after_persisting(monkeypatch: pytest.MonkeyPatch) -> None:
+    # C390-2: run_supervised persists the revision before it may still raise (e.g. an unverifiable lane query);
+    # the cache must be invalidated on that path too, and the original error must propagate.
+    calls = {"invalidate": 0}
+
+    class _Governance:
+        def run_supervised(self, root):
+            raise RuntimeError("remediation lane query is not verifiable")
+
+    class _SystemHealth:
+        def invalidate(self) -> None:
+            calls["invalidate"] += 1
+
+    monkeypatch.setattr(app_main, "require_owner", lambda request: None)
+    monkeypatch.setattr(app_main, "governance_vulnerability", _Governance())
+    monkeypatch.setattr(app_main, "system_health", _SystemHealth())
+    with pytest.raises(RuntimeError, match="not verifiable"):
+        app_main.run_governance_attestation(request=object())
+    assert calls["invalidate"] == 1
+    # and when the owner check fails nothing is invalidated (no authorized run happened)
+    calls["invalidate"] = 0
+
+    def _refuse(request):
+        raise PermissionError("owner only")
+
+    monkeypatch.setattr(app_main, "require_owner", _refuse)
+    with pytest.raises(PermissionError):
+        app_main.run_governance_attestation(request=object())
+    assert calls["invalidate"] == 0
