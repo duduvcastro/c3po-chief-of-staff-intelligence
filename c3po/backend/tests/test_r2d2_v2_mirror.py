@@ -11,8 +11,8 @@ from app.config import Settings
 from app.database import Database
 from app.r2d2 import R2D2Repository
 from app.r2d2_v2_mirror import (
-    LABEL, Action, MirrorInputError, MirrorQuote, MirrorRelease, MirrorRepository, QuoteTape, command_id, ensure_mirror_experiment, marked_excess,
-    plan, public_summary, quantity_precision_ok, quote_valid, read_ledger, regular_session_at, run_once, source_admission_vetoes,
+    LABEL, Action, MirrorInputError, MirrorQuote, MirrorRelease, MirrorRepository, QuoteTape, command_id, ensure_mirror_experiment, execute,
+    marked_excess, plan, public_summary, quantity_precision_ok, quote_valid, read_ledger, regular_session_at, run_once, source_admission_vetoes,
 )
 
 EPOCH = "R2D2-V2-SHADOW-TEST"
@@ -323,7 +323,8 @@ def test_concurrent_execution_of_the_same_command_is_arbitrated_by_the_claim_and
     _run(repo, memory, experiment, ledger, quotes, T0 + timedelta(seconds=1))
     row = _rows(memory, experiment)["ep-AAA"]
     assert row["status"] == "OPEN" and len(repo.memory["trades"]) == 1
-    memory.upsert({**row, "status": "BUY_EXECUTING", "claim_token": "other-process", "buy_trade_id": None, "buy_quantity": None, "buy_fill_price": None, "divergence": None})
+    assert memory.write({**row, "status": "BUY_EXECUTING", "claim_token": "other-process", "buy_trade_id": None, "buy_quantity": None, "buy_fill_price": None,
+                         "divergence": None}, expected=("OPEN",), insert=False)[1] is True  # a foreign, in-flight claim (test harness)
     result = _run(repo, memory, experiment, ledger, quotes, T0 + timedelta(seconds=2))
     adopted = _rows(memory, experiment)["ep-AAA"]
     assert result["buy_adopted"] == 1 and result["buys"] == 0 and len(repo.memory["trades"]) == 1  # the effect exists: adopted by reading, no second order
@@ -446,7 +447,8 @@ def test_payload_conflicts_block_after_open_on_recovery_and_in_the_same_cycle_be
     repo2, memory2, experiment2 = _setup()
     _run(repo2, memory2, experiment2, ledger, quotes, T0)
     row2 = _rows(memory2, experiment2)["ep-AAA"]
-    memory2.upsert({**row2, "status": "BUY_PENDING", "buy_command_sha": "0" * 64, "buy_trade_id": None, "divergence": None})
+    assert memory2.write({**row2, "status": "BUY_PENDING", "buy_command_sha": "0" * 64, "buy_trade_id": None, "divergence": None},
+                         expected=("OPEN",), insert=False)[1] is True  # a stale registration with another payload (test harness)
     result = _run(repo2, memory2, experiment2, ledger, quotes, T0 + timedelta(minutes=2))
     assert result["conflicts"] == 1 and _rows(memory2, experiment2)["ep-AAA"]["status"] == "BLOCKED" and len(repo2.memory["trades"]) == 1
 
@@ -557,6 +559,134 @@ def test_release_receipt_binds_publication_and_cursor_to_an_official_session_ope
         MirrorRelease.verify(not_yet, hashlib.sha256(not_yet).hexdigest(), build_sha="abc123", now=T0)
     with pytest.raises(MirrorInputError, match="MIRROR_RELEASE_SHA_MISMATCH"):
         MirrorRelease.verify(data, "0" * 64, build_sha="abc123", now=T0)
+
+
+def test_registration_never_reopens_a_command_executed_by_another_worker_in_the_lock_window() -> None:
+    # Codex #387 round 3, I1: worker A read the ledger and the mirror (no row yet), looked a quote up and got suspended; worker B
+    # registered, claimed and executed the same command and committed its OPEN receipt. When A resumes, its registration must
+    # read-and-compare, never insert-or-overwrite: one trade, quantity 10 for a command of 10, and A defers.
+    repo, memory, experiment = _setup()
+    ledger = _row([_record("AAA", quantity=10.0)])
+    view = read_ledger(ledger)
+    record = view.records[0]
+    quotes = FakeQuotes({"AAA": 50.0})
+
+    def worker_b(symbol: str) -> None:
+        if quotes.calls == 1:  # inside A's quote lookup, before A's registration
+            execute([Action("BUY", record, "LEDGER_ADMISSION_RECORDED", record.episode_key)], ledger=view, mirror_epoch=MIRROR_EPOCH, repo=repo,
+                    mirror=memory, experiment=experiment, cycle_id=repo.start_cycle(experiment["id"], ["NASDAQ", "NYSE"]),
+                    quotes=FakeQuotes({"AAA": 50.0}), resolve_market=_resolve, now=T0)
+
+    quotes.hook = worker_b
+    result = _run(repo, memory, experiment, ledger, quotes, T0)
+    assert result["buys"] == 0 and result["deferred"] == 1 and result["reasons"] == {"COMMAND_ALREADY_ADVANCED": 1}
+    trades = repo.memory["trades"]
+    assert len(trades) == 1 and trades[0]["quantity"] == 10.0
+    row = _rows(memory, experiment)["ep-AAA"]
+    assert row["status"] == "OPEN" and row["buy_trade_id"] == trades[0]["id"] and row["claim_token"] is None
+    assert [p["quantity"] for p in repo.positions(experiment["id"])] == [10.0]
+    # the next cycle reads the receipt and has nothing to do: no replay, no second token
+    again = _run(repo, memory, experiment, ledger, quotes, T0 + timedelta(seconds=5))
+    assert again["actions"] == 0 and len(repo.memory["trades"]) == 1
+
+
+def test_conditional_writes_never_overwrite_a_row_advanced_elsewhere() -> None:
+    repo, memory, experiment = _setup()
+    quotes = FakeQuotes({"AAA": 50.0})
+    _run(repo, memory, experiment, _row([_record("AAA", quantity=10.0)]), quotes, T0)
+    row = _rows(memory, experiment)["ep-AAA"]
+    assert row["status"] == "OPEN"
+    # a stale worker that still believes the command is pending cannot rewrite the OPEN receipt
+    current, applied = memory.write({**row, "status": "BUY_PENDING", "claim_token": None, "buy_trade_id": None}, expected=("BUY_PENDING",), insert=True)
+    assert applied is False and current["status"] == "OPEN" and current["buy_trade_id"] == row["buy_trade_id"]
+    with pytest.raises(MirrorInputError, match="MIRROR_ROW_ADVANCED_ELSEWHERE"):
+        memory.upsert({**row, "status": "BUY_PENDING", "claim_token": None, "buy_trade_id": None})
+    # an exit obligation is only written over the OPEN/BLOCKED row that was read: a row CLOSED meanwhile stays CLOSED
+    closed, applied = memory.write({**row, "status": "CLOSED", "reason": "closed-elsewhere"}, expected=("OPEN",), insert=False)
+    assert applied is True and closed["status"] == "CLOSED"
+    current, applied = memory.write({**row, "status": "EXIT_PENDING", "reason": "stale-worker"}, expected=("OPEN", "BLOCKED"), insert=False)
+    assert applied is False and current["status"] == "CLOSED"
+    # an update-only write of an absent row writes nothing
+    assert memory.write({**row, "episode_key": "ep-ZZZ", "status": "EXIT_PENDING"}, expected=("OPEN",), insert=False) == (None, False)
+    # execute(): a SELL planned for a row that another worker CLOSED between the read and the write is deferred, never executed
+    exit_at = T0 + timedelta(hours=1)
+    ledger = _row([_record("AAA", status="CLOSED", exit_cause="TARGET", exit_price=54.2, exit_at=exit_at, quantity=10.0)], version=4)
+    memory.write({**closed, "status": "OPEN", "reason": "restored-for-the-test"}, expected=("CLOSED",), insert=False)
+    view = read_ledger(ledger)
+    record = view.records[0]
+    mirrored = _rows(memory, experiment)
+    memory.write({**mirrored["ep-AAA"], "status": "CLOSED", "reason": "closed-by-another-worker"}, expected=("OPEN",), insert=False)
+    summary = execute([Action("SELL", record, "LEDGER_EXIT_RECORDED:TARGET", record.episode_key)], ledger=view, mirror_epoch=MIRROR_EPOCH, repo=repo,
+                      mirror=memory, experiment=experiment, cycle_id=repo.start_cycle(experiment["id"], ["NASDAQ", "NYSE"]), quotes=quotes,
+                      resolve_market=_resolve, now=exit_at + timedelta(seconds=5))
+    assert summary["sells"] == 0 and summary["reasons"] == {"COMMAND_ALREADY_ADVANCED": 1}
+    assert _rows(memory, experiment)["ep-AAA"]["status"] == "CLOSED" and len(repo.memory["trades"]) == 1
+
+
+def test_source_marked_cap_excess_vetoes_new_buys_but_never_exits() -> None:
+    # I5c: the generator's global marking veto (#383 `_admission`: gross > 48 % of NAV, cash < 5 % of NAV, any OPEN position marked
+    # above 6 % of NAV) is inherited from the state the ledger publishes, in that order, with q and the paper caps untouched.
+    view = read_ledger(_row([_record("AAA", quantity=1400.0, mark=50.0)]))  # 70 000 marked on a 1 M NAV: above 6 %
+    assert view.source_vetoes == ("MARKED_CAP_EXCESS",) and view.vetoed
+    assert source_admission_vetoes(_row([_record("AAA", quantity=1000.0, mark=50.0)])["state"]["ledger"]) == ()  # 50 000 = 5 %: admitted
+    ten = [_record(f"S{index}", quantity=1000.0, mark=50.0) for index in range(10)]  # gross 500 000 > 48 % of NAV
+    assert source_admission_vetoes(_row(ten)["state"]["ledger"]) == ("MARKED_CAP_EXCESS",)
+    # cash < 5 % of NAV with gross within 48 % and no position above 6 %: only possible with unpaid receivables in the NAV
+    eight = [_record(f"S{index}", quantity=100.0, mark=50.0) for index in range(8)]  # gross 40 000
+    eight[0]["receivables"] = {"div": {"amount": 56_000.0, "paid": False}}  # NAV = 4 000 cash + 40 000 + 56 000 = 100 000
+    assert source_admission_vetoes(_row(eight, cash=4_000.0, session_start_nav=100_000.0)["state"]["ledger"]) == ("MARKED_CAP_EXCESS",)
+    assert source_admission_vetoes(_row([_record("AAA", quantity=1000.0, mark=50.0)], session_start_nav=2_000_000.0)["state"]["ledger"]) == ("DAILY_LOSS_LIMIT",)  # order preserved
+    # exits keep flowing while the veto is in force; new BUYs are deferred by the ledger's own admission veto
+    repo, memory, experiment = _setup()
+    quotes = FakeQuotes({"AAA": 50.0, "BBB": 30.0, "CCC": 50.0})
+    _run(repo, memory, experiment, _row([_record("AAA", quantity=100.0)]), quotes, T0)
+    exit_at = T0 + timedelta(hours=1)
+    ledger = _row([_record("AAA", status="CLOSED", exit_cause="TARGET", exit_price=54.2, exit_at=exit_at, quantity=100.0),
+                   _record("CCC", quantity=1400.0, mark=50.0, opened_at=exit_at - timedelta(minutes=5)), _record("BBB", opened_at=exit_at)], version=4)
+    result = _run(repo, memory, experiment, ledger, quotes, exit_at + timedelta(seconds=5))
+    assert result["sells"] == 1 and result["buys"] == 0 and result["source_vetoes"] == ["MARKED_CAP_EXCESS"]
+    assert result["reasons"]["LEDGER_ADMISSION_VETO:MARKED_CAP_EXCESS"] == 2  # BBB and CCC deferred, nothing skipped permanently
+    rows = _rows(memory, experiment)
+    assert rows["ep-AAA"]["status"] == "CLOSED" and "ep-BBB" not in rows and "ep-CCC" not in rows
+
+
+def test_effect_instant_is_measured_after_the_guards_not_before_the_locks(monkeypatch: pytest.MonkeyPatch) -> None:
+    # C2: time spent inside the guards (row locks, claim check, veto/quote re-read) never predates the effect: executed_at,
+    # the receipt's mirror_at and the position clocks are read AFTER the guards.
+    import time as _time
+    original = MirrorRepository.guard
+
+    def slow_guard(self, connection, row, *, token, status):
+        _time.sleep(0.3)
+        return original(self, connection, row, token=token, status=status)
+
+    monkeypatch.setattr(MirrorRepository, "guard", slow_guard)
+    repo, memory, experiment = _setup()
+    quotes = FakeQuotes({"AAA": 50.0})
+    real_clock = lambda: datetime.now(timezone.utc)  # noqa: E731
+    result = _run(repo, memory, experiment, _row([_record("AAA", quantity=10.0)]), quotes, real_clock(), clock=real_clock)
+    assert result["buys"] == 1
+    row = _rows(memory, experiment)["ep-AAA"]
+    trade = repo.memory["trades"][0]
+    decided_at = datetime.fromisoformat(row["divergence"]["buy"]["decided_at"])
+    assert trade["executed_at"] - decided_at >= timedelta(seconds=0.3)
+    assert row["buy_at"] == trade["executed_at"] and datetime.fromisoformat(row["divergence"]["buy"]["mirror_at"]) == trade["executed_at"]
+    assert repo.positions(experiment["id"])[0]["opened_at"] == trade["executed_at"]
+
+
+def test_cycle_status_is_supported_and_no_v1_decision_row_is_written() -> None:
+    # PG-S2 / PG-S1: r2d2_cycles admits succeeded/partial/failed (never `completed`); the mirror has no V1 score and writes no
+    # r2d2_decisions row — its audit record is the receipt and the trade's decision_snapshot, committed together.
+    repo, memory, experiment = _setup()
+    quotes = FakeQuotes({"AAA": 50.0})
+    ledger = _row([_record("AAA", quantity=10.0)])
+    result = _run(repo, memory, experiment, ledger, quotes, T0)
+    assert result["cycle_status"] == "succeeded" and repo.memory["cycles"][-1]["status"] == "succeeded"
+    assert repo.memory["decisions"] == [] and repo.memory["trades"][0]["decision_snapshot"]["command_id"]
+    tampered = _row([_record("AAA", quantity=11.0)], version=4)  # payload conflict → BLOCK → partial
+    result = _run(repo, memory, experiment, tampered, quotes, T0 + timedelta(seconds=5))
+    assert result["blocked"] == 1 and result["cycle_status"] == "partial" and repo.memory["cycles"][-1]["status"] == "partial"
+    assert all(cycle["status"] in ("succeeded", "partial", "failed") for cycle in repo.memory["cycles"])
 
 
 def test_worker_is_off_by_default(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

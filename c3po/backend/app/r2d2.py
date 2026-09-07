@@ -1286,15 +1286,18 @@ class R2D2Repository:
         """Paper effect. `before_effect(connection)` and `after_effect(connection, trade_id, executed_at)` are optional
         hooks run INSIDE the effect's transaction (after the experiment/position rows are locked, and after the trade
         is inserted but before commit): an exception in either aborts the whole effect. `connection` is None in
-        memory mode. Absent hooks leave the behaviour unchanged (used by the R2D2 V2 paper mirror, never by V1)."""
+        memory mode. Absent hooks leave the behaviour unchanged (used by the R2D2 V2 paper mirror, never by V1).
+        The effect instant (`executed_at` of the trade, `opened_at`/`updated_at` of the position, the value handed to
+        `after_effect`) is read from the clock AFTER the row locks and the `before_effect` guards (Codex #387 C2): time
+        spent waiting for locks or inside the guards never predates the effect."""
         trade_id = str(uuid4())
-        now = datetime.now(timezone.utc)
         gross = quantity * fill_price * fx
         position_key = (candidate["market"], candidate["symbol"])
         realized: float | None = None
         if not self.database.database_url:
             if before_effect is not None:
                 before_effect(None)
+            now = datetime.now(timezone.utc)  # the effect instant, after the guards
             current = self.memory["positions"].get(position_key)
             cash = _float(experiment["cash_balance"])
             if side == "BUY":
@@ -1347,6 +1350,7 @@ class R2D2Repository:
                 ).fetchone()
                 if before_effect is not None:
                     before_effect(connection)
+                now = datetime.now(timezone.utc)  # the effect instant, after the row locks and the guards
                 if side == "BUY":
                     if gross + fees > cash + 0.01:
                         raise ValueError("Paper order exceeds available cash")
