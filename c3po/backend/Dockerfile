@@ -16,7 +16,11 @@ RUN test -n "$C3PO_SECURITY_REBUILD" \
 WORKDIR /app
 
 COPY backend/requirements.txt .
+# The base image bundles the pip of its build date; the scanner reports pip's own
+# advisories (CVE-2025-8869, CVE-2026-1703/3219/6357/8643/13346 on pip 25.0.1), so pip
+# is upgraded to a fixed release before the application dependencies are installed.
 RUN test -n "$C3PO_SECURITY_REBUILD" \
+    && pip install --no-cache-dir --upgrade "pip>=26.2" \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app

@@ -151,7 +151,11 @@ def test_fixable_high_and_critical_runtime_findings_have_explicit_upgrades() -> 
     assert frontend.count("C3PO_SECURITY_REBUILD") == 2
     assert "golang:1.25.13-alpine3.24@sha256:" in database
     assert "ARG GOSU_COMMIT=6456aaa0f3c854d199d0f037f068eb97515b7513" in database
-    assert '"github.com/tianon/gosu@${GOSU_COMMIT}"' in database
+    assert "git clone --quiet https://github.com/tianon/gosu /src/gosu" in database
+    assert 'git checkout --quiet "$GOSU_COMMIT"' in database
+    assert 'go mod edit -require="golang.org/x/sys@${GOSU_X_SYS_VERSION}"' in database
+    assert "ARG GOSU_X_SYS_VERSION=v0.47.0" in database
+    assert 'go version -m /go/bin/gosu | grep -F "golang.org/x/sys ${GOSU_X_SYS_VERSION}"' in database
     assert "CGO_ENABLED=0" in database
     assert "apk upgrade --no-cache\n" in database
     assert database.count("C3PO_SECURITY_REBUILD") == 4
