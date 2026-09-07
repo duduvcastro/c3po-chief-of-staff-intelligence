@@ -426,6 +426,69 @@ def test_controller_opens_work_for_medium_low_and_unrated_fixable_findings(tmp_p
     assert sum(counts.values()) == 0 and findings == []
 
 
+def _medium_report(scanner: ModuleType, occurrences: list[dict[str, str]]) -> dict[str, Any]:
+    report = _report(scanner, critical=0, high=0)
+    image = report["images"][0]
+    image["occurrences"] = list(occurrences)
+    fixable = sum(1 for occurrence in occurrences if occurrence["fixed_version"])
+    image["fix_available"]["medium"] = fixable
+    report["by_severity"]["medium"] = len(occurrences)
+    report["fix_available"]["medium"] = fixable
+    report["finding_total"] = len(occurrences)
+    report["report_sha256"] = scanner.report_sha256(report)
+    return report
+
+
+def _remediation_key(controller: ModuleType, report: dict[str, Any]) -> tuple[str, list[dict[str, str]]]:
+    counts, findings = controller.validate_report(report)
+    trigger = controller.build_trigger(
+        report,
+        counts=counts,
+        findings=findings,
+        run_url="https://github.com/duduvcastro/c3po/actions/runs/123",
+        artifact_name="c3po-production-container-vulnerabilities-123",
+    )
+    return trigger["remediation_key"], findings
+
+
+def test_remediation_key_is_canonical_over_every_identity_field_and_keeps_multiplicity() -> None:
+    # Two occurrences of the same CVE/package/target that differ only in installed version
+    # (a duplicated package at 1.0 and 1.1, both fixed in 1.2): the key must not depend on the
+    # scanner's output order, must change when a version really changes, and must change when
+    # the same occurrence is reported once versus twice.
+    scanner, controller = _modules()
+    first = {"vulnerability_id": "CVE-2026-1", "severity": "medium", "package": "libx",
+             "installed_version": "1.0", "fixed_version": "1.2", "target": "alpine"}
+    second = dict(first, installed_version="1.1")
+
+    key_forward, findings_forward = _remediation_key(controller, _medium_report(scanner, [first, second]))
+    key_reverse, findings_reverse = _remediation_key(controller, _medium_report(scanner, [second, first]))
+    assert key_forward == key_reverse
+    assert findings_forward == findings_reverse
+    assert [finding["installed_version"] for finding in findings_forward] == ["1.0", "1.1"]
+
+    key_other_fix, _ = _remediation_key(controller, _medium_report(scanner, [first, dict(second, fixed_version="1.3")]))
+    key_other_installed, _ = _remediation_key(controller, _medium_report(scanner, [first, dict(second, installed_version="1.2")]))
+    assert key_other_fix != key_forward
+    assert key_other_installed != key_forward
+
+    key_once, findings_once = _remediation_key(controller, _medium_report(scanner, [first]))
+    key_twice, findings_twice = _remediation_key(controller, _medium_report(scanner, [first, first]))
+    assert key_once != key_twice
+    assert len(findings_once) == 1 and len(findings_twice) == 2
+
+    # The same invariance holds across severities: reversing both the critical/high list and
+    # the occurrence list of the default fixture yields the same key.
+    report = _report(scanner, medium=1, low=1)
+    key_default, _ = _remediation_key(controller, report)
+    image = report["images"][0]
+    image["fixable_high_critical"].reverse()
+    image["occurrences"].reverse()
+    report["report_sha256"] = scanner.report_sha256(report)
+    key_reversed, _ = _remediation_key(controller, report)
+    assert key_reversed == key_default
+
+
 def test_controller_requires_occurrence_evidence_outside_the_sealed_fixture() -> None:
     scanner, controller = _modules()
     report = _report(scanner, with_occurrences=False)

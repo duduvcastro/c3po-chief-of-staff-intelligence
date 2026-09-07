@@ -35,6 +35,24 @@ def report_sha256(report: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_bytes(payload)).hexdigest()
 
 
+def finding_order(finding: dict[str, str]) -> tuple[str, ...]:
+    """Canonical order over every identity field of a finding.
+
+    The lists below are hashed downstream (report self-hash, remediation key), so
+    the order must not depend on the scanner's output order and must keep two
+    occurrences apart when they differ only in installed or fixed version.
+    Multiplicity is preserved: this sorts, it never deduplicates.
+    """
+    return (
+        finding["severity"],
+        finding["vulnerability_id"],
+        finding["package"],
+        finding.get("installed_version", ""),
+        finding.get("fixed_version", ""),
+        finding["target"],
+    )
+
+
 def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any]) -> dict[str, Any]:
     counts = {severity: 0 for severity in SEVERITIES}
     fix_available = {severity: 0 for severity in SEVERITIES}
@@ -95,35 +113,11 @@ def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any])
         "repo_digests": sorted(str(item) for item in metadata.get("RepoDigests") or []),
         "by_severity": counts,
         "fix_available": fix_available,
-        "fixable_high_critical": sorted(
-            fixable_high_critical,
-            key=lambda finding: (
-                finding["severity"],
-                finding["vulnerability_id"],
-                finding["package"],
-                finding["target"],
-            ),
-        ),
-        "unfixed_high_critical": sorted(
-            unfixed_high_critical,
-            key=lambda finding: (
-                finding["severity"],
-                finding["vulnerability_id"],
-                finding["package"],
-                finding["target"],
-            ),
-        ),
+        "fixable_high_critical": sorted(fixable_high_critical, key=finding_order),
+        "unfixed_high_critical": sorted(unfixed_high_critical, key=finding_order),
         "unknown": unknown,
         "unknown_fix_available": unknown_fix_available,
-        "occurrences": sorted(
-            occurrences,
-            key=lambda finding: (
-                finding["severity"],
-                finding["vulnerability_id"],
-                finding["package"],
-                finding["target"],
-            ),
-        ),
+        "occurrences": sorted(occurrences, key=finding_order),
         "finding_total": sum(counts.values()) + unknown,
     }
 

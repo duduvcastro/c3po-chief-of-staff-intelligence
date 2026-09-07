@@ -193,12 +193,19 @@ def validate_report(
                 raise ReportValidationError(
                     f"fixable {severity} detail/count mismatch: details={all_counts[severity]}, totals={declared_total}"
                 )
+    # Canonical order over every identity field (multiplicity preserved): the
+    # remediation key is a hash of this list, so two reports carrying the same
+    # multiset of occurrences must produce the same key whatever the scanner's
+    # input order, and two occurrences that differ only in installed/fixed
+    # version must never collapse into one position.
     all_findings.sort(
         key=lambda finding: (
             ALL_SEVERITIES.index(finding["severity"]),
             finding["vulnerability_id"],
             finding["image"],
             finding["package"],
+            finding["installed_version"],
+            finding["fixed_version"],
             finding["target"],
         )
     )
