@@ -10,9 +10,15 @@ O módulo `app/r2d2_v2_earnings_source.py` usa somente biblioteca padrão. O par
 injetado, cuja implementação deve ser auditada separadamente e ser somente-leitura.
 Não há verificador real de completude de earnings neste pacote.
 
+A avaliação de cobertura abaixo permanece como fronteira do contrato anterior.
+A EMENDA 3 rev3 (`3319407afcd7760668e6ec73bb4686ecb95a38eecf47fc157050899f80a6cc9c`)
+propõe substituí-la por três evidências validadas e recomputação de exclusão.
+Essa integração depende do conjunto de assinaturas e de um delta auditado da
+porta e dos eventos vivos. As correções do parser aqui não ativam essa política.
+
 ## Contrato e referências fixas
 
-- Observação: `R2D2_V2_EARNINGS_OBSERVATION_V1`.
+- Observação: `R2D2_V2_EARNINGS_OBSERVATION_V2` (diagnósticos por linha/símbolo).
 - Avaliação: `R2D2_V2_EARNINGS_COVERAGE_V1`.
 - Manifesto: `eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0`.
 - Emenda: `3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4`.
@@ -51,18 +57,32 @@ observou o transporte e não pode comprovar que o coletor disse a verdade.
 `EarningsObservation` conserva os bytes completos em campo privado e uma tupla
 imutável de eventos válidos reconhecidos. Um evento conserva símbolo, data de
 anúncio, fim do período fiscal, timing BMO/AMC/null e registro original canônico.
-Uma linha inválida não desaparece do corpo privado. Erros de linha tornam a
-observação `INVALID_BODY`; os eventos reconhecidos restantes são diagnósticos,
-não um conjunto completo aproveitável para liberar cobertura.
+Uma linha inválida não desaparece do corpo privado. `row_diagnostics` registra
+índice, símbolo válido quando identificável, código controlado e caráter bloqueante.
+`status_for_symbol()` devolve `INVALID_ROWS` somente para o símbolo afetado.
+Quando não há identidade confiável, a incerteza aplica-se a todos os símbolos:
+não se pode atribuir silenciosamente a linha inválida a outro nome. Isso não
+transforma o corpo JSON em estruturalmente inválido nem descarta os fatos válidos.
 
-Estados do parser: `OBSERVED`, `INCOMPLETE_TRANSPORT`, `HTTP_ERROR`, `INVALID_BODY`.
-Somente um HTTP200 JSON íntegro e válido pode ser `OBSERVED`. Isso ainda implica
+Estados do parser: `OBSERVED`, `OBSERVED_WITH_DIAGNOSTICS`,
+`INCOMPLETE_TRANSPORT`, `HTTP_ERROR`, `INVALID_BODY`.
+`INVALID_BODY` fica reservado a falhas estruturais/do envelope, inclusive JSON
+malformado, chaves duplicadas, constantes não finitas e ecos incompatíveis.
+Somente um HTTP200 JSON íntegro pode ser observado. Isso ainda implica
 `feed_coverage=UNKNOWN`: uma lista vazia não é atestado negativo. Valores EPS null
 continuam null; nenhum deles cria estado de anúncio confirmado ou cancelado.
-Campos novos/desconhecidos e enums desconhecidos bloqueiam, sem coerção silenciosa.
+Campos desconhecidos em linhas geram diagnóstico sem descartar a linha ou interpretar
+esses campos como autoridade. Enums/tipos/datas inválidos bloqueiam o símbolo.
+Datas fora da janela e repetições do período fiscal geram diagnósticos sem bloquear
+outros nomes: todas as datas e classificações observadas são preservadas para a
+união conservadora; não há sobrescrita pela última revisão. O hook legado continua
+independente e nunca recebe liberação de cobertura baseada apenas no parser.
+`symbols:""` é aceito exclusivamente quando a requisição não tinha filtro; esse
+eco não prova cobertura. O corpo real permanece item do rito de prontidão.
 
 `public_summary()` omite símbolos, payload, referências nominais do atestado e
-mensagens de erro externas. `to_private_dict()` acrescenta recibo, eventos e o corpo
+mensagens de erro externas. `to_private_dict()` acrescenta recibo, eventos, diagnósticos
+por linha e o corpo
 exato em base64. Essa saída é privada; seu chamador deverá persistir em localização
 autorizada com permissões adequadas. Este módulo não abre arquivos nem faz logs.
 
@@ -89,7 +109,9 @@ do anúncio. A disponibilidade da observação também não pode ultrapassar a d
 schema, pins, símbolo, parâmetros originais da consulta, hashes, decisão,
 maturidade e relógios factuais. Só o retorno **literal `True`** permite `VERIFIED`.
 Ausência do hook/evidência, exceção, retorno truthy não booleano, janela curta ou
-vínculo incorreto mantém `UNKNOWN`. Vínculos inválidos bloqueiam antes de chamar
+vínculo incorreto mantém `UNKNOWN`. Erros atribuíveis a outro símbolo e avisos de
+campos novos não contaminam a avaliação deste símbolo. Erros bloqueantes próprios
+ou sem identidade e vínculos inválidos bloqueiam antes de chamar
 o hook. Nenhuma mensagem arbitrária de exceção externa é propagada.
 
 O verificador deverá consultar evidência já existente em autoridade independente,

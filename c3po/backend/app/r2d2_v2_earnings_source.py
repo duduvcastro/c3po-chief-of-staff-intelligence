@@ -16,7 +16,7 @@ import math
 import re
 from typing import Any, Protocol
 
-OBSERVATION_SCHEMA = "R2D2_V2_EARNINGS_OBSERVATION_V1"
+OBSERVATION_SCHEMA = "R2D2_V2_EARNINGS_OBSERVATION_V2"
 COVERAGE_SCHEMA = "R2D2_V2_EARNINGS_COVERAGE_V1"
 MANIFEST_SHA = "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0"
 AMENDMENT_SHA = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
@@ -125,12 +125,37 @@ class EarningsEvent:
 
 
 @dataclass(frozen=True)
+class EarningsRowDiagnostic:
+    row_index: int
+    symbol: str | None = field(repr=False)
+    code: str
+    blocking: bool
+
+    def to_private_dict(self) -> dict[str, Any]:
+        return {"row_index": self.row_index, "symbol": self.symbol,
+                "code": self.code, "blocking": self.blocking}
+
+
+@dataclass(frozen=True)
 class EarningsObservation:
     receipt: EarningsReceipt = field(repr=False)
     raw_body: bytes = field(repr=False)
     events: tuple[EarningsEvent, ...] = field(repr=False)
     parse_status: str
     diagnostics: tuple[str, ...]
+    row_diagnostics: tuple[EarningsRowDiagnostic, ...] = field(default=(), repr=False)
+
+    def blocking_diagnostics_for(self, symbol: str) -> tuple[str, ...]:
+        # An invalid row with no trustworthy identity cannot be assigned to a
+        # different name. Preserve that uncertainty without invalidating JSON.
+        return tuple(dict.fromkeys(item.code for item in self.row_diagnostics
+                                   if item.blocking and item.symbol in (None, symbol)))
+
+    def status_for_symbol(self, symbol: str) -> str:
+        _require(_symbol(symbol), "ASSESSMENT_SYMBOL_INVALID")
+        if self.parse_status not in ("OBSERVED", "OBSERVED_WITH_DIAGNOSTICS"):
+            return self.parse_status
+        return "INVALID_ROWS" if self.blocking_diagnostics_for(symbol) else "OBSERVED"
 
     @property
     def receipt_sha256(self) -> str:
@@ -141,6 +166,9 @@ class EarningsObservation:
                 "body_sha256": self.receipt.body_sha256, "receipt_sha256": self.receipt_sha256,
                 "http_status": self.receipt.http_status, "transport_complete": self.receipt.transport_complete,
                 "parse_status": self.parse_status, "diagnostics": list(self.diagnostics),
+                "row_diagnostic_count": len(self.row_diagnostics),
+                "unattributed_invalid_row_count": len({item.row_index for item in self.row_diagnostics
+                    if item.blocking and item.symbol is None}),
                 "requested_symbol_count": len(self.receipt.request_symbols), "event_count": len(self.events),
                 "timing_counts": {str(k): sum(e.market_timing == k for e in self.events)
                                   for k in ("BeforeMarket", "AfterMarket", None)},
@@ -151,6 +179,7 @@ class EarningsObservation:
     def to_private_dict(self) -> dict[str, Any]:
         return {**self.public_summary(), "receipt": self.receipt.to_private_dict(),
                 "raw_body_base64": base64.b64encode(self.raw_body).decode("ascii"),
+                "row_diagnostics": [item.to_private_dict() for item in self.row_diagnostics],
                 "events": [event.to_private_dict() for event in self.events]}
 
 
@@ -174,8 +203,7 @@ def _load(raw: bytes) -> dict[str, Any]:
 
 def _event(row: Any) -> EarningsEvent:
     _require(isinstance(row, dict), "EVENT_NOT_OBJECT")
-    allowed = {"code", "report_date", "date", "before_after_market", "currency", "actual", "estimate", "difference", "percent"}
-    _require(set(row) <= allowed and {"code", "report_date", "date", "currency"} <= set(row), "EVENT_FIELDS_INVALID")
+    _require({"code", "report_date", "date", "currency"} <= set(row), "EVENT_FIELDS_INVALID")
     _require(_symbol(row["code"]), "EVENT_SYMBOL_INVALID")
     timing = row.get("before_after_market")
     _require(timing is None or timing in ("BeforeMarket", "AfterMarket"), "EVENT_TIMING_INVALID")
@@ -188,14 +216,22 @@ def _event(row: Any) -> EarningsEvent:
         except OverflowError:
             finite = False
         _require(value is None or finite, "EVENT_NUMBER_INVALID")
-    return EarningsEvent(row["code"], _day(row["report_date"]), _day(row["date"]), timing, _canonical(row))
+    report_date, fiscal_period_end = _day(row["report_date"]), _day(row["date"])
+    try:
+        record = _canonical(row)
+    except (ValueError, OverflowError, RecursionError):
+        # JSON exponent overflow in an unknown extension can parse to inf.
+        # Keep the original body and localize the error to this row/symbol.
+        raise EarningsInputError("EVENT_VALUE_UNREPRESENTABLE") from None
+    return EarningsEvent(row["code"], report_date, fiscal_period_end, timing, record)
 
 
 def parse_earnings_response(raw: bytes, receipt: EarningsReceipt) -> EarningsObservation:
     """Parse supplied bytes once, preserving failed bodies privately, never as []."""
     _validate_receipt(receipt, raw)
-    def result(status: str, reasons: tuple[str, ...], events: tuple[EarningsEvent, ...] = ()) -> EarningsObservation:
-        return EarningsObservation(receipt, raw, events, status, reasons)
+    def result(status: str, reasons: tuple[str, ...], events: tuple[EarningsEvent, ...] = (),
+               rows: tuple[EarningsRowDiagnostic, ...] = ()) -> EarningsObservation:
+        return EarningsObservation(receipt, raw, events, status, reasons, rows)
     if not receipt.transport_complete:
         return result("INCOMPLETE_TRANSPORT", ("TRANSPORT_INCOMPLETE",))
     if receipt.http_status != 200:
@@ -203,7 +239,6 @@ def parse_earnings_response(raw: bytes, receipt: EarningsReceipt) -> EarningsObs
     if receipt.content_type.split(";", 1)[0].strip().lower() != "application/json":
         return result("INVALID_BODY", ("CONTENT_TYPE_NOT_JSON",))
     events: list[EarningsEvent] = []
-    diagnostics: list[str] = []
     try:
         body = _load(raw)
         _require(set(body) <= {"type", "description", "from", "to", "symbols", "earnings"}
@@ -214,26 +249,37 @@ def parse_earnings_response(raw: bytes, receipt: EarningsReceipt) -> EarningsObs
                 _require(_day(body[key]) == expected, "RESPONSE_WINDOW_MISMATCH")
         if "symbols" in body:
             _require(isinstance(body["symbols"], str), "RESPONSE_SYMBOLS_INVALID")
-            echoed = body["symbols"].split(",")
+            echoed = body["symbols"].split(",") if body["symbols"] else []
             _require(len(set(echoed)) == len(echoed) and set(echoed) == set(receipt.request_symbols), "RESPONSE_SYMBOLS_MISMATCH")
-        identities: set[tuple[str, date]] = set()
-        for row in body["earnings"]:
-            try:
-                event = _event(row)
-                events.append(event)
-                if receipt.request_symbols and event.symbol not in receipt.request_symbols:
-                    diagnostics.append("EVENT_UNREQUESTED_SYMBOL")
-                if not receipt.request_from <= event.report_date <= receipt.request_to:
-                    diagnostics.append("EVENT_OUTSIDE_REQUEST_WINDOW")
-                identity = (event.symbol, event.fiscal_period_end)
-                if identity in identities:
-                    diagnostics.append("EVENT_DUPLICATE_FISCAL_PERIOD")
-                identities.add(identity)
-            except EarningsInputError as exc:
-                diagnostics.append(str(exc))
     except EarningsInputError as exc:
-        diagnostics.append(str(exc))
-    return result("OBSERVED" if not diagnostics else "INVALID_BODY", tuple(dict.fromkeys(diagnostics)), tuple(events))
+        return result("INVALID_BODY", (str(exc),))
+    row_diagnostics: list[EarningsRowDiagnostic] = []
+    identities: set[tuple[str, date]] = set()
+    allowed = {"code", "report_date", "date", "before_after_market", "currency", "actual", "estimate", "difference", "percent"}
+    for index, row in enumerate(body["earnings"]):
+        symbol = row.get("code") if isinstance(row, dict) and _symbol(row.get("code")) else None
+        def diagnostic(code: str, *, blocking: bool = False) -> None:
+            row_diagnostics.append(EarningsRowDiagnostic(index, symbol, code, blocking))
+        if isinstance(row, dict) and set(row) - allowed:
+            diagnostic("EVENT_UNKNOWN_FIELDS")
+        try:
+            event = _event(row)
+            events.append(event)
+            if receipt.request_symbols and event.symbol not in receipt.request_symbols:
+                diagnostic("EVENT_UNREQUESTED_SYMBOL")
+            if not receipt.request_from <= event.report_date <= receipt.request_to:
+                diagnostic("EVENT_OUTSIDE_REQUEST_WINDOW")
+            identity = (event.symbol, event.fiscal_period_end)
+            if identity in identities:
+                diagnostic("EVENT_DUPLICATE_FISCAL_PERIOD")
+            # Keep every observed date/timing revision. Consumers must apply
+            # the conservative union, never select a permissive last row.
+            identities.add(identity)
+        except EarningsInputError as exc:
+            diagnostic(str(exc), blocking=True)
+    diagnostics = tuple(dict.fromkeys(item.code for item in row_diagnostics))
+    return result("OBSERVED_WITH_DIAGNOSTICS" if diagnostics else "OBSERVED",
+                  diagnostics, tuple(events), tuple(row_diagnostics))
 
 
 @dataclass(frozen=True)
@@ -321,8 +367,9 @@ def assess_earnings_coverage(observation: EarningsObservation, *, symbol: str,
     expected = CoverageExpectation(COVERAGE_SCHEMA, MANIFEST_SHA, AMENDMENT_SHA, receipt.body_sha256,
         observation.receipt_sha256, symbol, receipt.request_symbols, receipt.request_from, receipt.request_to,
         decision, maturity, _utc(receipt.response_received_at), _utc(receipt.available_at))
-    reasons = list(observation.diagnostics)
-    if observation.parse_status != "OBSERVED":
+    reasons = list(observation.blocking_diagnostics_for(symbol))
+    if observation.parse_status not in ("OBSERVED", "OBSERVED_WITH_DIAGNOSTICS"):
+        reasons.extend(observation.diagnostics)
         reasons.append("OBSERVATION_NOT_VALID")
     if receipt.request_symbols and symbol not in receipt.request_symbols:
         reasons.append("SYMBOL_NOT_REQUESTED")

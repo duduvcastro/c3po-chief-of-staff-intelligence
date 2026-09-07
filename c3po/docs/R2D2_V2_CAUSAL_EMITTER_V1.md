@@ -80,6 +80,19 @@ em `audit_events`. A subpasta é deliberada: `Database.initialize` só percorre
 o deploy deste módulo OFF não o aplica automaticamente. O emissor nunca executa
 DDL, GRANT, REVOKE ou provisionamento de role.
 
+Cada conexão do emissor confere também os quatro triggers no `pg_catalog`:
+pares exatos tabela/nome, habilitados para origin ou sempre, BEFORE ROW
+UPDATE/DELETE sem WHEN, argumentos ou restrição de colunas, função PL/pgSQL
+`public.r2d2_v2_causal_append_only` com corpo exato da046 e sem SECURITY DEFINER
+ou configuração adicional. A sessão deve estar em `session_replication_role=origin`.
+Ausência, desativação ou definição divergente falha com
+`CAUSAL_APPEND_ONLY_TRIGGERS_INVALID`, antes do lock, INSERT ou sink.
+
+O rito de prontidão deve pinar a versão exata de `exchange_calendars`, calendário
+e hash por sessão no manifesto/release. Recuperação recompõe a seleção contra
+esse calendário; atualização incompatível falha fechada e não permite reescrever
+o recibo anterior. O pin operacional ainda depende do rito assinado.
+
 Provisionar separadamente a identidade emissora, com SELECT/INSERT nas quatro
 tabelas necessárias e nenhum UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER, inclusive
 UPDATE por coluna. Sem ownership, memberships, troca de role, CREATE em banco ou

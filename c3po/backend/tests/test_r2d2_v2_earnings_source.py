@@ -181,11 +181,12 @@ def test_malformed_response_is_not_coverage(raw, reason):
     (event(report_date="2026-09-15T16:00:00Z"), "DATE_INVALID"),
     (event(report_date="2026-02-30"), "DATE_INVALID"),
     (event(currency=True), "EVENT_CURRENCY_INVALID"),
-    (event(updated_at="2026-09-08T13:00:00Z"), "EVENT_FIELDS_INVALID"),
 ])
 def test_event_schema_drift_invalid_types_and_dates_are_preserved_as_data_failure(row, reason):
     observation = observe(response([row]))
-    assert observation.parse_status == "INVALID_BODY" and reason in observation.diagnostics
+    assert observation.parse_status == ("INVALID_BODY" if reason == "JSON_NONFINITE" else "OBSERVED_WITH_DIAGNOSTICS")
+    assert reason in observation.diagnostics
+    assert observation.status_for_symbol("TEST.US") != "OBSERVED"
     assert json.loads(observation.raw_body)["earnings"][0] == row
 
 
@@ -197,11 +198,12 @@ def test_actual_null_is_not_announced_and_disappearance_is_not_cancellation():
     assert len(previous.events) == 1  # immutable old observation is not revised
 
 
-def test_duplicate_rows_are_retained_and_block_not_silently_deduplicated():
+def test_duplicate_rows_are_retained_without_inventing_an_instant():
     observation = observe(response([event(), event()]))
     assert len(observation.events) == 2
     assert observation.diagnostics == ("EVENT_DUPLICATE_FISCAL_PERIOD",)
-    assert assess(observation, evidence=evidence(observation), verifier=lambda *_: True).feed_coverage == "UNKNOWN"
+    assessment = assess(observation, evidence=evidence(observation), verifier=lambda *_: True)
+    assert assessment.feed_coverage == "VERIFIED" and not assessment.port_temporal_fields_complete
 
 
 @pytest.mark.parametrize("body,reason", [
@@ -214,7 +216,8 @@ def test_duplicate_rows_are_retained_and_block_not_silently_deduplicated():
 def test_symbol_and_date_window_discrepancies_are_explicit(body, reason):
     observation = observe(body)
     assert reason in observation.diagnostics
-    assert assess(observation, evidence=evidence(observation), verifier=lambda *_: True).feed_coverage == "UNKNOWN"
+    expected = "VERIFIED" if reason.startswith("EVENT_") else "UNKNOWN"
+    assert assess(observation, evidence=evidence(observation), verifier=lambda *_: True).feed_coverage == expected
 
 
 def test_multi_symbol_absence_does_not_inherit_other_symbols_coverage():
@@ -234,6 +237,76 @@ def test_no_symbol_filter_can_be_assessed_only_with_per_symbol_external_evidence
     observation = observe(request_symbols=())
     assert assess(observation).feed_coverage == "UNKNOWN"
     assert assess(observation, evidence=evidence(observation), verifier=lambda *_: True).feed_coverage == "VERIFIED"
+
+
+def test_empty_symbols_echo_means_unfiltered_only_when_request_was_unfiltered():
+    observation = observe(response([], symbols=""), request_symbols=())
+    assert observation.parse_status == "OBSERVED"
+    assert assess(observation).feed_coverage == "UNKNOWN"
+    assert observe(response([], symbols="")).diagnostics == ("RESPONSE_SYMBOLS_MISMATCH",)
+    assert observe(response([], symbols="TEST.US"), request_symbols=()).parse_status == "INVALID_BODY"
+
+
+def test_attributable_invalid_row_does_not_block_other_symbols():
+    observation = observe(response([event(code="BAD.US", report_date="bad")]), request_symbols=())
+    assert observation.parse_status == "OBSERVED_WITH_DIAGNOSTICS"
+    assert observation.status_for_symbol("BAD.US") == "INVALID_ROWS"
+    assert observation.status_for_symbol("TEST.US") == "OBSERVED"
+    assert assess(observation, evidence=evidence(observation), verifier=lambda *_: True).feed_coverage == "VERIFIED"
+    calls = []
+    bad = assess_earnings_coverage(observation, symbol="BAD.US", decision_at=DECISION, maturity_at=MATURITY,
+        evidence=evidence(observation, symbol="BAD.US"), verifier=lambda *_: calls.append(True) or True)
+    assert bad.feed_coverage == "UNKNOWN" and "DATE_INVALID" in bad.diagnostics and not calls
+    assert observation.to_private_dict()["row_diagnostics"] == [
+        {"row_index": 0, "symbol": "BAD.US", "code": "DATE_INVALID", "blocking": True}]
+    assert "BAD.US" not in json.dumps(observation.public_summary())
+
+
+@pytest.mark.parametrize("row", [None, [], event(code=""), event(code=None)])
+def test_invalid_unattributable_row_remains_uncertain_without_invalidating_body(row):
+    observation = observe(response([row]), request_symbols=())
+    assert observation.parse_status == "OBSERVED_WITH_DIAGNOSTICS"
+    assert observation.status_for_symbol("TEST.US") == "INVALID_ROWS"
+    calls = []
+    assert assess(observation, evidence=evidence(observation), verifier=lambda *_: calls.append(True) or True).feed_coverage == "UNKNOWN"
+    assert calls == [] and observation.public_summary()["unattributed_invalid_row_count"] == 1
+
+
+def test_unknown_fields_are_private_diagnostics_without_dropping_event():
+    row = event(updated_at=SECRET, arbitrary={"private": SECRET})
+    observation = observe(response([row]))
+    assert observation.parse_status == "OBSERVED_WITH_DIAGNOSTICS"
+    assert observation.status_for_symbol("TEST.US") == "OBSERVED"
+    assert observation.diagnostics == ("EVENT_UNKNOWN_FIELDS",)
+    assert json.loads(observation.events[0].raw_record) == row
+    assert observation.events[0].to_private_dict()["provider_updated_at"] is None
+    assert SECRET not in json.dumps(observation.public_summary())
+    assessment = assess(observation, evidence=evidence(observation), verifier=lambda *_: True)
+    assert assessment.feed_coverage == "VERIFIED" and not assessment.port_temporal_fields_complete
+
+
+def test_unknown_extension_numeric_overflow_is_controlled_and_localized():
+    raw = encoded(response([event(code="BAD.US", unknown="OVERFLOW")])).replace(b'"OVERFLOW"', b'1e400')
+    observation = observe(raw=raw, request_symbols=())
+    assert observation.raw_body == raw and observation.parse_status == "OBSERVED_WITH_DIAGNOSTICS"
+    assert observation.status_for_symbol("BAD.US") == "INVALID_ROWS"
+    assert observation.status_for_symbol("TEST.US") == "OBSERVED"
+    assert observation.diagnostics == ("EVENT_UNKNOWN_FIELDS", "EVENT_VALUE_UNREPRESENTABLE")
+    assert assess(observation, evidence=evidence(observation), verifier=lambda *_: True).feed_coverage == "VERIFIED"
+
+
+def test_revised_dates_outside_window_and_timing_conflicts_preserve_conservative_union():
+    rows = [event(report_date="2026-09-15", before_after_market="BeforeMarket"),
+            event(report_date="2026-09-22", before_after_market="AfterMarket")]
+    observation = observe(response(rows), request_symbols=())
+    assert observation.parse_status == "OBSERVED_WITH_DIAGNOSTICS"
+    assert observation.status_for_symbol("TEST.US") == "OBSERVED"
+    assert [e.report_date.isoformat() for e in observation.events] == ["2026-09-15", "2026-09-22"]
+    assert [e.market_timing for e in observation.events] == ["BeforeMarket", "AfterMarket"]
+    assert set(observation.diagnostics) == {"EVENT_OUTSIDE_REQUEST_WINDOW", "EVENT_DUPLICATE_FISCAL_PERIOD"}
+    assert all(e.to_private_dict()["event_at"] is None for e in observation.events)
+    # Neither last-row-wins nor a warning about one name certifies absence.
+    assert assess(observation).feed_coverage == "UNKNOWN"
 
 
 def test_later_receipt_or_historical_backfill_cannot_enter_past_decision():

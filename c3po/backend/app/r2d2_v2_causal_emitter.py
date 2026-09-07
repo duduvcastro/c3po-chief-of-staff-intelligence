@@ -13,12 +13,35 @@ import hashlib
 from typing import Any, Callable, Protocol
 from uuid import uuid4
 
-from .r2d2_v2_causal_list import (Calendar, MAX_INPUT_BYTES, _decode,
-    build_commitment, digest, validate_commitment)
+from .r2d2_v2_causal_list import (Calendar, _decode, build_commitment,
+    check_causal_envelope_size, check_causal_input_sizes, digest, validate_commitment)
 from .r2d2_v2_store import ShadowIntegrityError, canonical, utc, validate_epoch
 
 BUILT = "r2d2.v2.causal_list_built"
 PUBLISHED = "r2d2.v2.causal_list_published"
+_IMMUTABLE_TRIGGERS = {
+    "audit_events": "r2d2_v2_causal_audit_immutable",
+    "r2d2_v2_causal_artifacts": "r2d2_v2_causal_artifacts_immutable",
+    "r2d2_v2_causal_publications": "r2d2_v2_causal_publications_immutable",
+    "r2d2_v2_causal_confirmations": "r2d2_v2_causal_confirmations_immutable",
+}
+# Exact prosrc of manual/046; changing the installed function requires review.
+# Retain statement/row/timing predicates below as well as the function body.
+_APPEND_ONLY_BODY = """
+BEGIN
+    IF TG_TABLE_NAME <> 'audit_events' THEN
+        RAISE EXCEPTION 'V2_CAUSAL_APPEND_ONLY';
+    END IF;
+    IF OLD.action IN ('r2d2.v2.causal_list_built', 'r2d2.v2.causal_list_published') THEN
+        RAISE EXCEPTION 'V2_CAUSAL_APPEND_ONLY';
+    END IF;
+    IF TG_OP = 'UPDATE' AND NEW.action IN ('r2d2.v2.causal_list_built', 'r2d2.v2.causal_list_published') THEN
+        RAISE EXCEPTION 'V2_CAUSAL_APPEND_ONLY';
+    END IF;
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END;
+"""
 
 
 class PublicationSink(Protocol):
@@ -81,6 +104,28 @@ def _authority(connection) -> None:
         (["audit_events", "r2d2_v2_causal_artifacts", "r2d2_v2_causal_publications", "r2d2_v2_causal_confirmations"],)).fetchall()
     _require(len(rows) == 4 and all(all(value is True for value in row[1:]) for row in rows),
              "CAUSAL_TABLE_AUTHORITY_INVALID")
+    triggers = connection.execute("""SELECT c.relname,t.tgname,
+        t.tgenabled IN ('O','A'),
+        t.tgtype=27 AND NOT t.tgisinternal AND t.tgnargs=0
+            AND t.tgqual IS NULL AND t.tgattr::text=''
+            AND t.tgoldtable IS NULL AND t.tgnewtable IS NULL,
+        pn.nspname='public' AND p.proname='r2d2_v2_causal_append_only',
+        p.prorettype='pg_catalog.trigger'::regtype AND p.pronargs=0
+            AND l.lanname='plpgsql' AND NOT p.prosecdef AND p.proconfig IS NULL,
+        p.prosrc, current_setting('session_replication_role')='origin'
+        FROM pg_catalog.pg_trigger t
+        JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+        JOIN pg_catalog.pg_proc p ON p.oid=t.tgfoid
+        JOIN pg_catalog.pg_namespace pn ON pn.oid=p.pronamespace
+        JOIN pg_catalog.pg_language l ON l.oid=p.prolang
+        WHERE n.nspname='public' AND c.relname=ANY(%s) AND t.tgname=ANY(%s)""",
+        (list(_IMMUTABLE_TRIGGERS), list(_IMMUTABLE_TRIGGERS.values()))).fetchall()
+    _require(len(triggers) == 4
+             and {(row[0], row[1]) for row in triggers} == set(_IMMUTABLE_TRIGGERS.items())
+             and all(all(value is True for value in row[2:6])
+                     and row[6] == _APPEND_ONLY_BODY and row[7] is True for row in triggers),
+             "CAUSAL_APPEND_ONLY_TRIGGERS_INVALID")
 
 
 def _binding(commitment: dict) -> dict:
@@ -157,8 +202,7 @@ class PostgresCausalListEmitter:
                 # A concurrent witness may win; use its actual immutable record.
                 prior = connection.execute("SELECT event_sha,confirmed_at FROM public.r2d2_v2_causal_confirmations WHERE event_id=%s",
                                            (receipt["event_id"],)).fetchone()
-                _require(prior is not None and prior[0] == digest(receipt), "CAUSAL_CONFIRMATION_CONFLICT")
-                if prior is None:
+                if prior is None or prior[0] != digest(receipt):
                     raise ShadowIntegrityError("CAUSAL_CONFIRMATION_CONFLICT")
                 confirmed = utc(prior[1])
             _require(utc(receipt["occurred_at"]) <= confirmed, "CAUSAL_DATABASE_CLOCK_REVERSED")
@@ -168,9 +212,7 @@ class PostgresCausalListEmitter:
 
     def build(self, *, epoch: str, day: date, registry_bytes: bytes, daily_bytes: bytes) -> dict:
         self._check(epoch, day)
-        _require(isinstance(registry_bytes, bytes) and isinstance(daily_bytes, bytes), "CAUSAL_INPUT_BYTES_REQUIRED")
-        _require(0 < len(registry_bytes) <= MAX_INPUT_BYTES and 0 < len(daily_bytes) <= MAX_INPUT_BYTES,
-                 "CAUSAL_INPUT_SIZE_LIMIT")
+        check_causal_input_sizes(registry_bytes, daily_bytes)
         with self.connection_factory() as connection:
             self._lock(connection, epoch, day)
             previous = connection.execute("""SELECT commitment,commitment_sha,build_event_id
@@ -250,6 +292,7 @@ class PostgresCausalListEmitter:
             connection.commit()
         self._confirm(publication)
         envelope = {"commitment": commitment, "audit_receipt": audit, "publication_receipt": publication}
+        check_causal_envelope_size(envelope)
         # Independent reads observe committed events AND their confirmations;
         # recovery revalidates exact raw bytes/selection, not a saved status bit.
         with self.connection_factory() as connection:

@@ -15,8 +15,9 @@ import stat
 from uuid import uuid4
 
 from .r2d2_v2_store import ShadowIntegrityError, canonical, validate_epoch
+from .r2d2_v2_causal_list import MAX_CAUSAL_ENVELOPE_BYTES, check_causal_envelope_size
 
-MAX_BYTES = 64 * 1024 * 1024
+MAX_BYTES = MAX_CAUSAL_ENVELOPE_BYTES
 PUBLIC_FIELDS = {"schema", "epoch", "session", "manifest_sha", "amendment_sha",
     "list_sha256", "n_cut", "commitment_sha256", "build_audit_event_id", "built_at",
     "registry_sha256", "daily_contract_sha256", "counts", "coverage"}
@@ -144,6 +145,7 @@ def write_private_envelope(root: Path, envelope: dict) -> str:
     independent validation or fabricate the missing publication/audit facts.
     """
     _require(set(envelope) == {"commitment", "audit_receipt", "publication_receipt"}, "CAUSAL_ENVELOPE_FIELDS")
+    check_causal_envelope_size(envelope)
     item = envelope["commitment"]
     epoch, day = item["epoch"], date.fromisoformat(item["session"])
     validate_epoch(epoch)

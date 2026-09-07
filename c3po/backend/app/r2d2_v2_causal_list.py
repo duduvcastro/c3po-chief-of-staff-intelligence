@@ -18,14 +18,20 @@ from decimal import Decimal, localcontext
 import hashlib
 from typing import Any, Callable, Protocol
 
-from .r2d2_v2_sources import (AMENDMENT_SHA, MANIFEST_SHA, NY, SourceUnavailable,
+from .r2d2_v2_sources import (AMENDMENT_SHA, MANIFEST_SHA, MAX_SNAPSHOT_BYTES, NY, SourceUnavailable,
     _SYMBOL, _causal, _load_json, _now, _number, _require, _time, _token, canonical)
 
 SCHEMA = "V2_CAUSAL_LIST_COMMITMENT_V1"
 REGISTRY_SCHEMA = "V2_CAUSAL_REGISTRY_V1"
 DAILY_SCHEMA = "V2_CAUSAL_DAILY_CONTRACT_V1"
 N_CUT = 550
-MAX_INPUT_BYTES = 20 * 1024 * 1024
+MAX_INPUT_BYTES = MAX_SNAPSHOT_BYTES
+MAX_CAUSAL_ENVELOPE_BYTES = MAX_SNAPSHOT_BYTES
+# The emitter's two UUID receipts, duplicated hash bindings, UTC clocks and
+# <=512-character publication reference fit here, including JSON escaping.
+# The full envelope is also checked, so this reservation is never a substitute
+# for checking the actual bytes before publication/private-file persistence.
+CAUSAL_RECEIPT_RESERVE_BYTES = 16 * 1024
 MAX_REGISTRY = 10000
 ReceiptVerifier = Callable[[dict[str, Any], dict[str, Any]], bool]
 
@@ -36,6 +42,36 @@ class Calendar(Protocol):
 
 def digest(value: Any) -> str:
     return hashlib.sha256(canonical(value)).hexdigest()
+
+
+def _base64_size(size: int) -> int:
+    return 4 * ((size + 2) // 3)
+
+
+def check_causal_input_sizes(registry_bytes: bytes, daily_bytes: bytes) -> int:
+    """Reject raw/encoded impossibilities before parsing, database or sink I/O.
+
+    Return the exact combined base64 length. Metadata is checked separately by
+    build_commitment, before encoding or returning a persistable commitment.
+    """
+    _require(all(isinstance(value, bytes) and 0 < len(value) <= MAX_INPUT_BYTES
+                 for value in (registry_bytes, daily_bytes)), "CAUSAL_INPUT_SIZE_LIMIT")
+    encoded = _base64_size(len(registry_bytes)) + _base64_size(len(daily_bytes))
+    _require(encoded <= MAX_CAUSAL_ENVELOPE_BYTES - CAUSAL_RECEIPT_RESERVE_BYTES,
+             "CAUSAL_ENVELOPE_SIZE_LIMIT")
+    return encoded
+
+
+def check_causal_envelope_size(envelope: dict[str, Any]) -> int:
+    """Check the actual canonical envelope, not just either raw input's cap."""
+    item = envelope.get("commitment")
+    if isinstance(item, dict):
+        raw_length = sum(len(value) for key in ("registry_raw_base64", "daily_raw_base64")
+                         if isinstance(value := item.get(key), str))
+        _require(raw_length <= MAX_CAUSAL_ENVELOPE_BYTES, "CAUSAL_ENVELOPE_SIZE_LIMIT")
+    size = len(canonical(envelope))
+    _require(size <= MAX_CAUSAL_ENVELOPE_BYTES, "CAUSAL_ENVELOPE_SIZE_LIMIT")
+    return size
 
 
 def _day(value: date | str) -> date:
@@ -96,6 +132,7 @@ def _liquidity(daily: Any, prior: tuple[date, ...], built: datetime, calendar: C
 def build_commitment(*, epoch: str, day: date | str, built_at: datetime,
                      registry_bytes: bytes, daily_bytes: bytes, calendar: Calendar) -> dict[str, Any]:
     """Pure, bounded selection. Returned bytes are not an audit/publication receipt."""
+    encoded_size = check_causal_input_sizes(registry_bytes, daily_bytes)
     _require(_token(epoch) and epoch not in {".", ".."}, "CAUSAL_EPOCH_INVALID")
     day, built = _day(day), _now(built_at)
     prior, after_close, cutoff, publication_deadline, calendar_sha = _dates(day, calendar)
@@ -152,30 +189,41 @@ def build_commitment(*, epoch: str, day: date | str, built_at: datetime,
     reasons["N_CUT_EXCLUDED"] = max(0, len(ranked) - N_CUT)
     reasons["NOT_IN_CAUSAL_LIST"] = len(filtered) - len(selected)
     epoch_contract = {"epoch": epoch, "n_cut": N_CUT, "manifest_sha": MANIFEST_SHA, "amendment_sha": AMENDMENT_SHA}
-    return {"schema": SCHEMA, **epoch_contract, "epoch_contract_sha256": digest(epoch_contract),
+    commitment = {"schema": SCHEMA, **epoch_contract, "epoch_contract_sha256": digest(epoch_contract),
             "session": day.isoformat(), "previous_session": prior[-1].isoformat(), "built_at": built.isoformat(),
             "cutoff_at": cutoff.isoformat(), "decision_at": publication_deadline.isoformat(), "calendar_sha256": calendar_sha,
             "registry_sha256": hashlib.sha256(registry_bytes).hexdigest(), "daily_contract_sha256": hashlib.sha256(daily_bytes).hexdigest(),
-            "registry_raw_base64": base64.b64encode(registry_bytes).decode(), "daily_raw_base64": base64.b64encode(daily_bytes).decode(),
+            "registry_raw_base64": "", "daily_raw_base64": "",
             "list": selected, "list_sha256": digest(selected), "filtered_symbols": sorted(filtered),
             "ranked_liquidity": [{"symbol": symbol, "adv20_usd": str(adv)} for adv, symbol in ranked],
             "exclusions": sorted(excluded, key=lambda item: item["symbol"]),
             "counts": {"registry": len(records), "filtered": len(filtered), "liquidity_passed": len(ranked), "selected": len(selected), "reasons": dict(sorted(reasons.items()))},
             "coverage": {"numerator": len(selected), "denominator": len(filtered), "ratio": len(selected) / len(filtered) if filtered else None,
                          "scope": "FILTERED_PROVIDER_REGISTRY_ONLY", "outside_registry_observed": False, "complete_exchange_universe": False}}
+    # Base64 is ASCII without JSON escapes. Empty placeholders let us measure
+    # the exact final JSON size without first allocating both encoded inputs.
+    projected_size = len(canonical(commitment)) + encoded_size
+    _require(projected_size <= MAX_CAUSAL_ENVELOPE_BYTES - CAUSAL_RECEIPT_RESERVE_BYTES,
+             "CAUSAL_ENVELOPE_SIZE_LIMIT")
+    commitment["registry_raw_base64"] = base64.b64encode(registry_bytes).decode()
+    commitment["daily_raw_base64"] = base64.b64encode(daily_bytes).decode()
+    return commitment
 
 
 def _decode(value: Any) -> bytes:
-    _require(isinstance(value, str) and len(value) <= 4 * ((MAX_INPUT_BYTES + 2) // 3), "CAUSAL_INPUT_SIZE_LIMIT")
+    _require(isinstance(value, str) and len(value) <= _base64_size(MAX_INPUT_BYTES), "CAUSAL_INPUT_SIZE_LIMIT")
     try:
-        return base64.b64decode(value, validate=True)
+        decoded = base64.b64decode(value, validate=True)
     except (ValueError, binascii.Error):
         raise SourceUnavailable("CAUSAL_INPUT_ENCODING") from None
+    _require(0 < len(decoded) <= MAX_INPUT_BYTES, "CAUSAL_INPUT_SIZE_LIMIT")
+    return decoded
 
 
 def validate_commitment(envelope: dict[str, Any], *, epoch: str, day: date | str, now: datetime,
                         calendar: Calendar, receipt_verifier: ReceiptVerifier | None) -> dict[str, Any]:
     _require(set(envelope) == {"commitment", "audit_receipt", "publication_receipt"}, "CAUSAL_ENVELOPE_FIELDS")
+    check_causal_envelope_size(envelope)
     item = envelope["commitment"]
     _require(isinstance(item, dict), "CAUSAL_COMMITMENT_MISSING")
     _require(item.get("manifest_sha") == MANIFEST_SHA and item.get("amendment_sha") == AMENDMENT_SHA, "CAUSAL_MANIFEST_MISMATCH")
