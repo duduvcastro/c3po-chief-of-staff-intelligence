@@ -446,3 +446,62 @@ def test_quarantine_is_durable_before_the_tape_and_a_retained_receipt_is_never_r
     outcomes = emitter.recover_rounds(tmp_path / "source2", now=NOW + timedelta(minutes=5))
     assert outcomes[0]["commit"] == "already_retained" and receipt_path.read_bytes() == before and not journal_path.exists()
     assert len(_tape(tmp_path / "source2")["final"]) == 4
+
+
+def _rolled_back_identity(root: Path, monkeypatch: pytest.MonkeyPatch, document: dict, episodes: list) -> tuple[Path, bytes]:
+    """Attempt 1 of a round: truncated staging -> audited rollback. Returns the retained receipt path and its bytes."""
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    victim = next(item for item in journal["files"] if not (root / "events" / item["name"]).exists())
+    temp_path = root / "events" / victim["temp"]
+    whole = temp_path.read_bytes()
+    temp_path.write_bytes(whole[: len(whole) // 2])
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    assert outcomes[0]["commit"] == "rolled_back"
+    retained = Path(outcomes[0]["receipt"])
+    return retained, retained.read_bytes()
+
+
+def test_a_closed_round_identity_is_never_reused_and_a_partial_retry_is_undone_not_consumed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R3 (Codex 5575841596): after an audited rollback, re-emitting the SAME identity (same inputs, same published_at)
+    # must be refused before the tape is touched; and a retry that slipped through and crashed half-way must never be mistaken
+    # by recovery for the retained attempt: it is undone behind the guard (zero, never a silent subset).
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    retained, before = _rolled_back_identity(root, monkeypatch, document, episodes)
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_IDENTITY_CLOSED"):
+        emitter.emit_round(document, episodes, root, now=NOW)  # the closed identity
+    assert _tape(root) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root) == [] and retained.read_bytes() == before
+    fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=3))  # a new instant is a new identity
+    assert fresh["commit"] == "complete" and fresh["new_files"] == 4
+    # recovery hardening: a journal + partial finals of the CLOSED identity (as an older emitter could leave) -> undone, not consumed
+    root2 = tmp_path / "source2"
+    retained2, before2 = _rolled_back_identity(root2, monkeypatch, document, episodes)
+    original = emitter._retained_commit
+    monkeypatch.setattr(emitter, "_retained_commit", lambda rounds_dir, receipt: None)  # the refusal is bypassed on purpose
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root2, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    monkeypatch.setattr(emitter, "_retained_commit", original)
+    assert len(_tape(root2)["final"]) == 1 and len(_tape(root2)["guard"]) == 1
+    outcomes = emitter.recover_rounds(root2, now=NOW + timedelta(minutes=4))
+    assert outcomes[0]["commit"] == "rolled_back" and "already retained as 'rolled_back'" in json.loads(Path(outcomes[0]["receipt"]).read_bytes())["note"]
+    assert _tape(root2) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root2) == []
+    assert retained2.read_bytes() == before2 and Path(outcomes[0]["receipt"]) != retained2  # original untouched; attempt receipt apart
+    assert ".attempt-" in Path(outcomes[0]["receipt"]).name
+    # a COMPLETE receipt whose finals were damaged afterwards is not "already retained" either: consistency wins over a subset
+    root3 = tmp_path / "source3"
+    ok = emitter.emit_round(document, episodes, root3, now=NOW)
+    published = json.loads(Path(ok["receipt"]).read_bytes())["published"]
+    (root3 / "events" / published[0]["file"]).unlink()  # one final lost after completion
+    journal_path = root3 / "rounds" / f"2026-09-08.{ok['round_id']}{emitter.JOURNAL_SUFFIX}"
+    journal_path.write_bytes(canonical({"schema": emitter.JOURNAL_SCHEMA, "round_id": ok["round_id"], "round_session": "2026-09-08",
+                                        "guard": emitter._guard_name(ok["round_id"]), "files": [{"name": item["file"], "sha256": item["sha256"], "temp": ".stage-gone.tmp"} for item in published],
+                                        "receipt": {k: v for k, v in json.loads(Path(ok["receipt"]).read_bytes()).items() if k not in ("commit", "published", "published_count", "new_files", "quarantined", "quarantined_count", "events_in_tape_after", "retained_at")},
+                                        "published": published, "quarantined": [], "started_at": _iso(NOW)}))
+    outcomes = emitter.recover_rounds(root3, now=NOW + timedelta(minutes=5))
+    assert outcomes[0]["commit"] == "rolled_back" and _tape(root3)["final"] == [] and ".attempt-" in Path(outcomes[0]["receipt"]).name

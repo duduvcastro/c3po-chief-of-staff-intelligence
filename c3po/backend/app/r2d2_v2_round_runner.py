@@ -270,6 +270,13 @@ CLAIM_PREFIX = ".claimed-"
 _after_claim: Callable[[], None] | None = None  # test hook: runs right after the purge claims its directory entry
 
 
+def _unlink_at_dir(fd: int, name: str) -> None:
+    try:
+        os.unlink(name, dir_fd=fd)
+    except FileNotFoundError:
+        pass
+
+
 def purge_quarantined(root: Path, session: str, name: str, *, signed_by: str, reason: str, now: datetime) -> dict[str, Any]:
     """Remove ONE quarantined file, only from ``quarantine/<session>/``, only after a signed purge receipt is durable
     next to it. Every step is anchored in a descriptor of the session directory reached without following symlinks
@@ -310,8 +317,16 @@ def purge_quarantined(root: Path, session: str, name: str, *, signed_by: str, re
             data = _read_at(fd, claimed)
             claimed_info = os.stat(claimed, dir_fd=fd, follow_symlinks=False)
         except (OSError, RoundEmitterError) as error:
-            os.rename(claimed, name, src_dir_fd=fd, dst_dir_fd=fd)  # put the entry back: nothing is removed without its whole hash
-            raise RoundEmitterError("PURGE_REFUSED_" + (str(error) if isinstance(error, RoundEmitterError) else "UNREADABLE")) from error
+            code = "PURGE_REFUSED_" + (str(error) if isinstance(error, RoundEmitterError) else "UNREADABLE")
+            # put the entry back WITHOUT overwriting (D-R3): link the claimed inode under the visible name only if that name is
+            # free; if a substitute appeared meanwhile, both are preserved (the claim stays as CLAIM_LEFTOVER) and the conflict is reported
+            try:
+                os.link(claimed, name, src_dir_fd=fd, dst_dir_fd=fd)
+            except FileExistsError:
+                raise RoundEmitterError(code + "_CLAIM_KEPT:" + claimed) from error
+            _unlink_at_dir(fd, claimed)
+            _fsync_fd(fd)
+            raise RoundEmitterError(code) from error
         try:
             body = json.loads(data)
         except ValueError:

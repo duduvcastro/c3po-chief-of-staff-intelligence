@@ -15,7 +15,8 @@ events_module = pytest.importorskip("app.r2d2_v2_earnings_events")
 
 from app import r2d2_v2_round_emitter as emitter  # noqa: E402
 from app import r2d2_v2_round_runner as runner  # noqa: E402
-from tests.test_r2d2_v2_round_emitter import MATURITY, NOW, OPENED, RECEIVED, _component, _document, _episode, _event, _known, _standard  # noqa: E402
+from tests.test_r2d2_v2_round_emitter import (MATURITY, NOW, OPENED, RECEIVED, _component, _crash_between_links, _document, _episode, _event,  # noqa: E402
+                                              _known, _rolled_back_identity, _standard, _tape)
 from tests.test_r2d2_v2_round_runner import PUBLISHED, _Ticker, _fetch  # noqa: E402
 
 
@@ -157,3 +158,29 @@ def test_capacity_reservation_matches_the_real_reader_at_the_peak(tmp_path: Path
     monkeypatch.setattr(os, "link", real_link)
     assert third["new_files"] == 4 and max(seen_counts) <= 17
     assert len(source.events(NOW + timedelta(minutes=4))) == 12 and source.last_event_diagnostics == []
+
+
+def test_a_closed_identity_retry_never_leaves_a_silent_subset_for_the_reader(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R3 against the real reader: rollback -> retry of the same identity -> crash on the second link -> recovery.
+    # The reader sees zero events with a diagnostic (guard) or zero events clean (rollback), never 1 of 4 with zero diagnostics.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    retained, before = _rolled_back_identity(root, monkeypatch, document, episodes)
+    source = sources.FileShadowSource(root)
+    assert source.events(NOW + timedelta(minutes=1)) == [] and source.last_event_diagnostics == []  # clean empty tape after rollback
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_IDENTITY_CLOSED"):
+        emitter.emit_round(document, episodes, root, now=NOW)  # the refusal, before the tape is touched
+    assert source.events(NOW + timedelta(minutes=2)) == [] and source.last_event_diagnostics == []
+    original = emitter._retained_commit
+    monkeypatch.setattr(emitter, "_retained_commit", lambda rounds_dir, receipt: None)  # bypass the refusal on purpose
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    monkeypatch.setattr(emitter, "_retained_commit", original)
+    assert len(_tape(root)["final"]) == 1
+    assert source.events(NOW + timedelta(minutes=3)) == [] and source.last_event_diagnostics  # guard: refused as a whole
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=4))
+    assert outcomes[0]["commit"] == "rolled_back"
+    assert source.events(NOW + timedelta(minutes=5)) == [] and source.last_event_diagnostics == []  # zero and clean, never a subset
+    assert retained.read_bytes() == before

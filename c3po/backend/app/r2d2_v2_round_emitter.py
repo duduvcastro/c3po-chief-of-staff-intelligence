@@ -485,6 +485,28 @@ def _retained_path(rounds_dir: Path, receipt: Mapping[str, Any]) -> Path:
     return rounds_dir / f"{receipt['round_session']}.{receipt['round_id']}.json"
 
 
+COMPLETE_COMMITS = frozenset({"complete", "recovered", "already_present"})
+CLOSED_COMMITS = frozenset({"rolled_back"})
+
+
+def _retained_commit(rounds_dir: Path, receipt: Mapping[str, Any]) -> str | None:
+    """The ``commit`` recorded by the retained receipt of this round identity, if any (``None`` = never retained)."""
+    path = _retained_path(rounds_dir, receipt)
+    if not path.is_file():
+        return None
+    try:
+        retained = json.loads(path.read_bytes())
+    except (OSError, ValueError) as error:
+        raise RoundEmitterError("RETAINED_RECEIPT_UNREADABLE") from error
+    _require(isinstance(retained, dict) and retained.get("round_id") == receipt["round_id"], "RETAINED_RECEIPT_MISMATCH")
+    return str(retained.get("commit"))
+
+
+def _attempt_receipt_path(rounds_dir: Path, receipt: Mapping[str, Any], started_at: str) -> Path:
+    compact = "".join(ch for ch in started_at if ch.isdigit())
+    return rounds_dir / f"{receipt['round_session']}.{receipt['round_id']}.attempt-{compact}.json"
+
+
 def _retain(rounds_dir: Path, receipt: Mapping[str, Any], *, commit: str, files: Sequence[Mapping[str, Any]], quarantined: Sequence[Mapping[str, Any]],
             events_after: int, now: datetime, note: str | None = None, recovery: Mapping[str, Any] | None = None) -> Path:
     retained = {**receipt, "commit": commit, "published": [dict(item) for item in files], "published_count": len(files),
@@ -538,6 +560,11 @@ def publish_round(root: Path, receipt: Mapping[str, Any], envelopes: Sequence[Ma
     for directory in (root, events_dir, rounds_dir):
         _private_dir(directory)
     _require(not pending_rounds(root), "PENDING_ROUND_REQUIRES_RECOVERY")
+    # A round identity (round_id = hash of the receipt core, published_at included) is used ONCE (A-R3): an identity whose
+    # retained receipt says it was rolled back is closed for good — re-emitting it could otherwise crash half-way and be
+    # mistaken by recovery for the earlier, already-retained attempt. A new instant is a new identity.
+    closed = _retained_commit(rounds_dir, receipt)
+    _require(closed not in CLOSED_COMMITS, "ROUND_IDENTITY_CLOSED")
     valid: list[tuple[str, bytes, str]] = []
     quarantined: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -654,13 +681,26 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
         quarantine_present, quarantine_missing = _quarantine_present(root, receipt, journal.get("quarantined") or [])
         events_fd = _open_private_dir(events_dir)
         try:
-            if retained_path.is_file():
-                # crash after the receipt was retained: the round is complete; never rewrite the receipt (A-R2)
+            retained_commit = _retained_commit(rounds_dir, receipt)
+            finals_intact = retained_commit in COMPLETE_COMMITS and all(
+                _exists_at(events_fd, item["name"]) and sha256_hex(_read_at(events_fd, item["name"], MAX_EVENT_BYTES)) == item["sha256"]
+                for item in journal["files"])
+            if finals_intact:
+                # crash after a COMPLETE receipt was retained and every final is present and intact: never rewrite the receipt (A-R2)
                 for item in journal["files"]:
                     _unlink_at(events_fd, item["temp"])
                 _unlink_at(events_fd, str(journal.get("guard") or _guard_name(round_id)))
                 _fsync_fd(events_fd)
                 commit, note, missing, corrupt = "already_retained", None, [], []
+            elif retained_commit is not None:
+                # a receipt exists but does not prove a complete commit with intact finals (A-R3): this attempt is undone behind
+                # the guard — never a silent subset — and gets its own attempt receipt; the original receipt is never rewritten
+                for item in journal["files"]:
+                    _unlink_at(events_fd, item["name"])
+                    _unlink_at(events_fd, item["temp"])
+                _unlink_at(events_fd, str(journal.get("guard") or _guard_name(round_id)))
+                _fsync_fd(events_fd)
+                commit, note, missing, corrupt = "rolled_back", f"identity already retained as '{retained_commit}': this attempt undone", [], []
             else:
                 missing, corrupt = [], []
                 linkable: list[Mapping[str, Any]] = []
@@ -710,15 +750,24 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
             events_after = len(_visible_events(_tape_entries(events_fd)))
         finally:
             os.close(events_fd)
-        recovery = {"missing": missing, "corrupt": corrupt, "quarantine_missing": quarantine_missing, "recovered_at": _iso(now)}
+        recovery = {"missing": missing, "corrupt": corrupt, "quarantine_missing": quarantine_missing, "recovered_at": _iso(now),
+                    "retained_commit_before": retained_commit}
         if commit == "already_retained":
             receipt_path = retained_path
         else:
             published = [dict(item) for item in journal.get("published", [])] if commit == "recovered" else []
             if quarantine_missing:
                 note = "; ".join(filter(None, [note, "quarantine records missing on disk: " + ", ".join(quarantine_missing)]))
-            receipt_path = _retain(rounds_dir, receipt, commit=commit, files=published, quarantined=quarantine_present, events_after=events_after,
-                                   now=now, note=note, recovery=recovery)
+            if retained_commit is not None:
+                # the identity already has its retained receipt: this attempt's outcome goes to a separate, dated attempt receipt
+                attempt = {**receipt, "commit": commit, "published": published, "published_count": len(published), "new_files": 0,
+                           "quarantined": quarantine_present, "quarantined_count": len(quarantine_present), "events_in_tape_after": events_after,
+                           "retained_at": _iso(now), "note": note, "recovery": recovery, "attempt_started_at": journal.get("started_at")}
+                receipt_path = _attempt_receipt_path(rounds_dir, receipt, str(journal.get("started_at") or _iso(now)))
+                write_private(receipt_path, canonical(attempt))
+            else:
+                receipt_path = _retain(rounds_dir, receipt, commit=commit, files=published, quarantined=quarantine_present, events_after=events_after,
+                                       now=now, note=note, recovery=recovery)
         journal_path.unlink()
         _fsync_dir(rounds_dir)
         outcomes.append({"round_id": round_id, "round_session": receipt["round_session"], "commit": commit, "receipt": str(receipt_path),

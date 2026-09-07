@@ -411,3 +411,35 @@ def test_purge_claims_its_entry_so_a_concurrent_replacement_survives(tmp_path: P
     os.chmod(session / (runner.CLAIM_PREFIX + "deadbeef.json"), 0o600)
     kinds = {item["file"]: item["kind"] for item in runner.quarantine_inventory(root)}
     assert kinds[runner.CLAIM_PREFIX + "deadbeef.json"] == "CLAIM_LEFTOVER" and kinds["x.json"] == "QUARANTINED"
+
+
+def test_a_refused_purge_restores_without_overwriting_a_substitute(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 D-R3 (Codex 5575841596): claim -> a writer creates the visible name -> the read is refused (too large) -> the restore
+    # must not overwrite the substitute: both are preserved and the conflict is reported.
+    root, session = _quarantine_root(tmp_path)
+    monkeypatch.setattr(emitter, "READ_LIMIT_BYTES", 1024)
+    big, substitute = _record_bytes("EVENT_SIZE_LIMIT", pad=4096), _record_bytes("B")
+    (session / "t.json").write_bytes(big)
+    os.chmod(session / "t.json", 0o600)
+
+    def race() -> None:
+        incoming = session / ".incoming.tmp"
+        incoming.write_bytes(substitute)
+        os.chmod(incoming, 0o600)
+        os.replace(incoming, session / "t.json")
+
+    monkeypatch.setattr(runner, "_after_claim", race)
+    with pytest.raises(emitter.RoundEmitterError, match="PURGE_REFUSED_FILE_TOO_LARGE_CLAIM_KEPT:") as info:
+        runner.purge_quarantined(root, "2026-09-08", "t.json", signed_by="fable", reason="x", now=NOW)
+    monkeypatch.setattr(runner, "_after_claim", None)
+    claimed = str(info.value).split(":", 1)[1]
+    assert (session / "t.json").read_bytes() == substitute and (session / claimed).read_bytes() == big  # both preserved
+    kinds = {item["file"]: item["kind"] for item in runner.quarantine_inventory(root)}
+    assert kinds["t.json"] == "QUARANTINED" and kinds[claimed] == "CLAIM_LEFTOVER" and not (session / "t.purge.json").exists()
+    # without a substitute the refusal restores the visible name, and no claim is left behind
+    (session / "u.json").write_bytes(big)
+    os.chmod(session / "u.json", 0o600)
+    with pytest.raises(emitter.RoundEmitterError, match="PURGE_REFUSED_FILE_TOO_LARGE$"):
+        runner.purge_quarantined(root, "2026-09-08", "u.json", signed_by="fable", reason="x", now=NOW)
+    assert (session / "u.json").read_bytes() == big
+    assert [name for name in os.listdir(session) if name.startswith(runner.CLAIM_PREFIX)] == [claimed]
