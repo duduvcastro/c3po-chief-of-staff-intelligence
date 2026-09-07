@@ -40,3 +40,10 @@ desta mesma PR e nunca foram admitidos.
 
 Admissão de ambas por esta PR após parecer do Codex e OK da mesa; nenhuma promoção, mudança de consumidor/TP, deploy ou
 coleta decorre delas.
+
+## Linha #10 — status de 07/09/2026 (fechamento a seis mãos com ressalva)
+
+Pin do documento após esta atualização: `ba1ec914a6b29eacfd8c4be1154e6ce251fbd7e10424d1427d4f8e8e19971194` (anterior admitido `5e6d487c30f8e31696b989015abb44771ae0f539eb9057c6223dbd2e4640c177`, PR #388).
+A linha #10 passa a registrar a assinatura integral do Codex sobre a 13ª noite (`f912a1f276903becf430cb1d480b88b38e07429204512738c67a0323bab0bb2b`,
+4.206/4.206 relações, ressalva documental sobre a cobertura do V3.2 no B3) e o fechamento a seis mãos da leitura `07417723…`
+(manifesto `MANIFESTO_V3_GATE_2026-09-07.json`). G3 permanece aberto; nenhuma promoção, mudança de consumidor/TP, deploy ou coleta decorre.
