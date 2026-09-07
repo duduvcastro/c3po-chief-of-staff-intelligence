@@ -55,7 +55,7 @@ from .r2d2_v2_producer_daily import EodhdFetcher, Fetcher, ProducerError, Respon
 PRODUCER = "fable-eodhd-earnings"
 PRODUCER_VERSION = "v3"
 RULE_VERSION = "EXCLUSION_RULE_V1"
-AMENDMENT = "EMENDA_3_REV3_SIGNED_SIX_HANDS"
+AMENDMENT = "EMENDA_3_REV3"  # exact label accepted by the port's policy validator (r2d2_v2_earnings_policy)
 AMENDMENT_SHA: str | None = "3319407afcd7760668e6ec73bb4686ecb95a38eecf47fc157050899f80a6cc9c"  # manifesto 1a927ca4…, três recibos
 SCHEMA = "V2_EARNINGS_COMPONENTS_V2"
 NEW_YORK = ZoneInfo("America/New_York")

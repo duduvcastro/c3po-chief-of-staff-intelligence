@@ -1,6 +1,14 @@
-"""Producers -> real V2 port (PR #383 modules). Skipped where the port is not checked out."""
+"""Producers -> real V2 port. Skipped where the port is not checked out.
+
+Two port generations are supported on purpose. The #383 port (no
+``app.r2d2_v2_earnings_policy``) must refuse the EMENDA 3 component by schema,
+never promoting it into legacy coverage. The F386-4 port validates the same
+nine-key component with its own policy recomputation and must reach the verdict
+by content, with no earnings reason for a name whose last report is far away.
+"""
 from __future__ import annotations
 
+import importlib.util
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -18,6 +26,7 @@ from app import r2d2_v2_producer_daily as prod  # noqa: E402
 from app import r2d2_v2_producer_earnings as earn  # noqa: E402
 from app import r2d2_v2_producer_snapshot as snap  # noqa: E402
 
+NEW_PORT = importlib.util.find_spec("app.r2d2_v2_earnings_policy") is not None
 D = date(2026, 9, 8)
 PREVIOUS = date(2026, 9, 4)
 EPOCH = "R2D2-V2-SHADOW-SYNTHETIC"
@@ -70,7 +79,7 @@ def _observe(root: Path, loader, book, calendar, sequence: int):
     body = snap.assemble_snapshot(["SYNTH"], book, loader(), now=NOW, sequence=sequence)
     prod.write_private(root / "snapshot.json", prod.canonical(body))
     batch = sources.FileShadowSource(root).snapshot(NOW)
-    assert batch["status"] == "AVAILABLE"
+    assert batch["status"] == "AVAILABLE", batch
     row = batch["universe"]["instruments"][0]
     inputs = shadow.candidate_inputs(row, batch, NOW, calendar)
     return row, inputs, contract.evaluate_candidate(inputs).to_dict()
@@ -87,14 +96,19 @@ def _root_with_quote(tmp_path: Path, history: str):
     return root, base, fetch, book
 
 
+def _risk(base: Path, **extra) -> None:
+    prod.write_private(base / "risk.json", prod.canonical({"schema": "V2_RISK_COMPONENTS_V1", "session_date": D.isoformat(), "symbols": {
+        "SYNTH": {"value": 30.5, "producer": "codex-risk", "source_at": (NOW - timedelta(minutes=10)).isoformat(),
+                  "available_at": (NOW - timedelta(minutes=9)).isoformat(), **extra}}}))
+
+
 def _deliver_components(base: Path, fetch) -> None:
     prod.produce_instrument_components(fetch, ["SYNTH"], session_date=D, output_dir=base)
-    prod.write_private(base / "risk.json", prod.canonical({"schema": "V2_RISK_COMPONENTS_V1", "session_date": D.isoformat(), "symbols": {
-        "SYNTH": {"value": 30.5, "producer": "codex-risk", "source_at": (NOW - timedelta(minutes=10)).isoformat(), "available_at": (NOW - timedelta(minutes=9)).isoformat()}}}))
+    _risk(base)
     earn.produce_earnings(fetch, ["SYNTH"], session_date=D, output_dir=base, now=STAMP + timedelta(seconds=10))
 
 
-def test_snapshot_keeps_names_pending_until_components_arrive_and_the_legacy_port_refuses_the_new_earnings_policy(tmp_path: Path) -> None:
+def test_snapshot_keeps_names_pending_until_components_arrive(tmp_path: Path) -> None:
     root, base, fetch, book = _root_with_quote(tmp_path, "published_far")
     loader = snap.ComponentLoader(root, D, ["SYNTH"])
     calendar = calendar_module.ShadowCalendar()
@@ -102,20 +116,26 @@ def test_snapshot_keeps_names_pending_until_components_arrive_and_the_legacy_por
     row, inputs, evaluation = _observe(root, loader, book, calendar, 1)
     assert row["data_available"] is False and contract.input_complete(inputs) is False
     assert inputs.available_at["daily"] is None and inputs.available_at["risk"] is None and inputs.available_at["earnings"] is None
-    # 2. the responses land during the window: the next assembly carries them; daily and risk are complete and valid,
-    #    while the EMENDA 3 earnings component (policy/evidence/exclusion) is refused by the legacy reader BY SCHEMA:
-    #    a concluded invalid response, hence DATA_INELIGIBLE — never legacy coverage, never ELIGIBLE, never pending.
+    # 2. the responses land during the window: the next assembly carries them and the inputs are complete
     _deliver_components(base, fetch)
     row, inputs, evaluation = _observe(root, loader, book, calendar, 2)
-    assert contract.input_complete(inputs) is True and row["data_available"] is False
-    assert [d["code"] for d in row["diagnostics"]] == ["EARNINGS_MISSING"]
-    assert evaluation["status"] == "DATA_INELIGIBLE", evaluation
-    assert any("EARNINGS" in reason for reason in evaluation["reasons"]), evaluation
+    assert contract.input_complete(inputs) is True
     for code in ("SOURCE_DAILY_COVERAGE_UNVERIFIED", "SPLIT_COVERAGE_UNVERIFIED", "DAILY_BARS_COUNT_OR_TYPE", "RISK_SCORE_INVALID"):
         assert code not in evaluation["reasons"], evaluation
+    if NEW_PORT:
+        # F386-4 port: the signed EMENDA 3 component is recomputed and accepted; a report published far
+        # from the horizon adds no earnings reason and the verdict is reached by content (risk 30.5 -> R1 ELIGIBLE).
+        assert row["data_available"] is True and row["diagnostics"] == []
+        assert evaluation["status"] == "ELIGIBLE" and evaluation["reasons"] == [], evaluation
+    else:
+        # #383 port: the nine-key component is refused BY SCHEMA, never promoted into legacy coverage:
+        # a concluded invalid response, hence DATA_INELIGIBLE — never ELIGIBLE, never pending.
+        assert row["data_available"] is False
+        assert [d["code"] for d in row["diagnostics"]] == ["EARNINGS_MISSING"]
+        assert evaluation["status"] == "DATA_INELIGIBLE", evaluation
+        assert any("EARNINGS" in reason for reason in evaluation["reasons"]), evaluation
     # 3. a concluded invalid risk response (extra field) is carried as concluded, not turned into a wait
-    prod.write_private(base / "risk.json", prod.canonical({"schema": "V2_RISK_COMPONENTS_V1", "session_date": D.isoformat(), "symbols": {
-        "SYNTH": {"value": 30.5, "producer": "codex-risk", "extra": 1, "source_at": (NOW - timedelta(minutes=10)).isoformat(), "available_at": (NOW - timedelta(minutes=9)).isoformat()}}}))
+    _risk(base, extra=1)
     row, inputs, evaluation = _observe(root, loader, book, calendar, 3)
     assert contract.input_complete(inputs) is True and evaluation["status"] == "DATA_INELIGIBLE"
     assert "RISK_MISSING" in [d["code"] for d in row["diagnostics"]]
@@ -131,3 +151,24 @@ def test_codex_earnings_counterexamples_never_reach_eligible(tmp_path: Path, his
     assert expected_reason in component["exclusion"]["reasons"] and component["exclusion"]["excluded"] is True
     row, inputs, evaluation = _observe(root, snap.ComponentLoader(root, D, ["SYNTH"]), book, calendar_module.ShadowCalendar(), 1)
     assert contract.input_complete(inputs) is True and evaluation["status"] == "DATA_INELIGIBLE", evaluation
+    if NEW_PORT:
+        # The port recomputes the verdict from the evidence and publishes the same code the producer concluded.
+        # A component whose three evidences were not all validated (coverage_verified False) is additionally
+        # flagged by the source reader as a concluded EARNINGS_EVIDENCE_INVALID row: still DATA, never pending.
+        assert expected_reason in evaluation["reasons"], evaluation
+        assert row["data_available"] is component["coverage_verified"], (row, component["coverage_verified"])
+        if not component["coverage_verified"]:
+            assert [d["code"] for d in row["diagnostics"]] == ["EARNINGS_EVIDENCE_INVALID"]
+            assert "SOURCE_EARNINGS_EVIDENCE_INVALID" in evaluation["reasons"]
+
+
+@pytest.mark.skipif(not NEW_PORT, reason="F386-4 port not checked out")
+def test_new_port_recomputes_the_verdict_and_rejects_a_tampered_conclusion(tmp_path: Path) -> None:
+    root, base, fetch, book = _root_with_quote(tmp_path, "cadence_inside")
+    _deliver_components(base, fetch)
+    document = json.loads((base / "earnings.json").read_bytes())
+    document["symbols"]["SYNTH"]["exclusion"] = {"excluded": False, "reasons": []}
+    prod.write_private(base / "earnings.json", prod.canonical(document))
+    row, inputs, evaluation = _observe(root, snap.ComponentLoader(root, D, ["SYNTH"]), book, calendar_module.ShadowCalendar(), 1)
+    assert contract.input_complete(inputs) is True and evaluation["status"] == "DATA_INELIGIBLE", evaluation
+    assert "EARNINGS_EVIDENCE_INVALID" in evaluation["reasons"] and "ELIGIBLE" != evaluation["status"]

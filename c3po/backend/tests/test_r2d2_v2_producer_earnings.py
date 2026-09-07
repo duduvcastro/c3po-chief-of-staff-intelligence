@@ -160,7 +160,7 @@ def test_third_evidence_is_required_and_invalid_evidence_never_counts() -> None:
 def test_coverage_means_the_three_evidences_validated_with_receipts() -> None:
     ooo = _build("OOO", OTHER_ONLY, PUBLISHED_FAR)
     assert ooo["coverage_verified"] is True and ooo["exclusion"] == {"excluded": False, "reasons": []}
-    assert ooo["policy"] == {"rule": "EXCLUSION_RULE_V1", "amendment": "EMENDA_3_REV3_SIGNED_SIX_HANDS", "amendment_sha": "3319407afcd7760668e6ec73bb4686ecb95a38eecf47fc157050899f80a6cc9c", "producer": "fable-eodhd-earnings", "version": "v3"}
+    assert ooo["policy"] == {"rule": "EXCLUSION_RULE_V1", "amendment": "EMENDA_3_REV3", "amendment_sha": "3319407afcd7760668e6ec73bb4686ecb95a38eecf47fc157050899f80a6cc9c", "producer": "fable-eodhd-earnings", "version": "v3"}
     assert ooo["evidence"]["calendar_payload_sha256"] == OTHER_ONLY.sha256 and ooo["evidence"]["history_payload_sha256"] == PUBLISHED_FAR.sha256
     assert ooo["evidence"]["last_published_report_date"] == "2026-05-20" and ooo["evidence"]["calendar_window"] == ["2026-08-24", "2026-10-06"]
     assert datetime.fromisoformat(ooo["window_start"]) == RECEIVED and datetime.fromisoformat(ooo["window_end"]) >= earn.horizon_for(D).maturity_at
