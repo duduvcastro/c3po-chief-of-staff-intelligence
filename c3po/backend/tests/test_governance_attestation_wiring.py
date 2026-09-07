@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -147,7 +148,7 @@ def test_a_refresh_in_flight_cannot_republish_a_snapshot_that_predates_an_invali
         return SimpleNamespace(generated_at=now, revision=current)
 
     service._refresh_snapshot = _refresh  # type: ignore[method-assign]
-    results: list[SimpleNamespace] = []
+    results: list[Any] = []
     reader = threading.Thread(target=lambda: results.append(service.snapshot()))
     reader.start()
     assert started.wait(5)
@@ -155,14 +156,15 @@ def test_a_refresh_in_flight_cannot_republish_a_snapshot_that_predates_an_invali
     service.invalidate()  # ... and the route invalidated the cache while the old refresh is still running
     release.set()
     reader.join(5)
-    assert results[0].revision == 1  # the caller of the old refresh gets what it computed ...
+    assert getattr(results[0], "revision") == 1  # the caller of the old refresh gets what it computed ...
     assert service._cache is None  # ... but the stale snapshot is never cached
-    assert service.snapshot().revision == 2  # the next GET recomputes
+    assert getattr(service.snapshot(), "revision") == 2  # the next GET recomputes
     # control: with no invalidation in between, a refresh is cached normally
-    assert service._cache is not None and service._cache[1].revision == 2
+    cached = service._cache
+    assert cached is not None and getattr(cached[1], "revision") == 2
     started.clear()
     release.set()
-    assert service.snapshot(force=True).revision == 2 and service._cache is not None
+    assert getattr(service.snapshot(force=True), "revision") == 2 and service._cache is not None
 
 
 def test_attestation_route_invalidates_even_when_the_run_raises_after_persisting(monkeypatch: pytest.MonkeyPatch) -> None:
