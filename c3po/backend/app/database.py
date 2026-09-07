@@ -33,6 +33,10 @@ class Database:
         self._observations: dict[tuple[str, str, str], dict[str, Any]] = {}
         self._methodologies: dict[tuple[str, int], dict[str, Any]] = {}
         self._analysis_snapshots: list[dict[str, Any]] = []
+        # official target price (V3.2 rev 7 §7-bis, Passo 0): in-memory stores mirror the append-only tables
+        self._valuation_predictions: list[dict[str, Any]] = []
+        self._valuation_official_selections: list[dict[str, Any]] = []
+        self._official_cycle_cache: dict[str, dict[str, Any]] = {}
         self._valuation_changes: list[dict[str, Any]] = []
         self._server_usage_samples: list[dict[str, Any]] = []
         self._api_performance_buckets: list[dict[str, Any]] = []
@@ -3279,6 +3283,7 @@ class Database:
             }
             self._analysis_snapshots.append(current_snapshot)
             self._capture_valuation_changes(current_snapshot, prior_snapshot)
+            self._record_official_predictions(current_snapshot)
             return snapshot_id
         with self.connection() as connection:
             prior = connection.execute(
@@ -3314,19 +3319,173 @@ class Database:
                 ),
             )
             connection.commit()
-        self._capture_valuation_changes(
-            {
-                "id": snapshot_id,
-                "analysis_type": analysis_type,
-                "entity_key": entity_key,
-                "methodology_version_id": methodology_version_id,
-                "inputs": inputs,
-                "outputs": outputs,
-                "published_at": published_at,
-            },
-            prior_snapshot,
-        )
+        current_snapshot = {
+            "id": snapshot_id,
+            "analysis_type": analysis_type,
+            "entity_key": entity_key,
+            "methodology_version_id": methodology_version_id,
+            "inputs": inputs,
+            "outputs": outputs,
+            "published_at": published_at,
+        }
+        self._capture_valuation_changes(current_snapshot, prior_snapshot)
+        self._record_official_predictions(current_snapshot)
         return snapshot_id
+
+    # ------------------------------------------------------------------ official target price (V3.2 rev 7 §7-bis, Passo 0)
+
+    _PREDICTION_KEYS = ("id", "source", "source_version", "market", "symbol", "scope", "session_date", "cycle_id", "prediction_instant",
+                        "tp", "buy_in", "internal_tp", "consensus_tp", "consensus_source", "analyst_count", "consensus_weight_percent",
+                        "price", "currency", "decomposition", "row_sha256")
+    _SELECTION_KEYS = ("generation_id", "source", "source_version", "cycles", "session_dates", "validated_complete", "activated_at",
+                       "activated_by", "previous_generation_id", "receipt")
+
+    def _record_official_predictions(self, snapshot: dict[str, Any]) -> None:
+        """Every published producer cycle becomes prediction records; universe cycles may activate a generation."""
+        from .valuation_official import record_snapshot  # local import: that module only depends on this storage API
+        record_snapshot(self, snapshot)
+
+    def insert_valuation_predictions(self, records: list[dict[str, Any]]) -> int:
+        if not records:
+            return 0
+        if not self.database_url:
+            existing = {(r["source"], r["source_version"], r["market"], r["symbol"], r["cycle_id"]) for r in self._valuation_predictions}
+            added = [r for r in records if (r["source"], r["source_version"], r["market"], r["symbol"], r["cycle_id"]) not in existing]
+            self._valuation_predictions.extend(dict(r) for r in added)
+            return len(added)
+        inserted = 0
+        with self.connection() as connection:
+            for record in records:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO valuation_predictions
+                        (id, source, source_version, market, symbol, scope, session_date, cycle_id, prediction_instant,
+                         tp, buy_in, internal_tp, consensus_tp, consensus_source, analyst_count, consensus_weight_percent,
+                         price, currency, decomposition, row_sha256)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+                    ON CONFLICT (source, source_version, market, symbol, cycle_id) DO NOTHING
+                    """,
+                    (record["id"], record["source"], record["source_version"], record["market"], record["symbol"], record["scope"],
+                     record["session_date"], record["cycle_id"], record["prediction_instant"], record["tp"], record["buy_in"],
+                     record.get("internal_tp"), record.get("consensus_tp"), record.get("consensus_source"), record.get("analyst_count"),
+                     record.get("consensus_weight_percent"), record.get("price"), record["currency"],
+                     json.dumps(record.get("decomposition") or {}), record["row_sha256"]),
+                )
+                inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+            connection.commit()
+        return inserted
+
+    def latest_valuation_prediction(self, market: str, symbol: str, *, source: str, scope: str | None = None) -> dict[str, Any] | None:
+        if not self.database_url:
+            matches = [r for r in self._valuation_predictions
+                       if r["market"] == market and r["symbol"] == symbol and r["source"] == source and (scope is None or r["scope"] == scope)]
+            return dict(max(matches, key=lambda r: str(r["prediction_instant"]))) if matches else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT id::text, source, source_version, market, symbol, scope, session_date::text, cycle_id::text, prediction_instant,
+                       tp, buy_in, internal_tp, consensus_tp, consensus_source, analyst_count, consensus_weight_percent, price, currency,
+                       decomposition, row_sha256
+                FROM valuation_predictions
+                WHERE market = %s AND symbol = %s AND source = %s AND (%s::text IS NULL OR scope = %s)
+                ORDER BY prediction_instant DESC LIMIT 1
+                """,
+                (market, symbol, source, scope, scope),
+            ).fetchone()
+        if not row:
+            return None
+        record = dict(zip(self._PREDICTION_KEYS, row))
+        for key in ("tp", "buy_in", "internal_tp", "consensus_tp", "consensus_weight_percent", "price"):
+            record[key] = float(record[key]) if record[key] is not None else None
+        if isinstance(record["prediction_instant"], datetime):
+            record["prediction_instant"] = record["prediction_instant"].isoformat()
+        return record
+
+    def insert_valuation_official_selection(self, generation: dict[str, Any]) -> None:
+        if not self.database_url:
+            self._valuation_official_selections.append(dict(generation))
+            return
+        with self.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO valuation_official_selection
+                    (generation_id, source, source_version, cycles, session_dates, validated_complete, activated_at, activated_by,
+                     previous_generation_id, receipt)
+                VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s::jsonb)
+                """,
+                (generation["generation_id"], generation["source"], generation["source_version"], json.dumps(generation["cycles"]),
+                 json.dumps(generation["session_dates"]), bool(generation["validated_complete"]), generation["activated_at"],
+                 generation["activated_by"], generation.get("previous_generation_id"), json.dumps(generation.get("receipt") or {})),
+            )
+            connection.commit()
+
+    def _selection_record(self, row: Any) -> dict[str, Any] | None:
+        if not row:
+            return None
+        record = dict(zip(self._SELECTION_KEYS, row))
+        if isinstance(record.get("activated_at"), datetime):
+            record["activated_at"] = record["activated_at"].isoformat()
+        return record
+
+    def latest_valuation_official_selection(self) -> dict[str, Any] | None:
+        if not self.database_url:
+            return dict(self._valuation_official_selections[-1]) if self._valuation_official_selections else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT generation_id::text, source, source_version, cycles, session_dates, validated_complete, activated_at,
+                       activated_by, previous_generation_id::text, receipt
+                FROM valuation_official_selection
+                ORDER BY activated_at DESC, created_at DESC LIMIT 1
+                """
+            ).fetchone()
+        return self._selection_record(row)
+
+    def valuation_official_selection(self, generation_id: str) -> dict[str, Any] | None:
+        if not self.database_url:
+            match = next((item for item in self._valuation_official_selections if item.get("generation_id") == generation_id), None)
+            return dict(match) if match else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT generation_id::text, source, source_version, cycles, session_dates, validated_complete, activated_at,
+                       activated_by, previous_generation_id::text, receipt
+                FROM valuation_official_selection WHERE generation_id = %s
+                """,
+                (generation_id,),
+            ).fetchone()
+        return self._selection_record(row)
+
+    def analysis_snapshot_by_id(self, snapshot_id: str) -> dict[str, Any] | None:
+        if not self.database_url:
+            match = next((item for item in self._analysis_snapshots if item.get("id") == snapshot_id), None)
+            return match.copy() if match else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT id::text, analysis_type, entity_key, methodology_version_id::text, inputs, outputs, published_at
+                FROM analysis_snapshots WHERE id = %s
+                """,
+                (snapshot_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return dict(zip(("id", "analysis_type", "entity_key", "methodology_version_id", "inputs", "outputs", "published_at"), row))
+
+    def official_cycle_snapshot(self, cycle_id: str) -> dict[str, Any] | None:
+        """A producer cycle referenced by the official selection; cycles are immutable, so a small cache is exact."""
+        cached = self._official_cycle_cache.get(cycle_id)
+        if cached is not None:
+            return cached
+        snapshot = self.analysis_snapshot_by_id(cycle_id)
+        if snapshot is not None:
+            if len(self._official_cycle_cache) >= 8:
+                self._official_cycle_cache.pop(next(iter(self._official_cycle_cache)))
+            self._official_cycle_cache[cycle_id] = snapshot
+        return snapshot
+
+    def drop_official_cycle_cache(self) -> None:
+        self._official_cycle_cache.clear()
 
     def latest_analysis_snapshot_published_at(self, analysis_type: str, entity_key: str) -> datetime | None:
         """Timestamp-only counterpart of latest_analysis_snapshot(), for

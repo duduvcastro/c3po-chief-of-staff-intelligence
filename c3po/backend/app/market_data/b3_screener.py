@@ -16,6 +16,7 @@ from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
 from .sector_taxonomy import SECTOR_TAXONOMY_VERSION, canonical_b3_company_name, resolve_b3_sector
+from ..valuation_official import official_stamp
 from ..valuation_policy import (
     C3PO_VALUATION_POLICY,
     METHODOLOGY_KEY,
@@ -613,6 +614,7 @@ class B3ScreenerService:
             eligible_count=len(rows),
             generated_at=generated_at,
             items=items,
+            **official_stamp(self.database, "B3"),
             criteria={
                 "ranking": "C3PO TP upside, descending, inside the validated-TP Jedi Force Power Zone",
                 "universe": "350 liquid B3 stocks; issuer share classes deduplicated",

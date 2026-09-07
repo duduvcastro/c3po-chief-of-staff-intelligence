@@ -20,7 +20,21 @@ def service_for(tmp_path):
         auth_cookie_secure=False,
     )
     database = Database(settings)
-    return OnePagerService(settings, database, MarketDataService(settings, database), output_dir=tmp_path)
+    service = OnePagerService(settings, database, MarketDataService(settings, database), output_dir=tmp_path)
+    with_official(service)  # Passo 0 (V3.2 rev 7 §7-bis): the One Pager never computes a TP; tests inject the official row
+    return service
+
+
+DEFAULT_OFFICIAL_ROW = {"our_tp": 560.0, "buy_in": 470.0, "tp_source": "official_blend_v1",
+                        "generation_id": "gen-test", "official_cycle_id": "cycle-test"}
+
+
+def with_official(service, **overrides):
+    """What the official selection would return for any symbol in these tests (see test_valuation_official.py for
+    the real resolution path). Returns the row installed."""
+    row = {**DEFAULT_OFFICIAL_ROW, **overrides}
+    service._official_valuation = lambda symbol, market: dict(row)  # type: ignore[method-assign]
+    return row
 
 
 def sample_analysis(service):
@@ -259,6 +273,7 @@ def test_b3_one_pager_uses_shared_candidate_and_matrix_valuation(tmp_path) -> No
 
 def test_mhvyf_uses_primary_listing_currency_and_public_coverage(tmp_path) -> None:
     service = service_for(tmp_path)
+    with_official(service, our_tp=34.149, buy_in=19.522)  # the official producer carries the primary-listing bridge values
     policy = policy_for("MHVYF")
     assert policy is not None
     fundamentals = normalize_foreign_fundamentals(
@@ -745,7 +760,9 @@ def test_analyze_uses_live_peer_medians_over_the_fallback_constants(tmp_path) ->
         peer_medians={"technology": {"pe": 8.0, "ev_ebitda": 6.0}},
     )
 
-    assert with_low_peer_pe["c3po_tp"] < without_peers["c3po_tp"]
+    # the internal framework reacts to live peer medians (diagnostic); the TP shown is the official one in both cases
+    assert with_low_peer_pe["internal_framework_tp"] < without_peers["internal_framework_tp"]
+    assert with_low_peer_pe["c3po_tp"] == without_peers["c3po_tp"] == DEFAULT_OFFICIAL_ROW["our_tp"]
 
 
 def test_us_consensus_weight_scales_with_analyst_breadth_and_zeroes_without_coverage() -> None:
@@ -812,6 +829,7 @@ def test_analyze_skips_ev_ebitda_and_dcf_for_the_financial_profile(tmp_path) -> 
     reproduction of JPM's real inputs.
     """
     service = service_for(tmp_path)
+    with_official(service, our_tp=400.0, buy_in=330.0)
     fundamentals = {
         "companyName": "JPM", "sector": "Financial Services", "industry": "Banks-Diversified",
         "marketCap": 950_000_000_000, "trailingEps": 24.0, "forwardEps": 25.007,
@@ -829,7 +847,7 @@ def test_analyze_skips_ev_ebitda_and_dcf_for_the_financial_profile(tmp_path) -> 
     # Before this fix, Morgan Stanley (72% dcf_tp weight) alone hit $555+
     # and enterprise-heavy methods blew past $1,000; every method should
     # now be a plausible multiple of price, not 2-3x it.
-    assert all(value < 2.0 * quote["price"] for value in result["methods"].values())
+    assert all(value < 2.0 * quote["price"] for value in result["internal_framework_methods"].values())
     assert result["c3po_tp"] < 1.5 * quote["price"]
 
 
@@ -862,17 +880,13 @@ def test_analyze_pulls_the_final_tp_toward_a_well_covered_consensus(tmp_path) ->
         risk_free_rate=0.042,
     )
 
-    assert with_consensus["methods"] == pytest.approx(without_consensus["methods"])
-    assert statistics.mean(with_consensus["methods"].values()) == pytest.approx(
-        statistics.mean(without_consensus["methods"].values())
-    )
-    expected_weight = service._us_consensus_weight(374.57, 27)
-    expected_tp = (
-        statistics.mean(with_consensus["methods"].values()) * (1 - expected_weight)
-        + 374.57 * expected_weight
-    )
-    assert with_consensus["c3po_tp"] == pytest.approx(expected_tp)
-    assert abs(with_consensus["c3po_tp"] - 374.57) < abs(without_consensus["c3po_tp"] - 374.57)
+    # Valuation V3.2 rev 7 (P1/P2): the consensus never enters the TP shown — it remains a diagnostic weight — and the
+    # internal framework is unchanged by it; the TP is the official one in both cases.
+    assert with_consensus["internal_framework_methods"] == pytest.approx(without_consensus["internal_framework_methods"])
+    assert with_consensus["consensus_weight_diagnostic"] == pytest.approx(service._us_consensus_weight(374.57, 27))
+    assert with_consensus["consensus_weight_diagnostic"] > 0 and without_consensus["consensus_weight_diagnostic"] == 0
+    assert with_consensus["c3po_tp"] == without_consensus["c3po_tp"] == DEFAULT_OFFICIAL_ROW["our_tp"]
+    assert with_consensus["tp_source"] == "official_blend_v1" and with_consensus["official_generation_id"] == "gen-test"
 
 
 def test_consensus_does_not_leak_into_internal_methods_without_fundamentals(tmp_path) -> None:
@@ -892,9 +906,9 @@ def test_consensus_does_not_leak_into_internal_methods_without_fundamentals(tmp_
         {**fundamentals, "targetMeanPrice": 140.0, "numberOfAnalystOpinions": 10},
     )
 
-    assert with_consensus["methods"] == pytest.approx(without_consensus["methods"])
-    internal_tp = statistics.mean(with_consensus["methods"].values())
-    assert with_consensus["c3po_tp"] == pytest.approx(internal_tp * 0.65 + 140.0 * 0.35)
+    assert with_consensus["internal_framework_methods"] == pytest.approx(without_consensus["internal_framework_methods"])
+    assert with_consensus["internal_framework_tp"] == pytest.approx(without_consensus["internal_framework_tp"])
+    assert with_consensus["c3po_tp"] == DEFAULT_OFFICIAL_ROW["our_tp"]  # the consensus never enters the TP (rev 7, P1)
 
 
 def test_v2_shadow_band_renders_without_replacing_the_official_tp(tmp_path) -> None:
@@ -952,3 +966,12 @@ def test_valuation_v2_shadow_lookup_reads_the_persisted_snapshot(tmp_path) -> No
         "v2_tp": 99.0, "low_conviction": True
     }
     assert service._valuation_v2_shadow("UNKNOWN", "US") is None
+
+
+def test_generate_refuses_without_an_official_tp_and_never_computes_one(tmp_path) -> None:
+    # Valuation V3.2 rev 7 §7-bis (Passo 0): without an official row there is no One Pager — no local blend, no fallback.
+    service = service_for(tmp_path)
+    service._official_valuation = lambda symbol, market: None  # type: ignore[method-assign]
+    with pytest.raises(OnePagerGenerationError, match="TP oficial"):
+        sample_analysis(service)
+

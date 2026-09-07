@@ -33,6 +33,7 @@ from .r2d2_shadow_candidate_log import (
     build_observation as build_shadow_candidate_observation,
     entry_rejection_reason_id,
 )
+from .valuation_official import official_rows
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
@@ -3935,61 +3936,13 @@ class R2D2PaperService:
         if not shortlist:
             return []
 
-        snapshot = self.repo.database.latest_analysis_snapshot(
-            "valuation_universe", f"{market}_UNIVERSE",
-        )
-        snapshot_outputs = snapshot.get("outputs") if snapshot and isinstance(snapshot.get("outputs"), dict) else {}
-        snapshot_rows = snapshot_outputs.get("rows") if isinstance(snapshot_outputs.get("rows"), list) else []
-        canonical = {
-            str(item.get("symbol") or "").upper(): item
-            for item in snapshot_rows
-            if isinstance(item, dict) and item.get("symbol")
-        }
+        # Valuation V3.2 rev 7, §7-bis (Passo 0): the canonical rows are the OFFICIAL selection (current generation),
+        # stamped with generation_id/tp_source — never a raw snapshot, never a TP computed here.
+        canonical = official_rows(self.repo.database, market)
 
         today = now.date()
-        missing = [
-            row.symbol
-            for row, security_type in stocks
-            if row.symbol not in canonical
-            and (row.symbol not in self._us_basis or self._us_basis[row.symbol][0] != today)
-            and self._us_backfill_attempted.get(row.symbol) != today
-        ][:US_FUNDAMENTAL_BACKFILL_PER_CYCLE]
-        if missing and self.one_pagers is not None:
-            self._us_backfill_attempted.update({symbol: today for symbol in missing})
-            client = EodhdClient(
-                self.settings.eodhd_base_url,
-                self.settings.eodhd_api_token,
-                self.one_pagers.market_data.http,
-            )
-            fundamentals = client.fundamentals(missing, exchange="US", workers=8)
-            histories = client.histories(missing, exchange="US", days=365, workers=8)
-            self._eodhd_call_counts["backfill_fundamentals_symbols"] = (
-                self._eodhd_call_counts.get("backfill_fundamentals_symbols", 0) + len(missing)
-            )
-            self._eodhd_call_counts["backfill_history_symbols"] = (
-                self._eodhd_call_counts.get("backfill_history_symbols", 0) + len(missing)
-            )
-            quote_by_symbol = {row.symbol: row for row, _ in shortlist}
-            for symbol in missing:
-                row = quote_by_symbol.get(symbol)
-                fundamental = fundamentals.get(symbol)
-                history = histories.get(symbol, [])
-                if not row or not fundamental or len(history) < 40:
-                    continue
-                try:
-                    analysis = self.one_pagers._analyze(
-                        symbol, "US", {"price": row.price, "currency": "USD", "as_of": row.as_of,
-                                        "change_percent": row.change_percent}, fundamental, history,
-                    )
-                except Exception:
-                    continue
-                operating_quality = clamp(
-                    50
-                    + (normalized_percent(fundamental.get("returnOnEquity")) or 0) * 0.45
-                    + (normalized_percent(fundamental.get("profitMargins")) or 0) * 0.30,
-                    20, 95,
-                )
-                self._us_basis[symbol] = (today, analysis, operating_quality)
+        # Valuation V3.2 rev 7, §7-bis (Passo 0): no same-day 'valuation backfill' — a symbol without an official row gets no
+        # TP here (it falls to the provisional technical tier below); this service never computes a TP of its own.
 
         output: list[dict[str, Any]] = []
         for row, security_type in shortlist:

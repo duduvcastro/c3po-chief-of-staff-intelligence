@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings
 from ..database import Database
 from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixPowerResponse
+from ..valuation_official import official_stamp
 from ..valuation_policy import C3PO_VALUATION_POLICY, METHODOLOGY_KEY, METHODOLOGY_NAME, METHODOLOGY_VERSION
 from .b3_screener import ABSOLUTE_LOW_RISK_LIMIT, LATEST_COPOM_SELIC, MAX_ENTRY_DISTANCE, TP_UPSIDE_PREMIUM
 from .eodhd import EodhdClient
@@ -634,6 +635,7 @@ class USScreeningService:
             eligible_count=len(rows),
             generated_at=self._basis_at[market] or datetime.now(timezone.utc),
             items=items,
+            **official_stamp(self.database, market),
             criteria={
                 "ranking": "C3PO TP upside descending inside the validated Power Zone",
                 "universe": f"Up to {STOCK_LIMIT} liquid stocks and {ETF_LIMIT} liquid ETFs listed in {market}",

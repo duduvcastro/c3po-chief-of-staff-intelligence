@@ -18,6 +18,7 @@ from .market_data.service import MarketDataService
 from .one_pager_pdf import PremiumOnePagerRenderer
 from .official_fundamentals import apply_official_fundamentals_map
 from .schemas import OnePagerReport
+from .valuation_official import official_row
 from .valuation_policy import C3PO_VALUATION_POLICY, METHODOLOGY_KEY, METHODOLOGY_NAME, METHODOLOGY_VERSION
 
 if TYPE_CHECKING:
@@ -153,6 +154,16 @@ class OnePagerService:
     def set_us_screener(self, screener: USScreeningService) -> None:
         self.us_screener = screener
 
+    def _official_valuation(self, symbol: str, market: str) -> dict[str, Any] | None:
+        """The official row for ``symbol`` (spec V3.2 rev 7 §7-bis, Passo 0), stamped with ``generation_id`` and
+        ``tp_source``. Resolved through the current generation of the official selection; for B3 the official producer
+        may build a targeted valuation first. Never computed by this service."""
+        row = official_row(self.database, market, symbol)
+        if row is None and market == "B3" and self.b3_screener:
+            self.b3_screener.valuation_for(symbol, build_if_missing=True)  # the producer persists a cycle → a prediction record
+            row = official_row(self.database, market, symbol)
+        return row
+
     def generate(self, requested_symbol: str) -> OnePagerReport:
         symbol, market = self._normalize_symbol(requested_symbol)
         provider = "brapi" if market == "B3" else "eodhd"
@@ -215,18 +226,15 @@ class OnePagerService:
             fmp_consensus, fmp_summary = self._fmp_consensus_data(symbol) if market != "B3" else (None, None)
             institutional_positions = self._fmp_institutional_data(symbol) if market != "B3" else None
             recent_grades = self._fmp_recent_grades_data(symbol) if market != "B3" else []
-            shared_valuation = (
-                self.b3_screener.valuation_for(symbol, build_if_missing=True)
-                if market == "B3" and self.b3_screener
-                else self.us_screener.valuation_for(symbol)
-                if market == "US" and self.us_screener
-                else None
-            )
-            if market == "B3" and shared_valuation is None:
+            # Valuation V3.2 rev 7, §7-bis (Passo 0): the ONE official TP, resolved through the official selection.
+            # B3 may first ask the official producer to build a targeted valuation (its cycle is recorded as a prediction
+            # and read back the same way); nobody computes a TP here. Without an official row there is no One Pager.
+            shared_valuation = self._official_valuation(symbol, market)
+            if shared_valuation is None:
                 raise OnePagerGenerationError(
-                    f"Não gerei o One Pager de {symbol}: os dados disponíveis ainda não sustentam pelo menos "
-                    f"três métodos internos utilizáveis no valuation canônico v{METHODOLOGY_VERSION}. "
-                    "Os cortes de Candidate Stocks e Jedi Force não bloqueiam a geração do documento."
+                    f"Não gerei o One Pager de {symbol}: não há TP oficial para este ativo na seleção vigente ("
+                    + ("os dados disponíveis ainda não sustentam o valuation canônico" if market == "B3" else "ativo fora do universo canônico US")
+                    + "). Nenhum serviço calcula um TP próprio (Valuation V3.2 rev 7, §7-bis)."
                 )
             analysis = self._analyze(
                 symbol,
@@ -587,20 +595,13 @@ class OnePagerService:
             for name, value in raw_methods.items()
         )
         internal_tp = statistics.mean(methods.values())
-        consensus_weight = self._us_consensus_weight(consensus, analyst_count)
-        c3po_tp = (
-            internal_tp * (1 - consensus_weight) + consensus * consensus_weight
-            if consensus_weight
-            else internal_tp
-        )
+        consensus_weight = self._us_consensus_weight(consensus, analyst_count)  # diagnostic only: never inside the TP (rev 7, P1)
         foreign_policy = fundamentals.get("foreignListingPolicy")
-        foreign_buy_in_override = None
         method_estimate_registered_on = None
         method_estimate_registered_display = None
         if isinstance(foreign_policy, dict):
             foreign_methods = foreign_policy.get("internalMethodTargets")
-            foreign_buy_in = self._positive(foreign_policy.get("buyIn"))
-            if isinstance(foreign_methods, dict) and len(foreign_methods) == 5 and foreign_buy_in:
+            if isinstance(foreign_methods, dict) and len(foreign_methods) == 5:
                 registered_on_raw = foreign_policy.get("internalMethodTargetsRegisteredOn")
                 try:
                     registered_on = date.fromisoformat(str(registered_on_raw))
@@ -617,8 +618,6 @@ class OnePagerService:
                     raise OnePagerGenerationError(
                         f"{symbol}: a ponte de valuation da listagem primária está incompleta."
                     )
-                c3po_tp = statistics.mean(methods.values())
-                foreign_buy_in_override = foreign_buy_in
                 method_estimate_registered_on = registered_on.isoformat()
                 method_estimate_registered_display = registered_on.strftime("%d/%m/%Y")
         method_values = list(methods.values())
@@ -641,26 +640,30 @@ class OnePagerService:
             45 + completeness * 28 + min(analyst_count or 0, 30) * 0.35 - dispersion * 0.35 + sentiment_adjustment,
             45, 94,
         )
-        required_return = 0.12 if market == "US" else 0.20
-        entry_discount = required_return + risk_score / 100 * 0.11 + (100 - confidence) / 100 * 0.06
-        if foreign_buy_in_override is None:
-            buy_in = statistics.mean(value / (1 + entry_discount) for value in methods.values())
-            buy_in = min(buy_in, c3po_tp * 0.90)
-        else:
-            buy_in = foreign_buy_in_override
-        if shared_valuation:
-            shared_tp = self._positive(shared_valuation.get("our_tp"))
-            shared_buy_in = self._positive(shared_valuation.get("buy_in"))
-            if shared_tp and shared_buy_in:
-                c3po_tp = shared_tp
-                buy_in = shared_buy_in
-                methods = self._shared_framework_methods(shared_valuation, shared_tp, profile)
-                method_values = list(methods.values())
-                consensus = self._bounded_tp(shared_valuation.get("public_consensus_tp"), price) or consensus
-                analyst_count = int(shared_valuation.get("analyst_count") or analyst_count or 0) or None
-                risk_score = self._clamp(float(shared_valuation.get("risk_score") or risk_score), 0, 100)
-                confidence = self._clamp(float(shared_valuation.get("valuation_confidence") or confidence), 0, 100)
-                dispersion = max(0.0, float(shared_valuation.get("method_dispersion_percent") or self._dispersion(method_values)))
+        # Valuation V3.2 rev 7, §7-bis (Passo 0): the TP and the buy-in shown are the OFFICIAL ones, resolved by the
+        # caller through the official selection (`shared_valuation`, stamped with generation_id/tp_source). This service
+        # does not compute, adjust, calibrate or blend a TP of its own; the internal methods above remain only as the
+        # framework display and its diagnostics (dispersion, confidence).
+        internal_framework_methods = OrderedDict(methods)
+        internal_framework_tp = statistics.mean(method_values) if method_values else None
+        if shared_valuation is None:
+            shared_valuation = self._official_valuation(symbol, market)
+        official_tp = self._positive((shared_valuation or {}).get("our_tp"))
+        official_buy_in = self._positive((shared_valuation or {}).get("buy_in"))
+        if shared_valuation is None or official_tp is None or official_buy_in is None:
+            raise OnePagerGenerationError(
+                f"Não gerei o One Pager de {symbol}: sem TP oficial na seleção vigente; "
+                "nenhum serviço calcula um TP próprio (Valuation V3.2 rev 7, §7-bis)."
+            )
+        c3po_tp = official_tp
+        buy_in = official_buy_in
+        methods = self._shared_framework_methods(shared_valuation, official_tp, profile)
+        method_values = list(methods.values())
+        consensus = self._bounded_tp(shared_valuation.get("public_consensus_tp"), price) or consensus
+        analyst_count = int(shared_valuation.get("analyst_count") or analyst_count or 0) or None
+        risk_score = self._clamp(float(shared_valuation.get("risk_score") or risk_score), 0, 100)
+        confidence = self._clamp(float(shared_valuation.get("valuation_confidence") or confidence), 0, 100)
+        dispersion = max(0.0, float(shared_valuation.get("method_dispersion_percent") or self._dispersion(method_values)))
         upside = (c3po_tp / price - 1) * 100
         consensus_upside = (consensus / price - 1) * 100 if consensus else None
         rating = "COMPRA" if upside >= 25 else "ACUMULAR" if upside >= 10 else "NEUTRO" if upside >= -10 else "REDUZIR"
@@ -807,6 +810,13 @@ class OnePagerService:
             "comparison_period": comparison_period,
             "financial_rows": financial_rows,
             "c3po_tp": c3po_tp,
+            # Passo 0 stamp (I-TP3) and the internal framework kept as diagnostics only (never the TP shown)
+            "tp_source": shared_valuation.get("tp_source"),
+            "official_generation_id": shared_valuation.get("generation_id"),
+            "official_cycle_id": shared_valuation.get("official_cycle_id"),
+            "internal_framework_methods": dict(internal_framework_methods),
+            "internal_framework_tp": internal_framework_tp,
+            "consensus_weight_diagnostic": consensus_weight,
             "profile": profile,
             "consensus_tp": consensus,
             "consensus_source": consensus_source,

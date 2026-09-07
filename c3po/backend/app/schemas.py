@@ -397,6 +397,9 @@ class B3CandidateResponse(BaseModel):
     generated_at: datetime
     items: list[B3Candidate]
     criteria: dict[str, str]
+    tp_source: str | None = None  # V3.2 rev 7 §7-bis: the official producer these TPs come from
+    official_generation_id: str | None = None  # the official selection generation in force when served
+    official_cycle_id: str | None = None  # the producer cycle of this market inside that generation
 
 
 class MatrixPowerItem(BaseModel):
