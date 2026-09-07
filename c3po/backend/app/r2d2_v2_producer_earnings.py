@@ -1,4 +1,4 @@
-"""R2D2 V2 — earnings producer: conservative exclusion with declared granularity (EMENDA 3 rev 3, draft under parecer).
+"""R2D2 V2 — earnings producer: conservative exclusion with declared granularity (EMENDA 3 rev 3, signed six-hands).
 
 Produces `components/<D>/earnings.json` for the causal list of session D and, per
 EMENDA 3 §3.5, for the live names re-queried in the daily round: one `earnings`
@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -54,8 +55,8 @@ from .r2d2_v2_producer_daily import EodhdFetcher, Fetcher, ProducerError, Respon
 PRODUCER = "fable-eodhd-earnings"
 PRODUCER_VERSION = "v3"
 RULE_VERSION = "EXCLUSION_RULE_V1"
-AMENDMENT = "EMENDA_3_REV3_DRAFT_UNDER_PARECER"
-AMENDMENT_SHA: str | None = None  # pinned by the release once the three signatures exist
+AMENDMENT = "EMENDA_3_REV3_SIGNED_SIX_HANDS"
+AMENDMENT_SHA: str | None = "3319407afcd7760668e6ec73bb4686ecb95a38eecf47fc157050899f80a6cc9c"  # manifesto 1a927ca4…, três recibos
 SCHEMA = "V2_EARNINGS_COMPONENTS_V2"
 NEW_YORK = ZoneInfo("America/New_York")
 HORIZON_SESSIONS = 10
@@ -171,17 +172,19 @@ def cadence_expected(last_published: date | None) -> date | None:
 
 
 def _date(value: Any) -> date | None:
-    if not isinstance(value, str):
+    """The contracted format is exactly YYYY-MM-DD; any suffix, time or other form is unreadable (never projected)."""
+    if not isinstance(value, str) or len(value) != 10:
         return None
     try:
-        parsed = date.fromisoformat(value[:10])
+        parsed = date.fromisoformat(value)
     except ValueError:
         return None
-    return parsed if parsed.isoformat() == value[:10] else None
+    return parsed if parsed.isoformat() == value else None
 
 
 def _actual(value: Any) -> float | None:
-    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+    """A published result is a finite number; NaN, +-inf (also from JSON `1e400`/`Infinity`) never count as evidence."""
+    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return None
     return float(value)
 

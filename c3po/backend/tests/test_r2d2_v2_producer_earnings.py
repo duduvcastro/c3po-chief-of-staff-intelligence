@@ -135,6 +135,19 @@ def test_third_evidence_is_required_and_invalid_evidence_never_counts() -> None:
     mmm = _build("MMM", calendar, PUBLISHED_FAR)
     assert mmm["coverage_verified"] is False and mmm["exclusion"]["reasons"] == ["EARNINGS_EVIDENCE_INVALID"]
     assert mmm["evidence"]["invalid_entries"] == [{"source": "calendar", "index": 0, "reason": "REPORT_DATE_UNREADABLE"}]
+    # (h) Codex counterproofs (5563765757): a date with a suffix is never projected; non-finite results never count
+    suffixed = _history({"2026-01-31": {"reportDate": "2026-02-20Tnot-an-ISO-timestamp", "epsActual": 0.9}})
+    qqq = _build("QQQ", OTHER_ONLY, suffixed)
+    assert qqq["coverage_verified"] is False and qqq["evidence"]["last_published_report_date"] is None
+    assert qqq["exclusion"]["reasons"] == ["EARNINGS_LAST_REPORT_UNKNOWN", "EARNINGS_EVIDENCE_INVALID"]
+    assert qqq["evidence"]["invalid_entries"] == [{"source": "history", "key": "2026-01-31", "reason": "REPORT_DATE_UNREADABLE"}]
+    for raw in ('{"2026-04-30": {"reportDate": "2026-05-20", "epsActual": 1e400}}', '{"2026-04-30": {"reportDate": "2026-05-20", "epsActual": Infinity}}',
+                '{"2026-04-30": {"reportDate": "2026-05-20", "epsActual": NaN}}'):
+        infinite = Response(raw.encode(), RECEIVED + timedelta(seconds=5), "/api/x")
+        rrr = _build("RRR", OTHER_ONLY, infinite)
+        assert rrr["coverage_verified"] is False and rrr["evidence"]["last_published_report_date"] is None
+        assert rrr["exclusion"]["reasons"] == ["EARNINGS_LAST_REPORT_UNKNOWN", "EARNINGS_EVIDENCE_INVALID"], raw
+        assert rrr["evidence"]["invalid_entries"][0]["reason"] == "EPS_ACTUAL_NOT_A_NUMBER"
     # (f) not tracked at all
     untracked = _build("NNN", OTHER_ONLY, _history({}))
     assert untracked["coverage_verified"] is False and untracked["exclusion"]["reasons"] == ["EARNINGS_NOT_TRACKED"]
@@ -147,7 +160,7 @@ def test_third_evidence_is_required_and_invalid_evidence_never_counts() -> None:
 def test_coverage_means_the_three_evidences_validated_with_receipts() -> None:
     ooo = _build("OOO", OTHER_ONLY, PUBLISHED_FAR)
     assert ooo["coverage_verified"] is True and ooo["exclusion"] == {"excluded": False, "reasons": []}
-    assert ooo["policy"] == {"rule": "EXCLUSION_RULE_V1", "amendment": earn.AMENDMENT, "amendment_sha": None, "producer": "fable-eodhd-earnings", "version": "v3"}
+    assert ooo["policy"] == {"rule": "EXCLUSION_RULE_V1", "amendment": "EMENDA_3_REV3_SIGNED_SIX_HANDS", "amendment_sha": "3319407afcd7760668e6ec73bb4686ecb95a38eecf47fc157050899f80a6cc9c", "producer": "fable-eodhd-earnings", "version": "v3"}
     assert ooo["evidence"]["calendar_payload_sha256"] == OTHER_ONLY.sha256 and ooo["evidence"]["history_payload_sha256"] == PUBLISHED_FAR.sha256
     assert ooo["evidence"]["last_published_report_date"] == "2026-05-20" and ooo["evidence"]["calendar_window"] == ["2026-08-24", "2026-10-06"]
     assert datetime.fromisoformat(ooo["window_start"]) == RECEIVED and datetime.fromisoformat(ooo["window_end"]) >= earn.horizon_for(D).maturity_at

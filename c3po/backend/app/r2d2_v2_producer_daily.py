@@ -11,8 +11,8 @@ revision 2, of the shadow generator) from the provider's end-of-day endpoints:
 - `V2_CAUSAL_DAILY_CONTRACT_V1` (`daily_contract.json`): for every registry symbol
   of a security type the signed list builder can select (`COMMON_STOCK`,
   `COMMON_STOCK_ADR`; the other classes are `CLASSIFICATION_EXCLUDED` before any
-  daily data is needed, and the whole universe would exceed the port's input
-  limit), the raw OHLCV bars of the last 20 official sessions up to D-1 (bulk
+  daily data is needed; measured 43 MB for all classes versus 29 MB, so the
+  restriction keeps the envelope far from the port's 64 MiB limit), the raw OHLCV bars of the last 20 official sessions up to D-1 (bulk
   end-of-day endpoint, one call per session) and the splits effective inside
   that window (bulk splits endpoint), `adjustment = RAW_UNADJUSTED`, per-bar
   `source_at` / `available_at` = the receipt instant of the provider response
