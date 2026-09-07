@@ -14,6 +14,9 @@ from c3po_trivy_scan import report_sha256
 
 TRIGGER_SCHEMA = "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1"
 HIGH_CRITICAL = ("critical", "high")
+ALL_SEVERITIES = ("critical", "high", "medium", "low", "unknown")
+# Only the sealed positive-control fixture predates the per-occurrence evidence.
+OCCURRENCE_OPTIONAL_SCOPES = ("controller_dry_run",)
 HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 PR_MARKER = "<!-- c3po-container-remediation -->"
 PRODUCTION_LANE_PREFIX = "automation/container-security-rebuild-"
@@ -123,16 +126,83 @@ def validate_report(
         raise ReportValidationError(
             f"fixable detail/count mismatch: details={detail_counts}, totals={counts}"
         )
-    findings.sort(
+    all_counts = {severity: 0 for severity in ALL_SEVERITIES}
+    all_counts.update(counts)
+    all_findings = list(findings)
+    occurrence_evidence = [image for image in images if "occurrences" in image]
+    if occurrence_evidence or expected_scope not in OCCURRENCE_OPTIONAL_SCOPES:
+        # Every fixable occurrence of any severity is remediation work (medium, low and
+        # findings the scanner cannot rate yet but whose distro already ships a fix).
+        for image in images:
+            label = str(image["label"])
+            raw_occurrences = image.get("occurrences")
+            if not isinstance(raw_occurrences, list):
+                raise ReportValidationError(f"image {label} is missing occurrences evidence")
+            high_critical_fixable: list[tuple[str, ...]] = []
+            fixable_by_severity = {severity: 0 for severity in ALL_SEVERITIES}
+            unknown_seen = 0
+            for raw_occurrence in raw_occurrences:
+                if not isinstance(raw_occurrence, dict):
+                    raise ReportValidationError("occurrence must be an object")
+                occurrence: dict[str, str] = {"image": label}
+                for field in required_fields:
+                    value = raw_occurrence.get(field)
+                    if not isinstance(value, str) or (field != "fixed_version" and not value.strip()):
+                        raise ReportValidationError(f"occurrence {field} must be a string")
+                    occurrence[field] = value.strip()
+                if occurrence["severity"] not in ALL_SEVERITIES:
+                    raise ReportValidationError("occurrence severity is not a known level")
+                if occurrence["severity"] == "unknown":
+                    unknown_seen += 1
+                if not occurrence["fixed_version"]:
+                    continue
+                fixable_by_severity[occurrence["severity"]] += 1
+                if occurrence["severity"] in HIGH_CRITICAL:
+                    high_critical_fixable.append(tuple(occurrence[field] for field in ("image", *required_fields)))
+                else:
+                    all_findings.append(occurrence)
+            expected_high_critical = sorted(
+                tuple(finding[field] for field in ("image", *required_fields))
+                for finding in findings if finding["image"] == label
+            )
+            if sorted(high_critical_fixable) != expected_high_critical:
+                raise ReportValidationError(
+                    f"image {label}: fixable critical/high occurrences do not match fixable_high_critical"
+                )
+            image_fix_available = image.get("fix_available")
+            if not isinstance(image_fix_available, dict):
+                raise ReportValidationError(f"image {label} fix_available must be an object")
+            for severity in ("medium", "low"):
+                declared = _nonnegative_int(image_fix_available.get(severity), f"{label}.fix_available.{severity}")
+                if declared != fixable_by_severity[severity]:
+                    raise ReportValidationError(
+                        f"image {label}: fixable {severity} detail/count mismatch: "
+                        f"details={fixable_by_severity[severity]}, totals={declared}"
+                    )
+            if unknown_seen != _nonnegative_int(image.get("unknown"), f"{label}.unknown"):
+                raise ReportValidationError(f"image {label}: unrated occurrence count mismatch")
+            if fixable_by_severity["unknown"] != _nonnegative_int(
+                image.get("unknown_fix_available"), f"{label}.unknown_fix_available"
+            ):
+                raise ReportValidationError(f"image {label}: unrated fixable detail/count mismatch")
+            for severity in ("medium", "low", "unknown"):
+                all_counts[severity] += fixable_by_severity[severity]
+        for severity in ("medium", "low"):
+            declared_total = _nonnegative_int(raw_counts.get(severity), f"fix_available.{severity}")
+            if declared_total != all_counts[severity]:
+                raise ReportValidationError(
+                    f"fixable {severity} detail/count mismatch: details={all_counts[severity]}, totals={declared_total}"
+                )
+    all_findings.sort(
         key=lambda finding: (
-            finding["severity"],
+            ALL_SEVERITIES.index(finding["severity"]),
             finding["vulnerability_id"],
             finding["image"],
             finding["package"],
             finding["target"],
         )
     )
-    return counts, findings
+    return all_counts, all_findings
 
 
 def validate_positive_dry_run_fixture(
@@ -154,7 +224,7 @@ def validate_positive_dry_run_fixture(
         expected_scope=DRY_RUN_SCOPE,
         require_dead_man=False,
     )
-    if counts != {"critical": 0, "high": 1} or findings != [{
+    if counts != {"critical": 0, "high": 1, "medium": 0, "low": 0, "unknown": 0} or findings != [{
         "image": "controller-positive-control",
         "vulnerability_id": "C3PO-DRY-RUN-FIXABLE-001",
         "severity": "high",
@@ -230,16 +300,19 @@ def render_pr_body(trigger: dict[str, Any]) -> str:
             "Esta PR-fixture exercita a máquina de estados do controlador com uma "
             "ocorrência sintética selada. Não representa um achado de produção."
             if dry_run
-            else "O controlador remoto detectou uma `FixedVersion` no scan completo das imagens "
+            else "O controlador remoto detectou uma `FixedVersion` (qualquer severidade, inclusive achados "
         ),
         (
             "Ela nunca deve ser mergeada e será fechada após a execução supervisionada."
             if dry_run
-            else "em produção e abriu esta PR sem depender de workstation ou Codex desktop."
+            else "ainda sem classificação pública) no scan completo das imagens em produção e abriu esta PR."
         ),
         "",
         f"- Critical fixável: **{counts['critical']}**",
         f"- High fixável: **{counts['high']}**",
+        f"- Medium fixável: **{counts.get('medium', 0)}**",
+        f"- Low fixável: **{counts.get('low', 0)}**",
+        f"- Sem classificação pública, mas com correção da distribuição: **{counts.get('unknown', 0)}**",
         f"- Report self-hash: `{trigger['report_sha256']}`",
         f"- Chave de deduplicação: `{trigger['remediation_key']}`",
         f"- [Workflow de origem]({trigger['run_url']})",
@@ -281,7 +354,7 @@ def render_pr_body(trigger: dict[str, Any]) -> str:
     else:
         lines.extend([
             "O commit inicial apenas força rebuild integral a partir das bases pinadas e dos ",
-            "repositórios oficiais. Se o scan da PR não zerar os C/H fixáveis, Codex ajusta ",
+            "repositórios oficiais. Se o scan da PR não zerar os achados fixáveis, Codex ajusta ",
             "pacotes ou digests nesta mesma PR. Fable audita a evidência final. Dudu autoriza ",
             "o merge. **Não há auto-merge nem deploy antes desses portões.**",
             "",
@@ -332,6 +405,9 @@ def _plan(args: argparse.Namespace, *, dry_run: bool) -> int:
         "required": "true" if required else "false",
         "critical": str(counts["critical"]),
         "high": str(counts["high"]),
+        "medium": str(counts["medium"]),
+        "low": str(counts["low"]),
+        "unknown": str(counts["unknown"]),
         "report_sha256": str(report["report_sha256"]),
         "remediation_key": remediation_key,
         "lane_prefix": lane_prefix,
@@ -359,7 +435,7 @@ def verify_zero(args: argparse.Namespace) -> int:
     print(json.dumps({"fix_available": counts}, sort_keys=True))
     if sum(counts.values()) > 0:
         raise ReportValidationError(
-            f"remediation still has fixable critical/high findings: {counts}"
+            f"remediation still has fixable findings: {counts}"
         )
     return 0
 
