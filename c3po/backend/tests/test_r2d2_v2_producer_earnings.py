@@ -215,6 +215,44 @@ def test_produce_writes_the_round_document_with_port_components(tmp_path: Path) 
     assert [c[0] for c in calls] == ["/api/calendar/earnings", "/api/fundamentals/AAA.US", "/api/fundamentals/BBB.US", "/api/fundamentals/LIVE.US"]
 
 
+def test_huge_json_integers_are_invalid_evidence_and_never_abort_the_round(tmp_path: Path) -> None:
+    # Codex R6-2 (5564053546): a JSON integer of 400 digits made math.isfinite raise OverflowError, the round aborted
+    # and no document was written. It is invalid evidence for that name (bytes pinned), and the round continues.
+    assert earn._actual(10**400) is None and earn._actual(-(10**400)) is None and earn._actual("1") is None and earn._actual(True) is None
+    assert earn._actual(10**308) == 1e308 and earn._actual(0) == 0.0 and earn._actual(-1.5) == -1.5
+    huge = _history({"2026-04-30": {"reportDate": "2026-05-20", "epsActual": 10**400}})
+    sss = _build("SSS", OTHER_ONLY, huge)
+    assert sss["coverage_verified"] is False and sss["evidence"]["last_published_report_date"] is None
+    assert sss["exclusion"]["reasons"] == ["EARNINGS_LAST_REPORT_UNKNOWN", "EARNINGS_EVIDENCE_INVALID"]
+    assert sss["evidence"]["invalid_entries"] == [{"source": "history", "key": "2026-04-30", "reason": "EPS_ACTUAL_NOT_A_NUMBER"}]
+    assert sss["evidence"]["history_payload_sha256"] == huge.sha256
+    negative = _build("TTT", OTHER_ONLY, _history({"2026-04-30": {"reportDate": "2026-05-20", "epsActual": -(10**400)}}))
+    assert negative["exclusion"]["reasons"] == ["EARNINGS_LAST_REPORT_UNKNOWN", "EARNINGS_EVIDENCE_INVALID"]
+    calls: list[str] = []
+
+    def fetch(path: str, params: Mapping[str, str]) -> Response:
+        calls.append(path)
+        if path == "/api/calendar/earnings":
+            return OTHER_ONLY
+        if path == "/api/fundamentals/BADINT.US":
+            return huge
+        if path == "/api/fundamentals/BOOM.US":
+            raise KeyError("unexpected provider shape")  # a producer defect confined to one name
+        if path == "/api/fundamentals/GOOD.US":
+            return PUBLISHED_FAR
+        raise AssertionError(path)
+
+    result = earn.produce_earnings(fetch, ["BADINT", "BOOM", "GOOD"], session_date=D, output_dir=tmp_path, now=RECEIVED)
+    assert calls == ["/api/calendar/earnings", "/api/fundamentals/BADINT.US", "/api/fundamentals/BOOM.US", "/api/fundamentals/GOOD.US"]
+    document = json.loads((tmp_path / "earnings.json").read_bytes())
+    assert document["symbols"]["BADINT"]["exclusion"]["reasons"] == ["EARNINGS_LAST_REPORT_UNKNOWN", "EARNINGS_EVIDENCE_INVALID"]
+    assert document["symbols"]["BADINT"]["evidence"]["invalid_entries"][0]["reason"] == "EPS_ACTUAL_NOT_A_NUMBER"
+    boom = document["symbols"]["BOOM"]
+    assert boom["exclusion"]["reasons"] == ["EARNINGS_SOURCE_UNAVAILABLE"] and boom["evidence"]["error"] == "PRODUCER_EXCEPTION:KeyError" and set(boom) == KEYS
+    assert document["symbols"]["GOOD"]["coverage_verified"] is True and document["symbols"]["GOOD"]["exclusion"]["excluded"] is False
+    assert result["counts"]["covered"] == 1 and result["counts"]["EARNINGS_EVIDENCE_INVALID"] == 1 and result["counts"]["EARNINGS_SOURCE_UNAVAILABLE"] == 1
+
+
 def test_cli_is_off_by_default(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
     monkeypatch.delenv("C3PO_R2D2_V2_PRODUCERS_ENABLED", raising=False)
     symbols = tmp_path / "symbols.txt"

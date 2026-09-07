@@ -183,10 +183,15 @@ def _date(value: Any) -> date | None:
 
 
 def _actual(value: Any) -> float | None:
-    """A published result is a finite number; NaN, +-inf (also from JSON `1e400`/`Infinity`) never count as evidence."""
-    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    """A published result is a finite number; NaN, +-inf (also from JSON `1e400`/`Infinity`) and integers written with
+    more digits than a float can hold (JSON `1000...0`, Codex R6-2) never count as evidence and never abort the round."""
+    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value)
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def calendar_rows(response: Response) -> list[dict[str, Any]]:
@@ -320,6 +325,11 @@ def produce_earnings(fetch: Fetcher, symbols: Sequence[str], *, session_date: da
             components[symbol] = build_component(symbol, horizon, rows, calendar_response, history_entries(history_response), history_response, now=clock)
         except ProducerError as error:
             components[symbol] = unavailable_component(horizon, calendar_response, str(error))
+        except (OverflowError, ValueError, TypeError, KeyError, AttributeError) as error:
+            # An unforeseen payload shape or a producer defect for one name never aborts the round (Codex R6-2): the
+            # name is recorded as UNAVAILABLE with the failure class (never as absence of earnings), the remaining
+            # names are still consulted and the document is still written for audit.
+            components[symbol] = unavailable_component(horizon, calendar_response, f"PRODUCER_EXCEPTION:{type(error).__name__}")
         assert set(components[symbol]) == COMPONENT_KEYS
     counts = {"symbols": len(ordered), "live_symbols": len(set(live_symbols)),
               "covered": sum(1 for c in components.values() if c["coverage_verified"]),
