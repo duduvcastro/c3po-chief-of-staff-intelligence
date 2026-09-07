@@ -1,0 +1,51 @@
+{
+  "schema": "C3PO_V2_V1_REV2_DOCUMENTARY_SIGNATURE_MANIFEST_v1",
+  "status": "CODEX_DOCUMENTARY_GO_REQUIRES_FABLE_DUDU_SIGNATURES_OF_SAME_BUNDLE",
+  "signature_scope": "Spec revision 2 plus annexes A/B/B-fechamento/C/D and normative addendum E; not isolated master",
+  "authorization": "No implementation, collection or deploy before three bundle signatures; calibration and operational gates remain mandatory",
+  "precedence_source": "ADENDO_E_NORMATIVO_CODEX.md",
+  "entries": [
+    {
+      "role": "spec-rev2",
+      "file": "R2D2_V2_SPEC_V1_REV2.md",
+      "sha256": "175aa499d9b21a996c4bf603ce7241d2958a954d601673e0821fc5fa63a73494",
+      "source_path": "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/v2-spec-v1-rev2-review/spec-rev2-received.md"
+    },
+    {
+      "role": "A",
+      "file": "events-review.md",
+      "sha256": "e27cd008b2f61300928b74794d55b7b7a17e32d48ee5ac89d5e1f99218305cd5",
+      "source_path": "/Users/eduardocastro/ClaudeCode/evidence-relay/r2d2-v2-spec/anexos-codex-2026-09-06/events-review.md"
+    },
+    {
+      "role": "B",
+      "file": "anexo-calibracao-proposta.md",
+      "sha256": "58718d1473a1628d4c1f157a4e36f12b96936c1d509b9563903f358fc3adfea4",
+      "source_path": "/Users/eduardocastro/ClaudeCode/evidence-relay/r2d2-v2-spec/anexos-codex-2026-09-06/anexo-calibracao-proposta.md"
+    },
+    {
+      "role": "B-fechamento",
+      "file": "FECHAMENTO_ANEXOS_PROPOSTA_CODEX.md",
+      "sha256": "006777c271903da31f311bf8a7207f5233cc68f9e7628045898ab55603963621",
+      "source_path": "/Users/eduardocastro/ClaudeCode/evidence-relay/r2d2-v2-spec/anexos-codex-2026-09-06/FECHAMENTO_ANEXOS_PROPOSTA_CODEX.md"
+    },
+    {
+      "role": "C",
+      "file": "V2_SEC4_PROPOSTA_CODEX_2026-09-06.md",
+      "sha256": "fb65182751113ff73d4d98f363358a508f3d842b244a6b9a8a27b92d155e491a",
+      "source_path": "/Users/eduardocastro/ClaudeCode/evidence-relay/r2d2-v2-spec/anexos-codex-2026-09-06/V2_SEC4_PROPOSTA_CODEX_2026-09-06.md"
+    },
+    {
+      "role": "D",
+      "file": "R2D2_V2_REGRA_RISCO_INVERTIDA_2026-09-06.md",
+      "sha256": "03675063f3ba2ba61bb37112c75673049f706c7789172981be770b7d62bdace8",
+      "source_path": "/Users/eduardocastro/ClaudeCode/evidence-relay/R2D2_V2_REGRA_RISCO_INVERTIDA_2026-09-06.md"
+    },
+    {
+      "role": "E",
+      "file": "ADENDO_E_NORMATIVO_CODEX.md",
+      "sha256": "853cc3a78d0f09d7972e108a168c50f3583ebc72d72e66a2a04bbb3beb117fce",
+      "source_path": "/Users/eduardocastro/Documents/Codex/2026-09-04/va/work/v2-spec-v1-rev2-review/ADENDO_E_NORMATIVO_CODEX.md"
+    }
+  ]
+}

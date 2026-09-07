@@ -144,15 +144,20 @@ def test_fixable_high_and_critical_runtime_findings_have_explicit_upgrades() -> 
     assert "python:3.12-alpine3.24@sha256:" in backend
     assert "apt-get" not in backend
     assert "apk upgrade --no-cache" in backend
+    assert "pip check \\\n    && pip uninstall -y pip" in backend  # pip is a build tool, never part of the runtime image
     assert backend.count("C3PO_SECURITY_REBUILD") == 3
     assert {"tzdata", "libstdc++", "libgcc"} <= set(backend.split())
     assert "cryptography>=50,<51" in requirements
-    assert "apk upgrade --no-cache libcrypto3 libssl3 libexpat" in frontend
+    assert "apk upgrade --no-cache \\\n    && apk del --no-cache curl" in frontend
     assert frontend.count("C3PO_SECURITY_REBUILD") == 2
     assert "golang:1.25.13-alpine3.24@sha256:" in database
     assert "ARG GOSU_COMMIT=6456aaa0f3c854d199d0f037f068eb97515b7513" in database
-    assert '"github.com/tianon/gosu@${GOSU_COMMIT}"' in database
+    assert "git clone --quiet https://github.com/tianon/gosu /src/gosu" in database
+    assert 'git checkout --quiet "$GOSU_COMMIT"' in database
+    assert 'go mod edit -require="golang.org/x/sys@${GOSU_X_SYS_VERSION}"' in database
+    assert "ARG GOSU_X_SYS_VERSION=v0.47.0" in database
+    assert 'go version -m /go/bin/gosu | grep -E "golang.org/x/sys[[:space:]]+${GOSU_X_SYS_VERSION}([[:space:]]|$)"' in database
     assert "CGO_ENABLED=0" in database
-    assert "apk upgrade --no-cache libcrypto3 libssl3" in database
+    assert "apk upgrade --no-cache\n" in database
     assert database.count("C3PO_SECURITY_REBUILD") == 4
     assert "gosu nobody true" in database

@@ -11,15 +11,24 @@ COPY . .
 
 ARG NEXT_PUBLIC_C3PO_API_URL=http://localhost:8000
 ARG NEXT_PUBLIC_C3PO_BUILD_SHA=development
+ARG NEXT_PUBLIC_SENTRY_DSN=
+ARG NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=0
+ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
 ENV NEXT_PUBLIC_C3PO_API_URL=$NEXT_PUBLIC_C3PO_API_URL
 ENV NEXT_PUBLIC_C3PO_BUILD_SHA=$NEXT_PUBLIC_C3PO_BUILD_SHA
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
+ENV NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=$NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE
+ENV NEXT_PUBLIC_SENTRY_ENVIRONMENT=$NEXT_PUBLIC_SENTRY_ENVIRONMENT
 
-RUN pnpm build
+RUN pnpm build && node scripts/build-nginx-config.cjs
 
 FROM nginx:1.31.4-alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
 ARG C3PO_SECURITY_REBUILD=bootstrap
+# Full stable-channel upgrade (Alpine has no proposed-updates channel) and no curl:
+# nothing in the web image calls curl/libcurl (the deploy health probes run on the host).
 RUN test -n "$C3PO_SECURITY_REBUILD" \
-    && apk upgrade --no-cache libcrypto3 libssl3 libexpat libuuid
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+    && apk upgrade --no-cache \
+    && apk del --no-cache curl
+COPY --from=build /app/nginx.production.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/out /usr/share/nginx/html
 EXPOSE 80

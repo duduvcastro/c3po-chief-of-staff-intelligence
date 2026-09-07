@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     build_sha: str = "development"
     sentry_dsn: str = ""
     sentry_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=0.01)
     push_vapid_private_key: str = ""
     push_vapid_public_key: str = ""
     push_vapid_subject: str = "mailto:eu@eduardocastro.com.br"
