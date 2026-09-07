@@ -16,3 +16,9 @@ assinatura ocorridos depois da sua emissão.
 O ledger está adotado como pauta obrigatória da primeira leitura do gate V3 de 4–5/09 e das
 mesas de promoção posteriores. Linhas candidatas produzidas por runners são rascunhos
 mecânicos; inclusão, mudança de status ou consequência de política continuam exigindo mesa.
+
+## Linha #10 (admissão proposta em 07/09/2026)
+
+Pin do documento após a linha #10: `ac4184a85581851ae006eb5dd2597658c3be98045914fa73a6c55d07325865ed` (anterior `bc2f52dbab4041e7af71800efe92e8340a3788a0a163db26beca38b7c31b014a`, linha #9 admitida via #282). A linha registra o
+veredito da leitura do gate V3 de 07/09 (13 noites, REPROVADO) e a deliberação a seis mãos; admissão por esta PR
+após parecer do Codex; nenhuma promoção ou mudança de consumidor/TP decorre dela.
