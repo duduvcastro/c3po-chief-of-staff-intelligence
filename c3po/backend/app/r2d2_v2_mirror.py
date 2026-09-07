@@ -492,14 +492,17 @@ class MirrorRepository:
     def _values(record: Mapping[str, Any], fields: Iterable[str]) -> list[Any]:
         return [json.dumps(record[field], default=str) if field == "divergence" else record[field] for field in fields]
 
-    def write(self, row: Mapping[str, Any], *, expected: tuple[str, ...] | None, insert: bool = True) -> tuple[dict[str, Any] | None, bool]:
+    def write(self, row: Mapping[str, Any], *, expected: tuple[str, ...] | None, insert: bool = True,
+              same: Mapping[str, Any] | None = None) -> tuple[dict[str, Any] | None, bool]:
         """Conditional insert-or-update of a command row (Codex #387 round 3, I1).
 
         An absent row is inserted only when `insert` is true. A present row is updated only when its CURRENT status is in
         `expected` (None = only the status the new row carries, i.e. an idempotent re-registration) and it belongs to the
         same experiment (C3; another experiment raises). A row that advanced elsewhere between the caller's read and this
         write (claimed, OPEN, CLOSED, ...) is never overwritten: the caller gets the row as it is now and `applied=False`,
-        so a stale worker can never reopen a command that another worker already executed."""
+        so a stale worker can never reopen a command that another worker already executed. `same` binds the update to
+        the COMMAND already registered (e.g. {"buy_command_id": ..., "buy_command_sha": ...}, NULL-safe): a present row
+        whose registered command differs is never replaced — same status is not the same command (round 4, I1)."""
         now = _utc_now()
         record = self._validated(row, now)
         statuses = tuple(expected) if expected is not None else (record["status"],)
@@ -515,7 +518,7 @@ class MirrorRepository:
                     return dict(record), True
                 if current.get("experiment_id") != record["experiment_id"]:
                     raise MirrorInputError("MIRROR_ROW_EXPERIMENT_IMMUTABLE")
-                if current.get("status") not in statuses:
+                if current.get("status") not in statuses or any(current.get(field) != value for field, value in (same or {}).items()):
                     return dict(current), False
                 record["created_at"] = current["created_at"]
                 self.memory[key] = record
@@ -524,6 +527,8 @@ class MirrorRepository:
         fields = [field for field in MIRROR_FIELDS if field not in _IMMUTABLE_FIELDS]
         columns = ", ".join(MIRROR_FIELDS)
         selected = ", ".join(MIRROR_FIELDS)
+        same_sql = "".join(f" AND r2d2_v2_mirror_episodes.{field} IS NOT DISTINCT FROM %s" for field in (same or {}))
+        same_values = list((same or {}).values())
         with self.database.connection() as connection:
             if insert:
                 placeholders = ", ".join("%s::jsonb" if field == "divergence" else "%s" for field in MIRROR_FIELDS)
@@ -532,14 +537,14 @@ class MirrorRepository:
                     f"INSERT INTO r2d2_v2_mirror_episodes ({columns}) VALUES ({placeholders}) "
                     f"ON CONFLICT (mirror_epoch, epoch, episode_key) DO UPDATE SET {updates} "
                     f"WHERE r2d2_v2_mirror_episodes.experiment_id = EXCLUDED.experiment_id "
-                    f"AND r2d2_v2_mirror_episodes.status = ANY(%s) RETURNING {selected}",
-                    [*self._values(record, MIRROR_FIELDS), list(statuses)]).fetchone()
+                    f"AND r2d2_v2_mirror_episodes.status = ANY(%s){same_sql} RETURNING {selected}",
+                    [*self._values(record, MIRROR_FIELDS), list(statuses), *same_values]).fetchone()
             else:
                 assignments = ", ".join(f"{field}=%s::jsonb" if field == "divergence" else f"{field}=%s" for field in fields)
                 written = connection.execute(
                     f"UPDATE r2d2_v2_mirror_episodes SET {assignments} WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s "
-                    f"AND experiment_id=%s AND status = ANY(%s) RETURNING {selected}",
-                    [*self._values(record, fields), *key, record["experiment_id"], list(statuses)]).fetchone()
+                    f"AND experiment_id=%s AND status = ANY(%s){same_sql} RETURNING {selected}",
+                    [*self._values(record, fields), *key, record["experiment_id"], list(statuses), *same_values]).fetchone()
             if written is not None:
                 connection.commit()
                 return _from_sql(written), True
@@ -561,58 +566,73 @@ class MirrorRepository:
             raise MirrorInputError("MIRROR_ROW_ADVANCED_ELSEWHERE")
         return record
 
-    def claim(self, row: Mapping[str, Any], *, from_status: str, to_status: str, now: datetime) -> dict[str, Any] | None:
-        """Atomically move a command from `from_status` to `to_status`; only one claimant ever gets the row."""
+    def claim(self, row: Mapping[str, Any], *, from_status: str, to_status: str, now: datetime,
+              command: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
+        """Atomically move a command from `from_status` to `to_status`; only one claimant ever gets the row, and only
+        the row that still carries the expected command (`command`, e.g. {"buy_command_sha": ...}, NULL-safe): a row
+        re-registered with another payload between the read and the claim is never claimed (round 4, I1)."""
         token = str(uuid4())
         key = _key(row)
         if not self.database.database_url:
             with self._rows_lock:
                 current = self.memory.get(key)
-                if current is None or current.get("status") != from_status:
+                if current is None or current.get("status") != from_status or any(current.get(f) != v for f, v in (command or {}).items()):
                     return None
                 current.update(status=to_status, claim_token=token, claimed_at=now, updated_at=now)
                 return dict(current)
+        command_sql = "".join(f" AND {field} IS NOT DISTINCT FROM %s" for field in (command or {}))
         with self.database.connection() as connection:
             claimed = connection.execute(
                 """UPDATE r2d2_v2_mirror_episodes SET status=%s, claim_token=%s, claimed_at=%s, updated_at=%s
-                   WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s AND status=%s RETURNING """ + ", ".join(MIRROR_FIELDS),
-                (to_status, token, now, now, *key, from_status)).fetchone()
+                   WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s AND status=%s""" + command_sql + " RETURNING " + ", ".join(MIRROR_FIELDS),
+                (to_status, token, now, now, *key, from_status, *list((command or {}).values()))).fetchone()
             connection.commit()
         return _from_sql(claimed) if claimed else None
 
-    def guard(self, connection: Any, row: Mapping[str, Any], *, token: str, status: str) -> None:
-        """Inside the effect's transaction (I1): the claim must still be ours, under the row lock; otherwise the effect aborts."""
+    def guard(self, connection: Any, row: Mapping[str, Any], *, token: str, status: str, command: Mapping[str, Any] | None = None) -> None:
+        """Inside the effect's transaction (I1): the claim must still be ours AND the row must still carry the command
+        this effect executes (`command`), under the row lock; otherwise the effect aborts."""
         key = _key(row)
+        fields = list((command or {}).keys())
+        values = list((command or {}).values())
         if not self.database.database_url:
             with self._rows_lock:
                 current = self.memory.get(key)
                 if current is None or current.get("status") != status or current.get("claim_token") != token:
                     raise MirrorClaimLost("CLAIM_LOST_BEFORE_EFFECT")
+                if any(current.get(field) != value for field, value in zip(fields, values)):
+                    raise MirrorClaimLost("COMMAND_CHANGED_BEFORE_EFFECT")
             return
         found = connection.execute(
-            "SELECT status, claim_token FROM r2d2_v2_mirror_episodes WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s FOR UPDATE",
-            key).fetchone()
+            "SELECT status, claim_token" + "".join(f", {field}" for field in fields)
+            + " FROM r2d2_v2_mirror_episodes WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s FOR UPDATE", key).fetchone()
         if found is None or found[0] != status or found[1] != token:
             raise MirrorClaimLost("CLAIM_LOST_BEFORE_EFFECT")
+        if any(found[2 + index] != value for index, value in enumerate(values)):
+            raise MirrorClaimLost("COMMAND_CHANGED_BEFORE_EFFECT")
 
-    def receipt(self, connection: Any, row: Mapping[str, Any], *, token: str, status: str, updates: Mapping[str, Any]) -> dict[str, Any]:
-        """Inside the effect's transaction (I1): the command's receipt, committed atomically with the paper effect."""
+    def receipt(self, connection: Any, row: Mapping[str, Any], *, token: str, status: str, updates: Mapping[str, Any],
+                command: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """Inside the effect's transaction (I1): the command's receipt, committed atomically with the paper effect, written
+        only over the row that still carries our claim AND the command executed (`command`)."""
         now = _utc_now()
         record = self._validated({**row, **updates, "claim_token": None, "claimed_at": None}, now)
         key = _key(record)
         if not self.database.database_url:
             with self._rows_lock:
                 current = self.memory.get(key)
-                if current is None or current.get("status") != status or current.get("claim_token") != token:
+                if (current is None or current.get("status") != status or current.get("claim_token") != token
+                        or any(current.get(f) != v for f, v in (command or {}).items())):
                     raise MirrorClaimLost("CLAIM_LOST_BEFORE_RECEIPT")
                 record["created_at"] = current["created_at"]
                 self.memory[key] = record
                 return dict(record)
         fields = [field for field in MIRROR_FIELDS if field not in _IMMUTABLE_FIELDS]
         assignments = ", ".join(f"{field}=%s::jsonb" if field == "divergence" else f"{field}=%s" for field in fields)
+        command_sql = "".join(f" AND {field} IS NOT DISTINCT FROM %s" for field in (command or {}))
         cursor = connection.execute(
-            f"UPDATE r2d2_v2_mirror_episodes SET {assignments} WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s AND status=%s AND claim_token=%s",
-            [*self._values(record, fields), *key, status, token])
+            f"UPDATE r2d2_v2_mirror_episodes SET {assignments} WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s AND status=%s AND claim_token=%s{command_sql}",
+            [*self._values(record, fields), *key, status, token, *list((command or {}).values())])
         if cursor.rowcount != 1:
             raise MirrorClaimLost("CLAIM_LOST_BEFORE_RECEIPT")
         return dict(record)
@@ -1124,10 +1144,11 @@ def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str,
     live_experiment = repo.experiment(str(experiment["code"])) or dict(experiment)
 
     def write_or_defer(row: Mapping[str, Any], *, expected: tuple[str, ...], insert: bool,
-                       reason: str = "ROW_ADVANCED_ELSEWHERE") -> dict[str, Any] | None:
-        """Every write of this cycle is conditional on the status the row had when the cycle read it (I1): a row that
-        advanced elsewhere meanwhile is left exactly as it is and the action is deferred to the next cycle's reading."""
-        written, applied = mirror.write(row, expected=expected, insert=insert)
+                       reason: str = "ROW_ADVANCED_ELSEWHERE", same: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
+        """Every write of this cycle is conditional on the status the row had when the cycle read it and, for a command,
+        on the command already registered (I1): a row that advanced or changed elsewhere meanwhile is left exactly as
+        it is and the action is deferred to the next cycle's reading."""
+        written, applied = mirror.write(row, expected=expected, insert=insert, same=same)
         if applied and written is not None:
             return written
         summary["deferred"] += 1
@@ -1208,13 +1229,17 @@ def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str,
             #    (claimed, OPEN, ...) is read, never overwritten, and this cycle defers (I1); 2. claim it (one claimant);
             # 3. paper effect carrying the command id, with the claim verified and the receipt written inside the engine's
             #    transaction; 4. the receipt is the row itself.
-            registered = write_or_defer({**previous, **base_row(record, market), "status": "BUY_PENDING", "reason": action.reason,
-                                         "buy_command_id": command, "buy_command_sha": payload_sha,
-                                         "command_registered_at": previous.get("command_registered_at") or decided_at},
-                                        expected=("BUY_PENDING",), insert=True, reason="COMMAND_ALREADY_ADVANCED")
-            if registered is None:
+            buy_command = {"buy_command_id": command, "buy_command_sha": payload_sha}
+            registered, applied = mirror.write({**previous, **base_row(record, market), "status": "BUY_PENDING", "reason": action.reason,
+                                                **buy_command, "command_registered_at": previous.get("command_registered_at") or decided_at},
+                                               expected=("BUY_PENDING",), insert=True, same=buy_command)
+            if not applied or registered is None:
+                # insert-or-read: the row as it is NOW decides — a pending command with another payload is a conflict
+                # (never replaced); any other status means the command advanced elsewhere. Either way this cycle defers.
+                summary["deferred"] += 1
+                count("COMMAND_PAYLOAD_CONFLICT_AT_REGISTRATION" if (registered or {}).get("status") == "BUY_PENDING" else "COMMAND_ALREADY_ADVANCED")
                 continue
-            claimed = mirror.claim(registered, from_status="BUY_PENDING", to_status="BUY_EXECUTING", now=decided_at)
+            claimed = mirror.claim(registered, from_status="BUY_PENDING", to_status="BUY_EXECUTING", now=decided_at, command=buy_command)
             if claimed is None:
                 summary["deferred"] += 1
                 count("COMMAND_CLAIMED_ELSEWHERE")
@@ -1232,8 +1257,9 @@ def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str,
                                   "reference": "midpoint", "regular": quote.regular},
                         "decided_at": decided_at.isoformat(), "paper_only": True, "own_decision": False}
 
-            def before_buy(connection: Any, claimed: dict[str, Any] = claimed, token: str = token, quote: MirrorQuote = quote) -> None:
-                mirror.guard(connection, claimed, token=token, status="BUY_EXECUTING")
+            def before_buy(connection: Any, claimed: dict[str, Any] = claimed, token: str = token, quote: MirrorQuote = quote,
+                           buy_command: dict[str, Any] = buy_command) -> None:
+                mirror.guard(connection, claimed, token=token, status="BUY_EXECUTING", command=buy_command)
                 if exits_only:
                     raise MirrorVetoAtEffect("EXITS_ONLY_BY_DESK_ORDER")
                 if _entries_paused(repo, connection, experiment_id):
@@ -1243,8 +1269,8 @@ def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str,
 
             def after_buy(connection: Any, trade_id: str, executed_at: datetime, claimed: dict[str, Any] = claimed, token: str = token,
                           quote: MirrorQuote = quote, record: LedgerRecord = record, fill: dict[str, Any] = fill, decided_at: datetime = decided_at,
-                          reason: str = action.reason) -> None:
-                mirror.receipt(connection, claimed, token=token, status="BUY_EXECUTING", updates={
+                          reason: str = action.reason, buy_command: dict[str, Any] = buy_command) -> None:
+                mirror.receipt(connection, claimed, token=token, status="BUY_EXECUTING", command=buy_command, updates={
                     "status": "OPEN", "reason": reason, "buy_trade_id": trade_id, "buy_at": executed_at, "buy_quantity": record.quantity,
                     "buy_fill_price": fill["fill_price"],
                     "divergence": {"buy": _divergence(record, side="BUY", quote=quote, fill_price=fill["fill_price"], quantity=record.quantity,
@@ -1284,11 +1310,16 @@ def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str,
                 summary["deferred"] += 1
                 count("COMMAND_CLAIMED_ELSEWHERE")
                 continue
+            sell_command = {"sell_command_id": command, "sell_command_sha": payload_sha}
             if previous.get("status") != "EXIT_PENDING":
                 # the exit obligation is durable before any quote is looked at — written only over the OPEN/BLOCKED row this cycle read
                 pending = write_or_defer(pending, expected=("OPEN", "BLOCKED"), insert=False, reason="COMMAND_ALREADY_ADVANCED")
                 if pending is None:
                     continue
+            elif previous.get("sell_command_sha") != payload_sha:  # registered exit command differs from the ledger's: never replaced here
+                summary["deferred"] += 1
+                count("EXIT_COMMAND_PAYLOAD_CONFLICT")
+                continue
             if existing is None:
                 if write_or_defer({**pending, "status": "CLOSED", "reason": "POSITION_ABSENT_AT_EXIT"}, expected=("EXIT_PENDING",), insert=False) is None:
                     continue
@@ -1303,7 +1334,7 @@ def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str,
                 count("QUOTE_NOT_VALID_EXIT_PENDING")
                 continue
             assert quote is not None
-            claimed = mirror.claim(pending, from_status="EXIT_PENDING", to_status="SELL_EXECUTING", now=decided_at)
+            claimed = mirror.claim(pending, from_status="EXIT_PENDING", to_status="SELL_EXECUTING", now=decided_at, command=sell_command)
             if claimed is None:
                 summary["deferred"] += 1
                 count("COMMAND_CLAIMED_ELSEWHERE")
@@ -1318,18 +1349,20 @@ def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str,
                                   "reference": "midpoint", "regular": quote.regular},
                         "decided_at": decided_at.isoformat(), "paper_only": True, "own_decision": False}
 
-            def before_sell(connection: Any, claimed: dict[str, Any] = claimed, token: str = token, quote: MirrorQuote = quote) -> None:
-                mirror.guard(connection, claimed, token=token, status="SELL_EXECUTING")
+            def before_sell(connection: Any, claimed: dict[str, Any] = claimed, token: str = token, quote: MirrorQuote = quote,
+                            sell_command: dict[str, Any] = sell_command) -> None:
+                mirror.guard(connection, claimed, token=token, status="SELL_EXECUTING", command=sell_command)
                 if not quote_valid(quote, read_clock()):
                     raise MirrorVetoAtEffect("QUOTE_STALE_AT_EFFECT")
 
             def after_sell(connection: Any, trade_id: str, executed_at: datetime, claimed: dict[str, Any] = claimed, token: str = token,
                            quote: MirrorQuote = quote, record: LedgerRecord = record, fill: dict[str, Any] = fill, quantity: float = quantity,
-                           decided_at: datetime = decided_at, reason: str = action.reason, pending: dict[str, Any] = pending) -> None:
+                           decided_at: datetime = decided_at, reason: str = action.reason, pending: dict[str, Any] = pending,
+                           sell_command: dict[str, Any] = sell_command) -> None:
                 divergence = dict(pending.get("divergence") or {})
                 divergence["sell"] = _divergence(record, side="SELL", quote=quote, fill_price=fill["fill_price"], quantity=quantity,
                                                  decided_at=decided_at, executed_at=executed_at)
-                mirror.receipt(connection, claimed, token=token, status="SELL_EXECUTING", updates={
+                mirror.receipt(connection, claimed, token=token, status="SELL_EXECUTING", command=sell_command, updates={
                     "status": "CLOSED", "reason": reason, "sell_trade_id": trade_id, "sell_at": executed_at, "sell_fill_price": fill["fill_price"],
                     "divergence": divergence})
 

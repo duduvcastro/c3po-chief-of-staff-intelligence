@@ -210,3 +210,46 @@ def test_a_worker_suspended_before_registration_never_reopens_a_command_executed
     assert row["status"] == "OPEN" and row["claim_token"] is None
     assert float(_scalar(repo, "SELECT quantity FROM r2d2_positions WHERE experiment_id=%s AND symbol='AAA'", (experiment["id"],))) == 10.0
     assert float(_scalar(repo, "SELECT cash_balance FROM r2d2_experiments WHERE id=%s", (experiment["id"],))) < 1_000_000.0
+
+
+def test_registration_reads_and_compares_a_command_registered_with_another_payload_in_postgres() -> None:
+    # Codex #387 round 4, I1 residual, on the real INSERT ... ON CONFLICT ... WHERE status = ANY(...) AND buy_command_sha IS NOT DISTINCT FROM:
+    # A (q10) suspended in its quote lookup; B registers the episode with q11 and defers (BUY_PENDING/q11, zero trades); A resumes with a
+    # valid quote: the frozen SHA is never replaced, A defers, and only the registered command (q11) ever executes.
+    repo, mirror, experiment, mirror_epoch = _bare_fixture()
+    ledger10 = _row([_record("AAA", quantity=10.0)])
+    rec11 = read_ledger(_row([_record("AAA", quantity=11.0)], version=4)).records[0]
+    sha11 = digest(rec11.buy_payload())
+    command = command_id(mirror_epoch, EPOCH, "ep-AAA", "BUY")
+    entered, gate = threading.Event(), threading.Event()
+    outcome: dict = {}
+
+    def suspended(symbol: str) -> None:
+        entered.set()
+        gate.wait(timeout=30)
+
+    def worker_a() -> None:
+        try:
+            outcome["result"] = _run(repo, mirror, experiment, mirror_epoch, ledger10, FakeQuotes({"AAA": 50.0}, hook=suspended), T0)
+        except Exception as exc:  # pragma: no cover
+            outcome["error"] = exc
+
+    thread = threading.Thread(target=worker_a)
+    thread.start()
+    assert entered.wait(15)
+    written, applied = mirror.write({"mirror_epoch": mirror_epoch, "epoch": EPOCH, "episode_key": "ep-AAA", "symbol": "AAA", "market": "NASDAQ",
+                                     "experiment_id": experiment["id"], "status": "BUY_PENDING", "reason": "b-registered-q11", "buy_command_id": command,
+                                     "buy_command_sha": sha11, "command_registered_at": T0}, expected=("BUY_PENDING",), insert=True)
+    assert applied is True
+    gate.set()
+    thread.join(timeout=60)
+    assert "error" not in outcome
+    assert outcome["result"]["buys"] == 0 and outcome["result"]["reasons"] == {"COMMAND_PAYLOAD_CONFLICT_AT_REGISTRATION": 1}
+    row = mirror.load(mirror_epoch, EPOCH, str(experiment["id"]))["ep-AAA"]
+    assert row["status"] == "BUY_PENDING" and row["buy_command_sha"] == sha11 and row["reason"] == "b-registered-q11"
+    assert _trades(repo, experiment, command) == 0
+    # the registered command (q11) is the only one that can execute; its claim/guard/receipt are bound to its SHA
+    result = _run(repo, mirror, experiment, mirror_epoch, _row([_record("AAA", quantity=11.0)], version=4), FakeQuotes({"AAA": 50.0}), T0 + timedelta(seconds=1))
+    assert result["buys"] == 1 and _trades(repo, experiment, command) == 1
+    assert float(_scalar(repo, "SELECT quantity FROM r2d2_trades WHERE experiment_id=%s AND decision_snapshot->>'command_id'=%s", (experiment["id"], command))) == 11.0
+    assert mirror.load(mirror_epoch, EPOCH, str(experiment["id"]))["ep-AAA"]["buy_command_sha"] == sha11

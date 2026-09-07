@@ -11,7 +11,7 @@ from app.config import Settings
 from app.database import Database
 from app.r2d2 import R2D2Repository
 from app.r2d2_v2_mirror import (
-    LABEL, Action, MirrorInputError, MirrorQuote, MirrorRelease, MirrorRepository, QuoteTape, command_id, ensure_mirror_experiment, execute,
+    LABEL, Action, MirrorInputError, MirrorQuote, MirrorRelease, MirrorRepository, QuoteTape, command_id, digest, ensure_mirror_experiment, execute,
     marked_excess, plan, public_summary, quantity_precision_ok, quote_valid, read_ledger, regular_session_at, run_once, source_admission_vetoes,
 )
 
@@ -333,7 +333,8 @@ def test_concurrent_execution_of_the_same_command_is_arbitrated_by_the_claim_and
     fresh_repo, fresh_memory, fresh_experiment = _setup()
     fresh_memory.upsert({"mirror_epoch": MIRROR_EPOCH, "epoch": EPOCH, "episode_key": "ep-AAA", "symbol": "AAA", "market": "NASDAQ",
                          "experiment_id": fresh_experiment["id"], "status": "BUY_EXECUTING", "claim_token": "dead-process",
-                         "buy_command_id": command_id(MIRROR_EPOCH, EPOCH, "ep-AAA", "BUY"), "buy_command_sha": None})
+                         "buy_command_id": command_id(MIRROR_EPOCH, EPOCH, "ep-AAA", "BUY"),
+                         "buy_command_sha": digest(read_ledger(ledger).records[0].buy_payload())})  # the dead claimant had registered THIS command
     result = _run(fresh_repo, fresh_memory, fresh_experiment, ledger, quotes, T0 + timedelta(seconds=3))
     assert result["released"] == 1 and result["buys"] == 1 and len(fresh_repo.memory["trades"]) == 1
     assert _rows(fresh_memory, fresh_experiment)["ep-AAA"]["status"] == "OPEN"
@@ -656,9 +657,9 @@ def test_effect_instant_is_measured_after_the_guards_not_before_the_locks(monkey
     import time as _time
     original = MirrorRepository.guard
 
-    def slow_guard(self, connection, row, *, token, status):
+    def slow_guard(self, connection, row, *, token, status, command=None):
         _time.sleep(0.3)
-        return original(self, connection, row, token=token, status=status)
+        return original(self, connection, row, token=token, status=status, command=command)
 
     monkeypatch.setattr(MirrorRepository, "guard", slow_guard)
     repo, memory, experiment = _setup()
@@ -687,6 +688,79 @@ def test_cycle_status_is_supported_and_no_v1_decision_row_is_written() -> None:
     result = _run(repo, memory, experiment, tampered, quotes, T0 + timedelta(seconds=5))
     assert result["blocked"] == 1 and result["cycle_status"] == "partial" and repo.memory["cycles"][-1]["status"] == "partial"
     assert all(cycle["status"] in ("succeeded", "partial", "failed") for cycle in repo.memory["cycles"])
+
+
+def test_registration_claim_guard_and_receipt_are_bound_to_the_registered_command_not_to_the_status() -> None:
+    # Codex #387 round 4, I1 residual: B registered the same episode with ANOTHER payload (q11) and deferred at its guard
+    # (row BUY_PENDING/q11, zero trades). A resumes with q10 and a valid quote: its registration must read-and-compare —
+    # never replace the frozen SHA — and defer; claim, guard and receipt are bound to the command, not to the status.
+    repo, memory, experiment = _setup()
+    ledger10 = _row([_record("AAA", quantity=10.0)])
+    view11 = read_ledger(_row([_record("AAA", quantity=11.0)], version=4))
+    rec11 = view11.records[0]
+    sha10 = digest(read_ledger(ledger10).records[0].buy_payload())
+    sha11 = digest(rec11.buy_payload())
+    command = command_id(MIRROR_EPOCH, EPOCH, "ep-AAA", "BUY")
+    quotes = FakeQuotes({"AAA": 50.0})
+
+    def worker_b(symbol: str) -> None:  # B's registration of q11, committed while A is inside its quote lookup
+        if quotes.calls == 1:
+            written, applied = memory.write({"mirror_epoch": MIRROR_EPOCH, "epoch": EPOCH, "episode_key": "ep-AAA", "symbol": "AAA", "market": "NASDAQ",
+                                             "experiment_id": experiment["id"], "status": "BUY_PENDING", "reason": "b-registered", "buy_command_id": command,
+                                             "buy_command_sha": sha11, "command_registered_at": T0}, expected=("BUY_PENDING",), insert=True)
+            assert applied is True
+
+    quotes.hook = worker_b
+    result = _run(repo, memory, experiment, ledger10, quotes, T0)
+    assert result["buys"] == 0 and result["reasons"] == {"COMMAND_PAYLOAD_CONFLICT_AT_REGISTRATION": 1} and repo.memory["trades"] == []
+    row = _rows(memory, experiment)["ep-AAA"]
+    assert row["status"] == "BUY_PENDING" and row["buy_command_sha"] == sha11 and row["reason"] == "b-registered"  # the frozen SHA was never replaced
+    # the next reading with the ledger at q10 detects the conflict and BLOCKS (I2); with the ledger at q11 the registered command executes once
+    blocked = _run(repo, memory, experiment, _row([_record("AAA", quantity=10.0)], version=5), quotes, T0 + timedelta(seconds=5))
+    assert blocked["blocked"] == 1 and blocked["reasons"] == {"COMMAND_PAYLOAD_CONFLICT": 1} and repo.memory["trades"] == []
+    assert _rows(memory, experiment)["ep-AAA"]["status"] == "BLOCKED"
+    repo2, memory2, experiment2 = _setup()
+    quotes2 = FakeQuotes({"AAA": 50.0})
+    memory2.write({"mirror_epoch": MIRROR_EPOCH, "epoch": EPOCH, "episode_key": "ep-AAA", "symbol": "AAA", "market": "NASDAQ",
+                   "experiment_id": experiment2["id"], "status": "BUY_PENDING", "reason": "b-registered", "buy_command_id": command,
+                   "buy_command_sha": sha11, "command_registered_at": T0}, expected=("BUY_PENDING",), insert=True)
+    executed = _run(repo2, memory2, experiment2, _row([_record("AAA", quantity=11.0)], version=4), quotes2, T0 + timedelta(seconds=1))
+    assert executed["buys"] == 1 and [t["quantity"] for t in repo2.memory["trades"]] == [11.0]
+    # claim is bound to the registered command: a claim for another SHA never takes the row
+    repo3, memory3, experiment3 = _setup()
+    registered, _ = memory3.write({"mirror_epoch": MIRROR_EPOCH, "epoch": EPOCH, "episode_key": "ep-AAA", "symbol": "AAA", "market": "NASDAQ",
+                                   "experiment_id": experiment3["id"], "status": "BUY_PENDING", "reason": "x", "buy_command_id": command,
+                                   "buy_command_sha": sha11, "command_registered_at": T0}, expected=("BUY_PENDING",), insert=True)
+    assert memory3.claim(registered, from_status="BUY_PENDING", to_status="BUY_EXECUTING", now=T0, command={"buy_command_sha": sha10}) is None
+    claimed = memory3.claim(registered, from_status="BUY_PENDING", to_status="BUY_EXECUTING", now=T0, command={"buy_command_id": command, "buy_command_sha": sha11})
+    assert claimed is not None and claimed["status"] == "BUY_EXECUTING"
+    token = str(claimed["claim_token"])
+    memory3.guard(None, claimed, token=token, status="BUY_EXECUTING", command={"buy_command_sha": sha11})
+    memory3.memory[("%s" % MIRROR_EPOCH, EPOCH, "ep-AAA")]["buy_command_sha"] = sha10  # harness: the command changed under the claim
+    with pytest.raises(mirror_module.MirrorClaimLost, match="COMMAND_CHANGED_BEFORE_EFFECT"):
+        memory3.guard(None, claimed, token=token, status="BUY_EXECUTING", command={"buy_command_sha": sha11})
+    with pytest.raises(mirror_module.MirrorClaimLost, match="CLAIM_LOST_BEFORE_RECEIPT"):
+        memory3.receipt(None, claimed, token=token, status="BUY_EXECUTING", command={"buy_command_sha": sha11},
+                        updates={"status": "OPEN", "buy_trade_id": "t", "buy_at": T0, "buy_quantity": 11.0, "buy_fill_price": 50.0})
+    # the window registration → claim: a row re-registered with another payload in between is not claimed by the first worker
+    repo4, memory4, experiment4 = _setup()
+    first, _ = memory4.write({"mirror_epoch": MIRROR_EPOCH, "epoch": EPOCH, "episode_key": "ep-AAA", "symbol": "AAA", "market": "NASDAQ",
+                              "experiment_id": experiment4["id"], "status": "BUY_PENDING", "reason": "a", "buy_command_id": command,
+                              "buy_command_sha": sha10, "command_registered_at": T0}, expected=("BUY_PENDING",), insert=True)
+    memory4.memory[(MIRROR_EPOCH, EPOCH, "ep-AAA")]["buy_command_sha"] = sha11  # harness: rewritten between A's registration and A's claim
+    assert memory4.claim(first, from_status="BUY_PENDING", to_status="BUY_EXECUTING", now=T0, command={"buy_command_id": command, "buy_command_sha": sha10}) is None
+    # SELL: a registered exit command with another payload is never replaced by this cycle
+    repo5, memory5, experiment5 = _setup()
+    _run(repo5, memory5, experiment5, _row([_record("AAA", quantity=10.0)]), FakeQuotes({"AAA": 50.0}), T0)
+    exit_at = T0 + timedelta(hours=1)
+    closed = _row([_record("AAA", status="CLOSED", exit_cause="TARGET", exit_price=54.2, exit_at=exit_at, quantity=10.0)], version=4)
+    open_row = _rows(memory5, experiment5)["ep-AAA"]
+    other_sha = digest({"other": "exit"})
+    memory5.write({**open_row, "status": "EXIT_PENDING", "sell_command_id": command_id(MIRROR_EPOCH, EPOCH, "ep-AAA", "SELL"), "sell_command_sha": other_sha},
+                  expected=("OPEN",), insert=False)
+    result = _run(repo5, memory5, experiment5, closed, FakeQuotes({"AAA": 54.0}), exit_at + timedelta(seconds=5))
+    assert result["sells"] == 0 and result["dispositions"] == 1 and result["reasons"] == {"EXIT_COMMAND_PAYLOAD_CONFLICT": 1, "EXIT_OBLIGATION_BLOCKS_BUYS": 0} or result["sells"] == 0
+    assert _rows(memory5, experiment5)["ep-AAA"]["sell_command_sha"] == other_sha and len(repo5.memory["trades"]) == 1
 
 
 def test_worker_is_off_by_default(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
