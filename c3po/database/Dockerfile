@@ -15,7 +15,7 @@ RUN test -n "$C3PO_SECURITY_REBUILD" \
     && go mod edit -require="golang.org/x/sys@${GOSU_X_SYS_VERSION}" \
     && go mod tidy \
     && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /go/bin/gosu . \
-    && go version -m /go/bin/gosu | grep -F "golang.org/x/sys ${GOSU_X_SYS_VERSION}"
+    && go version -m /go/bin/gosu | grep -E "golang.org/x/sys[[:space:]]+${GOSU_X_SYS_VERSION}([[:space:]]|$)"
 
 FROM postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
 
