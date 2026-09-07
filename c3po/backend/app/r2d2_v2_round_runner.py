@@ -37,10 +37,12 @@ import importlib
 import json
 import os
 import re
+import stat
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
+from uuid import uuid4
 
 from .r2d2_v2_producer_daily import EodhdFetcher, Fetcher, ProducerError, canonical, write_private
 from .r2d2_v2_producer_earnings import produce_earnings
@@ -230,12 +232,16 @@ def quarantine_inventory(root: Path) -> list[dict[str, Any]]:
                 continue
             try:
                 for name in sorted(os.listdir(fd)):
+                    if name.startswith(CLAIM_PREFIX):  # a purge that crashed between claim and unlink: visible to the audit, never removed here
+                        items.append({"session": session, "file": name, "kind": "CLAIM_LEFTOVER"})
+                        continue
                     if name.startswith("."):
                         continue
                     try:
-                        data = _read_at(fd, name)
+                        data = _read_at(fd, name)  # whole file under the hard cap: the hash is never a prefix (D-R1)
                     except (OSError, RoundEmitterError) as error:
-                        items.append({"session": session, "file": name, "kind": "FILE_REFUSED", "error": type(error).__name__})
+                        items.append({"session": session, "file": name, "kind": "FILE_REFUSED",
+                                      "error": str(error) if isinstance(error, RoundEmitterError) else type(error).__name__})
                         continue
                     item: dict[str, Any] = {"session": session, "file": name, "sha256": sha256_hex(data)}
                     if name.endswith(".purge.json"):
@@ -260,10 +266,17 @@ def quarantine_inventory(root: Path) -> list[dict[str, Any]]:
     return items
 
 
+CLAIM_PREFIX = ".claimed-"
+_after_claim: Callable[[], None] | None = None  # test hook: runs right after the purge claims its directory entry
+
+
 def purge_quarantined(root: Path, session: str, name: str, *, signed_by: str, reason: str, now: datetime) -> dict[str, Any]:
     """Remove ONE quarantined file, only from ``quarantine/<session>/``, only after a signed purge receipt is durable
-    next to it. Every step (read, receipt, unlink, fsync) is anchored in a descriptor of the session directory reached
-    without following symlinks, so a symlinked session directory or file cannot make the purge act outside (F385-8-D)."""
+    next to it. Every step is anchored in a descriptor of the session directory reached without following symlinks
+    (F385-8-D). Identity (D-R2): the purge first CLAIMS its directory entry by renaming it to a hidden name — atomic,
+    unknown to any writer — and from then on reads, hashes, signs and unlinks only the claimed inode; a writer that
+    replaces the visible name afterwards keeps its file untouched. Integrity (D-R1): the bytes are read whole under a
+    hard cap and the receipt carries the hash of everything that is removed; an oversized file is refused and put back."""
     _require(bool(signed_by.strip()) and bool(reason.strip()), "PURGE_REQUIRES_SIGNER_AND_REASON")
     _require(_SESSION_NAME.fullmatch(session) is not None and "/" not in name and not name.startswith(".") and name.endswith(".json")
              and not name.endswith(".purge.json"), "PURGE_TARGET_INVALID")
@@ -280,21 +293,37 @@ def purge_quarantined(root: Path, session: str, name: str, *, signed_by: str, re
         os.close(base_fd)
     try:
         try:
-            data = _read_at(fd, name)
-        except (OSError, RoundEmitterError) as error:
+            info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        except FileNotFoundError as error:
             raise RoundEmitterError("PURGE_TARGET_NOT_IN_QUARANTINE") from error
+        _require(stat.S_ISREG(info.st_mode), "PURGE_TARGET_NOT_IN_QUARANTINE")
+        receipt_name = name[:-len(".json")] + ".purge.json"
+        _require(not _exists_at(fd, receipt_name), "PURGE_RECEIPT_EXISTS")
+        claimed = CLAIM_PREFIX + uuid4().hex + ".json"
+        try:
+            os.rename(name, claimed, src_dir_fd=fd, dst_dir_fd=fd)  # atomic claim of exactly one directory entry
+        except FileNotFoundError as error:
+            raise RoundEmitterError("PURGE_TARGET_NOT_IN_QUARANTINE") from error
+        if _after_claim is not None:
+            _after_claim()
+        try:
+            data = _read_at(fd, claimed)
+            claimed_info = os.stat(claimed, dir_fd=fd, follow_symlinks=False)
+        except (OSError, RoundEmitterError) as error:
+            os.rename(claimed, name, src_dir_fd=fd, dst_dir_fd=fd)  # put the entry back: nothing is removed without its whole hash
+            raise RoundEmitterError("PURGE_REFUSED_" + (str(error) if isinstance(error, RoundEmitterError) else "UNREADABLE")) from error
         try:
             body = json.loads(data)
         except ValueError:
             body = None
         record = body if isinstance(body, dict) else {}
-        receipt = {"schema": PURGE_SCHEMA, "session": session, "file": name, "sha256": sha256_hex(data), "code": record.get("code"),
-                   "round_id": record.get("round_id"), "signed_by": signed_by.strip(), "reason": reason.strip(), "purged_at": _iso(now)}
-        receipt_name = name[:-len(".json")] + ".purge.json"
-        _require(not _exists_at(fd, receipt_name), "PURGE_RECEIPT_EXISTS")
+        receipt = {"schema": PURGE_SCHEMA, "session": session, "file": name, "sha256": sha256_hex(data), "size": len(data),
+                   "claimed_identity": {"dev": claimed_info.st_dev, "inode": claimed_info.st_ino, "mtime_ns": claimed_info.st_mtime_ns},
+                   "code": record.get("code"), "round_id": record.get("round_id"), "signed_by": signed_by.strip(), "reason": reason.strip(),
+                   "purged_at": _iso(now)}
         _write_at(fd, receipt_name, canonical(receipt))  # durable before the removal: a crash in between leaves both, never neither
         _fsync_fd(fd)
-        os.unlink(name, dir_fd=fd)
+        os.unlink(claimed, dir_fd=fd)  # only the claimed inode goes; a substitute under the visible name survives
         _fsync_fd(fd)
     finally:
         os.close(fd)

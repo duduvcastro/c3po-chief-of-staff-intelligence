@@ -215,6 +215,7 @@ def test_quarantine_audit_and_signed_purge(tmp_path: Path) -> None:
     assert receipt["round_id"] == summary["round_id"] and receipt["purged_at"] == _iso(NOW + timedelta(hours=1))
     receipt_path = root / "quarantine" / "2026-09-08" / (item["file"][:-5] + ".purge.json")
     assert _mode(receipt_path) == 0o600 and json.loads(receipt_path.read_bytes()) == receipt
+    assert receipt["size"] > 0 and receipt["claimed_identity"]["inode"] > 0  # whole-file size and the claimed inode are recorded
     after = runner.quarantine_inventory(root)
     assert [entry["kind"] for entry in after] == ["PURGE_RECEIPT"] and after[0]["file"] == receipt_path.name
     with pytest.raises(emitter.RoundEmitterError, match="PURGE_TARGET_NOT_IN_QUARANTINE"):
@@ -345,3 +346,68 @@ def test_purge_and_inventory_never_follow_symlinks(tmp_path: Path) -> None:
     assert runner.quarantine_inventory(root)[0]["kind"] == "QUARANTINE_DIRECTORY_REFUSED"
     with pytest.raises(emitter.RoundEmitterError, match="PURGE_TARGET_NOT_IN_QUARANTINE"):
         runner.purge_quarantined(root, "2026-09-08", "x.json", signed_by="fable", reason="x", now=NOW)
+
+
+def _quarantine_root(tmp_path: Path) -> tuple[Path, Path]:
+    root = tmp_path / "source"
+    session = root / "quarantine" / "2026-09-08"
+    session.mkdir(parents=True, mode=0o700)
+    for folder in (root, root / "quarantine", session):
+        os.chmod(folder, 0o700)
+    return root, session
+
+
+def _record_bytes(code: str, pad: int = 0) -> bytes:
+    return json.dumps({"schema": emitter.QUARANTINE_SCHEMA, "round_id": "0" * 64, "quarantined_at": _iso(NOW), "code": code,
+                       "envelope": {"event_id": "x", "event": {"instrument_key": "US:AAA", "type": "EARNINGS"}}, "pad": "x" * pad}).encode()
+
+
+def test_purge_and_inventory_hash_the_whole_file_and_refuse_oversized_targets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 D-R1: a quarantined envelope can exceed the reader's 64 KiB (that is why it was quarantined); the audit and the purge
+    # receipt must hash ALL of its bytes, and a file above the hard cap is refused and preserved, never hashed by prefix.
+    root, session = _quarantine_root(tmp_path)
+    payload = _record_bytes("EVENT_SIZE_LIMIT", pad=300_000)
+    (session / "big.json").write_bytes(payload)
+    os.chmod(session / "big.json", 0o600)
+    listed = runner.quarantine_inventory(root)
+    assert listed[0]["kind"] == "QUARANTINED" and listed[0]["sha256"] == hashlib.sha256(payload).hexdigest()
+    receipt = runner.purge_quarantined(root, "2026-09-08", "big.json", signed_by="fable", reason="oversized envelope audited", now=NOW)
+    assert receipt["sha256"] == hashlib.sha256(payload).hexdigest() and receipt["size"] == len(payload) and not (session / "big.json").exists()
+    monkeypatch.setattr(emitter, "READ_LIMIT_BYTES", 1024)
+    huge = _record_bytes("EVENT_SIZE_LIMIT", pad=4096)
+    (session / "huge.json").write_bytes(huge)
+    os.chmod(session / "huge.json", 0o600)
+    refused = [item for item in runner.quarantine_inventory(root) if item["file"] == "huge.json"][0]
+    assert refused["kind"] == "FILE_REFUSED" and refused["error"] == "FILE_TOO_LARGE"
+    with pytest.raises(emitter.RoundEmitterError, match="PURGE_REFUSED_FILE_TOO_LARGE"):
+        runner.purge_quarantined(root, "2026-09-08", "huge.json", signed_by="fable", reason="x", now=NOW)
+    assert (session / "huge.json").read_bytes() == huge and not (session / "huge.purge.json").exists()  # put back, untouched, no receipt
+    assert [name for name in os.listdir(session) if name.startswith(runner.CLAIM_PREFIX)] == []
+
+
+def test_purge_claims_its_entry_so_a_concurrent_replacement_survives(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 D-R2: a writer replacing the visible name between the read and the unlink must not have its new bytes removed
+    # under a receipt of the old ones. The purge claims one directory entry atomically and removes only that inode.
+    root, session = _quarantine_root(tmp_path)
+    old, new = _record_bytes("A"), _record_bytes("B")
+    (session / "x.json").write_bytes(old)
+    os.chmod(session / "x.json", 0o600)
+    old_inode = os.stat(session / "x.json").st_ino
+
+    def race() -> None:
+        incoming = session / ".incoming.tmp"
+        incoming.write_bytes(new)
+        os.chmod(incoming, 0o600)
+        os.replace(incoming, session / "x.json")  # the visible name now points to the substitute
+
+    monkeypatch.setattr(runner, "_after_claim", race)
+    receipt = runner.purge_quarantined(root, "2026-09-08", "x.json", signed_by="fable", reason="x", now=NOW)
+    monkeypatch.setattr(runner, "_after_claim", None)
+    assert receipt["sha256"] == hashlib.sha256(old).hexdigest() and receipt["claimed_identity"]["inode"] == old_inode
+    assert (session / "x.json").read_bytes() == new  # the substitute survives under the visible name
+    assert [name for name in os.listdir(session) if name.startswith(runner.CLAIM_PREFIX)] == []
+    # a purge that dies between claim and unlink leaves a hidden claimed entry the audit reports and never removes
+    (session / (runner.CLAIM_PREFIX + "deadbeef.json")).write_bytes(old)
+    os.chmod(session / (runner.CLAIM_PREFIX + "deadbeef.json"), 0o600)
+    kinds = {item["file"]: item["kind"] for item in runner.quarantine_inventory(root)}
+    assert kinds[runner.CLAIM_PREFIX + "deadbeef.json"] == "CLAIM_LEFTOVER" and kinds["x.json"] == "QUARANTINED"

@@ -385,3 +385,64 @@ def test_capacity_is_counted_as_the_reader_counts_and_identical_re_emission_is_f
     third = emitter.emit_round(document, episodes, root, now=later)
     assert third["new_files"] == 4 and json.loads(Path(third["receipt"]).read_bytes())["events_in_tape_after"] == 8
     assert len(_tape(root)["final"]) == 8 and _tape(root)["temp"] == [] and _tape(root)["guard"] == []
+
+
+def test_a_truncated_staged_file_is_never_accepted_and_the_round_is_rolled_back_with_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R1 (Codex 5575498116): an interruption right after creating a temp can leave incomplete bytes. Recovery must not
+    # loop on STAGED_BYTES_MISMATCH keeping the tape hostage, nor accept the bytes: it preserves them as evidence and rolls back.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    victim = next(item for item in journal["files"] if not (root / "events" / item["name"]).exists())
+    temp_path = root / "events" / victim["temp"]
+    whole = temp_path.read_bytes()
+    temp_path.write_bytes(whole[: len(whole) // 2])  # truncated staging
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    assert outcomes[0]["commit"] == "rolled_back" and outcomes[0]["corrupt"] == [victim["name"]] and outcomes[0]["missing"] == []
+    assert _tape(root) == {"guard": [], "final": [], "temp": []}  # the tape is released and nothing of the round remains in it
+    evidence_dir = root / "rounds" / emitter.RECOVERY_DIR / journal["round_id"]
+    kept = os.listdir(evidence_dir)
+    assert len(kept) == 1 and kept[0].startswith("temp-") and (evidence_dir / kept[0]).read_bytes() == whole[: len(whole) // 2]
+    assert _mode(evidence_dir) == 0o700 and _mode(evidence_dir / kept[0]) == 0o600
+    receipt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    corrupt = receipt["recovery"]["corrupt"][0]
+    assert receipt["commit"] == "rolled_back" and corrupt["expected_sha256"] == victim["sha256"] and corrupt["observed"] != victim["sha256"]
+    assert corrupt["evidence"] == str(evidence_dir / kept[0]) and "corrupt bytes preserved" in receipt["note"]
+    assert emitter.recover_rounds(root, now=NOW + timedelta(minutes=3)) == []  # nothing pending: no repeated failure
+    fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=4))
+    assert fresh["commit"] == "complete" and fresh["new_files"] == 4
+
+
+def test_quarantine_is_durable_before_the_tape_and_a_retained_receipt_is_never_rewritten(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R2: the quarantine is written before the guard, so a crash between links never loses a rejection, and the
+    # recovered receipt lists it; a journal left behind after the receipt was retained never rewrites that receipt.
+    document, episodes = _standard()
+    document["symbols"]["AAA"]["evidence"]["known_events"].append(_known(_event("2026-09-12", available_at=RECEIVED - timedelta(minutes=1))))
+    root = tmp_path / "source"
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    quarantine = root / "quarantine" / "2026-09-08"
+    assert len(os.listdir(quarantine)) == 1  # durable before the crash
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    assert journal["quarantined"][0]["code"] == "AT_BEFORE_ROUND" and journal["quarantined"][0]["file"] == os.listdir(quarantine)[0]
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    receipt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    assert receipt["commit"] == "recovered" and receipt["quarantined_count"] == 1 and receipt["quarantined"][0]["code"] == "AT_BEFORE_ROUND"
+    assert receipt["quarantined"][0]["sha256"] == hashlib.sha256((quarantine / receipt["quarantined"][0]["file"]).read_bytes()).hexdigest()
+    # crash after the receipt was retained: the journal is still there, the receipt must survive byte for byte
+    ok = emitter.emit_round(_standard()[0], episodes, tmp_path / "source2", now=NOW)
+    receipt_path = Path(ok["receipt"])
+    before = receipt_path.read_bytes()
+    journal_path = tmp_path / "source2" / "rounds" / f"2026-09-08.{ok['round_id']}{emitter.JOURNAL_SUFFIX}"
+    journal_path.write_bytes(canonical({"schema": emitter.JOURNAL_SCHEMA, "round_id": ok["round_id"], "round_session": "2026-09-08",
+                                        "guard": emitter._guard_name(ok["round_id"]), "files": [], "receipt": json.loads(before), "published": [],
+                                        "quarantined": [], "started_at": _iso(NOW)}))
+    outcomes = emitter.recover_rounds(tmp_path / "source2", now=NOW + timedelta(minutes=5))
+    assert outcomes[0]["commit"] == "already_retained" and receipt_path.read_bytes() == before and not journal_path.exists()
+    assert len(_tape(tmp_path / "source2")["final"]) == 4
