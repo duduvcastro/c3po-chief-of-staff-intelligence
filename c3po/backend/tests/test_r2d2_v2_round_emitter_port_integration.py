@@ -211,3 +211,47 @@ def test_an_unverifiable_final_never_blocks_the_reader_forever(tmp_path: Path, m
     fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=7))
     assert fresh["new_files"] == 4 and len(source.events(NOW + timedelta(minutes=8))) == 4 and source.last_event_diagnostics == []
 
+
+def test_undoing_a_completed_round_never_shows_the_reader_a_clean_subset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R5 against the real reader: after the evidence is moved, after a crash at that boundary and between removals the
+    # reader sees zero events WITH a diagnostic (the re-armed guard); the resumed recovery ends zero and clean; a new instant reads.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_retain = _crash_after_receipt(monkeypatch)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(emitter, "_retain", real_retain)
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    finals = {item["name"] for item in journal["files"]}
+    victim = root / "events" / journal["files"][0]["name"]
+    victim.write_bytes(victim.read_bytes() + b" " * emitter.MAX_EVENT_BYTES)
+    source = sources.FileShadowSource(root)
+    readings: list[tuple[str, int, int]] = []
+    real_preserve, real_unlink = emitter._preserve_evidence, emitter._unlink_at
+
+    def observing_preserve(rounds_dir, round_id, events_fd, corrupt):
+        real_preserve(rounds_dir, round_id, events_fd, corrupt)
+        readings.append(("after_evidence", len(source.events(NOW + timedelta(minutes=2))), len(source.last_event_diagnostics)))
+        raise OSError("simulated crash right after the evidence was moved")
+
+    monkeypatch.setattr(emitter, "_preserve_evidence", observing_preserve)
+    with pytest.raises(OSError):
+        emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    monkeypatch.setattr(emitter, "_preserve_evidence", real_preserve)
+    readings.append(("after_crash", len(source.events(NOW + timedelta(minutes=3))), len(source.last_event_diagnostics)))
+
+    def observing_unlink(dir_fd, name):
+        if name in finals:
+            readings.append(("between_removals", len(source.events(NOW + timedelta(minutes=4))), len(source.last_event_diagnostics)))
+        real_unlink(dir_fd, name)
+
+    monkeypatch.setattr(emitter, "_unlink_at", observing_unlink)
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=5))
+    monkeypatch.setattr(emitter, "_unlink_at", real_unlink)
+    assert outcomes[0]["commit"] == "rolled_back"
+    assert len(readings) == 6 and all(count == 0 and diagnostics > 0 for _, count, diagnostics in readings), readings  # never a clean subset
+    assert source.events(NOW + timedelta(minutes=6)) == [] and source.last_event_diagnostics == []
+    assert emitter.recover_rounds(root, now=NOW + timedelta(minutes=7)) == []
+    fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=8))
+    assert fresh["new_files"] == 4 and len(source.events(NOW + timedelta(minutes=9))) == 4 and source.last_event_diagnostics == []
+

@@ -568,3 +568,56 @@ def test_a_final_that_cannot_be_verified_at_recovery_is_an_inconsistency_with_ev
     assert _tape(root2) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root2) == []
     assert emitter.recover_rounds(root2, now=NOW + timedelta(minutes=6)) == []
 
+
+def test_undoing_a_completed_round_re_arms_the_guard_before_any_final_moves_and_keeps_it_under_interruption(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R5 (Codex 5576362466): the A-R4 scenario starts WITHOUT a guard (the round had completed). Undoing it must re-arm
+    # the guard before any final is moved or removed, keep it if recovery dies at that boundary, and remove it only when the
+    # undo is complete — the tape never shows a clean subset between removals.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_retain = _crash_after_receipt(monkeypatch)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(emitter, "_retain", real_retain)
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    guard, finals = journal["guard"], {item["name"] for item in journal["files"]}
+    victim = root / "events" / journal["files"][0]["name"]
+    victim.write_bytes(victim.read_bytes() + b" " * emitter.MAX_EVENT_BYTES)
+    assert _tape(root)["guard"] == [] and len(_tape(root)["final"]) == 4  # the completed round left no guard: only the journal survived
+    seen: list[tuple[str, bool, int]] = []
+    real_preserve, real_unlink = emitter._preserve_evidence, emitter._unlink_at
+
+    def observing_preserve(rounds_dir, round_id, events_fd, corrupt):
+        seen.append(("before_evidence", emitter._exists_at(events_fd, guard), len(_tape(root)["final"])))
+        real_preserve(rounds_dir, round_id, events_fd, corrupt)
+        seen.append(("after_evidence", emitter._exists_at(events_fd, guard), len(_tape(root)["final"])))
+        raise OSError("simulated crash right after the evidence was moved")
+
+    monkeypatch.setattr(emitter, "_preserve_evidence", observing_preserve)
+    with pytest.raises(OSError):
+        emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    monkeypatch.setattr(emitter, "_preserve_evidence", real_preserve)
+    assert seen == [("before_evidence", True, 4), ("after_evidence", True, 3)]  # armed BEFORE the move; 3 finals only ever behind the guard
+    assert _tape(root)["guard"] == [guard] and len(_tape(root)["final"]) == 3 and emitter.pending_rounds(root) != []  # protected under interruption
+    evidence = root / "rounds" / emitter.RECOVERY_DIR / journal["round_id"] / f"final-{journal['files'][0]['name']}"
+    assert evidence.is_file()
+
+    def observing_unlink(dir_fd, name):
+        if name in finals:
+            seen.append(("unlink", emitter._exists_at(dir_fd, guard), len(_tape(root)["final"])))
+        real_unlink(dir_fd, name)
+
+    monkeypatch.setattr(emitter, "_unlink_at", observing_unlink)
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=3))  # resumed at the boundary
+    monkeypatch.setattr(emitter, "_unlink_at", real_unlink)
+    unlinks = [entry for entry in seen if entry[0] == "unlink"]
+    assert len(unlinks) == 4 and all(armed for _, armed, _ in unlinks)  # every removal happened behind the guard
+    assert outcomes[0]["commit"] == "rolled_back" and _tape(root) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root) == []
+    attempt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    corrupt = attempt["recovery"]["corrupt"]
+    assert corrupt[0]["observed"] == "preserved as evidence by an interrupted recovery" and corrupt[0]["evidence"] == str(evidence) and evidence.is_file()
+    assert emitter.recover_rounds(root, now=NOW + timedelta(minutes=4)) == []
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_IDENTITY_CLOSED"):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    assert emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=5))["new_files"] == 4
+

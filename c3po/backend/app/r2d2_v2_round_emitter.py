@@ -548,12 +548,28 @@ def _preserve_evidence(rounds_dir: Path, round_id: str, events_fd: int, corrupt:
     evidence_fd = _open_private_dir(evidence_dir)
     try:
         for item in corrupt:
+            if item.get("evidence"):
+                continue  # already moved by an interrupted recovery (A-R5): never moved twice, never lost
             target = f"{item['kind']}-{item['entry'].lstrip('.')}"
             os.rename(item["entry"], target, src_dir_fd=events_fd, dst_dir_fd=evidence_fd)
             item["evidence"] = str(evidence_dir / target)
         _fsync_fd(evidence_fd)
     finally:
         os.close(evidence_fd)
+
+
+def _arm_guard(events_fd: int, journal: Mapping[str, Any], round_id: str, *, now: datetime) -> str:
+    """Make sure the round's GUARD is on the tape BEFORE recovery moves or removes any final (A-R5): a journal alone does
+    not stop the reader, and a round that had already completed (its guard long gone) must never be undone in the open —
+    the reader would see a clean subset between removals. The guard stays under interruption; the caller removes it only
+    when the undo is complete. Returns the guard name."""
+    guard = str(journal.get("guard") or _guard_name(round_id))
+    if not _exists_at(events_fd, guard):
+        _write_at(events_fd, guard, canonical({"schema": GUARD_SCHEMA, "round_id": round_id, "round_session": journal["receipt"]["round_session"],
+                                                "files": [item["name"] for item in journal["files"]], "started_at": journal.get("started_at"),
+                                                "rearmed_at": _iso(now)}))
+        _fsync_fd(events_fd)
+    return guard
 
 
 def _retain(rounds_dir: Path, receipt: Mapping[str, Any], *, commit: str, files: Sequence[Mapping[str, Any]], quarantined: Sequence[Mapping[str, Any]],
@@ -719,6 +735,8 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
     * a final that cannot be VERIFIED at recovery (oversized, changed during the read, not a regular file, I/O error) is an
       inconsistency, never an exception left undisposed: the attempt is undone behind the guard, the unverifiable bytes are
       moved to the evidence directory and the identity is closed by its attempt receipt (A-R4);
+    * the GUARD is re-armed before recovery moves or removes any final of a round that had already completed, kept under
+      interruption and removed only when the undo is complete: the reader never sees a clean subset (A-R5);
     * quarantine records planned by the journal are checked on disk and listed in the receipt (never reset to zero).
     The guard is removed only at the end, so the reader never sees a partial round. Each outcome leaves a receipt."""
     outcomes: list[dict[str, Any]] = []
@@ -743,7 +761,13 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
                 # with a disposition (A-R4), never an exception that leaves the journal (and the tape) behind
                 for item in journal["files"]:
                     if not _exists_at(events_fd, item["name"]):
-                        absent.append(item["name"])
+                        evidence = rounds_dir / RECOVERY_DIR / round_id / f"final-{item['name']}"
+                        if evidence.is_symlink() or evidence.exists():
+                            # moved out by a recovery that was interrupted right after preserving it (A-R5): reported, not moved twice
+                            corrupt.append({"kind": "final", "entry": item["name"], "name": item["name"], "expected_sha256": item["sha256"],
+                                            "observed": "preserved as evidence by an interrupted recovery", "evidence": str(evidence)})
+                        else:
+                            absent.append(item["name"])
                         continue
                     observed = _observed_sha256(events_fd, item["name"])
                     if observed != item["sha256"]:
@@ -760,12 +784,14 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
                 # a receipt exists but does not prove a complete commit with verified finals (A-R3, A-R4): this attempt is undone
                 # behind the guard — never a silent subset — unverifiable bytes are preserved as evidence, and the outcome goes
                 # to its own attempt receipt; the original receipt is never rewritten
+                guard = _arm_guard(events_fd, journal, round_id, now=now)  # A-R5: the reader is stopped BEFORE any final moves
                 if corrupt:
                     _preserve_evidence(rounds_dir, round_id, events_fd, corrupt)
                 for item in journal["files"]:
                     _unlink_at(events_fd, item["name"])
                     _unlink_at(events_fd, item["temp"])
-                _unlink_at(events_fd, str(journal.get("guard") or _guard_name(round_id)))
+                _fsync_fd(events_fd)
+                _unlink_at(events_fd, guard)  # only once the undo is complete
                 _fsync_fd(events_fd)
                 missing = absent
                 commit = "rolled_back"
@@ -788,6 +814,7 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
                         linkable.append(item)
                 if corrupt or missing:
                     # controlled, audited rollback: corrupt bytes are preserved as evidence, never accepted into the tape
+                    _arm_guard(events_fd, journal, round_id, now=now)  # A-R5: never undone in the open
                     if corrupt:
                         _preserve_evidence(rounds_dir, round_id, events_fd, corrupt)
                     for item in journal["files"]:
@@ -796,6 +823,8 @@ def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
                     note = "; ".join(filter(None, ["staged bytes missing for: " + ", ".join(missing) if missing else "",
                                                    "corrupt bytes preserved as evidence for: " + ", ".join(sorted({c["name"] for c in corrupt})) if corrupt else ""]))
                 else:
+                    if linkable:
+                        _arm_guard(events_fd, journal, round_id, now=now)
                     for item in linkable:
                         os.link(item["temp"], item["name"], src_dir_fd=events_fd, dst_dir_fd=events_fd)
                     commit = "recovered"
