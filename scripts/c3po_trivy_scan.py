@@ -35,16 +35,48 @@ def report_sha256(report: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_bytes(payload)).hexdigest()
 
 
+def finding_order(finding: dict[str, str]) -> tuple[str, ...]:
+    """Canonical order over every identity field of a finding.
+
+    The lists below are hashed downstream (report self-hash, remediation key), so
+    the order must not depend on the scanner's output order and must keep two
+    occurrences apart when they differ only in installed or fixed version.
+    Multiplicity is preserved: this sorts, it never deduplicates.
+    """
+    return (
+        finding["severity"],
+        finding["vulnerability_id"],
+        finding["package"],
+        finding.get("installed_version", ""),
+        finding.get("fixed_version", ""),
+        finding["target"],
+    )
+
+
 def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any]) -> dict[str, Any]:
     counts = {severity: 0 for severity in SEVERITIES}
     fix_available = {severity: 0 for severity in SEVERITIES}
     fixable_high_critical: list[dict[str, str]] = []
     unfixed_high_critical: list[dict[str, str]] = []
+    occurrences: list[dict[str, str]] = []
     unknown = 0
+    unknown_fix_available = 0
     for result in payload.get("Results") or []:
         for vulnerability in result.get("Vulnerabilities") or []:
             severity = str(vulnerability.get("Severity") or "unknown").lower()
             fixed_version = str(vulnerability.get("FixedVersion") or "").strip()
+            # Every occurrence, whatever its severity, is listed: a finding the
+            # scanner cannot rate (no public record yet) is still a fact to act on.
+            occurrences.append({
+                "vulnerability_id": str(vulnerability.get("VulnerabilityID") or "unknown"),
+                "severity": severity if severity in counts else "unknown",
+                "package": str(vulnerability.get("PkgName") or "unknown"),
+                "installed_version": str(vulnerability.get("InstalledVersion") or "unknown"),
+                "fixed_version": fixed_version,
+                "target": str(result.get("Target") or "unknown"),
+            })
+            if severity not in counts and fixed_version:
+                unknown_fix_available += 1
             if severity in counts:
                 counts[severity] += 1
                 if fixed_version:
@@ -81,25 +113,11 @@ def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any])
         "repo_digests": sorted(str(item) for item in metadata.get("RepoDigests") or []),
         "by_severity": counts,
         "fix_available": fix_available,
-        "fixable_high_critical": sorted(
-            fixable_high_critical,
-            key=lambda finding: (
-                finding["severity"],
-                finding["vulnerability_id"],
-                finding["package"],
-                finding["target"],
-            ),
-        ),
-        "unfixed_high_critical": sorted(
-            unfixed_high_critical,
-            key=lambda finding: (
-                finding["severity"],
-                finding["vulnerability_id"],
-                finding["package"],
-                finding["target"],
-            ),
-        ),
+        "fixable_high_critical": sorted(fixable_high_critical, key=finding_order),
+        "unfixed_high_critical": sorted(unfixed_high_critical, key=finding_order),
         "unknown": unknown,
+        "unknown_fix_available": unknown_fix_available,
+        "occurrences": sorted(occurrences, key=finding_order),
         "finding_total": sum(counts.values()) + unknown,
     }
 

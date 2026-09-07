@@ -18,8 +18,11 @@ RUN pnpm build
 
 FROM nginx:1.31.4-alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
 ARG C3PO_SECURITY_REBUILD=bootstrap
+# Full stable-channel upgrade (Alpine has no proposed-updates channel) and no curl:
+# nothing in the web image calls curl/libcurl (the deploy health probes run on the host).
 RUN test -n "$C3PO_SECURITY_REBUILD" \
-    && apk upgrade --no-cache libcrypto3 libssl3 libexpat libuuid
+    && apk upgrade --no-cache \
+    && apk del --no-cache curl
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/out /usr/share/nginx/html
 EXPOSE 80
