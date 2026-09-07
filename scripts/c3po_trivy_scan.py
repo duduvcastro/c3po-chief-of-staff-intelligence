@@ -40,11 +40,25 @@ def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any])
     fix_available = {severity: 0 for severity in SEVERITIES}
     fixable_high_critical: list[dict[str, str]] = []
     unfixed_high_critical: list[dict[str, str]] = []
+    occurrences: list[dict[str, str]] = []
     unknown = 0
+    unknown_fix_available = 0
     for result in payload.get("Results") or []:
         for vulnerability in result.get("Vulnerabilities") or []:
             severity = str(vulnerability.get("Severity") or "unknown").lower()
             fixed_version = str(vulnerability.get("FixedVersion") or "").strip()
+            # Every occurrence, whatever its severity, is listed: a finding the
+            # scanner cannot rate (no public record yet) is still a fact to act on.
+            occurrences.append({
+                "vulnerability_id": str(vulnerability.get("VulnerabilityID") or "unknown"),
+                "severity": severity if severity in counts else "unknown",
+                "package": str(vulnerability.get("PkgName") or "unknown"),
+                "installed_version": str(vulnerability.get("InstalledVersion") or "unknown"),
+                "fixed_version": fixed_version,
+                "target": str(result.get("Target") or "unknown"),
+            })
+            if severity not in counts and fixed_version:
+                unknown_fix_available += 1
             if severity in counts:
                 counts[severity] += 1
                 if fixed_version:
@@ -100,6 +114,16 @@ def normalize_trivy_payload(label: str, reference: str, payload: dict[str, Any])
             ),
         ),
         "unknown": unknown,
+        "unknown_fix_available": unknown_fix_available,
+        "occurrences": sorted(
+            occurrences,
+            key=lambda finding: (
+                finding["severity"],
+                finding["vulnerability_id"],
+                finding["package"],
+                finding["target"],
+            ),
+        ),
         "finding_total": sum(counts.values()) + unknown,
     }
 
