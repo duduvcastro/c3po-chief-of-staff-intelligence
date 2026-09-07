@@ -60,6 +60,12 @@ class SystemHealthService:
         # so freshness and payload always come from the same version of the cache.
         self._cache: tuple[datetime, SystemHealthResponse] | None = None
         self._refresh_lock = Lock()
+        # Generation of the cache: every invalidation bumps it. A refresh publishes its
+        # result only if the generation it started under is still current, so a refresh
+        # that captured the world BEFORE an attestation can never put that stale snapshot
+        # back after the attestation invalidated the cache (C390-3).
+        self._state_lock = Lock()
+        self._generation = 0
 
     def invalidate(self) -> None:
         """Drop the cached snapshot so the next read recomputes it.
@@ -69,9 +75,13 @@ class SystemHealthService:
         attestation must not keep reading the previous one for the remainder of
         the cache window. The cache entry is replaced atomically (see `_cache`),
         so a concurrent reader either sees the old consistent entry or none —
-        never a half-cleared one.
+        never a half-cleared one. The generation bump makes a refresh that is
+        still in flight (it read the previous attestation) discard its result
+        instead of re-publishing it as fresh (C390-3).
         """
-        self._cache = None
+        with self._state_lock:
+            self._generation += 1
+            self._cache = None
 
     def _cached(self) -> tuple[datetime, SystemHealthResponse] | None:
         """One consistent read of the cache entry: freshness and payload come from
@@ -103,8 +113,14 @@ class SystemHealthService:
             entry = self._cached()
             if not force and self._entry_is_fresh(entry, now):
                 return entry[1]  # type: ignore[index]
+            with self._state_lock:
+                generation = self._generation
             response = self._refresh_snapshot(now)
-            self._cache = (now, response)
+            with self._state_lock:
+                if self._generation == generation:
+                    self._cache = (now, response)
+                # else: an attestation invalidated the cache while the probes ran; this
+                # snapshot predates it and is returned to its caller but never cached.
             return response
         finally:
             self._refresh_lock.release()

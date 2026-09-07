@@ -130,6 +130,41 @@ def test_a_reader_interleaved_with_invalidate_never_gets_none() -> None:
     assert failures == []
 
 
+def test_a_refresh_in_flight_cannot_republish_a_snapshot_that_predates_an_invalidation() -> None:
+    # C390-3 (Codex 5574978039): a refresh captures revision 1 -> the attestation persists revision 2 and invalidates
+    # -> the old refresh finishes. It must NOT put revision 1 back as fresh: the next GET recomputes and sees revision 2.
+    import threading
+
+    settings = SimpleNamespace(system_health_probe_timeout_seconds=1)
+    service = SystemHealthService(settings, None, None, None, None, None, cache_seconds=60)
+    revision = {"value": 1}
+    started, release = threading.Event(), threading.Event()
+
+    def _refresh(now: datetime):
+        current = revision["value"]  # the world as the probes saw it
+        started.set()
+        release.wait(5)
+        return SimpleNamespace(generated_at=now, revision=current)
+
+    service._refresh_snapshot = _refresh  # type: ignore[method-assign]
+    results: list[SimpleNamespace] = []
+    reader = threading.Thread(target=lambda: results.append(service.snapshot()))
+    reader.start()
+    assert started.wait(5)
+    revision["value"] = 2  # the supervised attestation persisted revision 2 ...
+    service.invalidate()  # ... and the route invalidated the cache while the old refresh is still running
+    release.set()
+    reader.join(5)
+    assert results[0].revision == 1  # the caller of the old refresh gets what it computed ...
+    assert service._cache is None  # ... but the stale snapshot is never cached
+    assert service.snapshot().revision == 2  # the next GET recomputes
+    # control: with no invalidation in between, a refresh is cached normally
+    assert service._cache is not None and service._cache[1].revision == 2
+    started.clear()
+    release.set()
+    assert service.snapshot(force=True).revision == 2 and service._cache is not None
+
+
 def test_attestation_route_invalidates_even_when_the_run_raises_after_persisting(monkeypatch: pytest.MonkeyPatch) -> None:
     # C390-2: run_supervised persists the revision before it may still raise (e.g. an unverifiable lane query);
     # the cache must be invalidated on that path too, and the original error must propagate.
