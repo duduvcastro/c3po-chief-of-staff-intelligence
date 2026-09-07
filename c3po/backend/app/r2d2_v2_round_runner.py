@@ -32,18 +32,21 @@ OFF by default (``C3PO_R2D2_V2_PRODUCERS_ENABLED``); the provider token never le
 from __future__ import annotations
 
 import argparse
+import fcntl
 import importlib
 import json
 import os
 import re
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 from .r2d2_v2_producer_daily import EodhdFetcher, Fetcher, ProducerError, canonical, write_private
 from .r2d2_v2_producer_earnings import produce_earnings
-from .r2d2_v2_round_emitter import (NEW_YORK, QUARANTINE_SCHEMA, ROUND_TARGET, Episode, RoundEmitterError, _calendar, _fsync_dir, _iso,
-                                    _private_dir, _require, emit_round, episode_from, official_close, read_episodes, sha256_hex)
+from .r2d2_v2_round_emitter import (JOURNAL_SUFFIX, NEW_YORK, QUARANTINE_SCHEMA, ROUND_TARGET, Episode, RoundEmitterError, _calendar, _exists_at,
+                                    _fsync_fd, _iso, _open_tree, _private_dir, _read_at, _require, _write_at, emit_round, episode_from,
+                                    official_close, read_episodes, recover_rounds, sha256_hex)
 
 INVENTORY_SCHEMA = "V2_EARNINGS_ROUND_INVENTORY_V1"
 RUN_SCHEMA = "V2_EARNINGS_ROUND_RUN_V1"
@@ -130,106 +133,171 @@ def round_open(session: date, now: datetime) -> None:
 
 
 def previous_rounds(root: Path, session: date) -> list[str]:
-    """Retained round receipts already emitted for the session (run receipts excluded)."""
+    """Retained round receipts already emitted for the session (run receipts and journals of crashed rounds excluded)."""
     rounds_dir = root / "rounds"
     if not rounds_dir.is_dir():
         return []
     prefix = session.isoformat() + "."
     return sorted(name for name in os.listdir(rounds_dir)
-                  if name.startswith(prefix) and name.endswith(".json") and not name.endswith(".run.json"))
+                  if name.startswith(prefix) and name.endswith(".json") and not name.endswith(".run.json") and not name.endswith(JOURNAL_SUFFIX))
+
+
+@contextmanager
+def exclusive_round(root: Path) -> Iterator[None]:
+    """One round process at a time per source root (F385-8-B): recovery, the repeat guard, the provider round and the
+    commit all happen under an exclusive advisory lock (``rounds/.lock``, flock); a second process is refused with
+    ``ROUND_LOCKED`` before any provider call. The lock lives in the open file description, so it also excludes
+    threads of the same process that open the file separately."""
+    _private_dir(root)
+    _private_dir(root / "rounds")
+    fd = os.open(root / "rounds" / ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            raise RoundEmitterError("ROUND_LOCKED") from error
+        yield
+    finally:
+        os.close(fd)
 
 
 def run_round(fetch: Fetcher, episodes: Sequence[Episode], root: Path, *, session: date | None = None, clock: Clock | None = None,
               repeat: bool = False, inventory_source: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """Guards -> one producer round for the live names only -> the emitter -> a run receipt binding inventory, document and round."""
+    """Lock -> recovery of crashed rounds -> guards -> one producer round for the live names only -> the emitter ->
+    a run receipt binding inventory, document and round."""
     tick = clock or _utc
     started = tick().astimezone(timezone.utc)
-    day = target_session(started, session)
-    round_open(day, started)
-    earlier = previous_rounds(root, day)
-    _require(repeat or not earlier, "ROUND_ALREADY_EMITTED_FOR_SESSION")
-    symbols = sorted({episode.symbol for episode in episodes})
-    window = lookback(episodes)
-    document_dir = root / "documents" / day.isoformat() / ("round-" + started.strftime("%Y%m%dT%H%M%S%fZ"))
-    for directory in (root, root / "documents", root / "documents" / day.isoformat(), document_dir):
-        _private_dir(directory)
-    produced = produce_earnings(fetch, (), session_date=day, output_dir=document_dir, now=started, live_symbols=symbols, live_lookback=window)
-    document_path = Path(produced["output"])
-    data = document_path.read_bytes()
-    _require(sha256_hex(data) == produced["sha256"], "DOCUMENT_HASH_MISMATCH")
-    document = json.loads(data)
-    published = tick().astimezone(timezone.utc)
-    summary = emit_round(document, episodes, root, now=published)
-    inventory = inventory_document(episodes, inventory_source or {"kind": "explicit"})
-    run = {"schema": RUN_SCHEMA, "schedule": SCHEDULE, "round_session": day.isoformat(), "round_id": summary["round_id"],
-           "started_at": _iso(started), "published_at": _iso(published), "repeat": bool(earlier), "previous_rounds": earlier,
-           "live_symbols": symbols, "live_lookback": [window[0].isoformat(), window[1].isoformat()] if window else None,
-           "document": {"path": str(document_path), "sha256": produced["sha256"], "counts": produced["counts"]},
-           "inventory": inventory, "inventory_sha256": sha256_hex(canonical(inventory)),
-           "receipt": summary["receipt"], "published": summary["published"], "quarantined": summary["quarantined"]}
-    run_path = root / "rounds" / (day.isoformat() + "." + summary["round_id"] + ".run.json")
-    write_private(run_path, canonical(run))
+    with exclusive_round(root):
+        recovered = recover_rounds(root, now=started)
+        day = target_session(started, session)
+        round_open(day, started)
+        earlier = previous_rounds(root, day)
+        _require(repeat or not earlier, "ROUND_ALREADY_EMITTED_FOR_SESSION")
+        symbols = sorted({episode.symbol for episode in episodes})
+        window = lookback(episodes)
+        document_dir = root / "documents" / day.isoformat() / ("round-" + started.strftime("%Y%m%dT%H%M%S%fZ"))
+        for directory in (root / "documents", root / "documents" / day.isoformat(), document_dir):
+            _private_dir(directory)
+        produced = produce_earnings(fetch, (), session_date=day, output_dir=document_dir, now=started, live_symbols=symbols, live_lookback=window)
+        document_path = Path(produced["output"])
+        data = document_path.read_bytes()
+        _require(sha256_hex(data) == produced["sha256"], "DOCUMENT_HASH_MISMATCH")
+        document = json.loads(data)
+        published = tick().astimezone(timezone.utc)
+        summary = emit_round(document, episodes, root, now=published)
+        inventory = inventory_document(episodes, inventory_source or {"kind": "explicit"})
+        run = {"schema": RUN_SCHEMA, "schedule": SCHEDULE, "round_session": day.isoformat(), "round_id": summary["round_id"],
+               "started_at": _iso(started), "published_at": _iso(published), "repeat": bool(earlier), "previous_rounds": earlier,
+               "recovered_before": recovered, "live_symbols": symbols,
+               "live_lookback": [window[0].isoformat(), window[1].isoformat()] if window else None,
+               "document": {"path": str(document_path), "sha256": produced["sha256"], "counts": produced["counts"]},
+               "inventory": inventory, "inventory_sha256": sha256_hex(canonical(inventory)),
+               "receipt": summary["receipt"], "commit": summary["commit"], "published": summary["published"], "new_files": summary["new_files"],
+               "quarantined": summary["quarantined"]}
+        run_path = root / "rounds" / (day.isoformat() + "." + summary["round_id"] + ".run.json")
+        write_private(run_path, canonical(run))
     return {**summary, "run": str(run_path), "document": str(document_path), "document_sha256": produced["sha256"],
-            "live_symbols": len(symbols), "started_at": _iso(started), "published_at": _iso(published), "repeat": bool(earlier)}
+            "live_symbols": len(symbols), "started_at": _iso(started), "published_at": _iso(published), "repeat": bool(earlier),
+            "recovered_before": recovered}
 
 
 # ------------------------------------------------------------------ quarantine procedure
 
+def _open_session_dir(base_fd: int, session: str) -> int:
+    """The session directory opened relative to the quarantine descriptor, never through a symlink (F385-8-D)."""
+    return os.open(session, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=base_fd)
+
+
 def quarantine_inventory(root: Path) -> list[dict[str, Any]]:
-    """Read-only audit of everything the emitter refused: one line per file, with the code and the bytes' hash."""
-    base = root / "quarantine"
+    """Read-only audit of everything the emitter refused: one line per file, with the code and the bytes' hash.
+    Directories and files are reached only through descriptors opened with O_NOFOLLOW (ancestors included): a symlink
+    anywhere is reported as refused, never followed."""
     items: list[dict[str, Any]] = []
-    if not base.is_dir():
+    if not (root / "quarantine").is_dir():
         return items
-    for session in sorted(os.listdir(base)):
-        folder = base / session
-        if session.startswith(".") or not folder.is_dir():
-            continue
-        for name in sorted(os.listdir(folder)):
-            path = folder / name
-            if name.startswith(".") or not path.is_file():
-                continue
-            data = path.read_bytes()
-            item: dict[str, Any] = {"session": session, "file": name, "sha256": sha256_hex(data)}
-            if name.endswith(".purge.json"):
-                items.append({**item, "kind": "PURGE_RECEIPT"})
+    try:
+        base_fd = _open_tree(root / "quarantine")
+    except OSError as error:
+        return [{"session": None, "kind": "QUARANTINE_DIRECTORY_REFUSED", "error": type(error).__name__}]
+    try:
+        for session in sorted(os.listdir(base_fd)):
+            if session.startswith("."):
                 continue
             try:
-                body = json.loads(data)
-            except ValueError:
-                body = None
-            if not isinstance(body, dict) or body.get("schema") != QUARANTINE_SCHEMA or not isinstance(body.get("envelope"), dict):
-                items.append({**item, "kind": "UNREADABLE"})
+                fd = _open_session_dir(base_fd, session)
+            except OSError as error:
+                items.append({"session": session, "kind": "SESSION_DIRECTORY_REFUSED", "error": type(error).__name__})
                 continue
-            envelope = body["envelope"]
-            event = envelope.get("event") if isinstance(envelope.get("event"), dict) else {}
-            items.append({**item, "kind": "QUARANTINED", "code": body.get("code"), "round_id": body.get("round_id"),
-                          "quarantined_at": body.get("quarantined_at"), "event_id": envelope.get("event_id"),
-                          "instrument_key": event.get("instrument_key"), "type": event.get("type")})
+            try:
+                for name in sorted(os.listdir(fd)):
+                    if name.startswith("."):
+                        continue
+                    try:
+                        data = _read_at(fd, name)
+                    except (OSError, RoundEmitterError) as error:
+                        items.append({"session": session, "file": name, "kind": "FILE_REFUSED", "error": type(error).__name__})
+                        continue
+                    item: dict[str, Any] = {"session": session, "file": name, "sha256": sha256_hex(data)}
+                    if name.endswith(".purge.json"):
+                        items.append({**item, "kind": "PURGE_RECEIPT"})
+                        continue
+                    try:
+                        body = json.loads(data)
+                    except ValueError:
+                        body = None
+                    if not isinstance(body, dict) or body.get("schema") != QUARANTINE_SCHEMA or not isinstance(body.get("envelope"), dict):
+                        items.append({**item, "kind": "UNREADABLE"})
+                        continue
+                    envelope = body["envelope"]
+                    event = envelope.get("event") if isinstance(envelope.get("event"), dict) else {}
+                    items.append({**item, "kind": "QUARANTINED", "code": body.get("code"), "round_id": body.get("round_id"),
+                                  "quarantined_at": body.get("quarantined_at"), "event_id": envelope.get("event_id"),
+                                  "instrument_key": event.get("instrument_key"), "type": event.get("type")})
+            finally:
+                os.close(fd)
+    finally:
+        os.close(base_fd)
     return items
 
 
 def purge_quarantined(root: Path, session: str, name: str, *, signed_by: str, reason: str, now: datetime) -> dict[str, Any]:
-    """Remove ONE quarantined file, only from ``quarantine/<session>/``, only after a signed purge receipt is durable next to it."""
+    """Remove ONE quarantined file, only from ``quarantine/<session>/``, only after a signed purge receipt is durable
+    next to it. Every step (read, receipt, unlink, fsync) is anchored in a descriptor of the session directory reached
+    without following symlinks, so a symlinked session directory or file cannot make the purge act outside (F385-8-D)."""
     _require(bool(signed_by.strip()) and bool(reason.strip()), "PURGE_REQUIRES_SIGNER_AND_REASON")
     _require(_SESSION_NAME.fullmatch(session) is not None and "/" not in name and not name.startswith(".") and name.endswith(".json")
              and not name.endswith(".purge.json"), "PURGE_TARGET_INVALID")
-    folder = root / "quarantine" / session
-    path = folder / name
-    _require(folder.is_dir() and path.is_file() and not path.is_symlink() and path.resolve().parent == folder.resolve(), "PURGE_TARGET_NOT_IN_QUARANTINE")
-    data = path.read_bytes()
     try:
-        body = json.loads(data)
-    except ValueError:
-        body = None
-    record = body if isinstance(body, dict) else {}
-    receipt = {"schema": PURGE_SCHEMA, "session": session, "file": name, "sha256": sha256_hex(data), "code": record.get("code"),
-               "round_id": record.get("round_id"), "signed_by": signed_by.strip(), "reason": reason.strip(), "purged_at": _iso(now)}
-    receipt_path = folder / (name[:-len(".json")] + ".purge.json")
-    _require(not receipt_path.exists(), "PURGE_RECEIPT_EXISTS")
-    write_private(receipt_path, canonical(receipt))  # durable before the removal: a crash in between leaves both, never neither
-    os.unlink(path)
-    _fsync_dir(folder)
+        base_fd = _open_tree(root / "quarantine")
+    except OSError as error:
+        raise RoundEmitterError("PURGE_TARGET_NOT_IN_QUARANTINE") from error
+    try:
+        try:
+            fd = _open_session_dir(base_fd, session)
+        except OSError as error:
+            raise RoundEmitterError("PURGE_TARGET_NOT_IN_QUARANTINE") from error
+    finally:
+        os.close(base_fd)
+    try:
+        try:
+            data = _read_at(fd, name)
+        except (OSError, RoundEmitterError) as error:
+            raise RoundEmitterError("PURGE_TARGET_NOT_IN_QUARANTINE") from error
+        try:
+            body = json.loads(data)
+        except ValueError:
+            body = None
+        record = body if isinstance(body, dict) else {}
+        receipt = {"schema": PURGE_SCHEMA, "session": session, "file": name, "sha256": sha256_hex(data), "code": record.get("code"),
+                   "round_id": record.get("round_id"), "signed_by": signed_by.strip(), "reason": reason.strip(), "purged_at": _iso(now)}
+        receipt_name = name[:-len(".json")] + ".purge.json"
+        _require(not _exists_at(fd, receipt_name), "PURGE_RECEIPT_EXISTS")
+        _write_at(fd, receipt_name, canonical(receipt))  # durable before the removal: a crash in between leaves both, never neither
+        _fsync_fd(fd)
+        os.unlink(name, dir_fd=fd)
+        _fsync_fd(fd)
+    finally:
+        os.close(fd)
     return receipt
 
 
@@ -264,6 +332,7 @@ def main(argv: list[str] | None = None) -> int:
     inventory.add_argument("--epoch", help="read the live episodes from the collector's persisted state of this epoch")
     parser.add_argument("--repeat", action="store_true", help="allow a second round for the same session (retry after a partial failure)")
     parser.add_argument("--audit-quarantine", action="store_true", help="list the quarantine (read-only, no provider, allowed while OFF)")
+    parser.add_argument("--recover", action="store_true", help="complete or roll back rounds that crashed between guard and receipt (no provider)")
     parser.add_argument("--purge-quarantine", nargs=2, metavar=("SESSION", "FILE"), help="remove ONE quarantined file after a signed purge receipt")
     parser.add_argument("--signed-by", help="who signs the purge")
     parser.add_argument("--reason", help="why the quarantined file is removed")
@@ -278,6 +347,11 @@ def main(argv: list[str] | None = None) -> int:
     settings = _settings()
     root = Path(args.root) if args.root else Path(settings.r2d2_v2_shadow_source_dir)
     try:
+        if args.recover:
+            with exclusive_round(root):
+                outcomes = recover_rounds(root, now=_utc())
+            print(json.dumps({"status": "RECOVERED", "rounds": outcomes}, sort_keys=True))
+            return 0
         if args.purge_quarantine:
             session, name = args.purge_quarantine
             receipt = purge_quarantined(root, session, name, signed_by=args.signed_by or "", reason=args.reason or "", now=_utc())

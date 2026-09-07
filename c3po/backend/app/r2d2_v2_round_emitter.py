@@ -20,9 +20,14 @@ plus the inventory of LIVE episodes into ``V2_SHADOW_SOURCE_EVENT_V2`` envelopes
   ``event_at`` present only for INSTANT granularity (never produced by this provider today);
 * ``at`` = the provider response's local reception (first local detection), never earlier than
   ``round_received_at``; ``available_at`` = the publication instant;
-* **hidden staging + atomic link/rename**, one file per event named ``<event_id>.<self_sha256>.json`` in ``events/``
-  (the reader skips names starting with ``.``), all-or-nothing per round, ``MAX_EVENT_FILES`` respected before any
-  write; every envelope is validated BEFORE publication and an invalid one goes to an audited ``quarantine/``
+* **round commit the reader respects** (F385-8-A): a journal with the staged bytes is retained first, a visible GUARD
+  file the reader refuses is created before the first link and removed after the last, so the collector never
+  consumes a half-published round (it sees no events and a diagnostic instead); ``recover_rounds`` completes or
+  rolls back a crashed round from the journal; one file per event named ``<event_id>.<self_sha256>.json``;
+* **capacity counted as the reader counts** (F385-8-C): every directory entry (staging and guard included), with
+  room reserved for the temps and the finals of the round, checked before any write; a name already present with
+  identical bytes is not a new file (re-emission costs zero capacity); the receipt records the effective count;
+* every envelope is validated BEFORE publication and an invalid one goes to an audited ``quarantine/``
   directory, never to the tape (a single invalid file would make the collector discard the whole tape);
 * everything private (directories 0700, files 0600); no provider access here (step 2 wires ``produce_earnings``,
   the live-episode inventory and the schedule).
@@ -348,7 +353,23 @@ def validate_envelope(envelope: Mapping[str, Any], *, now: datetime) -> None:
     _require(event.get("revision_sha256") == revision_sha256(event), "REVISION_SHA_MISMATCH")
 
 
-# ------------------------------------------------------------------ atomic, private publication
+# ------------------------------------------------------------------ descriptor-anchored directories (no symlink traversal)
+
+def _open_tree(path: Path) -> int:
+    """Walk anchored descriptors from ``/``: every component is opened with O_NOFOLLOW, so a symlink anywhere in the
+    path (ancestors included) is refused instead of followed — the same discipline as the collector's reader."""
+    resolved = Path(os.path.abspath(path))
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in resolved.parts[1:]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
 
 def _private_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -357,14 +378,19 @@ def _private_dir(path: Path) -> None:
     _require(stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) & 0o077 == 0, "DIRECTORY_NOT_PRIVATE")
 
 
-def _stage(directory: Path, data: bytes) -> Path:
-    temp = directory / (".stage-" + uuid4().hex + ".tmp")  # hidden: the collector never reads it
-    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
-    return temp
+def _open_private_dir(path: Path) -> int:
+    fd = _open_tree(path)
+    try:
+        info = os.fstat(fd)
+        _require(stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) & 0o077 == 0, "DIRECTORY_NOT_PRIVATE")
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _fsync_fd(fd: int) -> None:
+    os.fsync(fd)
 
 
 def _fsync_dir(directory: Path) -> None:
@@ -375,14 +401,100 @@ def _fsync_dir(directory: Path) -> None:
         os.close(fd)
 
 
+def _write_at(dir_fd: int, name: str, data: bytes) -> None:
+    """Create a private regular file under the descriptor (never over an existing one, never through a symlink)."""
+    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _read_at(dir_fd: int, name: str, limit: int = MAX_EVENT_BYTES * 4) -> bytes:
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+    with os.fdopen(fd, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        _require(stat.S_ISREG(info.st_mode), "NOT_A_REGULAR_FILE")
+        return handle.read(limit + 1)
+
+
+def _exists_at(dir_fd: int, name: str) -> bool:
+    try:
+        os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def _unlink_at(dir_fd: int, name: str) -> None:
+    try:
+        os.unlink(name, dir_fd=dir_fd)
+    except FileNotFoundError:
+        pass
+
+
+def _tape_entries(dir_fd: int) -> list[str]:
+    """Every directory entry, exactly what the collector counts against MAX_EVENT_FILES (staging and guards included)."""
+    return sorted(os.listdir(dir_fd))
+
+
+def _visible_events(entries: Sequence[str]) -> list[str]:
+    return [name for name in entries if not name.startswith(".") and name.endswith(".json") and not name.startswith(GUARD_PREFIX)]
+
+
+# ------------------------------------------------------------------ round commit: guard + journal, atomic publication, recovery
+
+GUARD_PREFIX = "ROUND-COMMIT-"
+GUARD_SCHEMA = "V2_EARNINGS_ROUND_COMMIT_GUARD_V1"
+JOURNAL_SCHEMA = "V2_EARNINGS_ROUND_JOURNAL_V1"
+JOURNAL_SUFFIX = ".journal.json"
+
+
+def _guard_name(round_id: str) -> str:
+    return f"{GUARD_PREFIX}{round_id[:16]}.json"
+
+
+def pending_rounds(root: Path) -> list[str]:
+    """Journals of rounds that did not reach their retained receipt (crash between guard and receipt)."""
+    rounds_dir = root / "rounds"
+    if not rounds_dir.is_dir():
+        return []
+    return sorted(name for name in os.listdir(rounds_dir) if name.endswith(JOURNAL_SUFFIX) and not name.startswith("."))
+
+
+def _retain(rounds_dir: Path, receipt: Mapping[str, Any], *, commit: str, files: Sequence[Mapping[str, Any]], quarantined: Sequence[Mapping[str, Any]],
+            events_after: int, now: datetime, note: str | None = None) -> Path:
+    retained = {**receipt, "commit": commit, "published": [dict(item) for item in files], "published_count": len(files),
+                "new_files": sum(1 for item in files if item.get("state") == "new"),
+                "quarantined": [dict(item) for item in quarantined], "quarantined_count": len(quarantined),
+                "events_in_tape_after": events_after, "retained_at": _iso(now)}
+    if note:
+        retained["note"] = note
+    path = rounds_dir / f"{receipt['round_session']}.{receipt['round_id']}.json"
+    write_private(path, canonical(retained))
+    return path
+
+
 def publish_round(root: Path, receipt: Mapping[str, Any], envelopes: Sequence[Mapping[str, Any]], *, now: datetime) -> dict[str, Any]:
-    """Validate every envelope, then publish the valid ones all-or-nothing into ``events/`` (staged hidden, linked
-    atomically under ``<event_id>.<self_sha256>.json``), quarantine the invalid ones, and retain the round receipt."""
+    """Validate every envelope, then commit the round to ``events/`` as a unit the collector cannot read half-way:
+
+    1. capacity is checked the way the reader counts (every directory entry, staging and guard included, with room for
+       the temps AND the finals of this round) before any write; names already present with identical bytes are not
+       new files, so re-emitting a round costs zero capacity;
+    2. a journal (round receipt core + planned files + staged temp names) is retained in ``rounds/`` first;
+    3. a GUARD file — a visible ``.json`` the reader refuses — is created BEFORE the first link, so while the round
+       is between links (or after a crash) the reader returns no events and a diagnostic, never a partial round;
+    4. the envelopes are staged hidden, linked one by one, the directory is fsynced, temps and the guard are removed;
+    5. the retained receipt is written and the journal removed. A crash anywhere leaves the guard + journal behind:
+       ``recover_rounds`` completes the round from the staged bytes or rolls it back, and only then removes the guard.
+    Invalid envelopes go to an audited quarantine and never to the tape."""
     events_dir, rounds_dir, quarantine_dir = root / "events", root / "rounds", root / "quarantine" / str(receipt["round_session"])
     for directory in (root, events_dir, rounds_dir):
         _private_dir(directory)
+    _require(not pending_rounds(root), "PENDING_ROUND_REQUIRES_RECOVERY")
     valid: list[tuple[str, bytes, str]] = []
     quarantined: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for envelope in envelopes:
         data = canonical(envelope)
         try:
@@ -390,45 +502,128 @@ def publish_round(root: Path, receipt: Mapping[str, Any], envelopes: Sequence[Ma
         except RoundEmitterError as error:
             quarantined.append({"event_id": envelope.get("event_id"), "sha256": sha256_hex(data), "code": str(error), "envelope": envelope})
             continue
-        valid.append((f"{envelope['event_id']}.{envelope['self_sha256']}.json", data, sha256_hex(data)))
-    existing = [name for name in os.listdir(events_dir) if not name.startswith(".") and name.endswith(".json")]
-    _require(len(existing) + len(valid) <= MAX_EVENT_FILES, "EVENT_FILE_LIMIT")  # refused before any write: the tape stays readable
-    staged: list[tuple[Path, str, bytes]] = []
+        name = f"{envelope['event_id']}.{envelope['self_sha256']}.json"
+        if name not in seen:  # the same envelope twice in one round is one file (its name carries its hash)
+            seen.add(name)
+            valid.append((name, data, sha256_hex(data)))
+    events_fd = _open_private_dir(events_dir)
     try:
-        for name, data, _ in valid:
-            staged.append((_stage(events_dir, data), name, data))
-        for temp, name, data in staged:
-            final = events_dir / name
+        entries = _tape_entries(events_fd)
+        _require(not any(name.startswith(GUARD_PREFIX) for name in entries), "PENDING_ROUND_REQUIRES_RECOVERY")
+        present = set(_visible_events(entries))
+        files: list[dict[str, Any]] = []
+        new: list[tuple[str, bytes, str]] = []
+        for name, data, digest in valid:
+            if name in present:
+                _require(_read_at(events_fd, name) == data, "EVENT_RECEIPT_COLLISION")  # same name ⇒ same bytes (hash in the name)
+                files.append({"file": name, "sha256": digest, "state": "already_present"})
+            else:
+                new.append((name, data, digest))
+                files.append({"file": name, "sha256": digest, "state": "new"})
+        # the reader counts every entry: existing + temps + finals + guard must never exceed the limit at any instant
+        _require(len(entries) + 2 * len(new) + (1 if new else 0) <= MAX_EVENT_FILES, "EVENT_FILE_LIMIT")
+        if new:
+            guard = _guard_name(receipt["round_id"])
+            planned = [{"name": name, "sha256": digest, "temp": ".stage-" + uuid4().hex + ".tmp"} for name, _, digest in new]
+            journal = {"schema": JOURNAL_SCHEMA, "round_id": receipt["round_id"], "round_session": receipt["round_session"], "guard": guard,
+                       "files": planned, "receipt": dict(receipt), "published": files, "quarantined_planned": len(quarantined), "started_at": _iso(now)}
+            journal_path = rounds_dir / f"{receipt['round_session']}.{receipt['round_id']}{JOURNAL_SUFFIX}"
+            write_private(journal_path, canonical(journal))
+            _write_at(events_fd, guard, canonical({"schema": GUARD_SCHEMA, "round_id": receipt["round_id"], "round_session": receipt["round_session"],
+                                                     "files": [item["name"] for item in planned], "started_at": _iso(now)}))
+            _fsync_fd(events_fd)
+            staged: list[str] = []
             try:
-                os.link(temp, final)
-            except FileExistsError:
-                _require(final.read_bytes() == data, "EVENT_RECEIPT_COLLISION")  # same name ⇒ same bytes (hash in the name)
-        _fsync_dir(events_dir)
+                for item, (_, data, _) in zip(planned, new):
+                    _write_at(events_fd, item["temp"], data)
+                    staged.append(item["temp"])
+                for item in planned:
+                    try:
+                        os.link(item["temp"], item["name"], src_dir_fd=events_fd, dst_dir_fd=events_fd)
+                    except FileExistsError:
+                        _require(sha256_hex(_read_at(events_fd, item["name"])) == item["sha256"], "EVENT_RECEIPT_COLLISION")
+                _fsync_fd(events_fd)
+            except BaseException:
+                # the guard stays: the reader keeps refusing the tape until recover_rounds completes or rolls back
+                raise
+            for temp in staged:
+                _unlink_at(events_fd, temp)
+            _unlink_at(events_fd, guard)
+            _fsync_fd(events_fd)
+            commit = "complete"
+        else:
+            journal_path = None
+            commit = "already_present"
+        quarantine_files: list[dict[str, Any]] = []
+        if quarantined:
+            _private_dir(quarantine_dir)
+            for item in quarantined:
+                name = f"{item['event_id']}.{item['sha256']}.json"
+                write_private(quarantine_dir / name, canonical({"schema": QUARANTINE_SCHEMA, "round_id": receipt["round_id"],
+                                                                 "quarantined_at": _iso(now), "code": item["code"], "envelope": item["envelope"]}))
+                quarantine_files.append({"file": name, "code": item["code"]})
+        events_after = len(_visible_events(_tape_entries(events_fd)))
+        receipt_path = _retain(rounds_dir, receipt, commit=commit, files=files, quarantined=quarantine_files, events_after=events_after, now=now)
+        if journal_path is not None:
+            journal_path.unlink()
+            _fsync_dir(rounds_dir)
     finally:
-        for temp, _, _ in staged:
-            try:
-                os.unlink(temp)
-            except FileNotFoundError:
-                pass
-    quarantine_files: list[str] = []
-    if quarantined:
-        _private_dir(quarantine_dir)
-        for item in quarantined:
-            name = f"{item['event_id']}.{item['sha256']}.json"
-            write_private(quarantine_dir / name, canonical({"schema": QUARANTINE_SCHEMA, "round_id": receipt["round_id"],
-                                                             "quarantined_at": _iso(now), "code": item["code"], "envelope": item["envelope"]}))
-            quarantine_files.append(name)
-    retained = {**receipt, "published": [{"file": name, "sha256": digest} for name, _, digest in valid],
-                "published_count": len(valid), "quarantined": [{"file": name, "code": item["code"]} for name, item in zip(quarantine_files, quarantined)],
-                "quarantined_count": len(quarantined), "events_in_tape_after": len(existing) + len(valid), "retained_at": _iso(now)}
-    receipt_name = f"{receipt['round_session']}.{receipt['round_id']}.json"
-    write_private(rounds_dir / receipt_name, canonical(retained))
-    return {"round_id": receipt["round_id"], "round_session": receipt["round_session"], "published": len(valid), "quarantined": len(quarantined),
-            "receipt": str(rounds_dir / receipt_name), "events_dir": str(events_dir), "quarantine_dir": str(quarantine_dir) if quarantined else None}
+        os.close(events_fd)
+    return {"round_id": receipt["round_id"], "round_session": receipt["round_session"], "published": len(files), "new_files": len(new),
+            "quarantined": len(quarantined), "receipt": str(receipt_path), "events_dir": str(events_dir),
+            "quarantine_dir": str(quarantine_dir) if quarantined else None, "commit": commit}
+
+
+def recover_rounds(root: Path, *, now: datetime) -> list[dict[str, Any]]:
+    """Finish or undo every round whose journal survived a crash. Completion links the staged bytes that are still
+    missing; if any staged temp is gone, the round is rolled back (its finals are unlinked). The guard is removed only
+    at the end, so the reader never sees a partial round. Each outcome leaves a retained receipt."""
+    outcomes: list[dict[str, Any]] = []
+    rounds_dir, events_dir = root / "rounds", root / "events"
+    for journal_name in pending_rounds(root):
+        journal_path = rounds_dir / journal_name
+        try:
+            journal = json.loads(journal_path.read_bytes())
+        except (OSError, ValueError) as error:
+            raise RoundEmitterError("JOURNAL_UNREADABLE") from error
+        _require(isinstance(journal, dict) and journal.get("schema") == JOURNAL_SCHEMA and isinstance(journal.get("files"), list)
+                 and isinstance(journal.get("receipt"), dict), "JOURNAL_INVALID")
+        receipt = journal["receipt"]
+        events_fd = _open_private_dir(events_dir)
+        try:
+            missing: list[str] = []
+            for item in journal["files"]:
+                if _exists_at(events_fd, item["name"]):
+                    _require(sha256_hex(_read_at(events_fd, item["name"])) == item["sha256"], "EVENT_RECEIPT_COLLISION")
+                elif _exists_at(events_fd, item["temp"]):
+                    _require(sha256_hex(_read_at(events_fd, item["temp"])) == item["sha256"], "STAGED_BYTES_MISMATCH")
+                    os.link(item["temp"], item["name"], src_dir_fd=events_fd, dst_dir_fd=events_fd)
+                else:
+                    missing.append(item["name"])
+            if missing:  # cannot complete: undo what this round linked (nothing was ever readable behind the guard)
+                for item in journal["files"]:
+                    _unlink_at(events_fd, item["name"])
+                commit, note = "rolled_back", "staged bytes missing for: " + ", ".join(missing)
+            else:
+                commit, note = "recovered", None
+            _fsync_fd(events_fd)
+            for item in journal["files"]:
+                _unlink_at(events_fd, item["temp"])
+            _unlink_at(events_fd, str(journal.get("guard") or _guard_name(receipt["round_id"])))
+            _fsync_fd(events_fd)
+            published = [dict(item) for item in journal.get("published", [])] if commit == "recovered" else []
+            events_after = len(_visible_events(_tape_entries(events_fd)))
+        finally:
+            os.close(events_fd)
+        receipt_path = _retain(rounds_dir, receipt, commit=commit, files=published, quarantined=[], events_after=events_after, now=now, note=note)
+        journal_path.unlink()
+        _fsync_dir(rounds_dir)
+        outcomes.append({"round_id": receipt["round_id"], "round_session": receipt["round_session"], "commit": commit, "receipt": str(receipt_path), "missing": missing})
+    return outcomes
 
 
 def emit_round(document: Mapping[str, Any], episodes: Sequence[Episode], root: Path, *, now: datetime) -> dict[str, Any]:
-    """Receipt → envelopes → validation → atomic publication → retained receipt. No provider access."""
+    """Receipt → envelopes → validation → guarded atomic publication → retained receipt. No provider access."""
     receipt = build_receipt(document, episodes, published_at=now)
     envelopes = build_events(document, episodes, receipt)
     return publish_round(root, receipt, envelopes, now=now)

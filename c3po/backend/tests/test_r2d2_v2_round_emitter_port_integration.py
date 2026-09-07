@@ -100,3 +100,60 @@ def test_an_invalid_file_in_the_tape_would_discard_it_which_is_why_validation_pr
     os.chmod(bad, 0o600)
     source = sources.FileShadowSource(root)
     assert source.events(NOW + timedelta(seconds=1)) == [] and source.last_event_diagnostics  # the collector drops the whole tape
+
+
+def test_a_crashed_round_is_never_consumed_partially_and_recovery_makes_it_whole(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8-A against the real reader: between links the tape carries the guard -> zero events and a diagnostic (never 1 of 4).
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_link = os.link
+    calls = {"n": 0}
+
+    def failing(src, dst, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated crash between links")
+        return real_link(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", failing)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    source = sources.FileShadowSource(root)
+    assert source.events(NOW + timedelta(seconds=1)) == [] and source.last_event_diagnostics  # refused as a whole, with a diagnostic
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=1))
+    assert [outcome["commit"] for outcome in outcomes] == ["recovered"]
+    tape = source.events(NOW + timedelta(minutes=2))
+    assert source.last_event_diagnostics == [] and len(tape) == 4
+
+
+def test_capacity_reservation_matches_the_real_reader_at_the_peak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8-C against the real reader: with both limits lowered to the same value, a round the emitter accepts never
+    # trips the reader's EVENT_FILE_LIMIT at any instant, and a round it refuses would have.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    emitter.emit_round(document, episodes, root, now=NOW)
+    emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=1))  # 8 files
+    source = sources.FileShadowSource(root)
+    for limit in (13, 16):  # 8 + 2*4 + 1 = 17 entries at the peak of a third round
+        monkeypatch.setattr(emitter, "MAX_EVENT_FILES", limit)
+        monkeypatch.setattr(sources, "MAX_EVENT_FILES", limit)
+        with pytest.raises(emitter.RoundEmitterError, match="EVENT_FILE_LIMIT"):
+            emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=2))
+        assert len(source.events(NOW + timedelta(minutes=3))) == 8 and source.last_event_diagnostics == []
+    monkeypatch.setattr(emitter, "MAX_EVENT_FILES", 17)
+    monkeypatch.setattr(sources, "MAX_EVENT_FILES", 17)
+    seen_counts: list[int] = []
+    real_link = os.link
+
+    def observing_link(src, dst, *args, **kwargs):  # the reader polls between two links: it must never trip the limit
+        real_link(src, dst, *args, **kwargs)
+        seen_counts.append(len(os.listdir(root / "events")))
+        source.events(NOW + timedelta(minutes=3))
+        assert source.last_event_diagnostics == [{"code": "ENVELOPE_FIELDS"}] or source.last_event_diagnostics[0]["code"] != "EVENT_FILE_LIMIT"
+
+    monkeypatch.setattr(os, "link", observing_link)
+    third = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=2))
+    monkeypatch.setattr(os, "link", real_link)
+    assert third["new_files"] == 4 and max(seen_counts) <= 17
+    assert len(source.events(NOW + timedelta(minutes=4))) == 12 and source.last_event_diagnostics == []

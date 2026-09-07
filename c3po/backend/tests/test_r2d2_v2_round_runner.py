@@ -162,7 +162,7 @@ def test_schedule_guards_run_before_any_provider_call(tmp_path: Path) -> None:
     for instant, session, code in cases:
         with pytest.raises(emitter.RoundEmitterError, match=code):
             runner.run_round(fetch, episodes, root, session=session, clock=_Ticker(instant))
-    assert calls == [] and not root.exists()
+    assert calls == [] and not (root / "events").exists() and not (root / "documents").exists()  # only the lock file exists
     # a delayed run keeps its intended session when told so: 00:30 ET of 09/09 is a valid round for the session of 08/09
     ticker = _Ticker(datetime(2026, 9, 9, 4, 30, tzinfo=timezone.utc))
     fetch_late, calls_late = _fetch(calendar, {}, stamp=lambda: ticker.last)
@@ -270,3 +270,78 @@ def test_cli_is_off_by_default_audits_read_only_and_runs_with_explicit_or_stored
     assert json.loads(capsys.readouterr().out)["code"] == "PURGE_TARGET_NOT_IN_QUARANTINE"
     assert runner.main(["--audit-quarantine", "--root", str(tmp_path / "elsewhere")]) == 0
     assert json.loads(capsys.readouterr().out) == {"status": "AUDIT", "root": str(tmp_path / "elsewhere"), "quarantine": []}
+
+
+def test_a_second_process_is_refused_before_any_provider_call_while_a_round_holds_the_lock(tmp_path: Path) -> None:
+    # F385-8-B: recovery, the repeat guard, the provider round and the commit run under one exclusive advisory lock per root.
+    fetch, calls = _fetch([{"code": "ZZZ.US", "report_date": "2026-09-10", "before_after_market": "None"}], {})
+    episodes = [emitter.Episode("US:AAA", OPENED, MATURITY)]
+    root = tmp_path / "source"
+    with runner.exclusive_round(root):  # another process (a separate open file description) holds the lock
+        with pytest.raises(emitter.RoundEmitterError, match="ROUND_LOCKED"):
+            runner.run_round(fetch, episodes, root, clock=_Ticker(RECEIVED))
+    assert calls == []
+    result = runner.run_round(fetch, episodes, root, clock=_Ticker(RECEIVED))  # released: the round runs
+    assert result["round_session"] == "2026-09-08" and [call[0] for call in calls] == ["/api/calendar/earnings", "/api/fundamentals/AAA.US"]
+
+
+def test_recovery_runs_before_every_round_and_the_cli_exposes_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                                  capsys: pytest.CaptureFixture[str]) -> None:
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_link = os.link
+    calls = {"n": 0}
+
+    def failing(src: Any, dst: Any, *args: Any, **kwargs: Any) -> None:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated crash between links")
+        real_link(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", failing)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    assert len(emitter.pending_rounds(root)) == 1
+    fetch, _ = _fetch([{"code": "ZZZ.US", "report_date": "2026-09-10", "before_after_market": "None"}], {})
+    result = runner.run_round(fetch, [emitter.Episode("US:AAA", OPENED, MATURITY)], root, clock=_Ticker(NOW + timedelta(minutes=5)), repeat=True)
+    assert [outcome["commit"] for outcome in result["recovered_before"]] == ["recovered"] and emitter.pending_rounds(root) == []
+    assert json.loads(Path(result["run"]).read_bytes())["recovered_before"][0]["commit"] == "recovered"
+    settings = SimpleNamespace(r2d2_v2_shadow_source_dir=root, eodhd_base_url="https://example.invalid", eodhd_api_token="never-logged",
+                               market_data_timeout_seconds=1.0)
+    monkeypatch.setattr(runner, "_settings", lambda: settings)
+    monkeypatch.setenv("C3PO_R2D2_V2_PRODUCERS_ENABLED", "true")
+    assert runner.main(["--recover"]) == 0  # nothing pending now: an empty, explicit outcome
+    assert json.loads(capsys.readouterr().out) == {"status": "RECOVERED", "rounds": []}
+
+
+def test_purge_and_inventory_never_follow_symlinks(tmp_path: Path) -> None:
+    # F385-8-D: a symlinked session directory or file must not let the purge read, write or unlink outside the quarantine.
+    document, episodes = _standard()
+    document["symbols"]["AAA"]["evidence"]["known_events"].append(_known({"event_date": "2026-09-12", "granularity": "AMC",
+                                                                          "available_at": _iso(RECEIVED - timedelta(minutes=1))}))
+    root = tmp_path / "source"
+    emitter.emit_round(document, episodes, root, now=NOW)  # one real quarantined file in 2026-09-08
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o700)
+    victim = outside / "victim.json"
+    victim.write_bytes(b'{"schema": "V2_EARNINGS_ROUND_QUARANTINE_V1", "envelope": {}, "code": "X"}')
+    os.chmod(victim, 0o600)
+    (root / "quarantine" / "2026-09-09").symlink_to(outside)  # a session directory that is really a symlink out
+    (root / "quarantine" / "2026-09-08" / "link.json").symlink_to(victim)  # a file that is really a symlink out
+    for session, name in (("2026-09-09", "victim.json"), ("2026-09-08", "link.json")):
+        with pytest.raises(emitter.RoundEmitterError, match="PURGE_TARGET_NOT_IN_QUARANTINE"):
+            runner.purge_quarantined(root, session, name, signed_by="fable", reason="x", now=NOW)
+    assert victim.exists() and sorted(os.listdir(outside)) == ["victim.json"]  # nothing read as a target, written or unlinked outside
+    kinds = {(item["session"], item.get("file")): item["kind"] for item in runner.quarantine_inventory(root)}
+    assert kinds[("2026-09-09", None)] == "SESSION_DIRECTORY_REFUSED" and kinds[("2026-09-08", "link.json")] == "FILE_REFUSED"
+    assert [kind for (session, name), kind in kinds.items() if session == "2026-09-08" and name != "link.json"] == ["QUARANTINED"]
+    (root / "quarantine").unlink() if (root / "quarantine").is_symlink() else None
+    # the quarantine directory itself replaced by a symlink is refused as a whole
+    real = root / "quarantine"
+    moved = tmp_path / "moved"
+    real.rename(moved)
+    real.symlink_to(moved)
+    assert runner.quarantine_inventory(root)[0]["kind"] == "QUARANTINE_DIRECTORY_REFUSED"
+    with pytest.raises(emitter.RoundEmitterError, match="PURGE_TARGET_NOT_IN_QUARANTINE"):
+        runner.purge_quarantined(root, "2026-09-08", "x.json", signed_by="fable", reason="x", now=NOW)

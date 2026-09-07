@@ -75,6 +75,14 @@ publicar e o que falha vai para a quarentena. A quarentena é evidência, não l
 4. **Publicar** na PR #348 (canal de auditoria cruzada) o hash do recibo de purga sempre que a quarentena tocar
    uma sessão em curso, e conferir a fita na sessão seguinte (`FileShadowSource.last_event_diagnostics == []`).
 
+## 4-bis. Commit de rodada, recuperação e exclusão (reparos F385-8-A/B/C/D)
+
+- **Commit que o leitor respeita:** antes do primeiro link a rodada grava um journal (`rounds/<sessão>.<round_id>.journal.json`, com o núcleo do recibo e os arquivos planejados com seus temporários) e um **arquivo-guarda** visível em `events/` (`ROUND-COMMIT-<round_id[:16]>.json`, esquema `V2_EARNINGS_ROUND_COMMIT_GUARD_V1`) que **não é um envelope válido**: enquanto ele existir, o leitor devolve zero eventos e um diagnóstico — nunca uma rodada pela metade. Os envelopes são preparados ocultos (`.stage-*.tmp`), linkados um a um, o diretório é sincronizado, temporários e guarda são removidos, o recibo é gravado e o journal apagado.
+- **Recuperação:** toda execução começa por `recover_rounds` (também `--recover`, sob a mesma exclusão): um journal sobrevivente é **concluído** a partir dos bytes em staging (recibo `commit = recovered`) ou, se algum temporário se perdeu, **desfeito** (finais da rodada removidos, recibo `commit = rolled_back` com a lista do que faltou). A guarda só sai no fim. Nenhuma rodada nova é publicada enquanto houver journal pendente (`PENDING_ROUND_REQUIRES_RECOVERY`).
+- **Capacidade como o leitor conta:** o leitor conta **todas** as entradas de `events/` (staging e guarda incluídos) antes de ignorar o staging; o emissor exige `entradas + 2 × novos + 1 ≤ 4096` antes de qualquer escrita; nome já presente com bytes idênticos não é arquivo novo (reemitir uma rodada custa zero); o recibo registra `new_files` e a contagem efetiva `events_in_tape_after`.
+- **Exclusão entre processos:** `rounds/.lock` (flock exclusivo) do início da recuperação ao commit; uma segunda execução é recusada com `ROUND_LOCKED` antes de qualquer chamada ao provedor.
+- **Symlinks:** inventário e purga da quarentena só alcançam diretórios e arquivos por descritores abertos com `O_NOFOLLOW` (ancestrais incluídos); um symlink em qualquer ponto aparece como `SESSION_DIRECTORY_REFUSED`/`FILE_REFUSED`/`QUARANTINE_DIRECTORY_REFUSED` e a purga é recusada, sem ler, gravar ou remover fora da quarentena.
+
 ## 5. Invariantes
 
 - Nenhuma chamada ao provedor antes das guardas de agenda (18:00 NY, fechamento oficial, sessão válida, rodada

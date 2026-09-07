@@ -289,3 +289,99 @@ def test_validate_envelope_mirrors_the_collector_rules() -> None:
         emitter.validate_envelope(good, now=NOW - timedelta(minutes=5))  # published in the future relative to the reader's clock
     emitter.validate_envelope(good, now=NOW)
     emitter.validate_envelope(failed, now=NOW)
+
+
+def _tape(root: Path) -> dict[str, list[str]]:
+    entries = sorted(os.listdir(root / "events"))
+    return {"guard": [n for n in entries if n.startswith(emitter.GUARD_PREFIX)],
+            "final": [n for n in entries if n.endswith(".json") and not n.startswith(".") and not n.startswith(emitter.GUARD_PREFIX)],
+            "temp": [n for n in entries if n.startswith(".")]}
+
+
+def _crash_between_links(monkeypatch: pytest.MonkeyPatch, at_call: int):
+    """os.link fails on the N-th call of the round: the process dies between two links."""
+    real_link = os.link
+    calls = {"n": 0}
+
+    def failing(src, dst, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == at_call:
+            raise OSError("simulated crash between links")
+        return real_link(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", failing)
+    return real_link
+
+
+def test_a_crash_between_links_leaves_a_guard_the_reader_refuses_and_recovery_completes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8-A (Codex 5575014911): a round is committed as a unit. Between links the tape carries a visible guard the
+    # reader refuses (no events + diagnostic), never a partial round; recovery completes it from the staged bytes.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError, match="simulated crash"):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    tape = _tape(root)
+    assert len(tape["guard"]) == 1 and len(tape["final"]) == 1 and len(tape["temp"]) == 4  # one link done; staged bytes retained
+    guard = json.loads((root / "events" / tape["guard"][0]).read_bytes())
+    assert guard["schema"] == emitter.GUARD_SCHEMA and len(guard["files"]) == 4
+    with pytest.raises(emitter.RoundEmitterError):  # the guard is not an envelope: the reader's validation refuses it
+        emitter.validate_envelope(guard, now=NOW)
+    assert len(emitter.pending_rounds(root)) == 1 and not [n for n in os.listdir(root / "rounds") if not n.endswith(emitter.JOURNAL_SUFFIX)]
+    with pytest.raises(emitter.RoundEmitterError, match="PENDING_ROUND_REQUIRES_RECOVERY"):  # no round on top of a pending one
+        emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=1))
+    monkeypatch.setattr(os, "link", real_link)
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    assert [o["commit"] for o in outcomes] == ["recovered"] and outcomes[0]["missing"] == []
+    tape = _tape(root)
+    assert len(tape["final"]) == 4 and tape["guard"] == [] and tape["temp"] == [] and emitter.pending_rounds(root) == []
+    for name in tape["final"]:
+        emitter.validate_envelope(json.loads((root / "events" / name).read_bytes()), now=NOW + timedelta(minutes=3))
+    receipt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    assert receipt["commit"] == "recovered" and receipt["published_count"] == 4 and receipt["events_in_tape_after"] == 4
+    again = emitter.emit_round(document, episodes, root, now=NOW)  # the same round after recovery: idempotent, zero new files
+    assert again["commit"] == "already_present" and again["new_files"] == 0 and len(_tape(root)["final"]) == 4
+
+
+def test_a_crashed_round_whose_staged_bytes_are_gone_is_rolled_back_behind_the_guard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_link = _crash_between_links(monkeypatch, at_call=3)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    assert len(_tape(root)["final"]) == 2 and len(_tape(root)["temp"]) == 4
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    lost = next(item for item in journal["files"] if not (root / "events" / item["name"]).exists())
+    (root / "events" / lost["temp"]).unlink()  # a staged file is gone: the round can no longer be completed
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    assert outcomes[0]["commit"] == "rolled_back" and outcomes[0]["missing"] == [lost["name"]]
+    assert _tape(root) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root) == []  # nothing was ever readable
+    receipt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    assert receipt["commit"] == "rolled_back" and receipt["published_count"] == 0 and receipt["events_in_tape_after"] == 0
+    assert "staged bytes missing" in receipt["note"]
+    fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=3))  # the round can be emitted again
+    assert fresh["commit"] == "complete" and fresh["new_files"] == 4
+
+
+def test_capacity_is_counted_as_the_reader_counts_and_identical_re_emission_is_free(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8-C: the reader counts EVERY directory entry (staging and guard included) before ignoring staging, so the
+    # emitter reserves room for temps + finals + guard; names already present with identical bytes cost nothing.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    emitter.emit_round(document, episodes, root, now=NOW)  # 4 files
+    before = sorted(os.listdir(root / "events"))
+    monkeypatch.setattr(emitter, "MAX_EVENT_FILES", 4)
+    again = emitter.emit_round(document, episodes, root, now=NOW)  # the identical round AT the limit: zero new files -> accepted
+    assert again["commit"] == "already_present" and again["new_files"] == 0
+    assert json.loads(Path(again["receipt"]).read_bytes())["events_in_tape_after"] == 4 and sorted(os.listdir(root / "events")) == before
+    later = NOW + timedelta(minutes=1)  # a new round id: 4 new files need 4 + 2*4 + 1 = 13 entries at the peak
+    for limit in (4, 12):
+        monkeypatch.setattr(emitter, "MAX_EVENT_FILES", limit)
+        with pytest.raises(emitter.RoundEmitterError, match="EVENT_FILE_LIMIT"):
+            emitter.emit_round(document, episodes, root, now=later)
+        assert sorted(os.listdir(root / "events")) == before and emitter.pending_rounds(root) == []  # nothing staged, no guard, no journal
+    monkeypatch.setattr(emitter, "MAX_EVENT_FILES", 13)
+    third = emitter.emit_round(document, episodes, root, now=later)
+    assert third["new_files"] == 4 and json.loads(Path(third["receipt"]).read_bytes())["events_in_tape_after"] == 8
+    assert len(_tape(root)["final"]) == 8 and _tape(root)["temp"] == [] and _tape(root)["guard"] == []
