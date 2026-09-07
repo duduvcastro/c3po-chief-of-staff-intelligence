@@ -144,6 +144,7 @@ def test_fixable_high_and_critical_runtime_findings_have_explicit_upgrades() -> 
     assert "python:3.12-alpine3.24@sha256:" in backend
     assert "apt-get" not in backend
     assert "apk upgrade --no-cache" in backend
+    assert "pip check \\\n    && pip uninstall -y pip" in backend  # pip is a build tool, never part of the runtime image
     assert backend.count("C3PO_SECURITY_REBUILD") == 3
     assert {"tzdata", "libstdc++", "libgcc"} <= set(backend.split())
     assert "cryptography>=50,<51" in requirements
