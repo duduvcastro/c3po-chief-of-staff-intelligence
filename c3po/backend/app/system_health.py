@@ -853,16 +853,26 @@ class SystemHealthService:
                 headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
             )
             indicator = str((response.json().get("status") or {}).get("indicator") or "unknown")
-            if response.status_code >= 500 or indicator in {"major", "critical"}:
+            if response.status_code >= 400:
+                status = "offline" if response.status_code >= 500 else "attention"
+                provider_detail = "Status do serviço não confirmado"
+            elif indicator in {"major", "critical"}:
                 status = "offline"
-            elif response.status_code >= 400 or indicator not in {"none", "unknown"}:
+                provider_detail = "Serviço com incidente grave"
+            elif indicator != "none":
                 status = "attention"
+                provider_detail = (
+                    "Serviço com instabilidade"
+                    if indicator in {"minor", "maintenance"}
+                    else "Status do serviço não confirmado"
+                )
             else:
                 status = "healthy"
+                provider_detail = "Serviço operacional"
             return IntegrationHealth(
                 name="Sentry",
                 status=status,
-                detail=f"DSN loaded · PII disabled · SaaS status {indicator}",
+                detail=f"DSN carregado · Filtros de dados ativos · {provider_detail}",
                 last_update=self._format_time(now),
             )
         except Exception as exc:

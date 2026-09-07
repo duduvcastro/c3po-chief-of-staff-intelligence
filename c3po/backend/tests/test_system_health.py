@@ -8,6 +8,8 @@ from tempfile import TemporaryDirectory
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from app.config import Settings
 from app.governance_vulnerability import report_sha256
 from app.schemas import (
@@ -231,22 +233,30 @@ class _ServerUsage:
 
 
 class _ExternalResponse:
-    def __init__(self, *, cloudflare: bool = False, usage: bool = False) -> None:
+    def __init__(self, *, cloudflare: bool = False, usage: bool = False,
+                 sentry_status: str | None = None) -> None:
         self.status_code = 200
         self.headers = {"server": "cloudflare", "cf-ray": "test-GRU"} if cloudflare else {}
         self.text = "User-agent: *\nDisallow: /" if cloudflare else "{}"
         self.usage = usage
+        self.sentry_status = sentry_status
 
     def raise_for_status(self):
         return None
 
     def json(self):
+        if self.sentry_status is not None:
+            return {"status": {"indicator": self.sentry_status}}
         return {"apiRequests": 60_000, "dailyRateLimit": 100_000} if self.usage else {}
 
 
 def _external_get(url: str, **_kwargs):
     assert "/api/api/" not in url
-    return _ExternalResponse(cloudflare="robots.txt" in url, usage="/api/user/" in url)
+    return _ExternalResponse(
+        cloudflare="robots.txt" in url,
+        usage="/api/user/" in url,
+        sentry_status="none" if url == "https://status.sentry.io/api/v2/status.json" else None,
+    )
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -420,7 +430,8 @@ def test_resilience_services_are_monitored_with_distinct_evidence() -> None:
     assert items["Healthchecks.io"].status == "healthy"
     assert "8/8 dead-man checks configured" in items["Healthchecks.io"].detail
     assert items["Sentry"].status == "healthy"
-    assert "DSN loaded" in items["Sentry"].detail
+    assert "DSN carregado" in items["Sentry"].detail
+    assert "Serviço operacional" in items["Sentry"].detail
     assert items["PostgreSQL offsite backup"].status == "healthy"
     assert "Immutable S3 upload evidenced" in items["PostgreSQL offsite backup"].detail
     assert "restore drill verified" in items["PostgreSQL offsite backup"].detail
@@ -444,6 +455,32 @@ def test_sentry_is_offline_without_an_official_dsn() -> None:
 
     assert item.status == "offline"
     assert "not configured" in item.detail
+
+
+@pytest.mark.parametrize("http_status,indicator,expected_status,expected_detail", [
+    (200, "none", "healthy", "Serviço operacional"),
+    (200, None, "attention", "Status do serviço não confirmado"),
+    (200, "unknown", "attention", "Status do serviço não confirmado"),
+    (200, "future-status", "attention", "Status do serviço não confirmado"),
+    (200, "minor", "attention", "Serviço com instabilidade"),
+    (200, "maintenance", "attention", "Serviço com instabilidade"),
+    (200, "major", "offline", "Serviço com incidente grave"),
+    (200, "critical", "offline", "Serviço com incidente grave"),
+    (403, "none", "attention", "Status do serviço não confirmado"),
+    (503, "none", "offline", "Status do serviço não confirmado"),
+])
+def test_sentry_card_reports_provider_status_without_assuming_delivery(
+    http_status, indicator, expected_status, expected_detail,
+) -> None:
+    service = _service()
+    response = _ExternalResponse(sentry_status=indicator)
+    response.status_code = http_status
+    service.external_get = lambda *_args, **_kwargs: response
+
+    item = service._sentry_health(datetime.now(timezone.utc))
+
+    assert item.status == expected_status
+    assert item.detail == f"DSN carregado · Filtros de dados ativos · {expected_detail}"
 
 
 def test_postgres_backup_is_attention_before_first_sealed_upload() -> None:
@@ -822,7 +859,7 @@ def test_high_api_consumption_does_not_mark_operational_connection_unhealthy() -
     service = _service()
 
     def high_usage_get(url: str, **_kwargs):
-        response = _ExternalResponse(cloudflare="robots.txt" in url, usage=False)
+        response = _external_get(url, **_kwargs)
         if "/api/user/" in url:
             response.json = lambda: {"apiRequests": 95_000, "dailyRateLimit": 100_000}
         return response
