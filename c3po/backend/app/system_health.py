@@ -60,6 +60,17 @@ class SystemHealthService:
         self._cached_response: SystemHealthResponse | None = None
         self._refresh_lock = Lock()
 
+    def invalidate(self) -> None:
+        """Drop the cached snapshot so the next read recomputes it.
+
+        Called after a supervised governance attestation: the panel that just
+        asked for a new attestation must not keep reading the previous one for
+        the remainder of the cache window.
+        """
+        with self._refresh_lock:
+            self._cached_at = None
+            self._cached_response = None
+
     def snapshot(self, *, force: bool = False) -> SystemHealthResponse:
         now = datetime.now(timezone.utc)
         if not force and self._cache_is_fresh(now):

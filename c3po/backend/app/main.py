@@ -203,10 +203,15 @@ def _r2d2_read_cache_ttl_seconds() -> float:
 r2d2_read_cache = SingleFlightReadCache(_r2d2_read_cache_ttl_seconds)
 push_notifications = PushNotificationService(settings, database)
 operational_incidents = OperationalIncidentService(database)
+# The API instance must carry the incident service: a supervised attestation
+# triggered from the panel resolves (or signals) the governance incident by its
+# factual result, exactly like the worker's daily run. Without it, a healthy
+# attestation could be persisted while the incident stayed open.
 governance_vulnerability = GovernanceVulnerabilityService(
     settings,
     database,
     push_notifications=push_notifications,
+    operational_incidents=operational_incidents,
 )
 SESSION_COOKIE = "c3po_session"
 
@@ -477,6 +482,9 @@ def resolve_operational_incident(
 def run_governance_attestation(request: Request) -> dict:
     require_owner(request)
     _, report = governance_vulnerability.run_supervised(settings.legacy_root)
+    # The consolidated system-health snapshot is cached; the panel that just asked
+    # for a new attestation must not keep showing the previous one for a minute.
+    system_health.invalidate()
     return {
         "status": report["status"],
         "session_date": report["session_date"],
