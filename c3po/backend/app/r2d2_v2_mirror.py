@@ -3,64 +3,84 @@
 Replicates decisions ALREADY RECORDED in the V2 virtual ledger (the shadow
 generator's portfolio records) as paper orders in a dedicated R2D2 experiment
 (`R2D2-V2-MIRROR-001`). The adapter decides nothing on its own. EMENDA 2 rev 2
-and the Codex audit of #387 (I1–I5, C1–C5) fix these behaviours:
+and the Codex audits of #387 (rounds 1 and 2: I1–I5, C1–C5) fix these behaviours:
 
 - one COMMAND per ledger decision with a durable identity (mirror epoch, shadow
   epoch, episode key, decision) and the hash of its payload, registered in the
   mirror's own memory BEFORE the paper effect; the effect is CLAIMED atomically
-  (BUY_PENDING → BUY_EXECUTING, one claimant), the paper trade carries the
-  command id, an uncertain outcome is resolved by READING the paper trades,
-  repetition returns the receipt, a payload that differs from the registered or
-  executed one BLOCKS (also after OPEN and on recovery); cycles of one mirror
-  epoch are serialized by a lock, so two processes never run the same command;
+  (BUY_PENDING → BUY_EXECUTING, one claimant) and the claim token is verified
+  INSIDE the paper engine's transaction (row lock), where the receipt is also
+  written: effect and receipt commit together or not at all, a claim released
+  elsewhere aborts the effect, and a release is a compare-and-set of the token
+  it observed (never a blind reopen). Cycles of one mirror epoch are serialized
+  by a lock; repetition returns the receipt; a payload that differs from the
+  registered or executed one BLOCKS — also after OPEN, on recovery and on the
+  terminal receipts (CLOSED, registered SKIPPED);
 - a portfolio admission (kind PORTFOLIO, status OPEN, opened at or after the
   published initial cursor) becomes ONE paper BUY of the ledger quantity `q`
   (eight-decimal nominal precision; more decimals are rejected, never rounded);
   research episodes and controls are never mirrored; a BUY still pending when
   the virtual position already closed becomes SKIPPED; a BUY not yet executed
-  obeys every veto in force at execution time;
+  obeys every veto in force at execution time, re-read inside the effect's
+  transaction (pause, desk exits-only order, quote age);
 - a recorded exit becomes ONE paper SELL of the quantity actually mirrored for
   that episode; until executed the position is EXIT_PENDING (latency recorded,
   new BUYs blocked); a missing quote never erases the position nor invents a
-  fill; the exit obligation survives any conflict or disposition (a BLOCKED or
-  AWAITING_DISPOSITION row with a position keeps blocking BUYs and still sells
-  when the ledger records the exit);
-- inherited vetoes: ledger terminal reasons, the V2 collection data gate of the
-  current session (active, unrestored data issues), exits-only orders, the
-  mirror experiment's own `entries_paused`, any pending exit, and any cap
-  breached by marking (per US name across exchanges, 48% gross US aggregated,
-  95% exposure, 5% cash) block new BUYs; nothing is liquidated;
-- fills use a REGULAR bid/ask quote with causal clocks (source ≤ available ≤
-  now, at most 10 s old, never in the future), midpoint reference and the
-  simulator's US friction; the receipt records the quote clocks, the decision
-  instant and the FACTUAL fill instant returned by the paper engine;
-- memory is scoped by (mirror epoch, shadow epoch, experiment);
-- the release receipt binds the initial cursor to a session open and requires
-  publication before that cursor;
+  fill; the exit obligation survives any conflict (a BLOCKED row with a position
+  keeps blocking BUYs and still sells when the ledger records the exit). A row
+  AWAITING_DISPOSITION keeps its position and blocks BUYs until the desk orders
+  its disposition; nothing here sells it automatically;
+- inherited vetoes: ledger terminal reasons, the generator's own admission
+  vetoes recomputed from its state (NAV unobservable, day NAV unobservable,
+  daily loss ≥ 2 %), the V2 collection data gate of the current session applied
+  PER NAME (an unrestored issue of the name or a wildcard the name was not
+  restored from), exits-only orders, the mirror experiment's own
+  `entries_paused`, any pending exit, any block or disposition recorded in the
+  same cycle, and any cap breached by marking (per US name across exchanges,
+  48 % gross US aggregated, 95 % exposure, 5 % cash) block new BUYs; entries are
+  planned only after this cycle's transitions are durable; nothing is liquidated;
+- fills use a REGULAR bid/ask quote proven by the official XNYS calendar at the
+  tick instant, with causal clocks (source ≤ available ≤ now, at most 10 s old,
+  never in the future) validated with a clock re-read after the lookup and again
+  inside the effect's transaction; midpoint reference and the simulator's US
+  friction; the receipt records the quote clocks, the decision instant and the
+  FACTUAL fill instant returned by the paper engine;
+- memory is scoped by (mirror epoch, shadow epoch, experiment); the experiment
+  is bound to one (mirror epoch, shadow epoch) at creation and the binding is
+  immutable (rows never change experiment);
+- the release receipt binds the initial cursor to the official open of an
+  official session, names that session, and requires publication strictly
+  before that open;
 - everything published carries MIRROR_NOT_CERTIFIED.
 
 Production wiring: the ledger is read through the shadow store of the
 generator (PR #383, `r2d2_v2_store.PostgresShadowStore.read`); the paper
-engine is the existing `R2D2Repository` (paper-only, no broker); nothing of
-the V1 selection/sizing/stop/watcher/learning runs on the mirror experiment.
-The worker refuses to run without `C3PO_R2D2_V2_MIRROR_ENABLED=true`, a pinned
-release receipt (`R2D2_V2_MIRROR_RELEASE_V1`) and a CERTIFIED shadow epoch.
+engine is the existing `R2D2Repository` (paper-only, no broker; the only touch
+on it is the optional pair of transaction hooks of `execute_trade`); quotes come
+from the provider's raw `us-quote` feed (bid/ask with tick clocks) recorded by
+the mirror's own tape; nothing of the V1 selection/sizing/stop/watcher/learning
+runs on the mirror experiment. The worker refuses to run without
+`C3PO_R2D2_V2_MIRROR_ENABLED=true`, a pinned release receipt
+(`R2D2_V2_MIRROR_RELEASE_V1`, verified before any database initialization) and
+a CERTIFIED shadow epoch.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
 import math
 import os
 import threading
-import time as clock
+import time as time_module
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, time, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, Mapping, Protocol
+from typing import Any, Callable, Iterable, Iterator, Mapping, Protocol, TypeGuard
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -70,7 +90,7 @@ from .r2d2 import R2D2Repository, _paper_buy_execution, _paper_exit_execution
 logger = logging.getLogger(__name__)
 
 MIRROR_ID = "R2D2-V2-MIRROR"
-MIRROR_VERSION = "v3"
+MIRROR_VERSION = "v4"
 LABEL = "MIRROR_NOT_CERTIFIED"
 STATEMENT = "réplica descritiva da carteira virtual; não é evidência"
 RELEASE_SCHEMA = "R2D2_V2_MIRROR_RELEASE_V1"
@@ -79,18 +99,27 @@ STARTING_CAPITAL_USD = 1_000_000.0
 SHADOW_EPOCH_PREFIX = "R2D2-V2-SHADOW-"
 MARKETS = ("NASDAQ", "NYSE")
 NEW_YORK = ZoneInfo("America/New_York")
-OFFICIAL_OPEN = time(9, 30)
 CAPS = {"per_name_percent": 6.0, "gross_us_percent": 48.0, "exposure_percent": 95.0, "cash_percent": 5.0}
 QUOTE_MAX_AGE_SECONDS = 10.0
 QUANTITY_DECIMALS = 8
-METHODOLOGY_VERSION = "r2d2-v2-mirror-v3"
+METHODOLOGY_VERSION = "r2d2-v2-mirror-v4"
 EXIT_CAUSES = ("STOP", "TARGET", "EVENT", "TIME")
 STATUSES = ("SKIPPED", "BUY_PENDING", "BUY_EXECUTING", "OPEN", "EXIT_PENDING", "SELL_EXECUTING", "CLOSED", "AWAITING_DISPOSITION", "BLOCKED")
 EXIT_OBLIGATION_STATUSES = ("EXIT_PENDING", "SELL_EXECUTING", "AWAITING_DISPOSITION")
+SOURCE_ADMISSION_VETOES = ("NAV_UNOBSERVABLE", "DAY_NAV_UNOBSERVABLE", "DAILY_LOSS_LIMIT")
+Clock = Callable[[], datetime]
 
 
 class MirrorInputError(ValueError):
     """Controlled message only."""
+
+
+class MirrorClaimLost(MirrorInputError):
+    """The claim was released or taken by another process before the effect committed: the effect is aborted."""
+
+
+class MirrorVetoAtEffect(MirrorInputError):
+    """A mutable veto (pause, desk order, quote age) observed inside the effect's transaction: the effect is aborted."""
 
 
 def canonical(value: Any) -> bytes:
@@ -99,6 +128,36 @@ def canonical(value: Any) -> bytes:
 
 def digest(value: Any) -> str:
     return hashlib.sha256(canonical(value)).hexdigest()
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+# ---------------------------------------------------------------- official calendar (XNYS)
+
+def _xnys() -> Any:
+    import exchange_calendars
+
+    return exchange_calendars.get_calendar("XNYS")
+
+
+@lru_cache(maxsize=2048)
+def session_bounds(day: date) -> tuple[datetime, datetime] | None:
+    """Official open and close (UTC) of `day`, or None when it is not an official session (weekend, holiday)."""
+    calendar = _xnys()
+    if not calendar.is_session(day.isoformat()):
+        return None
+    return (calendar.session_open(day.isoformat()).to_pydatetime().astimezone(timezone.utc),
+            calendar.session_close(day.isoformat()).to_pydatetime().astimezone(timezone.utc))
+
+
+def regular_session_at(instant: datetime) -> bool:
+    """True only inside [official open, official close) of the official session of the instant's New York date."""
+    if not isinstance(instant, datetime) or instant.tzinfo is None:
+        return False
+    bounds = session_bounds(instant.astimezone(NEW_YORK).date())
+    return bounds is not None and bounds[0] <= instant.astimezone(timezone.utc) < bounds[1]
 
 
 # ---------------------------------------------------------------- ledger view (read-only, confirmed facts only)
@@ -115,8 +174,12 @@ def _time(value: Any) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _finite(value: Any) -> TypeGuard[float]:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
 def _number(value: Any, *, positive: bool = False) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or (positive and value <= 0):
+    if not _finite(value) or (positive and value <= 0):
         raise MirrorInputError("LEDGER_NUMBER_INVALID")
     return float(value)
 
@@ -157,6 +220,14 @@ class LedgerRecord:
                 "exit_interval": list(self.exit_interval) if self.exit_interval else None}
 
 
+def _issue_gates(issue: Mapping[str, Any], instrument_key: str | None) -> bool:
+    """The collector's gate (#383 `_admission_block`): an active issue of the session gates a name unless the name was restored."""
+    scope, restored = issue.get("instrument"), issue.get("restored_instruments") or []
+    if instrument_key is None:
+        return scope == "*" or scope not in restored
+    return (scope == "*" or scope == instrument_key) and instrument_key not in restored
+
+
 @dataclass(frozen=True)
 class LedgerView:
     epoch: str
@@ -164,12 +235,22 @@ class LedgerView:
     state_sha: str
     session: str | None
     terminal_reasons: tuple[str, ...]
-    data_gate_blocked: bool
+    source_vetoes: tuple[str, ...]
+    data_issues: tuple[Mapping[str, Any], ...]
     records: tuple[LedgerRecord, ...]
 
     @property
+    def data_gate_blocked(self) -> bool:
+        """At least one name is gated by an active, unrestored data issue of the current session (coarse, for reporting)."""
+        return any(_issue_gates(issue, None) for issue in self.data_issues)
+
+    def gated(self, instrument_key: str) -> bool:
+        """The gate as the generator applies it to this name: the wildcard no longer gates a name it restored (I5b)."""
+        return any(_issue_gates(issue, instrument_key) for issue in self.data_issues)
+
+    @property
     def vetoed(self) -> bool:
-        return bool(self.terminal_reasons) or self.data_gate_blocked
+        return bool(self.terminal_reasons) or bool(self.source_vetoes) or self.data_gate_blocked
 
     def by_key(self) -> dict[str, LedgerRecord]:
         return {record.episode_key: record for record in self.records}
@@ -207,19 +288,60 @@ def _record(key: str, raw: Mapping[str, Any]) -> LedgerRecord:
     )
 
 
-def data_gate_blocked(state: Mapping[str, Any], session: str | None) -> bool:
-    """The collector's gate (#383 `_admission_block`): an active, unrestored data issue of the current session, any instrument."""
+def source_admission_vetoes(ledger: Mapping[str, Any]) -> tuple[str, ...]:
+    """The generator's own admission vetoes (#383 `_admission`), recomputed from the state it publishes.
+
+    NAV = cash + marks of OPEN positions + unpaid receivables, unknown when any position has unknown accounting/order or
+    an OPEN position without a mark; NAV_UNOBSERVABLE (unknown or ≤ 0), DAY_NAV_UNOBSERVABLE (no session start NAV),
+    DAILY_LOSS_LIMIT (NAV ≤ 98 % of the session start NAV). An unknown NAV is never treated as zero (I5a)."""
+    cash, positions = ledger.get("cash"), ledger.get("portfolio")
+    if not _finite(cash) or not isinstance(positions, dict):
+        return ("NAV_UNOBSERVABLE",)
+    gross = rights = 0.0
+    for record in positions.values():
+        if not isinstance(record, dict) or record.get("accounting_unknown") or record.get("order_unknown"):
+            return ("NAV_UNOBSERVABLE",)
+        if record.get("status") == "OPEN":
+            mark, quantity = record.get("mark"), record.get("quantity")
+            if not _finite(mark) or not _finite(quantity):
+                return ("NAV_UNOBSERVABLE",)
+            gross += float(quantity) * float(mark)
+        receivables = record.get("receivables")
+        if receivables is not None:
+            if not isinstance(receivables, dict):
+                return ("NAV_UNOBSERVABLE",)
+            for item in receivables.values():
+                amount = item.get("amount") if isinstance(item, dict) else None
+                if not _finite(amount):
+                    return ("NAV_UNOBSERVABLE",)
+                if not item.get("paid"):
+                    rights += float(amount)
+    nav = float(cash) + gross + rights
+    if nav <= 0:
+        return ("NAV_UNOBSERVABLE",)
+    start = ledger.get("session_start_nav")
+    if start is None:
+        return ("DAY_NAV_UNOBSERVABLE",)
+    if not _finite(start):
+        return ("NAV_UNOBSERVABLE",)
+    if nav <= 0.98 * float(start):
+        return ("DAILY_LOSS_LIMIT",)
+    return ()
+
+
+def _data_issues(state: Mapping[str, Any], session: str | None) -> tuple[Mapping[str, Any], ...]:
     issues = state.get("active_data_issues")
     if issues is None:
-        return False
+        return ()
     if not isinstance(issues, dict):
         raise MirrorInputError("SHADOW_DATA_ISSUES_INVALID")
+    selected = []
     for issue in issues.values():
         if not isinstance(issue, dict):
             raise MirrorInputError("SHADOW_DATA_ISSUES_INVALID")
-        if issue.get("session") == session and (issue.get("instrument") == "*" or issue.get("instrument") not in (issue.get("restored_instruments") or [])):
-            return True
-    return False
+        if issue.get("session") == session:
+            selected.append(issue)
+    return tuple(selected)
 
 
 def read_ledger(row: Mapping[str, Any]) -> LedgerView:
@@ -248,7 +370,7 @@ def read_ledger(row: Mapping[str, Any]) -> LedgerView:
     session_key = session if isinstance(session, str) else None
     records = tuple(_record(str(key), value) for key, value in sorted(ledger["portfolio"].items()) if isinstance(value, dict))
     return LedgerView(epoch=epoch, version=version, state_sha=state_sha, session=session_key, terminal_reasons=tuple(reasons),
-                      data_gate_blocked=data_gate_blocked(state, session_key), records=records)
+                      source_vetoes=source_admission_vetoes(ledger), data_issues=_data_issues(state, session_key), records=records)
 
 
 # ---------------------------------------------------------------- command identity
@@ -265,14 +387,33 @@ MIRROR_FIELDS = ("mirror_epoch", "epoch", "episode_key", "symbol", "market", "ex
                  "buy_trade_id", "buy_at", "buy_quantity", "buy_fill_price", "ledger_entry_price", "ledger_quantity", "ledger_opened_at",
                  "sell_trade_id", "sell_at", "sell_fill_price", "ledger_exit_price", "ledger_exit_at", "ledger_exit_cause",
                  "divergence", "created_at", "updated_at")
+_SCOPE_FIELDS = ("mirror_epoch", "epoch", "episode_key")
+_IMMUTABLE_FIELDS = _SCOPE_FIELDS + ("experiment_id", "created_at")
 
 
 def has_position(row: Mapping[str, Any]) -> bool:
     return bool(row.get("buy_trade_id")) and not row.get("sell_trade_id")
 
 
+def _key(row: Mapping[str, Any]) -> tuple[str, str, str]:
+    return (str(row["mirror_epoch"]), str(row["epoch"]), str(row["episode_key"]))
+
+
+def _from_sql(values: Iterable[Any]) -> dict[str, Any]:
+    """A stored row as the memory mode presents it: identifiers are strings (UUID columns come back as UUID objects)."""
+    row: dict[str, Any] = dict(zip(MIRROR_FIELDS, values))
+    for field in ("experiment_id", "buy_trade_id", "sell_trade_id"):
+        if row.get(field) is not None:
+            row[field] = str(row[field])
+    return row
+
+
 class MirrorRepository:
-    """Per-episode command memory scoped by (mirror epoch, shadow epoch, experiment). Claims are atomic; cycles are serialized."""
+    """Per-episode command memory scoped by (mirror epoch, shadow epoch, experiment).
+
+    Claims are atomic; the claim token is verified inside the paper effect's transaction (`guard`) and the receipt is
+    written there too (`receipt`), so effect and receipt commit together; releases are compare-and-set (`release`);
+    cycles are serialized per mirror epoch (`cycle_lock`)."""
 
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -280,10 +421,16 @@ class MirrorRepository:
             database._r2d2_v2_mirror_memory = {}  # type: ignore[attr-defined]
         if not hasattr(database, "_r2d2_v2_mirror_lock"):
             database._r2d2_v2_mirror_lock = threading.Lock()  # type: ignore[attr-defined]
+        if not hasattr(database, "_r2d2_v2_mirror_rows_lock"):
+            database._r2d2_v2_mirror_rows_lock = threading.RLock()  # type: ignore[attr-defined]
 
     @property
     def memory(self) -> dict[tuple[str, str, str], dict[str, Any]]:
         return self.database._r2d2_v2_mirror_memory  # type: ignore[attr-defined]
+
+    @property
+    def _rows_lock(self) -> threading.RLock:
+        return self.database._r2d2_v2_mirror_rows_lock  # type: ignore[attr-defined]
 
     @contextmanager
     def cycle_lock(self, mirror_epoch: str) -> Iterator[bool]:
@@ -308,16 +455,17 @@ class MirrorRepository:
 
     def load(self, mirror_epoch: str, epoch: str, experiment_id: str) -> dict[str, dict[str, Any]]:
         if not self.database.database_url:
-            return {key[2]: dict(value) for key, value in self.memory.items()
-                    if key[0] == mirror_epoch and key[1] == epoch and value.get("experiment_id") == experiment_id}
+            with self._rows_lock:
+                return {key[2]: dict(value) for key, value in self.memory.items()
+                        if key[0] == mirror_epoch and key[1] == epoch and value.get("experiment_id") == experiment_id}
         with self.database.connection() as connection:
             rows = connection.execute(
                 f"SELECT {', '.join(MIRROR_FIELDS)} FROM r2d2_v2_mirror_episodes WHERE mirror_epoch=%s AND epoch=%s AND experiment_id=%s",
                 (mirror_epoch, epoch, experiment_id)).fetchall()
-        return {row[2]: dict(zip(MIRROR_FIELDS, row)) for row in rows}
+        return {str(row[2]): _from_sql(row) for row in rows}
 
-    def upsert(self, row: Mapping[str, Any]) -> dict[str, Any]:
-        now = datetime.now(timezone.utc)
+    @staticmethod
+    def _validated(row: Mapping[str, Any], now: datetime) -> dict[str, Any]:
         record = {field: row.get(field) for field in MIRROR_FIELDS}
         if record["status"] not in STATUSES:
             raise MirrorInputError("MIRROR_STATUS_INVALID")
@@ -325,31 +473,46 @@ class MirrorRepository:
             if not record.get(key):
                 raise MirrorInputError("MIRROR_ROW_SCOPE_MISSING")
         record["updated_at"] = now
+        return record
+
+    @staticmethod
+    def _values(record: Mapping[str, Any], fields: Iterable[str]) -> list[Any]:
+        return [json.dumps(record[field], default=str) if field == "divergence" else record[field] for field in fields]
+
+    def upsert(self, row: Mapping[str, Any]) -> dict[str, Any]:
+        """Insert or update a command row. The row's experiment binding is immutable (C3): a different experiment is refused."""
+        now = _utc_now()
+        record = self._validated(row, now)
         if not self.database.database_url:
-            key = (str(record["mirror_epoch"]), str(record["epoch"]), str(record["episode_key"]))
-            previous = self.memory.get(key)
-            record["created_at"] = previous["created_at"] if previous else now
-            self.memory[key] = record
-            return dict(record)
+            with self._rows_lock:
+                key = _key(record)
+                previous = self.memory.get(key)
+                if previous is not None and previous.get("experiment_id") != record["experiment_id"]:
+                    raise MirrorInputError("MIRROR_ROW_EXPERIMENT_IMMUTABLE")
+                record["created_at"] = previous["created_at"] if previous else now
+                self.memory[key] = record
+                return dict(record)
         record["created_at"] = record.get("created_at") or now
         columns = ", ".join(MIRROR_FIELDS)
         placeholders = ", ".join("%s::jsonb" if field == "divergence" else "%s" for field in MIRROR_FIELDS)
-        updates = ", ".join(f"{field}=EXCLUDED.{field}" for field in MIRROR_FIELDS if field not in ("mirror_epoch", "epoch", "episode_key", "created_at"))
-        values = [json.dumps(record[field], default=str) if field == "divergence" else record[field] for field in MIRROR_FIELDS]
+        updates = ", ".join(f"{field}=EXCLUDED.{field}" for field in MIRROR_FIELDS if field not in _IMMUTABLE_FIELDS)
         with self.database.connection() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 f"INSERT INTO r2d2_v2_mirror_episodes ({columns}) VALUES ({placeholders}) "
-                f"ON CONFLICT (mirror_epoch, epoch, episode_key) DO UPDATE SET {updates}", values)
+                f"ON CONFLICT (mirror_epoch, epoch, episode_key) DO UPDATE SET {updates} "
+                f"WHERE r2d2_v2_mirror_episodes.experiment_id = EXCLUDED.experiment_id", self._values(record, MIRROR_FIELDS))
+            if cursor.rowcount != 1:
+                connection.rollback()
+                raise MirrorInputError("MIRROR_ROW_EXPERIMENT_IMMUTABLE")
             connection.commit()
         return dict(record)
 
     def claim(self, row: Mapping[str, Any], *, from_status: str, to_status: str, now: datetime) -> dict[str, Any] | None:
         """Atomically move a command from `from_status` to `to_status`; only one claimant ever gets the row."""
         token = str(uuid4())
-        key = (str(row["mirror_epoch"]), str(row["epoch"]), str(row["episode_key"]))
+        key = _key(row)
         if not self.database.database_url:
-            lock: threading.Lock = self.database._r2d2_v2_mirror_lock  # type: ignore[attr-defined]
-            with lock if not lock.locked() else _noop():
+            with self._rows_lock:
                 current = self.memory.get(key)
                 if current is None or current.get("status") != from_status:
                     return None
@@ -361,7 +524,63 @@ class MirrorRepository:
                    WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s AND status=%s RETURNING """ + ", ".join(MIRROR_FIELDS),
                 (to_status, token, now, now, *key, from_status)).fetchone()
             connection.commit()
-        return dict(zip(MIRROR_FIELDS, claimed)) if claimed else None
+        return _from_sql(claimed) if claimed else None
+
+    def guard(self, connection: Any, row: Mapping[str, Any], *, token: str, status: str) -> None:
+        """Inside the effect's transaction (I1): the claim must still be ours, under the row lock; otherwise the effect aborts."""
+        key = _key(row)
+        if not self.database.database_url:
+            with self._rows_lock:
+                current = self.memory.get(key)
+                if current is None or current.get("status") != status or current.get("claim_token") != token:
+                    raise MirrorClaimLost("CLAIM_LOST_BEFORE_EFFECT")
+            return
+        found = connection.execute(
+            "SELECT status, claim_token FROM r2d2_v2_mirror_episodes WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s FOR UPDATE",
+            key).fetchone()
+        if found is None or found[0] != status or found[1] != token:
+            raise MirrorClaimLost("CLAIM_LOST_BEFORE_EFFECT")
+
+    def receipt(self, connection: Any, row: Mapping[str, Any], *, token: str, status: str, updates: Mapping[str, Any]) -> dict[str, Any]:
+        """Inside the effect's transaction (I1): the command's receipt, committed atomically with the paper effect."""
+        now = _utc_now()
+        record = self._validated({**row, **updates, "claim_token": None, "claimed_at": None}, now)
+        key = _key(record)
+        if not self.database.database_url:
+            with self._rows_lock:
+                current = self.memory.get(key)
+                if current is None or current.get("status") != status or current.get("claim_token") != token:
+                    raise MirrorClaimLost("CLAIM_LOST_BEFORE_RECEIPT")
+                record["created_at"] = current["created_at"]
+                self.memory[key] = record
+                return dict(record)
+        fields = [field for field in MIRROR_FIELDS if field not in _IMMUTABLE_FIELDS]
+        assignments = ", ".join(f"{field}=%s::jsonb" if field == "divergence" else f"{field}=%s" for field in fields)
+        cursor = connection.execute(
+            f"UPDATE r2d2_v2_mirror_episodes SET {assignments} WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s AND status=%s AND claim_token=%s",
+            [*self._values(record, fields), *key, status, token])
+        if cursor.rowcount != 1:
+            raise MirrorClaimLost("CLAIM_LOST_BEFORE_RECEIPT")
+        return dict(record)
+
+    def release(self, row: Mapping[str, Any], *, token: str, from_status: str, to_status: str, reason: str, now: datetime) -> bool:
+        """Compare-and-set release of the claim whose token was observed; a newer claim or a committed receipt is never clobbered."""
+        key = _key(row)
+        if not self.database.database_url:
+            with self._rows_lock:
+                current = self.memory.get(key)
+                if current is None or current.get("status") != from_status or current.get("claim_token") != token:
+                    return False
+                current.update(status=to_status, claim_token=None, claimed_at=None, reason=reason, updated_at=now)
+                return True
+        with self.database.connection() as connection:
+            cursor = connection.execute(
+                """UPDATE r2d2_v2_mirror_episodes SET status=%s, claim_token=NULL, claimed_at=NULL, reason=%s, updated_at=%s
+                   WHERE mirror_epoch=%s AND epoch=%s AND episode_key=%s AND status=%s AND claim_token=%s""",
+                (to_status, reason, now, *key, from_status, token))
+            released = cursor.rowcount == 1
+            connection.commit()
+        return released
 
     def trade_for_command(self, repo: R2D2Repository, experiment_id: str, command: str) -> dict[str, Any] | None:
         """The paper effect of a command, if it happened: resolution by READING, never by a new effect."""
@@ -382,11 +601,6 @@ class MirrorRepository:
                 "quote_as_of": row[5], "command_sha": row[6]}
 
 
-@contextmanager
-def _noop() -> Iterator[None]:
-    yield None
-
-
 # ---------------------------------------------------------------- experiment (dedicated paper account, NAV 1M)
 
 def mirror_mandate(epoch: str, mirror_epoch: str) -> dict[str, Any]:
@@ -394,20 +608,32 @@ def mirror_mandate(epoch: str, mirror_epoch: str) -> dict[str, Any]:
         "mode": "paper_only", "real_broker_execution": False, "mirror": MIRROR_ID, "mirror_version": MIRROR_VERSION, "mirror_epoch": mirror_epoch,
         "label": LABEL, "statement": STATEMENT, "mirrored_epoch": epoch, "markets": list(MARKETS),
         "own_decisions": False, "source": "V2 virtual ledger (shadow generator) — admissions and exits already recorded",
-        "caps": dict(CAPS), "quote_policy": {"regular_bid_ask": True, "max_age_seconds": QUOTE_MAX_AGE_SECONDS, "reference": "midpoint",
-                                             "causal_clocks": "source_at <= available_at <= decision", "friction_us": {"slippage_rate": 0.0010, "fee_rate": 0.0004}},
+        "caps": dict(CAPS), "quote_policy": {"regular_bid_ask": True, "regularity": "official XNYS session at the tick instant",
+                                             "max_age_seconds": QUOTE_MAX_AGE_SECONDS, "reference": "midpoint",
+                                             "causal_clocks": "source_at <= available_at <= decision, re-read at the effect",
+                                             "friction_us": {"slippage_rate": 0.0010, "fee_rate": 0.0004}},
         "quantity_policy": f"ledger q preserved, {QUANTITY_DECIMALS} decimals, no resizing; caps/cash including friction reject permanently",
         "no_minimum_position": True, "research_episodes_mirrored": False, "controls_mirrored": False,
+        "binding": "immutable: one experiment per (mirror epoch, shadow epoch)",
         "is_evidence": False, "certification_input": False,
     }
 
 
+def verify_experiment_binding(experiment: Mapping[str, Any], *, epoch: str, mirror_epoch: str) -> None:
+    """The experiment is bound to exactly one (mirror epoch, shadow epoch) by its mandate (C3); anything else is refused."""
+    mandate = experiment.get("mandate")
+    if (not isinstance(mandate, dict) or mandate.get("mirror") != MIRROR_ID or mandate.get("mirror_epoch") != mirror_epoch
+            or mandate.get("mirrored_epoch") != epoch or mandate.get("real_broker_execution") is not False):
+        raise MirrorInputError("MIRROR_EXPERIMENT_BOUND_TO_ANOTHER_MIRROR")
+
+
 def ensure_mirror_experiment(repo: R2D2Repository, *, code: str, epoch: str, mirror_epoch: str,
                              starting_capital: float = STARTING_CAPITAL_USD, now: datetime | None = None) -> dict[str, Any]:
-    """Create-or-read the mirror's own paper experiment. Never the V1 initialization routine; never re-runs a closed one."""
+    """Create-or-read the mirror's own paper experiment. Never the V1 initialization routine; never re-runs a closed one;
+    never rebinds an existing experiment to another mirror or shadow epoch (its mandate is written once)."""
     if not code.startswith(MIRROR_ID):
         raise MirrorInputError("MIRROR_EXPERIMENT_CODE_INVALID")
-    clock_now = now or datetime.now(timezone.utc)
+    clock_now = now or _utc_now()
     mandate = mirror_mandate(epoch, mirror_epoch)
     payload = {"id": str(uuid4()), "code": code, "status": "running", "base_currency": "USD",
                "starting_capital": starting_capital, "cash_balance": starting_capital, "start_date": clock_now.date(),
@@ -421,27 +647,41 @@ def ensure_mirror_experiment(repo: R2D2Repository, *, code: str, epoch: str, mir
             raise MirrorInputError("MEMORY_MODE_HOLDS_ANOTHER_EXPERIMENT")
         if current is None:
             repo.memory["experiment"] = payload
-        return dict(repo.memory["experiment"])
-    with repo.database.connection() as connection:
-        row = connection.execute(
-            """INSERT INTO r2d2_experiments
-                   (id, code, status, starting_capital, cash_balance, start_date, end_date, checkpoint_date,
-                    is_continuous, methodology_version, mandate)
-               VALUES (%s, %s, 'running', %s, %s, %s, %s, %s, TRUE, %s, %s::jsonb)
-               ON CONFLICT (code) DO UPDATE SET mandate = EXCLUDED.mandate, updated_at = now()
-               RETURNING id::text, code, status, base_currency, starting_capital, cash_balance,
-                         start_date, checkpoint_date, methodology_version, mandate,
-                         entries_paused, entries_paused_at, entries_pause_operator,
-                         entries_pause_reason, policy_epoch, policy_epoch_started_at,
-                         entry_score_adapter_version, entry_score_adapter_enabled_at,
-                         created_at, updated_at""",
-            (payload["id"], code, starting_capital, starting_capital, clock_now.date(), clock_now.date(), clock_now.date(),
-             METHODOLOGY_VERSION, json.dumps(mandate))).fetchone()
-        connection.commit()
-    experiment = R2D2Repository._experiment(row)
+        experiment = dict(repo.memory["experiment"])
+    else:
+        with repo.database.connection() as connection:
+            row = connection.execute(
+                """INSERT INTO r2d2_experiments
+                       (id, code, status, starting_capital, cash_balance, start_date, end_date, checkpoint_date,
+                        is_continuous, methodology_version, mandate)
+                   VALUES (%s, %s, 'running', %s, %s, %s, %s, %s, TRUE, %s, %s::jsonb)
+                   ON CONFLICT (code) DO NOTHING
+                   RETURNING id::text, code, status, base_currency, starting_capital, cash_balance,
+                             start_date, checkpoint_date, methodology_version, mandate,
+                             entries_paused, entries_paused_at, entries_pause_operator,
+                             entries_pause_reason, policy_epoch, policy_epoch_started_at,
+                             entry_score_adapter_version, entry_score_adapter_enabled_at,
+                             created_at, updated_at""",
+                (payload["id"], code, starting_capital, starting_capital, clock_now.date(), clock_now.date(), clock_now.date(),
+                 METHODOLOGY_VERSION, json.dumps(mandate))).fetchone()
+            connection.commit()
+        existing = repo.experiment(code) if row is None else R2D2Repository._experiment(row)
+        if existing is None:
+            raise MirrorInputError("MIRROR_EXPERIMENT_UNREADABLE")
+        experiment = existing
+    verify_experiment_binding(experiment, epoch=epoch, mirror_epoch=mirror_epoch)
     if experiment["status"] == "completed":
         raise MirrorInputError("MIRROR_EXPERIMENT_CLOSED")
     return experiment
+
+
+def _entries_paused(repo: R2D2Repository, connection: Any, experiment_id: str) -> bool:
+    """The pause flag as it is at the effect (I3): read inside the same transaction that holds the experiment row lock."""
+    if not repo.database.database_url:
+        current = repo.memory["experiment"]
+        return bool(current and current.get("entries_paused"))
+    row = connection.execute("SELECT entries_paused FROM r2d2_experiments WHERE id=%s", (experiment_id,)).fetchone()
+    return bool(row and row[0])
 
 
 # ---------------------------------------------------------------- book and caps
@@ -507,9 +747,16 @@ class Action:
     episode_key: str
 
 
+ENTRY_KINDS = ("BUY", "DEFER")
+
+
 def plan(ledger: LedgerView, mirrored: Mapping[str, Mapping[str, Any]], *, activated_at: datetime, exits_only: bool = False,
          entries_paused: bool = False, marked: str | None = None) -> list[Action]:
-    """Which commands are due now. SKIP/BLOCK are persisted (never revisited); DEFER is retried next cycle."""
+    """Which commands are due now. SKIP/BLOCK are persisted (never revisited); DEFER is retried next cycle.
+
+    Blocks and dispositions discovered in this cycle join the obligations BEFORE entries are planned (I4); terminal
+    receipts are compared with the ledger's current payload (I2); the generator's admission vetoes (I5a) and the per-name
+    data gate (I5b) apply to every BUY not yet executed."""
     records = ledger.by_key()
     blockers: list[str] = []
     if exits_only:
@@ -518,14 +765,29 @@ def plan(ledger: LedgerView, mirrored: Mapping[str, Mapping[str, Any]], *, activ
         blockers.append("MIRROR_ENTRIES_PAUSED")
     if ledger.terminal_reasons:
         blockers.append("LEDGER_VETO:" + ",".join(ledger.terminal_reasons))
-    if ledger.data_gate_blocked:
-        blockers.append("COLLECTION_DATA_GATE_BLOCKED")
+    if ledger.source_vetoes:
+        blockers.append("LEDGER_ADMISSION_VETO:" + ",".join(ledger.source_vetoes))
     if marked:
         blockers.append(marked)
+    conflicts: dict[str, str] = {}  # rows that will be BLOCKED this cycle (payload conflicts), before any entry
+    for key, row in mirrored.items():
+        record = records.get(key)
+        if record is None:
+            continue
+        buy_sha = digest(record.buy_payload())
+        status = row.get("status")
+        if status in ("BUY_PENDING", "BUY_EXECUTING", "OPEN") and row.get("buy_command_sha") not in (None, buy_sha):
+            conflicts[key] = "COMMAND_PAYLOAD_CONFLICT"
+        elif status == "CLOSED" and (row.get("buy_command_sha") not in (None, buy_sha)
+                                     or row.get("sell_command_sha") not in (None, digest(record.sell_payload()))):
+            conflicts[key] = "TERMINAL_RECEIPT_PAYLOAD_CONFLICT"
+        elif status == "SKIPPED" and row.get("buy_command_sha") not in (None, buy_sha):
+            conflicts[key] = "TERMINAL_RECEIPT_PAYLOAD_CONFLICT"
     obligations = [key for key, row in mirrored.items()
                    if row.get("status") in EXIT_OBLIGATION_STATUSES
                    or (row.get("status") in ("OPEN", "BLOCKED") and key in records and records[key].status == "CLOSED")
                    or (row.get("status") == "BLOCKED" and has_position(row))
+                   or (key in conflicts and (has_position(row) or row.get("status") == "OPEN"))
                    or (row.get("status") in ("OPEN", "BUY_PENDING", "BUY_EXECUTING", "BLOCKED") and key not in records and (has_position(row) or row.get("status") != "OPEN"))]
     if obligations:
         blockers.append("EXIT_OBLIGATION_BLOCKS_BUYS")
@@ -539,7 +801,8 @@ def plan(ledger: LedgerView, mirrored: Mapping[str, Mapping[str, Any]], *, activ
             continue
         row = mirrored.get(record.episode_key)
         status = row.get("status") if row else None
-        buy_sha = digest(record.buy_payload())
+        conflict = conflicts.get(record.episode_key)
+        entry_veto = veto if veto is not None else ("COLLECTION_DATA_GATE_BLOCKED" if ledger.gated(record.instrument_key) else None)
         if row is None:
             if record.status == "CLOSED":
                 actions.append(Action("SKIP", record, "CLOSED_BEFORE_MIRROR", record.episode_key))
@@ -547,23 +810,21 @@ def plan(ledger: LedgerView, mirrored: Mapping[str, Mapping[str, Any]], *, activ
                 actions.append(Action("SKIP", record, "OPENED_BEFORE_INITIAL_CURSOR", record.episode_key))
             elif not quantity_precision_ok(record.quantity):
                 actions.append(Action("SKIP", record, "QUANTITY_PRECISION_INVALID", record.episode_key))
-            elif veto is not None:
-                actions.append(Action("DEFER", record, veto, record.episode_key))
+            elif entry_veto is not None:
+                actions.append(Action("DEFER", record, entry_veto, record.episode_key))
             else:
                 actions.append(Action("BUY", record, "LEDGER_ADMISSION_RECORDED", record.episode_key))
+        elif conflict is not None:
+            actions.append(Action("BLOCK", record, conflict, record.episode_key))
         elif status in ("BUY_PENDING", "BUY_EXECUTING"):
-            if row.get("buy_command_sha") not in (None, buy_sha):
-                actions.append(Action("BLOCK", record, "COMMAND_PAYLOAD_CONFLICT", record.episode_key))
-            elif record.status == "CLOSED":
+            if record.status == "CLOSED":
                 actions.append(Action("SKIP", record, "CLOSED_BEFORE_MIRROR_EXECUTION", record.episode_key))
-            elif veto is not None:
-                actions.append(Action("DEFER", record, veto, record.episode_key))  # every veto in force applies before an unexecuted BUY
+            elif entry_veto is not None:
+                actions.append(Action("DEFER", record, entry_veto, record.episode_key))  # every veto in force applies before an unexecuted BUY
             else:
                 actions.append(Action("BUY", record, "COMMAND_REGISTERED_EFFECT_PENDING", record.episode_key))
         elif status == "OPEN":
-            if row.get("buy_command_sha") not in (None, buy_sha):
-                actions.append(Action("BLOCK", record, "COMMAND_PAYLOAD_CONFLICT", record.episode_key))
-            elif record.status == "CLOSED":
+            if record.status == "CLOSED":
                 actions.append(Action("SELL", record, f"LEDGER_EXIT_RECORDED:{record.exit_cause}", record.episode_key))
         elif status == "BLOCKED":
             if record.status == "CLOSED" and has_position(row):
@@ -586,6 +847,7 @@ class MirrorQuote:
     source_at: datetime
     available_at: datetime
     status: str
+    regular: bool = False  # proven by the official calendar at the tick instant; a source that cannot prove it is never valid
 
     @property
     def midpoint(self) -> float:
@@ -601,7 +863,7 @@ MarketResolver = Callable[[str], str | None]
 
 def quote_valid(quote: MirrorQuote | None, now: datetime, max_age_seconds: float = QUOTE_MAX_AGE_SECONDS) -> bool:
     """A regular, live bid/ask with causal clocks: source_at <= available_at <= now, at most `max_age_seconds` old, never future."""
-    if quote is None or quote.status != "live":
+    if quote is None or quote.status != "live" or quote.regular is not True:
         return False
     if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in (quote.bid, quote.ask)) or not 0 < quote.bid <= quote.ask:
         return False
@@ -613,6 +875,99 @@ def quote_valid(quote: MirrorQuote | None, now: datetime, max_age_seconds: float
     if not source <= available <= now:
         return False
     return (now - source).total_seconds() <= max_age_seconds
+
+
+@dataclass(frozen=True)
+class TapeQuote:
+    bid: float
+    ask: float
+    tick_at: datetime
+    received_at: datetime
+
+
+class QuoteTape:
+    """Latest causal bid/ask per symbol from the provider's raw `us-quote` payloads (`s`, `bp`, `ask` as `ap`, `t` in ms).
+
+    The same fields the V2 snapshot producer records: finite positive prices, a tick clock not after the local receipt,
+    never regressing; anything else is counted and ignored. Regularity is proven by the official calendar at the tick."""
+
+    def __init__(self) -> None:
+        self._quotes: dict[str, TapeQuote] = {}
+        self._lock = threading.Lock()
+        self.rejected: dict[str, int] = {}
+        self.updates = 0
+
+    def _reject(self, reason: str) -> None:
+        self.rejected[reason] = self.rejected.get(reason, 0) + 1
+
+    def record(self, payload: str, received_at: datetime, allowed: set[str] | None = None) -> str | None:
+        try:
+            item = json.loads(payload)
+        except ValueError:
+            self._reject("NOT_JSON")
+            return None
+        if not isinstance(item, dict):
+            self._reject("NOT_OBJECT")
+            return None
+        symbol = str(item.get("s") or "").strip().upper()
+        if not symbol or (allowed is not None and symbol not in allowed):
+            self._reject("SYMBOL_NOT_LISTED")
+            return None
+        stamp = item.get("t")
+        if not _finite(stamp) or stamp <= 0:
+            self._reject("TICK_CLOCK_INVALID")
+            return None
+        if received_at.tzinfo is None:
+            self._reject("RECEIPT_CLOCK_NAIVE")
+            return None
+        tick_at = datetime.fromtimestamp(float(stamp) / 1000, tz=timezone.utc)
+        if tick_at > received_at:
+            self._reject("TICK_IN_FUTURE")
+            return None
+        bid, ask = item.get("bp"), item.get("ap")
+        if not _finite(bid) or not _finite(ask) or not 0 < float(bid) <= float(ask):
+            self._reject("BID_ASK_INVALID")
+            return None
+        with self._lock:
+            current = self._quotes.get(symbol)
+            if current is not None and tick_at < current.tick_at:
+                self._reject("TICK_REGRESSES")
+                return None
+            self._quotes[symbol] = TapeQuote(float(bid), float(ask), tick_at, received_at.astimezone(timezone.utc))
+            self.updates += 1
+        return symbol
+
+    def quote(self, market: str, symbol: str, now: datetime) -> MirrorQuote | None:
+        with self._lock:
+            item = self._quotes.get(symbol)
+        if item is None:
+            return None
+        return MirrorQuote(item.bid, item.ask, item.tick_at, item.received_at, "live", regular=regular_session_at(item.tick_at))
+
+
+async def stream_quotes(tape: QuoteTape, token: str, wanted: Callable[[], set[str]], stop: threading.Event, *,
+                        url_base: str = "wss://ws.eodhistoricaldata.com/ws/us-quote", clock: Clock = _utc_now) -> None:
+    """Consume the provider's `us-quote` feed into the tape until `stop`; reconnects. The token never reaches logs or receipts."""
+    import websockets
+
+    url = f"{url_base}?api_token={token}"
+    while not stop.is_set():
+        try:
+            async with websockets.connect(url, ping_interval=20, ping_timeout=20, close_timeout=2, max_size=1_000_000) as socket:
+                subscribed: set[str] = set()
+                while not stop.is_set():
+                    missing = wanted() - subscribed
+                    if missing:
+                        await socket.send(json.dumps({"action": "subscribe", "symbols": ",".join(sorted(missing))}))
+                        subscribed |= missing
+                    try:
+                        message = await asyncio.wait_for(socket.recv(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        continue
+                    tape.record(message if isinstance(message, str) else bytes(message).decode("utf-8", "replace"), clock())
+        except Exception as exc:  # the reason is logged by class only: the URL carries the token
+            logger.warning("mirror quote stream disconnected: %s", type(exc).__name__)
+            await asyncio.sleep(2.0)
 
 
 # ---------------------------------------------------------------- execution (paper simulator)
@@ -638,8 +993,10 @@ def _executed_at(trade: Mapping[str, Any], fallback: datetime) -> datetime:
 
 def reconcile(*, ledger: LedgerView, mirror_epoch: str, repo: R2D2Repository, mirror: MirrorRepository, experiment: Mapping[str, Any],
               now: datetime) -> dict[str, int]:
-    """Resolve claimed/pending commands by READING the paper trades (crash between effect and receipt); never a new effect.
+    """Resolve claimed/pending commands by READING the paper trades; never a new effect.
 
+    With the receipt committed inside the effect's transaction, a claim without a trade is a claimant that died before
+    committing (or one still in flight: its release is a compare-and-set that waits for the row lock and then fails).
     The effect is adopted only if its payload hash equals the registered one AND the decision the ledger presents now."""
     counts = {"buy_adopted": 0, "sell_adopted": 0, "conflicts": 0, "released": 0}
     records = ledger.by_key()
@@ -654,10 +1011,10 @@ def reconcile(*, ledger: LedgerView, mirror_epoch: str, repo: R2D2Repository, mi
         current_sha = (digest(record.buy_payload()) if side == "BUY" else digest(record.sell_payload())) if record else None
         trade = mirror.trade_for_command(repo, str(experiment["id"]), str(command)) if command else None
         if trade is None:
-            if status in ("BUY_EXECUTING", "SELL_EXECUTING"):  # a claim without effect: the claimant died before the paper engine committed
-                mirror.upsert({**row, "status": "BUY_PENDING" if side == "BUY" else "EXIT_PENDING", "claim_token": None, "claimed_at": None,
-                               "reason": "CLAIM_RELEASED_NO_EFFECT"})
-                counts["released"] += 1
+            if status in ("BUY_EXECUTING", "SELL_EXECUTING") and isinstance(row.get("claim_token"), str):
+                if mirror.release(row, token=str(row["claim_token"]), from_status=status,
+                                  to_status="BUY_PENDING" if side == "BUY" else "EXIT_PENDING", reason="CLAIM_RELEASED_NO_EFFECT", now=now):
+                    counts["released"] += 1  # a CAS that fails means the effect committed meanwhile: its receipt is already durable
             continue
         if trade.get("command_sha") != registered_sha or (record is not None and current_sha != registered_sha):
             mirror.upsert({**row, "status": "BLOCKED", "reason": "COMMAND_PAYLOAD_CONFLICT", "claim_token": None,
@@ -686,14 +1043,16 @@ def reconcile(*, ledger: LedgerView, mirror_epoch: str, repo: R2D2Repository, mi
 
 def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str, repo: R2D2Repository, mirror: MirrorRepository,
             experiment: Mapping[str, Any], cycle_id: str, quotes: QuoteSource, resolve_market: MarketResolver, now: datetime,
-            fx: float = 1.0) -> dict[str, Any]:
-    """Emit the paper orders for the planned commands: register → claim → effect → receipt. Divergences recorded, never reconciled."""
+            clock: Clock | None = None, exits_only: bool = False, fx: float = 1.0) -> dict[str, Any]:
+    """Emit the paper orders for the planned commands: register → claim → effect (claim verified and receipt written inside the
+    engine's transaction) → receipt. The quote is validated with a clock re-read after the lookup and again at the effect."""
     summary: dict[str, Any] = {"buys": 0, "sells": 0, "skipped": 0, "deferred": 0, "dispositions": 0, "blocked": 0, "reasons": {}}
+    read_clock: Clock = clock or (lambda: now)
 
     def count(reason: str) -> None:
         summary["reasons"][reason] = summary["reasons"].get(reason, 0) + 1
 
-    experiment_id = str(experiment["id"])
+    experiment_id = str(experiment["code"]) and str(experiment["id"])
     mirrored = mirror.load(mirror_epoch, ledger.epoch, experiment_id)
 
     def base_row(record: LedgerRecord, market: str | None) -> dict[str, Any]:
@@ -744,8 +1103,9 @@ def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str,
                 summary["dispositions"] += 1
                 count("POSITION_WITHOUT_MIRROR_COMMAND")
                 continue
-            quote = quotes.quote(market, record.symbol, now)
-            if not quote_valid(quote, now):
+            quote = quotes.quote(market, record.symbol, read_clock())
+            decided_at = read_clock()  # the clock after the lookup: I/O time never rejuvenates a quote (C2)
+            if not quote_valid(quote, decided_at):
                 summary["deferred"] += 1
                 count("QUOTE_NOT_VALID")
                 continue
@@ -758,49 +1118,75 @@ def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str,
                 summary["skipped"] += 1
                 count(breach)
                 continue
-            # 1. register the command; 2. claim it (one claimant); 3. paper effect carrying the command id; 4. receipt.
+            # 1. register the command; 2. claim it (one claimant); 3. paper effect carrying the command id, with the claim
+            #    verified and the receipt written inside the engine's transaction; 4. the receipt is the row itself.
             registered = mirror.upsert({**previous, **base_row(record, market), "status": "BUY_PENDING", "reason": action.reason,
                                         "buy_command_id": command, "buy_command_sha": payload_sha,
-                                        "command_registered_at": previous.get("command_registered_at") or now})
-            claimed = mirror.claim(registered, from_status="BUY_PENDING", to_status="BUY_EXECUTING", now=now)
+                                        "command_registered_at": previous.get("command_registered_at") or decided_at})
+            claimed = mirror.claim(registered, from_status="BUY_PENDING", to_status="BUY_EXECUTING", now=decided_at)
             if claimed is None:
                 summary["deferred"] += 1
                 count("COMMAND_CLAIMED_ELSEWHERE")
                 continue
+            token = str(claimed["claim_token"])
             candidate = {"market": market, "symbol": record.symbol, "name": record.symbol, "currency": "USD",
                          "stop_price": record.stop, "price": quote.midpoint, "quote_as_of": quote.source_at, "risk_score": None}
             decision = {"mirror": MIRROR_ID, "mirror_version": MIRROR_VERSION, "mirror_epoch": mirror_epoch, "label": LABEL, "statement": STATEMENT,
-                        "command_id": command, "command_sha": payload_sha, "claim_token": claimed["claim_token"], "epoch": ledger.epoch,
+                        "command_id": command, "command_sha": payload_sha, "claim_token": token, "epoch": ledger.epoch,
                         "ledger_version": ledger.version, "ledger_state_sha": ledger.state_sha, "episode_key": record.episode_key,
                         "ledger": record.buy_payload(), "ledger_maturity_at": record.maturity_at.isoformat() if record.maturity_at else None,
                         "quote": {"bid": quote.bid, "ask": quote.ask, "source_at": quote.source_at.isoformat(), "available_at": quote.available_at.isoformat(),
-                                  "reference": "midpoint"},
-                        "decided_at": now.isoformat(), "paper_only": True, "own_decision": False}
+                                  "reference": "midpoint", "regular": quote.regular},
+                        "decided_at": decided_at.isoformat(), "paper_only": True, "own_decision": False}
+
+            def before_buy(connection: Any, claimed: dict[str, Any] = claimed, token: str = token, quote: MirrorQuote = quote) -> None:
+                mirror.guard(connection, claimed, token=token, status="BUY_EXECUTING")
+                if exits_only:
+                    raise MirrorVetoAtEffect("EXITS_ONLY_BY_DESK_ORDER")
+                if _entries_paused(repo, connection, experiment_id):
+                    raise MirrorVetoAtEffect("MIRROR_ENTRIES_PAUSED_AT_EFFECT")
+                if not quote_valid(quote, read_clock()):
+                    raise MirrorVetoAtEffect("QUOTE_STALE_AT_EFFECT")
+
+            def after_buy(connection: Any, trade_id: str, executed_at: datetime, claimed: dict[str, Any] = claimed, token: str = token,
+                          quote: MirrorQuote = quote, record: LedgerRecord = record, fill: dict[str, Any] = fill, decided_at: datetime = decided_at,
+                          reason: str = action.reason) -> None:
+                mirror.receipt(connection, claimed, token=token, status="BUY_EXECUTING", updates={
+                    "status": "OPEN", "reason": reason, "buy_trade_id": trade_id, "buy_at": executed_at, "buy_quantity": record.quantity,
+                    "buy_fill_price": fill["fill_price"],
+                    "divergence": {"buy": _divergence(record, side="BUY", quote=quote, fill_price=fill["fill_price"], quantity=record.quantity,
+                                                      decided_at=decided_at, executed_at=executed_at)}})
+
             try:
                 trade = repo.execute_trade(dict(live_experiment), cycle_id=cycle_id, candidate=candidate, side="BUY", quantity=record.quantity,
                                            signal_price=quote.midpoint, fill_price=fill["fill_price"], fx=fx, fees=fill["fees_usd"],
                                            slippage=fill["slippage_usd"], reason=f"{LABEL}: mirror of V2 ledger admission (command {command[:12]})",
-                                           decision=decision, quote_as_of=quote.source_at)
+                                           decision=decision, quote_as_of=quote.source_at, before_effect=before_buy, after_effect=after_buy)
+            except MirrorClaimLost as exc:  # the claim is no longer ours: nothing to release, nothing executed
+                summary["deferred"] += 1
+                count(str(exc))
+                continue
+            except MirrorVetoAtEffect as exc:
+                mirror.release(claimed, token=token, from_status="BUY_EXECUTING", to_status="BUY_PENDING", reason=str(exc), now=read_clock())
+                summary["deferred"] += 1
+                count(str(exc))
+                continue
             except ValueError as exc:
-                mirror.upsert({**claimed, "status": "SKIPPED", "reason": f"PAPER_ORDER_REJECTED:{exc}", "claim_token": None})
+                mirror.release(claimed, token=token, from_status="BUY_EXECUTING", to_status="SKIPPED", reason=f"PAPER_ORDER_REJECTED:{exc}", now=read_clock())
                 summary["skipped"] += 1
                 count("PAPER_ORDER_REJECTED")
                 continue
-            executed = _executed_at(trade, now)
             repo.save_decision(experiment_id, cycle_id, candidate, "BUY", [MIRROR_ID, LABEL, command], trade["id"])
             live_experiment = repo.experiment(str(experiment["code"])) or live_experiment
-            mirror.upsert({**claimed, "status": "OPEN", "reason": action.reason, "claim_token": None, "buy_trade_id": trade["id"], "buy_at": executed,
-                           "buy_quantity": record.quantity, "buy_fill_price": fill["fill_price"],
-                           "divergence": {"buy": _divergence(record, side="BUY", quote=quote, fill_price=fill["fill_price"], quantity=record.quantity,
-                                                             decided_at=now, executed_at=executed)}})
             summary["buys"] += 1
             count("BUY")
         elif action.kind == "SELL":
             command = command_id(mirror_epoch, ledger.epoch, record.episode_key, "SELL")
             payload_sha = digest(record.sell_payload())
+            registered_at = read_clock()
             pending = {**previous, **base_row(record, market), "status": "EXIT_PENDING", "reason": action.reason, "sell_command_id": command,
                        "sell_command_sha": payload_sha, "claim_token": None,
-                       "command_registered_at": previous.get("command_registered_at") if previous.get("status") in ("EXIT_PENDING", "SELL_EXECUTING") else now,
+                       "command_registered_at": previous.get("command_registered_at") if previous.get("status") in ("EXIT_PENDING", "SELL_EXECUTING") else registered_at,
                        "ledger_exit_price": record.exit_price, "ledger_exit_at": record.exit_at, "ledger_exit_cause": record.exit_cause}
             if previous.get("status") != "EXIT_PENDING":
                 pending = mirror.upsert(pending)  # the exit obligation is durable before any quote is looked at
@@ -810,50 +1196,81 @@ def execute(actions: Iterable[Action], *, ledger: LedgerView, mirror_epoch: str,
                 continue
             mirrored_quantity = float(previous.get("buy_quantity") or 0.0)
             quantity = min(float(existing["quantity"]), mirrored_quantity) if mirrored_quantity > 0 else float(existing["quantity"])
-            quote = quotes.quote(market, record.symbol, now)
-            if not quote_valid(quote, now):
+            quote = quotes.quote(market, record.symbol, read_clock())
+            decided_at = read_clock()
+            if not quote_valid(quote, decided_at):
                 summary["deferred"] += 1
                 count("QUOTE_NOT_VALID_EXIT_PENDING")
                 continue
             assert quote is not None
-            claimed = mirror.claim(pending, from_status="EXIT_PENDING", to_status="SELL_EXECUTING", now=now)
+            claimed = mirror.claim(pending, from_status="EXIT_PENDING", to_status="SELL_EXECUTING", now=decided_at)
             if claimed is None:
                 summary["deferred"] += 1
                 count("COMMAND_CLAIMED_ELSEWHERE")
                 continue
+            token = str(claimed["claim_token"])
             fill = _paper_exit_execution(market=market, price=quote.midpoint, quantity=quantity, fx=fx)
             candidate = {"market": market, "symbol": record.symbol, "name": existing.get("name") or record.symbol, "currency": "USD",
                          "stop_price": record.stop, "price": quote.midpoint, "quote_as_of": quote.source_at, "risk_score": None}
             decision = {"mirror": MIRROR_ID, "mirror_epoch": mirror_epoch, "label": LABEL, "command_id": command, "command_sha": payload_sha,
-                        "claim_token": claimed["claim_token"], "epoch": ledger.epoch, "episode_key": record.episode_key, "ledger": record.sell_payload(),
+                        "claim_token": token, "epoch": ledger.epoch, "episode_key": record.episode_key, "ledger": record.sell_payload(),
                         "quote": {"bid": quote.bid, "ask": quote.ask, "source_at": quote.source_at.isoformat(), "available_at": quote.available_at.isoformat(),
-                                  "reference": "midpoint"},
-                        "decided_at": now.isoformat(), "paper_only": True, "own_decision": False}
+                                  "reference": "midpoint", "regular": quote.regular},
+                        "decided_at": decided_at.isoformat(), "paper_only": True, "own_decision": False}
+
+            def before_sell(connection: Any, claimed: dict[str, Any] = claimed, token: str = token, quote: MirrorQuote = quote) -> None:
+                mirror.guard(connection, claimed, token=token, status="SELL_EXECUTING")
+                if not quote_valid(quote, read_clock()):
+                    raise MirrorVetoAtEffect("QUOTE_STALE_AT_EFFECT")
+
+            def after_sell(connection: Any, trade_id: str, executed_at: datetime, claimed: dict[str, Any] = claimed, token: str = token,
+                           quote: MirrorQuote = quote, record: LedgerRecord = record, fill: dict[str, Any] = fill, quantity: float = quantity,
+                           decided_at: datetime = decided_at, reason: str = action.reason, pending: dict[str, Any] = pending) -> None:
+                divergence = dict(pending.get("divergence") or {})
+                divergence["sell"] = _divergence(record, side="SELL", quote=quote, fill_price=fill["fill_price"], quantity=quantity,
+                                                 decided_at=decided_at, executed_at=executed_at)
+                mirror.receipt(connection, claimed, token=token, status="SELL_EXECUTING", updates={
+                    "status": "CLOSED", "reason": reason, "sell_trade_id": trade_id, "sell_at": executed_at, "sell_fill_price": fill["fill_price"],
+                    "divergence": divergence})
+
             try:
                 trade = repo.execute_trade(dict(live_experiment), cycle_id=cycle_id, candidate=candidate, side="SELL", quantity=quantity,
                                            signal_price=quote.midpoint, fill_price=fill["fill_price"], fx=fx, fees=fill["fees_usd"],
                                            slippage=fill["slippage_usd"], reason=f"{LABEL}: mirror of V2 ledger exit {record.exit_cause} (command {command[:12]})",
-                                           decision=decision, quote_as_of=quote.source_at)
+                                           decision=decision, quote_as_of=quote.source_at, before_effect=before_sell, after_effect=after_sell)
+            except MirrorClaimLost as exc:
+                summary["deferred"] += 1
+                count(str(exc))
+                continue
+            except MirrorVetoAtEffect as exc:
+                mirror.release(claimed, token=token, from_status="SELL_EXECUTING", to_status="EXIT_PENDING", reason=str(exc), now=read_clock())
+                summary["deferred"] += 1
+                count(str(exc))
+                continue
             except ValueError as exc:
-                mirror.upsert({**claimed, "status": "EXIT_PENDING", "claim_token": None, "reason": f"PAPER_SELL_REJECTED:{exc}"})
+                mirror.release(claimed, token=token, from_status="SELL_EXECUTING", to_status="EXIT_PENDING", reason=f"PAPER_SELL_REJECTED:{exc}", now=read_clock())
                 count("PAPER_SELL_REJECTED")
                 continue
-            executed = _executed_at(trade, now)
             repo.save_decision(experiment_id, cycle_id, candidate, "SELL", [MIRROR_ID, LABEL, str(record.exit_cause), command], trade["id"])
             live_experiment = repo.experiment(str(experiment["code"])) or live_experiment
-            divergence = dict(pending.get("divergence") or {})
-            divergence["sell"] = _divergence(record, side="SELL", quote=quote, fill_price=fill["fill_price"], quantity=quantity, decided_at=now, executed_at=executed)
-            mirror.upsert({**claimed, "status": "CLOSED", "reason": action.reason, "claim_token": None, "sell_trade_id": trade["id"], "sell_at": executed,
-                           "sell_fill_price": fill["fill_price"], "divergence": divergence})
             summary["sells"] += 1
             count("SELL")
     return summary
 
 
+def _merge(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
+    merged = {key: first[key] + second[key] for key in ("buys", "sells", "skipped", "deferred", "dispositions", "blocked")}
+    reasons = dict(first["reasons"])
+    for reason, value in second["reasons"].items():
+        reasons[reason] = reasons.get(reason, 0) + value
+    return {**merged, "reasons": reasons}
+
+
 def run_once(*, ledger_row: Mapping[str, Any], mirror_epoch: str, repo: R2D2Repository, mirror: MirrorRepository, experiment: Mapping[str, Any],
              quotes: QuoteSource, resolve_market: MarketResolver, now: datetime, activated_at: datetime, exits_only: bool = False,
-             fx: float = 1.0) -> dict[str, Any]:
-    """One mirror cycle under the mirror-epoch lock: read confirmed facts, recover by reading, plan, execute, log the cycle."""
+             clock: Clock | None = None, fx: float = 1.0) -> dict[str, Any]:
+    """One mirror cycle under the mirror-epoch lock: read confirmed facts, recover by reading, apply this cycle's transitions and
+    exits, then re-read the book and the vetoes and plan the entries (I4); log the cycle."""
     if activated_at.tzinfo is None:
         raise MirrorInputError("ACTIVATION_NOT_AWARE")
     with mirror.cycle_lock(mirror_epoch) as acquired:
@@ -862,36 +1279,51 @@ def run_once(*, ledger_row: Mapping[str, Any], mirror_epoch: str, repo: R2D2Repo
                     "skipped": 0, "deferred": 0, "dispositions": 0, "blocked": 0, "reasons": {"CYCLE_LOCKED_ELSEWHERE": 1}, "label": LABEL}
         ledger = read_ledger(ledger_row)
         live_experiment = repo.experiment(str(experiment["code"])) or dict(experiment)
+        verify_experiment_binding(live_experiment, epoch=ledger.epoch, mirror_epoch=mirror_epoch)
         if live_experiment.get("status") == "completed":
             raise MirrorInputError("MIRROR_EXPERIMENT_CLOSED")
         recovered = reconcile(ledger=ledger, mirror_epoch=mirror_epoch, repo=repo, mirror=mirror, experiment=experiment, now=now)
         positions, cash, nav = _book(repo, live_experiment)
         marked = marked_excess(positions, cash, nav)
-        actions = plan(ledger, mirror.load(mirror_epoch, ledger.epoch, str(experiment["id"])), activated_at=activated_at, exits_only=exits_only,
+        experiment_id = str(experiment["id"])
+        planned = plan(ledger, mirror.load(mirror_epoch, ledger.epoch, experiment_id), activated_at=activated_at, exits_only=exits_only,
                        entries_paused=bool(live_experiment.get("entries_paused")), marked=marked)
-        cycle_id = repo.start_cycle(str(experiment["id"]), list(MARKETS))
+        transitions = [action for action in planned if action.kind not in ENTRY_KINDS]
+        cycle_id = repo.start_cycle(experiment_id, list(MARKETS))
         try:
-            summary = execute(actions, ledger=ledger, mirror_epoch=mirror_epoch, repo=repo, mirror=mirror, experiment=experiment, cycle_id=cycle_id,
-                              quotes=quotes, resolve_market=resolve_market, now=now, fx=fx)
+            summary = execute(transitions, ledger=ledger, mirror_epoch=mirror_epoch, repo=repo, mirror=mirror, experiment=experiment, cycle_id=cycle_id,
+                              quotes=quotes, resolve_market=resolve_market, now=now, clock=clock, exits_only=exits_only, fx=fx)
+            # Entries only after this cycle's transitions are durable: the book, the pause flag and the obligations are re-read.
+            live_experiment = repo.experiment(str(experiment["code"])) or live_experiment
+            positions, cash, nav = _book(repo, live_experiment)
+            marked = marked_excess(positions, cash, nav)
+            entries = [action for action in plan(ledger, mirror.load(mirror_epoch, ledger.epoch, experiment_id), activated_at=activated_at,
+                                                 exits_only=exits_only, entries_paused=bool(live_experiment.get("entries_paused")), marked=marked)
+                       if action.kind in ENTRY_KINDS]
+            summary = _merge(summary, execute(entries, ledger=ledger, mirror_epoch=mirror_epoch, repo=repo, mirror=mirror, experiment=experiment,
+                                              cycle_id=cycle_id, quotes=quotes, resolve_market=resolve_market, now=now, clock=clock,
+                                              exits_only=exits_only, fx=fx))
+            actions = transitions + entries
         except Exception as exc:
-            repo.finish_cycle(cycle_id, "failed", len(ledger.records), len(actions), 0, error=type(exc).__name__, metadata={"mirror": MIRROR_ID, "label": LABEL})
+            repo.finish_cycle(cycle_id, "failed", len(ledger.records), len(planned), 0, error=type(exc).__name__, metadata={"mirror": MIRROR_ID, "label": LABEL})
             raise
         repo.finish_cycle(cycle_id, "completed", len(ledger.records), len(actions), summary["buys"] + summary["sells"],
                           metadata={"mirror": MIRROR_ID, "label": LABEL, "mirror_epoch": mirror_epoch, "epoch": ledger.epoch,
                                     "ledger_version": ledger.version, "ledger_state_sha": ledger.state_sha, "vetoed": ledger.vetoed,
-                                    "data_gate_blocked": ledger.data_gate_blocked, "marked_excess": marked, "exits_only": exits_only, **recovered, **summary})
+                                    "data_gate_blocked": ledger.data_gate_blocked, "source_vetoes": list(ledger.source_vetoes),
+                                    "marked_excess": marked, "exits_only": exits_only, **recovered, **summary})
         return {"cycle_id": cycle_id, "epoch": ledger.epoch, "mirror_epoch": mirror_epoch, "ledger_version": ledger.version,
                 "ledger_state_sha": ledger.state_sha, "vetoed": ledger.vetoed, "data_gate_blocked": ledger.data_gate_blocked,
-                "terminal_reasons": list(ledger.terminal_reasons), "marked_excess": marked, "actions": len(actions), **recovered, **summary,
-                "status": "COMPLETED", "label": LABEL}
+                "terminal_reasons": list(ledger.terminal_reasons), "source_vetoes": list(ledger.source_vetoes), "marked_excess": marked,
+                "actions": len(actions), **recovered, **summary, "status": "COMPLETED", "label": LABEL}
 
 
 # ---------------------------------------------------------------- publication (aggregates only; never evidence)
 
 def public_summary(*, repo: R2D2Repository, mirror: MirrorRepository, experiment: Mapping[str, Any], mirror_epoch: str, epoch: str,
-                   terminal_reasons: Iterable[str] = (), now: datetime | None = None) -> dict[str, Any]:
+                   terminal_reasons: Iterable[str] = (), source_vetoes: Iterable[str] = (), now: datetime | None = None) -> dict[str, Any]:
     """Daily public aggregates of the mirror. No symbols, no episode keys, no statistical verdict."""
-    clock_now = now or datetime.now(timezone.utc)
+    clock_now = now or _utc_now()
     live_experiment = repo.experiment(str(experiment["code"])) or dict(experiment)
     positions, cash, nav = _book(repo, live_experiment)
     rows = list(mirror.load(mirror_epoch, epoch, str(experiment["id"])).values())
@@ -907,7 +1339,7 @@ def public_summary(*, repo: R2D2Repository, mirror: MirrorRepository, experiment
         numbers = [float(item[key]) for item in values if isinstance(item, dict) and isinstance(item.get(key), (int, float))]
         return round(sum(numbers) / len(numbers), 3) if numbers else None
 
-    return {"schema": "R2D2_V2_MIRROR_PUBLIC_SUMMARY_V3", "label": LABEL, "statement": STATEMENT, "is_evidence": False,
+    return {"schema": "R2D2_V2_MIRROR_PUBLIC_SUMMARY_V4", "label": LABEL, "statement": STATEMENT, "is_evidence": False,
             "mirror": MIRROR_ID, "mirror_version": MIRROR_VERSION, "mirror_epoch": mirror_epoch, "experiment_code": live_experiment["code"],
             "mirrored_epoch": epoch, "as_of": clock_now.isoformat(), "nav_paper_usd": round(nav, 2), "cash_usd": round(cash, 2),
             "open_positions": len(positions), "marked_excess": marked_excess(positions, cash, nav),
@@ -915,7 +1347,7 @@ def public_summary(*, repo: R2D2Repository, mirror: MirrorRepository, experiment
             "orders_today": sum(1 for r in rows if _day(r.get("buy_at"))) + sum(1 for r in rows if _day(r.get("sell_at"))),
             "divergence_buy": {"mean_price_bps": _mean(buys, "price_diff_bps"), "mean_latency_seconds": _mean(buys, "latency_seconds"), "count": len(buys)},
             "divergence_sell": {"mean_price_bps": _mean(sells, "price_diff_bps"), "mean_latency_seconds": _mean(sells, "latency_seconds"), "count": len(sells)},
-            "active_vetoes": sorted(set(terminal_reasons)), "entries_paused": bool(live_experiment.get("entries_paused")),
+            "active_vetoes": sorted(set(terminal_reasons) | set(source_vetoes)), "entries_paused": bool(live_experiment.get("entries_paused")),
             "skip_reasons": _counts(rows)}
 
 
@@ -939,10 +1371,13 @@ class MirrorRelease:
     owner_order_ref: str
     published_at: datetime
     initial_cursor_at: datetime
+    initial_session: date
     receipt_sha: str
 
     @classmethod
     def verify(cls, data: bytes, expected_sha: str, *, build_sha: str, now: datetime) -> "MirrorRelease":
+        """The receipt names its first mirrored session; the cursor is at or before that session's official open (a real XNYS
+        session), the publication is strictly before that open, and the three signatures and pins are present (C4)."""
         receipt_sha = hashlib.sha256(data).hexdigest()
         if not expected_sha or receipt_sha != expected_sha:
             raise MirrorInputError("MIRROR_RELEASE_SHA_MISMATCH")
@@ -970,40 +1405,28 @@ class MirrorRelease:
         published, cursor = _time(body.get("published_at")), _time(body.get("initial_cursor_at"))
         if published > cursor:
             raise MirrorInputError("MIRROR_RELEASE_PUBLISHED_AFTER_CURSOR")
-        cursor_ny = cursor.astimezone(NEW_YORK)
-        if cursor_ny.time() > OFFICIAL_OPEN:
-            raise MirrorInputError("MIRROR_RELEASE_CURSOR_AFTER_OPEN")  # the cursor is the open of its first mirrored session, published before it
+        declared = body.get("initial_session")
+        try:
+            session_day = date.fromisoformat(declared) if isinstance(declared, str) else None
+        except ValueError:
+            session_day = None
+        if session_day is None:
+            raise MirrorInputError("MIRROR_RELEASE_INITIAL_SESSION_MISSING")
+        if session_day != cursor.astimezone(NEW_YORK).date():
+            raise MirrorInputError("MIRROR_RELEASE_INITIAL_SESSION_MISMATCH")
+        bounds = session_bounds(session_day)
+        if bounds is None:
+            raise MirrorInputError("MIRROR_RELEASE_CURSOR_NOT_A_SESSION")
+        if cursor > bounds[0]:
+            raise MirrorInputError("MIRROR_RELEASE_CURSOR_AFTER_OPEN")  # the cursor is at (or before) the official open of the first mirrored session
+        if published >= bounds[0]:
+            raise MirrorInputError("MIRROR_RELEASE_PUBLISHED_NOT_BEFORE_OPEN")
         if cursor > now:
             raise MirrorInputError("MIRROR_RELEASE_NOT_YET_ACTIVE")
-        return cls(mirror_epoch, epoch, code, str(body["code_revision"]), review, order, published, cursor, receipt_sha)
+        return cls(mirror_epoch, epoch, code, str(body["code_revision"]), review, order, published, cursor, session_day, receipt_sha)
 
 
 # ---------------------------------------------------------------- production adapters
-
-class RealtimeQuoteSource:
-    """Regular bid/ask quotes with their own source and receipt clocks; rows without both clocks are not valid quotes for the mirror."""
-
-    def __init__(self, realtime: Any) -> None:
-        self.realtime = realtime
-
-    def quote(self, market: str, symbol: str, now: datetime) -> MirrorQuote | None:
-        try:
-            rows = self.realtime._us_portfolio_rows(market, now, [symbol])
-            rows = [self.realtime._apply_stream_row(row) for row in rows]
-        except Exception:
-            logger.exception("mirror quote lookup failed for %s", symbol)
-            return None
-        for row in rows:
-            if getattr(row, "symbol", None) != symbol:
-                continue
-            bid, ask = getattr(row, "bid", None), getattr(row, "ask", None)
-            source_at, available_at = getattr(row, "as_of", None), getattr(row, "received_at", None) or getattr(row, "available_at", None)
-            status = str(getattr(row, "status", "unavailable"))
-            if isinstance(bid, (int, float)) and isinstance(ask, (int, float)) and isinstance(source_at, datetime) and isinstance(available_at, datetime):
-                return MirrorQuote(float(bid), float(ask), source_at if source_at.tzinfo else source_at.replace(tzinfo=timezone.utc),
-                                   available_at if available_at.tzinfo else available_at.replace(tzinfo=timezone.utc), status)
-        return None
-
 
 class RegistryMarketResolver:
     """Symbol -> NYSE/NASDAQ from the newest causal registry document of the file port (pinned evidence, never guessed)."""
@@ -1033,15 +1456,13 @@ class RegistryMarketResolver:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Worker loop. OFF unless enabled; every cycle rechecks the pinned release and the CERTIFIED epoch."""
+    """Worker loop. OFF unless enabled; the pinned release is verified BEFORE any database initialization and re-verified every cycle."""
     if os.environ.get("C3PO_R2D2_V2_MIRROR_ENABLED", "").lower() != "true":
         print('{"status":"OFF","reason":"C3PO_R2D2_V2_MIRROR_ENABLED is not true"}')
         return 0
     import importlib
 
     from .config import get_settings
-    from .market_data.realtime import RealtimeMarketsService
-    from .market_data.service import MarketDataService
 
     try:  # the shadow store ships with the V2 generator (PR #383); without it there is no ledger to mirror
         PostgresShadowStore = importlib.import_module("app.r2d2_v2_store").PostgresShadowStore
@@ -1049,8 +1470,6 @@ def main(argv: list[str] | None = None) -> int:
         raise MirrorInputError("SHADOW_STORE_MODULE_MISSING") from exc
 
     settings = get_settings()
-    database = Database(settings)
-    database.initialize()
     release_path = Path(getattr(settings, "r2d2_v2_mirror_release_file", ""))
     expected_sha = str(getattr(settings, "r2d2_v2_mirror_release_sha", ""))
     epoch = str(getattr(settings, "r2d2_v2_mirror_epoch", ""))
@@ -1058,34 +1477,42 @@ def main(argv: list[str] | None = None) -> int:
     cycle_seconds = float(getattr(settings, "r2d2_v2_mirror_cycle_seconds", 20))
     exits_only = bool(getattr(settings, "r2d2_v2_mirror_exits_only", False))
     registry_root = Path(getattr(settings, "r2d2_v2_mirror_registry_root", ""))
-    release = MirrorRelease.verify(release_path.read_bytes(), expected_sha, build_sha=settings.build_sha, now=datetime.now(timezone.utc))
+    release = MirrorRelease.verify(release_path.read_bytes(), expected_sha, build_sha=settings.build_sha, now=_utc_now())
     if release.epoch != epoch or release.experiment_code != code:
         raise MirrorInputError("MIRROR_RELEASE_DOES_NOT_MATCH_SETTINGS")
+    token = str(getattr(settings, "eodhd_api_token", "")).strip()
+    if not token:
+        raise MirrorInputError("QUOTE_FEED_TOKEN_MISSING")
+    database = Database(settings)
+    database.initialize()
     repo = R2D2Repository(database)
     mirror = MirrorRepository(database)
     experiment = ensure_mirror_experiment(repo, code=code, epoch=epoch, mirror_epoch=release.mirror_epoch)
     store = PostgresShadowStore(database.connection)
-    market_data = MarketDataService(settings, database)
-    quotes = RealtimeQuoteSource(RealtimeMarketsService(settings, database, market_data.http))
+    tape = QuoteTape()
+    wanted: set[str] = set()
+    stop = threading.Event()
+    threading.Thread(target=lambda: asyncio.run(stream_quotes(tape, token, lambda: set(wanted), stop)), name="r2d2-v2-mirror-quotes", daemon=True).start()
     resolve = RegistryMarketResolver(registry_root)
     logger.info("%s worker started: mirror epoch %s, shadow epoch %s, experiment %s (%s)", MIRROR_ID, release.mirror_epoch, epoch, code, LABEL)
     while True:
-        started = clock.monotonic()
+        started = time_module.monotonic()
         try:
-            now = datetime.now(timezone.utc)
+            now = _utc_now()
             MirrorRelease.verify(release_path.read_bytes(), expected_sha, build_sha=settings.build_sha, now=now)
             row = store.read(epoch)
             if row is None:
                 logger.warning("shadow epoch %s not found; mirror idle", epoch)
             else:
-                result = run_once(ledger_row=row, mirror_epoch=release.mirror_epoch, repo=repo, mirror=mirror, experiment=experiment, quotes=quotes,
-                                  resolve_market=resolve, now=now, activated_at=release.initial_cursor_at, exits_only=exits_only)
+                wanted.update(record.symbol for record in read_ledger(row).records if record.kind == "PORTFOLIO")
+                result = run_once(ledger_row=row, mirror_epoch=release.mirror_epoch, repo=repo, mirror=mirror, experiment=experiment, quotes=tape,
+                                  resolve_market=resolve, now=now, activated_at=release.initial_cursor_at, exits_only=exits_only, clock=_utc_now)
                 logger.info("mirror cycle %s", json.dumps(result, default=str, sort_keys=True))
         except MirrorInputError as exc:
             logger.error("mirror halted this cycle: %s", exc)
         except Exception:
             logger.exception("unhandled mirror error")
-        clock.sleep(max(0.0, cycle_seconds - (clock.monotonic() - started)))
+        time_module.sleep(max(0.0, cycle_seconds - (time_module.monotonic() - started)))
 
 
 if __name__ == "__main__":

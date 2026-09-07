@@ -1281,13 +1281,20 @@ class R2D2Repository:
                       side: str, quantity: float, signal_price: float, fill_price: float, fx: float,
                       fees: float, slippage: float, reason: str, decision: dict[str, Any],
                       quote_as_of: datetime,
-                      fast_exit_audit: dict[str, Any] | None = None) -> dict[str, Any]:
+                      fast_exit_audit: dict[str, Any] | None = None,
+                      before_effect: Any = None, after_effect: Any = None) -> dict[str, Any]:
+        """Paper effect. `before_effect(connection)` and `after_effect(connection, trade_id, executed_at)` are optional
+        hooks run INSIDE the effect's transaction (after the experiment/position rows are locked, and after the trade
+        is inserted but before commit): an exception in either aborts the whole effect. `connection` is None in
+        memory mode. Absent hooks leave the behaviour unchanged (used by the R2D2 V2 paper mirror, never by V1)."""
         trade_id = str(uuid4())
         now = datetime.now(timezone.utc)
         gross = quantity * fill_price * fx
         position_key = (candidate["market"], candidate["symbol"])
         realized: float | None = None
         if not self.database.database_url:
+            if before_effect is not None:
+                before_effect(None)
             current = self.memory["positions"].get(position_key)
             cash = _float(experiment["cash_balance"])
             if side == "BUY":
@@ -1324,6 +1331,8 @@ class R2D2Repository:
                 else:
                     current.update(quantity=remaining, last_price_local=fill_price, updated_at=now)
             self.memory["experiment"].update(cash_balance=experiment["cash_balance"], status="running", updated_at=now)
+            if after_effect is not None:
+                after_effect(None, trade_id, now)
         else:
             with self.database.connection() as connection:
                 locked = connection.execute(
@@ -1336,6 +1345,8 @@ class R2D2Repository:
                        WHERE experiment_id=%s AND market=%s AND symbol=%s FOR UPDATE""",
                     (experiment["id"], candidate["market"], candidate["symbol"]),
                 ).fetchone()
+                if before_effect is not None:
+                    before_effect(connection)
                 if side == "BUY":
                     if gross + fees > cash + 0.01:
                         raise ValueError("Paper order exceeds available cash")
@@ -1398,6 +1409,8 @@ class R2D2Repository:
                      (fast_exit_audit or {}).get("rule"), (fast_exit_audit or {}).get("level"),
                      (fast_exit_audit or {}).get("atr"), (fast_exit_audit or {}).get("tick_as_of")),
                 )
+                if after_effect is not None:
+                    after_effect(connection, trade_id, now)
                 connection.commit()
             experiment["cash_balance"] = cash
         trade = {
