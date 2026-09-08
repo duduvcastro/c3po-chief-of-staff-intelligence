@@ -5,7 +5,8 @@ realized-error labels ``P_real(T + h)``, for the weekly panel and — with the 3
 07/09/2026 — for the point-in-time re-execution (B2). This module PRODUCES and READS that series; it computes no
 label arithmetic beyond locating the bar ``h`` sessions after a session on the exchange calendar.
 
-Contract (rev 7 §2.2), rev 3 of the implementation (Codex C394-1..5, C394-2/9 residuals, C394-12..14):
+Contract (rev 7 §2.2), rev 4 of the implementation (Codex C394-1..5, C394-2/9 residuals, C394-12..14; rev 4 closes the two P2
+residuals of the rev 3 audit: A1 = C394-14 for a symbol with no series, A2 = one capture per market and phase ACROSS processes):
 * one bar per (market, symbol, session) with ``close`` and ``adjusted_close`` (both mandatory), ``currency``,
   ``source`` (EODHD ``/api/eod`` for every market — the single source declared in the inventory), ``fetched_at`` and a
   canonical CONTENT hash (``bar_sha256`` excludes the clock, so an unchanged bar is recognised across runs; prices are
@@ -39,6 +40,26 @@ Contract (rev 7 §2.2), rev 3 of the implementation (Codex C394-1..5, C394-2/9 r
   before the write (``AlreadyPublishedError``: a market that published since the due while this run was fetching is a
   skip with nothing written, whichever process published, T5) —, a refused market never stops the others, and the phase
   fails at the end naming the refused markets only (so a worker retry re-runs the failed market alone);
+* **at most ONE capture per market and phase, across processes (A2):** the advisory lock ends at the capture's commit and
+  is re-taken for the publication, so two processes with the same due could interleave A-capture → B-capture → A-publish →
+  B-publish and leave two vintages for one night (both consistent; the whole-cycle exclusion broken). The capture writer
+  therefore refuses — inside the lock, after the clock re-reads, before the dedupe read — a capture when the market's
+  latest MANIFEST was captured at/after the due and no publication since the due is visible (``AlreadyCapturedError``:
+  another process holds this phase's vintage; nothing written; the memory double applies the same rule under the market
+  lock — with a publication since the due it is ``AlreadyPublishedError`` instead: the publication check runs first).
+  ``run_all`` reads it as a skip carrying the capture clock it found — and checks, at the END of the run, that the vintage
+  it deferred to became visible: if the market still has no publication since the due, the phase FAILS naming it (the
+  process that captured died or failed — any exception — between its capture and its publication, is still publishing, or had its publication
+  refused by the availability stamp — a ``ValueError`` in the log of the run that captured: the clock went backwards, or
+  the availability/capture did not advance beyond the previous publication, e.g. a backfill run inside the phase window
+  — and the night is captured-never-published: loud, the retry is refused without a request or a write until the next
+  due, the previous vintage keeps serving — runbook in the docs). The CLI ``--nightly`` carries the same due
+  (``offhours_due_at`` of the real clock), so an operator obeys the once-per-phase rule — and is REFUSED by the parser
+  before that due (between 00:00 and 01:00 America/Sao_Paulo the due of the local date is still in the future, so the
+  rule would be empty: a vintage captured then would not count for tonight's phase and the worker would capture another
+  after 01:00) and, once the market published since the due, for the REST of the local day (``AlreadyPublishedError``,
+  not only inside the 01:00–08:00 window); ``--symbols`` is ``--backfill`` only (the parser refuses it with
+  ``--nightly``); ``--backfill`` is exempt BY DESIGN (the manual, ordered path: never inside the phase window);
 * **the in-memory double is the DDL and the JSONB column:** it refuses what migration 049 refuses (columns, market, ISO
   ``session_date``, prices > 0 compared in their own type — a huge int is a NUMERIC, never an OverflowError, T3 —, a finite
   ``volume``, the hash, the clock, T4) before any write, and stores the JSON round-trip of every snapshot's inputs/outputs
@@ -50,13 +71,21 @@ Contract (rev 7 §2.2), rev 3 of the implementation (Codex C394-1..5, C394-2/9 r
   (market, symbol, session, source); the vintage is reproduced by "latest row with ``fetched_at`` ≤ ``S.fetched_at``"
   inside the run's window MINUS the sessions ``S`` refused for that symbol, and verified by the per-symbol hash (a
   provider that silently drops a session — no row at all, not a refused one — makes that symbol ``unreproducible`` in
-  ``S``: recorded in the manifest, refused by the readers). Three clocks travel with every served bar: ``available_at``
+  ``S``: recorded in the manifest, refused by the readers; that check covers the symbols the run FETCHED bars for — the
+  dedupe read and the stale check — never a symbol known only by its refusals). Three clocks travel with every served bar: ``available_at``
   (publication of ``S``), ``fetched_at`` (capture of ``S``) and ``first_captured_at`` (the stored row's own clock — the
   first capture of that content);
 * a provider row the series refuses (a close missing) is recorded per symbol WITH its session and missing fields; the
   series of ``S`` for the symbol excludes that session even when an older vintage stored a bar for it (the provider
   answered: it is not a vanished session), and a label whose target session was refused is
-  ``label_unavailable:adjustment_unknown`` (§2.2), never ``missing_bar`` and never ``vintage_unreproducible``;
+  ``label_unavailable:adjustment_unknown`` (§2.2), never ``missing_bar`` and never ``vintage_unreproducible`` — ALSO when
+  the run refused EVERY row of the symbol, so ``S`` has no series hash for it (A1): the cause is in the manifest
+  (``rows_rejected``) and in ``series().rejected_sessions``, and ``label_bar`` reads it before saying
+  ``symbol_not_in_vintage``, which stays only when the vintage has neither a series nor a refusal (with a session) for the
+  symbol; a symbol the vintage knows only by its refusals gets ``outside_window`` outside the window and ``missing_bar``
+  for any other session in it — EVEN when an earlier vintage stored that session: the run does not check the dropped
+  sessions of a symbol without a series (the dedupe read and the stale check only cover the symbols it fetched bars for),
+  so such a symbol is never ``vintage_unreproducible`` (honest wording, not a guarantee a symbol with a series gives);
 * a publication is attested only when its manifest exists, agrees with it (type, market, schema, snapshot id, bars hash,
   capture clock), carries parseable clocks (``fetched_at``, ``from``, ``to``, and the publication's ``available_at``) AND
   its ``available_at`` is the instant of its own ``published_at`` (the clock a cut is compared with is never a claim);
@@ -67,7 +96,8 @@ Contract (rev 7 §2.2), rev 3 of the implementation (Codex C394-1..5, C394-2/9 r
   civil date) and the vintage has a bar for it; every reader returns its own copies, never the cache's dicts — and the
   producer's result is a deep copy too, never the stored manifest's dicts;
 * OFF by default: the worker phase runs only with ``C3PO_VALUATION_PRICE_HISTORY_ENABLED=true``; the backfill is an
-  explicit, one-shot CLI invocation under the mesa's order. A scripted ``clock`` is read exactly THREE times per run
+  explicit, one-shot CLI invocation under the mesa's order (no due), and the CLI ``--nightly`` is a phase run with the
+  real clock's due. A scripted ``clock`` is read exactly THREE times per run
   (``started_at``, ``fetched_at``, ``available_at``); ``backfill``/``nightly`` derive the window's end from the first of
   those ticks, never from an extra one.
 """
@@ -89,7 +119,7 @@ import exchange_calendars as xcals
 from exchange_calendars.errors import RequestedSessionOutOfBounds
 
 from .config import Settings, get_settings
-from .database import AlreadyPublishedError, Database
+from .database import AlreadyCapturedError, AlreadyPublishedError, Database
 from .market_data.eodhd import EodhdClient
 from .market_data.http import JsonHttpClient
 
@@ -352,8 +382,12 @@ class PriceHistoryService:
         vintage would hide the previous one from every later cut. ``due`` (a phase's due instant, from ``run_all``) is
         re-checked INSIDE the market's lock right before the capture write: a publication of the market at/after it means
         the market already published since the phase came due (while this run was fetching) — refused with
-        ``AlreadyPublishedError`` ("already published since <due>"), nothing written, a skip for ``run_all`` (T5). Like
-        every clock of the run API, a naive ``due`` is UTC (``_utc``); ``run_all`` converts the worker's reading first."""
+        ``AlreadyPublishedError`` ("already published since <due>"), nothing written, a skip for ``run_all`` (T5) —, and,
+        without such a publication, a MANIFEST captured at/after it means another process captured this phase's vintage
+        and has not published it yet — refused with ``AlreadyCapturedError`` ("already captured since <due>"), nothing
+        written, a skip for ``run_all`` that must be confirmed by a publication before the run ends (A2; the publication
+        check runs first, so a published vintage always says "already published"). Like every clock of the run API, a
+        naive ``due`` is UTC (``_utc``); ``run_all`` converts the worker's reading first."""
         wanted = self._wanted(market, symbols)
         due = None if due is None else _utc(due)
         tick: Callable[[], datetime] = clock or ((lambda: now) if now is not None else (lambda: datetime.now(timezone.utc)))  # type: ignore[return-value]
@@ -499,7 +533,7 @@ class PriceHistoryService:
         """The nightly vintage: the WHOLE window again (one provider call per symbol, as the backfill), so that every cut has
         one self-contained vintage; unchanged bars cost no storage. The clock is read as in ``backfill`` (three ticks), and
         an empty coverage set is refused BEFORE the first tick, any request and any write. ``due`` travels to ``persist_run``
-        (T5): the phase's due instant, re-checked inside the market's lock before the capture write."""
+        (T5, A2): the phase's due instant, re-checked inside the market's lock before the capture write."""
         wanted = self._wanted(market, self.coverage_symbols(market))  # S2: before the first tick
         end, tick = self._window_clock(now, clock)
         return self.persist_run(market, start=window_start(end, self.window_months()), end=end, symbols=wanted, mode="nightly", clock=tick, due=due)
@@ -514,17 +548,34 @@ class PriceHistoryService:
         STRONG guarantee is the writer's (T5): the due travels to ``persist_run`` and is re-checked INSIDE the market's lock
         right before the capture write, so a market that published since the due while this attempt was fetching (another
         process, another thread) is refused with ``AlreadyPublishedError`` — recorded as skipped too, with the availability
-        the writer found, never as a failure. A naive ``now``/``due_at`` is São Paulo wall time, exactly as the worker reads
-        a naive clock (``_phase_is_due``/``start_of_today`` — ``_worker_instant``, T2); the run's clock gets the same instant.
-        A market whose run is refused (no coverage, no bars, a clock that does not advance) or fails never stops the others
-        — its failure is logged, the remaining markets still run and publish, and the failures are re-raised together at
-        the end naming the failed markets only, so the worker phase still fails loudly (and retries inside its window, for
-        the failed markets alone)."""
+        the writer found, never as a failure. **One capture per market and phase, across processes (A2):** a market whose
+        latest MANIFEST was captured at/after the due but has no publication since it belongs to another process's attempt
+        (in flight, dead or failed — any exception — between its capture and its publication, or whose publication the availability stamp refused —
+        a ``ValueError`` in that run's log) — skipped here without a request or a write, and
+        refused by the writer with ``AlreadyCapturedError`` when the other process captured while this one was fetching —
+        recorded as ``{"skipped": "already captured", "fetched_at": ...}`` with the capture clock found. That skip defers to
+        a vintage that must become visible: at the END of the run every such market is re-read, and one that still has no
+        publication since the due is a FAILURE of the phase, named in the final error (nothing to re-run: the retry is
+        refused the same way, cheaply, until the next due; the previous vintage keeps serving; the night stays
+        captured-never-published — see the runbook). A naive ``now``/``due_at`` is São Paulo wall time, exactly as the
+        worker reads a naive clock (``_phase_is_due``/``start_of_today`` — ``_worker_instant``, T2); the run's clock gets
+        the same instant. A market whose run is refused (no coverage, no bars, a clock that does not advance) or fails
+        never stops the others — its failure is logged, the remaining markets still run and publish, and the failures are
+        re-raised together at the end naming the failed markets only, so the worker phase still fails loudly (and retries
+        inside its window, for the failed markets alone)."""
         run_now = None if now is None else _worker_instant(now)  # T2: the worker's reading of a naive clock, for the due AND the run
         due = _worker_instant(due_at) if due_at is not None else offhours_due_at(run_now if run_now is not None else datetime.now(timezone.utc))
         results: dict[str, dict[str, Any]] = {}
         failures: dict[str, str] = {}
         skipped: list[str] = []
+        deferred: dict[str, AlreadyCapturedError] = {}  # A2: markets whose capture belongs to another process — confirmed by a publication at the end
+
+        def defer(taken: AlreadyCapturedError, where: str) -> None:
+            results[taken.entity_key] = {"skipped": "already captured", "fetched_at": taken.fetched_at.isoformat()}
+            deferred[taken.entity_key] = taken
+            logger.info("valuation_price_history %s already captured at %s (phase due %s) by another process, not published yet%s: skipped, nothing written",
+                        taken.entity_key, taken.fetched_at.isoformat(), due.isoformat(), where)
+
         for market in MARKETS:
             try:
                 latest = self.database.latest_analysis_snapshot_published_at(PUBLICATION_TYPE, market)
@@ -533,15 +584,36 @@ class PriceHistoryService:
                     skipped.append(market)
                     logger.info("valuation_price_history %s already published at %s (phase due %s): skipped", market, _instant(latest).isoformat(), due.isoformat())
                     continue
+                captured = self.database.latest_analysis_snapshot_published_at(ANALYSIS_TYPE, market)
+                if captured is not None and _instant(captured) >= due:  # A2: captured since the due by another process (not published yet): no request, no write
+                    defer(AlreadyCapturedError(market, due, _instant(captured)), "")
+                    continue
                 results[market] = self.nightly(market, now=run_now, due=due)
             except AlreadyPublishedError as done:  # T5: the writer found a publication since the due inside the lock — a skip, not a failure
                 results[market] = {"skipped": "already published", "available_at": done.available_at.isoformat()}
                 skipped.append(market)
                 logger.info("valuation_price_history %s already published at %s (phase due %s) while this run was fetching: skipped, nothing written",
                             market, done.available_at.isoformat(), due.isoformat())
+            except AlreadyCapturedError as taken:  # A2: the writer found a manifest since the due inside the lock — the other process captured while this run was fetching
+                defer(taken, " while this run was fetching")
             except Exception as error:  # every market gets its turn; the phase fails at the end, not at the first market
                 failures[market] = f"{type(error).__name__}: {error}"
                 logger.exception("valuation_price_history %s nightly failed; the other markets still run", market)
+        for market, taken in deferred.items():  # A2: a skip is only a skip if the vintage it deferred to became visible; otherwise the phase fails, loudly
+            latest = self.database.latest_analysis_snapshot_published_at(PUBLICATION_TYPE, market)
+            if latest is not None and _instant(latest) >= due:
+                results[market]["available_at"] = _instant(latest).isoformat()
+                skipped.append(market)
+                continue
+            results.pop(market)
+            failures[market] = (f"{type(taken).__name__}: {taken}; still not published at the end of this run — the process that captured it died or failed "
+                                "(any exception) between its capture and its publication, is still publishing, or had its publication refused (ValueError of the "
+                                "availability stamp: the clock "
+                                "went backwards, or the availability/capture did not advance beyond the previous publication — in the log of the run that "
+                                "captured): refused without a request or a write until the next due, the previous vintage keeps serving, the night stays "
+                                "captured-never-published (runbook)")
+            logger.error("valuation_price_history %s captured at %s (phase due %s) but not published by the end of this run: the phase fails until the next due",
+                         market, taken.fetched_at.isoformat(), due.isoformat())
         if failures:
             note = f", {len(skipped)} already published since {due.isoformat()}" if skipped else ""
             raise ValueError(f"valuation_price_history nightly failed for {', '.join(failures)} ({len(results)} of {len(MARKETS)} markets published{note}): "
@@ -591,7 +663,8 @@ class PriceHistoryService:
         """One symbol's bars from the single vintage the cut sees, each bar's content hash recomputed and the series verified
         against the hash that vintage recorded for it. Statuses: ``ok``; ``no_vintage`` (nothing published before the cut);
         ``manifest_mismatch`` (the publication's manifest is missing or disagrees with it); ``symbol_not_in_vintage`` (the
-        vintage has no series for it — never completed from an older one); ``vintage_unreproducible`` (declared by the run
+        vintage has no series for it — never completed from an older one; when the run refused EVERY row of the symbol,
+        ``rejected_sessions`` still says which sessions and why, and ``label_bar`` reads it — A1); ``vintage_unreproducible`` (declared by the run
         itself); ``bar_hash_mismatch`` (a stored row's content no longer reproduces its own hash: refused);
         ``vintage_mismatch`` (the rows do not reproduce the recorded series hash: refused). The chain read is "latest row
         with ``fetched_at`` ≤ the capture" inside the window MINUS the sessions the vintage refused for the symbol (the
@@ -646,12 +719,19 @@ class PriceHistoryService:
 
     def label_bar(self, market: str, symbol: str, session: date, horizon_sessions: int, *, available_before: datetime) -> dict[str, Any]:
         """The bar ``h`` sessions after ``session`` (the label of a prediction made at ``session``), as known before the cut.
-        ``not_yet_mature`` until the target session has CLOSED before the cut; then the vintage's status; ``outside_window``;
-        ``label_unavailable:adjustment_unknown`` (with ``missing``) when the run refused the provider's row for that session
-        (a close missing in ``S``, §2.2); ``missing_bar`` only when the exchange had the session, the vintage has the symbol,
-        the window covers it and the provider gave nothing. ``labelled`` carries the three clocks: ``available_at`` (the
-        publication of ``S``), ``fetched_at`` (the capture of ``S``) and ``first_captured_at`` (the bar row's own clock: the
-        content may have been first captured by an earlier run and deduplicated since). Never a price from elsewhere."""
+        ``not_yet_mature`` until the target session has CLOSED before the cut; then the vintage's status — except that a
+        symbol with NO series in ``S`` whose rows the run REFUSED (``rejected_sessions`` non-empty) is a symbol the vintage
+        knows, and goes on to the checks below instead of ``symbol_not_in_vintage`` (A1: the cause is recorded; the label
+        must read it) —; ``outside_window``; ``label_unavailable:adjustment_unknown`` (with ``missing``) when the run refused
+        the provider's row for that session (a close missing in ``S``, §2.2), whether or not the symbol has other, usable
+        bars in ``S``; ``missing_bar`` only when the exchange had the session, the vintage knows the symbol (a series, or
+        rows it refused — the provider answered for it), the window covers it and the provider gave no row for that
+        session — for a symbol known only by its refusals this holds EVEN when an earlier vintage stored that session (the
+        run does not check the dropped sessions of a symbol without a series, so it is never ``vintage_unreproducible``);
+        ``symbol_not_in_vintage`` only when the vintage has neither a series nor a refusal with a session for the
+        symbol. ``labelled`` carries the three clocks: ``available_at`` (the publication of ``S``), ``fetched_at`` (the
+        capture of ``S``) and ``first_captured_at`` (the bar row's own clock: the content may have been first captured by
+        an earlier run and deduplicated since). Never a price from elsewhere."""
         cut = _utc(available_before)
         target, reason = sessions_after(market, session, horizon_sessions)
         if target is None:
@@ -661,7 +741,8 @@ class PriceHistoryService:
         known = self.series(market, symbol, available_before=cut)
         header = {"session": target.isoformat(), "price_snapshot_id": known["price_snapshot_id"], "publication_id": known["publication_id"],
                   "available_at": known["available_at"], "fetched_at": known["fetched_at"]}
-        if known["status"] != "ok":
+        known_by_refusal = known["status"] == "symbol_not_in_vintage" and bool(known["rejected_sessions"])  # A1: no series, but S refused rows of it: S knows the symbol
+        if known["status"] != "ok" and not known_by_refusal:
             return {**header, "status": known["status"]}
         if not (known["window"][0] <= target.isoformat() <= known["window"][1]):
             return {**header, "status": "outside_window"}  # the vintage never asked for that session: not "the exchange had no bar" (C394-11)
@@ -679,11 +760,25 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Valuation V3.2 price series (rev 7 §2.2): backfill or nightly vintage; OFF unless invoked.")
     parser.add_argument("--market", choices=MARKETS, required=True)
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--backfill", action="store_true", help="one-shot history (months from --months), bars stamped fetched_at = now")
-    group.add_argument("--nightly", action="store_true", help="the nightly vintage (whole window, coverage set)")
+    group.add_argument("--backfill", action="store_true", help="one-shot history (months from --months), bars stamped fetched_at = now; no phase due BY DESIGN "
+                                                               "(the manual, ordered path: never inside the phase window)")
+    group.add_argument("--nightly", action="store_true", help="the nightly vintage (whole window, coverage set) under the phase's once-per-phase rule: the due is "
+                                                              "01:00 America/Sao_Paulo of today, as for the worker phase — refused before 01:00 (the phase of today "
+                                                              "has not come due yet) and, once the market published since the due, for the rest of the local day "
+                                                              "(not only inside the 01:00-08:00 window)")
     parser.add_argument("--months", type=int, default=None, help="defaults to C3PO_VALUATION_PRICE_HISTORY_BACKFILL_MONTHS (36)")
-    parser.add_argument("--symbols", default="", help="comma-separated override of the coverage set (tests/dry runs)")
+    parser.add_argument("--symbols", default="", help="comma-separated override of the coverage set (--backfill only; tests/dry runs)")
     args = parser.parse_args(argv)
+    symbols = [s for s in args.symbols.split(",") if s.strip()] or None
+    if args.nightly and symbols:  # the phase run is the coverage set, as for the worker: an override is a dry run/test of the manual path only
+        parser.error("--symbols applies to --backfill only")
+    due: datetime | None = None
+    if args.nightly:  # the same once-per-phase rule as the worker phase (A2): the due of the São Paulo local date of the real clock, re-checked inside the market's lock
+        now = datetime.now(timezone.utc)
+        due = offhours_due_at(now)
+        if now < due:  # 00:00–01:00 São Paulo: the due of today is still in the future, so the rule would be empty and the phase would capture another vintage after it
+            parser.error(f"--nightly: the phase of today ({due.astimezone(SAO_PAULO).date().isoformat()}) has not come due yet (due {due.isoformat()} = "
+                         f"{OFFHOURS_DUE_HOUR:02d}:00 America/Sao_Paulo, now {now.isoformat()}); use --backfill outside the phase window")
     settings = get_settings()
     if not settings.eodhd_api_token:
         print(json.dumps({"error": "EODHD token not configured"}))
@@ -691,8 +786,10 @@ def main(argv: list[str] | None = None) -> int:
     database = Database(settings)
     from .market_data.service import MarketDataService  # the same HTTP client (timeouts/retries) the workers use
     service = PriceHistoryService(settings, database, MarketDataService(settings, database).http)
-    symbols = [s for s in args.symbols.split(",") if s.strip()] or None
-    result = service.backfill(args.market, months=args.months, symbols=symbols) if args.backfill else service.nightly(args.market)
+    if args.backfill:  # the manual, ordered path: no due BY DESIGN (it must never run inside the phase window — docs)
+        result = service.backfill(args.market, months=args.months, symbols=symbols)
+    else:
+        result = service.nightly(args.market, due=due)
     summary = {key: value for key, value in result.items() if key not in {"series_sha256", "series_bars", "rows_rejected"}}
     print(json.dumps(summary, sort_keys=True, default=str))
     return 0

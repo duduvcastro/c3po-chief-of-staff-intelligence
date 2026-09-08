@@ -33,6 +33,21 @@ class AlreadyPublishedError(ValueError):
         self.entity_key, self.due, self.available_at = entity_key, due, available_at
 
 
+class AlreadyCapturedError(ValueError):
+    """The capture writer found, INSIDE the market's lock, a MANIFEST of the market captured at/after the phase's due instant
+    and no publication since the due (A2; with one it is ``AlreadyPublishedError``, checked first): another process captured
+    this phase's vintage and is publishing it — or died or failed (any exception) between its capture and its publication, or had its
+    publication refused by the availability stamp (a ``ValueError`` in that run's log). Either way this run never captures a second vintage for the same phase (the
+    advisory lock ends at the capture commit, so without this check two processes could interleave capture/capture/
+    publish/publish and leave two vintages for one night): refused with nothing written, a skip for ``run_all`` — which
+    fails the phase at its end if that vintage is still unpublished, so a dead producer stays loud until the next due."""
+
+    def __init__(self, entity_key: str, due: datetime, fetched_at: datetime) -> None:
+        super().__init__(f"already captured since {due.isoformat()}: the latest manifest of {entity_key} was captured at {fetched_at.isoformat()} "
+                         "and has no publication yet, nothing written")
+        self.entity_key, self.due, self.fetched_at = entity_key, due, fetched_at
+
+
 class Database:
     def __init__(self, settings: Settings) -> None:
         self.database_url = settings.database_url
@@ -3508,7 +3523,9 @@ class Database:
         publication, and the two writers below re-take it (re-entrant). PostgreSQL serializes the same section across
         processes with a transaction-level advisory lock on ``valuation_price_history:<market>``, taken as the FIRST
         statement of each writer's transaction, after which the previous clocks are re-read and re-checked — and, for the
-        capture, the dedupe read happens in that same transaction, after the lock (never before it)."""
+        capture, the dedupe read happens in that same transaction, after the lock (never before it). The advisory lock
+        ends at the capture's commit, so across processes the whole-cycle exclusion of a phase is NOT this lock: it is the
+        capture writer's refusal of a second capture at/after the phase's due (``AlreadyCapturedError``, A2)."""
         with self._price_history_locks_guard:
             return self._price_history_locks.setdefault(market, threading.RLock())
 
@@ -3572,6 +3589,20 @@ class Database:
             raise AlreadyPublishedError(entity_key, due, previous["publication_available_at"])
 
     @staticmethod
+    def _refuse_if_captured_since(entity_key: str, due: datetime | None, previous: dict[str, Any]) -> None:
+        """At most ONE capture per market and phase, across processes (A2): decided INSIDE the market's lock, on the previous
+        manifest just re-read, after ``_refuse_if_published_since`` (so a published vintage says "already published") and
+        before the dedupe read. A manifest captured at/after ``due`` whose publication is not visible belongs to another
+        process's attempt at this phase — in flight, dead or failed (any exception) between its capture and its publication, or whose publication the
+        availability stamp refused —, and this run must not capture a second vintage for the same night:
+        ``AlreadyCapturedError``, nothing written. ``None`` = not a phase."""
+        if due is None or previous["manifest_fetched_at"] is None:
+            return
+        due = Database._price_bar_instant(due)
+        if previous["manifest_fetched_at"] >= due:
+            raise AlreadyCapturedError(entity_key, due, previous["manifest_fetched_at"])
+
+    @staticmethod
     def _refuse_unless_capture_advances(entity_key: str, fetched_at: datetime, previous: dict[str, Any]) -> None:
         """Two vintages can never share a clock, and a capture never precedes the availability of the vintage before it:
         otherwise "the vintage a cut sees" would not be unique (C394-9). Checked INSIDE the lock, right before the write."""
@@ -3593,7 +3624,11 @@ class Database:
         """The CAPTURE of one vintage in ONE critical section and ONE transaction, in this order: the market's lock (in
         PostgreSQL ``pg_advisory_xact_lock`` as the first statement), the previous clocks re-read — the capture refused
         when the previous publication is at/after ``due`` (the phase's due instant, when the caller is a phase: the market
-        already published since it came due, ``AlreadyPublishedError``, a skip for the caller — T5) or unless it advances
+        already published since it came due, ``AlreadyPublishedError``, a skip for the caller — T5), when — without such a
+        publication — the previous MANIFEST was captured at/after ``due`` (another process captured this phase's vintage and
+        has not published it yet: ``AlreadyCapturedError``, at most one capture per market and phase across processes — A2;
+        a manifest since the due WITH a publication since the due is ``AlreadyPublishedError``, because
+        ``_refuse_if_published_since`` runs first) or unless it advances
         beyond both previous clocks (nothing written either way) —, the DEDUPE READ (the latest content hash per (symbol,
         session) for ``symbols``/``source`` — in the same transaction, so two processes can never both see "no row yet" for
         the same bar), then ``build(latest_hashes)`` → ``(inputs, outputs, published_at, snapshot_id, bars_to_insert)`` with
@@ -3608,6 +3643,7 @@ class Database:
             with self.price_history_lock(entity_key):
                 previous = self._price_history_previous_memory(analysis_type, publication_type, entity_key)
                 self._refuse_if_published_since(entity_key, due, previous)
+                self._refuse_if_captured_since(entity_key, due, previous)  # A2: the same rule under the market lock, before the dedupe read
                 self._refuse_unless_capture_advances(entity_key, fetched_at, previous)
                 inputs, outputs, snapshot_id, bars = self._build_price_history_capture(build, self._latest_price_bar_hashes_memory(entity_key, symbols, source=source),
                                                                                        fetched_at)
@@ -3623,6 +3659,7 @@ class Database:
             self._lock_price_history_pg(connection, entity_key)
             previous = self._price_history_previous_pg(connection, analysis_type, publication_type, entity_key)
             self._refuse_if_published_since(entity_key, due, previous)
+            self._refuse_if_captured_since(entity_key, due, previous)  # A2: inside the advisory-locked transaction, after the clock reads, before DISTINCT ON
             self._refuse_unless_capture_advances(entity_key, fetched_at, previous)
             inputs, outputs, snapshot_id, bars = self._build_price_history_capture(build, self._latest_price_bar_hashes_pg(connection, entity_key, symbols, source=source),
                                                                                    fetched_at)

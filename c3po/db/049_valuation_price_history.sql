@@ -17,14 +17,22 @@
 -- and verifying the per-symbol series hash the manifest recorded: never a mix of vintages, never a live fetch.
 -- Both writers serialize per market with SELECT pg_advisory_xact_lock(hashtext('valuation_price_history:' || <M>)) as the
 -- first statement of their transaction, then re-read the previous manifest and publication and refuse a capture that does
--- not advance beyond both (two runs racing on the same clock leave exactly one vintage). The capture's dedupe read (the
--- latest bar_sha256 per (symbol, session_date), DISTINCT ON ... ORDER BY fetched_at DESC) runs in that same transaction,
--- after the lock, so two processes can never both see "no row yet" for the same bar. A run with no symbols to fetch, or
--- with no bars for any of them, is refused before any write: an empty vintage never hides the previous one. A publication
--- row must attest the capture it was checked against (inputs.fetched_at parseable and equal to the manifest's clock) and
--- its own availability (inputs.available_at = published_at); a previous publication whose inputs.fetched_at does not
--- parse makes every later writer refuse explicitly, by id (the clock chain cannot be proven), never fail on a parse error.
--- Bars are append-only (row triggers) and cannot be truncated. Nothing here touches V1/V2/V3.
+-- not advance beyond both (two runs racing on the same clock leave exactly one vintage). The advisory lock ends at the
+-- capture's commit and is re-taken for the publication, so a phase's whole-cycle exclusion across processes is the capture
+-- writer's own rule: when the caller is a phase (a due instant), a capture is refused — inside that transaction, after the
+-- clock re-reads, before the dedupe read — if the previous publication is at/after the due (already published: checked
+-- first, so it wins) OR, without such a publication, the previous manifest was captured at/after the due (already captured
+-- by another process, not yet published: at most one capture per market and phase; a producer that dies between its
+-- capture and its publication, or whose publication the availability stamp refuses — clock backwards, availability or
+-- capture not advancing beyond the previous publication —, leaves the night captured-never-published, refused until the
+-- next due). The CLI --nightly carries the same due; --backfill does not, by design (never inside the phase window). The
+-- capture's dedupe read (the latest bar_sha256 per (symbol, session_date), DISTINCT ON ... ORDER BY fetched_at DESC) runs
+-- in that same transaction, after the lock, so two processes can never both see "no row yet" for the same bar. A run with
+-- no symbols to fetch, or with no bars for any of them, is refused before any write: an empty vintage never hides the
+-- previous one. A publication row must attest the capture it was checked against (inputs.fetched_at parseable and equal
+-- to the manifest's clock) and its own availability (inputs.available_at = published_at); a previous publication whose
+-- inputs.fetched_at does not parse makes every later writer refuse explicitly, by id (the clock chain cannot be proven),
+-- never fail on a parse error. Bars are append-only (row triggers) and cannot be truncated. Nothing here touches V1/V2/V3.
 
 CREATE TABLE IF NOT EXISTS valuation_price_bars (
     id UUID PRIMARY KEY,

@@ -1,12 +1,16 @@
-"""The V3.2 price series (rev 7 §2.2 / §9.2), rev 3: every run is ONE vintage in two facts — the CAPTURE (manifest +
+"""The V3.2 price series (rev 7 §2.2 / §9.2), rev 4: every run is ONE vintage in two facts — the CAPTURE (manifest +
 changed bars in one transaction, ``fetched_at`` after the last provider answer) and, once committed, the PUBLICATION
 (``available_at`` stamped immediately before its insert); a cut resolves the single vintage by the publications, so a
 cut between capture and availability never sees it, now or later. One critical section per market (two runs racing
-on the same clock leave exactly one vintage); every served bar has its content hash recomputed; three clocks per bar;
-a session the run refused is ``label_unavailable:adjustment_unknown``, never ``missing_bar``. OFF by default; the
-36-month backfill is an explicit one-shot run."""
+on the same clock leave exactly one vintage) and, across processes, at most one CAPTURE per market and phase (A2);
+every served bar has its content hash recomputed; three clocks per bar; a session the run refused is
+``label_unavailable:adjustment_unknown``, never ``missing_bar`` — also for a symbol with no series in the vintage (A1).
+OFF by default; the 36-month backfill is an explicit one-shot run (no due, by design), and the CLI ``--nightly`` carries
+the phase's due (V4-R1); a publication the availability stamp refuses is the third way to an orphan (V4-R4); a symbol
+known only by its refusals is never checked for dropped sessions (V4-R5, documented, unchanged)."""
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -27,6 +31,13 @@ from app.market_data.eodhd import EodhdClient
 NOW = datetime(2026, 9, 7, 23, 30, tzinfo=timezone.utc)
 D = timedelta(days=1)
 S = timedelta(seconds=1)
+# what run_all appends to a deferred market's AlreadyCapturedError when its vintage is still invisible at the end of the run: the three causes of a
+# captured-never-published night, in the words the runbook quotes (V4-R4; pinned to the docs below)
+ORPHAN_TAIL = ("; still not published at the end of this run — the process that captured it died or failed (any exception) between its capture and its "
+               "publication, is still publishing, or had its publication refused (ValueError of the availability stamp: the clock went backwards, or the "
+               "availability/capture did not advance "
+               "beyond the previous publication — in the log of the run that captured): refused without a request or a write until the next due, the previous "
+               "vintage keeps serving, the night stays captured-never-published (runbook)")
 
 
 class ScriptedHttp:
@@ -80,6 +91,15 @@ def _run(service: series.PriceHistoryService, market: str, symbols: list[str], *
 
 def _rows(database: Database, analysis_type: str, market: str) -> list[dict]:
     return [s for s in database._analysis_snapshots if s["analysis_type"] == analysis_type and s["entity_key"] == market]
+
+
+def _other_process(shared: Database) -> Database:
+    """What ANOTHER PROCESS is to the in-memory double (A2): the same store — the tables: analysis_snapshots, the price bars,
+    the methodology versions — with its OWN locks. The RLock is per process, as PostgreSQL's advisory lock is per transaction:
+    neither outlives the capture's commit across processes."""
+    other = Database(_settings())
+    other._analysis_snapshots, other._price_bars, other._methodologies = shared._analysis_snapshots, shared._price_bars, shared._methodologies
+    return other
 
 
 def test_bars_need_both_closes_and_hash_their_content_not_their_clock() -> None:
@@ -494,6 +514,25 @@ def test_postgresql_writers_take_the_advisory_lock_first_and_refuse_before_writi
         database.persist_price_history_run(series.ANALYSIS_TYPE, series.PUBLICATION_TYPE, "NASDAQ", "mv", fetched_at=NOW + 10 * S, symbols=["AAPL"], source=series.SOURCE,
                                            build=build, due=NOW + 2 * S)
     assert connection.log[0][0].startswith("SELECT pg_advisory_xact_lock") and len(connection.log) == 3 and connection.committed == 0 and built == []
+    # A2: a MANIFEST captured at/after the due (m-orphan at NOW + 3 s) whose publication is not visible (p0 before the due) is refused as "already captured"
+    # at the same point — after the lock and the two clock reads, before the dedupe read — although the capture clock DOES advance beyond it; nothing
+    # built or committed. With a publication since the due the refusal is still "already published": the publication check comes first
+    connection.rows["valuation_price_history"], connection.rows["valuation_price_history_publication"] = ("m-orphan", NOW + 3 * S), ("p0", NOW, NOW.isoformat())
+    connection.log.clear()
+    with pytest.raises(series.AlreadyCapturedError, match=re.escape(f"already captured since {(NOW + 2 * S).isoformat()}: the latest manifest of NASDAQ was captured at "
+                                                                    f"{(NOW + 3 * S).isoformat()} and has no publication yet, nothing written")):
+        database.persist_price_history_run(series.ANALYSIS_TYPE, series.PUBLICATION_TYPE, "NASDAQ", "mv", fetched_at=NOW + 10 * S, symbols=["AAPL"], source=series.SOURCE,
+                                           build=build, due=NOW + 2 * S)
+    assert connection.log[0] == ("SELECT pg_advisory_xact_lock(hashtext(%s))", ("valuation_price_history:NASDAQ",))
+    assert [entry[1][0] for entry in connection.log[1:3]] == ["valuation_price_history", "valuation_price_history_publication"]
+    assert len(connection.log) == 3 and connection.committed == 0 and built == []
+    connection.rows["valuation_price_history_publication"] = ("p1", NOW + 3 * S, NOW.isoformat())
+    connection.log.clear()
+    with pytest.raises(series.AlreadyPublishedError):
+        database.persist_price_history_run(series.ANALYSIS_TYPE, series.PUBLICATION_TYPE, "NASDAQ", "mv", fetched_at=NOW + 10 * S, symbols=["AAPL"], source=series.SOURCE,
+                                           build=build, due=NOW + 2 * S)
+    assert len(connection.log) == 3 and connection.committed == 0 and built == []
+    connection.rows["valuation_price_history"] = ("m1", NOW)
     connection.log.clear()
     with pytest.raises(ValueError, match="does not advance beyond the capture"):
         database.publish_price_history_run(series.PUBLICATION_TYPE, series.ANALYSIS_TYPE, "NASDAQ", "mv", {"fetched_at": NOW.isoformat()}, {}, fetched_at=NOW,
@@ -598,6 +637,54 @@ def test_a_session_the_provider_refused_after_storing_it_is_adjustment_unknown_n
     fourth = _run(service, "B3", ["VALE3"], now=s1_at + 3 * D, start=date(2026, 9, 8), end=date(2026, 9, 10))
     assert fourth["rows_rejected"] == {} and fourth["rows_rejected_total"] == 0 and fourth["series_bars"] == {"VALE3": 2}
     assert service.label_bar("B3", "VALE3", date(2026, 9, 4), 1, available_before=s1_at + 4 * D)["status"] == "labelled"
+
+
+def test_a_symbol_whose_every_row_the_run_refused_is_adjustment_unknown_for_those_sessions_never_symbol_not_in_vintage() -> None:
+    # A1 (C394-14 residual): VALE3 answered 09-08/09-09 without adjusted_close — every row refused, no series hash in S, the vintage published thanks to
+    # PETR4. The cause is in the manifest (rows_rejected) and in series().rejected_sessions: label_bar must read it BEFORE saying symbol_not_in_vintage
+    service, database, http = _service({"PETR4.SA": [_bar("2026-09-08", 36.0), _bar("2026-09-09", 36.5), _bar("2026-09-10", 37.0)],
+                                        "VALE3.SA": [{"date": "2026-09-08", "close": 60.0}, {"date": "2026-09-09", "close": 61.0, "adjusted_close": "n/a"}],
+                                        "ITUB4.SA": []})
+    vintage_at = datetime(2026, 9, 11, 2, 0, tzinfo=timezone.utc)
+    result = _run(service, "B3", ["PETR4", "VALE3", "ITUB4"], now=vintage_at, start=date(2026, 9, 8), end=date(2026, 9, 10))
+    assert result["symbols_with_bars"] == 1 and result["symbols_missing"] == ["ITUB4", "VALE3"] and set(result["series_sha256"]) == {"PETR4"}
+    assert result["rows_rejected"] == {"VALE3": [{"session": "2026-09-08", "missing": ["adjusted_close"]}, {"session": "2026-09-09", "missing": ["adjusted_close"]}]}
+    cut = vintage_at + D
+    known = service.series("B3", "VALE3", available_before=cut)
+    assert known["status"] == "symbol_not_in_vintage" and known["bars"] == {} and known["window"] == ["2026-09-08", "2026-09-10"]  # the series status is unchanged: no series
+    assert known["rejected_sessions"] == {"2026-09-08": ["adjusted_close"], "2026-09-09": ["adjusted_close"]} and known["price_snapshot_id"] == result["price_snapshot_id"]
+    # branch 1: the target session was refused → adjustment_unknown with the fields, the vintage's ids and clocks — no series hash needed
+    for horizon, target in ((1, "2026-09-08"), (2, "2026-09-09")):
+        label = service.label_bar("B3", "VALE3", date(2026, 9, 4), horizon, available_before=cut)
+        assert label["status"] == series.LABEL_ADJUSTMENT_UNKNOWN == "label_unavailable:adjustment_unknown" and label["session"] == target, label
+        assert label["missing"] == ["adjusted_close"] and label["price_snapshot_id"] == result["price_snapshot_id"] and label["publication_id"] == result["publication_id"]
+        assert label["available_at"] == label["fetched_at"] == vintage_at.isoformat() and "close" not in label
+    # branch 2: neither a series nor a refusal for the symbol → symbol_not_in_vintage (an empty answer; a symbol the run never asked for)
+    for symbol in ("ITUB4", "BBAS3"):
+        absent = service.label_bar("B3", symbol, date(2026, 9, 4), 2, available_before=cut)
+        assert absent["status"] == "symbol_not_in_vintage" and absent["session"] == "2026-09-09" and absent["price_snapshot_id"] == result["price_snapshot_id"]
+        assert service.series("B3", symbol, available_before=cut)["rejected_sessions"] == {}
+    # branch 3: the vintage knows the symbol only by its refusals and the provider gave NO row for the target session → missing_bar, exactly as for a
+    # symbol with a series (the provider answered for VALE3: 09-10 is a B3 session it had no row for) — and outside_window before the window, as ever
+    gap = service.label_bar("B3", "VALE3", date(2026, 9, 4), 3, available_before=cut)
+    assert gap["status"] == "missing_bar" and gap["session"] == "2026-09-10" and gap["price_snapshot_id"] == result["price_snapshot_id"]
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 1), 1, available_before=cut)["status"] == "outside_window"  # 09-02 precedes the window
+    # the earlier gates are untouched: maturity, then the vintage — a cut at the publication sees no vintage
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 4), 2, available_before=datetime(2026, 9, 9, 21, 0, tzinfo=timezone.utc))["status"] == "not_yet_mature"
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 4), 2, available_before=vintage_at)["status"] == "no_vintage"
+    assert service.label_bar("B3", "PETR4", date(2026, 9, 4), 2, available_before=cut)["status"] == "labelled"  # the symbol with a series, as before
+    assert service._series_cache and all(key[1] == "B3:PETR4" for key in service._series_cache)  # a refused symbol is never cached (R5)
+    # a refusal WITHOUT a session (an unusable date) names no session: nothing to attribute — symbol_not_in_vintage stays; usable rows later restore the series
+    http.bars_by_symbol["VALE3.SA"] = [{"date": "bad", "close": 60.0}]
+    second = _run(service, "B3", ["PETR4", "VALE3"], now=vintage_at + D, start=date(2026, 9, 8), end=date(2026, 9, 10))
+    assert second["rows_rejected"] == {"VALE3": [{"session": None, "missing": ["date", "adjusted_close"]}]}
+    assert service.series("B3", "VALE3", available_before=vintage_at + 2 * D)["rejected_sessions"] == {}
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 4), 2, available_before=vintage_at + 2 * D)["status"] == "symbol_not_in_vintage"
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 4), 2, available_before=cut)["status"] == series.LABEL_ADJUSTMENT_UNKNOWN  # the old cut is unchanged
+    http.bars_by_symbol["VALE3.SA"] = [_bar("2026-09-08", 60.0), {"date": "2026-09-09", "close": 61.0}]
+    _run(service, "B3", ["PETR4", "VALE3"], now=vintage_at + 2 * D, start=date(2026, 9, 8), end=date(2026, 9, 10))
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 4), 1, available_before=vintage_at + 3 * D)["status"] == "labelled"
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 4), 2, available_before=vintage_at + 3 * D)["missing"] == ["adjusted_close"]  # the C394-14 path, with a series
 
 
 def test_the_producers_result_is_a_deep_copy_never_the_stored_manifest() -> None:
@@ -790,6 +877,7 @@ def test_backfill_and_nightly_fetch_the_whole_window_and_the_phase_stays_dormant
     assert "BEFORE UPDATE OR DELETE ON valuation_price_bars" in sql and "BEFORE TRUNCATE ON valuation_price_bars" in sql
     assert "adjusted_close NUMERIC NOT NULL CHECK (adjusted_close > 0)" in sql and "REFERENCES analysis_snapshots(id)" in sql
     assert "valuation_price_history_publication" in sql and "pg_advisory_xact_lock" in sql  # the publication row and the lock are declared with the DDL
+    assert max(len(line) for line in sql.splitlines()) <= 127, "migration 049 wraps its comment at 127 columns (P3-4)"
 
 
 def test_run_all_gives_every_market_its_turn_and_fails_at_the_end_naming_only_the_refused_ones(caplog: pytest.LogCaptureFixture) -> None:
@@ -1361,3 +1449,432 @@ def test_a_market_that_published_since_the_due_while_this_run_was_fetching_is_sk
     later = service.persist_run("NASDAQ", start=date(2026, 9, 1), end=date(2026, 9, 8), symbols=["AAPL"], now=attempt + S, due=interloper_at + S)  # due after it: due again
     assert later["available_at"] == (attempt + S).isoformat()
     assert service.backfill("NASDAQ", months=1, now=attempt + 2 * S, symbols=["AAPL"])["available_at"] == (attempt + 2 * S).isoformat()  # no due: never refused by it
+
+
+def test_two_processes_on_the_same_due_leave_one_capture_and_one_publication_even_when_their_critical_sections_interleave(caplog: pytest.LogCaptureFixture) -> None:
+    # A2: in PostgreSQL the advisory lock ends at the capture's commit and is re-taken for the publication, so two processes with the same due could
+    # interleave A-capture → B-capture → A-publish → B-publish and leave TWO vintages for one night. Two Database objects over ONE store are two processes
+    # to the in-memory double (its RLock is per process, as the advisory lock is per transaction). B passes its first check, fetches, A captures meanwhile:
+    # B's writer must refuse inside the lock (AlreadyCapturedError), A publishes, and B's run_all confirms A's publication at its end — one manifest, one
+    # publication, A's; B's bars never written
+    a_service, database, a_http = _service({"AAPL.US": [_bar("2026-09-04", 230.0)]})
+    b_http = ScriptedHttp({"AAPL.US": [_bar("2026-09-04", 231.0)], "IBM.US": [_bar("2026-09-04", 250.0)], "PETR4.SA": [_bar("2026-09-04", 36.0)]})
+    b_database = _other_process(database)
+    b_service = series.PriceHistoryService(_settings(), b_database, b_http, eodhd=EodhdClient("https://eodhd.com", "secret", b_http))  # type: ignore[arg-type]
+    assert b_database.price_history_lock("NASDAQ") is not database.price_history_lock("NASDAQ") and b_database._analysis_snapshots is database._analysis_snapshots
+    assert issubclass(series.AlreadyCapturedError, ValueError) and not issubclass(series.AlreadyCapturedError, series.AlreadyPublishedError)  # run_all tells them apart
+    for market, symbol in (("B3", "PETR4"), ("NASDAQ", "AAPL"), ("NYSE", "IBM")):
+        database.save_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE", "mv-1", {}, {"rows": [{"symbol": symbol}]}, NOW)
+    due = datetime(2026, 9, 8, 4, 0, tzinfo=timezone.utc)  # 01:00 in São Paulo
+    a_at, b_at = due + timedelta(minutes=1), due + timedelta(minutes=2)
+    a_captured, b_refused, a_published = threading.Event(), threading.Event(), threading.Event()
+    outcome: dict[str, object] = {}
+    real_a_publish = database.publish_price_history_run
+
+    def a_publish(*args, **kwargs):  # A's publication waits for B's capture attempt: A-capture → B-capture → A-publish, the interleaving the lock allows
+        a_captured.set()
+        assert b_refused.wait(timeout=10), "B never reached its capture"
+        return real_a_publish(*args, **kwargs)
+
+    database.publish_price_history_run = a_publish  # type: ignore[method-assign]
+
+    def run_a() -> None:
+        try:
+            outcome["a"] = a_service.persist_run("NASDAQ", start=date(2026, 9, 1), end=date(2026, 9, 8), symbols=["AAPL"], now=a_at, due=due)
+        except Exception as error:  # surfaced by the assertions below
+            outcome["a"] = error
+        a_published.set()
+
+    real_b_capture = b_database.persist_price_history_run
+
+    def b_capture(*args, **kwargs):
+        try:
+            return real_b_capture(*args, **kwargs)
+        finally:
+            if args[2] == "NASDAQ":  # B's capture attempt for the contested market (B3 comes first in MARKETS and must not release A)
+                b_refused.set()
+
+    b_database.persist_price_history_run = b_capture  # type: ignore[method-assign]
+    real_b_get_json = b_http.get_json
+
+    def b_get_json(url: str, *, params=None, headers=None):
+        if url.endswith("AAPL.US"):  # B's first check has passed (nothing captured yet); A captures while B is fetching
+            threading.Thread(target=run_a).start()
+            assert a_captured.wait(timeout=10), "A never captured"
+        if url.endswith("IBM.US"):  # B's last market: A has published by then (an event, never a sleep)
+            assert a_published.wait(timeout=10), "A never published"
+        return real_b_get_json(url, params=params, headers=headers)
+
+    b_http.get_json = b_get_json  # type: ignore[method-assign]
+    with caplog.at_level(logging.INFO, logger="app.valuation_price_history"):
+        results = b_service.run_all(now=b_at, due_at=due)
+    assert a_published.wait(timeout=10) and isinstance(outcome["a"], dict), outcome
+    a_result: dict = outcome["a"]  # type: ignore[assignment]
+    assert a_result["fetched_at"] == a_result["available_at"] == a_at.isoformat()
+    assert results["NASDAQ"] == {"skipped": "already captured", "fetched_at": a_at.isoformat(), "available_at": a_at.isoformat()}  # the capture clock B found, then A's publication
+    assert results["B3"]["mode"] == "nightly" and results["NYSE"]["mode"] == "nightly" and results["B3"]["available_at"] == b_at.isoformat()
+    assert [call["url"].rsplit("/", 1)[-1] for call in b_http.calls] == ["PETR4.SA", "AAPL.US", "IBM.US"]  # B DID fetch NASDAQ: its first check had passed
+    manifests, publications = _rows(database, series.ANALYSIS_TYPE, "NASDAQ"), _rows(database, series.PUBLICATION_TYPE, "NASDAQ")
+    assert len(manifests) == 1 == len(publications) and manifests[0]["id"] == a_result["price_snapshot_id"] and manifests[0]["published_at"] == a_at
+    assert publications[0]["id"] == a_result["publication_id"] and publications[0]["published_at"] == a_at
+    assert [bar["close"] for bar in database._price_bars if bar["market"] == "NASDAQ"] == [230.0]  # A's bar only: B's 231.0 was never written
+    assert b_service.series("NASDAQ", "AAPL", available_before=b_at + S)["bars"]["2026-09-04"]["close"] == 230.0
+    assert a_service.series("NASDAQ", "AAPL", available_before=a_at)["status"] == "no_vintage"  # a cut at A's availability sees nothing (strict <)
+    messages = [record.getMessage() for record in caplog.records if record.name == "app.valuation_price_history"]
+    assert (f"valuation_price_history NASDAQ already captured at {a_at.isoformat()} (phase due {due.isoformat()}) by another process, not published yet "
+            "while this run was fetching: skipped, nothing written") in messages
+    assert not any(record.levelno >= logging.ERROR for record in caplog.records if record.name == "app.valuation_price_history")
+    assert b_service.last_run_at() == a_service.last_run_at() == a_at  # every market has a publication since the due: the phase is complete
+    # the sequential retry after the first publication: skipped as already published — the publication check comes first —, no request, no write
+    calls = len(b_http.calls), len(a_http.calls)
+    assert b_service.run_all(now=b_at + timedelta(minutes=30), due_at=due) == {"B3": {"skipped": "already published", "available_at": b_at.isoformat()},
+                                                                            "NASDAQ": {"skipped": "already published", "available_at": a_at.isoformat()},
+                                                                            "NYSE": {"skipped": "already published", "available_at": b_at.isoformat()}}
+    assert len(b_http.calls) == calls[0]  # run_all's first check: nothing asked
+    with pytest.raises(series.AlreadyPublishedError):  # the writer too: a publication since the due beats a manifest since the due
+        a_service.persist_run("NASDAQ", start=date(2026, 9, 1), end=date(2026, 9, 8), symbols=["AAPL"], now=b_at + timedelta(minutes=31), due=due)
+    assert len(a_http.calls) == calls[1] + 1  # a direct persist_run has no first check: it fetched, then the writer refused inside the lock (T5)
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 1 == len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ"))
+    assert all(len(_rows(database, series.PUBLICATION_TYPE, market)) == 1 for market in series.MARKETS)
+
+
+def test_a_process_that_dies_between_capture_and_publication_leaves_the_night_captured_never_published_and_the_retry_is_refused_loudly(
+        caplog: pytest.LogCaptureFixture) -> None:
+    # A2, the documented cost of one capture per phase: the retry cannot tell a dead producer from one still publishing, so it defers to the captured
+    # vintage — and the phase FAILS at its end while that vintage is invisible: no request, no write, every retry, until the next due; the previous
+    # vintage keeps serving every cut and the orphan manifest is never served
+    service, database, http = _service({"AAPL.US": [_bar("2026-09-04", 230.0)], "IBM.US": [_bar("2026-09-04", 250.0)], "PETR4.SA": [_bar("2026-09-04", 36.0)]})
+    for market, symbol in (("B3", "PETR4"), ("NASDAQ", "AAPL"), ("NYSE", "IBM")):
+        database.save_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE", "mv-1", {}, {"rows": [{"symbol": symbol}]}, NOW)
+    first_night = datetime(2026, 9, 8, 4, 5, tzinfo=timezone.utc)
+    previous = service.run_all(now=first_night)
+    due = datetime(2026, 9, 9, 4, 0, tzinfo=timezone.utc)
+    dying_at = due + timedelta(minutes=1)
+    database.publish_price_history_run = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("process died"))  # type: ignore[method-assign]  # right after the capture's commit
+    with pytest.raises(RuntimeError, match="process died"):
+        service.nightly("NASDAQ", now=dying_at, due=due)
+    del database.publish_price_history_run  # that process is gone; the next one has the real writer
+    orphan = database.latest_analysis_snapshot(series.ANALYSIS_TYPE, "NASDAQ")
+    assert orphan and orphan["published_at"] == dying_at and orphan["id"] != previous["NASDAQ"]["price_snapshot_id"]
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 2 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 1
+    assert service.vintage("NASDAQ", available_before=dying_at + timedelta(hours=1))["price_snapshot_id"] == previous["NASDAQ"]["price_snapshot_id"]  # type: ignore[index]
+    # the retry's writer: refused with the explicit message and nothing written — its clock DOES advance beyond the orphan; the due rule is what refuses
+    retry_at = dying_at + timedelta(minutes=30)
+    message = f"already captured since {due.isoformat()}: the latest manifest of NASDAQ was captured at {dying_at.isoformat()} and has no publication yet, nothing written"
+    with pytest.raises(series.AlreadyCapturedError, match=re.escape(message)) as refused:
+        service.persist_run("NASDAQ", start=date(2026, 9, 1), end=date(2026, 9, 9), symbols=["AAPL"], now=retry_at, due=due)
+    assert str(refused.value) == message and isinstance(refused.value, ValueError)
+    assert refused.value.entity_key == "NASDAQ" and refused.value.due == due and refused.value.fetched_at == dying_at
+    with pytest.raises(series.AlreadyCapturedError):  # the due in any zone is the same instant
+        service.nightly("NASDAQ", now=retry_at, due=datetime(2026, 9, 9, 1, 0, tzinfo=ZoneInfo("America/Sao_Paulo")))
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 2 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 1
+    # the worker's retries: NASDAQ skipped WITHOUT a request or a write (the first check sees the orphan), B3/NYSE run once, and the phase FAILS naming
+    # NASDAQ — every 30 minutes, cheaply, until the next due: loud, never a second capture for the night
+    for attempt in (retry_at, retry_at + timedelta(minutes=30)):
+        calls = len(http.calls)
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="app.valuation_price_history"):
+            with pytest.raises(ValueError) as failed:
+                service.run_all(now=attempt)
+        note = "" if attempt == retry_at else f", 2 already published since {due.isoformat()}"
+        assert str(failed.value) == (f"valuation_price_history nightly failed for NASDAQ (2 of 3 markets published{note}): NASDAQ: AlreadyCapturedError: {message}"
+                                     + ORPHAN_TAIL), str(failed.value)
+        assert "B3" not in str(failed.value).split("): ", 1)[1] and "NYSE" not in str(failed.value).split("): ", 1)[1]  # the failed market only
+        assert "AAPL.US" not in {call["url"].rsplit("/", 1)[-1] for call in http.calls[calls:]}
+        assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 2 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 1
+        records = [record for record in caplog.records if record.name == "app.valuation_price_history" and "NASDAQ" in record.getMessage()]
+        assert [(record.levelno, record.getMessage()) for record in records] == [
+            (logging.INFO, f"valuation_price_history NASDAQ already captured at {dying_at.isoformat()} (phase due {due.isoformat()}) by another process, "
+                           "not published yet: skipped, nothing written"),
+            (logging.ERROR, f"valuation_price_history NASDAQ captured at {dying_at.isoformat()} (phase due {due.isoformat()}) but not published by the end of "
+                            "this run: the phase fails until the next due")]
+    assert len(_rows(database, series.PUBLICATION_TYPE, "B3")) == 2 == len(_rows(database, series.PUBLICATION_TYPE, "NYSE"))  # published once tonight, then skipped
+    # readers: the previous vintage keeps serving every cut; the worker keeps the phase due (last_run_at is NASDAQ's previous publication)
+    served = service.series("NASDAQ", "AAPL", available_before=retry_at + timedelta(hours=5))
+    assert served["status"] == "ok" and served["price_snapshot_id"] == previous["NASDAQ"]["price_snapshot_id"] and served["available_at"] == first_night.isoformat()
+    assert service.label_bar("NASDAQ", "AAPL", date(2026, 9, 3), 1, available_before=retry_at + timedelta(hours=5))["available_at"] == first_night.isoformat()
+    assert service.last_run_at() == first_night and worker._phase_is_due(service.last_run_at(), due.astimezone(worker.SAO_PAULO))
+    # the next due: the orphan's capture precedes it, NASDAQ runs again (its capture advances beyond the orphan) and publishes; the orphan is never served
+    next_night = due + D + timedelta(minutes=5)
+    results = service.run_all(now=next_night)
+    assert results["NASDAQ"]["mode"] == "nightly" and results["NASDAQ"]["available_at"] == next_night.isoformat() and results["NASDAQ"]["bars_unchanged"] == 1
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 3 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 2
+    assert service.series("NASDAQ", "AAPL", available_before=next_night + S)["price_snapshot_id"] == results["NASDAQ"]["price_snapshot_id"]
+    assert service.series("NASDAQ", "AAPL", available_before=next_night)["price_snapshot_id"] == previous["NASDAQ"]["price_snapshot_id"]  # never the orphan
+    assert orphan["id"] not in {service.vintage("NASDAQ", available_before=cut)["price_snapshot_id"]  # type: ignore[index]
+                                for cut in (dying_at + S, retry_at + D, next_night, next_night + S, next_night + D)}
+    assert service.last_run_at() == next_night
+    # without a due (a backfill under the mesa's order) the writer is not a phase: the orphan of a later night never refuses it
+    database.publish_price_history_run = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("process died"))  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError):
+        service.nightly("NASDAQ", now=next_night + D, due=next_night + D - timedelta(minutes=5))
+    del database.publish_price_history_run
+    assert service.backfill("NASDAQ", months=1, now=next_night + D + S, symbols=["AAPL"])["available_at"] == (next_night + D + S).isoformat()
+
+
+def test_a_publication_refused_by_the_availability_stamp_leaves_the_same_orphan_and_the_phase_names_the_three_causes(caplog: pytest.LogCaptureFixture) -> None:
+    # V4-R4: the third way to a captured-never-published night — the capture committed, then the publication writer REFUSED (here the clock went
+    # backwards between the capture and the availability stamp). The cause is in the log of the run that captured (logger.exception, with the
+    # traceback); the retry defers to the orphan exactly as for a dead producer, and the phase fails naming all three causes — the words the runbook quotes
+    service, database, http = _service({"AAPL.US": [_bar("2026-09-04", 230.0)], "IBM.US": [_bar("2026-09-04", 250.0)], "PETR4.SA": [_bar("2026-09-04", 36.0)]})
+    for market, symbol in (("B3", "PETR4"), ("NASDAQ", "AAPL"), ("NYSE", "IBM")):
+        database.save_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE", "mv-1", {}, {"rows": [{"symbol": symbol}]}, NOW)
+    first_night = datetime(2026, 9, 8, 4, 5, tzinfo=timezone.utc)
+    previous = service.run_all(now=first_night)
+    due = datetime(2026, 9, 9, 4, 0, tzinfo=timezone.utc)
+    capturing_at = due + timedelta(minutes=1)
+    real_publish = database.publish_price_history_run
+
+    def publish(*args, **kwargs):  # NASDAQ's clock goes backwards between its capture and its availability stamp; the other markets keep the run's clock
+        if args[2] == "NASDAQ":
+            kwargs["clock"] = lambda: capturing_at - S
+        return real_publish(*args, **kwargs)
+
+    database.publish_price_history_run = publish  # type: ignore[method-assign]
+    with caplog.at_level(logging.INFO, logger="app.valuation_price_history"):
+        with pytest.raises(ValueError) as failed:
+            service.run_all(now=capturing_at)
+    del database.publish_price_history_run
+    refusal = f"availability {(capturing_at - S).isoformat()} of NASDAQ precedes its capture {capturing_at.isoformat()} (clock went backwards)"
+    assert str(failed.value) == f"valuation_price_history nightly failed for NASDAQ (2 of 3 markets published): NASDAQ: ValueError: {refusal}"
+    logged = [record for record in caplog.records if record.name == "app.valuation_price_history" and record.levelno >= logging.ERROR]
+    assert [record.getMessage() for record in logged] == ["valuation_price_history NASDAQ nightly failed; the other markets still run"]
+    assert logged[0].exc_info and str(logged[0].exc_info[1]) == refusal  # the cause, in the log of the run that captured
+    orphan = database.latest_analysis_snapshot(series.ANALYSIS_TYPE, "NASDAQ")
+    assert orphan and orphan["published_at"] == capturing_at and orphan["id"] != previous["NASDAQ"]["price_snapshot_id"]
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 2 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 1  # captured, never published
+    # the retry: the orphan is indistinguishable from a dead producer's — NASDAQ deferred without a request or a write, then the phase fails naming the three causes
+    calls = len(http.calls)
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="app.valuation_price_history"):
+        with pytest.raises(ValueError) as retried:
+            service.run_all(now=capturing_at + timedelta(minutes=30))
+    message = f"already captured since {due.isoformat()}: the latest manifest of NASDAQ was captured at {capturing_at.isoformat()} and has no publication yet, nothing written"
+    assert str(retried.value) == (f"valuation_price_history nightly failed for NASDAQ (2 of 3 markets published, 2 already published since {due.isoformat()}): "
+                                  f"NASDAQ: AlreadyCapturedError: {message}" + ORPHAN_TAIL)
+    assert "had its publication refused (ValueError of the availability stamp: the clock went backwards" in str(retried.value)
+    assert "AAPL.US" not in {call["url"].rsplit("/", 1)[-1] for call in http.calls[calls:]} and len(http.calls) == calls
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 2 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 1
+    assert [record.levelno for record in caplog.records if record.name == "app.valuation_price_history" and "NASDAQ" in record.getMessage()] == [logging.INFO, logging.ERROR]
+    served = service.series("NASDAQ", "AAPL", available_before=capturing_at + timedelta(hours=5))
+    assert served["status"] == "ok" and served["price_snapshot_id"] == previous["NASDAQ"]["price_snapshot_id"]  # the previous vintage keeps serving
+    # the other refusals of the availability stamp leave the same orphan: a backfill run INSIDE the phase window publishes between the nightly's capture
+    # and its publication, so the nightly's capture no longer advances beyond the capture the latest publication attests (the reason --backfill is exempt
+    # from the due BY DESIGN and must not run inside the window)
+    next_due = due + D
+    t0, t1, t2, t3, t4 = (next_due + timedelta(minutes=m) for m in (1, 2, 3, 4, 5))
+    backfilled: list[dict] = []
+
+    def publish_after_a_backfill(*args, **kwargs):
+        database.publish_price_history_run = real_publish  # type: ignore[method-assign]
+        backfilled.append(service.backfill("NASDAQ", months=1, clock=Ticks(t2, t2, t3), symbols=["AAPL"]))  # no due: never refused by the nightly's manifest
+        return real_publish(*args, **kwargs)
+
+    database.publish_price_history_run = publish_after_a_backfill  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match=re.escape(f"vintage clock {t1.isoformat()} does not advance beyond the capture the previous publication of NASDAQ attests "
+                                                   f"({t2.isoformat()})")):
+        service.nightly("NASDAQ", clock=Ticks(t0, t1, t4), due=next_due)
+    del database.publish_price_history_run
+    assert backfilled[0]["available_at"] == t3.isoformat() and backfilled[0]["mode"] == "backfill"
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 4 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 2  # the nightly's manifest: an orphan
+    assert service.vintage("NASDAQ", available_before=t4)["price_snapshot_id"] == backfilled[0]["price_snapshot_id"]  # type: ignore[index]
+    with pytest.raises(series.AlreadyPublishedError):  # the retry of that phase: the backfill's publication is at/after the due — the publication check wins
+        service.nightly("NASDAQ", now=t4 + timedelta(minutes=30), due=next_due)
+
+
+def test_a_symbol_known_only_by_refusals_is_not_checked_for_dropped_sessions_so_an_earlier_vintages_session_is_missing_bar() -> None:
+    # V4-R5 (documented honestly, behaviour unchanged): the run's dedupe read and stale check cover the symbols it FETCHED bars for. VALE3 had 09-08/09-09
+    # in S1; in S2 the provider answers only a refused 09-08 row and NO 09-09 row — S2 knows VALE3 by its refusal alone, records nothing unreproducible for it,
+    # and 09-09 under S2 is missing_bar (S1's row is not S2's, and S2 never checked it), while PETR4, with a series, is vintage_unreproducible for the same drop
+    service, database, http = _service({"PETR4.SA": [_bar("2026-09-08", 36.0), _bar("2026-09-09", 36.5)], "VALE3.SA": [_bar("2026-09-08", 60.0), _bar("2026-09-09", 61.0)]})
+    s1_at = datetime(2026, 9, 11, 2, 0, tzinfo=timezone.utc)
+    first = _run(service, "B3", ["PETR4", "VALE3"], now=s1_at, start=date(2026, 9, 8), end=date(2026, 9, 10))
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 4), 2, available_before=s1_at + S)["status"] == "labelled"
+    http.bars_by_symbol["VALE3.SA"] = [{"date": "2026-09-08", "close": 60.0}]  # 09-09 vanished and 09-08 refused: no series for VALE3 in S2
+    http.bars_by_symbol["PETR4.SA"] = [_bar("2026-09-08", 36.0)]  # 09-09 vanished for a symbol WITH a series
+    second = _run(service, "B3", ["PETR4", "VALE3"], now=s1_at + D, start=date(2026, 9, 8), end=date(2026, 9, 10))
+    assert second["symbols_unreproducible"] == {"PETR4": ["2026-09-09"]} and second["symbols_missing"] == ["VALE3"] and set(second["series_sha256"]) == {"PETR4"}
+    assert second["rows_rejected"] == {"VALE3": [{"session": "2026-09-08", "missing": ["adjusted_close"]}]}
+    cut = s1_at + 2 * D
+    known = service.series("B3", "VALE3", available_before=cut)
+    assert known["status"] == "symbol_not_in_vintage" and known["rejected_sessions"] == {"2026-09-08": ["adjusted_close"]} and known["bars"] == {}
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 4), 1, available_before=cut)["status"] == series.LABEL_ADJUSTMENT_UNKNOWN  # the refused session (A1)
+    gap = service.label_bar("B3", "VALE3", date(2026, 9, 4), 2, available_before=cut)
+    assert gap["status"] == "missing_bar" and gap["session"] == "2026-09-09" and gap["price_snapshot_id"] == second["price_snapshot_id"]  # not unreproducible
+    assert service.label_bar("B3", "PETR4", date(2026, 9, 4), 2, available_before=cut)["status"] == "vintage_unreproducible"  # the guarantee a series gives
+    assert len([bar for bar in database._price_bars if bar["symbol"] == "VALE3" and bar["session_date"] == "2026-09-09"]) == 1  # S1's row is still stored
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 4), 2, available_before=s1_at + S)["price_snapshot_id"] == first["price_snapshot_id"]  # S1's cut: labelled
+    assert service.label_bar("B3", "VALE3", date(2026, 9, 1), 1, available_before=cut)["status"] == "outside_window"  # outside the window, as ever
+
+
+def test_the_cli_nightly_carries_the_phase_due_and_the_backfill_stays_exempt_by_design(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    # V4-R1: `main --nightly` is a phase run — due = offhours_due_at(now) of the real clock, the worker phase's rule — so an operator inside the phase
+    # window can neither publish a second vintage of the night nor recover an orphan; `main --backfill` carries no due BY DESIGN (the manual, ordered path)
+    service, database, http = _service({"AAPL.US": [_bar("2026-09-04", 230.0)]})
+    database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "mv-1", {}, {"rows": [{"symbol": "AAPL"}]}, NOW)
+    clock = {"now": datetime(2026, 9, 9, 4, 20, tzinfo=timezone.utc)}  # 01:20 in São Paulo: the phase of the 9th came due at 01:00 (04:00 UTC)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: timezone | None = None) -> datetime:  # the module's only real clock: main's due and the run's three ticks
+            return clock["now"].astimezone(tz) if tz else clock["now"].replace(tzinfo=None)
+
+    class SameHttpAsTheWorkers:
+        def __init__(self, settings: Settings, database: Database) -> None:
+            self.http = http
+
+    monkeypatch.setattr(series, "datetime", FrozenDateTime)
+    monkeypatch.setattr(series, "get_settings", lambda: service.settings)
+    monkeypatch.setattr(series, "Database", lambda settings: database)
+    monkeypatch.setattr("app.market_data.service.MarketDataService", SameHttpAsTheWorkers)
+    due = datetime(2026, 9, 9, 4, 0, tzinfo=timezone.utc)
+    assert series.offhours_due_at(clock["now"]) == due
+
+    def cli(*arguments: str) -> dict:
+        assert series.main(["--market", "NASDAQ", *arguments]) == 0
+        return json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+
+    # the first nightly of the phase: captured and published at the real clock, the whole window, the coverage set
+    first = cli("--nightly")
+    assert first["mode"] == "nightly" and first["available_at"] == first["fetched_at"] == clock["now"].isoformat() and first["symbols_with_bars"] == 1
+    assert http.calls[-1]["params"] == {**http.calls[-1]["params"], "from": "2023-09-01", "to": "2026-09-09"} and "series_sha256" not in first
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 1 == len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ"))
+    # a second --nightly inside the same phase: the writer refuses with the phase's due (already published since 01:00 SP), nothing written — the provider
+    # was asked once first (nightly has no first check; run_all's is the cheap one)
+    clock["now"] += timedelta(minutes=30)
+    calls = len(http.calls)
+    with pytest.raises(series.AlreadyPublishedError, match=re.escape(f"already published since {due.isoformat()}: the latest publication of NASDAQ is at "
+                                                                     f"{first['available_at']}, nothing written")):
+        series.main(["--market", "NASDAQ", "--nightly"])
+    assert len(http.calls) == calls + 1 and len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 1 == len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ"))
+    # the next phase: the CLI run dies between its capture and its publication — an orphan; the operator's retry inside the window is refused
+    # with AlreadyCapturedError (the same rule as the worker phase), nothing written
+    clock["now"] = datetime(2026, 9, 10, 4, 5, tzinfo=timezone.utc)
+    next_due = datetime(2026, 9, 10, 4, 0, tzinfo=timezone.utc)
+    database.publish_price_history_run = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("process died"))  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="process died"):
+        series.main(["--market", "NASDAQ", "--nightly"])
+    del database.publish_price_history_run
+    dying_at = clock["now"]
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 2 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 1
+    clock["now"] += timedelta(minutes=30)
+    with pytest.raises(series.AlreadyCapturedError, match=re.escape(f"already captured since {next_due.isoformat()}: the latest manifest of NASDAQ was captured at "
+                                                                    f"{dying_at.isoformat()} and has no publication yet, nothing written")):
+        series.main(["--market", "NASDAQ", "--nightly"])
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 2 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 1  # nothing written
+    assert service.vintage("NASDAQ", available_before=clock["now"])["price_snapshot_id"] == first["price_snapshot_id"]  # type: ignore[index]  # the previous vintage serves
+    # --backfill: no due, by design — the manual path is never refused by the orphan (nor by a publication since the due); it captures beyond the orphan and publishes
+    clock["now"] += timedelta(minutes=1)
+    backfill = cli("--backfill", "--months", "1", "--symbols", "AAPL")
+    assert backfill["mode"] == "backfill" and backfill["available_at"] == clock["now"].isoformat() and http.calls[-1]["params"]["from"] == "2026-08-01"
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 3 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 2
+    assert service.vintage("NASDAQ", available_before=clock["now"] + S)["price_snapshot_id"] == backfill["price_snapshot_id"]  # type: ignore[index]
+    # ...which is exactly why it must not run inside the window: the phase now says "already published" (the backfill's publication is at/after the due)
+    clock["now"] += timedelta(minutes=1)
+    with pytest.raises(series.AlreadyPublishedError, match=re.escape(f"already published since {next_due.isoformat()}")):
+        series.main(["--market", "NASDAQ", "--nightly"])
+    # the next phase again: the orphan and the backfill precede the new due; the CLI nightly runs and publishes
+    clock["now"] = datetime(2026, 9, 11, 4, 5, tzinfo=timezone.utc)
+    third = cli("--nightly")
+    assert third["mode"] == "nightly" and third["available_at"] == clock["now"].isoformat() and third["bars_unchanged"] == 1
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 4 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 3
+
+
+def test_the_cli_nightly_is_refused_before_the_due_and_for_the_rest_of_the_local_day_once_the_phase_published(monkeypatch: pytest.MonkeyPatch,
+                                                                                                                capsys: pytest.CaptureFixture[str]) -> None:
+    # P3-1 / P3-3 of the rev 4 audit. Between 00:00 and 01:00 São Paulo the due of the local date is still in the FUTURE, so the once-per-phase rule would
+    # be empty: a `--nightly` at 00:30 would capture a vintage the phase of that date does not see as its own, and the worker would capture another after
+    # 01:00 — refused by the parser (SystemExit 2, no request, no write; --backfill is the manual path, outside the window). Once the phase published the
+    # market, `--nightly` is refused for the REST of the local day — at 12:00 and 23:59 São Paulo too, not only inside the 01:00–08:00 window: the due does
+    # not move before midnight. And `--symbols` is `--backfill` only: with `--nightly` the parser refuses it before settings, database or provider.
+    service, database, http = _service({"AAPL.US": [_bar("2026-09-04", 230.0)]})
+    database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "mv-1", {}, {"rows": [{"symbol": "AAPL"}]}, NOW)
+    clock = {"now": datetime(2026, 9, 9, 3, 30, tzinfo=timezone.utc)}  # 00:30 in São Paulo: the phase of the 9th comes due at 01:00 (04:00 UTC)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: timezone | None = None) -> datetime:
+            return clock["now"].astimezone(tz) if tz else clock["now"].replace(tzinfo=None)
+
+    class SameHttpAsTheWorkers:
+        def __init__(self, settings: Settings, database: Database) -> None:
+            self.http = http
+
+    monkeypatch.setattr(series, "datetime", FrozenDateTime)
+    monkeypatch.setattr(series, "get_settings", lambda: service.settings)
+    monkeypatch.setattr(series, "Database", lambda settings: database)
+    monkeypatch.setattr("app.market_data.service.MarketDataService", SameHttpAsTheWorkers)
+    due = datetime(2026, 9, 9, 4, 0, tzinfo=timezone.utc)
+
+    def refused(*arguments: str) -> str:
+        with pytest.raises(SystemExit) as stop:
+            series.main(["--market", "NASDAQ", *arguments])
+        assert stop.value.code == 2  # argparse's parser.error
+        return capsys.readouterr().err
+
+    def cli(*arguments: str) -> dict:
+        assert series.main(["--market", "NASDAQ", *arguments]) == 0
+        return json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+
+    for now in (clock["now"], due - S):  # 00:30:00 and 00:59:59 São Paulo: the due of the 9th is in the future
+        clock["now"] = now
+        error = refused("--nightly")
+        assert (f"--nightly: the phase of today (2026-09-09) has not come due yet (due {due.isoformat()} = 01:00 America/Sao_Paulo, now {now.isoformat()}); "
+                "use --backfill outside the phase window") in error, error
+    assert http.calls == [] and _rows(database, series.ANALYSIS_TYPE, "NASDAQ") == [] and _rows(database, series.PUBLICATION_TYPE, "NASDAQ") == []
+    # at the due itself the phase has come due: the run captures and publishes at the real clock
+    clock["now"] = due
+    first = cli("--nightly")
+    assert first["mode"] == "nightly" and first["available_at"] == first["fetched_at"] == due.isoformat() and len(http.calls) == 1
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 1 == len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ"))
+    # after the phase published: refused for the rest of the local day — inside the window (01:30 SP) and outside it (12:00 SP, 23:59:59 SP) alike
+    for now in (due + timedelta(minutes=30), datetime(2026, 9, 9, 15, 0, tzinfo=timezone.utc), datetime(2026, 9, 10, 2, 59, 59, tzinfo=timezone.utc)):
+        clock["now"] = now
+        assert series.offhours_due_at(now) == due
+        calls = len(http.calls)
+        with pytest.raises(series.AlreadyPublishedError, match=re.escape(f"already published since {due.isoformat()}: the latest publication of NASDAQ is at "
+                                                                         f"{due.isoformat()}, nothing written")):
+            series.main(["--market", "NASDAQ", "--nightly"])
+        assert len(http.calls) == calls + 1  # nightly has no cheap first check: the provider is asked once, the writer refuses inside the lock
+    assert len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 1 == len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ"))
+    # the next local day before 01:00: the due of the 10th is in the future again — without the parser's refusal this would capture a SECOND vintage
+    # (the 9th's publication precedes the 10th's due, so the writer would not refuse) and the phase of the 10th would capture a third after 01:00
+    clock["now"] = datetime(2026, 9, 10, 3, 30, tzinfo=timezone.utc)
+    calls = len(http.calls)
+    assert "--nightly: the phase of today (2026-09-10) has not come due yet (due 2026-09-10T04:00:00+00:00 = 01:00 America/Sao_Paulo" in refused("--nightly")
+    assert len(http.calls) == calls and len(_rows(database, series.ANALYSIS_TYPE, "NASDAQ")) == 1 == len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ"))
+    clock["now"] = datetime(2026, 9, 10, 4, 0, 1, tzinfo=timezone.utc)  # one second after the 10th's due: the phase runs
+    second = cli("--nightly")
+    assert second["available_at"] == clock["now"].isoformat() and second["bars_unchanged"] == 1 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 2
+    # --symbols with --nightly: refused by the parser before settings, database or provider (--backfill keeps it: the manual path's dry run)
+    monkeypatch.setattr(series, "get_settings", lambda: pytest.fail("--symbols with --nightly must be refused before the settings are read"))
+    for arguments in (("--nightly", "--symbols", "AAPL"), ("--nightly", "--symbols", "AAPL,MSFT"), ("--symbols", "AAPL", "--nightly")):
+        assert "error: --symbols applies to --backfill only" in refused(*arguments)
+    assert len(http.calls) == 5 and len(_rows(database, series.PUBLICATION_TYPE, "NASDAQ")) == 2
+    monkeypatch.setattr(series, "get_settings", lambda: service.settings)
+    clock["now"] += timedelta(minutes=1)
+    assert cli("--backfill", "--months", "1", "--symbols", "AAPL")["mode"] == "backfill" and http.calls[-1]["params"]["from"] == "2026-08-01"
+    # the help says the truth about both rules
+    monkeypatch.setenv("COLUMNS", "400")  # argparse wraps the help at the terminal width: one line per option here
+    with pytest.raises(SystemExit) as shown:
+        series.main(["--help"])
+    assert shown.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "refused before 01:00 (the phase of today has not come due yet) and, once the market published since the due, for the rest of the local day" in help_text
+    assert "(not only inside the 01:00-08:00 window)" in help_text and "(--backfill only; tests/dry runs)" in help_text
+
+
+def test_the_docs_quote_the_capture_writers_refusal_and_the_phase_failure_verbatim() -> None:
+    # V4-R2 / V4-R4: the runbook quotes the code — AlreadyCapturedError's text (no comma before "and has no publication yet") and the three causes run_all
+    # names when a deferred vintage is still invisible at the end of the run — verbatim
+    docs = (Path(__file__).resolve().parents[2] / "docs" / "VALUATION_PRICE_HISTORY_V1.md").read_text(encoding="utf-8")
+    due, captured_at = datetime(2026, 9, 9, 4, 0, tzinfo=timezone.utc), datetime(2026, 9, 9, 4, 1, tzinfo=timezone.utc)
+    text = str(series.AlreadyCapturedError("M", due, captured_at))
+    assert text == f"already captured since {due.isoformat()}: the latest manifest of M was captured at {captured_at.isoformat()} and has no publication yet, nothing written"
+    assert "already captured since `<due>`: the latest manifest of M was captured at … and has no publication yet, nothing written" in docs
+    assert ", and has no publication yet" not in docs and ", and has no publication yet" not in text
+    assert ORPHAN_TAIL in docs  # the message of run_all (asserted char by char by the orphan tests above) is the one the docs quote
+    assert "died or failed (any exception) between its capture and its publication" in ORPHAN_TAIL and docs.count("died between") == 0  # P3-2: any exception
+    assert "**morreu ou falhou (qualquer exceção)** entre o commit da captura e a publicação" in docs  # the runbook A2 names the same cause
+    assert "`--backfill` fica isento **por desenho**" in docs and "--nightly" in docs  # V4-R1: the CLI rule is documented
+    assert "has not come due yet" in docs and "é recusada pelo resto do dia local" in docs and "--symbols applies to --backfill only" in docs  # P3-1, P3-3
