@@ -3,7 +3,10 @@ prediction records FIRST; the official TP is a SELECTION by generation (one comp
 market, plus targeted admissions); what is served comes from the records; switching and rolling back are new
 selections; consumers resolve ONE generation per request and never compute a TP of their own.
 Rev 2 answers Codex 5577072593 (F393-1..F393-8); rev 5 closes the residuals on rev 4 (F393-4, F393-5, F393-6 a/b/c,
-F393-7, F393-9) — see the tests marked "rev 5" at the end."""
+F393-7, F393-9) — see the tests marked "rev 5"; rev 6 closes B2 (two clocks on the record) and B3 (the explicit order
+governs the direct admission) — the tests marked "rev 6" — and its residuals S1–S5, S8, S9 (the authority clock is the
+prediction instant; recency on the direct admission; the CHECK mirrored; readers tie-break like the selection; unrecordable
+re-runs warn once; a malformed published_at keeps the call; the idempotent column block of the migration) at the end."""
 from __future__ import annotations
 
 import json
@@ -275,6 +278,19 @@ def test_the_migration_defines_two_append_only_tables_with_targeted_admissions()
     # F393-9 (rev 5): the root escapes the partial chain index, so a second partial unique index admits ONE root
     assert "CREATE UNIQUE INDEX IF NOT EXISTS valuation_official_selection_root" in sql
     assert "ON valuation_official_selection ((1)) WHERE previous_generation_id IS NULL" in sql
+    # rev 6 (B2): the record's own publication clock is a NOT NULL column that can never precede the prediction's instant
+    assert "prediction_instant TIMESTAMPTZ NOT NULL" in sql
+    assert "published_at TIMESTAMPTZ NOT NULL CONSTRAINT valuation_predictions_published_at_check CHECK (published_at >= prediction_instant)" in sql
+    # S9: CREATE TABLE IF NOT EXISTS never alters a table created before the column, and every migration runs on every start —
+    # an idempotent block at the END (after the triggers it suspends) adds, backfills, hardens and constrains the column
+    tail = sql[sql.rindex("CREATE TRIGGER"):]
+    assert "ALTER TABLE valuation_predictions ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;" in tail
+    assert "UPDATE valuation_predictions SET published_at = prediction_instant WHERE published_at IS NULL;" in tail
+    assert tail.index("DISABLE TRIGGER valuation_predictions_append_only") < tail.index("UPDATE valuation_predictions") < tail.index("ENABLE TRIGGER valuation_predictions_append_only")
+    assert "ALTER TABLE valuation_predictions ALTER COLUMN published_at SET NOT NULL;" in tail
+    assert "FROM pg_constraint" in tail and "conname = 'valuation_predictions_published_at_check'" in tail and "IF NOT EXISTS" in tail
+    assert "ADD CONSTRAINT valuation_predictions_published_at_check" in tail and tail.count("CHECK (published_at >= prediction_instant)") == 1
+    assert tail.index("ADD COLUMN IF NOT EXISTS") < tail.index("UPDATE valuation_predictions") < tail.index("SET NOT NULL") < tail.index("ADD CONSTRAINT")
 
 
 def test_a_caller_that_resolved_no_generation_is_served_nothing_and_never_the_current_one() -> None:
@@ -288,7 +304,8 @@ def test_a_caller_that_resolved_no_generation_is_served_nothing_and_never_the_cu
     stamp = official.official_stamp(database, "NASDAQ")
     assert stamp["tp_source_version"] == "7" and stamp["official_session_date"] == "2026-09-04" and stamp["official_cycle_id"]
     item = official.item_stamp(official.official_row(database, "US", "AAPL"))
-    assert set(item) == {"tp_source", "official_generation_id", "official_cycle_id", "tp_source_version", "official_session_date", "prediction_instant", "official_row_sha256"}
+    assert set(item) == {"tp_source", "official_generation_id", "official_cycle_id", "tp_source_version", "official_session_date", "prediction_instant", "official_row_sha256",
+                         "official_published_at"}  # rev 6 (B2): the record's own publication clock travels with every served item
     assert item["official_row_sha256"] and official.item_stamp(None) == {key: None for key in item}
 
 
@@ -505,6 +522,7 @@ def _pg_row(record: dict[str, Any], zone: ZoneInfo) -> tuple[Any, ...]:
     numeric = Database._numeric_param
     return (record["id"], record["source"], record["source_version"], record["market"], record["symbol"], record["scope"],
             record["session_date"], record["cycle_id"], datetime.fromisoformat(record["prediction_instant"]).astimezone(zone),
+            datetime.fromisoformat(record["published_at"]).astimezone(zone),  # rev 6 (B2): the second clock, a TIMESTAMPTZ column too
             numeric(record["tp"]), numeric(record["buy_in"]), numeric(record["internal_tp"]), numeric(record["consensus_tp"]),
             record["consensus_source"], record["analyst_count"], numeric(record["consensus_weight_percent"]), numeric(record["price"]),
             record["currency"], json.loads(json.dumps(record["decomposition"])), record["row_sha256"])
@@ -530,7 +548,7 @@ def test_the_postgresql_row_reader_rebuilds_the_canonical_shape_and_the_stored_h
     assert float(Decimal(f"{odd:.15g}")) != odd
     # a JSONB delivered as text (no jsonb loader) is parsed, never hashed as a string
     as_text = list(_pg_row(record, ZoneInfo("UTC")))
-    as_text[18] = json.dumps(record["decomposition"])
+    as_text[19] = json.dumps(record["decomposition"])
     assert database._prediction_record(tuple(as_text)) == record
     # the memory double serves the same shape the PG reader rebuilds
     database.insert_valuation_predictions([record])
@@ -1078,8 +1096,8 @@ def test_an_explicit_order_stands_over_the_targeted_cycles_registered_before_it(
     # Z2 (Y3 residual): the recovery re-admitted, on the next automatic pass or bootstrap, what a mesa order had purged
     # (select_generation(targeted={})) or rolled back (to an older cycle while a newer one was registered) — the comment "an
     # explicit selection of an older one stands" was false. The mesa's LAST explicit order is authoritative over every targeted
-    # cycle registered at or before its instant — whether it is the head or automatic generations have chained on it since;
-    # only cycles registered AFTER the order are recovered.
+    # cycle PREDICTED at or before its instant (a re-run keeps the original instant, S1) — whether it is the head or automatic
+    # generations have chained on it since; only cycles predicted AFTER the order are recovered.
     database = _database()
     cycles = _three_markets(database)
     c1 = _targeted_cycle(database, "WEGE3", _wall())
@@ -1208,8 +1226,9 @@ def test_a_targeted_admission_numbers_its_attempts_in_the_receipt(monkeypatch: p
 def test_a_rollback_of_a_universe_cycle_survives_the_automatic_pass_and_the_bootstrap(caplog: pytest.LogCaptureFixture) -> None:
     # W1: the candidates of a pass were the LATEST snapshot per market, so a mesa rollback to an older universe cycle
     # (select_generation) was undone by the next automatic pass and by the bootstrap. The authority rule of Z2 now holds
-    # for universe cycles: a candidate published at or before the mesa's last explicit order is not new — the cycle in
-    # force is carried (receipt.held_by_explicit_order); only a cycle published AFTER the order is activated.
+    # for universe cycles: a candidate PREDICTED at or before the mesa's last explicit order (a re-run keeps the original
+    # instant, S1) is not new — the cycle in force is carried (receipt.held_by_explicit_order); only a cycle predicted AFTER
+    # the order is activated.
     database = _database()
     cycles = _three_markets(database)  # G0: published at NOW (a fixed past instant)
     g0 = official.current_generation(database)
@@ -1440,3 +1459,458 @@ def test_a_re_run_of_the_same_refused_targeted_cycle_is_info_once_the_receipt_na
     assert "ITUB4" in fresh.valuation_predictions_for_cycle(fresh_bad) and official.current_generation(fresh) is None and refusals() == []
     _three_markets(fresh)
     assert refusals() == [logging.WARNING] and official.current_generation(fresh)["receipt"]["targeted_refused"] == {"ITUB4": fresh_bad}  # type: ignore[index]
+
+
+# --- rev 6: Codex residuals B2 (two clocks on the record) and B3 (the explicit order governs the direct admission) -----------
+
+
+def _rerun_universe(database: Database, market: str, rows: list[dict], *, rerun_of: str, prediction_instant: str | None, at: datetime) -> str:
+    inputs: dict[str, Any] = {"methodology_version": 7, "market": market, "source_manifest_sha256": "a" * 64, "rerun_of": rerun_of}
+    if prediction_instant is not None:
+        inputs["prediction_instant"] = prediction_instant
+    return database.save_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE", "mv-1", inputs, {"rows": rows, "universe_size": len(rows) + 1}, at)
+
+
+def test_a_record_carries_its_own_publication_clock_distinct_from_the_prediction_instant(caplog: pytest.LogCaptureFixture) -> None:
+    # B2 (rev 6, spec rev 7 line 223): prediction_instant = the published_at of the ORIGINAL live evaluation; published_at = the
+    # factual availability of the snapshot that contains the record — for a re-run, the re-run date, never retro-dated. The
+    # record had ONE clock; now it has two, both hashed (VALUATION_PREDICTION_V2), persisted, round-tripped, served and graded.
+    database = _database()
+    cycles = _three_markets(database)
+    live = database.latest_valuation_prediction("NASDAQ", "AAPL", source=official.SOURCE_OFFICIAL)
+    assert live is not None and live["schema"] == official.PREDICTION_SCHEMA == "VALUATION_PREDICTION_V2"
+    assert live["published_at"] == live["prediction_instant"] == (NOW + timedelta(minutes=1)).isoformat()  # a live cycle: both clocks equal
+    assert live["decomposition"]["provenance"]["rerun_of"] is None
+    core = {key: value for key, value in live.items() if key not in ("id", "row_sha256")}
+    assert "published_at" in core and official.canonical_sha256(core) == live["row_sha256"]
+    row = _row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0)
+    shifted = official.prediction_from_row(row, market="NASDAQ", scope="universe", cycle_id=cycles["NASDAQ"], source_version="7",
+                                           prediction_instant=NOW + timedelta(minutes=1), published_at=NOW + timedelta(days=1), source_manifest_sha256="a" * 64)
+    assert shifted is not None and shifted["prediction_instant"] == live["prediction_instant"] and shifted["published_at"] == (NOW + timedelta(days=1)).isoformat()
+    assert shifted["row_sha256"] != live["row_sha256"]  # the publication clock is part of the identity
+    assert {key: value for key, value in shifted.items() if key not in ("id", "row_sha256", "published_at")} == {key: value for key, value in live.items() if key not in ("id", "row_sha256", "published_at")}
+    # served: the stamp carries the record's own publication clock, and every item model declares it
+    served = official.official_row(database, "US", "AAPL")
+    assert served is not None and served["official_published_at"] == live["published_at"] and served["prediction_instant"] == live["prediction_instant"]
+    assert official.item_stamp(served)["official_published_at"] == live["published_at"] and official.item_stamp(None)["official_published_at"] is None
+    assert official.official_rows(database, "NASDAQ")["AAPL"]["official_published_at"] == live["published_at"]
+    from app.schemas import B3Candidate, MatrixPowerItem
+    assert "official_published_at" in B3Candidate.model_fields and "official_published_at" in MatrixPowerItem.model_fields
+    # a synthetic re-run cycle: a NEW cycle, published now, reproducing the original's prediction — prediction_instant = the
+    # original's, published_at = the re-run's, the session the original's, the original named in the provenance
+    rerun_at = _wall()
+    rerun = _rerun_universe(database, "NASDAQ", [row], rerun_of=cycles["NASDAQ"], prediction_instant=live["prediction_instant"], at=rerun_at)
+    record = database.valuation_prediction_record(rerun, "AAPL")
+    assert record is not None and record["cycle_id"] == rerun and record["prediction_instant"] == live["prediction_instant"]
+    assert record["published_at"] == rerun_at.isoformat() and record["published_at"] != record["prediction_instant"]
+    assert record["session_date"] == live["session_date"] == "2026-09-04" and record["decomposition"]["provenance"]["rerun_of"] == cycles["NASDAQ"]
+    assert official.cycle_clocks(database.analysis_snapshot_by_id(rerun) or {}) == (_utc_(live["prediction_instant"]), rerun_at, cycles["NASDAQ"])
+    head = official.current_generation(database)  # the re-run is a new cycle published after the generation: activated, with the ORIGINAL's session
+    assert head is not None and head["cycles"]["NASDAQ"] == rerun and head["session_dates"]["NASDAQ"] == live["session_date"]
+    assert head["receipt"]["validation"]["NASDAQ"]["published_at"] == rerun_at.isoformat() and head["receipt"]["validation"]["NASDAQ"]["session_date"] == "2026-09-04"
+    stamped = official.official_row(database, "US", "AAPL")
+    assert stamped is not None and stamped["prediction_instant"] == live["prediction_instant"] and stamped["official_published_at"] == rerun_at.isoformat()
+    assert stamped["official_row_sha256"] == record["row_sha256"] != live["row_sha256"]
+    # the PostgreSQL-shaped reader rebuilds BOTH clocks in UTC whatever the session zone, and the stored hash re-verifies
+    for zone in (ZoneInfo("UTC"), ZoneInfo("America/Sao_Paulo"), ZoneInfo("Asia/Tokyo")):
+        rebuilt = database._prediction_record(_pg_row(record, zone))
+        assert rebuilt == record and rebuilt["published_at"] == rerun_at.isoformat() and rebuilt["prediction_instant"] == live["prediction_instant"]
+        assert official.canonical_sha256({key: value for key, value in rebuilt.items() if key not in ("id", "row_sha256")}) == record["row_sha256"]
+    # studies and grading: the call keeps the prediction's instant as changed_at and the record's publication apart
+    from app.valuation_accuracy import load_prediction_calls
+    calls = load_prediction_calls([record, live])
+    assert calls[0].changed_at.isoformat() == live["prediction_instant"] and calls[0].published_at == rerun_at and calls[0].cycle_id == rerun
+    assert calls[1].published_at == datetime.fromisoformat(live["published_at"]) == calls[1].changed_at
+    assert load_prediction_calls([{key: value for key, value in live.items() if key != "published_at"}])[0].published_at is None  # a legacy record
+    # a re-run that names no original instant, or names one AFTER its own publication, is NOT recordable (never mis-dated) and not selectable
+    caplog.set_level(logging.WARNING, logger="app.valuation_official")
+    ko = [_row("KO", tp=70.0, buy_in=60.0, price=65.0, internal_tp=68.0)]
+    nameless = _rerun_universe(database, "NYSE", ko, rerun_of=cycles["NYSE"], prediction_instant=None, at=_wall())
+    assert database.valuation_predictions_for_cycle(nameless) == {} and official.current_generation(database) == head
+    assert any("names no original prediction_instant — not recordable (B2)" in message for message in caplog.messages)
+    forward = _rerun_universe(database, "NYSE", ko, rerun_of=cycles["NYSE"], prediction_instant=(_wall() + timedelta(days=1)).isoformat(), at=_wall())
+    assert database.valuation_predictions_for_cycle(forward) == {} and official.current_generation(database) == head
+    assert any("AFTER its own publication" in message and "not recordable (B2)" in message for message in caplog.messages)
+    for cycle_id in (nameless, forward):
+        snapshot = database.analysis_snapshot_by_id(cycle_id)
+        assert snapshot is not None and official.cycle_clocks(snapshot) is None
+        validation = official.cycle_validation({**snapshot, "analysis_type": "valuation_universe", "entity_key": "NYSE_UNIVERSE"})
+        assert validation["valid"] is False and validation["session_date"] is None
+    assert official.official_row(database, "NYSE", "KO")["official_cycle_id"] == cycles["NYSE"]  # type: ignore[index]  # NYSE stays on its live cycle
+
+
+def _utc_(value: str) -> datetime:
+    return datetime.fromisoformat(value).astimezone(timezone.utc)
+
+
+def test_the_explicit_order_governs_the_direct_admission_and_a_replay_of_an_old_cycle(monkeypatch: pytest.MonkeyPatch,
+                                                                                       caplog: pytest.LogCaptureFixture) -> None:
+    # B3 (rev 6, F393-10): the authority of the mesa's last explicit order held on the recovery pass (Z2) and on universe
+    # cycles (W1), but NOT on the direct admission: the persistence hook replaying the SAME old targeted cycle
+    # (record_snapshot on a snapshot already recorded, recorded = 0) called admit_targeted_cycle, which validated the cycle,
+    # found it absent from the head's targeted map and admitted it again — a purge was undone, a rollback restored to the
+    # newer cycle. The order now governs the direct path too, re-read on every attempt; only a cycle published after it is admitted.
+    from app.database import SelectionConflict
+    database = _database()
+    cycles = _three_markets(database)
+    c1 = _targeted_cycle(database, "WEGE3", _wall())  # TGT/TP50
+    admitted = official.current_generation(database)
+    assert admitted is not None and admitted["targeted"] == {"WEGE3": c1} and official.official_row(database, "B3", "WEGE3")["our_tp"] == 50.0  # type: ignore[index]
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+    caplog.clear()  # the bootstrap warnings of the two-market window above are not this test's
+    purged = official.select_generation(database, cycles=cycles, targeted={}, now=_wall(), activated_by="mesa", reason="purge")
+    assert official.activate_generation_if_changed(database) is None and official.bootstrap_official_selection(database)["generation"] == purged  # the normal pass keeps the purge
+    chain = [item["generation_id"] for item in database._valuation_official_selections]
+    # the replay of the SAME snapshot through the persistence hook: zero records inserted, NO generation created, nothing restored
+    snapshot = database.analysis_snapshot_by_id(c1)
+    assert snapshot is not None and official.record_snapshot(database, snapshot) == {"recorded": 0, "generation": None}
+    assert official.admit_targeted_cycle(database, symbol=" wege3 ", cycle_id=c1) is None  # the direct call too
+    assert [item["generation_id"] for item in database._valuation_official_selections] == chain and official.current_generation(database) == purged
+    assert official.official_row(database, "B3", "WEGE3") is None and len(database.valuation_predictions_for_cycle(c1)) == 1
+    held = [record for record in caplog.records if "held, not admitted" in record.getMessage()]
+    assert len(held) == 2 and {record.levelno for record in held} == {logging.INFO} and c1 in held[0].getMessage() and purged["generation_id"] in held[0].getMessage()
+    assert not any(record.levelno >= logging.WARNING for record in caplog.records)  # nothing validated, nothing warned for a held cycle
+    assert official._predicted_at_or_before(database, "no-such-cycle", purged) is True  # an unreadable cycle is held too, never admitted over an order
+    # control: a cycle genuinely published AFTER the order is admitted (TP80)
+    c2 = _targeted_cycle(database, "WEGE3", _wall(), 80.0)
+    head = official.current_generation(database)
+    assert head is not None and head["targeted"] == {"WEGE3": c2} and head["previous_generation_id"] == purged["generation_id"]
+    assert head["receipt"]["targeted_admission"]["cycle_id"] == c2 and official.official_row(database, "B3", "WEGE3")["our_tp"] == 80.0  # type: ignore[index]
+    # a rollback to c1 while c2 is registered: the replay of c2 (and of c1 itself) restores nothing — the rollback stays on c1
+    rolled = official.select_generation(database, cycles=cycles, targeted={"WEGE3": c1}, now=_wall(), activated_by="mesa", reason="rollback to c1")
+    for cycle_id in (c2, c1):
+        replayed = database.analysis_snapshot_by_id(cycle_id)
+        assert replayed is not None and official.record_snapshot(database, replayed) == {"recorded": 0, "generation": None}
+    assert official.current_generation(database) == rolled and official.official_row(database, "B3", "WEGE3")["official_cycle_id"] == c1  # type: ignore[index]
+    assert official.activate_generation_if_changed(database) is None
+    # the order is re-read on EVERY attempt: a purge landing between the first and the second attempt of an admission is honoured
+    # by the second — the cycle (published before that purge) is held, and the pass after it keeps the purge (Z2, same clock)
+    original_insert = database.insert_valuation_official_selection
+    landed: list[dict[str, Any]] = []
+
+    def purge_lands_inside_the_first_attempt(generation: dict[str, Any]) -> None:
+        if landed:
+            return original_insert(generation)
+        landed.append({})  # the guard first: select_generation below inserts through this very function
+        landed[0] = official.select_generation(database, cycles=cycles, targeted={}, now=_wall(), activated_by="mesa", reason="purge during admission")
+        raise SelectionConflict(f"generation {generation['previous_generation_id']} already has a successor")
+
+    monkeypatch.setattr(database, "insert_valuation_official_selection", purge_lands_inside_the_first_attempt)
+    caplog.clear()
+    c3 = _targeted_cycle(database, "WEGE3", _wall(), 120.0)
+    assert landed and official.current_generation(database) == landed[0] and landed[0]["previous_generation_id"] == rolled["generation_id"]
+    assert official.official_row(database, "B3", "WEGE3") is None and official.activate_generation_if_changed(database) is None
+    held_c3 = [record for record in caplog.records if "held, not admitted" in record.getMessage() and c3 in record.getMessage()]
+    assert len(held_c3) == 1 and landed[0]["generation_id"] in held_c3[0].getMessage()
+    assert not any("recomposition attempts" in message for message in caplog.messages)  # the second attempt held, it did not keep retrying
+    # control again: a cycle published after that purge is admitted on its first attempt
+    c4 = _targeted_cycle(database, "WEGE3", _wall(), 90.0)
+    final = official.current_generation(database)
+    assert final is not None and final["targeted"] == {"WEGE3": c4} and final["previous_generation_id"] == landed[0]["generation_id"] and final["receipt"]["attempt"] == 1
+    assert official.official_row(database, "B3", "WEGE3")["our_tp"] == 90.0  # type: ignore[index]
+
+
+# --- rev 6 residuals (S1–S5, S8): the authority clock is the prediction instant; recency on the direct admission; the CHECK
+# --- mirrored; readers tie-break like the selection; unrecordable re-runs warn once; malformed published_at keeps the call
+
+
+def _rerun_targeted(database: Database, symbol: str, *, rerun_of: str, prediction_instant: str | None, at: datetime, tp: float = 50.0) -> str:
+    inputs: dict[str, Any] = {"methodology_version": 7, "rerun_of": rerun_of}
+    if prediction_instant is not None:
+        inputs["prediction_instant"] = prediction_instant
+    return database.save_analysis_snapshot("security_valuation", symbol, "mv-1", inputs, {"row": _targeted(symbol, tp)}, at)
+
+
+def test_a_re_run_published_after_an_explicit_order_never_re_opens_what_the_order_decided(caplog: pytest.LogCaptureFixture) -> None:
+    # S1: the authority clock of an order was the cycle's PUBLICATION, so a RE-RUN of a purged (or rolled-back) cycle — a new
+    # cycle published after the order, reproducing the SAME prediction (inputs.rerun_of + inputs.prediction_instant) — was admitted
+    # by the direct path, recovered by the pass and re-activated on the universe path (W1), undoing the order with the very
+    # prediction it had decided over. The clock is now the PREDICTION instant (a re-run keeps the original's) on all three paths.
+    database = _database()
+    cycles = _three_markets(database)
+    c1 = _targeted_cycle(database, "WEGE3", _wall())
+    c1_record = database.valuation_prediction_record(c1, "WEGE3")
+    assert c1_record is not None and official.current_generation(database)["targeted"] == {"WEGE3": c1}  # type: ignore[index]
+    purged = official.select_generation(database, cycles=cycles, targeted={}, now=_wall(), activated_by="mesa", reason="purge")
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+    caplog.clear()
+    # the direct admission (the persistence hook on the re-run: a NEW cycle, so its record IS inserted) holds the re-run
+    rerun = _rerun_targeted(database, "WEGE3", rerun_of=c1, prediction_instant=c1_record["prediction_instant"], at=_wall())
+    rerun_record = database.valuation_prediction_record(rerun, "WEGE3")
+    assert rerun_record is not None and rerun_record["prediction_instant"] == c1_record["prediction_instant"] and rerun_record["published_at"] > official._utc(purged["activated_at"]).isoformat()
+    assert official.current_generation(database) == purged and official.official_row(database, "B3", "WEGE3") is None
+    held = [record for record in caplog.records if "held, not admitted" in record.getMessage() and rerun in record.getMessage()]
+    assert len(held) == 1 and held[0].levelno == logging.INFO and "predicted at or before" in held[0].getMessage()
+    assert official._predicted_at_or_before(database, rerun, purged) is True and official._predicted_at_or_before(database, c1, purged) is True
+    # the recovery pass and the bootstrap hold it too — the re-run is the LATEST targeted record of the symbol (S4) and is skipped by its prediction instant
+    assert database.latest_targeted_predictions("B3", source=official.SOURCE_OFFICIAL)["WEGE3"]["cycle_id"] == rerun
+    assert official.activate_generation_if_changed(database) is None and official.bootstrap_official_selection(database)["generation"] == purged
+    assert not any(record.levelno >= logging.WARNING for record in caplog.records)
+    # a genuinely NEW prediction after the order is admitted
+    c2 = _targeted_cycle(database, "WEGE3", _wall(), 80.0)
+    head = official.current_generation(database)
+    assert head is not None and head["targeted"] == {"WEGE3": c2} and head["previous_generation_id"] == purged["generation_id"]
+    assert official.official_row(database, "B3", "WEGE3")["our_tp"] == 80.0  # type: ignore[index]
+    # a rollback to c1 while c2 is registered: a re-run of c2 (published after the rollback) restores nothing; a re-run of c1 changes nothing
+    rolled = official.select_generation(database, cycles=cycles, targeted={"WEGE3": c1}, now=_wall(), activated_by="mesa", reason="rollback to c1")
+    c2_record = database.valuation_prediction_record(c2, "WEGE3")
+    assert c2_record is not None
+    rerun_c2 = _rerun_targeted(database, "WEGE3", rerun_of=c2, prediction_instant=c2_record["prediction_instant"], at=_wall(), tp=80.0)
+    rerun_c1 = _rerun_targeted(database, "WEGE3", rerun_of=c1, prediction_instant=c1_record["prediction_instant"], at=_wall())
+    assert database.valuation_prediction_record(rerun_c2, "WEGE3") is not None and database.valuation_prediction_record(rerun_c1, "WEGE3") is not None
+    assert official.current_generation(database) == rolled and official.official_row(database, "B3", "WEGE3")["official_cycle_id"] == c1  # type: ignore[index]
+    assert official.activate_generation_if_changed(database) is None and official.bootstrap_official_selection(database)["generation"] == rolled
+    # the universe path (W1): a re-run of the rolled-back universe cycle, published after the rollback, is held — the market stays on the order's cycle
+    b3_new = _publish_universe(database, "B3", [_row("PETR4", tp=44.0, buy_in=35.0, price=37.0, internal_tp=43.0),
+                                                _row("VALE3", tp=72.0, buy_in=61.0, price=63.0, internal_tp=71.0)], _wall())
+    assert official.current_generation(database)["cycles"]["B3"] == b3_new  # type: ignore[index]
+    rolled_b3 = official.select_generation(database, cycles={**cycles}, targeted={"WEGE3": c1}, now=_wall(), activated_by="mesa", reason="rollback B3")
+    b3_snapshot = database.analysis_snapshot_by_id(b3_new)
+    assert b3_snapshot is not None
+    b3_rerun = _rerun_universe(database, "B3", b3_snapshot["outputs"]["rows"], rerun_of=b3_new, prediction_instant=official._utc(b3_snapshot["published_at"]).isoformat(), at=_wall())
+    assert database.valuation_prediction_record(b3_rerun, "PETR4") is not None  # recorded (a new cycle)...
+    assert official.current_generation(database) == rolled_b3 and official.official_row(database, "B3", "PETR4")["our_tp"] == 40.0  # type: ignore[index]  # ...not activated
+    assert official.selectable_cycles(database)["B3"]["cycle_id"] == b3_rerun and official.selectable_cycles(database)["B3"]["prediction_instant"] == official._utc(b3_snapshot["published_at"]).isoformat()
+    nasdaq_new = _publish_universe(database, "NASDAQ", [_row("AAPL", tp=260.0, buy_in=210.0, price=230.0, internal_tp=255.0)], _wall())  # a live cycle after the order
+    after = official.current_generation(database)
+    assert after is not None and after["cycles"] == {**cycles, "NASDAQ": nasdaq_new} and after["receipt"]["held_by_explicit_order"] == ["B3"]
+    assert after["receipt"]["validation"]["B3"]["cycle_id"] == b3_rerun and after["targeted"] == {"WEGE3": c1}
+    assert official.bootstrap_official_selection(database)["generation"] == after
+    # a re-run whose clocks cannot be read is held too (nothing unknown is admitted over an order)
+    nameless = _rerun_targeted(database, "WEGE3", rerun_of=c1, prediction_instant=None, at=_wall())
+    assert database.valuation_predictions_for_cycle(nameless) == {} and official._predicted_at_or_before(database, nameless, rolled_b3) is True
+    assert official.admit_targeted_cycle(database, symbol="WEGE3", cycle_id=nameless) is None and official.current_generation(database) == after
+
+
+def test_a_replay_of_an_old_targeted_cycle_with_no_order_after_it_is_not_admitted(caplog: pytest.LogCaptureFixture) -> None:
+    # S2: c1 (TP50) then c2 (TP80) admitted; replaying the SNAPSHOT of c1 (the persistence hook, recorded = 0; or the direct call)
+    # found c1 absent from the head's targeted map, validated it and admitted it: a generation serving TP50, and the next
+    # activation pass recovered c2 — flip-flop generations and a downgraded served number. The direct admission now applies the
+    # recovery's recency rule: a candidate not newer than the held record's prediction is not admitted (INFO, no generation).
+    database = _database()
+    cycles = _three_markets(database)
+    c1 = _targeted_cycle(database, "WEGE3", _wall())
+    c2 = _targeted_cycle(database, "WEGE3", _wall(), 80.0)
+    head = official.current_generation(database)
+    assert head is not None and head["targeted"] == {"WEGE3": c2} and official.official_row(database, "B3", "WEGE3")["our_tp"] == 80.0  # type: ignore[index]
+    chain = [item["generation_id"] for item in database._valuation_official_selections]
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+    caplog.clear()
+    snapshot = database.analysis_snapshot_by_id(c1)
+    assert snapshot is not None and official.record_snapshot(database, snapshot) == {"recorded": 0, "generation": None}
+    assert official.admit_targeted_cycle(database, symbol="wege3", cycle_id=c1) is None
+    assert [item["generation_id"] for item in database._valuation_official_selections] == chain and official.current_generation(database) == head
+    assert official.official_row(database, "B3", "WEGE3")["our_tp"] == 80.0 and official.activate_generation_if_changed(database) is None  # type: ignore[index]
+    not_newer = [record for record in caplog.records if "is not newer than the cycle the generation holds" in record.getMessage()]
+    assert len(not_newer) == 2 and {record.levelno for record in not_newer} == {logging.INFO} and c1 in not_newer[0].getMessage() and c2 in not_newer[0].getMessage()
+    assert not any(record.levelno >= logging.WARNING for record in caplog.records)  # nothing validated, nothing warned
+    # the same with an explicit order OLDER than both cycles: the order does not hold c1 (predicted after it) — the recency rule does
+    fresh = _database()
+    fresh_cycles = _three_markets(fresh)
+    order = official.select_generation(fresh, cycles=fresh_cycles, now=_wall(), activated_by="mesa", reason="an old order")
+    f1 = _targeted_cycle(fresh, "WEGE3", _wall())
+    f2 = _targeted_cycle(fresh, "WEGE3", _wall(), 80.0)
+    fresh_head = official.current_generation(fresh)
+    assert fresh_head is not None and fresh_head["targeted"] == {"WEGE3": f2} and fresh.latest_explicit_valuation_official_selection() == order
+    assert official._predicted_at_or_before(fresh, f1, order) is False
+    fresh_snapshot = fresh.analysis_snapshot_by_id(f1)
+    assert fresh_snapshot is not None and official.record_snapshot(fresh, fresh_snapshot) == {"recorded": 0, "generation": None}
+    assert official.current_generation(fresh) == fresh_head and official.official_row(fresh, "B3", "WEGE3")["our_tp"] == 80.0  # type: ignore[index]
+    assert official.activate_generation_if_changed(fresh) is None
+    # a genuinely newer cycle is admitted; a re-run of the held cycle (tied on prediction_instant) is not
+    f3 = _targeted_cycle(fresh, "WEGE3", _wall(), 90.0)
+    assert official.current_generation(fresh)["targeted"] == {"WEGE3": f3}  # type: ignore[index]
+    f3_record = fresh.valuation_prediction_record(f3, "WEGE3")
+    assert f3_record is not None
+    f3_rerun = _rerun_targeted(fresh, "WEGE3", rerun_of=f3, prediction_instant=f3_record["prediction_instant"], at=_wall(), tp=90.0)
+    assert fresh.valuation_prediction_record(f3_rerun, "WEGE3") is not None and official.current_generation(fresh)["targeted"] == {"WEGE3": f3}  # type: ignore[index]
+    assert official.activate_generation_if_changed(fresh) is None
+
+
+def test_a_publication_before_the_prediction_is_refused_by_the_record_builder_and_the_memory_double() -> None:
+    # S3: prediction_from_row accepted published_at < prediction_instant (the memory double stored it; PostgreSQL's CHECK refuses it)
+    database = _database()
+    row = _row("PETR4", tp=40.0, buy_in=32.0, price=36.0, internal_tp=39.0)
+    with pytest.raises(ValueError, match="precedes prediction_instant"):
+        official.prediction_from_row(row, market="B3", scope="universe", cycle_id="c", source_version="7", prediction_instant=NOW, published_at=NOW - timedelta(seconds=1))
+    record = official.prediction_from_row(row, market="B3", scope="universe", cycle_id="c", source_version="7", prediction_instant=NOW, published_at=NOW)
+    assert record is not None and record["published_at"] == record["prediction_instant"]  # equal clocks: a live cycle
+    later_record = official.prediction_from_row(row, market="B3", scope="universe", cycle_id="c2", source_version="7", prediction_instant=NOW, published_at=NOW + timedelta(days=1))
+    assert later_record is not None
+    bad = {**record, "id": "bad", "cycle_id": "c3", "published_at": (NOW - timedelta(seconds=1)).isoformat()}
+    with pytest.raises(ValueError, match="CHECK \\(published_at >= prediction_instant\\)"):
+        database.insert_valuation_predictions([record, bad])  # the whole statement is refused, as in PostgreSQL: nothing stored
+    assert database._valuation_predictions == [] and database.latest_valuation_prediction("B3", "PETR4", source=official.SOURCE_OFFICIAL) is None
+    assert database.insert_valuation_predictions([record, later_record]) == 2
+    naive = {**record, "id": "naive", "cycle_id": "c4", "published_at": (NOW - timedelta(seconds=1)).replace(tzinfo=None).isoformat()}
+    with pytest.raises(ValueError):  # a naive instant is UTC, as everywhere in the double
+        database.insert_valuation_predictions([naive])
+    assert len(database._valuation_predictions) == 2
+
+
+def test_readers_tie_break_on_published_at_so_a_re_run_is_the_latest_record_for_every_reader(monkeypatch: pytest.MonkeyPatch) -> None:
+    # S4: after a re-run (same prediction_instant, later published_at) the memory readers kept the ORIGINAL (max / strict >) while
+    # the selection served the RE-RUN, and the SQL ORDER BY prediction_instant DESC had no tie-break. Every reader now orders by
+    # (prediction_instant, published_at, insertion/created_at); the SQL text embeds the tie-break.
+    from contextlib import contextmanager
+    database = _database()
+    cycles = _three_markets(database)
+    live = database.latest_valuation_prediction("NASDAQ", "AAPL", source=official.SOURCE_OFFICIAL)
+    assert live is not None
+    row = _row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0)
+    rerun = _rerun_universe(database, "NASDAQ", [row], rerun_of=cycles["NASDAQ"], prediction_instant=live["prediction_instant"], at=_wall())
+    assert official.current_generation(database)["cycles"]["NASDAQ"] == rerun  # type: ignore[index]  # the selection serves the re-run...
+    assert database.latest_valuation_prediction("NASDAQ", "AAPL", source=official.SOURCE_OFFICIAL)["cycle_id"] == rerun  # type: ignore[index]  # ...and so does every reader
+    assert [record["cycle_id"] for record in database.list_valuation_predictions("NASDAQ", "AAPL")] == [rerun, cycles["NASDAQ"]]
+    assert [record["cycle_id"] for record in official.prediction_records(database, "US", "AAPL")] == [rerun, cycles["NASDAQ"]]
+    wege = _targeted_cycle(database, "WEGE3", _wall())
+    wege_record = database.valuation_prediction_record(wege, "WEGE3")
+    assert wege_record is not None
+    wege_rerun = _rerun_targeted(database, "WEGE3", rerun_of=wege, prediction_instant=wege_record["prediction_instant"], at=_wall())
+    assert database.latest_targeted_predictions("B3", source=official.SOURCE_OFFICIAL)["WEGE3"]["cycle_id"] == wege_rerun
+    # a re-run inserted BEFORE its original in the store (another host wrote it first) still wins: the key is the clocks, insertion last
+    early = official.prediction_from_row(row, market="NYSE", scope="universe", cycle_id="rerun-first", source_version="7", prediction_instant=NOW, published_at=NOW + timedelta(days=1))
+    original = official.prediction_from_row(row, market="NYSE", scope="universe", cycle_id="original-second", source_version="7", prediction_instant=NOW)
+    assert early is not None and original is not None and database.insert_valuation_predictions([early, original]) == 2
+    assert database.latest_valuation_prediction("NYSE", "AAPL", source=official.SOURCE_OFFICIAL)["cycle_id"] == "rerun-first"  # type: ignore[index]
+    assert [record["cycle_id"] for record in database.list_valuation_predictions("NYSE", "AAPL")] == ["rerun-first", "original-second"]
+    # the double's order on a full tie (both clocks equal) is the insertion order, as created_at orders it in PostgreSQL
+    twin = {**original, "id": "twin", "cycle_id": "twin-cycle"}
+    assert database.insert_valuation_predictions([twin]) == 1
+    assert [record["cycle_id"] for record in database.list_valuation_predictions("NYSE", "AAPL")] == ["rerun-first", "twin-cycle", "original-second"]
+    # the SQL readers embed the same tie-break (a recording connection: no database is reached)
+    pg = Database(Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False, database_url="postgresql://configured"))
+    queries: list[str] = []
+
+    class Recording:
+        def execute(self, query: str, params: Any = None) -> "Recording":
+            queries.append(" ".join(query.split()))
+            return self
+
+        def fetchall(self) -> list[Any]:
+            return []
+
+        def fetchone(self) -> Any:
+            return None
+
+    @contextmanager
+    def fake_connection() -> Any:
+        yield Recording()
+
+    monkeypatch.setattr(pg, "connection", fake_connection)
+    assert pg.list_valuation_predictions("NASDAQ", "AAPL") == [] and pg.latest_targeted_predictions("B3", source=official.SOURCE_OFFICIAL) == {}
+    assert pg.latest_valuation_prediction("NASDAQ", "AAPL", source=official.SOURCE_OFFICIAL) is None
+    assert len(queries) == 3 and Database._PREDICTION_ORDER == "prediction_instant DESC, published_at DESC, created_at DESC"
+    assert "ORDER BY prediction_instant DESC, published_at DESC, created_at DESC LIMIT %s" in queries[0]
+    assert "SELECT DISTINCT ON (symbol)" in queries[1] and "ORDER BY symbol, prediction_instant DESC, published_at DESC, created_at DESC" in queries[1]
+    assert "ORDER BY prediction_instant DESC, published_at DESC, created_at DESC LIMIT 1" in queries[2]
+    assert not any("ORDER BY prediction_instant DESC LIMIT" in query or "prediction_instant DESC\n" in query for query in queries)
+
+
+def test_an_unrecordable_re_run_is_a_warning_once_per_cycle_and_info_after(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    # S5: a re-run without inputs.prediction_instant (or dated after its own publication) is never recordable, and every activation
+    # pass met it twice (recording at selection time, then validating): 2 WARNINGs per pass, forever. Once per cycle id, INFO after.
+    monkeypatch.setattr(official, "_unrecordable_logged", set())
+    database = _database()
+    cycles = _three_markets(database)
+    head = official.current_generation(database)
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+
+    def unrecordable(cycle_id: str) -> list[int]:
+        return [record.levelno for record in caplog.records if "not recordable (B2)" in record.getMessage() and cycle_id in record.getMessage()]
+
+    ko = [_row("KO", tp=70.0, buy_in=60.0, price=65.0, internal_tp=68.0)]
+    nameless = _rerun_universe(database, "NYSE", ko, rerun_of=cycles["NYSE"], prediction_instant=None, at=_wall())
+    # the hook's pass meets the cycle three times: record_snapshot records it (1), then the activation pass records it at selection time (2) and validates it (3)
+    assert unrecordable(nameless) == [logging.WARNING, logging.INFO, logging.INFO]
+    assert official.current_generation(database) == head and database.valuation_predictions_for_cycle(nameless) == {}
+    caplog.clear()
+    for _ in range(3):
+        assert official.activate_generation_if_changed(database) is None
+    assert official.bootstrap_official_selection(database)["generation"] == head
+    assert unrecordable(nameless) == [logging.INFO] * 9 and not any(record.levelno >= logging.WARNING for record in caplog.records)  # 3 passes x 2 + the bootstrap's 3
+    assert nameless in official._unrecordable_logged
+    caplog.clear()
+    forward = _rerun_universe(database, "NYSE", ko, rerun_of=cycles["NYSE"], prediction_instant=(_wall() + timedelta(days=1)).isoformat(), at=_wall())
+    assert unrecordable(forward) == [logging.WARNING, logging.INFO, logging.INFO] and unrecordable(nameless) == []  # a different cycle id warns once; the old one is not met (not the latest)
+    caplog.clear()
+    assert official.activate_generation_if_changed(database) is None and unrecordable(forward) == [logging.INFO, logging.INFO]
+    monkeypatch.setattr(official, "_unrecordable_logged", set())  # another process warns once more, then INFO
+    caplog.clear()
+    assert official.activate_generation_if_changed(database) is None and unrecordable(forward) == [logging.WARNING, logging.INFO]
+    assert official.official_row(database, "NYSE", "KO")["official_cycle_id"] == cycles["NYSE"]  # type: ignore[index]  # NYSE stays on its live cycle throughout
+
+
+def test_the_studies_loader_keeps_a_call_whose_published_at_is_malformed(caplog: pytest.LogCaptureFixture) -> None:
+    # S8: load_prediction_calls parsed published_at inside the main try and dropped the WHOLE call on a malformed value — the
+    # call's identity is the prediction, not its second clock: kept, published_at = None, one WARNING.
+    from app.valuation_accuracy import load_prediction_calls
+    database = _database()
+    _three_markets(database)
+    record = database.latest_valuation_prediction("NASDAQ", "AAPL", source=official.SOURCE_OFFICIAL)
+    assert record is not None
+    caplog.set_level(logging.WARNING, logger="app.valuation_accuracy")
+    calls = load_prediction_calls([{**record, "published_at": "not-a-clock"}, {**record, "published_at": ""}, {**record, "published_at": None}, record,
+                                   {**record, "prediction_instant": "not-a-clock"}])
+    assert [call.published_at for call in calls] == [None, None, None, datetime.fromisoformat(record["published_at"])]  # the malformed PREDICTION instant is still dropped
+    assert all(call.changed_at.isoformat() == record["prediction_instant"] and call.target_price == 250.0 and call.cycle_id == record["cycle_id"] for call in calls)
+    warned = [message for message in caplog.messages if "malformed published_at" in message]
+    assert len(warned) == 1 and "'not-a-clock'" in warned[0] and record["cycle_id"] in warned[0]
+
+
+# --- rev 6 residuals (U1, U2): the held targeted cycle is read normalized; the double mirrors NOT NULL on published_at ----------
+
+
+def test_a_held_targeted_cycle_under_a_legacy_key_still_governs_the_direct_admission(caplog: pytest.LogCaptureFixture) -> None:
+    # U1: admit_targeted_cycle read the held cycle with current["targeted"].get(clean) — a head whose map carries a legacy key not
+    # written clean ({'wege3': c2}, which Y4 tolerates on the automatic path) looked as if nothing were held: the recency rule (S2)
+    # and the early return were bypassed, the replay of the older c1 was validated and admitted (TP80 → TP50) and re-admitting the
+    # held cycle itself chained a redundant generation. The held cycle is now read from the map NORMALIZED, as it is served.
+    database = _database()
+    cycles = _three_markets(database)
+    c1 = _targeted_cycle(database, "WEGE3", _wall())
+    c2 = _targeted_cycle(database, "WEGE3", _wall(), 80.0)
+    head = official.current_generation(database)
+    assert head is not None and head["targeted"] == {"WEGE3": c2}
+    database.insert_valuation_official_selection({**head, "generation_id": "legacy-head", "previous_generation_id": head["generation_id"],
+                                                  "targeted": {"wege3": c2}, "activated_at": _wall().isoformat()})
+    legacy = official.current_generation(database)
+    assert legacy is not None and legacy["generation_id"] == "legacy-head"
+    assert official.official_row(database, "B3", "WEGE3") is None  # X2: a legacy key is not served until a generation writes it clean (the pass, below)
+    chain = [item["generation_id"] for item in database._valuation_official_selections]
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+    caplog.clear()
+    snapshot = database.analysis_snapshot_by_id(c1)
+    assert snapshot is not None and official.record_snapshot(database, snapshot) == {"recorded": 0, "generation": None}  # the hook's replay of c1...
+    assert official.admit_targeted_cycle(database, symbol="wege3", cycle_id=c1) is None  # ...and the direct call: not newer than the held c2 (S2)
+    assert official.admit_targeted_cycle(database, symbol="WEGE3", cycle_id=c2) is None  # the held cycle itself: the early return, no redundant generation
+    assert [item["generation_id"] for item in database._valuation_official_selections] == chain and official.current_generation(database) == legacy
+    not_newer = [record for record in caplog.records if "is not newer than the cycle the generation holds" in record.getMessage()]
+    assert len(not_newer) == 2 and {record.levelno for record in not_newer} == {logging.INFO} and c1 in not_newer[0].getMessage() and c2 in not_newer[0].getMessage()
+    assert not any(record.levelno >= logging.WARNING for record in caplog.records)  # nothing validated, nothing warned
+    # the direct path now agrees with the activation pass: the pass carries c2 under its clean key (Y4) and recovers nothing — never c1
+    repaired = official.activate_generation_if_changed(database)
+    assert repaired is not None and repaired["previous_generation_id"] == "legacy-head" and repaired["cycles"] == cycles
+    assert repaired["targeted"] == {"WEGE3": c2} and repaired["receipt"]["targeted_recovered"] == {} and repaired["receipt"]["changed_markets"] == []
+    assert official.official_row(database, "B3", "WEGE3")["our_tp"] == 80.0 and official.activate_generation_if_changed(database) is None  # type: ignore[index]
+    # a genuinely newer cycle is still admitted
+    c3 = _targeted_cycle(database, "WEGE3", _wall(), 90.0)
+    admitted = official.current_generation(database)
+    assert admitted is not None and admitted["previous_generation_id"] == repaired["generation_id"] and admitted["targeted"] == {"WEGE3": c3}
+    assert official.official_row(database, "B3", "WEGE3")["our_tp"] == 90.0  # type: ignore[index]
+
+
+def test_a_record_without_its_publication_clock_is_refused_by_the_memory_double_as_by_not_null() -> None:
+    # U2: the double stored a record without published_at, while the SQL writer raises KeyError on the missing key and PostgreSQL
+    # refuses NULL (the column is NOT NULL, S9) — a test could pass on a record the table would never hold. ValueError, nothing stored.
+    database = _database()
+    row = _row("PETR4", tp=40.0, buy_in=32.0, price=36.0, internal_tp=39.0)
+    record = official.prediction_from_row(row, market="B3", scope="universe", cycle_id="c", source_version="7", prediction_instant=NOW, published_at=NOW)
+    assert record is not None
+    null = {**record, "id": "null", "cycle_id": "c2", "published_at": None}
+    absent = {key: value for key, value in {**record, "id": "absent", "cycle_id": "c3"}.items() if key != "published_at"}
+    for nameless in (null, absent):
+        with pytest.raises(ValueError, match="published_at NOT NULL"):
+            database.insert_valuation_predictions([record, nameless])  # the whole statement is refused, as in PostgreSQL: nothing stored
+        assert database._valuation_predictions == [] and database.latest_valuation_prediction("B3", "PETR4", source=official.SOURCE_OFFICIAL) is None
+    assert database.insert_valuation_predictions([record]) == 1

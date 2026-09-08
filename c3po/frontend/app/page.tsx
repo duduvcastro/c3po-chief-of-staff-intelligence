@@ -665,6 +665,12 @@ interface B3Candidate {
   thesis: string;
   risk: string;
   as_of: string;
+  /** Passo 0 official stamp (V3.2 rev 7 §7-bis, I-TP3; F393-6b): absent on responses of an older backend */
+  tp_source?: string | null;
+  tp_source_version?: string | null;
+  official_generation_id?: string | null;
+  official_session_date?: string | null;
+  official_row_sha256?: string | null;
 }
 
 interface B3CandidateResponse {
@@ -677,6 +683,12 @@ interface B3CandidateResponse {
   generated_at: string;
   items: B3Candidate[];
   criteria: Record<string, string>;
+  /** Passo 0 official stamp (V3.2 rev 7 §7-bis, I-TP3; F393-6b): absent on responses of an older backend */
+  tp_source?: string | null;
+  tp_source_version?: string | null;
+  official_generation_id?: string | null;
+  official_session_date?: string | null;
+  official_row_sha256?: string | null;
 }
 
 type MatrixQuadrant =
@@ -726,6 +738,12 @@ interface MatrixPowerItem {
   x_percent: number;
   y_percent: number;
   as_of: string;
+  /** Passo 0 official stamp (V3.2 rev 7 §7-bis, I-TP3; F393-6b): absent on responses of an older backend */
+  tp_source?: string | null;
+  tp_source_version?: string | null;
+  official_generation_id?: string | null;
+  official_session_date?: string | null;
+  official_row_sha256?: string | null;
 }
 
 interface MatrixPowerResponse {
@@ -747,6 +765,12 @@ interface MatrixPowerResponse {
   generated_at: string;
   items: MatrixPowerItem[];
   methodology: Record<string, string>;
+  /** Passo 0 official stamp (V3.2 rev 7 §7-bis, I-TP3; F393-6b): absent on responses of an older backend */
+  tp_source?: string | null;
+  tp_source_version?: string | null;
+  official_generation_id?: string | null;
+  official_session_date?: string | null;
+  official_row_sha256?: string | null;
 }
 
 interface ChewieFundamentalsItem {
@@ -1114,6 +1138,12 @@ interface OnePagerReport {
   confidence: number;
   method_count: number;
   download_url: string;
+  /** Passo 0 official stamp (V3.2 rev 7 §7-bis, I-TP3; F393-6b): absent on responses of an older backend */
+  tp_source?: string | null;
+  tp_source_version?: string | null;
+  official_generation_id?: string | null;
+  official_session_date?: string | null;
+  official_row_sha256?: string | null;
 }
 
 type ValuationTrigger = "initial" | "financial_results" | "material_event" | "web_research" | "market_data" | "methodology";
@@ -1719,6 +1749,28 @@ function DirectionIcon({ direction, size = 15 }: { direction: Direction; size?: 
   if (direction === "up") return <TrendingUp size={size} aria-label="up" />;
   if (direction === "down") return <TrendingDown size={size} aria-label="down" />;
   return <Activity size={size} aria-label="flat" />;
+}
+
+interface OfficialStamped {
+  tp_source?: string | null;
+  tp_source_version?: string | null;
+  official_generation_id?: string | null;
+  official_session_date?: string | null;
+  official_row_sha256?: string | null;
+}
+
+/** One unobtrusive line under a served C3PO TP (F393-6b): producer · generation · session · record hash prefix.
+ *  Every piece degrades on its own; an item without a stamp (older backend, or nothing official) says so — the
+ *  frontend never computes or completes a TP. */
+function formatOfficialStamp(item: OfficialStamped) {
+  if (!item.tp_source && !item.official_generation_id) return "sem carimbo oficial";
+  const parts = [
+    `${item.tp_source ?? "fonte N/D"}${item.tp_source_version ? ` v${item.tp_source_version}` : ""}`,
+    `ger. ${(item.official_generation_id ?? "-").slice(0, 8)}`,
+    `sessão ${(item.official_session_date ?? "-").slice(0, 10)}`,
+    `reg. ${(item.official_row_sha256 ?? "-").slice(0, 8)}`
+  ];
+  return parts.join(" · ");
 }
 
 function formatDate(value?: string) {
@@ -5815,6 +5867,7 @@ function CandidatesView({ reports, marketProviders }: { reports: ReportItem[]; m
                         <small>TP validated {item.tp_validation_score.toFixed(0)}/100{item.consensus_gap_percent !== null ? ` · gap ${item.consensus_gap_percent.toFixed(1)}%` : ""}</small>
                         <small>Internal {formatResearchPrice(item.internal_tp, activeMarket)} · {(100 - item.consensus_weight_percent).toFixed(0)}%</small>
                         <small>Expected 12M {formatPercent(item.expected_total_return_percent)}</small>
+                        <small className="official-stamp" title={formatOfficialStamp(item)}>{formatOfficialStamp(item)}</small>
                         {item.public_consensus_tp ? <small>Consensus {formatResearchPrice(item.public_consensus_tp, activeMarket)} · {item.consensus_weight_percent.toFixed(0)}%{item.analyst_count ? ` · ${item.analyst_count} analysts` : ""}</small> : <small>{item.security_type === "ETF" ? "ETF model · no analyst consensus" : "Consensus unavailable · 0%"}</small>}
                       </div>
                     </td>
@@ -6063,7 +6116,7 @@ function MatrixPowerView() {
                   <div><dt>Source evidence</dt><dd>{selectedItem.data_source_count} sources</dd></div>
                   <div><dt>Source agreement</dt><dd>{selectedItem.source_agreement_percent.toFixed(1)}%</dd></div>
                   <div><dt>Valuation signal</dt><dd className={selectedItem.signal_quality === "validated" ? "positive-text" : "negative-text"}>{selectedItem.signal_quality === "validated" ? "Validated" : "Provisional"}</dd></div>
-                  <div><dt>C3PO TP</dt><dd>{formatResearchPrice(selectedItem.our_tp, activeMarket)}</dd></div>
+                  <div><dt>C3PO TP</dt><dd>{formatResearchPrice(selectedItem.our_tp, activeMarket)} <span className="official-stamp" title={formatOfficialStamp(selectedItem)}>{formatOfficialStamp(selectedItem)}</span></dd></div>
                   <div><dt>Internal model</dt><dd>{formatResearchPrice(selectedItem.internal_tp, activeMarket)} <span>{(100 - selectedItem.consensus_weight_percent).toFixed(0)}%</span></dd></div>
                   <div><dt>Market consensus</dt><dd>{selectedItem.public_consensus_tp !== null ? formatResearchPrice(selectedItem.public_consensus_tp, activeMarket) : selectedItem.security_type === "ETF" ? "ETF model" : "N/D"} <span>{selectedItem.consensus_weight_percent.toFixed(0)}%{selectedItem.analyst_count ? ` · ${selectedItem.analyst_count} analysts` : ""}</span></dd></div>
                   <div><dt>Internal/consensus gap</dt><dd>{selectedItem.consensus_gap_percent !== null ? formatPercent(selectedItem.consensus_gap_percent) : "N/D"}</dd></div>
@@ -6612,7 +6665,7 @@ function OnePagerView({ canGenerate }: { canGenerate: boolean }) {
           </div>
           <div className="one-pager-metrics">
             <div><span>Price</span><strong>{formatCurrency(latest.price, latest.currency)}</strong></div>
-            <div><span>C3PO TP</span><strong>{formatCurrency(latest.c3po_tp, latest.currency)}</strong></div>
+            <div><span>C3PO TP</span><strong>{formatCurrency(latest.c3po_tp, latest.currency)}</strong><small className="official-stamp" title={formatOfficialStamp(latest)}>{formatOfficialStamp(latest)}</small></div>
             <div><span>Upside</span><strong className={latest.upside_percent >= 0 ? "positive-text" : "negative-text"}>{formatPercent(latest.upside_percent)}</strong></div>
             <div><span>Buy-in</span><strong>{formatCurrency(latest.buy_in, latest.currency)}</strong></div>
             <div><span>Confidence</span><strong>{latest.confidence}/100</strong></div>
@@ -6627,7 +6680,7 @@ function OnePagerView({ canGenerate }: { canGenerate: boolean }) {
             {reports.map((report) => (
               <a href={`${API_URL}${report.download_url}`} target="_blank" rel="noreferrer" key={report.filename}>
                 <div className="one-pager-history-mark"><CompanyLogo symbol={report.symbol} market={report.market} /></div>
-                <div><InstrumentPreviewTarget instrument={{ symbol: report.symbol, name: report.company_name, market: report.market }} nested pinOnClick={false}><strong>{report.symbol} | {report.company_name}</strong></InstrumentPreviewTarget><span>{formatDate(report.generated_at)}{report.methodology_version ? ` · v${report.methodology_version}` : " · legacy"} · {report.method_count} methods · confidence {report.confidence}</span></div>
+                <div><InstrumentPreviewTarget instrument={{ symbol: report.symbol, name: report.company_name, market: report.market }} nested pinOnClick={false}><strong>{report.symbol} | {report.company_name}</strong></InstrumentPreviewTarget><span>{formatDate(report.generated_at)}{report.methodology_version ? ` · v${report.methodology_version}` : " · legacy"} · {report.method_count} methods · confidence {report.confidence}</span><small className="official-stamp" title={formatOfficialStamp(report)}>{formatOfficialStamp(report)}</small></div>
                 <div className="one-pager-history-upside"><span>Upside</span><strong className={report.upside_percent >= 0 ? "positive-text" : "negative-text"}>{formatPercent(report.upside_percent)}</strong></div>
                 <Download size={17} />
               </a>

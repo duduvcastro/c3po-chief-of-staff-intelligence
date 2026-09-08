@@ -71,18 +71,19 @@ Rev 5 residuals (Z1–Z5):
   never the head for the readers (``max(activated_at)``, memory and SQL alike), so every later writer conflicted on the
   stale head and gave up — the chain was locked (Z1). The explicit path keeps refusing a clock behind the head (D3);
 * an explicit order (``select_generation``: a purge, a rollback, a switch) is authoritative over every targeted cycle
-  registered at or before its instant: the recovery of registered-but-unadmitted targeted cycles (Y3) considers only
-  cycles registered AFTER the mesa's last explicit order, so a purge stays purged and a rollback stays on its cycle
-  across automatic passes and bootstraps (Z2);
+  PREDICTED at or before its instant: the recovery of registered-but-unadmitted targeted cycles (Y3) considers only
+  cycles predicted AFTER the mesa's last explicit order, so a purge stays purged and a rollback stays on its cycle
+  across automatic passes and bootstraps (Z2; the authority clock is the prediction instant — a re-run keeps the
+  original's instant, so it never re-opens what the order decided, S1);
 * a registered targeted cycle the validator refuses is logged at INFO by the recovery path and recorded in the
   receipt (``targeted_refused``); it is a WARNING only when the refused cycle id changes (Z3);
 * the receipt of a targeted admission carries ``attempt``, as the activation pass does (Z4).
 
 Rev 5 residuals (W1–W5):
-* the same authority rule holds for UNIVERSE cycles (W1): a market whose candidate cycle was published at or before the
+* the same authority rule holds for UNIVERSE cycles (W1): a market whose candidate cycle was predicted at or before the
   mesa's last explicit order is not new — the automatic pass and the bootstrap carry the cycle in force and name the
-  market in ``receipt.held_by_explicit_order``; only a cycle published AFTER the order is activated, so a rollback of a
-  universe cycle is not undone by the next pass;
+  market in ``receipt.held_by_explicit_order``; only a cycle predicted AFTER the order is activated, so a rollback of a
+  universe cycle is not undone by the next pass (nor by a re-run of the rolled-back cycle, S1);
 * an explicit order carries the mesa's wall clock: a ``now`` in the future beyond ``EXPLICIT_CLOCK_TOLERANCE`` (60 s) is
   refused (``ValueError``), symmetric to the D3 refusal of a clock behind the head (W2);
 * an order is recognized by a marker ONLY ``select_generation`` writes (``receipt.explicit = True``), never by
@@ -94,6 +95,39 @@ Rev 5 residuals (W1–W5):
   health reports ``head_has_successor`` while the head is not the chain tip (W4);
 * an admission passes the head's known refusals (``receipt.targeted_refused``) to the validator, so a re-run of the same
   refused cycle logs at INFO, not WARNING (W5).
+
+Rev 6 (Codex B1–B3 residuals on rev 5):
+* a record carries TWO clocks (B2, spec rev 7 §7-bis TP-B): ``prediction_instant`` — when the prediction was made, the
+  ``published_at`` of the ORIGINAL live evaluation — and ``published_at`` — the factual availability of the snapshot that
+  contains it (the producing cycle's ``published_at``; for a re-run cycle, the re-run date, never retro-dated). A live
+  cycle has both equal; a re-run cycle declares ``inputs.rerun_of`` (the original cycle) and ``inputs.prediction_instant``
+  (the original's instant) — without the instant, or with an instant after its own publication, it is not recordable.
+  The session is the prediction's (from ``prediction_instant``). ``published_at`` is part of the hashed core
+  (``VALUATION_PREDICTION_V2``), a NOT NULL column, round-trips through the PostgreSQL reader, is served as
+  ``official_published_at`` and travels with the studies' calls (``ValuationCall.published_at``);
+* the mesa's last explicit order governs the DIRECT admission too (B3): ``admit_targeted_cycle`` — hence the persistence
+  hook replaying the SAME old cycle (``record_snapshot``, recorded = 0) — holds a targeted cycle predicted at or before
+  the order, re-reading the order on EVERY attempt of its loop, so a purge stays purged and a rollback stays on its
+  cycle across replays; only a cycle predicted after the order is admitted.
+
+Rev 6 residuals (S1–S10; S6 in the frontend, S9 in the migration, S10 in the docs):
+* the authority clock of an explicit order is the PREDICTION instant — ``cycle_clocks(snapshot)[0]``, the record's
+  ``prediction_instant``: for a live cycle its publication, for a re-run the ORIGINAL's instant — on all three paths:
+  the direct admission (``_predicted_at_or_before``), the recovery (Z2) and the universe path (W1). Comparing the
+  publication let a RE-RUN of a purged or rolled-back cycle, published after the order, re-admit the SAME prediction
+  the order had decided over (S1); a cycle whose clocks cannot be read is held;
+* the direct admission applies the recency rule of the recovery: a targeted cycle whose prediction is not newer than the
+  one the generation already holds for the symbol is not admitted (INFO) — a replay of an OLD cycle with no order after
+  it no longer downgrades the served number and flip-flops the chain (S2);
+* a record whose ``published_at`` precedes its ``prediction_instant`` is refused by ``prediction_from_row`` (``ValueError``)
+  and by the memory double of ``insert_valuation_predictions`` — the PostgreSQL CHECK, mirrored (S3);
+* the readers of prediction records order by ``(prediction_instant, published_at, insertion)`` — memory and SQL alike
+  (``created_at`` in SQL) — so a re-run, tied with its original on ``prediction_instant``, is the latest record for every
+  reader, as it is for the selection (S4);
+* an unrecordable re-run (no original instant, or one after its own publication) is a WARNING once per cycle id per
+  process (``_unrecordable_logged``), INFO after — not two WARNINGs per activation pass forever (S5);
+* the studies' loader keeps a call whose ``published_at`` is malformed (``published_at = None``, WARNING) instead of
+  dropping the call (S8).
 """
 from __future__ import annotations
 
@@ -112,7 +146,7 @@ import exchange_calendars as xcals
 logger = logging.getLogger(__name__)
 
 SOURCE_OFFICIAL = "official_blend_v1"
-PREDICTION_SCHEMA = "VALUATION_PREDICTION_V1"
+PREDICTION_SCHEMA = "VALUATION_PREDICTION_V2"  # V2 (rev 6, B2): `published_at` joined the hashed core
 SELECTION_SCHEMA = "VALUATION_OFFICIAL_SELECTION_V1"
 MARKETS: tuple[str, ...] = ("B3", "NASDAQ", "NYSE")
 UNIVERSE_ANALYSIS = "valuation_universe"
@@ -127,6 +161,7 @@ RECOMPOSITION_ATTEMPTS = 5  # a writer recomposes on a moved head this many time
 EXPLICIT_CLOCK_TOLERANCE = timedelta(seconds=60)  # an explicit order carries the mesa's wall clock: further ahead of ours is a wrong clock (W2)
 CHAIN_WALK_LIMIT = 64  # successors followed from an unmoved head to the chain tip before giving up (W4)
 _refusals_logged: dict[str, str] = {}  # symbol → the refused targeted cycle this PROCESS already warned about (Z3; the receipt carries it across processes)
+_unrecordable_logged: set[str] = set()  # re-run cycle ids this PROCESS already warned were not recordable (S5): the repeats are INFO
 
 
 class CalendarUnavailable(RuntimeError):
@@ -138,6 +173,7 @@ ITEM_STAMP_KEYS = {  # served-row key → API item field (F393-6: the full stamp
     "tp_source": "tp_source", "generation_id": "official_generation_id", "official_cycle_id": "official_cycle_id",
     "tp_source_version": "tp_source_version", "official_session_date": "official_session_date",
     "prediction_instant": "prediction_instant", "official_row_sha256": "official_row_sha256",
+    "official_published_at": "official_published_at",  # rev 6 (B2): the record's own publication clock, distinct from the prediction's
 }
 
 
@@ -267,17 +303,27 @@ def consensus_block(row: Mapping[str, Any], *, market: str) -> dict[str, Any]:
 
 
 def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycle_id: str, source_version: str,
-                        prediction_instant: datetime, source_manifest_sha256: str | None = None) -> dict[str, Any] | None:
+                        prediction_instant: datetime, source_manifest_sha256: str | None = None,
+                        published_at: datetime | None = None, rerun_of: str | None = None) -> dict[str, Any] | None:
     """The immutable record of one canonical row. ``None`` when the row carries no usable official TP
     (no symbol, TP or buy-in) — such rows are not predictions and never become official — or when the market's
     session is unknown (``CalendarUnavailable``: an identity cannot be minted from a civil date, rev 5). Every field
     the contract names is present — absent values are explicit ``null``, never dropped (F393-6).
-    ``Database._prediction_record`` rebuilds EXACTLY this shape from a PostgreSQL row: change both together."""
+    Two clocks (rev 6, B2): ``prediction_instant`` is WHEN THE PREDICTION WAS MADE (the original live evaluation's
+    publication; the session is its); ``published_at`` is when the snapshot that contains this record became available
+    (defaults to ``prediction_instant`` — a live cycle; a re-run passes its own date and names ``rerun_of``). Both are
+    hashed. A ``published_at`` BEFORE ``prediction_instant`` is a ``ValueError`` (S3) — the PostgreSQL CHECK, applied
+    before any record exists. ``Database._prediction_record`` rebuilds EXACTLY this shape from a PostgreSQL row: change
+    both together."""
     symbol = str(row.get("symbol") or "").strip().upper()
     tp, buy_in = _positive(row.get("our_tp")), _positive(row.get("buy_in"))
     if not symbol or tp is None or buy_in is None:
         return None
     instant = _utc(prediction_instant)
+    available = _utc(published_at) if published_at is not None else instant
+    if available < instant:
+        raise ValueError(f"published_at {available.isoformat()} precedes prediction_instant {instant.isoformat()} for {market}/{symbol} of cycle {cycle_id}: "
+                         "a prediction cannot be made after the snapshot that contains it became available (B2)")
     try:
         session_date = session_date_of(market, instant)
     except CalendarUnavailable as error:
@@ -295,6 +341,7 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
         "session_date": session_date,
         "cycle_id": str(cycle_id),
         "prediction_instant": instant.isoformat(),
+        "published_at": available.isoformat(),
         "tp": tp,
         "buy_in": buy_in,
         "internal_tp": _positive(row.get("internal_tp")),
@@ -328,6 +375,7 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
                 "fundamentals_as_of": row.get("fundamentals_as_of") or None,
                 "as_of": _text_or_none(row.get("as_of")),  # ISO for a datetime, null for '' (X3, as the consensus block)
                 "source_manifest_sha256": source_manifest_sha256,
+                "rerun_of": str(rerun_of) if rerun_of else None,  # the original cycle a re-run reproduces (B2); null for a live cycle
             },
         },
     }
@@ -343,6 +391,40 @@ def cycle_rows(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
         return [dict(item) for item in rows if isinstance(item, Mapping)] if isinstance(rows, list) else []
     row = outputs.get("row")
     return [dict(row)] if isinstance(row, Mapping) else []
+
+
+def cycle_clocks(snapshot: Mapping[str, Any]) -> tuple[datetime, datetime, str | None] | None:
+    """The two clocks of a producer cycle (rev 6, B2): ``(prediction_instant, published_at, rerun_of)``. A LIVE cycle
+    predicts at its own publication: both clocks are its ``published_at``. A RE-RUN cycle names the original cycle
+    (``inputs.rerun_of``) and the original's instant (``inputs.prediction_instant``, spec rev 7 line 223): its
+    ``prediction_instant`` is that original instant and its ``published_at`` is the re-run's own publication — never
+    retro-dated. ``None`` (not recordable) when a re-run does not name the original's instant, or names one AFTER its
+    own publication (a prediction cannot be made after the snapshot that contains it became available) — a WARNING the
+    first time this process meets the cycle, INFO after (``_unrecordable_logged``): every activation pass re-reads the
+    latest snapshot of the market, and an unrecordable one is met twice per pass, forever (S5)."""
+    if not snapshot.get("published_at"):
+        return None
+    available = _utc(snapshot["published_at"])
+    inputs = snapshot.get("inputs") if isinstance(snapshot.get("inputs"), Mapping) else {}
+    rerun_of = _text_or_none(inputs.get("rerun_of")) if isinstance(inputs, Mapping) else None
+    if rerun_of is None:
+        return available, available, None
+    declared = inputs.get("prediction_instant") if isinstance(inputs, Mapping) else None
+    try:
+        instant = _utc(declared) if _text_or_none(declared) is not None else None
+    except (TypeError, ValueError):
+        instant = None
+    if instant is not None and instant <= available:
+        return instant, available, rerun_of
+    cycle_id = str(snapshot.get("id"))
+    level = logging.INFO if cycle_id in _unrecordable_logged else logging.WARNING
+    _unrecordable_logged.add(cycle_id)
+    if instant is None:
+        logger.log(level, "valuation_official: cycle %s is a re-run of %s but names no original prediction_instant — not recordable (B2)", cycle_id, rerun_of)
+    else:
+        logger.log(level, "valuation_official: cycle %s is a re-run of %s dated %s, AFTER its own publication %s — not recordable (B2)",
+                   cycle_id, rerun_of, instant.isoformat(), available.isoformat())
+    return None
 
 
 def _usable(row: Mapping[str, Any]) -> bool:
@@ -367,9 +449,10 @@ def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapp
     market = market_of_entity(str(snapshot.get("analysis_type") or ""), str(snapshot.get("entity_key") or ""))
     session_date: str | None = None
     calendar_unavailable = False
-    if market is not None and snapshot.get("published_at"):
+    clocks = cycle_clocks(snapshot)  # the session is the PREDICTION's (a re-run keeps the original's session, B2)
+    if market is not None and clocks is not None:
         try:
-            session_date = session_date_of(market, _utc(snapshot["published_at"]))
+            session_date = session_date_of(market, clocks[0])
         except CalendarUnavailable:
             calendar_unavailable = True
     return {
@@ -384,6 +467,7 @@ def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapp
         "calendar_unavailable": calendar_unavailable,
         "valid": bool(rows) and not invalid and not unrecorded and (market is None or session_date is not None),
         "published_at": _utc(snapshot["published_at"]).isoformat() if snapshot.get("published_at") else None,
+        "prediction_instant": clocks[0].isoformat() if clocks else None,  # the authority clock of an explicit order (S1): a re-run's is the original's
     }
 
 
@@ -412,7 +496,10 @@ def record_cycle_predictions(database: Any, snapshot: Mapping[str, Any]) -> int:
     if market is None:
         return 0
     scope = "universe" if analysis_type == UNIVERSE_ANALYSIS else "targeted"
-    instant = _utc(snapshot["published_at"])
+    clocks = cycle_clocks(snapshot)  # (prediction_instant, published_at, rerun_of): a re-run keeps the original's instant (B2)
+    if clocks is None:
+        return 0
+    instant, available, rerun_of = clocks
     try:
         session_date_of(market, instant)
     except CalendarUnavailable as error:
@@ -420,7 +507,7 @@ def record_cycle_predictions(database: Any, snapshot: Mapping[str, Any]) -> int:
         return 0
     records = [record for record in (prediction_from_row(row, market=market, scope=scope, cycle_id=str(snapshot["id"]),
                                                           source_version=_source_version(snapshot), prediction_instant=instant,
-                                                          source_manifest_sha256=_manifest_sha(snapshot))
+                                                          source_manifest_sha256=_manifest_sha(snapshot), published_at=available, rerun_of=rerun_of)
                                      for row in cycle_rows(snapshot)) if record is not None]
     return int(database.insert_valuation_predictions(records)) if records else 0
 
@@ -627,6 +714,19 @@ def _admissible_targeted(database: Any, *, symbol: str, cycle_id: str, known_ref
     return validation
 
 
+def _predicted_at_or_before(database: Any, cycle_id: str, order: Mapping[str, Any]) -> bool:
+    """Whether the cycle was PREDICTED at or before the mesa's explicit ``order`` (its ``activated_at``) — the order then
+    decided over it (B3; the same clock as W1 for universe cycles and Z2 for the recovery). The clock is the prediction
+    instant, ``cycle_clocks(snapshot)[0]``: a live cycle's publication, a re-run's ORIGINAL instant — a re-run published
+    after the order reproduces a prediction the order already decided over, so it is held (S1). A cycle that cannot be
+    read, or whose clocks cannot (an unrecordable re-run), is held too: nothing unknown is admitted over an order."""
+    snapshot = database.official_cycle_snapshot(str(cycle_id))
+    clocks = cycle_clocks(snapshot) if snapshot else None
+    if clocks is None:
+        return True
+    return clocks[0] <= _utc(order["activated_at"])
+
+
 def _recovered_targeted(database: Any, carried: Mapping[str, str], universe_cycle: str | None, *,
                         head: Mapping[str, Any] | None, order: Mapping[str, Any] | None) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     """The targeted admissions of the next generation (Y3): the carried ones, then — for every symbol with a REGISTERED
@@ -636,12 +736,14 @@ def _recovered_targeted(database: Any, carried: Mapping[str, str], universe_cycl
     pass instead of waiting for a re-run.
     The mesa's last EXPLICIT order (``order``: the latest generation carrying the marker ``receipt.explicit``, which
     ``select_generation`` alone writes — a purge, a rollback, a switch; read once by the caller, W3) is authoritative
-    over every targeted cycle registered at or before its ``activated_at``: those are never recovered — the order
+    over every targeted cycle PREDICTED at or before its ``activated_at``: those are never recovered — the order
     decided over them (a purge stays purged, a rollback to an older cycle stays on it) — whether the order is the head
-    or an automatic generation has chained on it since; only cycles registered AFTER the order are candidates (Z2).
+    or an automatic generation has chained on it since; only cycles predicted AFTER the order are candidates (Z2).
     A candidate the validator refuses is recorded in the receipt (``targeted_refused``) and logged at INFO when the
     head's receipt (or this process) already names that cycle for the symbol, at WARNING when the refused cycle id
-    changes (Z3). Returns ``(targeted, recovered, refused)``."""
+    changes (Z3). The authority clock is the record's ``prediction_instant`` (a re-run keeps the ORIGINAL's instant, so
+    a re-run published after the order never re-opens what it decided, S1), as on the admission and the universe path (W1).
+    Returns ``(targeted, recovered, refused)``."""
     targeted = dict(carried)
     recovered: dict[str, str] = {}
     refused: dict[str, str] = {}
@@ -654,7 +756,7 @@ def _recovered_targeted(database: Any, carried: Mapping[str, str], universe_cycl
         if clean in served or targeted.get(clean) == candidate:
             continue
         if authority is not None and _utc(record["prediction_instant"]) <= authority:
-            continue  # registered at or before the mesa's last explicit order: that order decided over it (Z2)
+            continue  # predicted at or before the mesa's last explicit order: that order decided over it (Z2; a re-run keeps the original's instant, S1)
         admitted = database.valuation_prediction_record(str(targeted[clean]), clean) if clean in targeted else None
         if admitted is not None and _utc(record["prediction_instant"]) <= _utc(admitted["prediction_instant"]):
             continue  # the generation already holds a cycle at least as recent
@@ -673,13 +775,15 @@ def activate_generation_if_changed(database: Any) -> dict[str, Any] | None:
     official stamp. Bootstrap (no generation yet) still requires every market to have a valid cycle: an incomplete
     generation is never selectable. One INSERT — readers see the previous generation or the new one, never a mixture.
     The mesa's last EXPLICIT order (the latest generation with ``receipt.explicit``, read ONCE per attempt, W3) stands
-    over every cycle published at or before its ``activated_at`` — universe cycles too (W1): a market whose candidate
-    was published at or before the order, while a generation is in force, is NOT new — the cycle in force is carried
+    over every cycle PREDICTED at or before its ``activated_at`` — universe cycles too (W1): a market whose candidate
+    was predicted at or before the order, while a generation is in force, is NOT new — the cycle in force is carried
     and the market is named in ``receipt.held_by_explicit_order`` — so a rollback of a universe cycle survives the next
-    automatic pass and the bootstrap; only a cycle published AFTER the order is activated.
+    automatic pass and the bootstrap; only a cycle predicted AFTER the order is activated. The clock is the candidate's
+    prediction instant (``validation.prediction_instant``): a re-run of the rolled-back cycle keeps the original's
+    instant and is held too (S1).
     Targeted admissions of the current generation are carried over (collisions after normalization: first occurrence,
     Y4) and a registered targeted cycle newer than the carried one is admitted here (Y3, ``receipt.targeted_recovered``)
-    — only if it was registered AFTER the same order (Z2); a registered cycle the validator refuses is named in
+    — only if it was predicted AFTER the same order (Z2); a registered cycle the validator refuses is named in
     ``receipt.targeted_refused`` (Z3). Always written as ``ACTIVATED_BY``: the automatic path has no ``activated_by`` of
     its own, so nothing it writes can be read as an order (W3).
     The generation read here is the expected predecessor: if another writer moved the chain meanwhile the write is
@@ -701,8 +805,8 @@ def activate_generation_if_changed(database: Any) -> dict[str, Any] | None:
             item = candidates.get(market)
             in_force = str((current.get("cycles") or {}).get(market) or "") if current else ""
             if item and item["valid"] and in_force and str(item["cycle_id"]) != in_force and authority is not None \
-                    and item.get("published_at") and _utc(item["published_at"]) <= authority:
-                held.append(market)  # W1: published at or before the mesa's order — the order decided over it; not new
+                    and item.get("prediction_instant") and _utc(item["prediction_instant"]) <= authority:
+                held.append(market)  # W1: predicted at or before the mesa's order — the order decided over it; not new (a re-run keeps the original's instant, S1)
                 item = None
             if item and item["valid"]:
                 cycles[market] = str(item["cycle_id"])
@@ -749,14 +853,39 @@ def admit_targeted_cycle(database: Any, *, symbol: str, cycle_id: str) -> dict[s
     admission wins its own key (Y4), and the head's known refusals (``receipt.targeted_refused``) are carried too, minus
     this symbol, so a later pass does not warn again for a refusal the chain already names (Z3). The validator receives
     the head's known refusal for this symbol: a re-run of the same refused cycle is INFO, not WARNING (W5). Always
-    written as ``ACTIVATED_BY`` (W3). An admission that gives up is recovered by the next activation pass (Y3)."""
+    written as ``ACTIVATED_BY`` (W3). An admission that gives up is recovered by the next activation pass (Y3).
+    The mesa's last EXPLICIT order governs this direct path too (B3, rev 6): a cycle PREDICTED at or before the order's
+    ``activated_at`` is held — the order decided over it (a purge stays purged, a rollback stays on its cycle) — so the
+    persistence hook replaying the same old cycle (``record_snapshot``, recorded = 0) creates no generation and restores
+    nothing; the order is re-read on EVERY attempt (an order landing between two attempts is honoured by the next one);
+    only a cycle predicted after the order is admitted — a re-run keeps the original's instant, so a re-run of a purged
+    cycle is held too (S1). Nothing is validated or logged for a held cycle beyond INFO.
+    The recency rule of the recovery (Y3) holds here too (S2): when the generation already holds a targeted cycle for the
+    symbol, a candidate whose prediction is not NEWER than the held record's is not admitted (INFO) — the replay of an
+    old cycle (``record_snapshot`` on a snapshot recorded long ago, with no order after it) no longer downgrades the
+    served number and flip-flops the chain with the next pass. The held cycle is read from the head's map NORMALIZED
+    (the same map the carry-over writes, U1): a legacy key not written clean (``wege3``, which Y4 tolerates) is still
+    the held cycle for this rule and for the early return — it no longer lets the replay through as if nothing were held."""
     clean = symbol.strip().upper()
     validation: dict[str, Any] | None = None
     for attempt in range(RECOMPOSITION_ATTEMPTS):
         current = database.latest_valuation_official_selection()
         if not current:
             return None
-        if (current.get("targeted") or {}).get(clean) == str(cycle_id):
+        carried = _normalized_targeted(current.get("targeted") or {}, strict=False)  # the head's admissions as they are served (Y4, U1)
+        held_cycle = carried.get(clean)
+        if held_cycle == str(cycle_id):
+            return None
+        order = database.latest_explicit_valuation_official_selection()  # re-read on every attempt (B3)
+        if order is not None and _predicted_at_or_before(database, str(cycle_id), order):
+            logger.info("valuation_official: targeted cycle %s for %s was predicted at or before the mesa's last explicit order %s (%s) — held, not "
+                        "admitted: the order decided over it (B3)", cycle_id, clean, order["generation_id"], order["activated_at"])
+            return None
+        held_record = database.valuation_prediction_record(str(held_cycle), clean) if held_cycle else None
+        candidate = database.valuation_prediction_record(str(cycle_id), clean)
+        if held_record is not None and candidate is not None and _utc(candidate["prediction_instant"]) <= _utc(held_record["prediction_instant"]):
+            logger.info("valuation_official: targeted cycle %s for %s (predicted %s) is not newer than the cycle the generation holds, %s (%s) — not "
+                        "admitted (S2)", cycle_id, clean, candidate["prediction_instant"], held_cycle, held_record["prediction_instant"])
             return None
         if validation is None:  # validated once, against the head's known refusals (W5)
             known = ((current.get("receipt") or {}).get("targeted_refused") or {}).get(clean)
@@ -768,7 +897,7 @@ def admit_targeted_cycle(database: Any, *, symbol: str, cycle_id: str) -> dict[s
             return None
         generation = _new_generation(
             database, expected_previous=str(current["generation_id"]), cycles=current["cycles"],
-            targeted={**_normalized_targeted(current.get("targeted") or {}, strict=False), clean: str(cycle_id)}, source=str(current["source"]),
+            targeted={**carried, clean: str(cycle_id)}, source=str(current["source"]),
             source_version=str(current["source_version"]), session_dates=dict(current.get("session_dates") or {}), activated_by=ACTIVATED_BY,
             receipt={"targeted_admission": {"symbol": clean, "cycle_id": str(cycle_id), "validation": {k: v for k, v in validation.items() if k != "invalid_rows"}},
                      "changed_markets": [], "attempt": attempt + 1,
@@ -790,9 +919,11 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
     targeted symbols are normalized (``strip().upper()``) before validation and writing, as ``official_row`` looks them
     up (X2). The generation in force when the order is executed is the expected predecessor: if the chain moves during
     validation the order fails (``ValueError``) and the mesa re-reads. The order is authoritative over every cycle
-    published or registered at or before ``now`` — targeted (Z2) and universe (W1) alike: the automatic recovery (Y3)
-    never re-admits them — a purge (``targeted={}``) stays purged, a rollback to an older cycle stays on it, a universe
-    rollback is not undone by the next pass; a cycle published after the order is activated/recovered normally.
+    PREDICTED at or before ``now`` — targeted (Z2, B3) and universe (W1) alike; the clock is the prediction instant, so a
+    re-run (which keeps the original's instant) never re-opens what the order decided (S1): the automatic recovery (Y3)
+    and the direct admission never re-admit them — a purge (``targeted={}``) stays purged, a rollback to an older cycle
+    stays on it, a universe rollback is not undone by the next pass; a cycle predicted after the order is
+    activated/recovered/admitted normally.
     ``now`` is the mesa's WALL CLOCK at the order: a clock behind the head is refused (D3) and so is a clock further
     ahead of this host's than ``EXPLICIT_CLOCK_TOLERANCE`` (60 s; W2) — an order dated in the future would stand over
     cycles not yet published. The order is marked ``receipt.explicit = True`` — the ONLY marker the automatic path
@@ -876,6 +1007,7 @@ def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Ma
         "official_market": market,
         "official_session_date": record["session_date"],
         "prediction_instant": record["prediction_instant"],
+        "official_published_at": record.get("published_at"),  # the record's own publication clock (B2); a re-run's is its re-run date
         "official_row_sha256": record["row_sha256"],
     })
     return stamped
@@ -960,13 +1092,14 @@ def official_stamp(database: Any, market: str, *, generation: Any = UNRESOLVED) 
 
 
 def prediction_records(database: Any, market: str, symbol: str, *, source: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
-    """History for studies and grading (rev 7, TP-C; §10.8): the immutable records of one symbol, newest first,
-    by source when given — never re-read through the current selection."""
+    """History for studies and grading (rev 7, TP-C; §10.8): the immutable records of one symbol, newest first —
+    by ``(prediction_instant, published_at)``, so a re-run follows its original (S4) — by source when given; never
+    re-read through the current selection."""
     clean = symbol.strip().upper()
     rows: list[dict[str, Any]] = []
     for selected in _markets_for(market):
         rows.extend(database.list_valuation_predictions(selected, clean, source=source, limit=limit))
-    rows.sort(key=lambda record: str(record["prediction_instant"]), reverse=True)
+    rows.sort(key=lambda record: (_utc(record["prediction_instant"]), _utc(record.get("published_at") or record["prediction_instant"])), reverse=True)
     return rows[:limit]
 
 
@@ -1057,8 +1190,8 @@ def bootstrap_official_selection(database: Any) -> dict[str, Any]:
     that a deploy of Passo 0 does not leave the screeners empty until every market publishes a new cycle. Records of
     EVERY market first, ONE activation after (records before selection; the receipt counts what this call recorded).
     The activation is dated by the wall clock at its INSERT, as every automatic activation (Y1), never before the head
-    it chains on (Z1); the mesa's last explicit order stands over the targeted cycles registered before it (Z2) and over
-    the universe cycles published before it (W1): a bootstrap never undoes a rollback."""
+    it chains on (Z1); the mesa's last explicit order stands over the targeted cycles predicted before it (Z2) and over
+    the universe cycles predicted before it (W1; the prediction instant, S1): a bootstrap never undoes a rollback."""
     recorded: dict[str, int] = {}
     for market in MARKETS:
         raw = database.latest_analysis_snapshot(UNIVERSE_ANALYSIS, f"{market}_UNIVERSE")

@@ -392,6 +392,7 @@ class B3Candidate(BaseModel):
     official_session_date: str | None = None  # the market session the official prediction belongs to (exchange calendar)
     prediction_instant: datetime | None = None  # when the official prediction existed (the record's instant)
     official_row_sha256: str | None = None  # the immutable record hash the served number comes from
+    official_published_at: datetime | None = None  # rev 6 (B2): when the record became available (a re-run's re-run date), distinct from prediction_instant
 
 
 class B3CandidateResponse(BaseModel):
@@ -467,6 +468,7 @@ class MatrixPowerItem(BaseModel):
     official_session_date: str | None = None  # the market session the official prediction belongs to (exchange calendar)
     prediction_instant: datetime | None = None  # when the official prediction existed (the record's instant)
     official_row_sha256: str | None = None  # the immutable record hash the served number comes from
+    official_published_at: datetime | None = None  # rev 6 (B2): when the record became available (a re-run's re-run date), distinct from prediction_instant
 
 
 class MatrixPowerResponse(BaseModel):

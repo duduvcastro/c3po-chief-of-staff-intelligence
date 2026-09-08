@@ -17,7 +17,11 @@ CREATE TABLE IF NOT EXISTS valuation_predictions (
     scope TEXT NOT NULL CHECK (scope IN ('universe', 'targeted')),
     session_date DATE NOT NULL,
     cycle_id UUID NOT NULL REFERENCES analysis_snapshots(id),
-    prediction_instant TIMESTAMPTZ NOT NULL,
+    prediction_instant TIMESTAMPTZ NOT NULL,   -- when the prediction was made: the ORIGINAL live evaluation's publication (its session)
+    -- rev 6 (B2): the record's own publication clock — when the snapshot that contains it became available; equal to
+    -- prediction_instant for a live cycle, the re-run date for a re-run (never retro-dated: the CHECK forbids it).
+    -- The constraint is NAMED so the idempotent block at the end of this file can find it on a table created before the column
+    published_at TIMESTAMPTZ NOT NULL CONSTRAINT valuation_predictions_published_at_check CHECK (published_at >= prediction_instant),
     tp NUMERIC NOT NULL CHECK (tp > 0),
     buy_in NUMERIC NOT NULL CHECK (buy_in > 0),
     internal_tp NUMERIC,
@@ -77,3 +81,29 @@ DROP TRIGGER IF EXISTS valuation_official_selection_append_only ON valuation_off
 CREATE TRIGGER valuation_official_selection_append_only
     BEFORE UPDATE OR DELETE ON valuation_official_selection
     FOR EACH ROW EXECUTE FUNCTION valuation_official_append_only();
+
+-- rev 6 (B2, residual S9): published_at was added to the CREATE TABLE above after the table may already have been created
+-- without it (CREATE TABLE IF NOT EXISTS never alters an existing table). Every migration runs on every start, so the
+-- column is brought in idempotently here: added when missing, backfilled from prediction_instant (a live cycle has both
+-- clocks equal — the only rows such a table can hold), then NOT NULL and the CHECK (guarded by a pg_constraint lookup).
+-- The backfill is a schema migration of a NULL column, not an application write: the append-only trigger created above
+-- is suspended around the UPDATE and re-enabled at once, in the same transaction; on a table with the column it is a no-op.
+ALTER TABLE valuation_predictions ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;
+ALTER TABLE valuation_predictions DISABLE TRIGGER valuation_predictions_append_only;
+UPDATE valuation_predictions SET published_at = prediction_instant WHERE published_at IS NULL;
+ALTER TABLE valuation_predictions ENABLE TRIGGER valuation_predictions_append_only;
+ALTER TABLE valuation_predictions ALTER COLUMN published_at SET NOT NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'valuation_predictions'::regclass
+          AND conname = 'valuation_predictions_published_at_check'
+    ) THEN
+        ALTER TABLE valuation_predictions
+            ADD CONSTRAINT valuation_predictions_published_at_check
+            CHECK (published_at >= prediction_instant);
+    END IF;
+END
+$$;
