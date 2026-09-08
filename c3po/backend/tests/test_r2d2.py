@@ -23,6 +23,7 @@ from app.r2d2 import (
 from app import r2d2 as r2d2_module
 from app import r2d2_entry_control
 from app.market_data.eodhd_stream import EodhdRealtimeStream, EodhdStreamQuote
+from app.valuation_official import official_rows
 from fastapi.testclient import TestClient
 from app import main as app_main
 
@@ -481,6 +482,25 @@ def test_r2d2_us_candidates_rejects_provisional_canonical_valuation() -> None:
     by_symbol = {item["symbol"]: item for item in candidates}
     assert by_symbol["VALD"]["valuation_basis"] == "canonical C3PO valuation universe"
     assert by_symbol["PROV"]["valuation_basis"] != "canonical C3PO valuation universe"
+
+    # F393-6 (V3.2 rev 7 §7-bis, I-TP3): the item keeps the FULL stamp of the served record — producer, generation,
+    # cycle, producer version, session, instant and record hash — exactly as the official selection served it.
+    official = official_rows(service.repo.database, "NASDAQ")["VALD"]
+    stamp_keys = (("tp_source", "tp_source"), ("official_generation_id", "generation_id"),
+                  ("official_cycle_id", "official_cycle_id"), ("tp_source_version", "tp_source_version"),
+                  ("official_session_date", "official_session_date"), ("prediction_instant", "prediction_instant"),
+                  ("official_row_sha256", "official_row_sha256"))
+    for item_key, row_key in stamp_keys:
+        assert official[row_key], row_key  # the selection stamps every field
+        assert by_symbol["VALD"][item_key] == official[row_key], item_key
+    assert by_symbol["VALD"]["official_session_date"] == "2026-08-14"  # published Monday 10:00 NY, intraday: the last COMPLETED session is Friday
+    assert len(by_symbol["VALD"]["official_row_sha256"]) == 64
+    # a symbol without an official row carries an explicit None for the whole stamp (never a partial one)
+    assert all(by_symbol["PROV"][item_key] is None for item_key, _ in stamp_keys)
+    # the decision log persists the candidate whole, so the stamp survives into r2d2_decisions.inputs
+    service.repo.save_decision("exp-test", "cycle-test", by_symbol["VALD"], "skip", ["test"])
+    persisted_inputs = service.repo.memory["decisions"][-1]["inputs"]
+    assert all(persisted_inputs[item_key] == official[row_key] for item_key, row_key in stamp_keys)
 
 
 def test_r2d2_interleaves_live_reviews_across_us_markets() -> None:

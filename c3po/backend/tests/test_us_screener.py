@@ -54,6 +54,18 @@ class DummyOnePagers:
         }
 
 
+def _publish_official_universes(database, nasdaq_rows: list[dict], *, at: datetime | None = None, methodology_id: str = "mv-1") -> None:
+    """Passo 0 (V3.2 rev 7 §7-bis): served rows come from the official selection, which needs every market recorded once."""
+    at = at or datetime.now(timezone.utc)
+    filler = {"B3": {"symbol": "PETR4", "our_tp": 40.0, "buy_in": 32.0, "price": 36.0, "internal_tp": 39.0},
+              "NYSE": {"symbol": "KO", "our_tp": 70.0, "buy_in": 60.0, "price": 65.0, "internal_tp": 68.0}}
+    for market, row in filler.items():
+        database.save_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE", methodology_id, {"methodology_version": METHODOLOGY_VERSION},
+                                        {"rows": [row], "universe_size": 1}, at)
+    database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", methodology_id, {"methodology_version": METHODOLOGY_VERSION},
+                                    {"rows": nasdaq_rows, "universe_size": len(nasdaq_rows)}, at)
+
+
 def service() -> USScreeningService:
     settings = Settings(eodhd_api_token="test", auth_cookie_secure=False)
     return USScreeningService(settings, Database(settings), DummyRealtime(), DummyOnePagers())
@@ -237,10 +249,15 @@ def test_candidate_ranking_combines_stocks_and_etfs_by_tp_upside() -> None:
     screener._rows["NASDAQ"] = [etf, stock]
     screener._basis_at["NASDAQ"] = datetime.now(timezone.utc)
 
+    assert screener._candidate_response("NASDAQ").items == []  # no official generation yet: the raw build is never served (F393-3)
+    _publish_official_universes(screener.database, [etf, stock])
     response = screener._candidate_response("NASDAQ")
 
     assert [item.security_type for item in response.items] == ["Stock", "ETF"]
     assert response.items[0].upside_percent > response.items[1].upside_percent
+    assert response.tp_source == "official_blend_v1" and response.official_generation_id and response.official_session_date
+    assert all(item.tp_source == "official_blend_v1" and item.official_generation_id == response.official_generation_id
+               and item.official_row_sha256 and item.official_session_date and item.prediction_instant for item in response.items)
 
 
 def test_ir_freshness_flags_pending_review_when_fundamentals_predate_disclosure() -> None:
@@ -409,18 +426,15 @@ def test_valuation_for_rehydrates_when_a_newer_snapshot_is_persisted() -> None:
     methodology_id = svc.database.ensure_methodology_version("test", 1, {}, "test")
     old_at = datetime(2026, 8, 20, 4, 0, tzinfo=timezone.utc)
     new_at = datetime(2026, 8, 20, 7, 0, tzinfo=timezone.utc)
-    svc.database.save_analysis_snapshot(
-        "valuation_universe", "NASDAQ_UNIVERSE", methodology_id,
-        {"methodology_version": METHODOLOGY_VERSION},
-        {"rows": [{"symbol": "JPM", "our_tp": 625.49, "buy_in": 500.0, "as_of": old_at.isoformat()}], "universe_size": 1},
-        old_at,
-    )
+    assert svc.valuation_for("JPM", "NASDAQ") is None  # a consumer read: nothing official yet, nothing served (F393-3)
+    _publish_official_universes(svc.database, [{"symbol": "JPM", "our_tp": 625.49, "buy_in": 500.0, "price": 560.0, "internal_tp": 620.0, "as_of": old_at.isoformat()}],
+                                at=old_at, methodology_id=methodology_id)
     assert svc.valuation_for("JPM", "NASDAQ")["our_tp"] == 625.49
 
     svc.database.save_analysis_snapshot(
         "valuation_universe", "NASDAQ_UNIVERSE", methodology_id,
         {"methodology_version": METHODOLOGY_VERSION},
-        {"rows": [{"symbol": "JPM", "our_tp": 388.33, "buy_in": 340.0, "as_of": new_at.isoformat()}], "universe_size": 1},
+        {"rows": [{"symbol": "JPM", "our_tp": 388.33, "buy_in": 340.0, "price": 360.0, "internal_tp": 385.0, "as_of": new_at.isoformat()}], "universe_size": 1},
         new_at,
     )
 

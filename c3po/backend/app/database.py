@@ -1,9 +1,10 @@
+import copy
 import json
 import hashlib
 import logging
 import re
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -13,6 +14,10 @@ from .config import Settings
 
 logger = logging.getLogger(__name__)
 LEGACY_SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
+
+
+class SelectionConflict(RuntimeError):
+    """Another writer already chained a generation on the same predecessor (valuation_official_selection, B2)."""
 
 
 class Database:
@@ -3357,6 +3362,7 @@ class Database:
                 self._cycle_records_cache.pop(str(record["cycle_id"]), None)
             return len(added)
         inserted = 0
+        touched: set[str] = set()
         with self.connection() as connection:
             for record in records:
                 cursor = connection.execute(
@@ -3375,8 +3381,10 @@ class Database:
                      json.dumps(record.get("decomposition") or {}), record["row_sha256"]),
                 )
                 inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
-                self._cycle_records_cache.pop(str(record["cycle_id"]), None)
+                touched.add(str(record["cycle_id"]))
             connection.commit()
+        for cycle_id in touched:  # invalidated AFTER the commit: a concurrent reader cannot refill the cache with the pre-commit view (F393-5)
+            self._cycle_records_cache.pop(cycle_id, None)
         return inserted
 
     def _prediction_record(self, row: Any) -> dict[str, Any]:
@@ -3389,10 +3397,12 @@ class Database:
 
     def valuation_predictions_for_cycle(self, cycle_id: str) -> dict[str, dict[str, Any]]:
         """The immutable records of one producer cycle, by symbol — what the official selection SERVES (F393-5).
-        Cycles are immutable, so a small cache is exact (invalidated on insert for that cycle)."""
+        Cycles are immutable, so a small cache is exact — but ONLY for a non-empty answer: an empty one may be the
+        window between a cycle's publication and its records (another process), and must never be pinned (D1).
+        Callers receive a deep copy: mutating it never reaches the cache."""
         cached = self._cycle_records_cache.get(cycle_id)
         if cached is not None:
-            return cached
+            return copy.deepcopy(cached)
         if not self.database_url:
             records = {str(r["symbol"]): dict(r) for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id}
         else:
@@ -3407,9 +3417,10 @@ class Database:
                     (cycle_id,),
                 ).fetchall()
             records = {str(r["symbol"]): r for r in (self._prediction_record(row) for row in rows)}
-        if len(self._cycle_records_cache) >= 12:
-            self._cycle_records_cache.pop(next(iter(self._cycle_records_cache)))
-        self._cycle_records_cache[cycle_id] = records
+        if records:
+            if len(self._cycle_records_cache) >= 12:
+                self._cycle_records_cache.pop(next(iter(self._cycle_records_cache)))
+            self._cycle_records_cache[cycle_id] = copy.deepcopy(records)
         return records
 
     def list_valuation_predictions(self, market: str, symbol: str, *, source: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
@@ -3455,10 +3466,26 @@ class Database:
         return self._prediction_record(row)
 
     def insert_valuation_official_selection(self, generation: dict[str, Any]) -> None:
+        """One generation chains on ``previous_generation_id`` (UNIQUE where not null, migration 048): two writers
+        extending the same predecessor cannot both succeed — the loser gets ``SelectionConflict`` (B2)."""
+        previous = generation.get("previous_generation_id")
         if not self.database_url:
-            self._valuation_official_selections.append(dict(generation))
+            if previous is not None and any(item.get("previous_generation_id") == previous for item in self._valuation_official_selections):
+                raise SelectionConflict(f"generation {previous} already has a successor")
+            self._valuation_official_selections.append(copy.deepcopy(generation))
             return
         with self.connection() as connection:
+            try:
+                self._insert_selection_row(connection, generation)
+            except Exception as error:
+                if type(error).__name__ == "UniqueViolation":
+                    raise SelectionConflict(f"generation {previous} already has a successor") from error
+                raise
+            connection.commit()
+
+    @staticmethod
+    def _insert_selection_row(connection: Any, generation: dict[str, Any]) -> None:
+        if True:
             connection.execute(
                 """
                 INSERT INTO valuation_official_selection
@@ -3471,7 +3498,6 @@ class Database:
                  generation["activated_at"], generation["activated_by"], generation.get("previous_generation_id"),
                  json.dumps(generation.get("receipt") or {})),
             )
-            connection.commit()
 
     def _selection_record(self, row: Any) -> dict[str, Any] | None:
         if not row:
@@ -3481,9 +3507,37 @@ class Database:
             record["activated_at"] = record["activated_at"].isoformat()
         return record
 
+    @staticmethod
+    def _selection_instant(value: Any) -> datetime:
+        instant = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+        return instant.replace(tzinfo=timezone.utc) if instant.tzinfo is None else instant.astimezone(timezone.utc)
+
+    def _latest_selection_memory(self, before: datetime | None = None) -> dict[str, Any] | None:
+        """PostgreSQL orders by (activated_at DESC, created_at DESC); the in-memory double must agree (D3)."""
+        candidates = [(self._selection_instant(item["activated_at"]), index, item) for index, item in enumerate(self._valuation_official_selections)
+                      if before is None or self._selection_instant(item["activated_at"]) <= before]
+        return copy.deepcopy(max(candidates, key=lambda entry: (entry[0], entry[1]))[2]) if candidates else None
+
+    def valuation_official_selection_at(self, instant: datetime) -> dict[str, Any] | None:
+        """The generation in force at ``instant``: the latest activated at or before it (studies replay, F393-7)."""
+        if not self.database_url:
+            return self._latest_selection_memory(before=self._selection_instant(instant))
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT generation_id::text, source, source_version, cycles, targeted, session_dates, validated_complete, activated_at,
+                       activated_by, previous_generation_id::text, receipt
+                FROM valuation_official_selection
+                WHERE activated_at <= %s
+                ORDER BY activated_at DESC, created_at DESC LIMIT 1
+                """,
+                (self._selection_instant(instant),),
+            ).fetchone()
+        return self._selection_record(row)
+
     def latest_valuation_official_selection(self) -> dict[str, Any] | None:
         if not self.database_url:
-            return dict(self._valuation_official_selections[-1]) if self._valuation_official_selections else None
+            return self._latest_selection_memory()
         with self.connection() as connection:
             row = connection.execute(
                 """
@@ -3498,7 +3552,7 @@ class Database:
     def valuation_official_selection(self, generation_id: str) -> dict[str, Any] | None:
         if not self.database_url:
             match = next((item for item in self._valuation_official_selections if item.get("generation_id") == generation_id), None)
-            return dict(match) if match else None
+            return copy.deepcopy(match) if match else None
         with self.connection() as connection:
             row = connection.execute(
                 """
@@ -3530,16 +3584,18 @@ class Database:
         """A producer cycle referenced by the official selection; cycles are immutable, so a small cache is exact."""
         cached = self._official_cycle_cache.get(cycle_id)
         if cached is not None:
-            return cached
+            return copy.deepcopy(cached)
         snapshot = self.analysis_snapshot_by_id(cycle_id)
         if snapshot is not None:
             if len(self._official_cycle_cache) >= 8:
                 self._official_cycle_cache.pop(next(iter(self._official_cycle_cache)))
-            self._official_cycle_cache[cycle_id] = snapshot
+            self._official_cycle_cache[cycle_id] = copy.deepcopy(snapshot)
         return snapshot
 
     def drop_official_cycle_cache(self) -> None:
+        """Both official caches: cycles and their records (D1 — a poisoned empty answer never survives a generation)."""
         self._official_cycle_cache.clear()
+        self._cycle_records_cache.clear()
 
     def latest_analysis_snapshot_published_at(self, analysis_type: str, entity_key: str) -> datetime | None:
         """Timestamp-only counterpart of latest_analysis_snapshot(), for

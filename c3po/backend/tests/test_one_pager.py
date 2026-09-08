@@ -1,3 +1,4 @@
+import json
 import statistics
 from datetime import datetime, timedelta, timezone
 
@@ -9,6 +10,8 @@ from app.foreign_listings import normalize_foreign_fundamentals, policy_for
 from app.market_data.service import MarketDataService
 from app.market_data.http import MarketDataRequestError
 from app.one_pager import OnePagerGenerationError, OnePagerService
+from app.one_pager_pdf import PremiumOnePagerRenderer
+from app.schemas import OnePagerReport
 from app.valuation_policy import METHODOLOGY_VERSION
 
 
@@ -26,7 +29,17 @@ def service_for(tmp_path):
 
 
 DEFAULT_OFFICIAL_ROW = {"our_tp": 560.0, "buy_in": 470.0, "tp_source": "official_blend_v1",
-                        "generation_id": "gen-test", "official_cycle_id": "cycle-test"}
+                        "generation_id": "gen-test", "official_cycle_id": "cycle-test",
+                        # the rest of the served record's stamp (F393-6), exactly as `_served` names it
+                        "tp_source_version": "v1-test", "official_session_date": "2026-09-04",
+                        "prediction_instant": "2026-09-04T21:05:00+00:00",
+                        "official_row_sha256": "1a2b3c4d" + "0" * 56}
+
+# analysis/report key -> served row key (the report renames generation_id only)
+FULL_STAMP_KEYS = (("tp_source", "tp_source"), ("official_generation_id", "generation_id"),
+                   ("official_cycle_id", "official_cycle_id"), ("tp_source_version", "tp_source_version"),
+                   ("official_session_date", "official_session_date"), ("prediction_instant", "prediction_instant"),
+                   ("official_row_sha256", "official_row_sha256"))
 
 
 def with_official(service, **overrides):
@@ -887,6 +900,9 @@ def test_analyze_pulls_the_final_tp_toward_a_well_covered_consensus(tmp_path) ->
     assert with_consensus["consensus_weight_diagnostic"] > 0 and without_consensus["consensus_weight_diagnostic"] == 0
     assert with_consensus["c3po_tp"] == without_consensus["c3po_tp"] == DEFAULT_OFFICIAL_ROW["our_tp"]
     assert with_consensus["tp_source"] == "official_blend_v1" and with_consensus["official_generation_id"] == "gen-test"
+    # F393-6: the full stamp of the served record, not only producer/generation
+    for analysis_key, row_key in FULL_STAMP_KEYS:
+        assert with_consensus[analysis_key] == DEFAULT_OFFICIAL_ROW[row_key]
 
 
 def test_consensus_does_not_leak_into_internal_methods_without_fundamentals(tmp_path) -> None:
@@ -974,4 +990,68 @@ def test_generate_refuses_without_an_official_tp_and_never_computes_one(tmp_path
     service._official_valuation = lambda symbol, market: None  # type: ignore[method-assign]
     with pytest.raises(OnePagerGenerationError, match="TP oficial"):
         sample_analysis(service)
+
+
+def test_report_json_and_pdf_carry_the_full_official_stamp(tmp_path) -> None:
+    """F393-6 (V3.2 rev 7 §7-bis, I-TP3): the session, the record's instant, the record hash and the producer version
+    of the served number must not be lost between the official selection and the One Pager's JSON, sidecar and PDF."""
+    service = service_for(tmp_path)
+    analysis = sample_analysis(service)
+    for analysis_key, row_key in FULL_STAMP_KEYS:
+        assert analysis[analysis_key] == DEFAULT_OFFICIAL_ROW[row_key]
+
+    rendered: list[dict] = []
+    original_render = service._render_pdf
+
+    def capture_render(path, data, history, generated_at):
+        rendered.append(dict(data))
+        original_render(path, data, history, generated_at)
+
+    service._render_pdf = capture_render  # type: ignore[method-assign]
+    history = [{"date": (datetime(2025, 8, 5, tzinfo=timezone.utc) + timedelta(days=round(index * 365 / 260))).date().isoformat(),
+                "close": 400 + index * 0.3} for index in range(261)]
+
+    report = service._write_report(analysis, history)
+
+    # the dict the PDF renderer receives carries the whole stamp...
+    assert len(rendered) == 1
+    for analysis_key, row_key in FULL_STAMP_KEYS:
+        assert rendered[0][analysis_key] == DEFAULT_OFFICIAL_ROW[row_key]
+    # ...the report (the API's JSON) too...
+    assert report.tp_source == "official_blend_v1" and report.official_generation_id == "gen-test"
+    assert report.official_cycle_id == "cycle-test" and report.tp_source_version == "v1-test"
+    assert report.official_session_date == "2026-09-04"
+    assert report.prediction_instant == datetime(2026, 9, 4, 21, 5, tzinfo=timezone.utc)
+    assert report.official_row_sha256 == DEFAULT_OFFICIAL_ROW["official_row_sha256"]
+    # ...and the persisted sidecar next to the PDF round-trips it
+    sidecar = (tmp_path / report.filename).with_suffix(".json").read_text(encoding="utf-8")
+    persisted = json.loads(sidecar)
+    for key in ("tp_source", "official_generation_id", "official_cycle_id", "tp_source_version",
+                "official_session_date", "official_row_sha256"):
+        assert persisted[key] == getattr(report, key)
+    assert OnePagerReport.model_validate_json(sidecar).prediction_instant == report.prediction_instant
+    # the PDF's NOSSO TP line shows the session and the record hash prefix on the same line as producer/generation
+    label = PremiumOnePagerRenderer._official_stamp_label(rendered[0])
+    assert "official_blend_v1 · ger. gen-test · sessão 2026-09-04 · reg. 1a2b3c4d" in label
+    assert "\n" not in label
+
+
+def test_pdf_stamp_label_degrades_when_the_stamp_is_absent() -> None:
+    label = PremiumOnePagerRenderer._official_stamp_label({"upside_percent": 12.0})
+    assert label == "+12.0% upside · sem fonte oficial · ger. - · sessão - · reg. -"
+
+
+def test_producer_role_stamps_explicit_none_for_the_full_stamp(tmp_path) -> None:
+    # The producer branch (the screeners' engine) is what BECOMES the record: it carries no served stamp, explicitly.
+    service = service_for(tmp_path)
+    analysis = service._analyze(
+        "MSFT", "US",
+        {"price": 500.0, "currency": "USD", "change_percent": 1.25, "as_of": datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)},
+        {"companyName": "Microsoft Corporation", "sector": "Technology", "trailingEps": 16.0, "forwardEps": 18.5,
+         "bookValue": 42.0, "sharesOutstanding": 7_430_000_000, "freeCashflow": 92_000_000_000, "ebitda": 150_000_000_000},
+        role="producer",
+    )
+    assert analysis["analysis_role"] == "producer"
+    for analysis_key, _ in FULL_STAMP_KEYS:
+        assert analysis_key in analysis and analysis[analysis_key] is None
 

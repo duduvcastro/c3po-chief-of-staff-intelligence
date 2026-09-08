@@ -332,6 +332,11 @@ def main() -> None:
     database.initialize()
     push_notifications = PushNotificationService(settings, database)
     ensure_builtin_official_fundamentals(database)
+    try:  # V3.2 rev 7 §7-bis Passo 0: records + first generation from the cycles already persisted (idempotent)
+        from .valuation_official import bootstrap_official_selection
+        bootstrap_official_selection(database)
+    except Exception as exc:  # never blocks the worker: the next cycle records and activates by itself
+        logger.warning("valuation_official bootstrap failed: %s", type(exc).__name__)
     investor_relations = InvestorRelationsService(settings, database)
     market_data = MarketDataService(settings, database)
     screener = B3ScreenerService(settings, database, market_data.http)

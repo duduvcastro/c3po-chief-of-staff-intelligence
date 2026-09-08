@@ -7,7 +7,7 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from .database import Database
-from .valuation_official import official_prediction_snapshot
+from .valuation_official import generation_at, official_prediction_snapshot
 
 
 ADAPTER_VERSION = "R2D2-ENTRY-SCORE-ADAPTER-v1"
@@ -223,8 +223,9 @@ class R2D2EntryScoreAdapter:
         for market in sorted(markets):
             peer_market = "B3" if market == "B3" else "US"
             output[market] = {}
-            # V3.2 rev 7 §7-bis / §10.8: the official records of the current generation are a study source of their own
-            output[market]["official_prediction"] = official_prediction_snapshot(self.database, market)
+            # V3.2 rev 7 §7-bis / §10.8 (F393-7): the official records of the generation IN FORCE AT THE DECISION are a study
+            # source of their own — a replay never reads the current selection (a later switch cannot turn 100 into N/D)
+            output[market]["official_prediction"] = official_prediction_snapshot(self.database, market, generation=generation_at(self.database, decision_at))
             for role, (analysis_type, entity_template) in _SOURCE_SPECS.items():
                 entity_key = entity_template.format(market=market, peer_market=peer_market)
                 cache_key = (analysis_type, entity_key)

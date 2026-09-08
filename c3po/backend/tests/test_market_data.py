@@ -2302,6 +2302,9 @@ def test_b3_screener_returns_power_zone_candidates_ranked_by_tp_upside() -> None
     }  # type: ignore[method-assign]
     service._macro_context = lambda: {"selic": 0.12, "ipca12m": 0.045}  # type: ignore[method-assign]
 
+    for market, symbol in (("NASDAQ", "AAPL"), ("NYSE", "KO")):  # Passo 0: the official selection needs every market recorded once
+        service.database.save_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE", "mv-1", {"methodology_version": 1},
+                                                {"rows": [{"symbol": symbol, "our_tp": 250.0, "buy_in": 200.0, "price": 220.0, "internal_tp": 245.0}], "universe_size": 1}, now)
     response = service.screen(refresh=True)
     assert response.universe_size == 12
     assert response.eligible_count == 12
@@ -2370,6 +2373,9 @@ def test_b3_screener_returns_power_zone_candidates_ranked_by_tp_upside() -> None
     provisional_ranked, _, _ = service._rank([provisional_row], {"selic": 0.12})
     assert provisional_ranked == []
 
+    # V3.2 rev 7 §7-bis (Passo 0): the matrix and the candidates are served from the OFFICIAL selection, never from the
+    # in-memory build — the edited rows only reach a reader once they are published as a cycle (records → generation)
+    service._persist_universe(datetime.now(timezone.utc) + timedelta(seconds=1), {"selic": 0.12, "ipca12m": 0.045})  # after the screen()'s own cycle
     matrix = service.matrix()
     assert matrix.methodology_name == response.methodology
     assert matrix.methodology_version == response.methodology_version
@@ -2813,7 +2819,8 @@ def test_ir_refresh_preserves_matrix_row_when_provider_is_temporarily_incomplete
     screener._matrix_universe_size = 1
     monkeypatch.setattr(screener, "_build_targeted_valuation", lambda symbol: None)
     monkeypatch.setattr(screener, "_candidate_response", lambda *args: object())
-    monkeypatch.setattr(screener, "_persist_snapshot", lambda *args: None)
+    monkeypatch.setattr(screener, "_persist_universe", lambda *args: "mv-test")
+    monkeypatch.setattr(screener, "_persist_candidates", lambda *args: None)
 
     result = screener.refresh_symbols(["TEST3"])
 

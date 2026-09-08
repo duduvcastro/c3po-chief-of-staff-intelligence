@@ -29,6 +29,7 @@ PRODUCERS_AND_ENGINES = {
 }
 CONVERSIONS = {"float", "int", "round", "_float", "_positive", "positive", "number", "_number", "_bounded_tp", "_clamp", "clamp", "str"}
 ENGINE_CALLS = {"official_blend_v1", "official_buy_in_v1", "foreign_bridge_tp_v1"}  # the producer engine, callable only in producer role
+MUTATOR_CALLS = {"setattr", "setitem"}  # positional (target, name, value) mutators: setattr(...) / operator.setitem(...)
 
 
 def _call_name(node: ast.Call) -> str:
@@ -63,7 +64,24 @@ def _target_is_tp(target: ast.expr) -> bool:
         return str(target.slice.value) in TP_NAMES
     if isinstance(target, ast.Attribute):
         return target.attr in TP_NAMES
+    if isinstance(target, ast.Starred):
+        return _target_is_tp(target.value)
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return any(_target_is_tp(element) for element in target.elts)  # `our_tp, x = ...` / `[our_tp, y] = ...`
     return False
+
+
+def _tp_assignment_findings(target: ast.expr, value: ast.expr, label: str, lineno: int) -> list[str]:
+    """Handles both scalar targets and tuple/list (un)packing, matched element-wise when shapes line up."""
+    if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (ast.Tuple, ast.List)) and len(target.elts) == len(value.elts):
+        return [
+            f"{label}:{lineno}: unpacking assignment of a computed TP"
+            for element, element_value in zip(target.elts, value.elts)
+            if _target_is_tp(element) and _is_computation(element_value)
+        ]
+    if _target_is_tp(target) and _is_computation(value):
+        return [f"{label}:{lineno}: assignment of a computed TP"]
+    return []
 
 
 def tp_computations(source: str, label: str) -> list[str]:
@@ -72,12 +90,13 @@ def tp_computations(source: str, label: str) -> list[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if _target_is_tp(target) and _is_computation(node.value):
-                    found.append(f"{label}:{node.lineno}: assignment of a computed TP")
+                found.extend(_tp_assignment_findings(target, node.value, label, node.lineno))
         elif isinstance(node, ast.AnnAssign) and node.value is not None and _target_is_tp(node.target) and _is_computation(node.value):
             found.append(f"{label}:{node.lineno}: annotated assignment of a computed TP")
         elif isinstance(node, ast.AugAssign) and _target_is_tp(node.target):
             found.append(f"{label}:{node.lineno}: augmented assignment to a TP")
+        elif isinstance(node, ast.NamedExpr) and _target_is_tp(node.target) and _is_computation(node.value):
+            found.append(f"{label}:{node.lineno}: walrus assignment of a computed TP")
         elif isinstance(node, ast.Dict):
             for key, value in zip(node.keys, node.values):
                 if isinstance(key, ast.Constant) and str(key.value) in TP_NAMES and _is_computation(value):
@@ -86,6 +105,10 @@ def tp_computations(source: str, label: str) -> list[str]:
             for keyword in node.keywords:
                 if keyword.arg in TP_NAMES and _is_computation(keyword.value):
                     found.append(f"{label}:{node.lineno}: keyword argument with a computed TP")
+            if _call_name(node) in MUTATOR_CALLS and len(node.args) >= 3:
+                name_arg, value_arg = node.args[1], node.args[2]
+                if isinstance(name_arg, ast.Constant) and str(name_arg.value) in TP_NAMES and _is_computation(value_arg):
+                    found.append(f"{label}:{node.lineno}: positional mutator call with a computed TP")
     return found
 
 
@@ -110,6 +133,12 @@ def test_the_sweep_catches_the_mutants_codex_used_and_keeps_reads() -> None:
         "augmented": "def f(our_tp, k):\n    our_tp *= k\n",
         "attribute": "def f(item, a, b):\n    item.our_tp = a / b\n",
         "conditional": "def f(a, b, flag):\n    tp = a * b if flag else a\n",
+        # F393-adversarial: tuple/list unpacking, positional mutator calls, and the walrus operator
+        "tuple_target": "def f(a, b):\n    our_tp, x = a * b, 1\n",
+        "list_target": "def f(a, b):\n    [our_tp, y] = [a * b, 1]\n",
+        "setattr": "def f(row, a, b):\n    setattr(row, 'our_tp', a * b)\n",
+        "operator_setitem": "import operator\ndef f(row, a, b):\n    operator.setitem(row, 'our_tp', a * b)\n",
+        "walrus": "def f(a, b):\n    return (our_tp := a * b)\n",
     }
     for name, source in mutants.items():
         assert tp_computations(source, name), f"mutant not caught: {name}"
@@ -121,6 +150,11 @@ def test_the_sweep_catches_the_mutants_codex_used_and_keeps_reads() -> None:
         "attribute_read": "def f(item):\n    tp = item.our_tp\n",
         "dict_read": "def f(record):\n    return {'tp': record['tp'], 'our_tp': float(record['tp'])}\n",
         "engine": "def f(a, b, w):\n    c3po_tp = official_blend_v1(a, b, w)\n",
+        # F393-adversarial: a positional string argument that names a TP field but reads it, never writes it
+        "logger_format_string": "def f(logger, row):\n    logger.info('our_tp %s', row['our_tp'])\n",
+        "getattr_read": "def f(row):\n    return getattr(row, 'our_tp')\n",
+        "tuple_unpack_read": "def f(row):\n    our_tp, y = row['our_tp'], 1\n",
+        "setattr_read": "def f(row):\n    setattr(row, 'our_tp', row['our_tp'])\n",
     }.items():
         assert tp_computations(source, name) == [], f"false positive: {name}"
 

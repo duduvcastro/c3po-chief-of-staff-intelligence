@@ -33,7 +33,7 @@ from .r2d2_shadow_candidate_log import (
     build_observation as build_shadow_candidate_observation,
     entry_rejection_reason_id,
 )
-from .valuation_official import current_generation, official_rows
+from .valuation_official import UNRESOLVED, current_generation, official_rows
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
@@ -2837,10 +2837,13 @@ class R2D2PaperService:
             self._us_scan_counts = {}
             self._eodhd_call_counts = {}
             # V3.2 rev 7 §7-bis (F393-3): ONE official generation per cycle — NASDAQ and NYSE are read through the same one
-            self._batch_generation = current_generation(self.repo.database)
-            for market in ACTIVE_MARKETS:
-                if market in markets:
-                    candidates.extend(self._us_candidates(market, now))
+            self._batch_generation = current_generation(self.repo.database)  # None = resolved, none in force: the whole batch is served nothing
+            try:
+                for market in ACTIVE_MARKETS:
+                    if market in markets:
+                        candidates.extend(self._us_candidates(market, now))
+            finally:
+                self._batch_generation = UNRESOLVED  # the batch's generation never leaks into a later ad-hoc read
             shadow_population_count = len(candidates)
             scanned = sum(
                 self._us_scan_counts.get(market, {}).get(
@@ -3872,7 +3875,7 @@ class R2D2PaperService:
         return sorted(output, key=lambda item: item["composite_score"], reverse=True)[:40]
 
     def _us_candidates(self, market: str, now: datetime, generation: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        generation = generation if generation is not None else getattr(self, "_batch_generation", None)
+        generation = generation if generation is not None else getattr(self, "_batch_generation", UNRESOLVED)  # outside a batch: resolve once here
         rows = self.realtime._us_investable_rows(market, now)
         catalog = self.realtime._us_symbol_catalog(now)
         catalog_securities = [
@@ -4027,6 +4030,11 @@ class R2D2PaperService:
                 "tp_source": (canonical_row or {}).get("tp_source"),
                 "official_generation_id": (canonical_row or {}).get("generation_id"),
                 "official_cycle_id": (canonical_row or {}).get("official_cycle_id"),
+                # F393-6: the full stamp of the served record stays on the item (persisted whole in r2d2_decisions.inputs)
+                "tp_source_version": (canonical_row or {}).get("tp_source_version"),
+                "official_session_date": (canonical_row or {}).get("official_session_date"),
+                "prediction_instant": (canonical_row or {}).get("prediction_instant"),
+                "official_row_sha256": (canonical_row or {}).get("official_row_sha256"),
             }
             item["composite_score"] = self._composite(item)
             item["pretrade_rank"] = round(

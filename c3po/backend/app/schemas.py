@@ -385,6 +385,13 @@ class B3Candidate(BaseModel):
     thesis: str
     risk: str
     as_of: datetime
+    tp_source: str | None = None  # V3.2 rev 7 §7-bis (I-TP3): the official producer of our_tp/buy_in (per item, F393-6)
+    official_generation_id: str | None = None
+    official_cycle_id: str | None = None
+    tp_source_version: str | None = None  # V3.2 rev 7 §7-bis (I-TP3, F393-6): the producer version of the served number
+    official_session_date: str | None = None  # the market session the official prediction belongs to (exchange calendar)
+    prediction_instant: datetime | None = None  # when the official prediction existed (the record's instant)
+    official_row_sha256: str | None = None  # the immutable record hash the served number comes from
 
 
 class B3CandidateResponse(BaseModel):
@@ -400,6 +407,8 @@ class B3CandidateResponse(BaseModel):
     tp_source: str | None = None  # V3.2 rev 7 §7-bis: the official producer these TPs come from
     official_generation_id: str | None = None  # the official selection generation in force when served
     official_cycle_id: str | None = None  # the producer cycle of this market inside that generation
+    tp_source_version: str | None = None  # F393-6: the full stamp travels with every served response
+    official_session_date: str | None = None
 
 
 class MatrixPowerItem(BaseModel):
@@ -451,6 +460,13 @@ class MatrixPowerItem(BaseModel):
     x_percent: float = Field(ge=0, le=100)
     y_percent: float = Field(ge=0, le=100)
     as_of: datetime
+    tp_source: str | None = None  # V3.2 rev 7 §7-bis (I-TP3): the official producer of our_tp/buy_in (per item, F393-6)
+    official_generation_id: str | None = None
+    official_cycle_id: str | None = None
+    tp_source_version: str | None = None  # V3.2 rev 7 §7-bis (I-TP3, F393-6): the producer version of the served number
+    official_session_date: str | None = None  # the market session the official prediction belongs to (exchange calendar)
+    prediction_instant: datetime | None = None  # when the official prediction existed (the record's instant)
+    official_row_sha256: str | None = None  # the immutable record hash the served number comes from
 
 
 class MatrixPowerResponse(BaseModel):
@@ -472,6 +488,11 @@ class MatrixPowerResponse(BaseModel):
     generated_at: datetime
     items: list[MatrixPowerItem]
     methodology: dict[str, str]
+    tp_source: str | None = None  # V3.2 rev 7 §7-bis (I-TP3, F393-3/F393-6): the matrix is served from the official selection
+    official_generation_id: str | None = None
+    official_cycle_id: str | None = None
+    tp_source_version: str | None = None
+    official_session_date: str | None = None
 
 
 class ChewieMultiples(BaseModel):
@@ -962,6 +983,10 @@ class OnePagerReport(BaseModel):
     tp_source: str | None = None  # V3.2 rev 7 §7-bis (I-TP3): the official producer of c3po_tp/buy_in
     official_generation_id: str | None = None  # the official selection generation this report was resolved through
     official_cycle_id: str | None = None  # the producer cycle inside that generation
+    tp_source_version: str | None = None  # V3.2 rev 7 §7-bis (I-TP3, F393-6): the producer version of the served number
+    official_session_date: str | None = None  # the market session the official prediction belongs to (exchange calendar)
+    prediction_instant: datetime | None = None  # when the official prediction existed (the record's instant)
+    official_row_sha256: str | None = None  # the immutable record hash the served number comes from
     method_count: int = Field(ge=1, le=5)
     download_url: str
 

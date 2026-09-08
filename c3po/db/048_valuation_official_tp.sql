@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS valuation_predictions (
 );
 CREATE INDEX IF NOT EXISTS valuation_predictions_lookup
     ON valuation_predictions (market, symbol, source, prediction_instant DESC);
+-- every served read filters by cycle (the UNIQUE above ends with cycle_id and cannot serve it): rev 4, D2
+CREATE INDEX IF NOT EXISTS valuation_predictions_by_cycle
+    ON valuation_predictions (cycle_id);
 
 CREATE TABLE IF NOT EXISTS valuation_official_selection (
     generation_id UUID PRIMARY KEY,
@@ -51,6 +54,9 @@ CREATE TABLE IF NOT EXISTS valuation_official_selection (
 );
 CREATE INDEX IF NOT EXISTS valuation_official_selection_activated
     ON valuation_official_selection (activated_at DESC);
+-- generations form a chain: two concurrent writers cannot both extend the same predecessor (rev 4, B2)
+CREATE UNIQUE INDEX IF NOT EXISTS valuation_official_selection_chain
+    ON valuation_official_selection (previous_generation_id) WHERE previous_generation_id IS NOT NULL;
 
 -- Append-only: predictions and selections are history; the application never updates or deletes them (I-TP2, I-TP3).
 CREATE OR REPLACE FUNCTION valuation_official_append_only() RETURNS trigger AS $$

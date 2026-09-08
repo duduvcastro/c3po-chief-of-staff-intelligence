@@ -661,7 +661,8 @@ class OnePagerService:
             else:
                 c3po_tp = official_blend_v1(internal_tp, consensus, consensus_weight)
                 buy_in = official_buy_in_v1(method_values, entry_discount, c3po_tp)
-            tp_stamp = {"tp_source": None, "generation_id": None, "official_cycle_id": None}
+            tp_stamp = {"tp_source": None, "generation_id": None, "official_cycle_id": None, "tp_source_version": None,
+                        "official_session_date": None, "prediction_instant": None, "official_row_sha256": None}
         else:
             # CONSUMER role (Valuation V3.2 rev 7 §7-bis, Passo 0): the TP and the buy-in shown are the OFFICIAL ones, resolved
             # through the official selection (`shared_valuation`, stamped with generation_id/tp_source/cycle). This branch
@@ -684,8 +685,13 @@ class OnePagerService:
             risk_score = self._clamp(float(shared_valuation.get("risk_score") or risk_score), 0, 100)
             confidence = self._clamp(float(shared_valuation.get("valuation_confidence") or confidence), 0, 100)
             dispersion = max(0.0, float(shared_valuation.get("method_dispersion_percent") or self._dispersion(method_values)))
+            # The FULL stamp of the served record travels with the report (F393-6): session, instant and record hash too.
             tp_stamp = {"tp_source": shared_valuation.get("tp_source"), "generation_id": shared_valuation.get("generation_id"),
-                        "official_cycle_id": shared_valuation.get("official_cycle_id")}
+                        "official_cycle_id": shared_valuation.get("official_cycle_id"),
+                        "tp_source_version": shared_valuation.get("tp_source_version"),
+                        "official_session_date": shared_valuation.get("official_session_date"),
+                        "prediction_instant": shared_valuation.get("prediction_instant"),
+                        "official_row_sha256": shared_valuation.get("official_row_sha256")}
         upside = (c3po_tp / price - 1) * 100
         consensus_upside = (consensus / price - 1) * 100 if consensus else None
         rating = "COMPRA" if upside >= 25 else "ACUMULAR" if upside >= 10 else "NEUTRO" if upside >= -10 else "REDUZIR"
@@ -836,6 +842,10 @@ class OnePagerService:
             "tp_source": tp_stamp["tp_source"],
             "official_generation_id": tp_stamp["generation_id"],
             "official_cycle_id": tp_stamp["official_cycle_id"],
+            "tp_source_version": tp_stamp["tp_source_version"],
+            "official_session_date": tp_stamp["official_session_date"],
+            "prediction_instant": tp_stamp["prediction_instant"],
+            "official_row_sha256": tp_stamp["official_row_sha256"],
             "analysis_role": role,
             "internal_framework_methods": dict(internal_framework_methods),
             "internal_framework_tp": internal_framework_tp,
@@ -905,6 +915,10 @@ class OnePagerService:
             tp_source=data.get("tp_source"),
             official_generation_id=data.get("official_generation_id"),
             official_cycle_id=data.get("official_cycle_id"),
+            tp_source_version=data.get("tp_source_version"),
+            official_session_date=data.get("official_session_date"),
+            prediction_instant=data.get("prediction_instant"),
+            official_row_sha256=data.get("official_row_sha256"),
             methodology_name=data["methodology_name"],
             methodology_version=data["methodology_version"],
             price=round(data["price"], 2),

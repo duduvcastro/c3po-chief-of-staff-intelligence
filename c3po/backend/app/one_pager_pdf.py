@@ -493,6 +493,18 @@ class PremiumOnePagerRenderer:
         return f"{source} · {int(count)} analistas" if count else source
 
     @staticmethod
+    def _official_stamp_label(data: dict[str, Any]) -> str:
+        """One line under NOSSO TP with the full Passo 0 stamp (F393-6): producer, generation, session and record hash.
+        Each piece degrades on its own when absent; nothing is computed here."""
+        session = str(data.get("official_session_date") or "")[:10]
+        record_hash = str(data.get("official_row_sha256") or "")[:8]
+        return (
+            f"{data['upside_percent']:+.1f}% upside · {data.get('tp_source') or 'sem fonte oficial'}"
+            f" · ger. {str(data.get('official_generation_id') or '-')[:8]}"
+            f" · sessão {session or '-'} · reg. {record_hash or '-'}"
+        )
+
+    @staticmethod
     def _coverage_label(data: dict[str, Any]) -> str:
         total = int(data["analyst_count"]) if data.get("analyst_count") else None
         buy = data.get("analyst_buy")
@@ -561,8 +573,7 @@ class PremiumOnePagerRenderer:
         pdf.line(x + 2 * slot, y + 8, x + 2 * slot, y + h - 8)
         consensus_text = self._consensus_provenance_label(data)
         summaries = (
-            ("NOSSO TP", self._money(data["c3po_tp"], data["currency"]),
-             f"{data['upside_percent']:+.1f}% upside · {data.get('tp_source') or 'sem fonte oficial'} · ger. {str(data.get('official_generation_id') or '-')[:8]}", BLUE),
+            ("NOSSO TP", self._money(data["c3po_tp"], data["currency"]), self._official_stamp_label(data), BLUE),
             ("CONSENSO", self._money(data.get("consensus_tp"), data["currency"]), consensus_text, INK),
             ("BUY-IN", self._money(data["buy_in"], data["currency"]), "entrada disciplinada", AMBER),
         )

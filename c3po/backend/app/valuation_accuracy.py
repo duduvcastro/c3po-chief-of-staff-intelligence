@@ -50,6 +50,10 @@ class ValuationCall:
     price_at_call: float
     target_price: float
     confidence: float
+    source: str | None = None  # V3.2 rev 7 TP-C (F393-7): the producer/version/cycle of a prediction record travel with the call
+    source_version: str | None = None
+    cycle_id: str | None = None
+    row_sha256: str | None = None
 
     @property
     def predicted_return_percent(self) -> float:
@@ -234,6 +238,18 @@ def load_prediction_calls(records: Iterable[dict[str, Any]]) -> list[ValuationCa
         confidence = _float(decomposition.get("valuation_confidence"), 50.0)
         market = "B3" if str(record.get("market")) == "B3" else "US"
         calls.append(ValuationCall(market=market, symbol=str(record.get("symbol")), changed_at=changed_at, price_at_call=price,
-                                   target_price=target, confidence=confidence))
+                                   target_price=target, confidence=confidence, source=str(record.get("source")) if record.get("source") else None,
+                                   source_version=str(record.get("source_version")) if record.get("source_version") else None,
+                                   cycle_id=str(record.get("cycle_id")) if record.get("cycle_id") else None,
+                                   row_sha256=str(record.get("row_sha256")) if record.get("row_sha256") else None))
     return calls
+
+
+def calls_by_source(calls: Iterable[ValuationCall]) -> dict[str, list[ValuationCall]]:
+    """Grading by producer/version (rev 7 TP-C): the identity of every call is its record, never the current selection."""
+    groups: dict[str, list[ValuationCall]] = {}
+    for call in calls:
+        key = f"{call.source}:{call.source_version}" if call.source else "valuation_change_records"
+        groups.setdefault(key, []).append(call)
+    return groups
 

@@ -16,7 +16,7 @@ from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
 from .sector_taxonomy import SECTOR_TAXONOMY_VERSION, canonical_b3_company_name, resolve_b3_sector
-from ..valuation_official import current_generation, official_rows, official_stamp
+from ..valuation_official import current_generation, item_stamp, official_rows, official_stamp, provenance_sha256
 from ..valuation_policy import (
     C3PO_VALUATION_POLICY,
     METHODOLOGY_KEY,
@@ -337,6 +337,7 @@ class B3ScreenerService:
                 self._matrix_basis_at = generated_at
                 self._matrix_cached = None
                 self._matrix_cache_expires_at = None
+                methodology_id = self._persist_universe(generated_at, self._matrix_macro)
                 response = self._candidate_response(
                     generated_at,
                     self._matrix_universe_size or len(self._matrix_rows),
@@ -344,7 +345,7 @@ class B3ScreenerService:
                     self._matrix_macro,
                 )
                 self._cached = response
-                self._persist_snapshot(response, self._matrix_macro)
+                self._persist_candidates(response, self._matrix_macro, methodology_id)
             return {"updated": updated, "targeted_only": targeted_only, "missing": missing}
 
     def _build_targeted_valuation(self, symbol: str) -> dict[str, Any] | None:
@@ -594,8 +595,9 @@ class B3ScreenerService:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
             raise
 
+        methodology_id = self._persist_universe(generated_at, macro)  # the cycle is published (records → generation) BEFORE anything is served
         response = self._candidate_response(generated_at, len(symbols), rows, macro)
-        self._persist_snapshot(response, macro)
+        self._persist_candidates(response, macro, methodology_id)
         return response
 
     def _candidate_response(
@@ -606,9 +608,9 @@ class B3ScreenerService:
         macro: dict[str, float],
     ) -> B3CandidateResponse:
         generation = current_generation(self.database)  # resolved ONCE per response (F393-3)
-        if generation and (generation.get("cycles") or {}).get("B3"):
-            # served numbers come from the official selection's B3 cycle and its immutable records (F393-5)
-            rows = [dict(row) for row in official_rows(self.database, "B3", generation=generation).values()]
+        # served numbers come from the official selection's B3 cycle and its immutable records (F393-5); without a
+        # generation in force nothing is served — the producer's fresh rows are never a fallback (F393-3)
+        rows = list(official_rows(self.database, "B3", generation=generation).values())
         items, tp_upside_cutoff, risk_cutoff = self._rank(rows, macro)
         return B3CandidateResponse(
             source=self._source_label(),
@@ -2467,8 +2469,10 @@ class B3ScreenerService:
         return clamp(52 + (value - cutoff) / denominator * 44, 52, 96)
 
     def _build_matrix(self, generated_at: datetime) -> MatrixPowerResponse:
+        generation = current_generation(self.database)  # resolved ONCE per response (F393-3): the matrix reads the official selection, never the raw build
+        served_rows = list(official_rows(self.database, "B3", generation=generation).values())
         eligible_rows: list[dict[str, Any]] = []
-        for source_row in self._matrix_rows:
+        for source_row in served_rows:
             row = dict(source_row)
             if not positive(row.get("our_tp")) or not positive(row.get("buy_in")):
                 continue
@@ -2558,6 +2562,7 @@ class B3ScreenerService:
             x_position = clamp(x_position + jitter_x, 4, 48) if x_position < 50 else clamp(x_position + jitter_x, 52, 96)
             y_position = clamp(y_position + jitter_y, 4, 48) if y_position < 50 else clamp(y_position + jitter_y, 52, 96)
             items.append(MatrixPowerItem(
+                **item_stamp(row),
                 symbol=row["symbol"],
                 name=row["name"],
                 logo_url=row.get("logo_url"),
@@ -2614,11 +2619,12 @@ class B3ScreenerService:
         )
 
         return MatrixPowerResponse(
+            **official_stamp(self.database, "B3", generation=generation),
             source=self._source_label(),
             methodology_name=METHODOLOGY_NAME,
             methodology_version=METHODOLOGY_VERSION,
             universe_size=self._matrix_universe_size or UNIVERSE_LIMIT,
-            source_eligible_count=len(self._matrix_rows),
+            source_eligible_count=len(served_rows),
             item_count=len(items),
             validated_count=validated_count,
             provisional_count=provisional_count,
@@ -2742,6 +2748,7 @@ class B3ScreenerService:
         output: list[B3Candidate] = []
         for rank, row in enumerate(selected, 1):
             output.append(B3Candidate(
+                **item_stamp(row),
                 rank=rank,
                 symbol=row["symbol"],
                 name=row["name"],
@@ -2797,7 +2804,10 @@ class B3ScreenerService:
             ))
         return output, tp_upside_cutoff, risk_cutoff
 
-    def _persist_snapshot(self, response: B3CandidateResponse, macro: dict[str, float]) -> None:
+    def _persist_universe(self, generated_at: datetime, macro: dict[str, float]) -> str:
+        """Publish the cycle FIRST (V3.2 rev 7 §7-bis, Passo 0): the universe snapshot becomes prediction records and
+        may activate a generation, so the response built right after is served from the selection that includes this
+        cycle — never one cycle behind. Returns the methodology id for the candidate snapshot."""
         score_weights = self._score_weights(macro)
         parameters = {
             "universe_limit": UNIVERSE_LIMIT,
@@ -2841,21 +2851,14 @@ class B3ScreenerService:
             f"{C3PO_VALUATION_POLICY.label}: {C3PO_VALUATION_POLICY.release_note}",
         )
         self.database.save_analysis_snapshot(
-            "candidate_screen",
-            "B3_TOP_10",
-            methodology_id,
-            {"source": response.source, "universe_size": response.universe_size, "criteria": response.criteria, "macro": macro},
-            response.model_dump(mode="json"),
-            response.generated_at,
-        )
-        self.database.save_analysis_snapshot(
             "valuation_universe",
             "B3_UNIVERSE",
             methodology_id,
             {
-                "source": response.source,
-                "methodology_version": response.methodology_version,
+                "source": self._source_label(),
+                "methodology_version": METHODOLOGY_VERSION,
                 "cvm_first": True,
+                "source_manifest_sha256": provenance_sha256(self._matrix_rows),  # the provenance manifest every record of this cycle points at (E1)
             },
             self._json_safe({
                 "rows": self._matrix_rows,
@@ -2863,11 +2866,19 @@ class B3ScreenerService:
                 "universe_size": self._matrix_universe_size,
                 "coverage_audit": self._matrix_coverage_audit,
                 "sector_audit": self._matrix_sector_audit,
-                "basis_at": response.generated_at,
+                "basis_at": generated_at,
             }),
-            response.generated_at,
+            generated_at,
         )
-        self._persist_calibration(methodology_id, response.generated_at, self._matrix_rows)
+        self._persist_calibration(methodology_id, generated_at, self._matrix_rows)
+        return methodology_id
+
+    def _persist_candidates(self, response: B3CandidateResponse, macro: dict[str, float], methodology_id: str) -> None:
+        self.database.save_analysis_snapshot(
+            "candidate_screen", "B3_TOP_10", methodology_id,
+            {"source": response.source, "universe_size": response.universe_size, "criteria": response.criteria, "macro": macro},
+            response.model_dump(mode="json"), response.generated_at,
+        )
 
     def _persist_calibration(
         self,
