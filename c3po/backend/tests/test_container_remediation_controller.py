@@ -37,7 +37,8 @@ def _modules() -> tuple[ModuleType, ModuleType]:
     return scanner, controller
 
 
-def _report(scanner: ModuleType, *, critical: int = 1, high: int = 1) -> dict[str, Any]:
+def _report(scanner: ModuleType, *, critical: int = 1, high: int = 1, medium: int = 0, low: int = 0,
+            unrated: int = 0, unrated_fixable: int = 0, with_occurrences: bool = True) -> dict[str, Any]:
     findings = []
     for index in range(critical):
         findings.append({
@@ -57,6 +58,26 @@ def _report(scanner: ModuleType, *, critical: int = 1, high: int = 1) -> dict[st
             "fixed_version": "4.0",
             "target": "debian",
         })
+    occurrences = list(findings)
+    for index in range(medium):
+        occurrences.append({"vulnerability_id": f"CVE-MEDIUM-{index}", "severity": "medium", "package": "medium-lib",
+                            "installed_version": "5.0", "fixed_version": "5.1", "target": "alpine"})
+    for index in range(low):
+        occurrences.append({"vulnerability_id": f"CVE-LOW-{index}", "severity": "low", "package": "low-lib",
+                            "installed_version": "6.0", "fixed_version": "6.1", "target": "alpine"})
+    for index in range(unrated):
+        occurrences.append({"vulnerability_id": f"CVE-2026-8{index:04d}", "severity": "unknown", "package": "libcurl",
+                            "installed_version": "8.21.0-r0", "fixed_version": "8.22.0-r0" if index < unrated_fixable else "",
+                            "target": "alpine"})
+    image: dict[str, Any] = {
+        "label": "backend",
+        "fixable_high_critical": findings,
+        "fix_available": {"critical": critical, "high": high, "medium": medium, "low": low},
+        "unknown": unrated,
+        "unknown_fix_available": unrated_fixable,
+    }
+    if with_occurrences:
+        image["occurrences"] = occurrences
     report = {
         "schema": scanner.SCHEMA,
         "generated_at": "2026-08-30T22:00:00+00:00",
@@ -65,14 +86,11 @@ def _report(scanner: ModuleType, *, critical: int = 1, high: int = 1) -> dict[st
         "source_revision": "a" * 40,
         "dead_man_configured": True,
         "scanner": {"name": "Trivy"},
-        "images": [{
-            "label": "backend",
-            "fixable_high_critical": findings,
-        }],
-        "by_severity": {"critical": critical, "high": high, "medium": 0, "low": 0},
-        "fix_available": {"critical": critical, "high": high, "medium": 0, "low": 0},
-        "unknown": 0,
-        "finding_total": critical + high,
+        "images": [image],
+        "by_severity": {"critical": critical, "high": high, "medium": medium, "low": low},
+        "fix_available": {"critical": critical, "high": high, "medium": medium, "low": low},
+        "unknown": unrated,
+        "finding_total": critical + high + medium + low + unrated,
         "errors": [],
     }
     report["report_sha256"] = scanner.report_sha256(report)
@@ -112,7 +130,7 @@ def test_controller_accepts_a_zero_fixable_report_without_opening_work() -> None
 
     counts, findings = controller.validate_report(report)
 
-    assert counts == {"critical": 0, "high": 0}
+    assert counts == {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0}
     assert findings == []
 
 
@@ -161,7 +179,7 @@ def test_positive_dry_run_fixture_is_sealed_scoped_and_actionable(tmp_path: Path
         report,
     )
 
-    assert counts == {"critical": 0, "high": 1}
+    assert counts == {"critical": 0, "high": 1, "medium": 0, "low": 0, "unknown": 0}
     assert findings[0]["vulnerability_id"] == "C3PO-DRY-RUN-FIXABLE-001"
     trigger_path = tmp_path / "trigger.json"
     body_path = tmp_path / "body.md"
@@ -230,7 +248,7 @@ def test_zero_gate_accepts_pull_request_scope_without_a_dead_man() -> None:
         require_dead_man=False,
     )
 
-    assert counts == {"critical": 0, "high": 0}
+    assert counts == {"critical": 0, "high": 0, "medium": 0, "low": 0, "unknown": 0}
     assert findings == []
 
 
@@ -376,3 +394,133 @@ def test_controller_rejects_a_self_hash_mismatch() -> None:
 
     with pytest.raises(controller.ReportValidationError, match="self-hash mismatch"):
         controller.validate_report(report)
+
+
+def test_controller_opens_work_for_medium_low_and_unrated_fixable_findings(tmp_path: Path) -> None:
+    # The daily loop acts on every occurrence the distribution already fixed, not only critical/high:
+    # medium, low and findings without a public rating yet (CVE reserved, secdb fix shipped).
+    scanner, controller = _modules()
+    report = _report(scanner, critical=0, high=0, medium=1, low=1, unrated=2, unrated_fixable=1)
+
+    counts, findings = controller.validate_report(report)
+    assert counts == {"critical": 0, "high": 0, "medium": 1, "low": 1, "unknown": 1}
+    assert [(f["severity"], f["vulnerability_id"], f["fixed_version"]) for f in findings] == [
+        ("medium", "CVE-MEDIUM-0", "5.1"), ("low", "CVE-LOW-0", "6.1"), ("unknown", "CVE-2026-80000", "8.22.0-r0")]
+    trigger = controller.build_trigger(report, counts=counts, findings=findings,
+                                       run_url="https://github.com/duduvcastro/c3po/actions/runs/123",
+                                       artifact_name="c3po-production-container-vulnerabilities-123")
+    body = controller.render_pr_body(trigger)
+    assert trigger["finding_total"] == 3 and "Medium fixável: **1**" in body and "Low fixável: **1**" in body
+    assert "Sem classificação pública, mas com correção da distribuição: **1**" in body and "CVE-2026-80000" in body
+    output_path = tmp_path / "github-output"
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    assert controller.plan(Namespace(report=report_path, trigger=tmp_path / "trigger.json", pr_body=tmp_path / "body.md",
+                                     run_url="https://github.com/duduvcastro/c3po/actions/runs/123",
+                                     artifact_name="c3po-production-container-vulnerabilities-123", github_output=output_path)) == 0
+    outputs = dict(line.split("=", 1) for line in output_path.read_text(encoding="utf-8").splitlines())
+    assert outputs["required"] == "true" and outputs["medium"] == "1" and outputs["low"] == "1" and outputs["unknown"] == "1"
+    # an unrated occurrence WITHOUT a fix is not work: nothing to rebuild towards
+    report = _report(scanner, critical=0, high=0, unrated=1, unrated_fixable=0)
+    counts, findings = controller.validate_report(report)
+    assert sum(counts.values()) == 0 and findings == []
+
+
+def _medium_report(scanner: ModuleType, occurrences: list[dict[str, str]]) -> dict[str, Any]:
+    report = _report(scanner, critical=0, high=0)
+    image = report["images"][0]
+    image["occurrences"] = list(occurrences)
+    fixable = sum(1 for occurrence in occurrences if occurrence["fixed_version"])
+    image["fix_available"]["medium"] = fixable
+    report["by_severity"]["medium"] = len(occurrences)
+    report["fix_available"]["medium"] = fixable
+    report["finding_total"] = len(occurrences)
+    report["report_sha256"] = scanner.report_sha256(report)
+    return report
+
+
+def _remediation_key(controller: ModuleType, report: dict[str, Any]) -> tuple[str, list[dict[str, str]]]:
+    counts, findings = controller.validate_report(report)
+    trigger = controller.build_trigger(
+        report,
+        counts=counts,
+        findings=findings,
+        run_url="https://github.com/duduvcastro/c3po/actions/runs/123",
+        artifact_name="c3po-production-container-vulnerabilities-123",
+    )
+    return trigger["remediation_key"], findings
+
+
+def test_remediation_key_is_canonical_over_every_identity_field_and_keeps_multiplicity() -> None:
+    # Two occurrences of the same CVE/package/target that differ only in installed version
+    # (a duplicated package at 1.0 and 1.1, both fixed in 1.2): the key must not depend on the
+    # scanner's output order, must change when a version really changes, and must change when
+    # the same occurrence is reported once versus twice.
+    scanner, controller = _modules()
+    first = {"vulnerability_id": "CVE-2026-1", "severity": "medium", "package": "libx",
+             "installed_version": "1.0", "fixed_version": "1.2", "target": "alpine"}
+    second = dict(first, installed_version="1.1")
+
+    key_forward, findings_forward = _remediation_key(controller, _medium_report(scanner, [first, second]))
+    key_reverse, findings_reverse = _remediation_key(controller, _medium_report(scanner, [second, first]))
+    assert key_forward == key_reverse
+    assert findings_forward == findings_reverse
+    assert [finding["installed_version"] for finding in findings_forward] == ["1.0", "1.1"]
+
+    key_other_fix, _ = _remediation_key(controller, _medium_report(scanner, [first, dict(second, fixed_version="1.3")]))
+    key_other_installed, _ = _remediation_key(controller, _medium_report(scanner, [first, dict(second, installed_version="1.2")]))
+    assert key_other_fix != key_forward
+    assert key_other_installed != key_forward
+
+    key_once, findings_once = _remediation_key(controller, _medium_report(scanner, [first]))
+    key_twice, findings_twice = _remediation_key(controller, _medium_report(scanner, [first, first]))
+    assert key_once != key_twice
+    assert len(findings_once) == 1 and len(findings_twice) == 2
+
+    # The same invariance holds across severities: reversing both the critical/high list and
+    # the occurrence list of the default fixture yields the same key.
+    report = _report(scanner, medium=1, low=1)
+    key_default, _ = _remediation_key(controller, report)
+    image = report["images"][0]
+    image["fixable_high_critical"].reverse()
+    image["occurrences"].reverse()
+    report["report_sha256"] = scanner.report_sha256(report)
+    key_reversed, _ = _remediation_key(controller, report)
+    assert key_reversed == key_default
+
+
+def test_controller_requires_occurrence_evidence_outside_the_sealed_fixture() -> None:
+    scanner, controller = _modules()
+    report = _report(scanner, with_occurrences=False)
+    with pytest.raises(controller.ReportValidationError, match="missing occurrences evidence"):
+        controller.validate_report(report)
+
+
+@pytest.mark.parametrize("mutation, message", [
+    (lambda image: image["occurrences"].pop(0), "do not match fixable_high_critical"),
+    (lambda image: image["occurrences"].append({"vulnerability_id": "CVE-MEDIUM-9", "severity": "medium", "package": "x",
+                                                "installed_version": "1", "fixed_version": "2", "target": "alpine"}), "medium detail/count mismatch"),
+    (lambda image: image.update({"unknown_fix_available": 2}), "unrated fixable detail/count mismatch"),
+    (lambda image: image.update({"unknown": 3}), "unrated occurrence count mismatch"),
+    (lambda image: image["occurrences"].append({"vulnerability_id": "CVE-X", "severity": "weird", "package": "x",
+                                                "installed_version": "1", "fixed_version": "", "target": "alpine"}), "not a known level"),
+])
+def test_controller_rejects_occurrences_inconsistent_with_the_counts(mutation, message: str) -> None:
+    scanner, controller = _modules()
+    report = _report(scanner, medium=1, unrated=1, unrated_fixable=1)
+    mutation(report["images"][0])
+    report["report_sha256"] = scanner.report_sha256(report)
+    with pytest.raises(controller.ReportValidationError, match=message):
+        controller.validate_report(report)
+
+
+def test_zero_gate_rejects_any_fixable_finding(tmp_path: Path) -> None:
+    scanner, controller = _modules()
+    report = _report(scanner, critical=0, high=0, low=1)
+    report["scope"] = "pull_request_build"
+    report["dead_man_configured"] = False
+    report["report_sha256"] = scanner.report_sha256(report)
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(controller.ReportValidationError, match="fixable findings"):
+        controller.verify_zero(Namespace(report=report_path))

@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     build_sha: str = "development"
     sentry_dsn: str = ""
     sentry_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=0.01)
     push_vapid_private_key: str = ""
     push_vapid_public_key: str = ""
     push_vapid_subject: str = "mailto:eu@eduardocastro.com.br"
@@ -188,6 +189,12 @@ class Settings(BaseSettings):
     r2d2_fast_risk_tick_max_age_seconds: float = 10.0
     r2d2_fast_risk_atr_max_age_seconds: float = 30.0
     r2d2_entry_score_adapter_enabled: bool = False
+    # Independent V2 process; no collector or release is enabled by this change.
+    r2d2_v2_shadow_enabled: bool = False
+    r2d2_v2_shadow_source_dir: Path = Path("/app/data/r2d2-v2-source")
+    r2d2_v2_shadow_release_file: Path = Path("/app/data/r2d2-v2-release.json")
+    r2d2_v2_shadow_release_sha: str = ""
+    r2d2_v2_shadow_poll_seconds: float = Field(default=1.0, ge=0.25, le=5.0)
     r2d2_shadow_candidate_log_enabled: bool = False
     r2d2_shadow_candidate_outcomes_enabled: bool = False
     r2d2_shadow_candidate_evidence_dir: Path = Path(

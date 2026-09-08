@@ -1,0 +1,623 @@
+"""F385-8 step 1 — the live earnings round emitter, without any provider: receipt rules (18:00 NY and the official
+close), one window per instrument to maturity + 15 days, stable fact identities, hidden staging + atomic publication,
+validation before the tape, audited quarantine, file limit refused before any write, retained round receipt."""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import stat
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+from app import r2d2_v2_round_emitter as emitter
+from app.r2d2_v2_producer_daily import canonical
+from app.r2d2_v2_producer_earnings import AMENDMENT, AMENDMENT_SHA, REASON_EVIDENCE_INVALID, REASON_UNAVAILABLE, SCHEMA
+
+SESSION = date(2026, 9, 8)                                   # Tuesday, a regular XNYS session (close 16:00 ET = 20:00Z)
+RECEIVED = datetime(2026, 9, 8, 22, 5, tzinfo=timezone.utc)   # 18:05 ET: after 18:00 NY and after the official close
+CALENDAR_AT = datetime(2026, 9, 8, 22, 5, 30, tzinfo=timezone.utc)
+HISTORY_AT = datetime(2026, 9, 8, 22, 5, 45, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 8, 22, 7, tzinfo=timezone.utc)
+OPENED = datetime(2026, 9, 1, 14, 0, tzinfo=timezone.utc)
+MATURITY = datetime(2026, 9, 15, 14, 0, tzinfo=timezone.utc)
+CAL_SHA = hashlib.sha256(b"calendar").hexdigest()
+HIST_SHA = hashlib.sha256(b"history").hexdigest()
+
+
+def _iso(at: datetime) -> str:
+    return at.astimezone(timezone.utc).isoformat()
+
+
+def _known(item: dict, classification: str = "EXCLUDES") -> dict:
+    """The producer's ``evidence.known_events`` shape for a port-shaped event."""
+    marker = {"AMC": "AfterMarket", "BMO": "BeforeMarket"}.get(item["granularity"], "None")
+    return {"event_date": item["event_date"], "granularity": item["granularity"], "event_at": item.get("event_at"), "available_at": item["available_at"],
+            "provider_marker": marker, "source": "calendar", "classification": classification}
+
+
+def _component(events: list[dict] | None = None, reasons: list[str] | None = None, known: list[dict] | None = None) -> dict:
+    """``events`` = the port-shaped, admission-horizon list; ``evidence.known_events`` = everything known (default: the same facts)."""
+    return {"coverage_verified": not reasons, "window_start": _iso(CALENDAR_AT), "window_end": "2026-09-15T20:00:00+00:00",
+            "events": [dict(item) for item in (events or [])], "source_at": _iso(CALENDAR_AT), "available_at": _iso(HISTORY_AT),
+            "policy": {"rule": "EXCLUSION_RULE_V1", "amendment": AMENDMENT, "amendment_sha": AMENDMENT_SHA, "producer": "fable-eodhd-earnings", "version": "v3"},
+            "evidence": {"calendar_payload_sha256": CAL_SHA, "history_payload_sha256": HIST_SHA,
+                         "known_events": known if known is not None else [_known(item) for item in (events or [])]},
+            "exclusion": {"excluded": bool(reasons), "reasons": reasons or []}}
+
+
+def _event(event_date: str, granularity: str = "AMC", available_at: datetime = CALENDAR_AT, event_at: str | None = None) -> dict:
+    item = {"event_date": event_date, "granularity": granularity, "available_at": _iso(available_at)}
+    if event_at is not None:
+        item["event_at"] = event_at
+    return item
+
+
+def _document(symbols: dict[str, dict], *, executed_at: datetime = RECEIVED, session: date = SESSION) -> dict:
+    return {"schema": SCHEMA, "session_date": session.isoformat(), "rule": "EXCLUSION_RULE_V1", "amendment": AMENDMENT, "amendment_sha": AMENDMENT_SHA,
+            "round": {"target": "18:00 America/New_York after the official close", "executed_at": _iso(executed_at),
+                      "calendar_window": ["2026-08-24", "2026-10-06"], "live_lookback": ["2026-09-01", "2026-09-15"]},
+            "horizon": {"decision_at": "2026-09-09T14:00:00+00:00", "maturity_date": "2026-09-23", "maturity_at": "2026-09-23T13:55:00+00:00",
+                        "tolerance_window": ["2026-09-08", "2026-09-24"]},
+            "calendar": {"from": "2026-08-24", "to": "2026-10-06", "rows": 3, "payload_sha256": CAL_SHA, "received_at": _iso(CALENDAR_AT)},
+            "granularity_map": {"BeforeMarket": "BMO", "AfterMarket": "AMC", "other": "DAY", "instant": "never from this provider"},
+            "live_symbols": sorted(symbols), "symbols": symbols, "counts": {"symbols": len(symbols)}}
+
+
+def _episode(symbol: str, opened_at: datetime = OPENED, maturity_at: datetime = MATURITY) -> emitter.Episode:
+    return emitter.Episode(f"US:{symbol}", opened_at, maturity_at)
+
+
+def _standard() -> tuple[dict, list[emitter.Episode]]:
+    document = _document({
+        "AAA": _component([_event("2026-09-10"), _event("2026-11-20", "BMO")]),   # one inside the window, one far outside
+        "BBB": _component(reasons=[REASON_UNAVAILABLE]),
+        "CCC": _component([_event("2026-09-11")], reasons=[REASON_EVIDENCE_INVALID]),
+        "DDD": _component(),                                                      # observed clean: nothing to emit
+    })
+    episodes = [_episode("AAA"), _episode("BBB"), _episode("CCC"), _episode("DDD"), _episode("EEE")]  # EEE never consulted
+    return document, episodes
+
+
+def test_receipt_requires_a_session_after_18_ny_and_after_the_official_close() -> None:
+    document, episodes = _standard()
+    receipt = emitter.build_receipt(document, episodes, published_at=NOW)
+    assert len(receipt["round_id"]) == 64 and receipt["round_session"] == "2026-09-08"
+    assert receipt["official_close"] == "2026-09-08T20:00:00+00:00" and receipt["round_received_at"] == _iso(RECEIVED)
+    assert receipt["observation_windows"]["US:AAA"] == ["2026-09-01", "2026-09-30"]  # opened_at NY date .. maturity NY date + 15 d
+    assert receipt["instruments"] == ["US:AAA", "US:BBB", "US:CCC", "US:DDD", "US:EEE"] and receipt["live_episodes"] == 5
+    core = {key: value for key, value in receipt.items() if key != "round_id"}
+    assert receipt["round_id"] == hashlib.sha256(canonical(core)).hexdigest()  # never date-backfilled: the hash of what was known
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_BEFORE_18_00_NY"):
+        emitter.build_receipt(_document(document["symbols"], executed_at=datetime(2026, 9, 8, 21, 30, tzinfo=timezone.utc)), episodes, published_at=NOW)
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_SESSION_NOT_A_SESSION"):
+        emitter.build_receipt(_document(document["symbols"], session=date(2026, 9, 12), executed_at=datetime(2026, 9, 12, 23, 0, tzinfo=timezone.utc)),
+                              episodes, published_at=datetime(2026, 9, 12, 23, 5, tzinfo=timezone.utc))
+    # early close (Friday after Thanksgiving, 13:00 ET): 13:30 ET is after the close but before 18:00 NY — both rules hold
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_BEFORE_18_00_NY"):
+        emitter.build_receipt(_document(document["symbols"], session=date(2026, 11, 27), executed_at=datetime(2026, 11, 27, 18, 30, tzinfo=timezone.utc)),
+                              episodes, published_at=datetime(2026, 11, 27, 23, 30, tzinfo=timezone.utc))
+    with pytest.raises(emitter.RoundEmitterError, match="PUBLISHED_BEFORE_ROUND"):
+        emitter.build_receipt(document, episodes, published_at=RECEIVED - timedelta(seconds=1))
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_DOCUMENT_SCHEMA"):
+        emitter.build_receipt({**document, "schema": "OTHER"}, episodes, published_at=NOW)
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_DOCUMENT_POLICY"):
+        emitter.build_receipt({**document, "amendment": "EMENDA_3_REV2"}, episodes, published_at=NOW)
+
+
+def test_events_are_built_per_live_instrument_with_windows_and_stable_identities() -> None:
+    document, episodes = _standard()
+    receipt = emitter.build_receipt(document, episodes, published_at=NOW)
+    envelopes = emitter.build_events(document, episodes, receipt)
+    by_instrument = {}
+    for envelope in envelopes:
+        emitter.validate_envelope(envelope, now=NOW)  # every produced envelope passes the collector's rules
+        assert envelope["self_sha256"] == hashlib.sha256(canonical({k: v for k, v in envelope.items() if k != "self_sha256"})).hexdigest()
+        by_instrument.setdefault(envelope["event"]["instrument_key"], []).append(envelope)
+    assert [e["sequence"] for e in envelopes] == list(range(len(envelopes)))
+    assert len({e["event_id"] for e in envelopes}) == len(envelopes) and all(e["event_id"].startswith(f"earn-2026-09-08-{receipt['round_id'][:12]}-") for e in envelopes)
+    aaa = by_instrument["US:AAA"]
+    assert len(aaa) == 1  # 2026-11-20 is outside the live window and is not an observation for the tape
+    fact = aaa[0]["event"]
+    assert fact["type"] == "EARNINGS" and fact["event_date"] == "2026-09-10" and fact["granularity"] == "AMC" and "event_at" not in fact
+    assert fact["earnings_event_id"] == "ern:US:AAA:2026-09-10" and fact["revision_sha256"] == emitter.revision_sha256(fact)
+    assert fact["at"] == _iso(CALENDAR_AT) and fact["available_at"] == _iso(NOW) and fact["session"] == "2026-09-08"
+    assert fact["round_id"] == receipt["round_id"] and fact["round_received_at"] == _iso(RECEIVED) and fact["observation_window"] == ["2026-09-01", "2026-09-30"]
+    assert fact["earnings_policy_sha"] == AMENDMENT_SHA
+    assert aaa[0]["source_at"] == _iso(CALENDAR_AT) and aaa[0]["available_at"] == _iso(NOW) and aaa[0]["provenance"]["payload_sha256"] == receipt["document_sha256"]
+    assert by_instrument["US:BBB"][0]["event"]["type"] == "EARNINGS_OBSERVATION_FAILED" and by_instrument["US:BBB"][0]["event"]["reason"] == "EARNINGS_SOURCE_UNAVAILABLE"
+    assert by_instrument["US:CCC"][0]["event"]["reason"] == "EARNINGS_EVIDENCE_INVALID" and len(by_instrument["US:CCC"]) == 1  # invalid evidence: no EARNINGS facts
+    assert "US:DDD" not in by_instrument  # observed, nothing known in the window: nothing to emit (the receipt records the instrument)
+    eee = by_instrument["US:EEE"][0]["event"]
+    assert eee["type"] == "EARNINGS_OBSERVATION_FAILED" and eee["reason"] == "EARNINGS_SOURCE_UNAVAILABLE" and eee["at"] == _iso(CALENDAR_AT)
+    # the same fact in a later round keeps its identity and revision; another date is another fact
+    later = emitter.build_receipt(_document(document["symbols"], executed_at=RECEIVED + timedelta(days=1), session=date(2026, 9, 9)), episodes,
+                                  published_at=NOW + timedelta(days=1))
+    again = [e for e in emitter.build_events(document, episodes, later) if e["event"]["type"] == "EARNINGS"][0]["event"]
+    assert again["earnings_event_id"] == fact["earnings_event_id"] and again["revision_sha256"] == fact["revision_sha256"] and again["round_id"] != fact["round_id"]
+    moved = {**fact, "event_date": "2026-09-12"}
+    assert emitter.earnings_event_id("US:AAA", "2026-09-12") != fact["earnings_event_id"] and emitter.revision_sha256(moved) != fact["revision_sha256"]
+
+
+def test_facts_come_from_the_known_events_not_only_the_admission_horizon() -> None:
+    # C-F385-8-1: a fact dated before the round session but inside the live window (opened 01/09) is known to the producer
+    # (evidence.known_events, classification OUTSIDE_HORIZON) and absent from the admission-horizon `events`; it must be observed.
+    early = _known(_event("2026-09-03", "BMO"), classification="OUTSIDE_HORIZON")
+    inside = _event("2026-09-10")
+    document = _document({"AAA": _component([inside], known=[early, _known(inside)])})
+    episodes = [_episode("AAA")]
+    receipt = emitter.build_receipt(document, episodes, published_at=NOW)
+    envelopes = emitter.build_events(document, episodes, receipt)
+    assert sorted(e["event"]["event_date"] for e in envelopes) == ["2026-09-03", "2026-09-10"]
+    for envelope in envelopes:
+        emitter.validate_envelope(envelope, now=NOW)
+    # a component without the known list is a producer defect: the whole round is refused (nothing published)
+    broken = _document({"AAA": _component([inside])})
+    del broken["symbols"]["AAA"]["evidence"]["known_events"]
+    with pytest.raises(emitter.RoundEmitterError, match="COMPONENT_KNOWN_EVENTS_MISSING"):
+        emitter.build_events(broken, episodes, emitter.build_receipt(broken, episodes, published_at=NOW))
+
+
+def test_two_episodes_of_the_same_instrument_share_the_widest_window() -> None:
+    document = _document({"AAA": _component([_event("2026-09-25")])})
+    episodes = [_episode("AAA"), _episode("AAA", opened_at=OPENED + timedelta(days=5), maturity_at=MATURITY + timedelta(days=9))]
+    receipt = emitter.build_receipt(document, episodes, published_at=NOW)
+    assert receipt["observation_windows"] == {"US:AAA": ["2026-09-01", "2026-10-09"]}
+    envelopes = emitter.build_events(document, episodes, receipt)
+    assert len(envelopes) == 1 and envelopes[0]["event"]["event_date"] == "2026-09-25"
+
+
+def _mode(path: Path) -> int:
+    return stat.S_IMODE(os.stat(path).st_mode)
+
+
+def test_publish_is_atomic_private_idempotent_and_names_files_by_identity_and_hash(tmp_path: Path) -> None:
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    summary = emitter.emit_round(document, episodes, root, now=NOW)
+    events_dir = root / "events"
+    names = sorted(os.listdir(events_dir))
+    assert summary["published"] == 4 and summary["quarantined"] == 0 and len(names) == 4
+    assert not any(name.startswith(".") for name in names)  # no staging leftovers
+    assert _mode(root) == 0o700 and _mode(events_dir) == 0o700 and all(_mode(events_dir / name) == 0o600 for name in names)
+    for name in names:
+        data = (events_dir / name).read_bytes()
+        envelope = json.loads(data)
+        assert name == f"{envelope['event_id']}.{envelope['self_sha256']}.json" and data == canonical(envelope)
+        emitter.validate_envelope(envelope, now=NOW)
+    receipt_path = Path(summary["receipt"])
+    receipt = json.loads(receipt_path.read_bytes())
+    assert receipt_path.name == f"2026-09-08.{receipt['round_id']}.json" and _mode(receipt_path) == 0o600 and _mode(root / "rounds") == 0o700
+    assert receipt["published_count"] == 4 and [item["file"] for item in receipt["published"]] == names
+    assert all(item["sha256"] == hashlib.sha256((events_dir / item["file"]).read_bytes()).hexdigest() for item in receipt["published"])
+    assert receipt["events_in_tape_after"] == 4 and receipt["quarantined"] == [] and receipt["instruments"] == ["US:AAA", "US:BBB", "US:CCC", "US:DDD", "US:EEE"]
+    # the same round emitted again (same receipt core) links the same bytes under the same names: no duplicates, no rewrite
+    again = emitter.emit_round(document, episodes, root, now=NOW)
+    assert again["round_id"] == summary["round_id"] and sorted(os.listdir(events_dir)) == names
+    # a later publication instant is a new round: new round_id, new event ids, old files untouched
+    later = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=1))
+    assert later["round_id"] != summary["round_id"] and len(os.listdir(events_dir)) == 8 and all(name in os.listdir(events_dir) for name in names)
+
+
+def test_invalid_envelopes_are_quarantined_and_never_reach_the_tape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    document, episodes = _standard()
+    # an event whose provider reception predates the round: AT_BEFORE_ROUND — quarantined, the rest of the round is published
+    document["symbols"]["AAA"]["evidence"]["known_events"].append(_known(_event("2026-09-12", available_at=RECEIVED - timedelta(minutes=1))))
+    root = tmp_path / "source"
+    summary = emitter.emit_round(document, episodes, root, now=NOW)
+    assert summary["published"] == 4 and summary["quarantined"] == 1
+    tape = sorted(os.listdir(root / "events"))
+    assert len(tape) == 4 and all(json.loads((root / "events" / name).read_bytes())["event"].get("event_date") != "2026-09-12" for name in tape)
+    quarantine = root / "quarantine" / "2026-09-08"
+    assert _mode(quarantine) == 0o700
+    files = os.listdir(quarantine)
+    assert len(files) == 1 and _mode(quarantine / files[0]) == 0o600
+    item = json.loads((quarantine / files[0]).read_bytes())
+    assert item["schema"] == emitter.QUARANTINE_SCHEMA and item["code"] == "AT_BEFORE_ROUND" and item["envelope"]["event"]["event_date"] == "2026-09-12"
+    receipt = json.loads(Path(summary["receipt"]).read_bytes())
+    assert receipt["quarantined_count"] == 1 and receipt["quarantined"][0]["code"] == "AT_BEFORE_ROUND"
+    # an envelope corrupted after being built (hash no longer matches) is quarantined too
+    original = emitter.build_events
+
+    def corrupted(document, episodes, receipt):
+        envelopes = original(document, episodes, receipt)
+        envelopes[0]["event"]["granularity"] = "DAY"  # bytes changed after hashing
+        return envelopes
+
+    monkeypatch.setattr(emitter, "build_events", corrupted)
+    summary = emitter.emit_round(_standard()[0], episodes, tmp_path / "source2", now=NOW)
+    assert summary["quarantined"] == 1 and summary["published"] == 3
+    codes = [json.loads((tmp_path / "source2" / "quarantine" / "2026-09-08" / name).read_bytes())["code"] for name in os.listdir(tmp_path / "source2" / "quarantine" / "2026-09-08")]
+    assert codes == ["ENVELOPE_HASH_MISMATCH"]
+
+
+def test_file_limit_is_refused_before_any_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    emitter.emit_round(document, episodes, root, now=NOW)  # 4 files in the tape
+    monkeypatch.setattr(emitter, "MAX_EVENT_FILES", 6)
+    before = sorted(os.listdir(root / "events"))
+    with pytest.raises(emitter.RoundEmitterError, match="EVENT_FILE_LIMIT"):
+        emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=2))  # 4 + 4 > 6
+    assert sorted(os.listdir(root / "events")) == before and len(os.listdir(root / "rounds")) == 1  # nothing staged, no receipt
+
+
+def test_read_episodes_validates_the_inventory(tmp_path: Path) -> None:
+    path = tmp_path / "episodes.json"
+    path.write_text(json.dumps([{"instrument_key": "US:AAA", "opened_at": _iso(OPENED), "maturity_at": _iso(MATURITY)}]), encoding="utf-8")
+    episodes = emitter.read_episodes(path)
+    assert episodes == [emitter.Episode("US:AAA", OPENED, MATURITY)] and episodes[0].symbol == "AAA"
+    for bad in ({"instrument_key": "AAA", "opened_at": _iso(OPENED), "maturity_at": _iso(MATURITY)},
+                {"instrument_key": "US:AAA", "opened_at": "2026-09-01T14:00:00", "maturity_at": _iso(MATURITY)},
+                {"instrument_key": "US:AAA", "opened_at": _iso(MATURITY), "maturity_at": _iso(OPENED)}):
+        path.write_text(json.dumps([bad]), encoding="utf-8")
+        with pytest.raises(emitter.RoundEmitterError):
+            emitter.read_episodes(path)
+    path.write_text("{}", encoding="utf-8")
+    with pytest.raises(emitter.RoundEmitterError, match="EPISODES_NOT_A_LIST"):
+        emitter.read_episodes(path)
+
+
+def test_validate_envelope_mirrors_the_collector_rules() -> None:
+    document, episodes = _standard()
+    receipt = emitter.build_receipt(document, episodes, published_at=NOW)
+    good = [e for e in emitter.build_events(document, episodes, receipt) if e["event"]["type"] == "EARNINGS"][0]
+    failed = [e for e in emitter.build_events(document, episodes, receipt) if e["event"]["type"] != "EARNINGS"][0]
+
+    def reseal(envelope: dict, **changes) -> dict:
+        body = {k: v for k, v in envelope.items() if k != "self_sha256"}
+        body["event"] = {**body["event"], **changes}
+        return {**body, "self_sha256": hashlib.sha256(canonical(body)).hexdigest()}
+
+    cases = [
+        (reseal(good, event_at="2026-09-10T20:05:00+00:00"), "EVENT_AT_ONLY_FOR_INSTANT"),
+        (reseal(good, event_date="2026-11-20"), "EVENT_OUTSIDE_WINDOW"),
+        (reseal(good, earnings_policy_sha="0" * 64), "EARNINGS_POLICY_SHA"),
+        (reseal(good, revision_sha256="0" * 64), "REVISION_SHA_MISMATCH"),
+        (reseal(good, session="2026-09-09"), "EVENT_SESSION_INVALID"),
+        (reseal(good, extra=1), "EVENT_KIND_OR_FIELDS"),
+        (reseal(failed, reason="SOMETHING_ELSE"), "FAILURE_REASON_INVALID"),
+        (reseal(good, at=_iso(RECEIVED - timedelta(seconds=1))), "AT_BEFORE_ROUND"),
+        ({**good, "self_sha256": "0" * 64}, "ENVELOPE_HASH_MISMATCH"),
+    ]
+    for envelope, code in cases:
+        with pytest.raises(emitter.RoundEmitterError, match=code):
+            emitter.validate_envelope(envelope, now=NOW)
+    with pytest.raises(emitter.RoundEmitterError, match="SOURCE_FUTURE_OR_REVERSED"):
+        emitter.validate_envelope(good, now=NOW - timedelta(minutes=5))  # published in the future relative to the reader's clock
+    emitter.validate_envelope(good, now=NOW)
+    emitter.validate_envelope(failed, now=NOW)
+
+
+def _tape(root: Path) -> dict[str, list[str]]:
+    entries = sorted(os.listdir(root / "events"))
+    return {"guard": [n for n in entries if n.startswith(emitter.GUARD_PREFIX)],
+            "final": [n for n in entries if n.endswith(".json") and not n.startswith(".") and not n.startswith(emitter.GUARD_PREFIX)],
+            "temp": [n for n in entries if n.startswith(".")]}
+
+
+def _crash_between_links(monkeypatch: pytest.MonkeyPatch, at_call: int):
+    """os.link fails on the N-th call of the round: the process dies between two links."""
+    real_link = os.link
+    calls = {"n": 0}
+
+    def failing(src, dst, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == at_call:
+            raise OSError("simulated crash between links")
+        return real_link(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", failing)
+    return real_link
+
+
+def test_a_crash_between_links_leaves_a_guard_the_reader_refuses_and_recovery_completes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8-A (Codex 5575014911): a round is committed as a unit. Between links the tape carries a visible guard the
+    # reader refuses (no events + diagnostic), never a partial round; recovery completes it from the staged bytes.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError, match="simulated crash"):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    tape = _tape(root)
+    assert len(tape["guard"]) == 1 and len(tape["final"]) == 1 and len(tape["temp"]) == 4  # one link done; staged bytes retained
+    guard = json.loads((root / "events" / tape["guard"][0]).read_bytes())
+    assert guard["schema"] == emitter.GUARD_SCHEMA and len(guard["files"]) == 4
+    with pytest.raises(emitter.RoundEmitterError):  # the guard is not an envelope: the reader's validation refuses it
+        emitter.validate_envelope(guard, now=NOW)
+    assert len(emitter.pending_rounds(root)) == 1 and not [n for n in os.listdir(root / "rounds") if not n.endswith(emitter.JOURNAL_SUFFIX)]
+    with pytest.raises(emitter.RoundEmitterError, match="PENDING_ROUND_REQUIRES_RECOVERY"):  # no round on top of a pending one
+        emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=1))
+    monkeypatch.setattr(os, "link", real_link)
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    assert [o["commit"] for o in outcomes] == ["recovered"] and outcomes[0]["missing"] == []
+    tape = _tape(root)
+    assert len(tape["final"]) == 4 and tape["guard"] == [] and tape["temp"] == [] and emitter.pending_rounds(root) == []
+    for name in tape["final"]:
+        emitter.validate_envelope(json.loads((root / "events" / name).read_bytes()), now=NOW + timedelta(minutes=3))
+    receipt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    assert receipt["commit"] == "recovered" and receipt["published_count"] == 4 and receipt["events_in_tape_after"] == 4
+    again = emitter.emit_round(document, episodes, root, now=NOW)  # the same round after recovery: idempotent, zero new files
+    assert again["commit"] == "already_present" and again["new_files"] == 0 and len(_tape(root)["final"]) == 4
+
+
+def test_a_crashed_round_whose_staged_bytes_are_gone_is_rolled_back_behind_the_guard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_link = _crash_between_links(monkeypatch, at_call=3)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    assert len(_tape(root)["final"]) == 2 and len(_tape(root)["temp"]) == 4
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    lost = next(item for item in journal["files"] if not (root / "events" / item["name"]).exists())
+    (root / "events" / lost["temp"]).unlink()  # a staged file is gone: the round can no longer be completed
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    assert outcomes[0]["commit"] == "rolled_back" and outcomes[0]["missing"] == [lost["name"]]
+    assert _tape(root) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root) == []  # nothing was ever readable
+    receipt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    assert receipt["commit"] == "rolled_back" and receipt["published_count"] == 0 and receipt["events_in_tape_after"] == 0
+    assert "staged bytes missing" in receipt["note"]
+    fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=3))  # the round can be emitted again
+    assert fresh["commit"] == "complete" and fresh["new_files"] == 4
+
+
+def test_capacity_is_counted_as_the_reader_counts_and_identical_re_emission_is_free(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8-C: the reader counts EVERY directory entry (staging and guard included) before ignoring staging, so the
+    # emitter reserves room for temps + finals + guard; names already present with identical bytes cost nothing.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    emitter.emit_round(document, episodes, root, now=NOW)  # 4 files
+    before = sorted(os.listdir(root / "events"))
+    monkeypatch.setattr(emitter, "MAX_EVENT_FILES", 4)
+    again = emitter.emit_round(document, episodes, root, now=NOW)  # the identical round AT the limit: zero new files -> accepted
+    assert again["commit"] == "already_present" and again["new_files"] == 0
+    assert json.loads(Path(again["receipt"]).read_bytes())["events_in_tape_after"] == 4 and sorted(os.listdir(root / "events")) == before
+    later = NOW + timedelta(minutes=1)  # a new round id: 4 new files need 4 + 2*4 + 1 = 13 entries at the peak
+    for limit in (4, 12):
+        monkeypatch.setattr(emitter, "MAX_EVENT_FILES", limit)
+        with pytest.raises(emitter.RoundEmitterError, match="EVENT_FILE_LIMIT"):
+            emitter.emit_round(document, episodes, root, now=later)
+        assert sorted(os.listdir(root / "events")) == before and emitter.pending_rounds(root) == []  # nothing staged, no guard, no journal
+    monkeypatch.setattr(emitter, "MAX_EVENT_FILES", 13)
+    third = emitter.emit_round(document, episodes, root, now=later)
+    assert third["new_files"] == 4 and json.loads(Path(third["receipt"]).read_bytes())["events_in_tape_after"] == 8
+    assert len(_tape(root)["final"]) == 8 and _tape(root)["temp"] == [] and _tape(root)["guard"] == []
+
+
+def test_a_truncated_staged_file_is_never_accepted_and_the_round_is_rolled_back_with_evidence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R1 (Codex 5575498116): an interruption right after creating a temp can leave incomplete bytes. Recovery must not
+    # loop on STAGED_BYTES_MISMATCH keeping the tape hostage, nor accept the bytes: it preserves them as evidence and rolls back.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    victim = next(item for item in journal["files"] if not (root / "events" / item["name"]).exists())
+    temp_path = root / "events" / victim["temp"]
+    whole = temp_path.read_bytes()
+    temp_path.write_bytes(whole[: len(whole) // 2])  # truncated staging
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    assert outcomes[0]["commit"] == "rolled_back" and outcomes[0]["corrupt"] == [victim["name"]] and outcomes[0]["missing"] == []
+    assert _tape(root) == {"guard": [], "final": [], "temp": []}  # the tape is released and nothing of the round remains in it
+    evidence_dir = root / "rounds" / emitter.RECOVERY_DIR / journal["round_id"]
+    kept = os.listdir(evidence_dir)
+    assert len(kept) == 1 and kept[0].startswith("temp-") and (evidence_dir / kept[0]).read_bytes() == whole[: len(whole) // 2]
+    assert _mode(evidence_dir) == 0o700 and _mode(evidence_dir / kept[0]) == 0o600
+    receipt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    corrupt = receipt["recovery"]["corrupt"][0]
+    assert receipt["commit"] == "rolled_back" and corrupt["expected_sha256"] == victim["sha256"] and corrupt["observed"] != victim["sha256"]
+    assert corrupt["evidence"] == str(evidence_dir / kept[0]) and "corrupt bytes preserved" in receipt["note"]
+    assert emitter.recover_rounds(root, now=NOW + timedelta(minutes=3)) == []  # nothing pending: no repeated failure
+    fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=4))
+    assert fresh["commit"] == "complete" and fresh["new_files"] == 4
+
+
+def test_quarantine_is_durable_before_the_tape_and_a_retained_receipt_is_never_rewritten(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R2: the quarantine is written before the guard, so a crash between links never loses a rejection, and the
+    # recovered receipt lists it; a journal left behind after the receipt was retained never rewrites that receipt.
+    document, episodes = _standard()
+    document["symbols"]["AAA"]["evidence"]["known_events"].append(_known(_event("2026-09-12", available_at=RECEIVED - timedelta(minutes=1))))
+    root = tmp_path / "source"
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    quarantine = root / "quarantine" / "2026-09-08"
+    assert len(os.listdir(quarantine)) == 1  # durable before the crash
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    assert journal["quarantined"][0]["code"] == "AT_BEFORE_ROUND" and journal["quarantined"][0]["file"] == os.listdir(quarantine)[0]
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    receipt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    assert receipt["commit"] == "recovered" and receipt["quarantined_count"] == 1 and receipt["quarantined"][0]["code"] == "AT_BEFORE_ROUND"
+    assert receipt["quarantined"][0]["sha256"] == hashlib.sha256((quarantine / receipt["quarantined"][0]["file"]).read_bytes()).hexdigest()
+    # crash after the receipt was retained: the journal is still there, the receipt must survive byte for byte
+    ok = emitter.emit_round(_standard()[0], episodes, tmp_path / "source2", now=NOW)
+    receipt_path = Path(ok["receipt"])
+    before = receipt_path.read_bytes()
+    journal_path = tmp_path / "source2" / "rounds" / f"2026-09-08.{ok['round_id']}{emitter.JOURNAL_SUFFIX}"
+    journal_path.write_bytes(canonical({"schema": emitter.JOURNAL_SCHEMA, "round_id": ok["round_id"], "round_session": "2026-09-08",
+                                        "guard": emitter._guard_name(ok["round_id"]), "files": [], "receipt": json.loads(before), "published": [],
+                                        "quarantined": [], "started_at": _iso(NOW)}))
+    outcomes = emitter.recover_rounds(tmp_path / "source2", now=NOW + timedelta(minutes=5))
+    assert outcomes[0]["commit"] == "already_retained" and receipt_path.read_bytes() == before and not journal_path.exists()
+    assert len(_tape(tmp_path / "source2")["final"]) == 4
+
+
+def _rolled_back_identity(root: Path, monkeypatch: pytest.MonkeyPatch, document: dict, episodes: list) -> tuple[Path, bytes]:
+    """Attempt 1 of a round: truncated staging -> audited rollback. Returns the retained receipt path and its bytes."""
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    victim = next(item for item in journal["files"] if not (root / "events" / item["name"]).exists())
+    temp_path = root / "events" / victim["temp"]
+    whole = temp_path.read_bytes()
+    temp_path.write_bytes(whole[: len(whole) // 2])
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    assert outcomes[0]["commit"] == "rolled_back"
+    retained = Path(outcomes[0]["receipt"])
+    return retained, retained.read_bytes()
+
+
+def test_a_closed_round_identity_is_never_reused_and_a_partial_retry_is_undone_not_consumed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R3 (Codex 5575841596): after an audited rollback, re-emitting the SAME identity (same inputs, same published_at)
+    # must be refused before the tape is touched; and a retry that slipped through and crashed half-way must never be mistaken
+    # by recovery for the retained attempt: it is undone behind the guard (zero, never a silent subset).
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    retained, before = _rolled_back_identity(root, monkeypatch, document, episodes)
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_IDENTITY_CLOSED"):
+        emitter.emit_round(document, episodes, root, now=NOW)  # the closed identity
+    assert _tape(root) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root) == [] and retained.read_bytes() == before
+    fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=3))  # a new instant is a new identity
+    assert fresh["commit"] == "complete" and fresh["new_files"] == 4
+    # recovery hardening: a journal + partial finals of the CLOSED identity (as an older emitter could leave) -> undone, not consumed
+    root2 = tmp_path / "source2"
+    retained2, before2 = _rolled_back_identity(root2, monkeypatch, document, episodes)
+    original = emitter._retained_commit
+    monkeypatch.setattr(emitter, "_retained_commit", lambda rounds_dir, receipt: None)  # the refusal is bypassed on purpose
+    real_link = _crash_between_links(monkeypatch, at_call=2)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root2, now=NOW)
+    monkeypatch.setattr(os, "link", real_link)
+    monkeypatch.setattr(emitter, "_retained_commit", original)
+    assert len(_tape(root2)["final"]) == 1 and len(_tape(root2)["guard"]) == 1
+    outcomes = emitter.recover_rounds(root2, now=NOW + timedelta(minutes=4))
+    assert outcomes[0]["commit"] == "rolled_back" and "already retained as 'rolled_back'" in json.loads(Path(outcomes[0]["receipt"]).read_bytes())["note"]
+    assert _tape(root2) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root2) == []
+    assert retained2.read_bytes() == before2 and Path(outcomes[0]["receipt"]) != retained2  # original untouched; attempt receipt apart
+    assert ".attempt-" in Path(outcomes[0]["receipt"]).name
+    # a COMPLETE receipt whose finals were damaged afterwards is not "already retained" either: consistency wins over a subset
+    root3 = tmp_path / "source3"
+    ok = emitter.emit_round(document, episodes, root3, now=NOW)
+    published = json.loads(Path(ok["receipt"]).read_bytes())["published"]
+    (root3 / "events" / published[0]["file"]).unlink()  # one final lost after completion
+    journal_path = root3 / "rounds" / f"2026-09-08.{ok['round_id']}{emitter.JOURNAL_SUFFIX}"
+    journal_path.write_bytes(canonical({"schema": emitter.JOURNAL_SCHEMA, "round_id": ok["round_id"], "round_session": "2026-09-08",
+                                        "guard": emitter._guard_name(ok["round_id"]), "files": [{"name": item["file"], "sha256": item["sha256"], "temp": ".stage-gone.tmp"} for item in published],
+                                        "receipt": {k: v for k, v in json.loads(Path(ok["receipt"]).read_bytes()).items() if k not in ("commit", "published", "published_count", "new_files", "quarantined", "quarantined_count", "events_in_tape_after", "retained_at")},
+                                        "published": published, "quarantined": [], "started_at": _iso(NOW)}))
+    outcomes = emitter.recover_rounds(root3, now=NOW + timedelta(minutes=5))
+    assert outcomes[0]["commit"] == "rolled_back" and _tape(root3)["final"] == [] and ".attempt-" in Path(outcomes[0]["receipt"]).name
+
+
+def _crash_after_receipt(monkeypatch: pytest.MonkeyPatch):
+    """The process dies right after the COMPLETE receipt is retained and before the journal is removed."""
+    real = emitter._retain
+
+    def crashing(*args, **kwargs):
+        real(*args, **kwargs)
+        raise OSError("simulated crash before the journal was removed")
+
+    monkeypatch.setattr(emitter, "_retain", crashing)
+    return real
+
+
+def test_a_final_that_cannot_be_verified_at_recovery_is_an_inconsistency_with_evidence_never_an_undisposed_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R4 (Codex 5576042705): complete receipt + journal left by a crash, then a final deliberately grown past the
+    # per-file limit. Recovery must not die with FILE_TOO_LARGE leaving the journal behind: the attempt is undone behind the
+    # guard, the unverifiable bytes are preserved as evidence, the original receipt is untouched, an attempt receipt is
+    # written, the identity is closed, and a second recovery is a no-op. The verifiable exit is a new instant.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_retain = _crash_after_receipt(monkeypatch)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(emitter, "_retain", real_retain)
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    retained = emitter._retained_path(root / "rounds", journal["receipt"])
+    before = retained.read_bytes()
+    assert json.loads(before)["commit"] == "complete" and len(_tape(root)["final"]) == 4 and _tape(root)["guard"] == []
+    victim = root / "events" / journal["files"][0]["name"]
+    grown = victim.read_bytes() + b" " * emitter.MAX_EVENT_BYTES
+    victim.write_bytes(grown)  # past the per-file limit: _read_at refuses it (FILE_TOO_LARGE) instead of hashing a prefix
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    assert outcomes[0]["commit"] == "rolled_back" and outcomes[0]["corrupt"] == [journal["files"][0]["name"]]
+    attempt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    assert ".attempt-" in Path(outcomes[0]["receipt"]).name and attempt["recovery"]["retained_commit_before"] == "complete"
+    corrupt = attempt["recovery"]["corrupt"]
+    assert corrupt[0]["observed"] == "unreadable:FILE_TOO_LARGE" and Path(corrupt[0]["evidence"]).read_bytes() == grown
+    assert "unverifiable finals preserved as evidence" in attempt["note"] and retained.read_bytes() == before
+    assert _tape(root) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root) == []
+    assert emitter.recover_rounds(root, now=NOW + timedelta(minutes=3)) == []  # second recovery: nothing pending, nothing rewritten
+    assert emitter._attempt_receipts(root / "rounds", journal["receipt"]) == [Path(outcomes[0]["receipt"])]
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_IDENTITY_CLOSED"):
+        emitter.emit_round(document, episodes, root, now=NOW)  # the identity is closed by its attempt receipt
+    assert _tape(root) == {"guard": [], "final": [], "temp": []} and retained.read_bytes() == before
+    fresh = emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=4))  # the verifiable exit: a new instant
+    assert fresh["commit"] == "complete" and fresh["new_files"] == 4
+    # the same disposition when a final is not a regular file (a symlink: refused by O_NOFOLLOW as an OS error, not hashed)
+    root2 = tmp_path / "source2"
+    _crash_after_receipt(monkeypatch)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root2, now=NOW)
+    monkeypatch.setattr(emitter, "_retain", real_retain)
+    journal2 = json.loads((root2 / "rounds" / emitter.pending_rounds(root2)[0]).read_bytes())
+    victim2 = root2 / "events" / journal2["files"][1]["name"]
+    victim2.unlink()
+    victim2.symlink_to(tmp_path / "elsewhere.json")
+    outcomes2 = emitter.recover_rounds(root2, now=NOW + timedelta(minutes=5))
+    corrupt2 = json.loads(Path(outcomes2[0]["receipt"]).read_bytes())["recovery"]["corrupt"]
+    assert outcomes2[0]["commit"] == "rolled_back" and corrupt2[0]["observed"].startswith("unreadable:") and Path(corrupt2[0]["evidence"]).is_symlink()
+    assert _tape(root2) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root2) == []
+    assert emitter.recover_rounds(root2, now=NOW + timedelta(minutes=6)) == []
+
+
+def test_undoing_a_completed_round_re_arms_the_guard_before_any_final_moves_and_keeps_it_under_interruption(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # F385-8 A-R5 (Codex 5576362466): the A-R4 scenario starts WITHOUT a guard (the round had completed). Undoing it must re-arm
+    # the guard before any final is moved or removed, keep it if recovery dies at that boundary, and remove it only when the
+    # undo is complete — the tape never shows a clean subset between removals.
+    document, episodes = _standard()
+    root = tmp_path / "source"
+    real_retain = _crash_after_receipt(monkeypatch)
+    with pytest.raises(OSError):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    monkeypatch.setattr(emitter, "_retain", real_retain)
+    journal = json.loads((root / "rounds" / emitter.pending_rounds(root)[0]).read_bytes())
+    guard, finals = journal["guard"], {item["name"] for item in journal["files"]}
+    victim = root / "events" / journal["files"][0]["name"]
+    victim.write_bytes(victim.read_bytes() + b" " * emitter.MAX_EVENT_BYTES)
+    assert _tape(root)["guard"] == [] and len(_tape(root)["final"]) == 4  # the completed round left no guard: only the journal survived
+    seen: list[tuple[str, bool, int]] = []
+    real_preserve, real_unlink = emitter._preserve_evidence, emitter._unlink_at
+
+    def observing_preserve(rounds_dir, round_id, events_fd, corrupt):
+        seen.append(("before_evidence", emitter._exists_at(events_fd, guard), len(_tape(root)["final"])))
+        real_preserve(rounds_dir, round_id, events_fd, corrupt)
+        seen.append(("after_evidence", emitter._exists_at(events_fd, guard), len(_tape(root)["final"])))
+        raise OSError("simulated crash right after the evidence was moved")
+
+    monkeypatch.setattr(emitter, "_preserve_evidence", observing_preserve)
+    with pytest.raises(OSError):
+        emitter.recover_rounds(root, now=NOW + timedelta(minutes=2))
+    monkeypatch.setattr(emitter, "_preserve_evidence", real_preserve)
+    assert seen == [("before_evidence", True, 4), ("after_evidence", True, 3)]  # armed BEFORE the move; 3 finals only ever behind the guard
+    assert _tape(root)["guard"] == [guard] and len(_tape(root)["final"]) == 3 and emitter.pending_rounds(root) != []  # protected under interruption
+    evidence = root / "rounds" / emitter.RECOVERY_DIR / journal["round_id"] / f"final-{journal['files'][0]['name']}"
+    assert evidence.is_file()
+
+    def observing_unlink(dir_fd, name):
+        if name in finals:
+            seen.append(("unlink", emitter._exists_at(dir_fd, guard), len(_tape(root)["final"])))
+        real_unlink(dir_fd, name)
+
+    monkeypatch.setattr(emitter, "_unlink_at", observing_unlink)
+    outcomes = emitter.recover_rounds(root, now=NOW + timedelta(minutes=3))  # resumed at the boundary
+    monkeypatch.setattr(emitter, "_unlink_at", real_unlink)
+    unlinks = [entry for entry in seen if entry[0] == "unlink"]
+    assert len(unlinks) == 4 and all(armed for _, armed, _ in unlinks)  # every removal happened behind the guard
+    assert outcomes[0]["commit"] == "rolled_back" and _tape(root) == {"guard": [], "final": [], "temp": []} and emitter.pending_rounds(root) == []
+    attempt = json.loads(Path(outcomes[0]["receipt"]).read_bytes())
+    corrupt = attempt["recovery"]["corrupt"]
+    assert corrupt[0]["observed"] == "preserved as evidence by an interrupted recovery" and corrupt[0]["evidence"] == str(evidence) and evidence.is_file()
+    assert emitter.recover_rounds(root, now=NOW + timedelta(minutes=4)) == []
+    with pytest.raises(emitter.RoundEmitterError, match="ROUND_IDENTITY_CLOSED"):
+        emitter.emit_round(document, episodes, root, now=NOW)
+    assert emitter.emit_round(document, episodes, root, now=NOW + timedelta(minutes=5))["new_files"] == 4
+

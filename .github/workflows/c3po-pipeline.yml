@@ -172,7 +172,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Test browser telemetry privacy and limits
+        run: node --experimental-strip-types --test tests/sentry-privacy.test.mjs
+
       - name: Build frontend
+        env:
+          # Synthetic ingestion identifier: exercises enabled SDK/CSP compilation.
+          # Static builds do not initialize the browser SDK or send events.
+          NEXT_PUBLIC_SENTRY_DSN: https://012345abcdef@o123.ingest.us.sentry.io/456
+          NEXT_PUBLIC_SENTRY_ENVIRONMENT: ci
+          NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: "0.01"
         run: pnpm build
 
       - name: Validate production Docker images
@@ -190,6 +199,9 @@ jobs:
             --file c3po/frontend/Dockerfile \
             --build-arg NEXT_PUBLIC_C3PO_API_URL= \
             --build-arg "NEXT_PUBLIC_C3PO_BUILD_SHA=$GITHUB_SHA" \
+            --build-arg NEXT_PUBLIC_SENTRY_DSN=https://012345abcdef@o123.ingest.us.sentry.io/456 \
+            --build-arg NEXT_PUBLIC_SENTRY_ENVIRONMENT=ci \
+            --build-arg NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=0.01 \
             --build-arg "C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD" \
             --tag c3po/web:pr-validation \
             c3po/frontend
@@ -216,8 +228,9 @@ jobs:
             > "$RUNNER_TEMP/backend-runtime/image-inspect.json"
           docker image inspect c3po/backend:pr-validation --format '{{.Id}} {{.Architecture}} {{.Os}}' \
             | tee "$RUNNER_TEMP/backend-runtime/image-id.txt"
+          # `pip check` runs at build time (Dockerfile); the runtime image must not carry pip at all.
           docker run --rm --network none --entrypoint python c3po/backend:pr-validation \
-            -B -m pip check \
+            -B -c 'import importlib.util, sys; absent = importlib.util.find_spec("pip") is None; print("pip check ran at build time; pip absent from runtime image:", absent); sys.exit(0 if absent else 1)' \
             | tee "$RUNNER_TEMP/backend-runtime/pip-check.log"
           docker run --rm --network none --entrypoint python \
             -e PYTHONPATH=/app \
@@ -315,7 +328,13 @@ jobs:
       - name: Build production images outside the server
         env:
           REVISION: ${{ steps.revision.outputs.sha }}
+          # A DSN is the SDK's public ingestion identifier, never an auth token.
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.C3PO_SENTRY_DSN }}
         run: |
+          test -n "$NEXT_PUBLIC_SENTRY_DSN" || {
+            echo "::error::C3PO_SENTRY_DSN is required for browser error monitoring"
+            exit 1
+          }
           docker build \
             --file c3po/backend/Dockerfile \
             --build-arg "C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD" \
@@ -326,6 +345,9 @@ jobs:
             --file c3po/frontend/Dockerfile \
             --build-arg NEXT_PUBLIC_C3PO_API_URL= \
             --build-arg "NEXT_PUBLIC_C3PO_BUILD_SHA=$REVISION" \
+            --build-arg NEXT_PUBLIC_SENTRY_DSN \
+            --build-arg NEXT_PUBLIC_SENTRY_ENVIRONMENT=production \
+            --build-arg NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=0.01 \
             --build-arg "C3PO_SECURITY_REBUILD=$C3PO_SECURITY_REBUILD" \
             --label "org.opencontainers.image.revision=$REVISION" \
             --tag c3po/web:production \
