@@ -1,10 +1,30 @@
 -- Valuation Engine V3.2 rev 7, §2.2 / §9.2: the persisted daily price series (`valuation_price_history/<M>`).
--- Labels P_real(T + h) and the realized-error panel read ONLY bars persisted here. Every run is ONE vintage: a manifest
--- in analysis_snapshots (published_at = fetched_at of the run, stamped after the last provider answer) plus the bars whose
--- CONTENT changed (bar_sha256 hashes the content, not the clock), written in the same transaction. A package cut C
--- resolves the single vintage with the greatest fetched_at < C and reproduces each symbol's series as "latest row with
--- fetched_at <= that vintage's fetched_at", verified against the per-symbol hash the manifest recorded — never a mix of
--- vintages, never a live fetch. Bars are append-only (row triggers) and cannot be truncated. Nothing here touches V1/V2/V3.
+-- Labels P_real(T + h) and the realized-error panel read ONLY bars persisted here. Every run is ONE vintage in TWO facts,
+-- both rows of analysis_snapshots (no new table):
+--   1. the CAPTURE: the manifest (analysis_type = 'valuation_price_history', entity_key = <M>, published_at = fetched_at,
+--      stamped after the last provider answer) plus the bars whose CONTENT changed (bar_sha256 hashes the content, not the
+--      clock), written in the same transaction (the bars reference the manifest by FK);
+--   2. the PUBLICATION, appended only after that transaction committed: analysis_type = 'valuation_price_history_publication',
+--      entity_key = <M>, published_at = available_at (a clock read immediately before this insert), inputs
+--      {schema_version, price_snapshot_id, fetched_at, started_at, available_at}, outputs {schema_version, bars_sha256,
+--      price_snapshot_id}.
+-- A package cut C resolves the single vintage by the PUBLICATIONS (the greatest available_at < C of its schema) — never by
+-- the capture, so a cut between capture and availability sees nothing, now or later (§2.2: nothing is available before its
+-- first persistence; availability is never retro-dated) — loads the manifest by id (attested only when it agrees with the
+-- publication AND both carry parseable clocks: fetched_at/from/to and available_at; otherwise manifest_mismatch), and
+-- reproduces each symbol's series as "latest row with fetched_at <= that vintage's fetched_at" inside the window MINUS the
+-- sessions the manifest recorded as refused for that symbol (outputs.rows_rejected), recomputing every bar's content hash
+-- and verifying the per-symbol series hash the manifest recorded: never a mix of vintages, never a live fetch.
+-- Both writers serialize per market with SELECT pg_advisory_xact_lock(hashtext('valuation_price_history:' || <M>)) as the
+-- first statement of their transaction, then re-read the previous manifest and publication and refuse a capture that does
+-- not advance beyond both (two runs racing on the same clock leave exactly one vintage). The capture's dedupe read (the
+-- latest bar_sha256 per (symbol, session_date), DISTINCT ON ... ORDER BY fetched_at DESC) runs in that same transaction,
+-- after the lock, so two processes can never both see "no row yet" for the same bar. A run with no symbols to fetch, or
+-- with no bars for any of them, is refused before any write: an empty vintage never hides the previous one. A publication
+-- row must attest the capture it was checked against (inputs.fetched_at parseable and equal to the manifest's clock) and
+-- its own availability (inputs.available_at = published_at); a previous publication whose inputs.fetched_at does not
+-- parse makes every later writer refuse explicitly, by id (the clock chain cannot be proven), never fail on a parse error.
+-- Bars are append-only (row triggers) and cannot be truncated. Nothing here touches V1/V2/V3.
 
 CREATE TABLE IF NOT EXISTS valuation_price_bars (
     id UUID PRIMARY KEY,
