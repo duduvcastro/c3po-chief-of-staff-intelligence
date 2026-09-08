@@ -111,6 +111,20 @@ class EodhdClient:
                 })
         return output
 
+    def daily_bars(self, symbol: str, *, exchange: str, start: date, end: date) -> list[dict[str, Any]]:
+        """Raw daily bars for [start, end] with BOTH closes (V3.2 price series, rev 7 §2.2): the series keeps
+        `close` and `adjusted_close` as the provider returned them at fetch time; nothing is chosen or normalized here."""
+        clean = symbol.strip().upper()
+        provider_symbol = clean if "." in clean else f"{clean}.{exchange}"
+        payload = self.http.get_json(
+            f"{self.base_url}/api/eod/{provider_symbol}",
+            params={"api_token": self.token, "fmt": "json", "period": "d", "from": start.isoformat(), "to": end.isoformat()},
+        )
+        if not isinstance(payload, list):
+            return []
+        return [{"date": item.get("date"), "close": number(item.get("close")), "adjusted_close": number(item.get("adjusted_close")),
+                 "volume": number(item.get("volume"))} for item in payload if isinstance(item, dict)]
+
     def insider_transactions(
         self, symbol: str, *, since: date | None = None, max_pages: int = 5,
     ) -> list[dict[str, Any]]:

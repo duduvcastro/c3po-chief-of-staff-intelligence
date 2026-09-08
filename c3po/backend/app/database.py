@@ -33,6 +33,7 @@ class Database:
         self._observations: dict[tuple[str, str, str], dict[str, Any]] = {}
         self._methodologies: dict[tuple[str, int], dict[str, Any]] = {}
         self._analysis_snapshots: list[dict[str, Any]] = []
+        self._price_bars: list[dict[str, Any]] = []  # V3.2 price series (in-memory mirror of valuation_price_bars)
         self._valuation_changes: list[dict[str, Any]] = []
         self._server_usage_samples: list[dict[str, Any]] = []
         self._api_performance_buckets: list[dict[str, Any]] = []
@@ -3263,8 +3264,9 @@ class Database:
         inputs: dict[str, Any],
         outputs: dict[str, Any],
         published_at: datetime,
+        snapshot_id: str | None = None,
     ) -> str:
-        snapshot_id = str(uuid4())
+        snapshot_id = snapshot_id or str(uuid4())
         prior_snapshot: dict[str, Any] | None = None
         if not self.database_url:
             prior_snapshot = self.latest_analysis_snapshot(analysis_type, entity_key)
@@ -3327,6 +3329,93 @@ class Database:
             prior_snapshot,
         )
         return snapshot_id
+
+    # ------------------------------------------------------------------ V3.2 price series (rev 7 §2.2; migration 049)
+
+    _PRICE_BAR_KEYS = ("id", "market", "symbol", "session_date", "close", "adjusted_close", "volume", "currency", "source", "provider_symbol",
+                       "fetched_at", "snapshot_id", "bar_sha256")
+
+    def insert_price_bars(self, bars: list[dict[str, Any]]) -> int:
+        """Append-only: a bar already persisted for the same (market, symbol, session, source, fetched_at) is skipped."""
+        if not bars:
+            return 0
+        if not self.database_url:
+            existing = {(b["market"], b["symbol"], b["session_date"], b["source"], str(b["fetched_at"])) for b in self._price_bars}
+            added = [b for b in bars if (b["market"], b["symbol"], b["session_date"], b["source"], str(b["fetched_at"])) not in existing]
+            self._price_bars.extend(dict(b) for b in added)
+            return len(added)
+        inserted = 0
+        with self.connection() as connection:
+            for bar in bars:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO valuation_price_bars
+                        (id, market, symbol, session_date, close, adjusted_close, volume, currency, source, provider_symbol, fetched_at, snapshot_id, bar_sha256)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (market, symbol, session_date, source, fetched_at) DO NOTHING
+                    """,
+                    (bar["id"], bar["market"], bar["symbol"], bar["session_date"], bar["close"], bar["adjusted_close"], bar.get("volume"), bar["currency"],
+                     bar["source"], bar["provider_symbol"], bar["fetched_at"], bar["snapshot_id"], bar["bar_sha256"]),
+                )
+                inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+            connection.commit()
+        return inserted
+
+    def price_bars(self, market: str, symbol: str, *, fetched_before: datetime, since: date | None = None, until: date | None = None) -> dict[str, dict[str, Any]]:
+        """By session: the latest bar with fetched_at < fetched_before (the view a cut at that instant sees)."""
+        if not self.database_url:
+            chosen: dict[str, dict[str, Any]] = {}
+            for bar in sorted(self._price_bars, key=lambda b: str(b["fetched_at"])):
+                if bar["market"] != market or bar["symbol"] != symbol:
+                    continue
+                if datetime.fromisoformat(str(bar["fetched_at"])) >= fetched_before:
+                    continue
+                session = str(bar["session_date"])
+                if (since and session < since.isoformat()) or (until and session > until.isoformat()):
+                    continue
+                chosen[session] = dict(bar)
+            return chosen
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT ON (session_date) id::text, market, symbol, session_date::text, close, adjusted_close, volume, currency, source,
+                       provider_symbol, fetched_at, snapshot_id::text, bar_sha256
+                FROM valuation_price_bars
+                WHERE market = %s AND symbol = %s AND fetched_at < %s AND (%s::date IS NULL OR session_date >= %s) AND (%s::date IS NULL OR session_date <= %s)
+                ORDER BY session_date, fetched_at DESC
+                """,
+                (market, symbol, fetched_before, since, since, until, until),
+            ).fetchall()
+        output: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            record = dict(zip(self._PRICE_BAR_KEYS, row))
+            for key in ("close", "adjusted_close", "volume"):
+                record[key] = float(record[key]) if record[key] is not None else None
+            if isinstance(record.get("fetched_at"), datetime):
+                record["fetched_at"] = record["fetched_at"].isoformat()
+            output[str(record["session_date"])] = record
+        return output
+
+    def v3_shadow_symbols(self, market: str) -> list[str]:
+        """Every symbol that has a V3 shadow evaluation (its labels still need bars) — the coverage floor of the series."""
+        entity_key = f"{market}_V3_SHADOW"
+        if not self.database_url:
+            symbols: set[str] = set()
+            for item in self._analysis_snapshots:
+                if item.get("analysis_type") == "valuation_v3_shadow" and item.get("entity_key") == entity_key:
+                    results = (item.get("outputs") or {}).get("results")
+                    if isinstance(results, dict):
+                        symbols.update(str(key).upper() for key in results)
+            return sorted(symbols)
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT jsonb_object_keys(outputs->'results') FROM analysis_snapshots
+                WHERE analysis_type = 'valuation_v3_shadow' AND entity_key = %s AND jsonb_typeof(outputs->'results') = 'object'
+                """,
+                (entity_key,),
+            ).fetchall()
+        return sorted(str(row[0]).upper() for row in rows)
 
     def latest_analysis_snapshot_published_at(self, analysis_type: str, entity_key: str) -> datetime | None:
         """Timestamp-only counterpart of latest_analysis_snapshot(), for
