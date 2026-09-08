@@ -17,7 +17,7 @@ from typing import Any, Mapping, cast
 PRODUCER = "CANONICAL_ONLY_V1"
 VERSION = "1.0.0"
 ORIGIN_REVISION = "6083d7420746434426a11134b8edf0ba4b60b6b0"
-ORIGIN_ONE_PAGER_SHA256 = "e49265da0cfc4cd10ab8e94d826ff8be38ee1d278137769a62d3c9a86f006e0d"
+ORIGIN_ONE_PAGER_SHA256 = "caf9169c70cc39fb761fd39d19ed12718bc558aff54da88985e8d70942cd3ee5"  # re-pinned with Passo 0 (producer/consumer roles); the differential test proves the risk branch unchanged
 COMPONENTS = ("beta", "debt_to_ebitda", "earnings_growth", "free_cashflow",
               "insider_activity", "institutional_positions", "recent_grade_actions")
 
