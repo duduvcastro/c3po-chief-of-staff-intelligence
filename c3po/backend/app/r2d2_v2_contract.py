@@ -14,6 +14,8 @@ from types import MappingProxyType
 from typing import Mapping, NamedTuple, TypeGuard, cast
 from zoneinfo import ZoneInfo
 
+from .r2d2_v2_earnings_policy import validate_earnings_component
+
 NEW_YORK = ZoneInfo("America/New_York")
 RISK_C75 = 44.10596901963097
 SLIPPAGE = 0.0010
@@ -68,6 +70,9 @@ class CandidateInputs:
     earnings_coverage_start: date | None = None
     earnings_coverage_end: date | None = None
     earnings_coverage_verified: bool = False
+    # E3: retain the complete validated facts and independently recompute the
+    # exclusion. Legacy coverage booleans above never authorize admission.
+    earnings_component: object = None
     # Metadata also represents completed queries with absent/invalid field values.
     source_at: Mapping[str, datetime | None] = field(default_factory=dict)
     available_at: Mapping[str, datetime | None] = field(default_factory=dict)
@@ -329,25 +334,13 @@ def evaluate_candidate(inputs: CandidateInputs) -> CandidateEvaluation:
             geometry = entry_geometry(bid + (ask - bid) / 2, atr)
         except CandidateValidationError as exc:
             reject(exc.code, data=exc.data)
-    if (inputs.earnings_coverage_verified is not True or not horizon_valid
-            or not _day(inputs.earnings_coverage_start) or not _day(inputs.earnings_coverage_end)
-            or inputs.earnings_coverage_start > horizon[0] or inputs.earnings_coverage_end < horizon[-1]):
-        reject("EARNINGS_COVERAGE_UNVERIFIED")
-    if type(inputs.earnings_dates) is not tuple or not all(_day(day) for day in inputs.earnings_dates):
-        reject("EARNINGS_DATES_INVALID")
-    elif horizon_valid:
-        for day in inputs.earnings_dates:
-            if horizon[0] < day < horizon[-1]:
-                reject("EARNINGS_WITHIN_HORIZON", data=False)
-                break
-            if day in (horizon[0], horizon[-1]):
-                # A date without time cannot prove it falls outside entry/exit instants.
-                reject("EARNINGS_BOUNDARY_TIME_UNKNOWN")
-                break
-    if type(inputs.earnings_at) is not tuple or not all(_aware(at) for at in inputs.earnings_at):
-        reject("EARNINGS_INSTANT_INVALID")
-    elif decision is not None and maturity is not None and any(decision <= at <= maturity for at in cast(tuple[datetime, ...], inputs.earnings_at)):
-        reject("EARNINGS_WITHIN_HORIZON", data=False)
+    if decision is None or maturity is None:
+        reject("EARNINGS_EVIDENCE_INVALID")
+    else:
+        earnings = validate_earnings_component(inputs.earnings_component,
+            decision_at=decision, maturity_at=maturity)
+        for reason in earnings.reasons:
+            reject(reason)  # Every E3 exclusion is DATA, before the R1 split.
     # Only after all common gates, divide the research population into R1 arms.
     if risk is None or not 0 <= risk <= 100:
         reject("RISK_SCORE_INVALID")

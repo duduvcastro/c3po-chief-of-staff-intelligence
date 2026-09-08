@@ -18,6 +18,11 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.r2d2_v2_calendar import ShadowCalendar
+from app.r2d2_v2_earnings_package import (
+    CONSENT_SCHEMA, EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA,
+    RELEASE_SCHEMA, implementation_contract_sha, implementation_package,
+    implementation_package_sha,
+)
 from app.r2d2_v2_shadow import AMENDMENT_SHA, SIGNED_MANIFEST_SHA, Release, ShadowCollector, export_cohort, public_summary
 from app.r2d2_v2_sources import MANIFEST_SHA
 from app.r2d2_v2_store import (
@@ -165,8 +170,12 @@ def calendar():
 
 
 def release_body(mode='CERTIFIED'):
-    return {'schema':'R2D2_V2_RELEASE_V2','manifest_sha':MANIFEST_SHA,
+    body = {'schema':RELEASE_SCHEMA,'manifest_sha':MANIFEST_SHA,
             'signed_manifest_sha':SIGNED_MANIFEST_SHA,'amendment_sha':AMENDMENT_SHA,
+            'earnings_amendment_sha':EARNINGS_AMENDMENT_SHA,
+            'earnings_closed_manifest_sha':EARNINGS_CLOSED_MANIFEST_SHA,
+            'implementation_contract_sha':implementation_contract_sha(),
+            'implementation_package_sha':implementation_package_sha(),
             'epoch':EPOCH if mode == 'CERTIFIED' else 'R2D2-V2-DIAG-SYNTHETIC-TEST',
             'mode':mode,'first_session':'2026-09-08','approved_at':'2026-09-06T19:00:00+00:00',
             'code_revision':BUILD,'code_audit_sha':'c'*64,'authorization_ref':'synthetic-owner-approval',
@@ -176,6 +185,15 @@ def release_body(mode='CERTIFIED'):
             'readiness_sha':'4'*64,'readiness_at':'2026-09-06T18:00:00+00:00',
             'readiness_publication_at':'2026-09-06T18:05:00+00:00',
             'deploy_completed_at':'2026-09-06T17:00:00+00:00'}
+    bindings = {key:body[key] for key in ('earnings_amendment_sha','earnings_closed_manifest_sha',
+        'implementation_contract_sha','implementation_package_sha','code_revision','code_audit_sha',
+        'source_audit_sha','readiness_sha')}
+    body['package_consents'] = [{'schema':CONSENT_SCHEMA,'party':party,'approved':True,
+        'approved_at':'2026-09-06T18:30:00+00:00',
+        'receipt_ref':f'SYNTHETIC-ONLY-{party}-NOT-AUTHORIZATION',
+        'receipt_sha':sha256(f'synthetic consent {party}'.encode()).hexdigest(),**bindings}
+        for party in ('CODEX','FABLE','DUDU')]
+    return body
 
 
 def verify(body, calendar, **kwargs):
@@ -236,7 +254,7 @@ def test_release_requires_approval_before_now_and_before_first_market_open(calen
 
 def test_diagnostic_release_has_no_ledger_clock_or_certifiable_cohort(calendar):
     body = release_body('DIAGNOSTIC')
-    for key in ('calibration_sha','calibration_status','source_audit_sha'):body.pop(key)
+    for key in ('calibration_sha','calibration_status'):body.pop(key)
     diagnostic = verify(body,calendar)
     collector = ShadowCollector(MemoryShadowStore(),object(),diagnostic,calendar=calendar)
     state = collector._initial()
@@ -374,6 +392,7 @@ def test_amendment_release_requires_each_signed_pin(calendar, field):
 def test_cal1_or_old_release_never_authorizes_amended_collection(calendar):
     for change in ({'calibration_protocol':'C3PO-V2-CAL-1'},
                    {'calibration_protocol':'C3PO-V2-CAL-2'}, {'schema':'R2D2_V2_RELEASE_V1'},
+                   {'schema':'R2D2_V2_RELEASE_V2'},
                    {'manifest_sha':'9d67945aaa9b02943ec560a22d4aa8c02c7740a575cd2c82ce4989dc71f34f09'}):
         with pytest.raises(ShadowIntegrityError):
             verify(release_body() | change, calendar)
@@ -399,3 +418,104 @@ def test_diagnostic_prefix_cannot_be_reused_as_certified_or_reverse(calendar):
         verify(release_body('DIAGNOSTIC') | {'epoch':EPOCH}, calendar)
     with pytest.raises(ShadowIntegrityError, match='RELEASE_NAMESPACE_MISMATCH'):
         verify(release_body() | {'epoch':'R2D2-V2-DIAG-SYNTHETIC'}, calendar)
+
+
+@pytest.mark.parametrize('field', ['earnings_amendment_sha','earnings_closed_manifest_sha',
+    'implementation_contract_sha','implementation_package_sha','package_consents'])
+@pytest.mark.parametrize('value', [None,'0'*64])
+def test_e3_release_requires_new_package_identity_and_consents(calendar,field,value):
+    with pytest.raises(ShadowIntegrityError):
+        verify(release_body() | {field:value}, calendar)
+
+
+@pytest.mark.parametrize('field,value', [('approved',False),('approved','true'),('approved',None),
+    ('party','UNKNOWN'),('party',{}),('receipt_sha',None),('receipt_ref',''),
+    ('implementation_package_sha','0'*64),('implementation_contract_sha','0'*64),
+    ('earnings_amendment_sha','0'*64),('earnings_closed_manifest_sha','0'*64),
+    ('code_revision','f'*40),('code_audit_sha','f'*64),('source_audit_sha','f'*64),
+    ('readiness_sha','f'*64),('approved_at','2026-09-06T19:00:01+00:00')])
+def test_three_synthetic_consents_bind_same_package_audits_and_readiness(calendar,field,value):
+    body=release_body();body['package_consents'][0][field]=value
+    with pytest.raises(ShadowIntegrityError):
+        verify(body,calendar)
+
+
+def test_duplicate_or_missing_party_never_counts_as_three_approvals(calendar):
+    body=release_body();body['package_consents'][2]=deepcopy(body['package_consents'][1])
+    with pytest.raises(ShadowIntegrityError,match='PACKAGE_CONSENTS_REQUIRED'):
+        verify(body,calendar)
+    body=release_body();body['package_consents'].append(deepcopy(body['package_consents'][0]))
+    with pytest.raises(ShadowIntegrityError,match='PACKAGE_CONSENTS_REQUIRED'):
+        verify(body,calendar)
+
+
+def test_consent_cannot_precede_the_readiness_it_approves(calendar):
+    body=release_body()
+    body['package_consents'][0]['approved_at']='2026-09-06T17:59:59+00:00'
+    with pytest.raises(ShadowIntegrityError,match='READINESS_FIRST_SESSION_MISMATCH'):
+        verify(body,calendar)
+
+
+@pytest.mark.parametrize('field,value', [('approved',False),('party','FABLE')])
+def test_release_rejects_duplicate_consent_keys_even_when_outer_sha_matches(calendar,field,value):
+    data=canonical(release_body())
+    original=(json.dumps(field)+':'+json.dumps(True if field=='approved' else 'CODEX')).encode()
+    duplicate=(json.dumps(field)+':'+json.dumps(value)+',').encode()+original
+    assert data.count(original)>=1
+    data=data.replace(original,duplicate,1)
+    with pytest.raises(ShadowIntegrityError,match='RELEASE_INVALID'):
+        Release.verify(data,sha256(data).hexdigest(),now=NOW,build_sha=BUILD,calendar=calendar)
+
+
+def test_release_rejects_nonfinite_json_even_when_outer_sha_matches(calendar):
+    data=canonical(release_body())
+    data=data[:-1]+b',"untrusted_numeric_metadata":Infinity}'
+    with pytest.raises(ShadowIntegrityError,match='RELEASE_INVALID'):
+        Release.verify(data,sha256(data).hexdigest(),now=NOW,build_sha=BUILD,calendar=calendar)
+
+
+def test_shipped_unapproved_release_template_cannot_authorize(calendar):
+    from pathlib import Path
+    data=(Path(__file__).resolve().parents[2]/'docs/r2d2-v2-earnings-package-draft/'
+          'release-v3.template.json').read_bytes()
+    with pytest.raises(ShadowIntegrityError):
+        Release.verify(data,sha256(data).hexdigest(),now=NOW,build_sha=BUILD,calendar=calendar)
+
+
+def test_changed_installed_package_requires_a_new_release(calendar,monkeypatch):
+    import app.r2d2_v2_shadow as shadow
+    body=release_body()
+    approved=verify(body,calendar)
+    monkeypatch.setattr(shadow,'current_package_sha',lambda:'f'*64)
+    with pytest.raises(ShadowIntegrityError,match='RELEASE_IMPLEMENTATION_PACKAGE_MISMATCH'):
+        verify(body,calendar)
+    with pytest.raises(ShadowIntegrityError,match='COLLECTOR_IMPLEMENTATION_PACKAGE_MISMATCH'):
+        ShadowCollector(MemoryShadowStore(),object(),approved,calendar=calendar)
+
+
+def test_unverified_constructor_does_not_bypass_package_identity(calendar):
+    legacy=Release(EPOCH,'CERTIFIED',date(2026,9,8),NOW-timedelta(hours=1),BUILD,RECEIPT)
+    with pytest.raises(ShadowIntegrityError,match='COLLECTOR_IMPLEMENTATION_PACKAGE_MISMATCH'):
+        ShadowCollector(MemoryShadowStore(),object(),legacy,calendar=calendar)
+
+
+@pytest.mark.parametrize('field,value', [('schema','R2D2_V2_SHADOW_STATE_V2'),
+    ('earnings_amendment_sha',None),('earnings_closed_manifest_sha','0'*64),
+    ('implementation_contract_sha','0'*64),('implementation_package_sha','0'*64),
+    ('mode','DIAGNOSTIC'),('release_sha','0'*64),('code_revision','f'*40)])
+def test_state_policy_cannot_silently_cross_into_new_collector(calendar,field,value):
+    collector=ShadowCollector(MemoryShadowStore(),object(),verify(release_body(),calendar),calendar=calendar)
+    state=collector._initial();state[field]=value
+    with pytest.raises(ShadowIntegrityError,match='STATE_IMPLEMENTATION_PACKAGE_MISMATCH'):
+        collector._cycle(state,None,[],[],NOW)
+
+
+def test_implementation_manifest_hashes_bytes_without_asserting_authorization():
+    descriptor=implementation_package()
+    assert descriptor['status']=='DESCRIPTOR_NOT_AUTHORIZATION'
+    assert len(descriptor['source_sha256'])==10
+    assert descriptor['implementation_contract_sha']==implementation_contract_sha()
+    assert descriptor['contract']['descriptor_is_authorization'] is False
+    assert descriptor['contract']['estimator_algorithm_changed'] is False
+    assert descriptor['contract']['calibration_protocol']=='C3PO-V2-CAL-3'
+    assert implementation_package_sha()==digest(descriptor)

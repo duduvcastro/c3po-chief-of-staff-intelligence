@@ -16,18 +16,38 @@ import re
 from typing import Any
 
 from .r2d2_v2_calendar import NEW_YORK, ShadowCalendar
-from .r2d2_v2_contract import CandidateInputs, DailyBar, SplitRecord, evaluate_candidate, input_complete
+from .r2d2_v2_contract import CandidateInputs, DailyBar, SplitRecord, RISK_C75, evaluate_candidate, input_complete
+from .r2d2_v2_earnings_package import (
+    CONSENT_SCHEMA, EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA,
+    EXPORT_SCHEMA, RELEASE_SCHEMA, STATE_SCHEMA,
+    implementation_contract_sha as current_contract_sha,
+    implementation_package_sha as current_package_sha,
+)
 from .r2d2_v2_portfolio import PortfolioBatch, apply_events, export_session_statistics, new_portfolio, register_candidate
+from .r2d2_v2_portfolio import earnings_public_sessions
 from .r2d2_v2_sources import MANIFEST_SHA
 from .r2d2_v2_store import ShadowIntegrityError, canonical, digest, utc, validate_epoch
 
-SCHEMA = "R2D2_V2_SHADOW_STATE_V2"
+SCHEMA = STATE_SCHEMA
 AMENDMENT_SHA = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
 SIGNED_MANIFEST_SHA = "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0"
 
 
 def _hash(value) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def _release_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate release key")
+        result[key] = value
+    return result
+
+
+def _release_nonfinite(_token):
+    raise ValueError("nonfinite release number")
 
 
 @dataclass(frozen=True)
@@ -39,6 +59,10 @@ class Release:
     code_revision: str
     receipt_sha: str
     readiness_sha: str | None = None
+    earnings_amendment_sha: str | None = None
+    earnings_closed_manifest_sha: str | None = None
+    implementation_contract_sha: str | None = None
+    implementation_package_sha: str | None = None
 
     @classmethod
     def verify(cls, data: bytes, expected_sha: str, *, now: datetime, build_sha: str,
@@ -46,14 +70,20 @@ class Release:
         if not _hash(expected_sha) or sha256(data).hexdigest() != expected_sha:
             raise ShadowIntegrityError("RELEASE_HASH_MISMATCH")
         try:
-            body = json.loads(data)
+            body = json.loads(data, object_pairs_hook=_release_object, parse_constant=_release_nonfinite)
         except (ValueError, TypeError) as exc:
             raise ShadowIntegrityError("RELEASE_INVALID") from exc
-        if (not isinstance(body, dict) or body.get("schema") != "R2D2_V2_RELEASE_V2"
+        if (not isinstance(body, dict) or body.get("schema") != RELEASE_SCHEMA
                 or body.get("manifest_sha") != SIGNED_MANIFEST_SHA
                 or body.get("signed_manifest_sha") != SIGNED_MANIFEST_SHA
-                or body.get("amendment_sha") != AMENDMENT_SHA):
+                or body.get("amendment_sha") != AMENDMENT_SHA
+                or body.get("earnings_amendment_sha") != EARNINGS_AMENDMENT_SHA
+                or body.get("earnings_closed_manifest_sha") != EARNINGS_CLOSED_MANIFEST_SHA):
             raise ShadowIntegrityError("RELEASE_POLICY_MISMATCH")
+        contract_sha, package_sha = current_contract_sha(), current_package_sha()
+        if (body.get("implementation_contract_sha") != contract_sha
+                or body.get("implementation_package_sha") != package_sha):
+            raise ShadowIntegrityError("RELEASE_IMPLEMENTATION_PACKAGE_MISMATCH")
         epoch, mode = body.get("epoch"), body.get("mode")
         if not isinstance(epoch, str):
             raise ShadowIntegrityError("EPOCH_INVALID")
@@ -75,6 +105,32 @@ class Release:
                 or revision != build_sha or not _hash(body.get("code_audit_sha"))
                 or not isinstance(body.get("authorization_ref"), str) or not body["authorization_ref"].strip()):
             raise ShadowIntegrityError("RELEASE_CODE_OR_AUTHORIZATION_UNVERIFIED")
+        # These are operator-pinned receipt records, not cryptographic proofs
+        # of who signed. Missing/placeholder records never count as approval.
+        bindings = {key: body.get(key) for key in (
+            "earnings_amendment_sha", "earnings_closed_manifest_sha", "implementation_contract_sha",
+            "implementation_package_sha", "code_revision", "code_audit_sha", "source_audit_sha", "readiness_sha")}
+        consents = body.get("package_consents")
+        if (any(not _hash(bindings[key]) for key in ("code_audit_sha", "source_audit_sha", "readiness_sha"))
+                or not isinstance(consents, list) or len(consents) != 3
+                or any(not isinstance(item, dict) for item in consents)
+                or any(not isinstance(item.get("party"), str) for item in consents)
+                or {item.get("party") for item in consents} != {"CODEX", "FABLE", "DUDU"}):
+            raise ShadowIntegrityError("PACKAGE_CONSENTS_REQUIRED")
+        consent_times = []
+        for consent in consents:
+            if (consent.get("schema") != CONSENT_SCHEMA or consent.get("approved") is not True
+                    or any(consent.get(key) != value for key, value in bindings.items())
+                    or not _hash(consent.get("receipt_sha"))
+                    or not isinstance(consent.get("receipt_ref"), str) or not consent["receipt_ref"].strip()):
+                raise ShadowIntegrityError("PACKAGE_CONSENT_BINDING_MISMATCH")
+            try:
+                consent_at = utc(consent["approved_at"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ShadowIntegrityError("PACKAGE_CONSENT_CLOCK_INVALID") from exc
+            if consent_at > approved:
+                raise ShadowIntegrityError("PACKAGE_CONSENT_AFTER_RELEASE")
+            consent_times.append(consent_at)
         if mode == "CERTIFIED":
             approvals = ("calibration_sha", "calibration_acceptance_sha", "source_audit_sha",
                          "source_codex_signature_sha", "source_fable_signature_sha", "readiness_sha")
@@ -89,9 +145,11 @@ class Release:
                 raise ShadowIntegrityError("READINESS_CLOCK_INVALID") from exc
             opening = calendar.details(first)["open"]
             if (not deployed <= ready <= published <= utc(now) or approved < ready
-                    or published >= opening or first != calendar.first_open_after(ready)):
+                    or published >= opening or first != calendar.first_open_after(ready)
+                    or any(consented < ready for consented in consent_times)):
                 raise ShadowIntegrityError("READINESS_FIRST_SESSION_MISMATCH")
-        return cls(epoch, mode, first, approved, revision, expected_sha, body.get("readiness_sha"))
+        return cls(epoch, mode, first, approved, revision, expected_sha, body.get("readiness_sha"),
+                   EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA, contract_sha, package_sha)
 
 
 def _dt(value):
@@ -153,9 +211,6 @@ def candidate_inputs(row: dict, batch: dict, now: datetime, calendar: ShadowCale
         item = _object(item)
         splits.append(SplitRecord(_dt(item.get("effective_at")), item.get("factor"),
                                   _dt(item.get("source_at")), _dt(item.get("available_at"))))
-    earnings_events = earnings.get("events", [])
-    earnings_clocks = [_dt(_object(item).get("event_at")) for item in earnings_events] if isinstance(earnings_events, list) else [None]
-    earnings_at = tuple(at for at in earnings_clocks if at is not None)
     issues = [item["code"] for item in row.get("diagnostics", [])
               if isinstance(item, dict) and isinstance(item.get("code"), str)]
     received = _dt(quote.get("received_at"))
@@ -168,17 +223,6 @@ def candidate_inputs(row: dict, batch: dict, now: datetime, calendar: ShadowCale
         issues.append("QUOTE_RECEIPT_NOT_CAUSAL_OR_STALE")
     if daily.get("coverage_verified") is not True:
         issues.append("DAILY_COVERAGE_UNVERIFIED")
-    if any(at is None for at in earnings_clocks):
-        issues.append("EARNINGS_EVENT_INVALID")
-    if isinstance(earnings_events, list):
-        for item in earnings_events:
-            known_at = _dt(_object(item).get("available_at"))
-            if known_at is None or known_at > now:
-                issues.append("EARNINGS_EVENT_NOT_CAUSAL")
-    start, end = _dt(earnings.get("window_start")), _dt(earnings.get("window_end"))
-    # The port uses precise coverage instants. Never widen a partial date window.
-    coverage = (earnings.get("coverage_verified") is True and start is not None and end is not None
-                and start <= now and end >= detail["horizon_close"] - timedelta(minutes=5))
     return CandidateInputs(symbol=row.get("symbol", ""), market=row.get("market"),
         security_type=row.get("security_type") if row.get("classification_verified") is True else None,
         session_date=day, decision_at=now, bid=quote.get("bid"), ask=quote.get("ask"),
@@ -186,10 +230,8 @@ def candidate_inputs(row: dict, batch: dict, now: datetime, calendar: ShadowCale
         daily_bars=tuple(bars), previous_sessions=detail["previous_sessions"], horizon_sessions=detail["horizon_sessions"],
         horizon_close_at=detail["horizon_close"], splits=tuple(splits),
         split_coverage_verified=daily.get("split_coverage_verified") is True,
-        daily_price_basis=daily.get("adjustment"), earnings_at=earnings_at,
-        earnings_coverage_start=start.astimezone(NEW_YORK).date() if start else None,
-        earnings_coverage_end=end.astimezone(NEW_YORK).date() if end else None,
-        earnings_coverage_verified=coverage, source_at=source_at, available_at=available,
+        daily_price_basis=daily.get("adjustment"), earnings_component=earnings,
+        source_at=source_at, available_at=available,
         sources=sources, source_versions=versions, source_hashes=hashes, source_issues=tuple(dict.fromkeys(issues)))
 
 
@@ -230,7 +272,11 @@ class _LazyPortfolio:
 
 def _compact_evaluation(evaluation: dict) -> dict:
     """The immutable journal retains the full evaluation and private inputs."""
+    risk = evaluation.get("risk_score")
+    stratum = (("ELIGIBLE" if risk <= RISK_C75 else "CONTROL")
+        if isinstance(risk, (int, float)) and not isinstance(risk, bool) and 0 <= risk <= 100 else "UNASSIGNED")
     return {"status": evaluation.get("status"), "arm": evaluation.get("arm"),
+            "risk_stratum": stratum,
             "reasons": evaluation.get("reasons", []), "evaluation_sha256": digest(evaluation)}
 
 
@@ -276,6 +322,13 @@ def _pending_tail(previous: dict) -> dict:
 class ShadowCollector:
     def __init__(self, store, source, release: Release, *, calendar: ShadowCalendar | None = None, clock=None):
         self.store, self.source, self.release = store, source, release
+        self.implementation_package_sha = current_package_sha()
+        self.implementation_contract_sha = current_contract_sha()
+        if (release.earnings_amendment_sha != EARNINGS_AMENDMENT_SHA
+                or release.earnings_closed_manifest_sha != EARNINGS_CLOSED_MANIFEST_SHA
+                or release.implementation_contract_sha != self.implementation_contract_sha
+                or release.implementation_package_sha != self.implementation_package_sha):
+            raise ShadowIntegrityError("COLLECTOR_IMPLEMENTATION_PACKAGE_MISMATCH")
         self.calendar = calendar or ShadowCalendar()
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.schedule = self.calendar.sessions(release.first_session, 69)
@@ -285,6 +338,10 @@ class ShadowCollector:
     def _initial(self) -> dict:
         return {"schema": SCHEMA, "epoch": self.release.epoch, "manifest_sha": SIGNED_MANIFEST_SHA,
                 "signed_manifest_sha": SIGNED_MANIFEST_SHA, "amendment_sha": AMENDMENT_SHA,
+                "earnings_amendment_sha": EARNINGS_AMENDMENT_SHA,
+                "earnings_closed_manifest_sha": EARNINGS_CLOSED_MANIFEST_SHA,
+                "implementation_contract_sha": self.implementation_contract_sha,
+                "implementation_package_sha": self.implementation_package_sha,
                 "readiness_sha": self.release.readiness_sha,
                 "mode": self.release.mode, "release_sha": self.release.receipt_sha,
                 "code_revision": self.release.code_revision, "first_session": self.release.first_session.isoformat(),
@@ -332,6 +389,17 @@ class ShadowCollector:
         return result
 
     def _cycle(self, state, batch, events, event_diagnostics, now, *, causal=None):
+        if (state.get("schema") != SCHEMA or state.get("manifest_sha") != SIGNED_MANIFEST_SHA
+                or state.get("signed_manifest_sha") != SIGNED_MANIFEST_SHA
+                or state.get("amendment_sha") != AMENDMENT_SHA
+                or state.get("earnings_amendment_sha") != EARNINGS_AMENDMENT_SHA
+                or state.get("earnings_closed_manifest_sha") != EARNINGS_CLOSED_MANIFEST_SHA
+                or state.get("implementation_contract_sha") != self.implementation_contract_sha
+                or state.get("implementation_package_sha") != self.implementation_package_sha
+                or state.get("mode") != self.release.mode
+                or state.get("release_sha") != self.release.receipt_sha
+                or state.get("code_revision") != self.release.code_revision):
+            raise ShadowIntegrityError("STATE_IMPLEMENTATION_PACKAGE_MISMATCH")
         if state["calendar_version"] != self.calendar.version:
             raise ShadowIntegrityError("CALENDAR_VERSION_CHANGED")
         if state["last_cycle_at"] and now < utc(state["last_cycle_at"]):
@@ -499,7 +567,8 @@ class ShadowCollector:
                 continue
             pending.append(item)
         priority = {"SPLIT": 1, "DIVIDEND_ENTITLEMENT": 1, "DIVIDEND_PAYMENT": 1,
-                    "BAR": 3, "TRADE": 3, "MARK": 4, "EARNINGS": 2, "QUOTE": 4, "DATA_GAP": 1}
+                    "BAR": 3, "TRADE": 3, "MARK": 4, "EARNINGS": 2, "QUOTE": 4, "DATA_GAP": 1,
+                    "EARNINGS_OBSERVATION_FAILED": 1}
         # Source sequence is a separate proof from timestamps: missing packets
         # cannot silently disappear after restart or journal-file rotation.
         for item in sorted(pending, key=lambda e: (e["source_id"], e["sequence"])):
@@ -529,6 +598,12 @@ class ShadowCollector:
                     end=utc(event["end_at"]) if event.get("end_at") else None):
                 self._gap(state, journals, now, session, "EVENT_REGULAR_SESSION_INVALID", portfolio=portfolio)
                 event = None
+            elif event["type"] in {"EARNINGS", "EARNINGS_OBSERVATION_FAILED"}:
+                round_day = _date(event.get("round_session"))
+                received = _dt(event.get("round_received_at"))
+                if (round_day is None or received is None or not self.calendar.is_session(round_day)
+                        or received <= self.calendar.details(round_day)["close"]):
+                    raise ShadowIntegrityError("EARNINGS_ROUND_SESSION_INVALID")
             if event is not None:
                 name = event["instrument_key"]
                 episodes = [state["ledger"]["research"][key] for key in state["instrument_episodes"].get(name, [])]
@@ -718,6 +793,10 @@ class ShadowCollector:
 def public_summary(state: dict) -> dict:
     """No symbols, private identifiers, input values, or statistical verdicts."""
     sessions = []
+    observed = earnings_public_sessions(state["ledger"]) if state["ledger"] is not None else {}
+    earnings_codes = ("EARNINGS_WITHIN_HORIZON", "EARNINGS_EXPECTED_WITHIN_HORIZON",
+        "EARNINGS_NOT_TRACKED", "EARNINGS_LAST_REPORT_UNKNOWN", "EARNINGS_EVIDENCE_INVALID",
+        "EARNINGS_SOURCE_UNAVAILABLE", "EARNINGS_DETECTED_AFTER_ENTRY", "EARNINGS_OBSERVATION_FAILED")
     current = state.get("last_session") or max(state["sessions"], default=None)
     current_names = (state["sessions"].get(current, {}).get("universe") or [])
     active_issues = [issue for issue in state["active_data_issues"].values()
@@ -726,14 +805,31 @@ def public_summary(state: dict) -> dict:
             else not current_names or not set(current_names).issubset(issue["restored_instruments"]))]
     for session in state["sessions"].values():
         reasons = Counter(reason for c in session["candidates"].values() for reason in c.get("reasons", []))
+        earnings_counts = {arm: dict.fromkeys(earnings_codes, 0) for arm in ("ELIGIBLE", "CONTROL", "UNASSIGNED")}
+        for candidate in session["candidates"].values():
+            arm = candidate.get("risk_stratum", "UNASSIGNED")
+            for reason in set(candidate.get("reasons", [])) & set(earnings_codes):
+                earnings_counts[arm][reason] += 1
+        detection = observed.get(session["date"], {})
+        for arm, counts in detection.get("counts", {}).items():
+            earnings_counts[arm].update(counts)
         sessions.append({"session_date": session["date"], "entry_session": session["entry_session"],
             "capture_closed": session["capture_closed"], "universe_count": len(session["universe"]) if session["universe"] is not None else None,
             "snapshot_attempts": session["attempts"], "frozen_count": len(session["candidates"]),
             "reason_counts": dict(reasons), "diagnostics": session["diagnostics"],
+            "earnings_counts_by_arm": earnings_counts,
+            "earnings_count_basis": "VALID_RISK_R1_STRATUM_BEFORE_DATA_EXCLUSION_OR_ADMITTED_EPISODE_ARM",
+            "earnings_exit_diagnostics_by_arm": detection.get("exits"),
             "programmed_zero_reason": session.get("programmed_zero_reason")})
     return {"schema": "R2D2_V2_COLLECTOR_STATUS_V2", "epoch": state["epoch"], "manifest_sha": state["manifest_sha"],
             "amendment_sha": state["amendment_sha"],
+            "earnings_amendment_sha": state["earnings_amendment_sha"],
+            "earnings_closed_manifest_sha": state["earnings_closed_manifest_sha"],
+            "implementation_contract_sha": state["implementation_contract_sha"],
+            "implementation_package_sha": state["implementation_package_sha"],
             "mode": state["mode"], "last_cycle_at": state["last_cycle_at"], "sessions": sessions,
+            "earnings_observation_dates": [{"date": day, **summary}
+                for day, summary in sorted(observed.items())],
             "cohort_clock_started": state["mode"] == "CERTIFIED" and bool(state["sessions"]),
             "data_gate_unknown": bool(active_issues), "data_gate_scope": "CURRENT_SESSION_OBSERVATION",
             "data_issue_count": len(state["data_issues"]),
@@ -747,9 +843,15 @@ def export_cohort(state: dict, size: int, *, now: datetime, calendar: ShadowCale
 This does not compute a bootstrap or authorize a GO. Every programmed session,
 including zero days, remains in order. Diagnostic epochs cannot be promoted.
 """
-    if (state["mode"] != "CERTIFIED" or not state["epoch"].startswith("R2D2-V2-SHADOW-")
-            or size not in (40, 60) or state["manifest_sha"] != SIGNED_MANIFEST_SHA
-            or state["amendment_sha"] != AMENDMENT_SHA):
+    if (state.get("schema") != SCHEMA or state.get("mode") != "CERTIFIED"
+            or not str(state.get("epoch", "")).startswith("R2D2-V2-SHADOW-")
+            or size not in (40, 60) or state.get("manifest_sha") != SIGNED_MANIFEST_SHA
+            or state.get("signed_manifest_sha") != SIGNED_MANIFEST_SHA
+            or state.get("amendment_sha") != AMENDMENT_SHA
+            or state.get("earnings_amendment_sha") != EARNINGS_AMENDMENT_SHA
+            or state.get("earnings_closed_manifest_sha") != EARNINGS_CLOSED_MANIFEST_SHA
+            or state.get("implementation_contract_sha") != current_contract_sha()
+            or not _hash(state.get("implementation_package_sha"))):
         raise ShadowIntegrityError("COHORT_NOT_AUTHORIZED")
     schedule = state["schedule"]
     maturity_day = date.fromisoformat(schedule[size + 8])
@@ -775,8 +877,12 @@ including zero days, remains in order. Diagnostic epochs cannot be promoted.
         stats["terminal_veto"] = veto_through(calendar.details(date.fromisoformat(day))["horizon_close"])
         rows.append({**stats, "capture_coverage_unknown": unknown, "programmed_session_index": index})
     completed = sum(calendar.details(date.fromisoformat(day))["close"] <= utc(now) for day in schedule)
-    result = {"schema": "R2D2_V2_COHORT_EXPORT_V2", "epoch": state["epoch"], "manifest_sha": state["manifest_sha"],
+    result = {"schema": EXPORT_SCHEMA, "epoch": state["epoch"], "manifest_sha": state["manifest_sha"],
         "amendment_sha": state["amendment_sha"], "signed_manifest_sha": state["signed_manifest_sha"],
+        "earnings_amendment_sha": state["earnings_amendment_sha"],
+        "earnings_closed_manifest_sha": state["earnings_closed_manifest_sha"],
+        "implementation_contract_sha": state["implementation_contract_sha"],
+        "implementation_package_sha": state["implementation_package_sha"],
         "readiness_sha": state["readiness_sha"], "programmed_sessions": schedule, "sessions_completed": completed,
         "maturity_session_index": size + 9, "certification_target": "V2_FILTER_CERTIFIED_R1",
         "certificate_scope": "R1_DISCRIMINATION_ONLY",

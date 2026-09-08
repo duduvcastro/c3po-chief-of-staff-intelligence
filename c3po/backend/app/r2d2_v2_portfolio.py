@@ -13,7 +13,8 @@ session events), plus the type's fields. BAR uses end_at, open/high/low/close,
 regular, coverage_complete and optional complete trades [{at, price}]. QUOTE
 uses bid/ask, bid_at/ask_at, regular. TRADE/MARK uses price, regular. SPLIT uses
 factor; entitlement/payment uses entitlement_id and net_per_share for entitlement.
-EARNINGS uses earnings_at. MATURITY, DATA_GAP, SESSION_OPEN and SESSION_CLOSE use
+EARNINGS uses E3 granular facts and an immutable observation-round receipt.
+EARNINGS_OBSERVATION_FAILED records an explicit failed round. MATURITY, DATA_GAP, SESSION_OPEN and SESSION_CLOSE use
 only the envelope (DATA_GAP also requires reason). Values/timestamps are private.
 
 Submit known events before candidate admissions. DATA_GAP is an observability
@@ -37,11 +38,14 @@ from typing import Any, Iterable, Mapping
 from types import MappingProxyType
 from zoneinfo import ZoneInfo
 
-SCHEMA_VERSION = "R2D2_V2_PORTFOLIO_v1"
+from .r2d2_v2_earnings_policy import event_intersects, EarningsPolicyError
+from .r2d2_v2_earnings_events import validate_observation, window_covers
+
+SCHEMA_VERSION = "R2D2_V2_PORTFOLIO_v2"
 SELL_FACTOR = (1.0 - 0.0010) * (1.0 - 0.0004)
 NEW_YORK = ZoneInfo("America/New_York")
 GEOMETRY_FIELDS = ("P", "B", "C", "S", "T", "R_unit")
-EVENT_TYPES = frozenset({"BAR", "TRADE", "QUOTE", "MARK", "EARNINGS", "SPLIT",
+EVENT_TYPES = frozenset({"BAR", "TRADE", "QUOTE", "MARK", "EARNINGS", "EARNINGS_OBSERVATION_FAILED", "SPLIT",
     "DIVIDEND_ENTITLEMENT", "DIVIDEND_PAYMENT", "MATURITY", "DATA_GAP",
     "SESSION_OPEN", "SESSION_CLOSE"})
 
@@ -154,7 +158,7 @@ def _record(*, episode_key: str, instrument_key: str, session: str, opened_at: s
             "exit_cause": None, "exit_price": None, "fill_evidence": None,
             "category": None, "intent": None, "flags": [], "order_unknown": False,
             "accounting_unknown": False, "horizon_breach": False,
-            "previous_close_economic": None, "corporate_actions": []}
+            "previous_close_economic": None, "corporate_actions": [], "earnings_observations": {}}
 
 
 def _receivable(record: Mapping[str, Any]) -> float:
@@ -494,7 +498,9 @@ def _apply_quote(state: dict[str, Any], record: dict[str, Any], event: Mapping[s
     price = (bid + ask) / 2
     _mark(state, record, price, at, event["session"])
     intent = record["intent"]
-    if intent and min(bid_at, ask_at) >= _time(intent["at"]):
+    post_intent = (min(bid_at, ask_at) > _time(intent["at"]) if intent and intent["cause"] == "EVENT"
+                   else intent and min(bid_at, ask_at) >= _time(intent["at"]))
+    if intent and post_intent:
         _close(state, record, cause=intent["cause"], price=price, at=at, available_at=available,
                category="time_or_event_exit", evidence="DEMONSTRATED_QUOTE_REFERENCE")
 
@@ -598,12 +604,17 @@ def _apply_event_inplace(state: dict[str, Any], event: Mapping[str, Any]) -> tup
     at, available, session = _iso(event["at"]), _iso(event["available_at"]), _session(event["session"])
     if _time(at) > _time(available):
         raise PortfolioInputError("Event cannot be known before it happens")
+    if kind in {"EARNINGS", "EARNINGS_OBSERVATION_FAILED"}:
+        try:
+            validate_observation(event, detected_at=_time(available))
+        except EarningsPolicyError as exc:
+            raise PortfolioInputError(str(exc)) from None
     if result["last_action"] == "CANDIDATE" and result["last_available_at"] == available:
         raise PortfolioInputError("Known events must precede simultaneous admissions")
     priority = {"SESSION_OPEN": 0, "SPLIT": 1, "DIVIDEND_ENTITLEMENT": 1,
                 "DIVIDEND_PAYMENT": 1, "MATURITY": 2, "EARNINGS": 2,
                 "TRADE": 3, "BAR": 3, "MARK": 4, "QUOTE": 4,
-                "DATA_GAP": 1, "SESSION_CLOSE": 6}[kind]
+                "DATA_GAP": 1, "EARNINGS_OBSERVATION_FAILED": 1, "SESSION_CLOSE": 6}[kind]
     previous_order = result["last_event_order"]
     if (previous_order is not None and previous_order[:2] == [available, at]
             and priority < previous_order[2]):
@@ -639,10 +650,31 @@ def _apply_event_inplace(state: dict[str, Any], event: Mapping[str, Any]) -> tup
                 _apply_quote(result, record, event)
             elif kind in {"SPLIT", "DIVIDEND_ENTITLEMENT", "DIVIDEND_PAYMENT"}:
                 _corporate(result, record, event)
-            elif kind == "EARNINGS":
-                earnings = _time(event["earnings_at"])
-                if _time(record["opened_at"]) <= earnings <= _time(record["maturity_at"]):
+            elif kind in {"EARNINGS", "EARNINGS_OBSERVATION_FAILED"}:
+                # Detection does not replace the original episode horizon or
+                # rewrite a terminal episode after a late provider correction.
+                if record["status"] != "OPEN" or _time(available) < _time(record["opened_at"]):
+                    continue
+                failed = kind == "EARNINGS_OBSERVATION_FAILED" or not window_covers(event,
+                    opened_at=_time(record["opened_at"]), maturity_at=_time(record["maturity_at"]))
+                identity = ("failed:" + event["round_id"] if failed else
+                            "event:" + event["earnings_event_id"] + ":" + event["revision_sha256"])
+                if identity in record["earnings_observations"]:
+                    continue
+                if failed:
+                    code = "EARNINGS_OBSERVATION_FAILED"
+                    _flag(record, code, order=True)
+                    record["mark"] = None
+                elif event_intersects(event, opened_at=_time(record["opened_at"]),
+                                      maturity_at=_time(record["maturity_at"])):
+                    code = "EARNINGS_DETECTED_AFTER_ENTRY"
                     _intent(record, "EVENT", available)
+                else:
+                    continue
+                record["earnings_observations"][identity] = {"code": code,
+                    "session": _time(available).astimezone(NEW_YORK).date().isoformat(),
+                    "processing_session": session,
+                    "detected_at": available, "source_detected_at": at, "round_id": event["round_id"]}
             elif kind == "MATURITY":
                 if _time(record["maturity_at"]) <= _time(at):
                     _intent(record, "TIME", record["maturity_at"])
@@ -811,3 +843,46 @@ episodes. Research upper/lower counts never absorb ambiguous or censored cases.
             "data_gate_unknown": gate, "terminal_veto": bool(state["terminal_reasons"]),
             "finalized": all(r["status"] == "CLOSED" for r in records + positions),
             "observed_execution_certified": False}
+
+
+def earnings_observation_counts(state: Mapping[str, Any], session_date: str) -> dict[str, dict[str, int]]:
+    """Public counts by factual detection session and arm, never private IDs."""
+    session = _session(session_date)
+    return earnings_public_sessions(state).get(session, _empty_earnings_session())["counts"]
+
+
+def _empty_earnings_session() -> dict[str, Any]:
+    codes = ("EARNINGS_DETECTED_AFTER_ENTRY", "EARNINGS_OBSERVATION_FAILED")
+    return {"counts": {arm: dict.fromkeys(codes, 0) for arm in ("ELIGIBLE", "CONTROL")},
+            "exits": {arm: {"closed_episodes": 0, "event_exits": 0,
+                "event_exit_fraction": None, "detection_to_exit_seconds_sum": 0.0,
+                "mean_detection_to_exit_seconds": None} for arm in ("ELIGIBLE", "CONTROL")}}
+
+
+def earnings_public_sessions(state: Mapping[str, Any]) -> dict[str, Any]:
+    """One aggregate pass for the public view, with no name or event IDs.
+
+Detection counts are episode/revision pairs by detection session. Exit ratios
+use episodes closed in each factual exit-receipt session, including all causes.
+Neither an empty denominator nor an unseen event is assigned a fraction.
+"""
+    result: dict[str, Any] = {}
+    for record in state["research"].values():
+        for receipt in record["earnings_observations"].values():
+            summary = result.setdefault(receipt["session"], _empty_earnings_session())
+            summary["counts"][record["arm"]][receipt["code"]] += 1
+        if record["status"] != "CLOSED" or record["exit_available_at"] is None:
+            continue
+        day = _time(record["exit_available_at"]).astimezone(NEW_YORK).date().isoformat()
+        exits = result.setdefault(day, _empty_earnings_session())["exits"][record["arm"]]
+        exits["closed_episodes"] += 1
+        if record["exit_cause"] == "EVENT":
+            exits["event_exits"] += 1
+            exits["detection_to_exit_seconds_sum"] += (_time(record["exit_available_at"]) - _time(record["intent"]["at"])).total_seconds()
+    for summary in result.values():
+        for exits in summary["exits"].values():
+            if exits["closed_episodes"]:
+                exits["event_exit_fraction"] = exits["event_exits"] / exits["closed_episodes"]
+            if exits["event_exits"]:
+                exits["mean_detection_to_exit_seconds"] = exits["detection_to_exit_seconds_sum"] / exits["event_exits"]
+    return result

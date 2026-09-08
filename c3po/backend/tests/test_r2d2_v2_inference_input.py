@@ -10,6 +10,10 @@ from app.r2d2_v2_inference_input import (
     AMENDMENT_SHA, MANIFEST_SHA, SESSION_FIELDS, InferenceInputError,
     adapt_collector_export, validate_cohort_prefix,
 )
+from app.r2d2_v2_earnings_package import (
+    EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA, EXPORT_SCHEMA,
+    implementation_contract_sha,
+)
 
 
 def seal(value):
@@ -39,8 +43,12 @@ def export(size=40):
                      "portfolio_pnl_indeterminate_count": 0, "finalized": True,
                      "data_gate_unknown": False, "capture_coverage_unknown": False,
                      "terminal_veto": False, "observed_execution_certified": False})
-    return seal({"schema": "R2D2_V2_COHORT_EXPORT_V2", "epoch": "synthetic-epoch",
+    return seal({"schema": EXPORT_SCHEMA, "epoch": "synthetic-epoch",
                  "manifest_sha": MANIFEST_SHA, "signed_manifest_sha": MANIFEST_SHA,
+                 "earnings_amendment_sha": EARNINGS_AMENDMENT_SHA,
+                 "earnings_closed_manifest_sha": EARNINGS_CLOSED_MANIFEST_SHA,
+                 "implementation_contract_sha": implementation_contract_sha(),
+                 "implementation_package_sha": "d" * 64,
                  "amendment_sha": AMENDMENT_SHA, "release_sha": "a" * 64,
                  "readiness_sha": "b" * 64, "code_revision": "c" * 40,
                  "cohort_size": size, "calendar_version": "SYNTHETIC-CALENDAR",
@@ -189,7 +197,11 @@ def test_calendar_membership_and_maturity_cannot_shift_with_data(change):
 
 @pytest.mark.parametrize("field,value", [("manifest_sha", "0"*64), ("amendment_sha", "0"*64),
     ("readiness_sha", None), ("signed_manifest_sha", None), ("code_revision", "short"),
-    ("schema", "R2D2_V2_COHORT_EXPORT_V1"), ("statistical_verdict", "GO"),
+    ("schema", "R2D2_V2_COHORT_EXPORT_V1"), ("schema", "R2D2_V2_COHORT_EXPORT_V2"),
+    ("earnings_amendment_sha", None), ("earnings_amendment_sha", "0"*64),
+    ("earnings_closed_manifest_sha", "0"*64), ("implementation_contract_sha", "0"*64),
+    ("implementation_package_sha", None), ("implementation_package_sha", "placeholder"),
+    ("statistical_verdict", "GO"),
     ("terminal_veto", True), ("data_gate_unknown", True), ("data_gate_unknown", None)])
 def test_provenance_and_top_level_gate_fail_closed(field, value):
     source = export()
@@ -224,9 +236,23 @@ def test_sixty_preserves_forty_and_all_categories_not_only_nine_columns():
 
 
 @pytest.mark.parametrize("field,value", [("epoch", "different"), ("release_sha", "d"*64),
-                                         ("code_revision", "e"*40), ("calendar_version", "OTHER")])
+                                         ("code_revision", "e"*40), ("calendar_version", "OTHER"),
+                                         ("implementation_package_sha", "f"*64)])
 def test_same_counts_from_other_epoch_or_build_are_not_a_prefix(field, value):
     changed = export(60)
     changed[field] = value
     with pytest.raises(InferenceInputError, match="IDENTITY_MISMATCH"):
         validate_cohort_prefix(adapt_collector_export(export()), adapt_collector_export(seal(changed)))
+
+
+def test_earnings_identity_preserved_without_reading_implementation_files(monkeypatch):
+    from pathlib import Path
+    def forbidden(*args, **kwargs):
+        pytest.fail("pure inference adapter attempted file access")
+    monkeypatch.setattr(Path, "read_bytes", forbidden)
+    source = export()
+    adapted = adapt_collector_export(source).to_dict()
+    for key in ("earnings_amendment_sha", "earnings_closed_manifest_sha",
+                "implementation_contract_sha", "implementation_package_sha"):
+        assert adapted[key] == source[key]
+    assert adapted["schema"] == "R2D2_V2_INFERENCE_INPUT_V3"

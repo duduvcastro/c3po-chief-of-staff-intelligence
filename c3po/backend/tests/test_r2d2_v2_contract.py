@@ -8,6 +8,8 @@ import math
 
 import pytest
 
+from tests.test_r2d2_v2_earnings_policy import component as earnings_component
+
 from app.r2d2_v2_contract import (
     CandidateInputs, CandidateValidationError, DailyBar, EVIDENCE_COMPONENTS,
     FEE, NEW_YORK, RISK_C75, SLIPPAGE, SplitRecord,
@@ -45,6 +47,8 @@ def synthetic_snapshot() -> CandidateInputs:
         horizon_close_at=datetime.combine(horizon[-1], time(16), NEW_YORK),
         splits=(), split_coverage_verified=True, daily_price_basis="RAW_UNADJUSTED",
         earnings_coverage_start=session, earnings_coverage_end=horizon[-1], earnings_coverage_verified=True,
+        earnings_component=earnings_component(decision_at=decision,
+            maturity_at=datetime.combine(horizon[-1], time(15,55), NEW_YORK), available_at=evidence),
         source_at={name: evidence for name in EVIDENCE_COMPONENTS},
         available_at={name: evidence for name in EVIDENCE_COMPONENTS},
         sources={name: "synthetic:"+name for name in EVIDENCE_COMPONENTS},
@@ -117,6 +121,8 @@ def test_capture_window_is_half_open(offset, inside):
     decision = snapshot.decision_at + timedelta(seconds=offset)
     stamp = decision-timedelta(seconds=1)
     result = evaluate_candidate(replace(snapshot, decision_at=decision, bid_at=stamp, ask_at=stamp,
+        earnings_component=earnings_component(decision_at=decision,
+            maturity_at=snapshot.horizon_close_at-timedelta(minutes=5), available_at=stamp),
         source_at={name:stamp for name in EVIDENCE_COMPONENTS}, available_at={name:stamp for name in EVIDENCE_COMPONENTS}))
     assert (result.status == "ELIGIBLE") is inside
     assert ("OUTSIDE_CAPTURE_WINDOW" in result.reasons) is not inside
@@ -161,7 +167,9 @@ def test_calendar_exact_windows_and_regular_complete_bars():
                     (snapshot.horizon_sessions[1],)*10):
         assert "HORIZON_CALENDAR_INVALID" in evaluate_candidate(replace(snapshot,horizon_sessions=horizon)).reasons
     early_close = datetime.combine(snapshot.horizon_sessions[-1], time(13), NEW_YORK)
-    result = evaluate_candidate(replace(snapshot,horizon_close_at=early_close))
+    result = evaluate_candidate(replace(snapshot,horizon_close_at=early_close,
+        earnings_component=earnings_component(decision_at=snapshot.decision_at,
+            maturity_at=early_close-timedelta(minutes=5))))
     assert result.maturity_at.astimezone(NEW_YORK).time() == time(12,55)
 
 
@@ -215,27 +223,73 @@ def test_adv_uses_last20_full_raw_sessions_and_piso_inclusive():
     assert "ADV20_BELOW_MINIMUM" in result.reasons
 
 
-def test_known_earnings_and_unverified_data_are_distinct_before_both_arms():
+def _earnings_event(snapshot, *, day=None, at=None, granularity="DAY", classification="EXCLUDES"):
+    value = earnings_component(decision_at=snapshot.decision_at,
+        maturity_at=snapshot.horizon_close_at-timedelta(minutes=5))
+    when = at.astimezone(NEW_YORK).date() if at is not None else day
+    item = {"event_date": when.isoformat(), "granularity": "INSTANT" if at is not None else granularity,
+        "event_at": at.isoformat() if at is not None else None,
+        "available_at": value["available_at"], "source": "calendar", "classification": classification}
+    value["evidence"]["known_events"] = [item]
+    value["evidence"]["cadence_applicable"] = False
+    value["events"] = [{k: item[k] for k in ("event_date", "granularity", "available_at") +
+        (("event_at",) if at is not None else ())}]
+    excluded = classification == "EXCLUDES"
+    value["exclusion"] = {"excluded": excluded, "reasons": ["EARNINGS_WITHIN_HORIZON"] if excluded else []}
+    return value
+
+
+def test_e3_exclusion_and_missing_evidence_are_data_before_both_risk_arms():
     snapshot = synthetic_snapshot()
     for risk in (20., 60.):
-        scheduled = evaluate_candidate(replace(snapshot,risk_score=risk,earnings_dates=(snapshot.horizon_sessions[4],)))
-        assert scheduled.status == "INELIGIBLE" and scheduled.arm is None
+        value = _earnings_event(snapshot, day=snapshot.horizon_sessions[4])
+        scheduled = evaluate_candidate(replace(snapshot,risk_score=risk,earnings_component=value))
+        assert scheduled.status == "DATA_INELIGIBLE" and scheduled.arm is None
         assert scheduled.reasons == ("EARNINGS_WITHIN_HORIZON",)
-        unknown = evaluate_candidate(replace(snapshot,risk_score=risk,earnings_coverage_verified=False))
+        unknown = evaluate_candidate(replace(snapshot,risk_score=risk,earnings_component=None))
         assert unknown.status == "DATA_INELIGIBLE" and unknown.arm is None
-    short = replace(snapshot,earnings_coverage_end=snapshot.horizon_sessions[-2])
-    assert "EARNINGS_COVERAGE_UNVERIFIED" in evaluate_candidate(short).reasons
+        assert "EARNINGS_EVIDENCE_INVALID" in unknown.reasons
     for day in (snapshot.session_date,snapshot.horizon_sessions[-1]):
-        assert "EARNINGS_BOUNDARY_TIME_UNKNOWN" in evaluate_candidate(replace(snapshot,earnings_dates=(day,))).reasons
+        for granularity in ("DAY", "BMO", "AMC"):
+            value = _earnings_event(snapshot, day=day, granularity=granularity)
+            assert evaluate_candidate(replace(snapshot, earnings_component=value)).reasons == ("EARNINGS_WITHIN_HORIZON",)
+
+
+def test_legacy_fields_neither_grant_coverage_nor_override_signed_component():
+    snapshot = synthetic_snapshot()
+    assert evaluate_candidate(replace(snapshot, earnings_component=None)).status == "DATA_INELIGIBLE"
+    changed = replace(snapshot, earnings_coverage_verified=False, earnings_coverage_end=None,
+        earnings_dates=(snapshot.session_date,), earnings_at=(snapshot.decision_at,))
+    assert evaluate_candidate(changed).status == "ELIGIBLE"
 
 
 def test_earnings_precise_instant_respects_inclusive_entry_and_maturity():
     snapshot = synthetic_snapshot()
     maturity = snapshot.horizon_close_at-timedelta(minutes=5)
     for at in (snapshot.decision_at,maturity):
-        assert "EARNINGS_WITHIN_HORIZON" in evaluate_candidate(replace(snapshot,earnings_at=(at,))).reasons
-    for at in (snapshot.decision_at-timedelta(microseconds=1),maturity+timedelta(microseconds=1)):
-        assert evaluate_candidate(replace(snapshot,earnings_at=(at,))).status == "ELIGIBLE"
+        value = _earnings_event(snapshot, at=at)
+        assert evaluate_candidate(replace(snapshot,earnings_component=value)).reasons == ("EARNINGS_WITHIN_HORIZON",)
+    for at, classification in ((snapshot.decision_at-timedelta(microseconds=1),"PUBLISHED_BEFORE_DECISION"),
+            (maturity+timedelta(microseconds=1),"AFTER_MATURITY")):
+        value = _earnings_event(snapshot, at=at, classification=classification)
+        assert evaluate_candidate(replace(snapshot,earnings_component=value)).status == "ELIGIBLE"
+
+
+def test_earnings_component_cannot_move_calendar_maturity_or_nominal_boundary():
+    snapshot = synthetic_snapshot()
+    value = earnings_component(decision_at=snapshot.decision_at,
+        maturity_at=snapshot.horizon_close_at-timedelta(minutes=6))
+    assert evaluate_candidate(replace(snapshot,earnings_component=value)).reasons == ("EARNINGS_EVIDENCE_INVALID",)
+    later = snapshot.decision_at + timedelta(seconds=37)
+    shifted = replace(snapshot,decision_at=later,bid_at=later,ask_at=later,
+        source_at={name: later for name in EVIDENCE_COMPONENTS},
+        available_at={name: later for name in EVIDENCE_COMPONENTS})
+    unchanged = evaluate_candidate(shifted)
+    assert unchanged.status == "ELIGIBLE"
+    actual = earnings_component(decision_at=later,maturity_at=snapshot.horizon_close_at-timedelta(minutes=5))
+    assert evaluate_candidate(replace(shifted,earnings_component=actual)).status == "ELIGIBLE"
+    actual["evidence"]["decision_at"] = later.isoformat()
+    assert evaluate_candidate(replace(shifted,earnings_component=actual)).reasons == ("EARNINGS_EVIDENCE_INVALID",)
 
 
 def test_geometry_net_plus_minus_one_r_including_sequential_costs():
