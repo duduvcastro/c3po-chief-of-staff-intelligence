@@ -477,6 +477,9 @@ def test_r2d2_us_candidates_rejects_provisional_canonical_valuation() -> None:
         now,
     )
 
+    # REV4-1: an explicit None means "resolved, none in force" — nothing canonical is served, never the current generation
+    resolved_none = {item["symbol"]: item for item in service._us_candidates("NASDAQ", now, generation=None)}
+    assert resolved_none["VALD"]["valuation_basis"] != "canonical C3PO valuation universe" and resolved_none["VALD"]["tp_source"] is None
     candidates = service._us_candidates("NASDAQ", now)
 
     by_symbol = {item["symbol"]: item for item in candidates}

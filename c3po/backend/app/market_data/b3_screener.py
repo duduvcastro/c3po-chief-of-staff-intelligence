@@ -425,6 +425,7 @@ class B3ScreenerService:
                     "sector_taxonomy_version": SECTOR_TAXONOMY_VERSION,
                     "source": self._source_label(),
                     "scope": "on_demand_outside_screening_gates",
+                    "source_manifest_sha256": provenance_sha256([row]),  # the targeted producer records its provenance too (E1)
                 },
                 self._json_safe({"row": row}),
                 generated_at,

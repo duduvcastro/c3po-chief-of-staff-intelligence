@@ -3485,19 +3485,18 @@ class Database:
 
     @staticmethod
     def _insert_selection_row(connection: Any, generation: dict[str, Any]) -> None:
-        if True:
-            connection.execute(
-                """
-                INSERT INTO valuation_official_selection
-                    (generation_id, source, source_version, cycles, targeted, session_dates, validated_complete, activated_at, activated_by,
-                     previous_generation_id, receipt)
-                VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s::jsonb)
-                """,
-                (generation["generation_id"], generation["source"], generation["source_version"], json.dumps(generation["cycles"]),
-                 json.dumps(generation.get("targeted") or {}), json.dumps(generation["session_dates"]), bool(generation["validated_complete"]),
-                 generation["activated_at"], generation["activated_by"], generation.get("previous_generation_id"),
-                 json.dumps(generation.get("receipt") or {})),
-            )
+        connection.execute(
+            """
+            INSERT INTO valuation_official_selection
+                (generation_id, source, source_version, cycles, targeted, session_dates, validated_complete, activated_at, activated_by,
+                 previous_generation_id, receipt)
+            VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s::jsonb)
+            """,
+            (generation["generation_id"], generation["source"], generation["source_version"], json.dumps(generation["cycles"]),
+             json.dumps(generation.get("targeted") or {}), json.dumps(generation["session_dates"]), bool(generation["validated_complete"]),
+             generation["activated_at"], generation["activated_by"], generation.get("previous_generation_id"),
+             json.dumps(generation.get("receipt") or {})),
+        )
 
     def _selection_record(self, row: Any) -> dict[str, Any] | None:
         if not row:
@@ -3586,11 +3585,33 @@ class Database:
         if cached is not None:
             return copy.deepcopy(cached)
         snapshot = self.analysis_snapshot_by_id(cycle_id)
-        if snapshot is not None:
-            if len(self._official_cycle_cache) >= 8:
-                self._official_cycle_cache.pop(next(iter(self._official_cycle_cache)))
-            self._official_cycle_cache[cycle_id] = copy.deepcopy(snapshot)
-        return snapshot
+        if snapshot is None:
+            return None
+        if len(self._official_cycle_cache) >= 8:
+            self._official_cycle_cache.pop(next(iter(self._official_cycle_cache)))
+        self._official_cycle_cache[cycle_id] = copy.deepcopy(snapshot)
+        return copy.deepcopy(snapshot)  # a miss is a copy too: the in-memory master row is never handed out
+
+    def valuation_prediction_record(self, cycle_id: str, symbol: str) -> dict[str, Any] | None:
+        """ONE record of a cycle (a copy) — what a single-symbol reader needs, without copying the whole cycle."""
+        cached = self._cycle_records_cache.get(cycle_id)
+        if cached is not None:
+            record = cached.get(symbol)
+            return copy.deepcopy(record) if record is not None else None
+        if not self.database_url:
+            match = next((r for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id and str(r["symbol"]) == symbol), None)
+            return copy.deepcopy(match) if match else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT id::text, source, source_version, market, symbol, scope, session_date::text, cycle_id::text, prediction_instant,
+                       tp, buy_in, internal_tp, consensus_tp, consensus_source, analyst_count, consensus_weight_percent, price, currency,
+                       decomposition, row_sha256
+                FROM valuation_predictions WHERE cycle_id = %s AND symbol = %s
+                """,
+                (cycle_id, symbol),
+            ).fetchone()
+        return self._prediction_record(row) if row else None
 
     def drop_official_cycle_cache(self) -> None:
         """Both official caches: cycles and their records (D1 — a poisoned empty answer never survives a generation)."""

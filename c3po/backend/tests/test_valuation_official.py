@@ -278,10 +278,13 @@ def test_targeted_admission_requires_a_valid_cycle_and_a_symbol_the_universe_doe
                                     {"row": _row("PETR4", tp=90.0, buy_in=70.0, price=80.0, internal_tp=88.0)}, later(2))
     assert official.current_generation(database) == base  # PETR4 is in the B3 universe cycle: the universe answers first, no churn
     assert official.official_row(database, "B3", "PETR4")["our_tp"] == 40.0  # type: ignore[index]
-    good = database.save_analysis_snapshot("security_valuation", "WEGE3", "mv-1", {"methodology_version": 7},
+    good = database.save_analysis_snapshot("security_valuation", "WEGE3", "mv-1", {"methodology_version": 7, "source_manifest_sha256": "b" * 64},
                                            {"row": _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0)}, later(3))
     admitted = official.current_generation(database)
     assert admitted is not None and admitted["targeted"] == {"WEGE3": good} and admitted["validated_complete"] is True
+    served = official.official_row(database, "B3", "WEGE3")
+    assert served and served["official_scope"] == "targeted" and served["official_row_sha256"] == database.valuation_prediction_record(good, "WEGE3")["row_sha256"]  # type: ignore[index]
+    assert database.valuation_prediction_record(good, "WEGE3")["decomposition"]["provenance"]["source_manifest_sha256"] == "b" * 64  # type: ignore[index]
 
 
 def test_activation_carries_a_market_over_when_its_new_cycle_is_invalid() -> None:
@@ -328,6 +331,19 @@ def test_an_empty_answer_is_never_pinned_and_served_objects_are_copies() -> None
     assert generation is not None
     generation["cycles"]["NASDAQ"] = "tampered"
     assert official.current_generation(database)["cycles"]["NASDAQ"] != "tampered"  # type: ignore[index]
+    # a cache MISS is a copy too (REV4-2): mutating the first answer never reaches the master snapshot
+    database.drop_official_cycle_cache()
+    cycle = official.current_generation(database)["cycles"]["B3"]  # type: ignore[index]
+    first = database.official_cycle_snapshot(cycle)
+    assert first is not None
+    first["outputs"]["rows"][0]["our_tp"] = 999999.0
+    assert database.analysis_snapshot_by_id(cycle)["outputs"]["rows"][0]["our_tp"] == 40.0  # type: ignore[index]
+    assert database.official_cycle_snapshot(cycle)["outputs"]["rows"][0]["our_tp"] == 40.0  # type: ignore[index]
+    # a single-symbol read copies ONE record (REV4-5) and agrees with the whole-cycle read
+    one = database.valuation_prediction_record(cycle, "PETR4")
+    assert one is not None and one["tp"] == 40.0 and database.valuation_prediction_record(cycle, "NOPE") is None
+    one["tp"] = 1.0
+    assert database.valuation_prediction_record(cycle, "PETR4")["tp"] == 40.0  # type: ignore[index]
 
 
 def test_the_generation_chain_refuses_a_second_successor_and_orders_like_postgresql() -> None:

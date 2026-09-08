@@ -552,11 +552,11 @@ def official_row(database: Any, market: str, symbol: str, *, generation: Any = U
         return None
     for selected in _markets_for(market):
         cycle_id = (resolved.get("cycles") or {}).get(selected)
-        snapshot = database.official_cycle_snapshot(str(cycle_id)) if cycle_id else None
-        if not snapshot:
-            continue
-        record = database.valuation_predictions_for_cycle(str(cycle_id)).get(clean)
+        record = database.valuation_prediction_record(str(cycle_id), clean) if cycle_id else None  # one record, one copy
         if record is None:
+            continue
+        snapshot = database.official_cycle_snapshot(str(cycle_id))
+        if not snapshot:
             continue
         for row in cycle_rows(snapshot):
             if str(row.get("symbol") or "").strip().upper() == clean:
@@ -564,7 +564,7 @@ def official_row(database: Any, market: str, symbol: str, *, generation: Any = U
     targeted_cycle = (resolved.get("targeted") or {}).get(clean)
     if targeted_cycle and "B3" in _markets_for(market):
         snapshot = database.official_cycle_snapshot(str(targeted_cycle))
-        record = database.valuation_predictions_for_cycle(str(targeted_cycle)).get(clean)
+        record = database.valuation_prediction_record(str(targeted_cycle), clean)
         if snapshot and record is not None:
             for row in cycle_rows(snapshot):
                 if str(row.get("symbol") or "").strip().upper() == clean:

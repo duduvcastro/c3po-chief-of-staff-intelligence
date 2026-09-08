@@ -3874,8 +3874,10 @@ class R2D2PaperService:
             item["composite_score"] = self._composite(item)
         return sorted(output, key=lambda item: item["composite_score"], reverse=True)[:40]
 
-    def _us_candidates(self, market: str, now: datetime, generation: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        generation = generation if generation is not None else getattr(self, "_batch_generation", UNRESOLVED)  # outside a batch: resolve once here
+    def _us_candidates(self, market: str, now: datetime, generation: Any = UNRESOLVED) -> list[dict[str, Any]]:
+        # the same convention as every official_* reader: None = "resolved, none in force" → nothing canonical is served;
+        # UNRESOLVED (default) = the batch's pinned generation, or (outside a batch) the current one resolved once here
+        generation = generation if generation is not UNRESOLVED else getattr(self, "_batch_generation", UNRESOLVED)
         rows = self.realtime._us_investable_rows(market, now)
         catalog = self.realtime._us_symbol_catalog(now)
         catalog_securities = [
