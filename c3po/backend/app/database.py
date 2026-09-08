@@ -3,7 +3,7 @@ import hashlib
 import logging
 import re
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -3340,35 +3340,116 @@ class Database:
         if not bars:
             return 0
         if not self.database_url:
-            existing = {(b["market"], b["symbol"], b["session_date"], b["source"], str(b["fetched_at"])) for b in self._price_bars}
-            added = [b for b in bars if (b["market"], b["symbol"], b["session_date"], b["source"], str(b["fetched_at"])) not in existing]
-            self._price_bars.extend(dict(b) for b in added)
-            return len(added)
-        inserted = 0
+            return self._insert_price_bars_memory(bars)
         with self.connection() as connection:
-            for bar in bars:
-                cursor = connection.execute(
-                    """
-                    INSERT INTO valuation_price_bars
-                        (id, market, symbol, session_date, close, adjusted_close, volume, currency, source, provider_symbol, fetched_at, snapshot_id, bar_sha256)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (market, symbol, session_date, source, fetched_at) DO NOTHING
-                    """,
-                    (bar["id"], bar["market"], bar["symbol"], bar["session_date"], bar["close"], bar["adjusted_close"], bar.get("volume"), bar["currency"],
-                     bar["source"], bar["provider_symbol"], bar["fetched_at"], bar["snapshot_id"], bar["bar_sha256"]),
-                )
-                inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+            inserted = self._insert_price_bars_pg(connection, bars)
             connection.commit()
         return inserted
 
-    def price_bars(self, market: str, symbol: str, *, fetched_before: datetime, since: date | None = None, until: date | None = None) -> dict[str, dict[str, Any]]:
-        """By session: the latest bar with fetched_at < fetched_before (the view a cut at that instant sees)."""
+    @staticmethod
+    def _price_bar_key(bar: dict[str, Any]) -> tuple[str, str, str, str, str]:
+        return (str(bar["market"]), str(bar["symbol"]), str(bar["session_date"]), str(bar["source"]), Database._price_bar_instant(bar["fetched_at"]).isoformat())
+
+    @staticmethod
+    def _price_bar_instant(value: Any) -> datetime:
+        """The real instant of a bar's clock (UTC), never its string: offsets differ, strings mislead."""
+        instant = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+        return instant.replace(tzinfo=timezone.utc) if instant.tzinfo is None else instant.astimezone(timezone.utc)
+
+    def _insert_price_bars_memory(self, bars: list[dict[str, Any]]) -> int:
+        existing = {self._price_bar_key(b) for b in self._price_bars}
+        added = 0
+        for bar in bars:  # the same key twice in one batch: the first row wins, exactly like ON CONFLICT DO NOTHING
+            key = self._price_bar_key(bar)
+            if key in existing:
+                continue
+            existing.add(key)
+            self._price_bars.append(dict(bar))
+            added += 1
+        return added
+
+    def _insert_price_bars_pg(self, connection: Any, bars: list[dict[str, Any]]) -> int:
+        inserted = 0
+        for bar in bars:
+            cursor = connection.execute(
+                """
+                INSERT INTO valuation_price_bars
+                    (id, market, symbol, session_date, close, adjusted_close, volume, currency, source, provider_symbol, fetched_at, snapshot_id, bar_sha256)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (market, symbol, session_date, source, fetched_at) DO NOTHING
+                """,
+                (bar["id"], bar["market"], bar["symbol"], bar["session_date"], bar["close"], bar["adjusted_close"], bar.get("volume"), bar["currency"],
+                 bar["source"], bar["provider_symbol"], bar["fetched_at"], bar["snapshot_id"], bar["bar_sha256"]),
+            )
+            inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+        return inserted
+
+    def persist_price_history_run(self, analysis_type: str, entity_key: str, methodology_version_id: str, inputs: dict[str, Any], outputs: dict[str, Any],
+                                  published_at: datetime, snapshot_id: str, bars: list[dict[str, Any]]) -> int:
+        """One vintage = the manifest snapshot AND its bars in ONE transaction (the bars reference the manifest by FK):
+        either both exist or neither. Returns the number of bars inserted."""
+        if not self.database_url:
+            self.save_analysis_snapshot(analysis_type, entity_key, methodology_version_id, inputs, outputs, published_at, snapshot_id=snapshot_id)
+            return self._insert_price_bars_memory(bars)
+        with self.connection() as connection:
+            prior = connection.execute(
+                """
+                SELECT id::text FROM analysis_snapshots
+                WHERE analysis_type = %s AND entity_key = %s
+                ORDER BY published_at DESC LIMIT 1
+                """,
+                (analysis_type, entity_key),
+            ).fetchone()
+            connection.execute(
+                """
+                INSERT INTO analysis_snapshots
+                    (id, analysis_type, entity_key, methodology_version_id, inputs, outputs, published_at, supersedes_id)
+                VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+                """,
+                (snapshot_id, analysis_type, entity_key, methodology_version_id, json.dumps(inputs), json.dumps(outputs), published_at,
+                 prior[0] if prior else None),
+            )
+            inserted = self._insert_price_bars_pg(connection, bars)
+            connection.commit()
+        return inserted
+
+    def latest_price_bar_hashes(self, market: str, symbols: list[str], *, source: str) -> dict[tuple[str, str], str]:
+        """The content hash of the LATEST stored row per (symbol, session) — what a run compares its fetch against."""
+        if not symbols:
+            return {}
+        if not self.database_url:
+            wanted = set(symbols)
+            latest: dict[tuple[str, str], tuple[datetime, str]] = {}
+            for bar in self._price_bars:
+                if bar["market"] != market or bar["source"] != source or bar["symbol"] not in wanted:
+                    continue
+                key = (str(bar["symbol"]), str(bar["session_date"]))
+                instant = self._price_bar_instant(bar["fetched_at"])
+                if key not in latest or instant > latest[key][0]:
+                    latest[key] = (instant, str(bar["bar_sha256"]))
+            return {key: value[1] for key, value in latest.items()}
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT ON (symbol, session_date) symbol, session_date::text, bar_sha256
+                FROM valuation_price_bars
+                WHERE market = %s AND source = %s AND symbol = ANY(%s)
+                ORDER BY symbol, session_date, fetched_at DESC
+                """,
+                (market, source, list(symbols)),
+            ).fetchall()
+        return {(str(row[0]), str(row[1])): str(row[2]) for row in rows}
+
+    def price_bars(self, market: str, symbol: str, *, as_of: datetime, since: date | None = None, until: date | None = None) -> dict[str, dict[str, Any]]:
+        """By session: the latest bar with fetched_at <= as_of — the chain a vintage stamped at ``as_of`` reproduces
+        (the service verifies it against the vintage's series hash before serving it)."""
+        as_of = self._price_bar_instant(as_of)
         if not self.database_url:
             chosen: dict[str, dict[str, Any]] = {}
-            for bar in sorted(self._price_bars, key=lambda b: str(b["fetched_at"])):
+            for bar in sorted(self._price_bars, key=lambda b: self._price_bar_instant(b["fetched_at"])):  # real instants, never strings
                 if bar["market"] != market or bar["symbol"] != symbol:
                     continue
-                if datetime.fromisoformat(str(bar["fetched_at"])) >= fetched_before:
+                if self._price_bar_instant(bar["fetched_at"]) > as_of:
                     continue
                 session = str(bar["session_date"])
                 if (since and session < since.isoformat()) or (until and session > until.isoformat()):
@@ -3381,10 +3462,10 @@ class Database:
                 SELECT DISTINCT ON (session_date) id::text, market, symbol, session_date::text, close, adjusted_close, volume, currency, source,
                        provider_symbol, fetched_at, snapshot_id::text, bar_sha256
                 FROM valuation_price_bars
-                WHERE market = %s AND symbol = %s AND fetched_at < %s AND (%s::date IS NULL OR session_date >= %s) AND (%s::date IS NULL OR session_date <= %s)
+                WHERE market = %s AND symbol = %s AND fetched_at <= %s AND (%s::date IS NULL OR session_date >= %s) AND (%s::date IS NULL OR session_date <= %s)
                 ORDER BY session_date, fetched_at DESC
                 """,
-                (market, symbol, fetched_before, since, since, until, until),
+                (market, symbol, as_of, since, since, until, until),
             ).fetchall()
         output: dict[str, dict[str, Any]] = {}
         for row in rows:
@@ -3438,6 +3519,30 @@ class Database:
                 (analysis_type, entity_key),
             ).fetchone()
         return row[0] if row else None
+
+    def latest_analysis_snapshot_before(self, analysis_type: str, entity_key: str, before: datetime) -> dict[str, Any] | None:
+        """The snapshot with the greatest published_at STRICTLY before ``before`` (the single vintage a cut sees)."""
+        before = self._price_bar_instant(before)
+        if not self.database_url:
+            matches = [
+                item for item in self._analysis_snapshots
+                if item.get("analysis_type") == analysis_type and item.get("entity_key") == entity_key
+                and self._price_bar_instant(item["published_at"]) < before
+            ]
+            return max(matches, key=lambda item: self._price_bar_instant(item["published_at"])).copy() if matches else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT id::text, inputs, outputs, published_at, methodology_version_id::text
+                FROM analysis_snapshots
+                WHERE analysis_type = %s AND entity_key = %s AND published_at < %s
+                ORDER BY published_at DESC LIMIT 1
+                """,
+                (analysis_type, entity_key, before),
+            ).fetchone()
+        if not row:
+            return None
+        return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row))
 
     def latest_analysis_snapshot(self, analysis_type: str, entity_key: str) -> dict[str, Any] | None:
         if not self.database_url:
