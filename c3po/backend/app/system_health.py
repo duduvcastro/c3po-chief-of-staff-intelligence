@@ -56,34 +56,71 @@ class SystemHealthService:
         self.external_get = external_get or httpx.get
         self.backblaze_client = backblaze_client
         self.disk_usage = disk_usage or shutil.disk_usage
-        self._cached_at: datetime | None = None
-        self._cached_response: SystemHealthResponse | None = None
+        # One immutable (timestamp, response) entry: readers take it in a single read,
+        # so freshness and payload always come from the same version of the cache.
+        self._cache: tuple[datetime, SystemHealthResponse] | None = None
         self._refresh_lock = Lock()
+        # Generation of the cache: every invalidation bumps it. A refresh publishes its
+        # result only if the generation it started under is still current, so a refresh
+        # that captured the world BEFORE an attestation can never put that stale snapshot
+        # back after the attestation invalidated the cache (C390-3).
+        self._state_lock = Lock()
+        self._generation = 0
+
+    def invalidate(self) -> None:
+        """Drop the cached snapshot so the next read recomputes it.
+
+        Called after a supervised governance attestation (also when it raised
+        after persisting a revision): the panel that just asked for a new
+        attestation must not keep reading the previous one for the remainder of
+        the cache window. The cache entry is replaced atomically (see `_cache`),
+        so a concurrent reader either sees the old consistent entry or none —
+        never a half-cleared one. The generation bump makes a refresh that is
+        still in flight (it read the previous attestation) discard its result
+        instead of re-publishing it as fresh (C390-3).
+        """
+        with self._state_lock:
+            self._generation += 1
+            self._cache = None
+
+    def _cached(self) -> tuple[datetime, SystemHealthResponse] | None:
+        """One consistent read of the cache entry: freshness and payload come from
+        the same (timestamp, response) pair, whatever `invalidate` does meanwhile."""
+        return self._cache
 
     def snapshot(self, *, force: bool = False) -> SystemHealthResponse:
         now = datetime.now(timezone.utc)
-        if not force and self._cache_is_fresh(now):
-            return self._cached_response
+        entry = self._cached()
+        if not force and self._entry_is_fresh(entry, now):
+            return entry[1]  # type: ignore[index]
 
         acquired = self._refresh_lock.acquire(blocking=force)
         if not acquired:
-            if self._cached_response is not None:
-                return self._cached_response
+            entry = self._cached()
+            if entry is not None:
+                return entry[1]
             acquired = self._refresh_lock.acquire(
                 timeout=self.settings.system_health_probe_timeout_seconds + 0.25
             )
-            if acquired and self._cached_response is not None:
+            entry = self._cached()
+            if acquired and entry is not None:
                 self._refresh_lock.release()
-                return self._cached_response
+                return entry[1]
             if not acquired:
                 return self._startup_degraded_response(now)
 
         try:
-            if not force and self._cache_is_fresh(now):
-                return self._cached_response
+            entry = self._cached()
+            if not force and self._entry_is_fresh(entry, now):
+                return entry[1]  # type: ignore[index]
+            with self._state_lock:
+                generation = self._generation
             response = self._refresh_snapshot(now)
-            self._cached_at = now
-            self._cached_response = response
+            with self._state_lock:
+                if self._generation == generation:
+                    self._cache = (now, response)
+                # else: an attestation invalidated the cache while the probes ran; this
+                # snapshot predates it and is returned to its caller but never cached.
             return response
         finally:
             self._refresh_lock.release()
@@ -280,12 +317,8 @@ class SystemHealthService:
         )
         return response
 
-    def _cache_is_fresh(self, now: datetime) -> bool:
-        return bool(
-            self._cached_at
-            and self._cached_response
-            and (now - self._cached_at).total_seconds() < self.cache_seconds
-        )
+    def _entry_is_fresh(self, entry: tuple[datetime, SystemHealthResponse] | None, now: datetime) -> bool:
+        return entry is not None and (now - entry[0]).total_seconds() < self.cache_seconds
 
     def _run_probes(
         self,
@@ -853,16 +886,26 @@ class SystemHealthService:
                 headers={"User-Agent": "C3PO-Systems-Conditions/1.0"},
             )
             indicator = str((response.json().get("status") or {}).get("indicator") or "unknown")
-            if response.status_code >= 500 or indicator in {"major", "critical"}:
+            if response.status_code >= 400:
+                status = "offline" if response.status_code >= 500 else "attention"
+                provider_detail = "Status do serviço não confirmado"
+            elif indicator in {"major", "critical"}:
                 status = "offline"
-            elif response.status_code >= 400 or indicator not in {"none", "unknown"}:
+                provider_detail = "Serviço com incidente grave"
+            elif indicator != "none":
                 status = "attention"
+                provider_detail = (
+                    "Serviço com instabilidade"
+                    if indicator in {"minor", "maintenance"}
+                    else "Status do serviço não confirmado"
+                )
             else:
                 status = "healthy"
+                provider_detail = "Serviço operacional"
             return IntegrationHealth(
                 name="Sentry",
                 status=status,
-                detail=f"DSN loaded · PII disabled · SaaS status {indicator}",
+                detail=f"DSN carregado · Filtros de dados ativos · {provider_detail}",
                 last_update=self._format_time(now),
             )
         except Exception as exc:
