@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS valuation_official_selection (
     source TEXT NOT NULL,
     source_version TEXT NOT NULL,
     cycles JSONB NOT NULL,
+    targeted JSONB NOT NULL DEFAULT '{}'::jsonb,
     session_dates JSONB NOT NULL,
     validated_complete BOOLEAN NOT NULL,
     activated_at TIMESTAMPTZ NOT NULL,

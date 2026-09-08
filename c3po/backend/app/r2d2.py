@@ -33,7 +33,7 @@ from .r2d2_shadow_candidate_log import (
     build_observation as build_shadow_candidate_observation,
     entry_rejection_reason_id,
 )
-from .valuation_official import official_rows
+from .valuation_official import current_generation, official_rows
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
@@ -2836,6 +2836,8 @@ class R2D2PaperService:
             candidates: list[dict[str, Any]] = []
             self._us_scan_counts = {}
             self._eodhd_call_counts = {}
+            # V3.2 rev 7 §7-bis (F393-3): ONE official generation per cycle — NASDAQ and NYSE are read through the same one
+            self._batch_generation = current_generation(self.repo.database)
             for market in ACTIVE_MARKETS:
                 if market in markets:
                     candidates.extend(self._us_candidates(market, now))
@@ -3869,7 +3871,8 @@ class R2D2PaperService:
             item["composite_score"] = self._composite(item)
         return sorted(output, key=lambda item: item["composite_score"], reverse=True)[:40]
 
-    def _us_candidates(self, market: str, now: datetime) -> list[dict[str, Any]]:
+    def _us_candidates(self, market: str, now: datetime, generation: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        generation = generation if generation is not None else getattr(self, "_batch_generation", None)
         rows = self.realtime._us_investable_rows(market, now)
         catalog = self.realtime._us_symbol_catalog(now)
         catalog_securities = [
@@ -3938,7 +3941,7 @@ class R2D2PaperService:
 
         # Valuation V3.2 rev 7, §7-bis (Passo 0): the canonical rows are the OFFICIAL selection (current generation),
         # stamped with generation_id/tp_source — never a raw snapshot, never a TP computed here.
-        canonical = official_rows(self.repo.database, market)
+        canonical = official_rows(self.repo.database, market, generation=generation)  # ONE generation for the whole batch (F393-3)
 
         today = now.date()
         # Valuation V3.2 rev 7, §7-bis (Passo 0): no same-day 'valuation backfill' — a symbol without an official row gets no
@@ -4021,6 +4024,9 @@ class R2D2PaperService:
                 "stop_price": row.price * (1 - self.settings.r2d2_max_position_loss_percent / 100),
                 "thesis": thesis,
                 "valuation_basis": basis_source,
+                "tp_source": (canonical_row or {}).get("tp_source"),
+                "official_generation_id": (canonical_row or {}).get("generation_id"),
+                "official_cycle_id": (canonical_row or {}).get("official_cycle_id"),
             }
             item["composite_score"] = self._composite(item)
             item["pretrade_rank"] = round(

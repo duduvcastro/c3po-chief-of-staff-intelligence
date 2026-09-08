@@ -31,8 +31,9 @@ class DummyOnePagers:
     def _analyze(
         self, symbol, market, quote, fundamentals, history, *,
         insider_activity=None, news_sentiment=None, risk_free_rate=None, peer_medians=None,
-        fmp_consensus=None, fmp_summary=None, institutional_positions=None, recent_grades=None,
+        fmp_consensus=None, fmp_summary=None, institutional_positions=None, recent_grades=None, role="consumer",
     ):
+        assert role == "producer"  # the screener is the official producer (V3.2 rev 7 §7-bis): never a consumer read
         return {
             "c3po_tp": 145.0,
             "consensus_tp": 150.0,

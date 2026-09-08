@@ -37,6 +37,7 @@ class Database:
         self._valuation_predictions: list[dict[str, Any]] = []
         self._valuation_official_selections: list[dict[str, Any]] = []
         self._official_cycle_cache: dict[str, dict[str, Any]] = {}
+        self._cycle_records_cache: dict[str, dict[str, dict[str, Any]]] = {}
         self._valuation_changes: list[dict[str, Any]] = []
         self._server_usage_samples: list[dict[str, Any]] = []
         self._api_performance_buckets: list[dict[str, Any]] = []
@@ -3337,7 +3338,7 @@ class Database:
     _PREDICTION_KEYS = ("id", "source", "source_version", "market", "symbol", "scope", "session_date", "cycle_id", "prediction_instant",
                         "tp", "buy_in", "internal_tp", "consensus_tp", "consensus_source", "analyst_count", "consensus_weight_percent",
                         "price", "currency", "decomposition", "row_sha256")
-    _SELECTION_KEYS = ("generation_id", "source", "source_version", "cycles", "session_dates", "validated_complete", "activated_at",
+    _SELECTION_KEYS = ("generation_id", "source", "source_version", "cycles", "targeted", "session_dates", "validated_complete", "activated_at",
                        "activated_by", "previous_generation_id", "receipt")
 
     def _record_official_predictions(self, snapshot: dict[str, Any]) -> None:
@@ -3352,6 +3353,8 @@ class Database:
             existing = {(r["source"], r["source_version"], r["market"], r["symbol"], r["cycle_id"]) for r in self._valuation_predictions}
             added = [r for r in records if (r["source"], r["source_version"], r["market"], r["symbol"], r["cycle_id"]) not in existing]
             self._valuation_predictions.extend(dict(r) for r in added)
+            for record in added:
+                self._cycle_records_cache.pop(str(record["cycle_id"]), None)
             return len(added)
         inserted = 0
         with self.connection() as connection:
@@ -3372,8 +3375,63 @@ class Database:
                      json.dumps(record.get("decomposition") or {}), record["row_sha256"]),
                 )
                 inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+                self._cycle_records_cache.pop(str(record["cycle_id"]), None)
             connection.commit()
         return inserted
+
+    def _prediction_record(self, row: Any) -> dict[str, Any]:
+        record = dict(zip(self._PREDICTION_KEYS, row))
+        for key in ("tp", "buy_in", "internal_tp", "consensus_tp", "consensus_weight_percent", "price"):
+            record[key] = float(record[key]) if record[key] is not None else None
+        if isinstance(record.get("prediction_instant"), datetime):
+            record["prediction_instant"] = record["prediction_instant"].isoformat()
+        return record
+
+    def valuation_predictions_for_cycle(self, cycle_id: str) -> dict[str, dict[str, Any]]:
+        """The immutable records of one producer cycle, by symbol — what the official selection SERVES (F393-5).
+        Cycles are immutable, so a small cache is exact (invalidated on insert for that cycle)."""
+        cached = self._cycle_records_cache.get(cycle_id)
+        if cached is not None:
+            return cached
+        if not self.database_url:
+            records = {str(r["symbol"]): dict(r) for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id}
+        else:
+            with self.connection() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT id::text, source, source_version, market, symbol, scope, session_date::text, cycle_id::text, prediction_instant,
+                           tp, buy_in, internal_tp, consensus_tp, consensus_source, analyst_count, consensus_weight_percent, price, currency,
+                           decomposition, row_sha256
+                    FROM valuation_predictions WHERE cycle_id = %s
+                    """,
+                    (cycle_id,),
+                ).fetchall()
+            records = {str(r["symbol"]): r for r in (self._prediction_record(row) for row in rows)}
+        if len(self._cycle_records_cache) >= 12:
+            self._cycle_records_cache.pop(next(iter(self._cycle_records_cache)))
+        self._cycle_records_cache[cycle_id] = records
+        return records
+
+    def list_valuation_predictions(self, market: str, symbol: str, *, source: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+        """History of a symbol's records, newest first, optionally by source (studies and grading, rev 7 TP-C)."""
+        if not self.database_url:
+            matches = [dict(r) for r in self._valuation_predictions
+                       if r["market"] == market and r["symbol"] == symbol and (source is None or r["source"] == source)]
+            matches.sort(key=lambda r: str(r["prediction_instant"]), reverse=True)
+            return matches[:limit]
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id::text, source, source_version, market, symbol, scope, session_date::text, cycle_id::text, prediction_instant,
+                       tp, buy_in, internal_tp, consensus_tp, consensus_source, analyst_count, consensus_weight_percent, price, currency,
+                       decomposition, row_sha256
+                FROM valuation_predictions
+                WHERE market = %s AND symbol = %s AND (%s::text IS NULL OR source = %s)
+                ORDER BY prediction_instant DESC LIMIT %s
+                """,
+                (market, symbol, source, source, int(limit)),
+            ).fetchall()
+        return [self._prediction_record(row) for row in rows]
 
     def latest_valuation_prediction(self, market: str, symbol: str, *, source: str, scope: str | None = None) -> dict[str, Any] | None:
         if not self.database_url:
@@ -3394,12 +3452,7 @@ class Database:
             ).fetchone()
         if not row:
             return None
-        record = dict(zip(self._PREDICTION_KEYS, row))
-        for key in ("tp", "buy_in", "internal_tp", "consensus_tp", "consensus_weight_percent", "price"):
-            record[key] = float(record[key]) if record[key] is not None else None
-        if isinstance(record["prediction_instant"], datetime):
-            record["prediction_instant"] = record["prediction_instant"].isoformat()
-        return record
+        return self._prediction_record(row)
 
     def insert_valuation_official_selection(self, generation: dict[str, Any]) -> None:
         if not self.database_url:
@@ -3409,13 +3462,14 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO valuation_official_selection
-                    (generation_id, source, source_version, cycles, session_dates, validated_complete, activated_at, activated_by,
+                    (generation_id, source, source_version, cycles, targeted, session_dates, validated_complete, activated_at, activated_by,
                      previous_generation_id, receipt)
-                VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s::jsonb)
+                VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s::jsonb)
                 """,
                 (generation["generation_id"], generation["source"], generation["source_version"], json.dumps(generation["cycles"]),
-                 json.dumps(generation["session_dates"]), bool(generation["validated_complete"]), generation["activated_at"],
-                 generation["activated_by"], generation.get("previous_generation_id"), json.dumps(generation.get("receipt") or {})),
+                 json.dumps(generation.get("targeted") or {}), json.dumps(generation["session_dates"]), bool(generation["validated_complete"]),
+                 generation["activated_at"], generation["activated_by"], generation.get("previous_generation_id"),
+                 json.dumps(generation.get("receipt") or {})),
             )
             connection.commit()
 
@@ -3433,7 +3487,7 @@ class Database:
         with self.connection() as connection:
             row = connection.execute(
                 """
-                SELECT generation_id::text, source, source_version, cycles, session_dates, validated_complete, activated_at,
+                SELECT generation_id::text, source, source_version, cycles, targeted, session_dates, validated_complete, activated_at,
                        activated_by, previous_generation_id::text, receipt
                 FROM valuation_official_selection
                 ORDER BY activated_at DESC, created_at DESC LIMIT 1
@@ -3448,7 +3502,7 @@ class Database:
         with self.connection() as connection:
             row = connection.execute(
                 """
-                SELECT generation_id::text, source, source_version, cycles, session_dates, validated_complete, activated_at,
+                SELECT generation_id::text, source, source_version, cycles, targeted, session_dates, validated_complete, activated_at,
                        activated_by, previous_generation_id::text, receipt
                 FROM valuation_official_selection WHERE generation_id = %s
                 """,
@@ -3519,7 +3573,7 @@ class Database:
         with self.connection() as connection:
             row = connection.execute(
                 """
-                SELECT id::text, inputs, outputs, published_at, methodology_version_id::text
+                SELECT id::text, inputs, outputs, published_at, methodology_version_id::text, analysis_type, entity_key
                 FROM analysis_snapshots
                 WHERE analysis_type = %s AND entity_key = %s
                 ORDER BY published_at DESC LIMIT 1
@@ -3528,7 +3582,7 @@ class Database:
             ).fetchone()
         if not row:
             return None
-        return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row))
+        return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id", "analysis_type", "entity_key"), row))
 
     def latest_analysis_snapshots(
         self,

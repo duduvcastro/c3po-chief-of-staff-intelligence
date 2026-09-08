@@ -959,6 +959,9 @@ class OnePagerReport(BaseModel):
     buy_in: float
     upside_percent: float
     confidence: int = Field(ge=0, le=100)
+    tp_source: str | None = None  # V3.2 rev 7 §7-bis (I-TP3): the official producer of c3po_tp/buy_in
+    official_generation_id: str | None = None  # the official selection generation this report was resolved through
+    official_cycle_id: str | None = None  # the producer cycle inside that generation
     method_count: int = Field(ge=1, le=5)
     download_url: str
 

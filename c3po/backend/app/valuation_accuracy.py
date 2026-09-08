@@ -212,3 +212,28 @@ def coverage_summary(calls: list[ValuationCall]) -> dict[str, Any]:
         "distinct_symbols": len(symbols),
         "date_range": (min(dates), max(dates)),
     }
+
+
+def load_prediction_calls(records: Iterable[dict[str, Any]]) -> list[ValuationCall]:
+    """Immutable prediction records (`valuation_predictions`, one per source/version/instant) as calls to grade with the
+    same machinery as `valuation_change_records` (V3.2 rev 7, TP-C; §10.8). Grading by source never re-reads the current
+    selection: the record is the call. `market` collapses NASDAQ/NYSE into 'US' like the change records do."""
+    calls: list[ValuationCall] = []
+    for record in records:
+        try:
+            price = float(record.get("price") or 0.0)
+            target = float(record.get("tp") or 0.0)
+            instant = record.get("prediction_instant")
+            changed_at = instant if isinstance(instant, datetime) else _parse_timestamp(str(instant))
+        except (TypeError, ValueError):
+            continue
+        if price <= 0 or target <= 0:
+            continue
+        raw_decomposition = record.get("decomposition")
+        decomposition: dict[str, Any] = raw_decomposition if isinstance(raw_decomposition, dict) else {}
+        confidence = _float(decomposition.get("valuation_confidence"), 50.0)
+        market = "B3" if str(record.get("market")) == "B3" else "US"
+        calls.append(ValuationCall(market=market, symbol=str(record.get("symbol")), changed_at=changed_at, price_at_call=price,
+                                   target_price=target, confidence=confidence))
+    return calls
+

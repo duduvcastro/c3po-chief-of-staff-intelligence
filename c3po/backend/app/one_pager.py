@@ -19,6 +19,7 @@ from .one_pager_pdf import PremiumOnePagerRenderer
 from .official_fundamentals import apply_official_fundamentals_map
 from .schemas import OnePagerReport
 from .valuation_official import official_row
+from .valuation_official_engine import foreign_bridge_tp_v1, official_blend_v1, official_buy_in_v1
 from .valuation_policy import C3PO_VALUATION_POLICY, METHODOLOGY_KEY, METHODOLOGY_NAME, METHODOLOGY_VERSION
 
 if TYPE_CHECKING:
@@ -419,6 +420,7 @@ class OnePagerService:
         fmp_summary: dict[str, Any] | None = None,
         institutional_positions: dict[str, Any] | None = None,
         recent_grades: list[dict[str, Any]] | None = None,
+        role: str = "consumer",
     ) -> dict[str, Any]:
         price = self._positive(quote.get("price"))
         if price is None:
@@ -595,13 +597,16 @@ class OnePagerService:
             for name, value in raw_methods.items()
         )
         internal_tp = statistics.mean(methods.values())
-        consensus_weight = self._us_consensus_weight(consensus, analyst_count)  # diagnostic only: never inside the TP (rev 7, P1)
+        consensus_weight = self._us_consensus_weight(consensus, analyst_count)  # the producer's blend weight; a diagnostic for consumers
         foreign_policy = fundamentals.get("foreignListingPolicy")
+        foreign_bridge_methods: OrderedDict[str, float] | None = None
+        foreign_buy_in_override: float | None = None
         method_estimate_registered_on = None
         method_estimate_registered_display = None
         if isinstance(foreign_policy, dict):
             foreign_methods = foreign_policy.get("internalMethodTargets")
-            if isinstance(foreign_methods, dict) and len(foreign_methods) == 5:
+            foreign_buy_in = self._positive(foreign_policy.get("buyIn"))
+            if isinstance(foreign_methods, dict) and len(foreign_methods) == 5 and foreign_buy_in:
                 registered_on_raw = foreign_policy.get("internalMethodTargetsRegisteredOn")
                 try:
                     registered_on = date.fromisoformat(str(registered_on_raw))
@@ -609,15 +614,17 @@ class OnePagerService:
                     raise OnePagerGenerationError(
                         f"{symbol}: as estimativas internas da listagem primária não têm data de registro válida."
                     ) from None
-                methods = OrderedDict(
+                foreign_bridge_methods = OrderedDict(
                     (str(name), float(value))
                     for name, value in foreign_methods.items()
                     if self._positive(value)
                 )
-                if len(methods) != 5:
+                if len(foreign_bridge_methods) != 5:
                     raise OnePagerGenerationError(
                         f"{symbol}: a ponte de valuation da listagem primária está incompleta."
                     )
+                methods = foreign_bridge_methods
+                foreign_buy_in_override = foreign_buy_in
                 method_estimate_registered_on = registered_on.isoformat()
                 method_estimate_registered_display = registered_on.strftime("%d/%m/%Y")
         method_values = list(methods.values())
@@ -640,30 +647,45 @@ class OnePagerService:
             45 + completeness * 28 + min(analyst_count or 0, 30) * 0.35 - dispersion * 0.35 + sentiment_adjustment,
             45, 94,
         )
-        # Valuation V3.2 rev 7, §7-bis (Passo 0): the TP and the buy-in shown are the OFFICIAL ones, resolved by the
-        # caller through the official selection (`shared_valuation`, stamped with generation_id/tp_source). This service
-        # does not compute, adjust, calibrate or blend a TP of its own; the internal methods above remain only as the
-        # framework display and its diagnostics (dispersion, confidence).
+        required_return = 0.12 if market == "US" else 0.20
+        entry_discount = required_return + risk_score / 100 * 0.11 + (100 - confidence) / 100 * 0.06
         internal_framework_methods = OrderedDict(methods)
         internal_framework_tp = statistics.mean(method_values) if method_values else None
-        if shared_valuation is None:
-            shared_valuation = self._official_valuation(symbol, market)
-        official_tp = self._positive((shared_valuation or {}).get("our_tp"))
-        official_buy_in = self._positive((shared_valuation or {}).get("buy_in"))
-        if shared_valuation is None or official_tp is None or official_buy_in is None:
-            raise OnePagerGenerationError(
-                f"Não gerei o One Pager de {symbol}: sem TP oficial na seleção vigente; "
-                "nenhum serviço calcula um TP próprio (Valuation V3.2 rev 7, §7-bis)."
-            )
-        c3po_tp = official_tp
-        buy_in = official_buy_in
-        methods = self._shared_framework_methods(shared_valuation, official_tp, profile)
-        method_values = list(methods.values())
-        consensus = self._bounded_tp(shared_valuation.get("public_consensus_tp"), price) or consensus
-        analyst_count = int(shared_valuation.get("analyst_count") or analyst_count or 0) or None
-        risk_score = self._clamp(float(shared_valuation.get("risk_score") or risk_score), 0, 100)
-        confidence = self._clamp(float(shared_valuation.get("valuation_confidence") or confidence), 0, 100)
-        dispersion = max(0.0, float(shared_valuation.get("method_dispersion_percent") or self._dispersion(method_values)))
+        if role == "producer":
+            # PRODUCER role — the official engine of Passo 0 (`official_blend_v1`), taken ONLY by the screeners to build the
+            # canonical rows that become prediction records. The arithmetic lives in valuation_official_engine; a consumer
+            # never reaches this branch, so producing new names never depends on the selection they feed (F393-2).
+            if foreign_bridge_methods is not None and foreign_buy_in_override is not None:
+                c3po_tp = foreign_bridge_tp_v1(foreign_bridge_methods.values())
+                buy_in = foreign_buy_in_override
+            else:
+                c3po_tp = official_blend_v1(internal_tp, consensus, consensus_weight)
+                buy_in = official_buy_in_v1(method_values, entry_discount, c3po_tp)
+            tp_stamp = {"tp_source": None, "generation_id": None, "official_cycle_id": None}
+        else:
+            # CONSUMER role (Valuation V3.2 rev 7 §7-bis, Passo 0): the TP and the buy-in shown are the OFFICIAL ones, resolved
+            # through the official selection (`shared_valuation`, stamped with generation_id/tp_source/cycle). This branch
+            # computes no TP; the internal methods above remain only as the framework display and its diagnostics.
+            if shared_valuation is None:
+                shared_valuation = self._official_valuation(symbol, market)
+            official_tp = self._positive((shared_valuation or {}).get("our_tp"))
+            official_buy_in = self._positive((shared_valuation or {}).get("buy_in"))
+            if shared_valuation is None or official_tp is None or official_buy_in is None:
+                raise OnePagerGenerationError(
+                    f"Não gerei o One Pager de {symbol}: sem TP oficial na seleção vigente; "
+                    "nenhum serviço calcula um TP próprio (Valuation V3.2 rev 7, §7-bis)."
+                )
+            c3po_tp = official_tp
+            buy_in = official_buy_in
+            methods = self._shared_framework_methods(shared_valuation, official_tp, profile)
+            method_values = list(methods.values())
+            consensus = self._bounded_tp(shared_valuation.get("public_consensus_tp"), price) or consensus
+            analyst_count = int(shared_valuation.get("analyst_count") or analyst_count or 0) or None
+            risk_score = self._clamp(float(shared_valuation.get("risk_score") or risk_score), 0, 100)
+            confidence = self._clamp(float(shared_valuation.get("valuation_confidence") or confidence), 0, 100)
+            dispersion = max(0.0, float(shared_valuation.get("method_dispersion_percent") or self._dispersion(method_values)))
+            tp_stamp = {"tp_source": shared_valuation.get("tp_source"), "generation_id": shared_valuation.get("generation_id"),
+                        "official_cycle_id": shared_valuation.get("official_cycle_id")}
         upside = (c3po_tp / price - 1) * 100
         consensus_upside = (consensus / price - 1) * 100 if consensus else None
         rating = "COMPRA" if upside >= 25 else "ACUMULAR" if upside >= 10 else "NEUTRO" if upside >= -10 else "REDUZIR"
@@ -811,9 +833,10 @@ class OnePagerService:
             "financial_rows": financial_rows,
             "c3po_tp": c3po_tp,
             # Passo 0 stamp (I-TP3) and the internal framework kept as diagnostics only (never the TP shown)
-            "tp_source": shared_valuation.get("tp_source"),
-            "official_generation_id": shared_valuation.get("generation_id"),
-            "official_cycle_id": shared_valuation.get("official_cycle_id"),
+            "tp_source": tp_stamp["tp_source"],
+            "official_generation_id": tp_stamp["generation_id"],
+            "official_cycle_id": tp_stamp["official_cycle_id"],
+            "analysis_role": role,
             "internal_framework_methods": dict(internal_framework_methods),
             "internal_framework_tp": internal_framework_tp,
             "consensus_weight_diagnostic": consensus_weight,
@@ -879,6 +902,9 @@ class OnePagerService:
             filename=filename,
             generated_at=generated_at,
             source=data["source"],
+            tp_source=data.get("tp_source"),
+            official_generation_id=data.get("official_generation_id"),
+            official_cycle_id=data.get("official_cycle_id"),
             methodology_name=data["methodology_name"],
             methodology_version=data["methodology_version"],
             price=round(data["price"], 2),

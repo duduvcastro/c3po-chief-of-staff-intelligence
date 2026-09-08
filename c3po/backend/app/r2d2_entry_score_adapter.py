@@ -7,6 +7,7 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from .database import Database
+from .valuation_official import official_prediction_snapshot
 
 
 ADAPTER_VERSION = "R2D2-ENTRY-SCORE-ADAPTER-v1"
@@ -110,6 +111,7 @@ def _result_rows(snapshot: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 def _target_price(source: str, item: Mapping[str, Any]) -> float | None:
     fields = {
         "canonical": ("our_tp", "internal_tp"),
+        "official_prediction": ("tp",),
         "v2_shadow": ("v2_tp",),
         "v3_shadow": ("v3_tp",),
     }.get(source, ())
@@ -221,6 +223,8 @@ class R2D2EntryScoreAdapter:
         for market in sorted(markets):
             peer_market = "B3" if market == "B3" else "US"
             output[market] = {}
+            # V3.2 rev 7 §7-bis / §10.8: the official records of the current generation are a study source of their own
+            output[market]["official_prediction"] = official_prediction_snapshot(self.database, market)
             for role, (analysis_type, entity_template) in _SOURCE_SPECS.items():
                 entity_key = entity_template.format(market=market, peer_market=peer_market)
                 cache_key = (analysis_type, entity_key)
@@ -263,7 +267,7 @@ class R2D2EntryScoreAdapter:
         for market in sorted({str(item["market"]) for item in candidates}):
             market_candidates = [item for item in candidates if str(item["market"]) == market]
             source_upside: dict[str, dict[str, float]] = {}
-            for source in ("canonical", "v2_shadow", "v3_shadow"):
+            for source in ("canonical", "official_prediction", "v2_shadow", "v3_shadow"):
                 snapshot = snapshots.get(market, {}).get(source)
                 if snapshot is None:
                     source_upside[source] = {}
@@ -287,7 +291,7 @@ class R2D2EntryScoreAdapter:
                         "upside_percent": source_upside[source].get(key[1]),
                         "rank_percentile": rankings[source].get(key[1]),
                     }
-                    for source in ("canonical", "v2_shadow", "v3_shadow")
+                    for source in ("canonical", "official_prediction", "v2_shadow", "v3_shadow")
                 }
         return output
 

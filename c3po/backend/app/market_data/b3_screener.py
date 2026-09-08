@@ -16,7 +16,7 @@ from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
 from .sector_taxonomy import SECTOR_TAXONOMY_VERSION, canonical_b3_company_name, resolve_b3_sector
-from ..valuation_official import official_stamp
+from ..valuation_official import current_generation, official_rows, official_stamp
 from ..valuation_policy import (
     C3PO_VALUATION_POLICY,
     METHODOLOGY_KEY,
@@ -605,6 +605,10 @@ class B3ScreenerService:
         rows: list[dict[str, Any]],
         macro: dict[str, float],
     ) -> B3CandidateResponse:
+        generation = current_generation(self.database)  # resolved ONCE per response (F393-3)
+        if generation and (generation.get("cycles") or {}).get("B3"):
+            # served numbers come from the official selection's B3 cycle and its immutable records (F393-5)
+            rows = [dict(row) for row in official_rows(self.database, "B3", generation=generation).values()]
         items, tp_upside_cutoff, risk_cutoff = self._rank(rows, macro)
         return B3CandidateResponse(
             source=self._source_label(),
@@ -614,7 +618,7 @@ class B3ScreenerService:
             eligible_count=len(rows),
             generated_at=generated_at,
             items=items,
-            **official_stamp(self.database, "B3"),
+            **official_stamp(self.database, "B3", generation=generation),
             criteria={
                 "ranking": "C3PO TP upside, descending, inside the validated-TP Jedi Force Power Zone",
                 "universe": "350 liquid B3 stocks; issuer share classes deduplicated",

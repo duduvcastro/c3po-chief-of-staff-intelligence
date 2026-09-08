@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings
 from ..database import Database
 from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixPowerResponse
-from ..valuation_official import official_stamp
+from ..valuation_official import current_generation, official_rows, official_stamp
 from ..valuation_policy import C3PO_VALUATION_POLICY, METHODOLOGY_KEY, METHODOLOGY_NAME, METHODOLOGY_VERSION
 from .b3_screener import ABSOLUTE_LOW_RISK_LIMIT, LATEST_COPOM_SELIC, MAX_ENTRY_DISTANCE, TP_UPSIDE_PREMIUM
 from .eodhd import EodhdClient
@@ -93,6 +93,7 @@ class USScreeningService:
         self._matrix_lock = Lock()
         self._rows: dict[USMarket, list[dict[str, Any]]] = {"NASDAQ": [], "NYSE": []}
         self._basis_at: dict[USMarket, datetime | None] = {"NASDAQ": None, "NYSE": None}
+        self._basis_cycle_id: dict[USMarket, str | None] = {"NASDAQ": None, "NYSE": None}
         self._universe_size: dict[USMarket, int] = {"NASDAQ": STOCK_LIMIT + ETF_LIMIT, "NYSE": STOCK_LIMIT + ETF_LIMIT}
         self._coverage: dict[USMarket, dict[str, int]] = {"NASDAQ": {}, "NYSE": {}}
         self._calibration_factors: dict[USMarket, dict[str, float]] = {"NASDAQ": {}, "NYSE": {}}
@@ -371,6 +372,7 @@ class USScreeningService:
         symbol = str(quote["symbol"])
         analysis = self.one_pagers._analyze(
             symbol, "US", quote, fundamentals, history,
+            role="producer",  # the official engine (Passo 0): this row becomes a prediction record, never a consumer read
             insider_activity=insider_activity,
             news_sentiment=news_sentiment,
             risk_free_rate=risk_free_rate,
@@ -616,8 +618,25 @@ class USScreeningService:
             "as_of": quote.get("as_of") or datetime.now(timezone.utc),
         }
 
+    def _served_rows(self, market: USMarket, generation: dict[str, Any] | None) -> list[dict[str, Any]]:
+        """What the API serves (V3.2 rev 7 §7-bis, F393-3/F393-5): the rows of the official selection's cycle for this
+        market, with the numbers taken from the immutable prediction records — never a fresher in-memory build stamped
+        with a generation whose numbers differ. Without a generation in force the built rows are served unstamped."""
+        if not generation or not (generation.get("cycles") or {}).get(market):
+            return self._rows[market]
+        served: list[dict[str, Any]] = []
+        for row in official_rows(self.database, market, generation=generation).values():
+            if isinstance(row.get("as_of"), str):
+                try:
+                    row["as_of"] = datetime.fromisoformat(row["as_of"].replace("Z", "+00:00"))
+                except ValueError:
+                    row["as_of"] = None
+            served.append(row)
+        return served
+
     def _candidate_response(self, market: USMarket) -> B3CandidateResponse:
-        rows = self._rows[market]
+        generation = current_generation(self.database)  # resolved ONCE per response
+        rows = self._served_rows(market, generation)
         tp_cutoff = self._tp_cutoff()
         risk_cutoff = self._risk_cutoff(rows)
         selected = sorted(
@@ -635,7 +654,7 @@ class USScreeningService:
             eligible_count=len(rows),
             generated_at=self._basis_at[market] or datetime.now(timezone.utc),
             items=items,
-            **official_stamp(self.database, market),
+            **official_stamp(self.database, market, generation=generation),
             criteria={
                 "ranking": "C3PO TP upside descending inside the validated Power Zone",
                 "universe": f"Up to {STOCK_LIMIT} liquid stocks and {ETF_LIMIT} liquid ETFs listed in {market}",
@@ -740,7 +759,7 @@ class USScreeningService:
         )
         rows = [{**row, "as_of": row["as_of"].isoformat() if isinstance(row.get("as_of"), datetime) else row.get("as_of")} for row in self._rows[market]]
         generated_at = self._basis_at[market] or datetime.now(timezone.utc)
-        self.database.save_analysis_snapshot(
+        self._basis_cycle_id[market] = self.database.save_analysis_snapshot(
             "valuation_universe", f"{market}_UNIVERSE", methodology_id,
             {"methodology_version": METHODOLOGY_VERSION, "market": market, "coverage": self._coverage[market]},
             {"rows": rows, "universe_size": self._universe_size[market]}, generated_at,
@@ -879,6 +898,7 @@ class USScreeningService:
                     row["as_of"] = snapshot["published_at"]
         self._rows[market] = [dict(row) for row in rows if isinstance(row, dict)]
         self._basis_at[market] = snapshot.get("published_at")
+        self._basis_cycle_id[market] = str(snapshot.get("id") or "") or None
         self._universe_size[market] = int(outputs.get("universe_size") or STOCK_LIMIT + ETF_LIMIT)
         self._coverage[market] = {str(key): int(value) for key, value in inputs.get("coverage", {}).items()}
 

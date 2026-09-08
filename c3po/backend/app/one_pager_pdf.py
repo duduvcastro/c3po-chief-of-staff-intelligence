@@ -561,7 +561,8 @@ class PremiumOnePagerRenderer:
         pdf.line(x + 2 * slot, y + 8, x + 2 * slot, y + h - 8)
         consensus_text = self._consensus_provenance_label(data)
         summaries = (
-            ("NOSSO TP", self._money(data["c3po_tp"], data["currency"]), f"{data['upside_percent']:+.1f}% upside", BLUE),
+            ("NOSSO TP", self._money(data["c3po_tp"], data["currency"]),
+             f"{data['upside_percent']:+.1f}% upside · {data.get('tp_source') or 'sem fonte oficial'} · ger. {str(data.get('official_generation_id') or '-')[:8]}", BLUE),
             ("CONSENSO", self._money(data.get("consensus_tp"), data["currency"]), consensus_text, INK),
             ("BUY-IN", self._money(data["buy_in"], data["currency"]), "entrada disciplinada", AMBER),
         )
