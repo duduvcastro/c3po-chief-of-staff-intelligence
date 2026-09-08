@@ -3410,14 +3410,16 @@ class Database:
             self._cycle_records_cache.pop(cycle_id, None)
         return inserted
 
-    def _prediction_record(self, row: Any) -> dict[str, Any]:
+    def _prediction_record(self, row: Any) -> dict[str, Any] | None:
         """A PostgreSQL row (the SELECT column tuple in ``_PREDICTION_KEYS`` order) rebuilt into EXACTLY the canonical
-        shape ``valuation_official.prediction_from_row`` hashed (F393-6 a): the constant ``schema``, the top-level
-        ``bear_tp``/``bull_tp`` taken from ``decomposition.bands`` (they have no column), NUMERIC → float, INTEGER →
+        shape ``valuation_official.prediction_from_row`` hashed (F393-6 a): the ``schema`` the row was STORED with, the
+        top-level ``bear_tp``/``bull_tp`` taken from ``decomposition.bands`` (they have no column), NUMERIC → float, INTEGER →
         int, DATE → ISO text, TIMESTAMPTZ → UTC ISO text whatever the session time zone (both clocks: ``prediction_instant``
         and ``published_at``, B2) — so that ``canonical_sha256`` of every key but ``id``/``row_sha256`` equals the stored
-        ``row_sha256``. Change it together with the writer."""
-        from .valuation_official import PREDICTION_SCHEMA  # local import: that module depends on this storage API
+        ``row_sha256``. A row whose ``published_at`` is NULL is a legacy V1 row: ``valuation_official.stored_prediction``
+        rebuilds it as V1 (no ``published_at``) and verifies its hash as V1 — ``None`` when the identity does not verify
+        (not served, F393-11 b). Change it together with the writer."""
+        from .valuation_official import stored_prediction  # local import: that module depends on this storage API
         record = dict(zip(self._PREDICTION_KEYS, row))
         for key in ("tp", "buy_in", "internal_tp", "consensus_tp", "consensus_weight_percent", "price"):
             record[key] = float(record[key]) if record[key] is not None else None
@@ -3435,18 +3437,29 @@ class Database:
         bands = decomposition.get("bands") if isinstance(decomposition.get("bands"), dict) else {}
         record["bear_tp"] = float(bands["bear_tp"]) if bands.get("bear_tp") is not None else None
         record["bull_tp"] = float(bands["bull_tp"]) if bands.get("bull_tp") is not None else None
-        return {"schema": PREDICTION_SCHEMA, **record}
+        return stored_prediction(record)
+
+    def _stored_prediction(self, record: dict[str, Any]) -> dict[str, Any] | None:
+        """A record of the memory double as a reader serves it: a DEEP COPY (the store is never aliased, F393-5) under
+        the schema it was stored with — the rule the PostgreSQL reader applies (``valuation_official.stored_prediction``,
+        F393-11 b): a legacy V1 record (schema V1, or no ``published_at``) is verified and served as V1; a record that
+        claims V2 without its clock, or whose V1 hash does not verify, is ``None`` (not served)."""
+        from .valuation_official import stored_prediction  # local import: that module depends on this storage API
+        return stored_prediction(copy.deepcopy(record))
 
     def valuation_predictions_for_cycle(self, cycle_id: str) -> dict[str, dict[str, Any]]:
         """The immutable records of one producer cycle, by symbol — what the official selection SERVES (F393-5).
         Cycles are immutable, so a small cache is exact — but ONLY for a non-empty answer: an empty one may be the
         window between a cycle's publication and its records (another process), and must never be pinned (D1).
-        Callers receive a deep copy — on a hit AND on the cold read: neither the cache nor the store is ever aliased."""
+        Callers receive a deep copy — on a hit AND on the cold read: neither the cache nor the store is ever aliased.
+        A stored row whose identity does not verify is absent from the answer (F393-11 b): the cycle is then not
+        selectable (``cycle_validation`` counts its symbol unrecorded)."""
         cached = self._cycle_records_cache.get(cycle_id)
         if cached is not None:
             return copy.deepcopy(cached)
         if not self.database_url:
-            records = {str(r["symbol"]): copy.deepcopy(r) for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id}
+            served = (self._stored_prediction(r) for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id)
+            records = {str(r["symbol"]): r for r in served if r is not None}
         else:
             with self.connection() as connection:
                 rows = connection.execute(
@@ -3458,7 +3471,7 @@ class Database:
                     """,
                     (cycle_id,),
                 ).fetchall()
-            records = {str(r["symbol"]): r for r in (self._prediction_record(row) for row in rows)}
+            records = {str(r["symbol"]): r for r in (self._prediction_record(row) for row in rows) if r is not None}
         if records:
             if len(self._cycle_records_cache) >= 12:
                 self._cycle_records_cache.pop(next(iter(self._cycle_records_cache)))
@@ -3469,7 +3482,9 @@ class Database:
     # insertion)`` — a re-run ties with its original on ``prediction_instant`` and wins on ``published_at``; the SQL readers
     # order by ``prediction_instant DESC, published_at DESC, created_at DESC`` and the double must agree (as the selection
     # readers agree on ``activated_at, created_at``, D3). ``_PREDICTION_ORDER`` is the SQL text every reader embeds.
-    _PREDICTION_ORDER = "prediction_instant DESC, published_at DESC, created_at DESC"
+    # ``NULLS LAST``: a legacy V1 row (``published_at`` NULL) never sorts ahead of a V2 re-run tied on
+    # ``prediction_instant`` — the SQL order mirrors the memory double, which treats a missing clock as oldest.
+    _PREDICTION_ORDER = "prediction_instant DESC, published_at DESC NULLS LAST, created_at DESC"
 
     def _prediction_order_key(self, index: int, record: dict[str, Any]) -> tuple[datetime, datetime, int]:
         instant = self._selection_instant(record["prediction_instant"])
@@ -3477,12 +3492,14 @@ class Database:
 
     def list_valuation_predictions(self, market: str, symbol: str, *, source: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
         """History of a symbol's records, newest first (``_PREDICTION_ORDER``, S4), optionally by source (studies and
-        grading, rev 7 TP-C). Copies."""
+        grading, rev 7 TP-C). Copies. Each record keeps the schema it was stored with (a legacy V1 row is V1, a V2 row
+        V2, F393-11 b); a row whose identity does not verify is absent — after the LIMIT, as the SQL reader (the row is
+        selected by the query and refused by the reader, in both stores)."""
         if not self.database_url:
             matches = [(self._prediction_order_key(index, r), r) for index, r in enumerate(self._valuation_predictions)
                        if r["market"] == market and r["symbol"] == symbol and (source is None or r["source"] == source)]
             matches.sort(key=lambda entry: entry[0], reverse=True)
-            return [copy.deepcopy(r) for _, r in matches[:limit]]
+            return [record for record in (self._stored_prediction(r) for _, r in matches[:limit]) if record is not None]
         with self.connection() as connection:
             rows = connection.execute(
                 f"""
@@ -3495,7 +3512,7 @@ class Database:
                 """,
                 (market, symbol, source, source, int(limit)),
             ).fetchall()
-        return [self._prediction_record(row) for row in rows]
+        return [record for record in (self._prediction_record(row) for row in rows) if record is not None]
 
     def latest_targeted_predictions(self, market: str, *, source: str) -> dict[str, dict[str, Any]]:
         """The most recent TARGETED record of every symbol of ``market`` for ``source`` (newest by ``_PREDICTION_ORDER``
@@ -3510,7 +3527,8 @@ class Database:
                 held = latest.get(str(record["symbol"]))
                 if held is None or key > held[0]:
                     latest[str(record["symbol"])] = (key, record)
-            return {symbol: copy.deepcopy(record) for symbol, (_, record) in latest.items()}
+            served = ((symbol, self._stored_prediction(record)) for symbol, (_, record) in latest.items())
+            return {symbol: record for symbol, record in served if record is not None}  # the newest per symbol, then verified (as DISTINCT ON, then the reader)
         with self.connection() as connection:
             rows = connection.execute(
                 f"""
@@ -3524,14 +3542,16 @@ class Database:
                 """,
                 (market, source),
             ).fetchall()
-        return {str(record["symbol"]): record for record in (self._prediction_record(row) for row in rows)}
+        return {str(record["symbol"]): record for record in (self._prediction_record(row) for row in rows) if record is not None}
 
     def latest_valuation_prediction(self, market: str, symbol: str, *, source: str, scope: str | None = None) -> dict[str, Any] | None:
-        """The newest record of a symbol by ``_PREDICTION_ORDER`` (S4). A copy."""
+        """The newest record of a symbol by ``_PREDICTION_ORDER`` (S4). A copy. ``None`` when the newest row's identity
+        does not verify (F393-11 b): nothing is served in its place — neither store falls back to an older row (SQL
+        selects ONE row and the reader refuses it; the double does the same)."""
         if not self.database_url:
             matches = [(self._prediction_order_key(index, r), r) for index, r in enumerate(self._valuation_predictions)
                        if r["market"] == market and r["symbol"] == symbol and r["source"] == source and (scope is None or r["scope"] == scope)]
-            return copy.deepcopy(max(matches, key=lambda entry: entry[0])[1]) if matches else None
+            return self._stored_prediction(max(matches, key=lambda entry: entry[0])[1]) if matches else None
         with self.connection() as connection:
             row = connection.execute(
                 f"""
@@ -3734,7 +3754,7 @@ class Database:
             return copy.deepcopy(record) if record is not None else None
         if not self.database_url:
             match = next((r for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id and str(r["symbol"]) == symbol), None)
-            return copy.deepcopy(match) if match else None
+            return self._stored_prediction(match) if match else None
         with self.connection() as connection:
             row = connection.execute(
                 """

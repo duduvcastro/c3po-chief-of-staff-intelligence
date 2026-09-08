@@ -82,19 +82,35 @@ CREATE TRIGGER valuation_official_selection_append_only
     BEFORE UPDATE OR DELETE ON valuation_official_selection
     FOR EACH ROW EXECUTE FUNCTION valuation_official_append_only();
 
--- rev 6 (B2, residual S9): published_at was added to the CREATE TABLE above after the table may already have been created
--- without it (CREATE TABLE IF NOT EXISTS never alters an existing table). Every migration runs on every start, so the
--- column is brought in idempotently here: added when missing, backfilled from prediction_instant (a live cycle has both
--- clocks equal — the only rows such a table can hold), then NOT NULL and the CHECK (guarded by a pg_constraint lookup).
--- The backfill is a schema migration of a NULL column, not an application write: the append-only trigger created above
--- is suspended around the UPDATE and re-enabled at once, in the same transaction; on a table with the column it is a no-op.
-ALTER TABLE valuation_predictions ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;
-ALTER TABLE valuation_predictions DISABLE TRIGGER valuation_predictions_append_only;
-UPDATE valuation_predictions SET published_at = prediction_instant WHERE published_at IS NULL;
-ALTER TABLE valuation_predictions ENABLE TRIGGER valuation_predictions_append_only;
-ALTER TABLE valuation_predictions ALTER COLUMN published_at SET NOT NULL;
+-- rev 6 (B2, S9) / rev 7 (F393-11 a): published_at was added to the CREATE TABLE above after the table may already have
+-- been created without it (CREATE TABLE IF NOT EXISTS never alters an existing table), and every migration runs on every
+-- start. The rows of such a table are rev-5 records (VALUATION_PREDICTION_V1): their row_sha256 was computed WITHOUT
+-- published_at, so filling the column in place (the rev 6 backfill published_at = prediction_instant) would relabel them
+-- under an identity nobody can recompute — the historical reference is NEVER rewritten silently. The block below decides
+-- by the table: column missing + rows present → the migration FAILS LOUDLY (RAISE EXCEPTION naming the row count) and the
+-- table waits for an explicit, ordered operator path (export, or the column added by hand WITHOUT backfill so the rows are
+-- read as V1 — see docs/VALUATION_OFFICIAL_TP_V1.md, "Linhas legadas V1"); column missing + empty table → the column is
+-- added NOT NULL directly (no UPDATE, no trigger suspended — a fresh installation is the supported path of this step);
+-- column present → only the named CHECK is ensured (guarded by a pg_constraint lookup) and nothing else is touched.
 DO $$
+DECLARE
+    legacy_rows BIGINT;
 BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_attribute
+        WHERE attrelid = 'valuation_predictions'::regclass
+          AND attname = 'published_at'
+          AND attnum > 0
+          AND NOT attisdropped
+    ) THEN
+        SELECT count(*) INTO legacy_rows FROM valuation_predictions;
+        IF legacy_rows > 0 THEN
+            RAISE EXCEPTION 'valuation_predictions has no published_at column and holds % legacy VALUATION_PREDICTION_V1 row(s): migration 048 refuses to upgrade a populated table automatically (F393-11 a) — the stored row_sha256 of those rows does not cover published_at, and a backfill would relabel them under an unverifiable identity', legacy_rows
+                USING HINT = 'Operator path, by explicit order only (never automatic, never an in-place rewrite): either export the legacy rows (COPY valuation_predictions TO ...) and re-establish the history as new V2 records (a re-run of each cycle with inputs.rerun_of), or add the column by hand WITHOUT NOT NULL and WITHOUT backfill (ALTER TABLE valuation_predictions ADD COLUMN published_at TIMESTAMPTZ) so the legacy rows are read, verified and served as V1. See docs/VALUATION_OFFICIAL_TP_V1.md, section "Linhas legadas V1".';
+        END IF;
+        ALTER TABLE valuation_predictions ADD COLUMN published_at TIMESTAMPTZ NOT NULL;  -- an empty table: nothing to backfill
+    END IF;
     IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint

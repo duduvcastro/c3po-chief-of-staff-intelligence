@@ -128,6 +128,20 @@ Rev 6 residuals (S1–S10; S6 in the frontend, S9 in the migration, S10 in the d
   process (``_unrecordable_logged``), INFO after — not two WARNINGs per activation pass forever (S5);
 * the studies' loader keeps a call whose ``published_at`` is malformed (``published_at = None``, WARNING) instead of
   dropping the call (S8).
+
+Rev 7 (Codex F393-11 on rev 6 — the historical reference is never rewritten silently):
+* the migration NO LONGER backfills a legacy table (the S9 block filled ``published_at = prediction_instant`` into
+  rev-5 rows and the reader then served them as ``VALUATION_PREDICTION_V2`` under their V1 hash — an identity nobody
+  could recompute): a table without the column that HOLDS rows makes migration 048 fail loudly (``RAISE EXCEPTION``
+  naming the row count and the operator path); an empty one gets the column ``NOT NULL`` directly; a table with the
+  column only gets the CHECK ensured (F393-11 a). A fresh installation is the supported path of this step;
+* every reader honours the STORED schema (``stored_prediction``, F393-11 b): a row whose ``published_at`` is NULL/absent,
+  or whose stored schema is V1 (``LEGACY_PREDICTION_SCHEMA``), is rebuilt as the canonical V1 core — WITHOUT
+  ``published_at`` — and its ``row_sha256`` is recomputed and verified as V1; it is served as V1 with
+  ``official_published_at = None`` (never derived), never relabelled V2. A row that claims V2 without its clock, or
+  whose V1 hash does not verify, is an integrity failure: not served (WARNING once per record per process, INFO after),
+  and its cycle is not selectable (``cycle_validation`` counts the row unrecorded). PostgreSQL reader and memory double
+  apply the same rule; V2 rows are served exactly as before.
 """
 from __future__ import annotations
 
@@ -147,6 +161,7 @@ logger = logging.getLogger(__name__)
 
 SOURCE_OFFICIAL = "official_blend_v1"
 PREDICTION_SCHEMA = "VALUATION_PREDICTION_V2"  # V2 (rev 6, B2): `published_at` joined the hashed core
+LEGACY_PREDICTION_SCHEMA = "VALUATION_PREDICTION_V1"  # rev 5: one clock — a stored V1 row is read, verified and served as V1, never relabelled (F393-11)
 SELECTION_SCHEMA = "VALUATION_OFFICIAL_SELECTION_V1"
 MARKETS: tuple[str, ...] = ("B3", "NASDAQ", "NYSE")
 UNIVERSE_ANALYSIS = "valuation_universe"
@@ -162,6 +177,7 @@ EXPLICIT_CLOCK_TOLERANCE = timedelta(seconds=60)  # an explicit order carries th
 CHAIN_WALK_LIMIT = 64  # successors followed from an unmoved head to the chain tip before giving up (W4)
 _refusals_logged: dict[str, str] = {}  # symbol → the refused targeted cycle this PROCESS already warned about (Z3; the receipt carries it across processes)
 _unrecordable_logged: set[str] = set()  # re-run cycle ids this PROCESS already warned were not recordable (S5): the repeats are INFO
+_integrity_logged: set[str] = set()  # stored record ids this PROCESS already warned could not be verified (F393-11): the repeats are INFO
 
 
 class CalendarUnavailable(RuntimeError):
@@ -380,6 +396,70 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
         },
     }
     return {**core, "id": str(uuid4()), "row_sha256": canonical_sha256(core)}
+
+
+def _integrity_failure(record: Mapping[str, Any], reason: str) -> None:
+    key = str(record.get("id") or f"{record.get('market')}/{record.get('symbol')}/{record.get('cycle_id')}")
+    level = logging.INFO if key in _integrity_logged else logging.WARNING
+    _integrity_logged.add(key)
+    logger.log(level, "valuation_official: stored record %s (%s/%s of cycle %s) is not served — %s; its identity is not verifiable and the cycle "
+               "is not selectable (F393-11)", record.get("id"), record.get("market"), record.get("symbol"), record.get("cycle_id"), reason)
+
+
+def _stored_as_legacy(record: Mapping[str, Any]) -> bool:
+    """Whether a stored row was written by the rev-5 emitter (``VALUATION_PREDICTION_V1``): its stored schema says so
+    (the memory double keeps the record's ``schema``), its ``published_at`` is NULL/absent (the column joined after it),
+    or its provenance has no ``rerun_of`` key — the fingerprint of the rev-6 emitter, which always writes it (``null``
+    for a live cycle): a PostgreSQL row has no schema column, and this is what tells a V1 row whose ``published_at`` was
+    filled in place (the auditor's counterproof) from a V2 row."""
+    if record.get("schema") == LEGACY_PREDICTION_SCHEMA or record.get("published_at") is None:
+        return True
+    if record.get("schema") == PREDICTION_SCHEMA:
+        # An explicit V2 schema with its clock present is V2 (the memory double keeps it); the provenance
+        # fingerprint below only decides for a PostgreSQL row, which carries no schema column.
+        return False
+    decomposition = record.get("decomposition")
+    provenance = decomposition.get("provenance") if isinstance(decomposition, Mapping) else None
+    return not (isinstance(provenance, Mapping) and "rerun_of" in provenance)
+
+
+def stored_prediction(record: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The record a reader SERVES for a stored row, under the schema the row was STORED with — never relabelled (F393-11 b).
+    A V2 row (its ``published_at`` present, the rev-6 provenance, a V2 or absent schema — a PostgreSQL row has no schema
+    column) is served as it is. A legacy rev-5 row (``_stored_as_legacy``) is rebuilt as the canonical V1 core — WITHOUT
+    ``published_at``, the decomposition as stored — and its ``row_sha256`` is RECOMPUTED as V1 and verified; it is served
+    with ``schema`` V1 and no ``published_at`` (``official_published_at`` is ``None``, never derived from the prediction's
+    instant). A V1 row that carries a ``published_at`` (filled in place, which the migration and the append-only trigger
+    both refuse) is served as V1 under its verified V1 hash, the filled clock IGNORED, with a WARNING: nothing is ever
+    served under an identity that does not recompute. A row that claims V2 (or any other schema) without its clock, or
+    whose V1 hash does not verify, is an integrity failure: ``None`` — not served, the cycle not selectable
+    (``cycle_validation`` counts the row unrecorded) — with a WARNING the first time this process meets the record and
+    INFO after (``_integrity_logged``, as S5). Every reader — the PostgreSQL reader ``Database._prediction_record`` and
+    the memory double — passes through here; a V2 row is what it was before this rule."""
+    claimed = record.get("schema")
+    if claimed not in (None, PREDICTION_SCHEMA, LEGACY_PREDICTION_SCHEMA):
+        _integrity_failure(record, f"it claims an unknown schema {claimed!r}")
+        return None
+    if claimed == PREDICTION_SCHEMA and record.get("published_at") is None:
+        _integrity_failure(record, f"it claims schema {PREDICTION_SCHEMA} but carries no published_at")
+        return None
+    if not _stored_as_legacy(record):
+        return {"schema": PREDICTION_SCHEMA, **{key: value for key, value in record.items() if key != "schema"}}
+    core = {key: value for key, value in record.items() if key not in ("id", "row_sha256", "schema", "published_at")}
+    rebuilt = {"schema": LEGACY_PREDICTION_SCHEMA, **core}
+    stored_hash = str(record.get("row_sha256") or "")
+    recomputed = canonical_sha256(rebuilt)
+    if recomputed != stored_hash:
+        _integrity_failure(record, f"its stored row_sha256 {stored_hash[:12]}… does not verify as {LEGACY_PREDICTION_SCHEMA} (recomputed {recomputed[:12]}…)")
+        return None
+    if record.get("published_at") is not None:
+        key = f"filled:{record.get('id')}"
+        level = logging.INFO if key in _integrity_logged else logging.WARNING
+        _integrity_logged.add(key)
+        logger.log(level, "valuation_official: legacy %s record %s (%s/%s of cycle %s) carries a published_at (%s) it was not hashed with — a row "
+                   "filled in place; the clock is ignored and the record is served as V1 under its verified hash (F393-11)", LEGACY_PREDICTION_SCHEMA,
+                   record.get("id"), record.get("market"), record.get("symbol"), record.get("cycle_id"), record.get("published_at"))
+    return {**rebuilt, "id": str(record.get("id")), "row_sha256": stored_hash}
 
 
 def cycle_rows(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:

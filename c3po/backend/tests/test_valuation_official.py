@@ -6,9 +6,12 @@ Rev 2 answers Codex 5577072593 (F393-1..F393-8); rev 5 closes the residuals on r
 F393-7, F393-9) — see the tests marked "rev 5"; rev 6 closes B2 (two clocks on the record) and B3 (the explicit order
 governs the direct admission) — the tests marked "rev 6" — and its residuals S1–S5, S8, S9 (the authority clock is the
 prediction instant; recency on the direct admission; the CHECK mirrored; readers tie-break like the selection; unrecordable
-re-runs warn once; a malformed published_at keeps the call; the idempotent column block of the migration) at the end."""
+re-runs warn once; a malformed published_at keeps the call; the idempotent column block of the migration) at the end; rev 7
+closes F393-11 (the migration never backfills a legacy table; every reader honours the STORED schema — a V1 row is verified and
+served as V1, never relabelled V2) — the tests marked "rev 7", last."""
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import time
@@ -281,16 +284,36 @@ def test_the_migration_defines_two_append_only_tables_with_targeted_admissions()
     # rev 6 (B2): the record's own publication clock is a NOT NULL column that can never precede the prediction's instant
     assert "prediction_instant TIMESTAMPTZ NOT NULL" in sql
     assert "published_at TIMESTAMPTZ NOT NULL CONSTRAINT valuation_predictions_published_at_check CHECK (published_at >= prediction_instant)" in sql
-    # S9: CREATE TABLE IF NOT EXISTS never alters a table created before the column, and every migration runs on every start —
-    # an idempotent block at the END (after the triggers it suspends) adds, backfills, hardens and constrains the column
+    # S9 / F393-11 a (rev 7): CREATE TABLE IF NOT EXISTS never alters a table created before the column, and every migration runs on
+    # every start — an idempotent block at the END decides BY THE TABLE and never rewrites a legacy row: the rev 6 backfill
+    # (published_at = prediction_instant under a suspended trigger) relabelled V1 rows under a hash nobody could recompute.
+    statements = "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--"))  # the comments may NAME what was removed
+    assert "UPDATE valuation_predictions" not in statements and "DISABLE TRIGGER" not in statements and "ENABLE TRIGGER" not in statements  # no backfill, no trigger suspended
+    assert "ADD COLUMN IF NOT EXISTS" not in statements and "SET NOT NULL" not in statements  # the column is never added blind, never hardened over rows
+    assert "published_at = prediction_instant" not in statements
     tail = sql[sql.rindex("CREATE TRIGGER"):]
-    assert "ALTER TABLE valuation_predictions ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;" in tail
-    assert "UPDATE valuation_predictions SET published_at = prediction_instant WHERE published_at IS NULL;" in tail
-    assert tail.index("DISABLE TRIGGER valuation_predictions_append_only") < tail.index("UPDATE valuation_predictions") < tail.index("ENABLE TRIGGER valuation_predictions_append_only")
-    assert "ALTER TABLE valuation_predictions ALTER COLUMN published_at SET NOT NULL;" in tail
-    assert "FROM pg_constraint" in tail and "conname = 'valuation_predictions_published_at_check'" in tail and "IF NOT EXISTS" in tail
-    assert "ADD CONSTRAINT valuation_predictions_published_at_check" in tail and tail.count("CHECK (published_at >= prediction_instant)") == 1
-    assert tail.index("ADD COLUMN IF NOT EXISTS") < tail.index("UPDATE valuation_predictions") < tail.index("SET NOT NULL") < tail.index("ADD CONSTRAINT")
+    block = tail[tail.index("DO $$"):]
+    # the column lookup guards everything: pg_attribute (regclass, search-path aware, as the pg_constraint lookup)
+    assert "FROM pg_attribute" in block and "attname = 'published_at'" in block and "NOT attisdropped" in block
+    # column missing + rows → RAISE EXCEPTION naming the row count (%) and the operator path (explicit order, never automatic)
+    assert "SELECT count(*) INTO legacy_rows FROM valuation_predictions;" in block and "IF legacy_rows > 0 THEN" in block
+    raise_text = block[block.index("RAISE EXCEPTION"):block.index("END IF;")]
+    assert "holds % legacy VALUATION_PREDICTION_V1 row(s)" in raise_text and ", legacy_rows" in raise_text and "F393-11 a" in raise_text
+    assert "USING HINT" in raise_text and "by explicit order only" in raise_text and "never an in-place rewrite" in raise_text
+    assert "COPY valuation_predictions TO" in raise_text and "inputs.rerun_of" in raise_text  # export + re-run keeps a verifiable identity
+    assert "ALTER TABLE valuation_predictions ADD COLUMN published_at TIMESTAMPTZ)" in raise_text and "WITHOUT backfill" in raise_text  # or nullable, read as V1
+    assert 'docs/VALUATION_OFFICIAL_TP_V1.md, section "Linhas legadas V1"' in raise_text
+    assert raise_text.count("%") == 1  # the single placeholder is the row count: no stray % in the format string
+    # column missing + empty table → the column is added NOT NULL directly, after the RAISE guard, inside the same IF
+    add_column = "ALTER TABLE valuation_predictions ADD COLUMN published_at TIMESTAMPTZ NOT NULL;"
+    assert add_column in block and block.index("RAISE EXCEPTION") < block.index(add_column) < block.index("FROM pg_constraint")
+    assert block[block.index("RAISE EXCEPTION"):block.index(add_column)].count("END IF;") == 1  # after the RAISE guard closes...
+    assert block[block.index(add_column):block.index("FROM pg_constraint")].count("END IF;") == 1  # ...and still inside the column-missing IF
+    # column present → only the named CHECK is ensured (guarded by pg_constraint), one CHECK text in the block, nothing else
+    assert "FROM pg_constraint" in block and "conname = 'valuation_predictions_published_at_check'" in block
+    assert "ADD CONSTRAINT valuation_predictions_published_at_check" in block and block.count("CHECK (published_at >= prediction_instant)") == 1
+    executed = block.replace(raise_text, "")  # the statements the block can run (the HINT only quotes the operator's ALTER)
+    assert executed.count("ALTER TABLE") == 2 and executed.count("IF NOT EXISTS") == 2  # the column (guarded) and the constraint (guarded)
 
 
 def test_a_caller_that_resolved_no_generation_is_served_nothing_and_never_the_current_one() -> None:
@@ -520,9 +543,10 @@ def _pg_row(record: dict[str, Any], zone: ZoneInfo) -> tuple[Any, ...]:
     """The SELECT column tuple PostgreSQL hands ``Database._prediction_record`` for a stored record: NUMERIC → Decimal
     (the digits the writer bound), DATE::text, TIMESTAMPTZ in the SESSION time zone, JSONB → parsed JSON."""
     numeric = Database._numeric_param
+    available = record.get("published_at")  # rev 6 (B2): the second clock, a TIMESTAMPTZ column too; NULL on a legacy V1 row (rev 7, F393-11)
     return (record["id"], record["source"], record["source_version"], record["market"], record["symbol"], record["scope"],
             record["session_date"], record["cycle_id"], datetime.fromisoformat(record["prediction_instant"]).astimezone(zone),
-            datetime.fromisoformat(record["published_at"]).astimezone(zone),  # rev 6 (B2): the second clock, a TIMESTAMPTZ column too
+            datetime.fromisoformat(available).astimezone(zone) if available is not None else None,
             numeric(record["tp"]), numeric(record["buy_in"]), numeric(record["internal_tp"]), numeric(record["consensus_tp"]),
             record["consensus_source"], record["analyst_count"], numeric(record["consensus_weight_percent"]), numeric(record["price"]),
             record["currency"], json.loads(json.dumps(record["decomposition"])), record["row_sha256"])
@@ -1800,10 +1824,11 @@ def test_readers_tie_break_on_published_at_so_a_re_run_is_the_latest_record_for_
     monkeypatch.setattr(pg, "connection", fake_connection)
     assert pg.list_valuation_predictions("NASDAQ", "AAPL") == [] and pg.latest_targeted_predictions("B3", source=official.SOURCE_OFFICIAL) == {}
     assert pg.latest_valuation_prediction("NASDAQ", "AAPL", source=official.SOURCE_OFFICIAL) is None
-    assert len(queries) == 3 and Database._PREDICTION_ORDER == "prediction_instant DESC, published_at DESC, created_at DESC"
-    assert "ORDER BY prediction_instant DESC, published_at DESC, created_at DESC LIMIT %s" in queries[0]
-    assert "SELECT DISTINCT ON (symbol)" in queries[1] and "ORDER BY symbol, prediction_instant DESC, published_at DESC, created_at DESC" in queries[1]
-    assert "ORDER BY prediction_instant DESC, published_at DESC, created_at DESC LIMIT 1" in queries[2]
+    # NULLS LAST (rev 7): a legacy V1 row (NULL published_at) never sorts ahead of a V2 re-run tied on prediction_instant.
+    assert len(queries) == 3 and Database._PREDICTION_ORDER == "prediction_instant DESC, published_at DESC NULLS LAST, created_at DESC"
+    assert "ORDER BY prediction_instant DESC, published_at DESC NULLS LAST, created_at DESC LIMIT %s" in queries[0]
+    assert "SELECT DISTINCT ON (symbol)" in queries[1] and "ORDER BY symbol, prediction_instant DESC, published_at DESC NULLS LAST, created_at DESC" in queries[1]
+    assert "ORDER BY prediction_instant DESC, published_at DESC NULLS LAST, created_at DESC LIMIT 1" in queries[2]
     assert not any("ORDER BY prediction_instant DESC LIMIT" in query or "prediction_instant DESC\n" in query for query in queries)
 
 
@@ -1914,3 +1939,216 @@ def test_a_record_without_its_publication_clock_is_refused_by_the_memory_double_
             database.insert_valuation_predictions([record, nameless])  # the whole statement is refused, as in PostgreSQL: nothing stored
         assert database._valuation_predictions == [] and database.latest_valuation_prediction("B3", "PETR4", source=official.SOURCE_OFFICIAL) is None
     assert database.insert_valuation_predictions([record]) == 1
+
+
+# --- rev 7 (F393-11): the migration never backfills a legacy table; every reader honours the STORED schema — a V1 row stays V1 ---
+
+
+def _legacy_v1_record(row: dict, *, market: str, scope: str, cycle_id: str, prediction_instant: datetime, source_version: str = "7",
+                      source_manifest_sha256: str | None = "a" * 64) -> dict[str, Any]:
+    """The rev-5 emitter (``VALUATION_PREDICTION_V1``) — the rows a legacy table holds: ONE clock (no ``published_at`` in the
+    hashed core) and no ``rerun_of`` in the provenance; both joined the core in rev 6. Derived from today's emitter by removing
+    exactly what rev 6 added and re-hashing as V1: the hash the rev-5 code (git f3ff907) computes for the same row."""
+    record = official.prediction_from_row(row, market=market, scope=scope, cycle_id=cycle_id, source_version=source_version,
+                                          prediction_instant=prediction_instant, source_manifest_sha256=source_manifest_sha256)
+    assert record is not None
+    core = copy.deepcopy({key: value for key, value in record.items() if key not in ("id", "schema", "row_sha256", "published_at")})
+    core["decomposition"]["provenance"].pop("rerun_of")
+    core = {"schema": official.LEGACY_PREDICTION_SCHEMA, **core}
+    return {**core, "id": record["id"], "row_sha256": official.canonical_sha256(core)}
+
+
+def _hash_of(record: dict[str, Any]) -> str:
+    return official.canonical_sha256({key: value for key, value in record.items() if key not in ("id", "row_sha256")})
+
+
+def test_a_legacy_v1_row_is_read_verified_and_served_as_v1_never_relabelled_v2(caplog: pytest.LogCaptureFixture) -> None:
+    # F393-11 b (rev 7): the reader stamped schema = V2 on EVERY PostgreSQL row — a legacy rev-5 row (hashed without published_at)
+    # came back as VALUATION_PREDICTION_V2 under its V1 hash, an identity nobody could recompute. The STORED schema decides now:
+    # a V1 row is rebuilt as V1, its hash verified as V1, served without official_published_at (never derived) — never relabelled.
+    database = _database()
+    cycles = _three_markets(database)
+    v2 = database.valuation_prediction_record(cycles["NASDAQ"], "AAPL")
+    assert v2 is not None and v2["schema"] == official.PREDICTION_SCHEMA == "VALUATION_PREDICTION_V2"
+    row = _row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0)
+    v1 = _legacy_v1_record(row, market="NASDAQ", scope="universe", cycle_id=cycles["NASDAQ"], prediction_instant=NOW + timedelta(minutes=1))
+    assert v1["schema"] == official.LEGACY_PREDICTION_SCHEMA == "VALUATION_PREDICTION_V1" and "published_at" not in v1
+    assert "rerun_of" not in v1["decomposition"]["provenance"] and v1["row_sha256"] != v2["row_sha256"] and _hash_of(v1) == v1["row_sha256"]
+    # the PostgreSQL-shaped row — published_at NULL: the column added by explicit order, never backfilled — is rebuilt as V1 in every
+    # session zone, its hash recomputed and verified as V1, no published_at key, the decomposition as stored
+    for zone in (ZoneInfo("UTC"), ZoneInfo("America/Sao_Paulo"), ZoneInfo("Asia/Tokyo")):
+        rebuilt = database._prediction_record(_pg_row(v1, zone))
+        assert rebuilt == v1 and rebuilt["schema"] == official.LEGACY_PREDICTION_SCHEMA and "published_at" not in rebuilt and _hash_of(rebuilt) == v1["row_sha256"]
+    # the memory double behaves the same: the legacy row REPLACES the cycle's V2 record (a table recorded by rev 5) and every reader keeps it V1
+    database._valuation_predictions[:] = [record for record in database._valuation_predictions if record["cycle_id"] != cycles["NASDAQ"]] + [v1]
+    database.drop_official_cycle_cache()
+    for served in (database.valuation_prediction_record(cycles["NASDAQ"], "AAPL"), database.valuation_predictions_for_cycle(cycles["NASDAQ"])["AAPL"],
+                   database.latest_valuation_prediction("NASDAQ", "AAPL", source=official.SOURCE_OFFICIAL), database.list_valuation_predictions("NASDAQ", "AAPL")[0],
+                   official.prediction_records(database, "US", "AAPL")[0]):
+        assert served == v1 and served["schema"] == official.LEGACY_PREDICTION_SCHEMA and "published_at" not in served
+    assert database.valuation_prediction_record(cycles["NASDAQ"], "AAPL") == v1  # the cache hit, too
+    # served: the stamp carries official_published_at = None (never derived from the prediction's instant) and the V1 hash
+    stamped = official.official_row(database, "US", "AAPL")
+    assert stamped is not None and stamped["our_tp"] == 250.0 and stamped["official_published_at"] is None and stamped["official_row_sha256"] == v1["row_sha256"]
+    assert stamped["prediction_instant"] == v1["prediction_instant"] and official.item_stamp(stamped)["official_published_at"] is None
+    assert official.official_rows(database, "NASDAQ")["AAPL"]["official_published_at"] is None
+    # the cycle stays selectable — its identity is verifiable: the validator, the activation pass and an explicit order accept it
+    snapshot = database.analysis_snapshot_by_id(cycles["NASDAQ"])
+    assert snapshot is not None
+    validation = official.cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(cycles["NASDAQ"]))
+    assert validation["valid"] is True and validation["unrecorded_count"] == 0
+    assert official.selectable_cycles(database)["NASDAQ"]["valid"] is True and official.activate_generation_if_changed(database) is None
+    head = official.current_generation(database)
+    assert head is not None and head["cycles"]["NASDAQ"] == cycles["NASDAQ"]
+    rolled = official.select_generation(database, cycles=head["cycles"], now=later(1), activated_by="mesa", reason="a legacy cycle is selectable")
+    assert rolled["cycles"]["NASDAQ"] == cycles["NASDAQ"] and official.official_row(database, "US", "AAPL")["official_row_sha256"] == v1["row_sha256"]  # type: ignore[index]
+    # the studies' arm hands the V1 record as it is; the loader's call has no second clock
+    from app.valuation_accuracy import load_prediction_calls
+    arm = official.official_prediction_snapshot(database, "NASDAQ")
+    assert arm is not None and arm["outputs"]["results"]["AAPL"] == v1
+    call = load_prediction_calls([v1])[0]
+    assert call.published_at is None and call.changed_at.isoformat() == v1["prediction_instant"] and call.row_sha256 == v1["row_sha256"]
+    # the auditor's counterproof, at the reader: the V1 row with published_at FILLED IN PLACE (what the rev 6 migration did) is NOT
+    # served as V2 under the V1 hash — a PostgreSQL row has no schema column, and the provenance without rerun_of tells the rev-5
+    # emitter: rebuilt as V1, verified as V1, the filled clock IGNORED (official_published_at None), a WARNING once, INFO after
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+    caplog.clear()
+    filled = {key: value for key, value in v1.items() if key != "schema"}
+    filled["published_at"] = v1["prediction_instant"]
+    for zone in (ZoneInfo("UTC"), ZoneInfo("Asia/Tokyo")):
+        rebuilt = database._prediction_record(_pg_row(filled, zone))
+        assert rebuilt == v1 and rebuilt["schema"] == official.LEGACY_PREDICTION_SCHEMA and "published_at" not in rebuilt
+    filled_logs = [record for record in caplog.records if "filled in place" in record.getMessage()]
+    assert [record.levelno for record in filled_logs] == [logging.WARNING, logging.INFO] and v1["id"] in filled_logs[0].getMessage()
+    assert not any("is not served" in record.getMessage() for record in caplog.records)
+    database._valuation_predictions[:] = [record for record in database._valuation_predictions if record["cycle_id"] != cycles["NASDAQ"]] + [{**filled, "schema": official.LEGACY_PREDICTION_SCHEMA}]
+    database.drop_official_cycle_cache()
+    assert database.valuation_prediction_record(cycles["NASDAQ"], "AAPL") == v1 and official.official_row(database, "US", "AAPL")["official_published_at"] is None  # type: ignore[index]
+
+
+def test_a_row_that_claims_v2_without_its_clock_is_an_integrity_failure_not_served(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    # F393-11 b (rev 7): a row whose hash covers published_at (V2) but whose stored clock is NULL/absent cannot be verified under
+    # any schema: not served (every reader), WARNING once per record per process, and its cycle is not selectable — the generation
+    # in force carries the market, nothing is served in the row's place.
+    database = _database()
+    cycles = _three_markets(database)
+    v2 = database.valuation_prediction_record(cycles["NYSE"], "KO")
+    assert v2 is not None
+    snapshot = database.analysis_snapshot_by_id(cycles["NYSE"])
+    assert snapshot is not None
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+    caplog.clear()
+    nulled = {**v2, "published_at": None}
+    absent = {key: value for key, value in v2.items() if key != "published_at"}
+    for broken in (nulled, absent):  # the memory double: the stored dict claims V2 without its clock
+        database._valuation_predictions[:] = [record for record in database._valuation_predictions if record["cycle_id"] != cycles["NYSE"]] + [broken]
+        database.drop_official_cycle_cache()
+        assert database.valuation_prediction_record(cycles["NYSE"], "KO") is None and database.valuation_predictions_for_cycle(cycles["NYSE"]) == {}
+        assert cycles["NYSE"] not in database._cycle_records_cache  # an empty answer is never pinned (D1)
+        assert database.latest_valuation_prediction("NYSE", "KO", source=official.SOURCE_OFFICIAL) is None and database.list_valuation_predictions("NYSE", "KO") == []
+        assert database.latest_targeted_predictions("NYSE", source=official.SOURCE_OFFICIAL) == {}
+        assert official.official_row(database, "NYSE", "KO") is None and official.official_rows(database, "NYSE") == {}
+        validation = official.cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(cycles["NYSE"]))
+        assert validation["valid"] is False and validation["unrecorded_count"] == 1
+        assert official.selectable_cycles(database)["NYSE"]["valid"] is False  # the re-record is idempotent on the unique key: nothing replaces the row
+        assert official.activate_generation_if_changed(database) is None and official.current_generation(database)["cycles"]["NYSE"] == cycles["NYSE"]  # type: ignore[index]
+    refused = [record for record in caplog.records if "is not served" in record.getMessage()]
+    assert refused and refused[0].levelno == logging.WARNING and {record.levelno for record in refused[1:]} == {logging.INFO}  # once per record per process
+    assert "claims schema VALUATION_PREDICTION_V2 but carries no published_at" in refused[0].getMessage() and v2["id"] in refused[0].getMessage()
+    # the PostgreSQL-shaped row (no schema column): published_at NULL under a hash computed WITH the clock does not verify as V1
+    caplog.clear()
+    assert database._prediction_record(_pg_row(nulled, ZoneInfo("UTC"))) is None
+    assert any("does not verify as VALUATION_PREDICTION_V1" in record.getMessage() for record in caplog.records)
+    # a legacy row whose content was altered does not verify either — a tampered number is never served under a hash it does not match
+    row = _row("KO", tp=70.0, buy_in=60.0, price=65.0, internal_tp=68.0)
+    v1 = _legacy_v1_record(row, market="NYSE", scope="universe", cycle_id=cycles["NYSE"], prediction_instant=NOW + timedelta(minutes=2))
+    tampered = {**v1, "tp": 700.0}
+    assert database._prediction_record(_pg_row(tampered, ZoneInfo("UTC"))) is None and database._prediction_record(_pg_row(v1, ZoneInfo("UTC"))) == v1
+    database._valuation_predictions[:] = [record for record in database._valuation_predictions if record["cycle_id"] != cycles["NYSE"]] + [tampered]
+    database.drop_official_cycle_cache()
+    assert database.valuation_prediction_record(cycles["NYSE"], "KO") is None and official.official_row(database, "NYSE", "KO") is None
+    # an unknown schema is refused too; a V2 row is served exactly as before (no hash is recomputed for it)
+    assert official.stored_prediction({**v2, "schema": "VALUATION_PREDICTION_V9"}) is None
+    assert official.stored_prediction(v2) == v2 and official.stored_prediction({key: value for key, value in v2.items() if key != "schema"}) == v2
+    assert official.stored_prediction({**v2, "tp": 1.0}) == {**v2, "tp": 1.0}
+    # the SQL readers drop the refused row AFTER the query (a fake connection hands the rows PostgreSQL would): the cycle read keeps
+    # the verifiable rows only, the history is shorter, the single-row readers answer None — nothing is served in the row's place
+    from contextlib import contextmanager
+    pg = Database(Settings(brapi_token="brapi-test", eodhd_api_token="eodhd-test", auth_cookie_secure=False, database_url="postgresql://configured"))
+    rows = [_pg_row(nulled, ZoneInfo("UTC")), _pg_row(v1, ZoneInfo("Asia/Tokyo"))]
+
+    class Handing:
+        def execute(self, query: str, params: Any = None) -> "Handing":
+            return self
+
+        def fetchall(self) -> list[Any]:
+            return rows
+
+        def fetchone(self) -> Any:
+            return rows[0]
+
+    @contextmanager
+    def fake_connection() -> Any:
+        yield Handing()
+
+    monkeypatch.setattr(pg, "connection", fake_connection)
+    assert pg.latest_valuation_prediction("NYSE", "KO", source=official.SOURCE_OFFICIAL) is None and pg.valuation_prediction_record(cycles["NYSE"], "KO") is None
+    assert pg.valuation_predictions_for_cycle(cycles["NYSE"]) == {"KO": v1} and pg.list_valuation_predictions("NYSE", "KO") == [v1]
+    assert pg.latest_targeted_predictions("NYSE", source=official.SOURCE_OFFICIAL) == {"KO": v1}
+    assert pg.valuation_prediction_record(cycles["NYSE"], "KO") == v1  # the cycle read pinned the verifiable rows only: a cache hit serves the V1 row
+
+
+def test_a_mixed_table_keeps_each_schema_and_hash_per_row(caplog: pytest.LogCaptureFixture) -> None:
+    # F393-11 b (rev 7): V1 (rev 5) and V2 (rev 6) rows for the same market and symbol coexist in one table (the column added by
+    # explicit order, never backfilled): every reader hands each row under ITS schema and ITS hash, memory and PostgreSQL alike.
+    database = _database()
+    old_at = NOW - timedelta(days=1)
+    row = _row("KO", tp=68.0, buy_in=58.0, price=64.0, internal_tp=67.0)
+    legacy_cycle = _publish_universe(database, "NYSE", [row], old_at)
+    v1 = _legacy_v1_record(row, market="NYSE", scope="universe", cycle_id=legacy_cycle, prediction_instant=old_at)
+    database._valuation_predictions[:] = [v1]  # the cycle was recorded by rev 5
+    cycles = _three_markets(database)  # rev 6 records for the same market and symbol, in the same table
+    v2 = database.valuation_prediction_record(cycles["NYSE"], "KO")
+    assert v2 is not None and v2["schema"] == official.PREDICTION_SCHEMA and v2["published_at"] == v2["prediction_instant"]
+    caplog.set_level(logging.INFO, logger="app.valuation_official")
+    caplog.clear()
+    history = database.list_valuation_predictions("NYSE", "KO")
+    assert [(record["cycle_id"], record["schema"]) for record in history] == [(cycles["NYSE"], official.PREDICTION_SCHEMA), (legacy_cycle, official.LEGACY_PREDICTION_SCHEMA)]
+    assert history == [v2, v1] and "published_at" not in history[1] and all(_hash_of(record) == record["row_sha256"] for record in history)
+    assert official.prediction_records(database, "NYSE", "KO") == history and official.prediction_records(database, "US", "KO", source=official.SOURCE_OFFICIAL) == history
+    assert database.latest_valuation_prediction("NYSE", "KO", source=official.SOURCE_OFFICIAL) == v2  # the newest by the clocks is the V2
+    for record in (v1, v2):  # the PostgreSQL-shaped rows of the same table, in any session zone
+        for zone in (ZoneInfo("UTC"), ZoneInfo("America/Sao_Paulo")):
+            rebuilt = database._prediction_record(_pg_row(record, zone))
+            assert rebuilt == record and rebuilt["schema"] == record["schema"] and _hash_of(rebuilt) == record["row_sha256"]
+    # the generation serves the V2 cycle with its clock; a rollback onto the legacy cycle serves the V1 row without one, under the V1 hash
+    head = official.current_generation(database)
+    assert head is not None and head["cycles"]["NYSE"] == cycles["NYSE"]
+    served = official.official_row(database, "NYSE", "KO")
+    assert served is not None and served["official_published_at"] == v2["published_at"] and served["official_row_sha256"] == v2["row_sha256"] and served["our_tp"] == 70.0
+    # a legacy TARGETED row (admitted before any order): the targeted reader and the targeted served path keep it V1 too
+    wege = _targeted_cycle(database, "WEGE3", _wall())
+    wege_v1 = _legacy_v1_record(_row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0), market="B3", scope="targeted", cycle_id=wege,
+                                prediction_instant=official._utc(database.analysis_snapshot_by_id(wege)["published_at"]), source_manifest_sha256=None)  # type: ignore[index]
+    database._valuation_predictions[:] = [record for record in database._valuation_predictions if record["cycle_id"] != wege] + [wege_v1]
+    database.drop_official_cycle_cache()
+    assert database.latest_targeted_predictions("B3", source=official.SOURCE_OFFICIAL) == {"WEGE3": wege_v1} and wege_v1["schema"] == official.LEGACY_PREDICTION_SCHEMA
+    targeted = official.official_row(database, "B3", "WEGE3")
+    assert targeted is not None and targeted["official_scope"] == "targeted" and targeted["official_published_at"] is None and targeted["official_row_sha256"] == wege_v1["row_sha256"]
+    assert official.official_prediction_snapshot(database, "B3")["outputs"]["results"]["WEGE3"] == wege_v1  # type: ignore[index]
+    # a rollback onto the legacy universe cycle, keeping the legacy targeted one (both validated by the same validator: verifiable identities)
+    head = official.current_generation(database)
+    assert head is not None and head["targeted"] == {"WEGE3": wege}
+    rolled = official.select_generation(database, cycles={**head["cycles"], "NYSE": legacy_cycle}, targeted={"WEGE3": wege}, now=later(1), activated_by="mesa",
+                                        reason="rollback onto a legacy cycle")
+    assert rolled["cycles"]["NYSE"] == legacy_cycle and rolled["session_dates"]["NYSE"] == v1["session_date"] and rolled["targeted"] == {"WEGE3": wege}
+    served = official.official_row(database, "NYSE", "KO")
+    assert served is not None and served["official_published_at"] is None and served["official_row_sha256"] == v1["row_sha256"] and served["our_tp"] == 68.0
+    assert served["prediction_instant"] == v1["prediction_instant"] and official.official_stamp(database, "NYSE")["official_cycle_id"] == legacy_cycle
+    assert official.official_row(database, "B3", "WEGE3")["official_published_at"] is None  # type: ignore[index]
+    # the studies read each row with its own clock
+    from app.valuation_accuracy import load_prediction_calls
+    calls = load_prediction_calls(history)
+    assert calls[0].published_at == datetime.fromisoformat(v2["published_at"]) and calls[0].row_sha256 == v2["row_sha256"]
+    assert calls[1].published_at is None and calls[1].row_sha256 == v1["row_sha256"] and calls[1].changed_at == old_at
+    assert not any(record.levelno >= logging.WARNING for record in caplog.records)  # nothing refused, nothing warned
