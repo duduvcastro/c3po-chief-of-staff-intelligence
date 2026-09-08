@@ -33,6 +33,7 @@ services:
     environment:
       C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
       C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
+      C3PO_SENTRY_TRACES_SAMPLE_RATE: ${C3PO_SENTRY_TRACES_SAMPLE_RATE:-0.01}
       C3PO_LEGACY_ROOT: /legacy
       C3PO_MIGRATIONS_DIR: /app/db
       C3PO_AUTH_OWNER_IDLE_MINUTES: "360"
@@ -60,6 +61,7 @@ services:
     env_file:
       - ../.env
     environment:
+      C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
       C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
       C3PO_MIGRATIONS_DIR: /app/db
     command: ["python", "-m", "app.ir_worker"]
@@ -81,6 +83,7 @@ services:
     env_file:
       - ../.env
     environment:
+      C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
       C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
       C3PO_MIGRATIONS_DIR: /app/db
       TZ: America/Sao_Paulo
@@ -101,6 +104,7 @@ services:
     env_file:
       - ../.env
     environment:
+      C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
       C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
       C3PO_MIGRATIONS_DIR: /app/db
       C3PO_SERVER_USAGE_SERVER_ID: lightsail-sa-east-1
@@ -130,6 +134,7 @@ services:
     env_file:
       - ../.env
     environment:
+      C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
       C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
       C3PO_MIGRATIONS_DIR: /app/db
       C3PO_R2D2_EXPERIMENT_CODE: R2D2-90D-001
@@ -163,6 +168,7 @@ services:
     env_file:
       - ../.env
     environment:
+      C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
       C3PO_DATABASE_URL: postgresql://c3po:${C3PO_DB_PASSWORD:-c3po-local-only}@db:5432/c3po
       C3PO_MIGRATIONS_DIR: /app/db
       C3PO_R2D2_EXPERIMENT_CODE: R2D2-90D-001
@@ -187,6 +193,9 @@ services:
       args:
         NEXT_PUBLIC_C3PO_API_URL: ${C3PO_PUBLIC_API_URL:-}
         NEXT_PUBLIC_C3PO_BUILD_SHA: ${C3PO_BUILD_SHA:-development}
+        NEXT_PUBLIC_SENTRY_DSN: ${C3PO_SENTRY_DSN:-}
+        NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${C3PO_ENVIRONMENT:-development}
+        NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: ${C3PO_SENTRY_TRACES_SAMPLE_RATE:-0.01}
     ports:
       - "127.0.0.1:8081:80"
     depends_on:

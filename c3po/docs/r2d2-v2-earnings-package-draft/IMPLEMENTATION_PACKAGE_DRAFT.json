@@ -1,0 +1,91 @@
+{
+  "schema": "R2D2_V2_EARNINGS_IMPLEMENTATION_DRAFT_V1",
+  "approval_state": "DRAFT_UNAPPROVED",
+  "release_authorized": false,
+  "activation_authorized": false,
+  "must_regenerate_after_final_code_freeze": true,
+  "implementation_package_sha": "c13a37d452358c94211ad999e21b3984e60c78df220ad9f9dab576cf80d78471",
+  "implementation_package": {
+    "schema": "R2D2_V2_EARNINGS_IMPLEMENTATION_PACKAGE_V1",
+    "status": "DESCRIPTOR_NOT_AUTHORIZATION",
+    "contract": {
+      "schema": "R2D2_V2_EARNINGS_DATA_CONTRACT_V1",
+      "base_signed_manifest_sha": "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0",
+      "amendment_one_sha": "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4",
+      "earnings_amendment_sha": "3319407afcd7760668e6ec73bb4686ecb95a38eecf47fc157050899f80a6cc9c",
+      "earnings_closed_manifest_sha": "1a927ca41df89ccb28a276726626672b7d76a9e828f12e4fc5b126860dbb4e72",
+      "policy_rule": "EXCLUSION_RULE_V1",
+      "component_keys": [
+        "available_at",
+        "coverage_verified",
+        "events",
+        "evidence",
+        "exclusion",
+        "policy",
+        "source_at",
+        "window_end",
+        "window_start"
+      ],
+      "snapshot_envelope_schema": "V2_SHADOW_SOURCE_SNAPSHOT_V2",
+      "release_schema": "R2D2_V2_RELEASE_V3",
+      "state_schema": "R2D2_V2_SHADOW_STATE_V3",
+      "export_schema": "R2D2_V2_COHORT_EXPORT_V3",
+      "inference_schema": "R2D2_V2_INFERENCE_INPUT_V3",
+      "live_event_granularities": [
+        "AMC",
+        "BMO",
+        "DAY",
+        "INSTANT"
+      ],
+      "admission_exclusion_clock": "nominal 10:00 America/New_York",
+      "admission_causal_capture_window": "[10:00,10:01) America/New_York",
+      "live_exclusion_clock": "actual episode opened_at",
+      "live_event_required_fields": [
+        "earnings_policy_sha",
+        "round_id",
+        "round_session",
+        "round_received_at",
+        "observation_window",
+        "earnings_event_id",
+        "revision_sha256",
+        "event_date",
+        "granularity"
+      ],
+      "live_event_at_rule": "required only for INSTANT; key absent for AMC/BMO/DAY",
+      "live_revision_instant_encoding": "UTC-normalized semantic instant; raw input retained",
+      "round_session_rule": "official target session, independent of actual delayed receipt date",
+      "round_receipt_rule": "actual receipt at or after 18:00 New York target and after official close",
+      "observation_target": "18:00 America/New_York after each official session close",
+      "cohort_sizes": [
+        40,
+        60
+      ],
+      "maturity_session_indices": [
+        49,
+        69
+      ],
+      "calibration_protocol": "C3PO-V2-CAL-3",
+      "estimator_algorithm_changed": false,
+      "legacy_earnings_component_accepted": false,
+      "descriptor_is_authorization": false
+    },
+    "implementation_contract_sha": "0a44a7167355026838e99ca5709038b7a18bd13d286c043f2c5f9bdae3ddc10e",
+    "source_sha256": {
+      "r2d2_v2_earnings_package.py": "ea0449812a07df1e6c4d01bd8da621ddd65658b454d538b161b59a0097a60f1b",
+      "r2d2_v2_earnings_policy.py": "d5a10b0c7146f443d16ffe4d60707d44559c96980148940c3395bb726c567908",
+      "r2d2_v2_earnings_events.py": "5a0e3a86db69c7db3604c584b1b67a502e5fa4c92e6cf6b0a949afd0d3ceb98d",
+      "r2d2_v2_contract.py": "ddaafce9c5707102af53eb964c8fcf0ccf1deb7045a77138705ffdbb1266e776",
+      "r2d2_v2_portfolio.py": "63225d8e973e46d41236b1af20602ef7db221dbf95087e776bf4ac3decfa3ade",
+      "r2d2_v2_sources.py": "6e6980d16625522d38f58d4f71ea51c2ae9b515ad294d1cbf8d018dd748e4b70",
+      "r2d2_v2_shadow.py": "b81424a9ec644d5db2236b15cf4a9aa450abf9877a5b4e3910d0e37953a5de3f",
+      "r2d2_v2_inference_input.py": "37e6732574911f69d49ee18d870e69ae873ca36bd6d14922c87bbbf6ab678d39",
+      "r2d2_v2_shadow_worker.py": "327da146299586d10fa59bbb076f552b798644cdbc70087a9c369439c1a80255",
+      "config.py": "56633624204329ee80be277905294a7a15c58b4f1e5fdaeec8e3633f98638e0a"
+    }
+  },
+  "consents": {
+    "CODEX": null,
+    "FABLE": null,
+    "DUDU": null
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "schema": "R2D2_V2_EARNINGS_PACKAGE_CONSENT_V1",
+  "party": "FABLE",
+  "approved": null,
+  "approved_at": null,
+  "earnings_amendment_sha": "3319407afcd7760668e6ec73bb4686ecb95a38eecf47fc157050899f80a6cc9c",
+  "earnings_closed_manifest_sha": "1a927ca41df89ccb28a276726626672b7d76a9e828f12e4fc5b126860dbb4e72",
+  "implementation_contract_sha": "0a44a7167355026838e99ca5709038b7a18bd13d286c043f2c5f9bdae3ddc10e",
+  "implementation_package_sha": null,
+  "code_revision": null,
+  "code_audit_sha": null,
+  "source_audit_sha": null,
+  "readiness_sha": null
+}
