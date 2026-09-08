@@ -202,6 +202,75 @@ def test_labels_need_the_session_closed_before_the_cut_and_are_never_invented() 
     assert service.label_bar("NASDAQ", "AAPL", date(2026, 9, 4), 126, fetched_before=cut)["status"] == "not_yet_mature"
 
 
+def test_a_newer_manifest_of_another_schema_never_hides_a_compatible_vintage() -> None:
+    # C394-7: the vintage a cut sees is the latest COMPATIBLE manifest, not the latest of any schema
+    service, database, http = _service({"AAPL.US": [_bar("2026-09-04", 230.0)]})
+    first = _run(service, "NASDAQ", ["AAPL"], now=NOW)
+    database.save_analysis_snapshot(series.ANALYSIS_TYPE, "NASDAQ", "mv-x", {"fetched_at": (NOW + D).isoformat()}, {"schema_version": "SOMETHING-ELSE"}, NOW + D)
+    vintage = service.vintage("NASDAQ", fetched_before=NOW + 2 * D)
+    assert vintage and vintage["price_snapshot_id"] == first["price_snapshot_id"]
+    assert service.series("NASDAQ", "AAPL", fetched_before=NOW + 2 * D)["status"] == "ok"
+
+
+def test_two_vintages_never_share_a_clock_and_duplicate_sessions_in_a_response_are_counted() -> None:
+    # C394-9: the vintage must advance beyond the previous manifest; C394-10: an in-response duplicate is recorded, the first row wins
+    service, database, http = _service({"AAPL.US": [_bar("2026-09-04", 230.0), _bar("2026-09-04", 999.0), _bar("2026-09-03", 229.0)]})
+    result = _run(service, "NASDAQ", ["AAPL"], now=NOW)
+    assert result["rows_duplicate_in_response"] == {"AAPL": 1} and result["rows_duplicate_total"] == 1 and result["series_bars"] == {"AAPL": 2}
+    assert service.series("NASDAQ", "AAPL", fetched_before=NOW + D)["bars"]["2026-09-04"]["close"] == 230.0
+    manifest = database.latest_analysis_snapshot(series.ANALYSIS_TYPE, "NASDAQ")
+    assert manifest and manifest["outputs"]["rows_duplicate_in_response"] == {"AAPL": 1}
+    import pytest
+    with pytest.raises(ValueError, match="does not advance"):
+        _run(service, "NASDAQ", ["AAPL"], now=NOW)  # the same clock again: refused, nothing written
+    with pytest.raises(ValueError, match="does not advance"):
+        _run(service, "NASDAQ", ["AAPL"], now=NOW - timedelta(seconds=1))
+    assert len([s for s in database._analysis_snapshots if s["analysis_type"] == series.ANALYSIS_TYPE]) == 1
+
+
+def test_a_session_outside_the_vintage_window_is_not_a_missing_bar() -> None:
+    # C394-11: a narrower later window must not turn an existing session into "the exchange had no bar"
+    service, database, http = _service({"AAPL.US": [_bar("2026-09-01", 228.0), _bar("2026-09-02", 228.5), _bar("2026-09-03", 229.0), _bar("2026-09-04", 230.0)]})
+    _run(service, "NASDAQ", ["AAPL"], now=NOW, start=date(2026, 9, 1), end=date(2026, 9, 4))
+    _run(service, "NASDAQ", ["AAPL"], now=NOW + D, start=date(2026, 9, 3), end=date(2026, 9, 4))
+    assert service.label_bar("NASDAQ", "AAPL", date(2026, 9, 1), 1, fetched_before=NOW + timedelta(hours=1))["status"] == "labelled"  # under S1: 09-02 is there
+    narrow = service.label_bar("NASDAQ", "AAPL", date(2026, 9, 1), 1, fetched_before=NOW + 2 * D)
+    assert narrow["status"] == "outside_window" and narrow["session"] == "2026-09-02"
+    assert service.label_bar("NASDAQ", "AAPL", date(2026, 9, 2), 1, fetched_before=NOW + 2 * D)["status"] == "labelled"  # 09-03 is inside S2
+
+
+def test_postgresql_inserts_are_batched_inside_the_transaction() -> None:
+    # C394-8: one executemany per chunk of 5000 bars, never one statement per bar
+    class Cursor:
+        def __init__(self, log: list[int]) -> None:
+            self.log, self.rowcount = log, 0
+
+        def executemany(self, sql: str, params: list[tuple]) -> None:
+            assert "ON CONFLICT (market, symbol, session_date, source, fetched_at) DO NOTHING" in sql and len(params[0]) == 13
+            self.log.append(len(params))
+            self.rowcount = len(params)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+    class Connection:
+        def __init__(self) -> None:
+            self.log: list[int] = []
+
+        def cursor(self) -> Cursor:
+            return Cursor(self.log)
+
+    _, database, _ = _service({})
+    bar = series.bar_record("NASDAQ", "AAPL", "AAPL.US", _bar("2026-09-04", 230.0))
+    assert bar is not None
+    bars = [{**bar, "id": str(i), "session_date": f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}"[:10], "fetched_at": NOW.isoformat(), "snapshot_id": "s"} for i in range(5001)]
+    connection = Connection()
+    assert database._insert_price_bars_pg(connection, bars) == 5001 and connection.log == [5000, 1]
+
+
 def test_backfill_and_nightly_fetch_the_whole_window_and_the_phase_stays_dormant() -> None:
     service, database, http = _service({"AAPL.US": [_bar("2024-01-05", 180.0)], "BRK.B.US": [_bar("2026-01-05", 400.0), _bar("2024-01-05", 390.0)]})
     result = service.backfill("NASDAQ", months=36, now=NOW, symbols=["AAPL"])

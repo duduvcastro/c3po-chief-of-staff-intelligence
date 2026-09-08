@@ -211,6 +211,9 @@ class PriceHistoryService:
         fetched_at = _utc(tick())
         if fetched_at < started_at:
             raise ValueError("price history clock went backwards during the run")
+        previous = self.database.latest_analysis_snapshot_published_at(ANALYSIS_TYPE, market)
+        if previous is not None and fetched_at <= _utc(previous):  # two vintages can never share a clock: "the vintage" must be unique (C394-9)
+            raise ValueError(f"vintage clock {fetched_at.isoformat()} does not advance beyond the previous manifest of {market} ({_utc(previous).isoformat()})")
         snapshot_id = str(uuid4())
         # content dedup against the latest stored row per (symbol, session); a session the provider DROPPED from a symbol
         # would survive in the chain read and break the series hash — recorded as unreproducible, refused by the readers
@@ -220,10 +223,14 @@ class PriceHistoryService:
         series_hashes: dict[str, str] = {}
         series_bars: dict[str, int] = {}
         unreproducible: dict[str, list[str]] = {}
+        duplicates: dict[str, int] = {}
         for symbol, rows in fetched.items():
             by_session: dict[str, dict[str, Any]] = {}
-            for bar in rows:  # a duplicate session in one provider answer: the first row wins (same rule as ON CONFLICT DO NOTHING)
-                by_session.setdefault(bar["session_date"], bar)
+            for bar in rows:  # a duplicate session in one provider answer: the first row wins (same rule as ON CONFLICT DO NOTHING) — counted, never silent (C394-10)
+                if bar["session_date"] in by_session:
+                    duplicates[symbol] = duplicates.get(symbol, 0) + 1
+                else:
+                    by_session[bar["session_date"]] = bar
             stale = sorted(session for (sym, session) in latest if sym == symbol and start.isoformat() <= session <= end.isoformat()
                            and session not in by_session)
             if stale:
@@ -246,6 +253,7 @@ class PriceHistoryService:
                             "bars_inserted": len(to_insert), "bars_unchanged": unchanged,
                             "symbols_with_bars": len(fetched), "symbols_missing": sorted(missing), "errors": errors,
                             "rows_rejected_incomplete": dict(sorted(rejected.items())), "rows_rejected_total": sum(rejected.values()),
+                            "rows_duplicate_in_response": dict(sorted(duplicates.items())), "rows_duplicate_total": sum(duplicates.values()),
                             "symbols_unreproducible": dict(sorted(unreproducible.items())),
                             "first_session": sessions[0] if sessions else None, "last_session": sessions[-1] if sessions else None,
                             "series_sha256": dict(sorted(series_hashes.items())), "series_bars": dict(sorted(series_bars.items())),
@@ -289,7 +297,7 @@ class PriceHistoryService:
     # ------------------------------------------------------------------ readers (the clock is a parameter, never "now")
     def vintage(self, market: str, *, fetched_before: datetime) -> dict[str, Any] | None:
         """The single vintage a cut sees: the manifest with the greatest ``fetched_at < fetched_before`` (rev 7 §2.2 rule)."""
-        manifest = self.database.latest_analysis_snapshot_before(ANALYSIS_TYPE, market, _utc(fetched_before))
+        manifest = self.database.latest_analysis_snapshot_before(ANALYSIS_TYPE, market, _utc(fetched_before), schema_version=SCHEMA_VERSION)
         if not manifest:
             return None
         inputs = manifest.get("inputs") if isinstance(manifest.get("inputs"), dict) else {}
@@ -304,17 +312,18 @@ class PriceHistoryService:
         """One symbol's bars from the single vintage the cut sees, verified against the hash that vintage recorded for it.
         Statuses: ``ok``; ``no_vintage`` (nothing fetched before the cut); ``symbol_not_in_vintage`` (the vintage has no
         series for it — never completed from an older one); ``vintage_unreproducible`` (declared by the run itself);
-        ``vintage_mismatch`` (the stored rows do not reproduce the recorded hash: refused)."""
+        ``vintage_mismatch`` (the stored rows do not reproduce the recorded hash: refused). ``window`` is the vintage's
+        [from, to]: a label outside it is ``outside_window``, never ``missing_bar``."""
         symbol = symbol.strip().upper()
         vintage = self.vintage(market, fetched_before=fetched_before)
         if vintage is None:
-            return {"status": "no_vintage", "price_snapshot_id": None, "fetched_at": None, "bars": {}}
+            return {"status": "no_vintage", "price_snapshot_id": None, "fetched_at": None, "window": None, "bars": {}}
         key = (vintage["price_snapshot_id"], f"{market}:{symbol}")
         cached = self._series_cache.get(key)
         if cached is not None:
             self._series_cache.move_to_end(key)
             return dict(cached)
-        header = {"price_snapshot_id": vintage["price_snapshot_id"], "fetched_at": vintage["fetched_at"]}
+        header = {"price_snapshot_id": vintage["price_snapshot_id"], "fetched_at": vintage["fetched_at"], "window": [vintage["from"], vintage["to"]]}
         expected = vintage["series_sha256"].get(symbol)
         if expected is None:
             result = {"status": "symbol_not_in_vintage", **header, "bars": {}}
@@ -350,6 +359,8 @@ class PriceHistoryService:
         header = {"session": target.isoformat(), "price_snapshot_id": known["price_snapshot_id"]}
         if known["status"] != "ok":
             return {**header, "status": known["status"]}
+        if not (known["window"][0] <= target.isoformat() <= known["window"][1]):
+            return {**header, "status": "outside_window"}  # the vintage never asked for that session: not "the exchange had no bar" (C394-11)
         bar = known["bars"].get(target.isoformat())
         if not bar:
             return {**header, "status": "missing_bar"}

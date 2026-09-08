@@ -3368,20 +3368,29 @@ class Database:
             added += 1
         return added
 
+    PRICE_BAR_BATCH = 5000
+    _PRICE_BAR_INSERT_SQL = """
+        INSERT INTO valuation_price_bars
+            (id, market, symbol, session_date, close, adjusted_close, volume, currency, source, provider_symbol, fetched_at, snapshot_id, bar_sha256)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (market, symbol, session_date, source, fetched_at) DO NOTHING
+    """
+
+    @staticmethod
+    def _price_bar_params(bar: dict[str, Any]) -> tuple[Any, ...]:
+        return (bar["id"], bar["market"], bar["symbol"], bar["session_date"], bar["close"], bar["adjusted_close"], bar.get("volume"), bar["currency"],
+                bar["source"], bar["provider_symbol"], bar["fetched_at"], bar["snapshot_id"], bar["bar_sha256"])
+
     def _insert_price_bars_pg(self, connection: Any, bars: list[dict[str, Any]]) -> int:
+        """Batched inside the caller's transaction: one ``executemany`` per chunk of 5000 bars (psycopg pipelines the
+        round-trips) — never one statement per bar for a 36-month backfill (C394-8). ``rowcount`` after ``executemany``
+        is the total of affected rows (psycopg ≥ 3.1)."""
         inserted = 0
-        for bar in bars:
-            cursor = connection.execute(
-                """
-                INSERT INTO valuation_price_bars
-                    (id, market, symbol, session_date, close, adjusted_close, volume, currency, source, provider_symbol, fetched_at, snapshot_id, bar_sha256)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (market, symbol, session_date, source, fetched_at) DO NOTHING
-                """,
-                (bar["id"], bar["market"], bar["symbol"], bar["session_date"], bar["close"], bar["adjusted_close"], bar.get("volume"), bar["currency"],
-                 bar["source"], bar["provider_symbol"], bar["fetched_at"], bar["snapshot_id"], bar["bar_sha256"]),
-            )
-            inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+        with connection.cursor() as cursor:
+            for start in range(0, len(bars), self.PRICE_BAR_BATCH):
+                chunk = bars[start:start + self.PRICE_BAR_BATCH]
+                cursor.executemany(self._PRICE_BAR_INSERT_SQL, [self._price_bar_params(bar) for bar in chunk])
+                inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
         return inserted
 
     def persist_price_history_run(self, analysis_type: str, entity_key: str, methodology_version_id: str, inputs: dict[str, Any], outputs: dict[str, Any],
@@ -3520,14 +3529,17 @@ class Database:
             ).fetchone()
         return row[0] if row else None
 
-    def latest_analysis_snapshot_before(self, analysis_type: str, entity_key: str, before: datetime) -> dict[str, Any] | None:
-        """The snapshot with the greatest published_at STRICTLY before ``before`` (the single vintage a cut sees)."""
+    def latest_analysis_snapshot_before(self, analysis_type: str, entity_key: str, before: datetime, *, schema_version: str | None = None) -> dict[str, Any] | None:
+        """The snapshot with the greatest published_at STRICTLY before ``before`` (the single vintage a cut sees) — of the
+        given ``outputs.schema_version`` when one is asked, so a newer manifest of another schema never hides an older
+        compatible vintage from a historical cut."""
         before = self._price_bar_instant(before)
         if not self.database_url:
             matches = [
                 item for item in self._analysis_snapshots
                 if item.get("analysis_type") == analysis_type and item.get("entity_key") == entity_key
                 and self._price_bar_instant(item["published_at"]) < before
+                and (schema_version is None or (item.get("outputs") or {}).get("schema_version") == schema_version)
             ]
             return max(matches, key=lambda item: self._price_bar_instant(item["published_at"])).copy() if matches else None
         with self.connection() as connection:
@@ -3536,9 +3548,10 @@ class Database:
                 SELECT id::text, inputs, outputs, published_at, methodology_version_id::text
                 FROM analysis_snapshots
                 WHERE analysis_type = %s AND entity_key = %s AND published_at < %s
+                  AND (%s::text IS NULL OR outputs->>'schema_version' = %s)
                 ORDER BY published_at DESC LIMIT 1
                 """,
-                (analysis_type, entity_key, before),
+                (analysis_type, entity_key, before, schema_version, schema_version),
             ).fetchone()
         if not row:
             return None
