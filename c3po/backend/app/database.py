@@ -5,6 +5,7 @@ import logging
 import re
 import threading
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -17,7 +18,8 @@ LEGACY_SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
 
 
 class SelectionConflict(RuntimeError):
-    """Another writer already chained a generation on the same predecessor (valuation_official_selection, B2)."""
+    """Another writer already chained a generation on the same predecessor, or a root generation already exists
+    (valuation_official_selection: UNIQUE previous_generation_id, unique root — B2, F393-9)."""
 
 
 class Database:
@@ -3278,13 +3280,13 @@ class Database:
         prior_snapshot: dict[str, Any] | None = None
         if not self.database_url:
             prior_snapshot = self.latest_analysis_snapshot(analysis_type, entity_key)
-            current_snapshot = {
+            current_snapshot = {  # the double stores COPIES, as PostgreSQL stores JSON: the caller's dicts never alias the store (F393-5)
                 "id": snapshot_id,
                 "analysis_type": analysis_type,
                 "entity_key": entity_key,
                 "methodology_version_id": methodology_version_id,
-                "inputs": inputs,
-                "outputs": outputs,
+                "inputs": copy.deepcopy(inputs),
+                "outputs": copy.deepcopy(outputs),
                 "published_at": published_at,
             }
             self._analysis_snapshots.append(current_snapshot)
@@ -3351,13 +3353,22 @@ class Database:
         from .valuation_official import record_snapshot  # local import: that module only depends on this storage API
         record_snapshot(self, snapshot)
 
+    @staticmethod
+    def _numeric_param(value: Any) -> Decimal | None:
+        """A float bound to a NUMERIC column as its shortest round-trip decimal (``repr``), not as float8: PostgreSQL
+        casts float8 → numeric with 15 significant digits, which would alter a 17-digit float and break the stored
+        hash on re-read (F393-6 a). ``float(Decimal(repr(x))) == x`` always."""
+        return Decimal(repr(float(value))) if value is not None else None
+
     def insert_valuation_predictions(self, records: list[dict[str, Any]]) -> int:
+        """Append-only. The double stores DEEP COPIES (as PostgreSQL stores values): a caller that mutates the record it
+        inserted — its decomposition included — never reaches the store (F393-5)."""
         if not records:
             return 0
         if not self.database_url:
             existing = {(r["source"], r["source_version"], r["market"], r["symbol"], r["cycle_id"]) for r in self._valuation_predictions}
             added = [r for r in records if (r["source"], r["source_version"], r["market"], r["symbol"], r["cycle_id"]) not in existing]
-            self._valuation_predictions.extend(dict(r) for r in added)
+            self._valuation_predictions.extend(copy.deepcopy(r) for r in added)
             for record in added:
                 self._cycle_records_cache.pop(str(record["cycle_id"]), None)
             return len(added)
@@ -3375,9 +3386,10 @@ class Database:
                     ON CONFLICT (source, source_version, market, symbol, cycle_id) DO NOTHING
                     """,
                     (record["id"], record["source"], record["source_version"], record["market"], record["symbol"], record["scope"],
-                     record["session_date"], record["cycle_id"], record["prediction_instant"], record["tp"], record["buy_in"],
-                     record.get("internal_tp"), record.get("consensus_tp"), record.get("consensus_source"), record.get("analyst_count"),
-                     record.get("consensus_weight_percent"), record.get("price"), record["currency"],
+                     record["session_date"], record["cycle_id"], record["prediction_instant"],
+                     self._numeric_param(record["tp"]), self._numeric_param(record["buy_in"]), self._numeric_param(record.get("internal_tp")),
+                     self._numeric_param(record.get("consensus_tp")), record.get("consensus_source"), record.get("analyst_count"),
+                     self._numeric_param(record.get("consensus_weight_percent")), self._numeric_param(record.get("price")), record["currency"],
                      json.dumps(record.get("decomposition") or {}), record["row_sha256"]),
                 )
                 inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
@@ -3388,23 +3400,40 @@ class Database:
         return inserted
 
     def _prediction_record(self, row: Any) -> dict[str, Any]:
+        """A PostgreSQL row (the SELECT column tuple in ``_PREDICTION_KEYS`` order) rebuilt into EXACTLY the canonical
+        shape ``valuation_official.prediction_from_row`` hashed (F393-6 a): the constant ``schema``, the top-level
+        ``bear_tp``/``bull_tp`` taken from ``decomposition.bands`` (they have no column), NUMERIC → float, INTEGER →
+        int, DATE → ISO text, TIMESTAMPTZ → UTC ISO text whatever the session time zone — so that ``canonical_sha256``
+        of every key but ``id``/``row_sha256`` equals the stored ``row_sha256``. Change it together with the writer."""
+        from .valuation_official import PREDICTION_SCHEMA  # local import: that module depends on this storage API
         record = dict(zip(self._PREDICTION_KEYS, row))
         for key in ("tp", "buy_in", "internal_tp", "consensus_tp", "consensus_weight_percent", "price"):
             record[key] = float(record[key]) if record[key] is not None else None
-        if isinstance(record.get("prediction_instant"), datetime):
-            record["prediction_instant"] = record["prediction_instant"].isoformat()
-        return record
+        record["analyst_count"] = int(record["analyst_count"]) if record.get("analyst_count") is not None else None
+        for key in ("id", "cycle_id", "session_date", "row_sha256"):
+            record[key] = str(record[key])
+        instant = record["prediction_instant"]
+        if isinstance(instant, datetime):
+            record["prediction_instant"] = (instant.astimezone(timezone.utc) if instant.tzinfo else instant.replace(tzinfo=timezone.utc)).isoformat()
+        decomposition = record.get("decomposition")
+        if not isinstance(decomposition, dict):
+            decomposition = json.loads(decomposition) if isinstance(decomposition, str) else {}
+        record["decomposition"] = decomposition
+        bands = decomposition.get("bands") if isinstance(decomposition.get("bands"), dict) else {}
+        record["bear_tp"] = float(bands["bear_tp"]) if bands.get("bear_tp") is not None else None
+        record["bull_tp"] = float(bands["bull_tp"]) if bands.get("bull_tp") is not None else None
+        return {"schema": PREDICTION_SCHEMA, **record}
 
     def valuation_predictions_for_cycle(self, cycle_id: str) -> dict[str, dict[str, Any]]:
         """The immutable records of one producer cycle, by symbol — what the official selection SERVES (F393-5).
         Cycles are immutable, so a small cache is exact — but ONLY for a non-empty answer: an empty one may be the
         window between a cycle's publication and its records (another process), and must never be pinned (D1).
-        Callers receive a deep copy: mutating it never reaches the cache."""
+        Callers receive a deep copy — on a hit AND on the cold read: neither the cache nor the store is ever aliased."""
         cached = self._cycle_records_cache.get(cycle_id)
         if cached is not None:
             return copy.deepcopy(cached)
         if not self.database_url:
-            records = {str(r["symbol"]): dict(r) for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id}
+            records = {str(r["symbol"]): copy.deepcopy(r) for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id}
         else:
             with self.connection() as connection:
                 rows = connection.execute(
@@ -3424,9 +3453,9 @@ class Database:
         return records
 
     def list_valuation_predictions(self, market: str, symbol: str, *, source: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
-        """History of a symbol's records, newest first, optionally by source (studies and grading, rev 7 TP-C)."""
+        """History of a symbol's records, newest first, optionally by source (studies and grading, rev 7 TP-C). Copies."""
         if not self.database_url:
-            matches = [dict(r) for r in self._valuation_predictions
+            matches = [copy.deepcopy(r) for r in self._valuation_predictions
                        if r["market"] == market and r["symbol"] == symbol and (source is None or r["source"] == source)]
             matches.sort(key=lambda r: str(r["prediction_instant"]), reverse=True)
             return matches[:limit]
@@ -3444,11 +3473,39 @@ class Database:
             ).fetchall()
         return [self._prediction_record(row) for row in rows]
 
+    def latest_targeted_predictions(self, market: str, *, source: str) -> dict[str, dict[str, Any]]:
+        """The most recent TARGETED record of every symbol of ``market`` for ``source`` (newest ``prediction_instant``
+        per symbol), keyed by symbol — what the activation pass reads to admit a registered targeted cycle the
+        generation does not hold yet (valuation_official, Y3). Copies."""
+        if not self.database_url:
+            latest: dict[str, dict[str, Any]] = {}
+            for record in self._valuation_predictions:
+                if record["market"] != market or record["source"] != source or record["scope"] != "targeted":
+                    continue
+                held = latest.get(str(record["symbol"]))
+                if held is None or str(record["prediction_instant"]) > str(held["prediction_instant"]):
+                    latest[str(record["symbol"])] = record
+            return {symbol: copy.deepcopy(record) for symbol, record in latest.items()}
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT ON (symbol)
+                       id::text, source, source_version, market, symbol, scope, session_date::text, cycle_id::text, prediction_instant,
+                       tp, buy_in, internal_tp, consensus_tp, consensus_source, analyst_count, consensus_weight_percent, price, currency,
+                       decomposition, row_sha256
+                FROM valuation_predictions
+                WHERE market = %s AND source = %s AND scope = 'targeted'
+                ORDER BY symbol, prediction_instant DESC
+                """,
+                (market, source),
+            ).fetchall()
+        return {str(record["symbol"]): record for record in (self._prediction_record(row) for row in rows)}
+
     def latest_valuation_prediction(self, market: str, symbol: str, *, source: str, scope: str | None = None) -> dict[str, Any] | None:
         if not self.database_url:
             matches = [r for r in self._valuation_predictions
                        if r["market"] == market and r["symbol"] == symbol and r["source"] == source and (scope is None or r["scope"] == scope)]
-            return dict(max(matches, key=lambda r: str(r["prediction_instant"]))) if matches else None
+            return copy.deepcopy(max(matches, key=lambda r: str(r["prediction_instant"]))) if matches else None
         with self.connection() as connection:
             row = connection.execute(
                 """
@@ -3467,11 +3524,14 @@ class Database:
 
     def insert_valuation_official_selection(self, generation: dict[str, Any]) -> None:
         """One generation chains on ``previous_generation_id`` (UNIQUE where not null, migration 048): two writers
-        extending the same predecessor cannot both succeed — the loser gets ``SelectionConflict`` (B2)."""
+        extending the same predecessor cannot both succeed — the loser gets ``SelectionConflict`` (B2). The ROOT is
+        unique too (partial unique index where the predecessor is null, F393-9): two bootstraps cannot both succeed.
+        The double mirrors both indexes."""
         previous = generation.get("previous_generation_id")
+        conflict = f"generation {previous} already has a successor" if previous is not None else "a root generation already exists"
         if not self.database_url:
-            if previous is not None and any(item.get("previous_generation_id") == previous for item in self._valuation_official_selections):
-                raise SelectionConflict(f"generation {previous} already has a successor")
+            if any(item.get("previous_generation_id") == previous for item in self._valuation_official_selections):
+                raise SelectionConflict(conflict)
             self._valuation_official_selections.append(copy.deepcopy(generation))
             return
         with self.connection() as connection:
@@ -3479,7 +3539,7 @@ class Database:
                 self._insert_selection_row(connection, generation)
             except Exception as error:
                 if type(error).__name__ == "UniqueViolation":
-                    raise SelectionConflict(f"generation {previous} already has a successor") from error
+                    raise SelectionConflict(conflict) from error
                 raise
             connection.commit()
 
@@ -3511,10 +3571,18 @@ class Database:
         instant = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
         return instant.replace(tzinfo=timezone.utc) if instant.tzinfo is None else instant.astimezone(timezone.utc)
 
-    def _latest_selection_memory(self, before: datetime | None = None) -> dict[str, Any] | None:
+    @staticmethod
+    def _is_explicit_selection(item: dict[str, Any]) -> bool:
+        """The marker of a mesa order: the JSON boolean ``true`` under ``receipt.explicit`` — what ``select_generation``
+        alone writes (valuation_official, W3); the SQL reader tests the same containment (``receipt @> '{"explicit": true}'``)."""
+        receipt = item.get("receipt")
+        return isinstance(receipt, dict) and receipt.get("explicit") is True
+
+    def _latest_selection_memory(self, before: datetime | None = None, *, explicit_only: bool = False) -> dict[str, Any] | None:
         """PostgreSQL orders by (activated_at DESC, created_at DESC); the in-memory double must agree (D3)."""
         candidates = [(self._selection_instant(item["activated_at"]), index, item) for index, item in enumerate(self._valuation_official_selections)
-                      if before is None or self._selection_instant(item["activated_at"]) <= before]
+                      if (before is None or self._selection_instant(item["activated_at"]) <= before)
+                      and (not explicit_only or self._is_explicit_selection(item))]
         return copy.deepcopy(max(candidates, key=lambda entry: (entry[0], entry[1]))[2]) if candidates else None
 
     def valuation_official_selection_at(self, instant: datetime) -> dict[str, Any] | None:
@@ -3548,6 +3616,46 @@ class Database:
             ).fetchone()
         return self._selection_record(row)
 
+    def latest_explicit_valuation_official_selection(self) -> dict[str, Any] | None:
+        """The most recent generation carrying the marker of a mesa order — ``receipt.explicit`` = the JSON boolean
+        ``true``, which ``select_generation`` alone writes (a rollback, a purge, a switch; valuation_official W3) —
+        authoritative over every targeted cycle registered and every universe cycle published at or before its
+        ``activated_at`` (Z2, W1). NEVER keyed by ``activated_by``: a custom writer name on the automatic path is not an
+        order. ``None`` when no generation carries the marker. Same order as the head (``activated_at DESC, created_at
+        DESC``); the double tests the same boolean (``_is_explicit_selection``) as the JSONB containment here."""
+        if not self.database_url:
+            return self._latest_selection_memory(explicit_only=True)
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT generation_id::text, source, source_version, cycles, targeted, session_dates, validated_complete, activated_at,
+                       activated_by, previous_generation_id::text, receipt
+                FROM valuation_official_selection
+                WHERE receipt @> '{"explicit": true}'::jsonb
+                ORDER BY activated_at DESC, created_at DESC LIMIT 1
+                """
+            ).fetchone()
+        return self._selection_record(row)
+
+    def valuation_official_selection_successor(self, generation_id: str) -> dict[str, Any] | None:
+        """The generation chained on ``generation_id`` (``previous_generation_id = %s``; at most one — UNIQUE in the
+        migration), or ``None`` when it is the chain tip. Read by the chain repair and the health (valuation_official,
+        W4): a successor dated behind its predecessor is never the head for the readers, yet it blocks the head's
+        UNIQUE successor slot. A copy."""
+        if not self.database_url:
+            match = next((item for item in self._valuation_official_selections if item.get("previous_generation_id") == generation_id), None)
+            return copy.deepcopy(match) if match else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT generation_id::text, source, source_version, cycles, targeted, session_dates, validated_complete, activated_at,
+                       activated_by, previous_generation_id::text, receipt
+                FROM valuation_official_selection WHERE previous_generation_id = %s
+                """,
+                (generation_id,),
+            ).fetchone()
+        return self._selection_record(row)
+
     def valuation_official_selection(self, generation_id: str) -> dict[str, Any] | None:
         if not self.database_url:
             match = next((item for item in self._valuation_official_selections if item.get("generation_id") == generation_id), None)
@@ -3564,9 +3672,9 @@ class Database:
         return self._selection_record(row)
 
     def analysis_snapshot_by_id(self, snapshot_id: str) -> dict[str, Any] | None:
-        if not self.database_url:
+        if not self.database_url:  # a deep copy, as a PostgreSQL read is a fresh object: the store is never aliased (F393-5)
             match = next((item for item in self._analysis_snapshots if item.get("id") == snapshot_id), None)
-            return match.copy() if match else None
+            return copy.deepcopy(match) if match else None
         with self.connection() as connection:
             row = connection.execute(
                 """
@@ -3641,12 +3749,12 @@ class Database:
         return row[0] if row else None
 
     def latest_analysis_snapshot(self, analysis_type: str, entity_key: str) -> dict[str, Any] | None:
-        if not self.database_url:
+        if not self.database_url:  # a deep copy, as a PostgreSQL read is a fresh object: the store is never aliased (F393-5)
             matches = [
                 item for item in self._analysis_snapshots
                 if item.get("analysis_type") == analysis_type and item.get("entity_key") == entity_key
             ]
-            return max(matches, key=lambda item: item["published_at"]).copy() if matches else None
+            return copy.deepcopy(max(matches, key=lambda item: item["published_at"])) if matches else None
         with self.connection() as connection:
             row = connection.execute(
                 """

@@ -30,6 +30,70 @@ Rev 4 (Codex F393-3..7 residuals; pre-review D1–D3, B1–B2, A1, C1, E1, F1):
   night no longer strips the stamp from the other two); bootstrap still needs every market once;
 * activation/admission take the wall clock; a generation chains on ``previous_generation_id`` (UNIQUE in the
   migration) so two concurrent writers cannot both extend the same predecessor; served objects are deep copies.
+
+Rev 5 (Codex F393-4..7, F393-9 residuals on rev 4):
+* an explicit selection validates every targeted cycle with the SAME validator as the automatic admission;
+* a writer names the generation it based its decision on (``expected_previous``); if the chain moved meanwhile the
+  write is refused and the writer recomputes on the new head — no other writer's generation is ever dropped; the
+  root is unique too (a second bootstrap is refused);
+* a calendar failure is an UNAVAILABILITY (``CalendarUnavailable``), never a civil date: the row is not recordable,
+  the cycle is not selectable, the health says so;
+* the consensus of a record carries its own publication instant, horizon, currency and hash (explicit nulls);
+* the studies' official arm includes the targeted admissions of the generation (universe wins on collision);
+* the PostgreSQL row reader rebuilds the canonical record shape, so the stored hash re-verifies after a round trip.
+
+Rev 5 residuals (X1–X4):
+* the loser of a chain conflict recomposes on a NEW clock — a recomposition is a new activation, ordered by when it
+  actually happened; the D3 refusal of a stale clock protects the explicit path only (see Y1 for the automatic path);
+* targeted symbols are normalized (``strip().upper()``) before an explicit selection validates and writes them;
+* a consensus ``datetime``/``date`` is kept in ISO form and an empty string is an absent value;
+* a universe cycle that has NO record (published while the calendar could not answer) is recorded by the next
+  activation pass before validation — records before selection, and the market recovers without a bootstrap.
+
+Rev 5 residuals (Y1–Y4; Y5–Y7 in the docs and the B3 screener):
+* the automatic path has NO clock of its own: the activation instant is the wall clock read IMMEDIATELY before each
+  INSERT attempt — after the records were written, after the head was re-read — so a generation is dated after any
+  decision taken on its predecessor; nothing is clamped to the head's instant (a clamp BACKDATED a generation activated
+  later and made ``generation_at`` hand a past decision a generation that was not in force then, Y1); the D3 refusal
+  exists only on the explicit path, which carries the mesa's clock (a wall clock behind the head: see Z1);
+* a recomposition is retried while the head keeps moving, up to ``RECOMPOSITION_ATTEMPTS``; the limit is a WARNING
+  and the decision is left to the next activation pass (Y2);
+* the activation pass admits, for every symbol, the most recent REGISTERED targeted cycle newer than the one the
+  generation holds — an admission that lost its race (or met a calendar outage) is not lost for the day (Y3);
+* targeted keys that collide after normalization never raise on the automatic path: the first occurrence is carried
+  (WARNING) and a new admission wins its own key; the ambiguity is a ``ValueError`` only for an explicit order (Y4).
+
+Rev 5 residuals (Z1–Z5):
+* a generation is NEVER dated before the generation it chains on — now true on the automatic path too: when the wall
+  clock read at the INSERT is not after the head's ``activated_at`` (a host whose clock runs behind another host's),
+  the activation instant is ADVANCED to the head's instant + 1 microsecond, with a WARNING; it only advances, never
+  recedes (the old clamp reused a pre-records clock and tied with the head). A generation written behind the head was
+  never the head for the readers (``max(activated_at)``, memory and SQL alike), so every later writer conflicted on the
+  stale head and gave up — the chain was locked (Z1). The explicit path keeps refusing a clock behind the head (D3);
+* an explicit order (``select_generation``: a purge, a rollback, a switch) is authoritative over every targeted cycle
+  registered at or before its instant: the recovery of registered-but-unadmitted targeted cycles (Y3) considers only
+  cycles registered AFTER the mesa's last explicit order, so a purge stays purged and a rollback stays on its cycle
+  across automatic passes and bootstraps (Z2);
+* a registered targeted cycle the validator refuses is logged at INFO by the recovery path and recorded in the
+  receipt (``targeted_refused``); it is a WARNING only when the refused cycle id changes (Z3);
+* the receipt of a targeted admission carries ``attempt``, as the activation pass does (Z4).
+
+Rev 5 residuals (W1–W5):
+* the same authority rule holds for UNIVERSE cycles (W1): a market whose candidate cycle was published at or before the
+  mesa's last explicit order is not new — the automatic pass and the bootstrap carry the cycle in force and name the
+  market in ``receipt.held_by_explicit_order``; only a cycle published AFTER the order is activated, so a rollback of a
+  universe cycle is not undone by the next pass;
+* an explicit order carries the mesa's wall clock: a ``now`` in the future beyond ``EXPLICIT_CLOCK_TOLERANCE`` (60 s) is
+  refused (``ValueError``), symmetric to the D3 refusal of a clock behind the head (W2);
+* an order is recognized by a marker ONLY ``select_generation`` writes (``receipt.explicit = True``), never by
+  ``activated_by``; the automatic functions have no ``activated_by`` parameter, and the automatic path strips the
+  marker from any receipt it is handed (W3);
+* a legacy row chained behind its predecessor (dated before it, pre-Z1) locked the chain: every writer chained on the
+  head by ``max(activated_at)`` and conflicted on its UNIQUE successor. When a conflict finds the head unmoved, the writer
+  walks to the chain tip (``Database.valuation_official_selection_successor``) and chains on it, dated after it; the
+  health reports ``head_has_successor`` while the head is not the chain tip (W4);
+* an admission passes the head's known refusals (``receipt.targeted_refused``) to the validator, so a re-run of the same
+  refused cycle logs at INFO, not WARNING (W5).
 """
 from __future__ import annotations
 
@@ -38,7 +102,7 @@ import copy
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -58,6 +122,17 @@ SESSION_ZONES = {"B3": ZoneInfo("America/Sao_Paulo"), "NASDAQ": ZoneInfo("Americ
 CALENDARS = {"B3": "BVMF", "NASDAQ": "XNYS", "NYSE": "XNYS"}
 UNRESOLVED: Any = object()  # "the caller did not resolve a generation": readers resolve the current one themselves
 _calendars: dict[str, Any] = {}
+CONSENSUS_HORIZON = "12m"  # a public analyst consensus is a 12-month target unless the producer says otherwise
+RECOMPOSITION_ATTEMPTS = 5  # a writer recomposes on a moved head this many times before leaving it to the next pass (Y2)
+EXPLICIT_CLOCK_TOLERANCE = timedelta(seconds=60)  # an explicit order carries the mesa's wall clock: further ahead of ours is a wrong clock (W2)
+CHAIN_WALK_LIMIT = 64  # successors followed from an unmoved head to the chain tip before giving up (W4)
+_refusals_logged: dict[str, str] = {}  # symbol → the refused targeted cycle this PROCESS already warned about (Z3; the receipt carries it across processes)
+
+
+class CalendarUnavailable(RuntimeError):
+    """The exchange calendar could not answer for this market/instant: the session is UNKNOWN. Callers never fall
+    back to a civil date (a Sunday would become a session, F393-6): the row is not recordable, the cycle not selectable."""
+
 
 ITEM_STAMP_KEYS = {  # served-row key → API item field (F393-6: the full stamp travels with every served number)
     "tp_source": "tp_source", "generation_id": "official_generation_id", "official_cycle_id": "official_cycle_id",
@@ -73,7 +148,7 @@ def _number(value: Any) -> float | None:
         return None
     if number != number or number in (float("inf"), float("-inf")):
         return None
-    return number
+    return number + 0.0  # -0.0 → 0.0: JSONB has no signed zero, and the hash must survive the round trip
 
 
 def _positive(value: Any) -> float | None:
@@ -103,7 +178,9 @@ def _calendar(market: str) -> Any:
 def session_date_of(market: str, instant: datetime) -> str:
     """The market session a prediction belongs to: the last COMPLETED session of the market's exchange calendar at
     ``instant`` (close ≤ instant) — B3 on BVMF, NASDAQ/NYSE on XNYS. A prediction published on a Sunday night, on a
-    holiday or during the session belongs to the previous session (F393-6); never the civil date of any zone."""
+    holiday or during the session belongs to the previous session (F393-6); never the civil date of any zone.
+    When the calendar cannot answer (missing, out of range, broken) the session is unknown: ``CalendarUnavailable``,
+    logged — a civil-date fallback would mint a Sunday session and a wrong identity (rev 5, F393-6 c)."""
     at = _utc(instant)
     local_day = at.astimezone(SESSION_ZONES[market]).date().isoformat()
     try:
@@ -112,9 +189,10 @@ def session_date_of(market: str, instant: datetime) -> str:
         if _utc(calendar.session_close(session).to_pydatetime()) > at:
             session = calendar.previous_session(session)
         return session.date().isoformat()
-    except Exception as error:  # outside the calendar's range (decades away): declared, never silent
-        logger.warning("session_date_of(%s, %s): calendar unavailable (%s); civil date of the market zone used", market, at.isoformat(), type(error).__name__)
-        return local_day
+    except Exception as error:
+        logger.warning("session_date_of(%s, %s): calendar unavailable (%s: %s) — session unknown, nothing recorded or selected",
+                       market, at.isoformat(), type(error).__name__, error)
+        raise CalendarUnavailable(f"{market} calendar unavailable at {at.isoformat()}: {type(error).__name__}") from error
 
 
 def market_of_entity(analysis_type: str, entity_key: str) -> str | None:
@@ -148,16 +226,63 @@ def provenance_sha256(rows: list[Mapping[str, Any]]) -> str:
     return canonical_sha256(manifest)
 
 
+def _analyst_count(row: Mapping[str, Any]) -> int | None:
+    number = _number(row.get("analyst_count"))
+    return int(number) if number is not None else None
+
+
+def _text_or_none(value: Any) -> str | None:
+    """A producer's textual field as the record keeps it: ``None`` for an absent OR EMPTY value (``''`` is not an
+    instant), a ``datetime``/``date`` as its ISO form (never ``str()``, whose ``T`` is a space), text stripped."""
+    if value is None:
+        return None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    text = str(value).strip()
+    return text or None
+
+
+def consensus_block(row: Mapping[str, Any], *, market: str) -> dict[str, Any]:
+    """The consensus of reference a record carries, with its OWN identity (rev 5, F393-6 b): what it says (``tp``,
+    ``analyst_count``, ``gap_percent``), where it comes from (``source``), WHEN it was published (``published_at`` —
+    the producer's ``consensus_published_at``, else its ``consensus_as_of``; ``as_of`` is kept as the producer wrote
+    it), for which ``horizon`` (the producer's, else ``12m`` for any public consensus, null without one), in which
+    ``currency`` (the producer's, else the market's — the producer converts the consensus into the market's currency;
+    null without one), and ``payload_sha256`` — the canonical hash of all the other fields. Every key is always
+    present; absent values are explicit ``null``. A ``datetime``/``date`` the producer hands over is kept in ISO form
+    (never ``str()``), and an empty string is an absent value (X3)."""
+    tp = _positive(row.get("public_consensus_tp"))
+    published = _text_or_none(row.get("consensus_published_at")) or _text_or_none(row.get("consensus_as_of"))
+    payload = {
+        "tp": tp,
+        "source": _text_or_none(row.get("consensus_origin_source")),
+        "analyst_count": _analyst_count(row),
+        "as_of": _text_or_none(row.get("consensus_as_of")),
+        "published_at": published,
+        "horizon": _text_or_none(row.get("consensus_horizon")) or (CONSENSUS_HORIZON if tp is not None else None),
+        "currency": _text_or_none(row.get("consensus_currency")) or (currency_of(market) if tp is not None else None),
+        "gap_percent": _number(row.get("consensus_gap_percent")),
+    }
+    return {**payload, "payload_sha256": canonical_sha256(payload)}
+
+
 def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycle_id: str, source_version: str,
                         prediction_instant: datetime, source_manifest_sha256: str | None = None) -> dict[str, Any] | None:
     """The immutable record of one canonical row. ``None`` when the row carries no usable official TP
-    (no symbol, TP or buy-in): such rows are not predictions and never become official. Every field the contract
-    names is present — absent values are explicit ``null``, never dropped (F393-6)."""
+    (no symbol, TP or buy-in) — such rows are not predictions and never become official — or when the market's
+    session is unknown (``CalendarUnavailable``: an identity cannot be minted from a civil date, rev 5). Every field
+    the contract names is present — absent values are explicit ``null``, never dropped (F393-6).
+    ``Database._prediction_record`` rebuilds EXACTLY this shape from a PostgreSQL row: change both together."""
     symbol = str(row.get("symbol") or "").strip().upper()
     tp, buy_in = _positive(row.get("our_tp")), _positive(row.get("buy_in"))
     if not symbol or tp is None or buy_in is None:
         return None
     instant = _utc(prediction_instant)
+    try:
+        session_date = session_date_of(market, instant)
+    except CalendarUnavailable as error:
+        logger.warning("valuation_official: %s/%s of cycle %s not recordable — %s", market, symbol, cycle_id, error)
+        return None
     methods = row.get("methods")
     buy_in_models = row.get("buy_in_models")
     core = {
@@ -167,7 +292,7 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
         "market": market,
         "symbol": symbol,
         "scope": scope,
-        "session_date": session_date_of(market, instant),
+        "session_date": session_date,
         "cycle_id": str(cycle_id),
         "prediction_instant": instant.isoformat(),
         "tp": tp,
@@ -176,8 +301,8 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
         "bear_tp": _positive(row.get("bear_tp")),
         "bull_tp": _positive(row.get("bull_tp")),
         "consensus_tp": _positive(row.get("public_consensus_tp")),
-        "consensus_source": row.get("consensus_origin_source") or None,
-        "analyst_count": int(row["analyst_count"]) if _number(row.get("analyst_count")) is not None else None,
+        "consensus_source": _text_or_none(row.get("consensus_origin_source")),
+        "analyst_count": _analyst_count(row),
         "consensus_weight_percent": _number(row.get("consensus_weight_percent")),
         "price": _positive(row.get("price")),
         "currency": currency_of(market),
@@ -190,13 +315,7 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
                 "consensus_weight_percent": _number(row.get("consensus_weight_percent")),
             },
             "bands": {"bear_tp": _positive(row.get("bear_tp")), "bull_tp": _positive(row.get("bull_tp"))},
-            "consensus": {
-                "tp": _positive(row.get("public_consensus_tp")),
-                "source": row.get("consensus_origin_source") or None,
-                "analyst_count": int(row["analyst_count"]) if _number(row.get("analyst_count")) is not None else None,
-                "as_of": str(row.get("consensus_as_of")) if row.get("consensus_as_of") is not None else None,
-                "gap_percent": _number(row.get("consensus_gap_percent")),
-            },
+            "consensus": consensus_block(row, market=market),
             "valuation_profile": row.get("valuation_profile"),
             "risk_score": _number(row.get("risk_score")),
             "valuation_confidence": _number(row.get("valuation_confidence")),
@@ -207,7 +326,7 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
             "provenance": {
                 "source_name": row.get("source_name") or row.get("history_source") or None,
                 "fundamentals_as_of": row.get("fundamentals_as_of") or None,
-                "as_of": str(row.get("as_of")) if row.get("as_of") is not None else None,
+                "as_of": _text_or_none(row.get("as_of")),  # ISO for a datetime, null for '' (X3, as the consensus block)
                 "source_manifest_sha256": source_manifest_sha256,
             },
         },
@@ -233,9 +352,11 @@ def _usable(row: Mapping[str, Any]) -> bool:
 
 def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, Any]:
     """Whether a cycle is COMPLETE, VALID and RECORDED enough to be selectable: it finished (it was published), it has
-    rows, every row is a usable prediction (symbol, price, TP, buy-in, internal TP) and — when ``recorded`` is given —
-    every usable row already has its immutable prediction record (selection never precedes the records, F393-5).
-    Coverage against the producer's universe size is recorded, never presumed. The same rule admits targeted cycles."""
+    rows, every row is a usable prediction (symbol, price, TP, buy-in, internal TP), its market session is KNOWN
+    (the exchange calendar answered for ``published_at`` — an unavailable calendar makes the cycle unselectable, never
+    a civil-date session, rev 5) and — when ``recorded`` is given — every usable row already has its immutable
+    prediction record (selection never precedes the records, F393-5). Coverage against the producer's universe size
+    is recorded, never presumed. The same rule admits targeted cycles (automatic and explicit paths alike, F393-4)."""
     rows = cycle_rows(snapshot)
     outputs = snapshot.get("outputs") if isinstance(snapshot.get("outputs"), Mapping) else {}
     universe_size = _number(outputs.get("universe_size")) if isinstance(outputs, Mapping) else None
@@ -243,6 +364,14 @@ def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapp
     unrecorded: list[str] = []
     if recorded is not None:
         unrecorded = [str(row["symbol"]).strip().upper() for row in rows if _usable(row) and str(row["symbol"]).strip().upper() not in recorded]
+    market = market_of_entity(str(snapshot.get("analysis_type") or ""), str(snapshot.get("entity_key") or ""))
+    session_date: str | None = None
+    calendar_unavailable = False
+    if market is not None and snapshot.get("published_at"):
+        try:
+            session_date = session_date_of(market, _utc(snapshot["published_at"]))
+        except CalendarUnavailable:
+            calendar_unavailable = True
     return {
         "cycle_id": str(snapshot.get("id")),
         "rows": len(rows),
@@ -251,7 +380,9 @@ def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapp
         "invalid_rows": invalid[:20],
         "invalid_count": len(invalid),
         "unrecorded_count": len(unrecorded),
-        "valid": bool(rows) and not invalid and not unrecorded,
+        "session_date": session_date,
+        "calendar_unavailable": calendar_unavailable,
+        "valid": bool(rows) and not invalid and not unrecorded and (market is None or session_date is not None),
         "published_at": _utc(snapshot["published_at"]).isoformat() if snapshot.get("published_at") else None,
     }
 
@@ -271,161 +402,382 @@ def _manifest_sha(snapshot: Mapping[str, Any]) -> str | None:
     return None
 
 
-def record_snapshot(database: Any, snapshot: Mapping[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
-    """Called by the persistence layer right after a producer publishes a cycle: turns the cycle's rows into
-    prediction records FIRST, then (universe cycles) activates a new generation when the set of selectable cycles
-    changed, or (targeted cycles) admits the symbol into a new generation. Idempotent per cycle. The activation
-    instant is the wall clock (``now``), not the cycle's ``published_at``: generations are ordered by when they were
-    activated, and a cycle whose basis instant is older than the current generation still activates (D3)."""
+def record_cycle_predictions(database: Any, snapshot: Mapping[str, Any]) -> int:
+    """The records of one producer cycle, written (append-only, idempotent: the unique key ignores a re-insert) —
+    NOTHING else: no activation, no admission. Returns how many records were new. An unavailable calendar makes NO
+    row recordable (one warning per cycle, not one per row); the cycle can be recorded later, when the calendar
+    answers again (``selectable_cycles`` does so before validating, X4)."""
     analysis_type = str(snapshot.get("analysis_type") or "")
     market = market_of_entity(analysis_type, str(snapshot.get("entity_key") or ""))
     if market is None:
-        return {"recorded": 0, "generation": None}
+        return 0
     scope = "universe" if analysis_type == UNIVERSE_ANALYSIS else "targeted"
     instant = _utc(snapshot["published_at"])
-    activation_now = _utc(now) if now is not None else datetime.now(timezone.utc)
+    try:
+        session_date_of(market, instant)
+    except CalendarUnavailable as error:
+        logger.warning("valuation_official: cycle %s (%s) not recorded — %s", snapshot.get("id"), market, error)
+        return 0
     records = [record for record in (prediction_from_row(row, market=market, scope=scope, cycle_id=str(snapshot["id"]),
                                                           source_version=_source_version(snapshot), prediction_instant=instant,
                                                           source_manifest_sha256=_manifest_sha(snapshot))
                                      for row in cycle_rows(snapshot)) if record is not None]
-    recorded = database.insert_valuation_predictions(records) if records else 0
-    if scope == "universe":
-        generation = activate_generation_if_changed(database, now=activation_now)
+    return int(database.insert_valuation_predictions(records)) if records else 0
+
+
+def record_snapshot(database: Any, snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    """Called by the persistence layer right after a producer publishes a cycle: turns the cycle's rows into
+    prediction records FIRST, then (universe cycles) activates a new generation when the set of selectable cycles
+    changed, or (targeted cycles) admits the symbol into a new generation. Idempotent per cycle. No clock is taken
+    here: the activation instant is the wall clock the activation reads immediately before its INSERT — after the
+    records are written — never the cycle's ``published_at`` and never an instant from before the records (a clock
+    taken here and reused by the activation dated a generation before generations activated meanwhile, Y1)."""
+    analysis_type = str(snapshot.get("analysis_type") or "")
+    market = market_of_entity(analysis_type, str(snapshot.get("entity_key") or ""))
+    if market is None:
+        return {"recorded": 0, "generation": None}
+    recorded = record_cycle_predictions(database, snapshot)
+    if analysis_type == UNIVERSE_ANALYSIS:
+        generation = activate_generation_if_changed(database)
     else:
         symbol = str(snapshot.get("entity_key") or "").strip().upper()
-        generation = admit_targeted_cycle(database, symbol=symbol, cycle_id=str(snapshot["id"]), now=activation_now) if records else None
+        has_record = bool(recorded) or symbol in database.valuation_predictions_for_cycle(str(snapshot["id"]))  # an unrecordable cycle is never admitted
+        generation = admit_targeted_cycle(database, symbol=symbol, cycle_id=str(snapshot["id"])) if has_record else None
     return {"recorded": recorded, "generation": generation}
 
 
 def selectable_cycles(database: Any) -> dict[str, dict[str, Any]]:
-    """The latest COMPLETE, VALID and RECORDED universe cycle per market (the candidates for the next generation)."""
+    """The latest COMPLETE, VALID and RECORDED universe cycle per market (the candidates for the next generation).
+    A latest cycle with NO record at all is recorded here first (idempotent, records before selection): it was
+    published while the calendar could not answer (nothing was recordable then, X4) or before Passo 0 — the moment
+    the calendar answers, the next activation pass recovers it with its real session instead of leaving the market on
+    a stale generation. A cycle with SOME records missing is left alone: another process may still be writing them
+    (D1) and it is simply not selectable yet."""
     cycles: dict[str, dict[str, Any]] = {}
     for market in MARKETS:
         raw = database.latest_analysis_snapshot(UNIVERSE_ANALYSIS, f"{market}_UNIVERSE")
         if not raw:
             continue
         snapshot = _normalized_snapshot(raw, analysis_type=UNIVERSE_ANALYSIS, entity_key=f"{market}_UNIVERSE")
-        validation = cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(str(snapshot["id"])))
+        recorded = database.valuation_predictions_for_cycle(str(snapshot["id"]))
+        if not recorded and cycle_rows(snapshot) and record_cycle_predictions(database, snapshot) > 0:
+            logger.info("valuation_official: %s cycle %s recorded at selection time (published while unrecordable)", market, snapshot["id"])
+            recorded = database.valuation_predictions_for_cycle(str(snapshot["id"]))
+        validation = cycle_validation(snapshot, recorded=recorded)
         validation["source_version"] = _source_version(snapshot)
         cycles[market] = validation
     return cycles
 
 
-def _new_generation(database: Any, *, cycles: Mapping[str, str], targeted: Mapping[str, str], source: str, source_version: str,
-                    session_dates: Mapping[str, str], now: datetime, activated_by: str, receipt: Mapping[str, Any],
-                    strict: bool = False) -> dict[str, Any] | None:
-    """One INSERT chained on the current generation. A clock earlier than the current activation (D3) or a chain
-    conflict (another writer extended the same predecessor first, B2) is refused: ``ValueError`` on the explicit path
-    (``strict``), ``None`` on the automatic one — the next pass re-reads and retries; nothing is ever half-written."""
-    from .database import SelectionConflict  # the storage layer raises it on the UNIQUE previous_generation_id
+def _normalized_targeted(targeted: Mapping[str, str], *, strict: bool = True) -> dict[str, str]:
+    """Targeted admissions keyed by the CLEAN symbol (``strip().upper()``, as ``official_row`` looks them up): a key
+    written as ``wege3`` would never be served (X2). Two keys that collide after normalization with different cycles
+    are an ambiguous order: ``ValueError`` when ``strict`` (an explicit selection); on the automatic path (carry-over of
+    a generation already in force) the FIRST occurrence is kept and the collision is logged — the nightly writer never
+    dies on a map it did not write (Y4)."""
+    clean: dict[str, str] = {}
+    for symbol, cycle_id in targeted.items():
+        key = str(symbol).strip().upper()
+        if key in clean and clean[key] != str(cycle_id):
+            message = f"targeted symbols collide after normalization: {symbol!r} → {key} names {clean[key]} and {cycle_id}"
+            if strict:
+                raise ValueError(message)
+            logger.warning("valuation_official: %s — the first occurrence (%s) is carried", message, clean[key])
+            continue
+        clean[key] = str(cycle_id)
+    return clean
+
+
+def _new_generation(database: Any, *, expected_previous: str | None, cycles: Mapping[str, str], targeted: Mapping[str, str], source: str,
+                    source_version: str, session_dates: Mapping[str, str], activated_by: str, receipt: Mapping[str, Any],
+                    now: datetime | None = None, strict: bool = False) -> dict[str, Any] | None:
+    """One INSERT chained on ``expected_previous`` — the generation the CALLER based its decision on (``None`` for the
+    bootstrap). If the chain moved meanwhile (the head read here is not that generation: another writer published
+    first, F393-9) or the storage refuses the chain (the UNIQUE predecessor / the unique root, B2), the write is
+    refused: ``ValueError`` on the explicit path (``strict``), ``None`` on the automatic one — the caller re-reads the
+    NEW head and recomposes its decision on it, so the other writer's generation is carried, never dropped.
+    The activation clock (Y1, Z1): the explicit path carries the mesa's clock (``now``), and a clock earlier than the
+    current activation is a stale order, refused (D3, ``ValueError``, ``strict``). The automatic path passes NO clock:
+    the wall clock is read HERE, immediately before the INSERT — after the records were written and after the head was
+    re-read above — so the generation is dated after any decision taken on that predecessor; it is never clamped to the
+    head's instant (a clamp backdated it under a decision that read the predecessor, and ``generation_at`` handed that
+    decision a generation not in force then). A generation is NEVER dated before the generation it chains on: on the
+    non-strict path a clock that is not after the head's ``activated_at`` (this host's wall clock behind the host that
+    wrote the head) is ADVANCED to the head's instant + 1 microsecond, with a WARNING — it only advances, never recedes
+    (a generation written behind the head was not the head for any reader, and every later writer conflicted on the
+    stale head: the chain was locked, Z1). Nothing is ever half-written.
+    The marker of an explicit order (``receipt.explicit``) is written by ``select_generation`` alone: the non-strict
+    path strips it from any receipt it is handed, so no automatic generation is ever read as an order (W3).
+    A conflict that finds the head UNMOVED is a legacy row chained behind its predecessor (W4, see ``_repaired``)."""
+    from .database import SelectionConflict  # the storage layer raises it on the UNIQUE previous_generation_id / root
     current = database.latest_valuation_official_selection()
-    activated_at = _utc(now)
-    if current and activated_at < _utc(current["activated_at"]):
-        message = f"activation clock {activated_at.isoformat()} is earlier than the current generation ({current['activated_at']})"
+    head = current.get("generation_id") if current else None
+    if head != expected_previous:
+        message = f"the current generation is {head}, not the expected predecessor {expected_previous} — decision must be recomposed"
         if strict:
-            raise ValueError(message)
-        logger.warning("valuation_official: %s — generation not activated", message)
+            raise ValueError(f"selection conflict: {message}")
+        logger.warning("valuation_official: %s", message)
         return None
+    activated_at = _utc(now) if now is not None else datetime.now(timezone.utc)  # the automatic path: the clock of THIS attempt, at the INSERT
+    if current:
+        head_at = _utc(current["activated_at"])
+        if strict and activated_at < head_at:
+            raise ValueError(f"activation clock {activated_at.isoformat()} is earlier than the current generation ({current['activated_at']})")
+        if not strict and activated_at <= head_at:
+            advanced = head_at + timedelta(microseconds=1)
+            logger.warning("valuation_official: activation clock %s is not after the current generation (%s) — advanced to %s: a generation is "
+                           "never dated before the generation it chains on (wall clock behind the head, Z1)",
+                           activated_at.isoformat(), current["activated_at"], advanced.isoformat())
+            activated_at = advanced
+    stamped_receipt = dict(receipt)
+    if not strict:
+        stamped_receipt.pop("explicit", None)  # W3: only select_generation writes the marker of an order
     generation = {
         "schema": SELECTION_SCHEMA,
         "generation_id": str(uuid4()),
         "source": source,
         "source_version": source_version,
         "cycles": {market: str(cycles[market]) for market in MARKETS},
-        "targeted": {str(symbol): str(cycle_id) for symbol, cycle_id in sorted(targeted.items())},
+        "targeted": dict(sorted(_normalized_targeted(targeted, strict=strict).items())),
         "session_dates": dict(session_dates),
         "validated_complete": True,
         "activated_at": activated_at.isoformat(),
         "activated_by": activated_by,
-        "previous_generation_id": current.get("generation_id") if current else None,
-        "receipt": dict(receipt),
+        "previous_generation_id": head,
+        "receipt": stamped_receipt,
     }
     try:
         database.insert_valuation_official_selection(generation)
     except SelectionConflict as error:
-        if strict:
-            raise ValueError(f"selection conflict: {error}") from error
-        logger.warning("valuation_official: chain conflict on %s — generation not activated", generation["previous_generation_id"])
-        return None
+        generation = _repaired(database, generation, expected_previous=head, error=error, strict=strict)
+        if generation is None:
+            return None
     database.drop_official_cycle_cache()
     return generation
 
 
-def activate_generation_if_changed(database: Any, *, now: datetime, activated_by: str = ACTIVATED_BY) -> dict[str, Any] | None:
-    """Insert a new generation when the set of official cycles changed. A market with a new COMPLETE, VALID, RECORDED
-    cycle contributes it; a market without one keeps the cycle of the current generation (carried over, recorded in
-    the receipt, B1) — so one market's bad night never strips the other two of their official stamp. Bootstrap (no
-    generation yet) still requires every market to have a valid cycle: an incomplete generation is never selectable.
-    One INSERT — readers see the previous generation or the new one, never a mixture. Targeted admissions of the
-    current generation are carried over; a chain conflict is retried once."""
-    for _attempt in range(2):
+def _chain_tip(database: Any, generation_id: str | None) -> dict[str, Any] | None:
+    """The last generation reachable from ``generation_id`` through ``previous_generation_id`` successors — ``None``
+    when it has no successor (it IS the tip) or the walk exceeds ``CHAIN_WALK_LIMIT`` (W4)."""
+    tip: dict[str, Any] | None = None
+    cursor = generation_id
+    for _ in range(CHAIN_WALK_LIMIT):
+        successor = database.valuation_official_selection_successor(str(cursor)) if cursor is not None else None
+        if successor is None:
+            return tip
+        tip = successor
+        cursor = str(successor["generation_id"])
+    logger.warning("valuation_official: the chain from %s has more than %s successors — not followed", generation_id, CHAIN_WALK_LIMIT)
+    return None
+
+
+def _repaired(database: Any, generation: dict[str, Any], *, expected_previous: str | None, error: Exception, strict: bool) -> dict[str, Any] | None:
+    """The write refused by the storage (UNIQUE successor / unique root), re-examined (W4). If the head MOVED, it is a
+    legitimate race: ``ValueError`` on the explicit path, ``None`` on the automatic one (the caller recomposes). If the
+    head is UNMOVED, its successor is a row dated BEHIND it — written before Z1 by a host whose clock ran behind — that
+    no reader ever saw as the head; every writer chained on the head and conflicted on it: the chain was locked. The
+    generation is chained on the chain TIP instead, dated after it — and, on the automatic path, after the head too
+    (advanced by 1 µs past the later of the two when needed; the explicit clock is never advanced past the head, D3
+    already holds it at or after the head) — with the repair in its receipt (``repaired_chain``) and a WARNING. A second
+    refusal is given up (explicit: ``ValueError``)."""
+    reread = database.latest_valuation_official_selection()
+    moved = (reread.get("generation_id") if reread else None) != expected_previous
+    tip = None if moved else _chain_tip(database, expected_previous)
+    if moved or tip is None or reread is None:
+        if strict:
+            raise ValueError(f"selection conflict: {error}") from error
+        logger.warning("valuation_official: chain conflict on %s — generation not activated (%s)", expected_previous,
+                       "the head moved" if moved else "no successor is visible")
+        return None
+    activated_at = _utc(generation["activated_at"])
+    floor = _utc(tip["activated_at"]) if strict else max(_utc(tip["activated_at"]), _utc(reread["activated_at"]))
+    if activated_at <= floor:
+        activated_at = floor + timedelta(microseconds=1)
+    repaired = {**generation, "activated_at": activated_at.isoformat(), "previous_generation_id": str(tip["generation_id"]),
+                "receipt": {**generation["receipt"], "repaired_chain": {"head": expected_previous, "chained_on": str(tip["generation_id"])}}}
+    logger.warning("valuation_official: the head %s already has a successor dated behind it (chain tip %s, activated %s — a row written behind its "
+                   "predecessor): chained on the tip instead, at %s (W4)", expected_previous, tip["generation_id"], tip["activated_at"], repaired["activated_at"])
+    from .database import SelectionConflict
+    try:
+        database.insert_valuation_official_selection(repaired)
+    except SelectionConflict as second:
+        if strict:
+            raise ValueError(f"selection conflict: {second}") from second
+        logger.warning("valuation_official: chain conflict on the chain tip %s too — generation not activated", tip["generation_id"])
+        return None
+    return repaired
+
+
+def _admissible_targeted(database: Any, *, symbol: str, cycle_id: str, known_refusal: str | None = None) -> dict[str, Any] | None:
+    """The validation of a targeted cycle for ``symbol`` when it may be admitted — the SAME validator as a universe
+    cycle (F393-4) and the symbol's own record present — else ``None``, logged: a WARNING the first time this cycle is
+    refused (the admission, or a recovery pass meeting a refused cycle id it did not know), INFO when the refusal is
+    already known — by this process (``_refusals_logged``) or by the head's receipt (``known_refusal``, Z3)."""
+    snapshot = database.official_cycle_snapshot(str(cycle_id))
+    if not snapshot or snapshot.get("analysis_type") != TARGETED_ANALYSIS:
+        return None
+    recorded = database.valuation_predictions_for_cycle(str(cycle_id))
+    validation = cycle_validation(snapshot, recorded=recorded)
+    if not validation["valid"] or symbol not in recorded:
+        level = logging.INFO if str(cycle_id) in (known_refusal, _refusals_logged.get(symbol)) else logging.WARNING
+        logger.log(level, "valuation_official: targeted cycle %s for %s refused: %s", cycle_id, symbol,
+                   {k: validation[k] for k in ("invalid_count", "unrecorded_count", "rows", "calendar_unavailable")})
+        _refusals_logged[symbol] = str(cycle_id)
+        return None
+    return validation
+
+
+def _recovered_targeted(database: Any, carried: Mapping[str, str], universe_cycle: str | None, *,
+                        head: Mapping[str, Any] | None, order: Mapping[str, Any] | None) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """The targeted admissions of the next generation (Y3): the carried ones, then — for every symbol with a REGISTERED
+    targeted cycle newer than the one carried (or none carried) — that cycle, if it passes the validator and the
+    universe cycle does not serve the symbol (A1). A targeted cycle that was recorded but never admitted (its admission
+    lost every recomposition, or its calendar was out when it was validated) is thus admitted by the next activation
+    pass instead of waiting for a re-run.
+    The mesa's last EXPLICIT order (``order``: the latest generation carrying the marker ``receipt.explicit``, which
+    ``select_generation`` alone writes — a purge, a rollback, a switch; read once by the caller, W3) is authoritative
+    over every targeted cycle registered at or before its ``activated_at``: those are never recovered — the order
+    decided over them (a purge stays purged, a rollback to an older cycle stays on it) — whether the order is the head
+    or an automatic generation has chained on it since; only cycles registered AFTER the order are candidates (Z2).
+    A candidate the validator refuses is recorded in the receipt (``targeted_refused``) and logged at INFO when the
+    head's receipt (or this process) already names that cycle for the symbol, at WARNING when the refused cycle id
+    changes (Z3). Returns ``(targeted, recovered, refused)``."""
+    targeted = dict(carried)
+    recovered: dict[str, str] = {}
+    refused: dict[str, str] = {}
+    served = set(database.valuation_predictions_for_cycle(str(universe_cycle))) if universe_cycle else set()
+    authority = _utc(order["activated_at"]) if order else None
+    known_refusals = ((head or {}).get("receipt") or {}).get("targeted_refused") or {}
+    for symbol, record in sorted(database.latest_targeted_predictions("B3", source=SOURCE_OFFICIAL).items()):
+        clean = str(symbol).strip().upper()
+        candidate = str(record["cycle_id"])
+        if clean in served or targeted.get(clean) == candidate:
+            continue
+        if authority is not None and _utc(record["prediction_instant"]) <= authority:
+            continue  # registered at or before the mesa's last explicit order: that order decided over it (Z2)
+        admitted = database.valuation_prediction_record(str(targeted[clean]), clean) if clean in targeted else None
+        if admitted is not None and _utc(record["prediction_instant"]) <= _utc(admitted["prediction_instant"]):
+            continue  # the generation already holds a cycle at least as recent
+        if _admissible_targeted(database, symbol=clean, cycle_id=candidate, known_refusal=known_refusals.get(clean)) is None:
+            refused[clean] = candidate
+            continue
+        targeted[clean] = candidate
+        recovered[clean] = candidate
+    return targeted, recovered, refused
+
+
+def activate_generation_if_changed(database: Any) -> dict[str, Any] | None:
+    """Insert a new generation when the set of official cycles — or of targeted admissions — changed. A market with a
+    new COMPLETE, VALID, RECORDED cycle contributes it; a market without one keeps the cycle of the current generation
+    (carried over, recorded in the receipt, B1) — so one market's bad night never strips the other two of their
+    official stamp. Bootstrap (no generation yet) still requires every market to have a valid cycle: an incomplete
+    generation is never selectable. One INSERT — readers see the previous generation or the new one, never a mixture.
+    The mesa's last EXPLICIT order (the latest generation with ``receipt.explicit``, read ONCE per attempt, W3) stands
+    over every cycle published at or before its ``activated_at`` — universe cycles too (W1): a market whose candidate
+    was published at or before the order, while a generation is in force, is NOT new — the cycle in force is carried
+    and the market is named in ``receipt.held_by_explicit_order`` — so a rollback of a universe cycle survives the next
+    automatic pass and the bootstrap; only a cycle published AFTER the order is activated.
+    Targeted admissions of the current generation are carried over (collisions after normalization: first occurrence,
+    Y4) and a registered targeted cycle newer than the carried one is admitted here (Y3, ``receipt.targeted_recovered``)
+    — only if it was registered AFTER the same order (Z2); a registered cycle the validator refuses is named in
+    ``receipt.targeted_refused`` (Z3). Always written as ``ACTIVATED_BY``: the automatic path has no ``activated_by`` of
+    its own, so nothing it writes can be read as an order (W3).
+    The generation read here is the expected predecessor: if another writer moved the chain meanwhile the write is
+    refused and the decision is recomposed on the new head (F393-9), up to ``RECOMPOSITION_ATTEMPTS`` times (Y2) —
+    each attempt is a new activation, dated by the wall clock read at its own INSERT (Y1), never before the head it
+    chains on (Z1); past the limit the pass gives up with a WARNING and the next pass (the next cycle of any market, or
+    the bootstrap) composes the decision again."""
+    for attempt in range(RECOMPOSITION_ATTEMPTS):
         candidates = selectable_cycles(database)
         current = database.latest_valuation_official_selection()
+        order = database.latest_explicit_valuation_official_selection() if current else None  # the mesa's last order, once (W1/W3)
+        authority = _utc(order["activated_at"]) if order else None
         cycles: dict[str, str] = {}
         versions: dict[str, str] = {}
         carried: list[str] = []
+        held: list[str] = []
         session_dates: dict[str, str] = {}
         for market in MARKETS:
             item = candidates.get(market)
+            in_force = str((current.get("cycles") or {}).get(market) or "") if current else ""
+            if item and item["valid"] and in_force and str(item["cycle_id"]) != in_force and authority is not None \
+                    and item.get("published_at") and _utc(item["published_at"]) <= authority:
+                held.append(market)  # W1: published at or before the mesa's order — the order decided over it; not new
+                item = None
             if item and item["valid"]:
                 cycles[market] = str(item["cycle_id"])
                 versions[market] = str(item["source_version"])
-                session_dates[market] = session_date_of(market, _utc(item["published_at"]))
-            elif current and (current.get("cycles") or {}).get(market):
-                cycles[market] = str(current["cycles"][market])
+                session_dates[market] = str(item["session_date"])  # validated: the calendar answered for this cycle
+            elif in_force:
+                cycles[market] = in_force
                 carried_snapshot = database.official_cycle_snapshot(cycles[market])
                 versions[market] = _source_version(carried_snapshot) if carried_snapshot else "unknown"
-                session_dates[market] = str((current.get("session_dates") or {}).get(market) or "")
+                session_dates[market] = str(((current or {}).get("session_dates") or {}).get(market) or "")
                 carried.append(market)
             else:
                 logger.warning("valuation_official: %s has no valid recorded cycle and no generation to carry — nothing activated", market)
                 return None
-        if current and current.get("cycles") == cycles and current.get("source") == SOURCE_OFFICIAL:
+        carried_targeted = _normalized_targeted((current or {}).get("targeted") or {}, strict=False)
+        targeted, recovered, refused = _recovered_targeted(database, carried_targeted, cycles.get("B3"), head=current, order=order)
+        if current and current.get("cycles") == cycles and current.get("targeted") == targeted and current.get("source") == SOURCE_OFFICIAL:
             return None
         generation = _new_generation(
-            database, cycles=cycles, targeted=(current or {}).get("targeted") or {}, source=SOURCE_OFFICIAL,
-            source_version="+".join(sorted(set(versions.values()))), session_dates=session_dates, now=now, activated_by=activated_by,
+            database, expected_previous=current.get("generation_id") if current else None, cycles=cycles, targeted=targeted, source=SOURCE_OFFICIAL,
+            source_version="+".join(sorted(set(versions.values()))), session_dates=session_dates, activated_by=ACTIVATED_BY,
             receipt={"validation": {market: {k: v for k, v in candidates[market].items() if k != "invalid_rows"} for market in MARKETS if market in candidates},
                      "changed_markets": [market for market in MARKETS if not current or (current.get("cycles") or {}).get(market) != cycles[market]],
-                     "carried_markets": carried, "versions": versions},
+                     "carried_markets": carried, "held_by_explicit_order": held, "explicit_order": str(order["generation_id"]) if order else None,
+                     "versions": versions, "targeted_recovered": recovered, "targeted_refused": refused, "attempt": attempt + 1},
         )
         if generation is not None:
             return generation
+    logger.warning("valuation_official: the head moved on every one of %s recomposition attempts — nothing activated by this pass; the next pass recomposes",
+                   RECOMPOSITION_ATTEMPTS)
     return None
 
 
-def admit_targeted_cycle(database: Any, *, symbol: str, cycle_id: str, now: datetime, activated_by: str = ACTIVATED_BY) -> dict[str, Any] | None:
+def admit_targeted_cycle(database: Any, *, symbol: str, cycle_id: str) -> dict[str, Any] | None:
     """A targeted (on-demand) valuation published by the official producer for a symbol outside the universe becomes
     official only THROUGH the selection: a new generation with ``targeted[symbol] = cycle_id`` (new id — a new served
     number is a new generation, F393-4). The cycle must pass the SAME validation as a universe cycle (a row with
     ``price = 0`` or no ``internal_tp`` is never admitted); a symbol the universe cycle already serves is not admitted
     (the universe answers first, so the admission would never be read, A1). Without a current generation there is
-    nothing to admit into. A chain conflict is retried once."""
+    nothing to admit into (and nothing is validated: the bootstrap's recovery pass validates it, Y3). The generation
+    read is the expected predecessor; a moved chain is recomposed up to ``RECOMPOSITION_ATTEMPTS`` times (F393-9, Y2),
+    each attempt dated by the wall clock at its own INSERT (Y1, never before the head, Z1) and numbered in the receipt
+    (``attempt``, Z4); the current admissions are carried normalized (first occurrence on a collision) and this
+    admission wins its own key (Y4), and the head's known refusals (``receipt.targeted_refused``) are carried too, minus
+    this symbol, so a later pass does not warn again for a refusal the chain already names (Z3). The validator receives
+    the head's known refusal for this symbol: a re-run of the same refused cycle is INFO, not WARNING (W5). Always
+    written as ``ACTIVATED_BY`` (W3). An admission that gives up is recovered by the next activation pass (Y3)."""
     clean = symbol.strip().upper()
-    snapshot = database.official_cycle_snapshot(str(cycle_id))
-    if not snapshot or snapshot.get("analysis_type") != TARGETED_ANALYSIS:
-        return None
-    validation = cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(str(cycle_id)))
-    if not validation["valid"] or clean not in database.valuation_predictions_for_cycle(str(cycle_id)):
-        logger.warning("valuation_official: targeted cycle %s for %s refused: %s", cycle_id, clean, {k: validation[k] for k in ("invalid_count", "unrecorded_count", "rows")})
-        return None
-    for _attempt in range(2):
+    validation: dict[str, Any] | None = None
+    for attempt in range(RECOMPOSITION_ATTEMPTS):
         current = database.latest_valuation_official_selection()
         if not current:
             return None
         if (current.get("targeted") or {}).get(clean) == str(cycle_id):
             return None
+        if validation is None:  # validated once, against the head's known refusals (W5)
+            known = ((current.get("receipt") or {}).get("targeted_refused") or {}).get(clean)
+            validation = _admissible_targeted(database, symbol=clean, cycle_id=str(cycle_id), known_refusal=str(known) if known else None)
+            if validation is None:
+                return None
         universe_cycle = (current.get("cycles") or {}).get("B3")
         if universe_cycle and clean in database.valuation_predictions_for_cycle(str(universe_cycle)):
             return None
         generation = _new_generation(
-            database, cycles=current["cycles"], targeted={**(current.get("targeted") or {}), clean: str(cycle_id)}, source=str(current["source"]),
-            source_version=str(current["source_version"]), session_dates=dict(current.get("session_dates") or {}), now=now, activated_by=activated_by,
+            database, expected_previous=str(current["generation_id"]), cycles=current["cycles"],
+            targeted={**_normalized_targeted(current.get("targeted") or {}, strict=False), clean: str(cycle_id)}, source=str(current["source"]),
+            source_version=str(current["source_version"]), session_dates=dict(current.get("session_dates") or {}), activated_by=ACTIVATED_BY,
             receipt={"targeted_admission": {"symbol": clean, "cycle_id": str(cycle_id), "validation": {k: v for k, v in validation.items() if k != "invalid_rows"}},
-                     "changed_markets": []},
+                     "changed_markets": [], "attempt": attempt + 1,
+                     "targeted_refused": {k: v for k, v in (((current.get("receipt") or {}).get("targeted_refused") or {}).items()) if k != clean}},
         )
         if generation is not None:
             return generation
+    logger.warning("valuation_official: the head moved on every one of %s recomposition attempts — %s/%s not admitted by this call; the next activation pass recovers it",
+                   RECOMPOSITION_ATTEMPTS, clean, cycle_id)
     return None
 
 
@@ -433,28 +785,50 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
                       targeted: Mapping[str, str] | None = None, source: str = SOURCE_OFFICIAL, source_version: str = "rollback") -> dict[str, Any]:
     """Explicit selection (rollback or a mesa-ordered switch): a new generation pointing at complete, recorded cycles
     that already exist — each market cycle must be a universe cycle OF THAT MARKET, each targeted cycle a targeted
-    cycle OF THAT SYMBOL (F393-4). Every market must be named (F1). Never used by the nightly path."""
+    cycle OF THAT SYMBOL, and BOTH must pass ``cycle_validation`` (the validator of the automatic path: a targeted row
+    with ``price = 0`` or no ``internal_tp`` is refused here too, F393-4 rev 5). Every market must be named (F1). The
+    targeted symbols are normalized (``strip().upper()``) before validation and writing, as ``official_row`` looks them
+    up (X2). The generation in force when the order is executed is the expected predecessor: if the chain moves during
+    validation the order fails (``ValueError``) and the mesa re-reads. The order is authoritative over every cycle
+    published or registered at or before ``now`` — targeted (Z2) and universe (W1) alike: the automatic recovery (Y3)
+    never re-admits them — a purge (``targeted={}``) stays purged, a rollback to an older cycle stays on it, a universe
+    rollback is not undone by the next pass; a cycle published after the order is activated/recovered normally.
+    ``now`` is the mesa's WALL CLOCK at the order: a clock behind the head is refused (D3) and so is a clock further
+    ahead of this host's than ``EXPLICIT_CLOCK_TOLERANCE`` (60 s; W2) — an order dated in the future would stand over
+    cycles not yet published. The order is marked ``receipt.explicit = True`` — the ONLY marker the automatic path
+    reads as an order (W3). Never used by the nightly path."""
+    instant = _utc(now)
+    wall = datetime.now(timezone.utc)
+    if instant > wall + EXPLICIT_CLOCK_TOLERANCE:
+        raise ValueError(f"activation clock {instant.isoformat()} is in the future by more than {int(EXPLICIT_CLOCK_TOLERANCE.total_seconds())} s "
+                         f"(wall clock {wall.isoformat()}) — the order carries the mesa's wall clock")
     missing = [market for market in MARKETS if market not in cycles]
     if missing:
         raise ValueError(f"cycles must name every market; missing: {', '.join(missing)}")
-    snapshots: dict[str, dict[str, Any]] = {}
+    admissions = _normalized_targeted(targeted or {})
+    current = database.latest_valuation_official_selection()
+    session_dates: dict[str, str] = {}
     for market in MARKETS:
         snapshot = database.analysis_snapshot_by_id(str(cycles[market]))
         if not snapshot or snapshot.get("analysis_type") != UNIVERSE_ANALYSIS or market_of_entity(UNIVERSE_ANALYSIS, str(snapshot.get("entity_key") or "")) != market:
             raise ValueError(f"cycle for {market} is not a universe cycle of {market}: {cycles.get(market)}")
-        if not cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(str(cycles[market])))["valid"]:
+        validation = cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(str(cycles[market])))
+        if not validation["valid"]:
             raise ValueError(f"cycle for {market} is not complete/valid/recorded: {cycles[market]}")
-        snapshots[market] = snapshot
-    for symbol, cycle_id in (targeted or {}).items():
-        snapshot = database.analysis_snapshot_by_id(str(cycle_id))
-        if not snapshot or snapshot.get("analysis_type") != TARGETED_ANALYSIS or str(snapshot.get("entity_key") or "").upper() != symbol.upper():
+        session_dates[market] = str(validation["session_date"])
+    for symbol, cycle_id in admissions.items():
+        snapshot = database.analysis_snapshot_by_id(cycle_id)
+        if not snapshot or snapshot.get("analysis_type") != TARGETED_ANALYSIS or str(snapshot.get("entity_key") or "").strip().upper() != symbol:
             raise ValueError(f"targeted cycle for {symbol} is not a targeted cycle of {symbol}: {cycle_id}")
-        if symbol.upper() not in database.valuation_predictions_for_cycle(str(cycle_id)):
-            raise ValueError(f"targeted cycle for {symbol} has no prediction record: {cycle_id}")
+        recorded = database.valuation_predictions_for_cycle(cycle_id)
+        validation = cycle_validation(snapshot, recorded=recorded)
+        if not validation["valid"] or symbol not in recorded:
+            raise ValueError(f"targeted cycle for {symbol} is not complete/valid/recorded: {cycle_id} "
+                             f"({ {k: validation[k] for k in ('invalid_count', 'unrecorded_count', 'rows', 'calendar_unavailable')} })")
     generation = _new_generation(
-        database, cycles=cycles, targeted=targeted or {}, source=source, source_version=source_version,
-        session_dates={market: session_date_of(market, _utc(snapshots[market]["published_at"])) for market in MARKETS}, now=now,
-        activated_by=activated_by, receipt={"reason": reason}, strict=True,
+        database, expected_previous=current.get("generation_id") if current else None, cycles=cycles, targeted=admissions,
+        source=source, source_version=source_version, session_dates=session_dates, now=instant, activated_by=activated_by,
+        receipt={"reason": reason, "explicit": True}, strict=True,  # the marker of an order — written here and nowhere else (W3)
     )
     assert generation is not None  # strict mode raises instead of returning None
     return generation
@@ -599,14 +973,27 @@ def prediction_records(database: Any, market: str, symbol: str, *, source: str |
 def official_prediction_snapshot(database: Any, market: str, *, generation: Any = UNRESOLVED) -> dict[str, Any] | None:
     """The official records of one market for one generation, in the shape the studies adapter reads (``outputs.results``
     keyed by symbol), with ``published_at`` = the generation's activation — the provenance a study needs. A study
-    replaying a decision passes the generation in force at that decision (``generation_at``), never the current one."""
+    replaying a decision passes the generation in force at that decision (``generation_at``), never the current one.
+    ``results`` holds EVERYTHING the generation served for the market: the universe cycle's records plus the records
+    of the targeted cycles it admitted for that market (F393-7 rev 5) — one map, keyed by symbol; each entry carries
+    its own ``scope`` (``universe``/``targeted``) and ``cycle_id`` (the record's), and ``outputs.targeted_cycles``
+    names the targeted cycles included. On a collision the universe record wins (it is what ``official_row`` serves)."""
     resolved = _resolve(database, generation)
     if not resolved:
         return None
     cycle_id = (resolved.get("cycles") or {}).get(market)
     if not cycle_id:
         return None
-    records = database.valuation_predictions_for_cycle(str(cycle_id))
+    results = database.valuation_predictions_for_cycle(str(cycle_id))  # a deep copy: the store is never handed out
+    targeted_cycles: dict[str, str] = {}
+    for symbol, targeted_cycle in sorted((resolved.get("targeted") or {}).items()):
+        clean = str(symbol).strip().upper()
+        if clean in results or market_of_entity(TARGETED_ANALYSIS, clean) != market:
+            continue
+        record = database.valuation_prediction_record(str(targeted_cycle), clean)
+        if record is not None:
+            results[clean] = record
+            targeted_cycles[clean] = str(targeted_cycle)
     return {
         "id": str(cycle_id),
         "analysis_type": "valuation_official_prediction",
@@ -614,47 +1001,70 @@ def official_prediction_snapshot(database: Any, market: str, *, generation: Any 
         "published_at": _utc(resolved["activated_at"]),
         "outputs": {"generation_id": resolved["generation_id"], "source": resolved["source"], "source_version": resolved["source_version"],
                     "session_date": (resolved.get("session_dates") or {}).get(market), "cycle_id": str(cycle_id),
-                    "results": {symbol: dict(record) for symbol, record in records.items()}},
+                    "targeted_cycles": targeted_cycles, "results": results},
     }
 
 
 def selection_health(database: Any, *, now: datetime) -> dict[str, Any]:
     """The state of the official selection for the health card and the receipts (B1): whether a generation is in
-    force, how many sessions old each market's official cycle is, and which markets were carried over."""
+    force, how many sessions old each market's official cycle is, and which markets were carried over. A market whose
+    calendar cannot answer is reported as such (``calendar_unavailable``) and counted stale: its freshness is unknown
+    and its next cycle cannot be selected until the calendar is back (rev 5). ``head_has_successor`` names the successor
+    of the head when the head (``max(activated_at)``) is not the chain tip — a row chained behind its predecessor; the
+    next activation chains on the tip (W4)."""
     current = current_generation(database)
     if not current:
-        return {"status": "none", "generation_id": None, "markets": {}, "detail": "no official generation in force — screeners serve nothing"}
+        return {"status": "none", "generation_id": None, "markets": {}, "head_has_successor": None,
+                "detail": "no official generation in force — screeners serve nothing"}
+    successor = database.valuation_official_selection_successor(str(current["generation_id"]))
     today = _utc(now)
     markets: dict[str, dict[str, Any]] = {}
     stale: list[str] = []
+    unavailable: list[str] = []
     for market in MARKETS:
         session = (current.get("session_dates") or {}).get(market)
-        expected = session_date_of(market, today)
-        age = 0
-        if session and session < expected:
-            calendar = _calendar(market)
+        expected: str | None
+        try:
+            expected = session_date_of(market, today)
+        except CalendarUnavailable:
+            expected = None
+            unavailable.append(market)
+        age: int | None = 0
+        if expected is None:
+            age = None
+        elif session and session < expected:
             try:
-                age = int(calendar.sessions_distance(session, expected)) - 1
+                age = int(_calendar(market).sessions_distance(session, expected)) - 1
             except Exception:
                 age = 1
         markets[market] = {"cycle_id": (current.get("cycles") or {}).get(market), "session_date": session, "expected_session": expected, "sessions_behind": age,
-                           "carried": market in ((current.get("receipt") or {}).get("carried_markets") or [])}
-        if age >= 2:
+                           "calendar_unavailable": expected is None, "carried": market in ((current.get("receipt") or {}).get("carried_markets") or [])}
+        if age is None or age >= 2:
             stale.append(market)
+    detail = f"stale official cycles: {', '.join(stale)}" if stale else "every market within one session"
+    if unavailable:
+        detail += f"; calendar unavailable: {', '.join(unavailable)}"
+    if successor:
+        detail += f"; the head has a successor dated behind it ({successor['generation_id']}) — the next activation chains on the chain tip"
     return {"status": "stale" if stale else "ok", "generation_id": current["generation_id"], "activated_at": current["activated_at"], "markets": markets,
-            "stale_markets": stale, "detail": f"stale official cycles: {', '.join(stale)}" if stale else "every market within one session"}
+            "stale_markets": stale, "calendar_unavailable": unavailable,
+            "head_has_successor": str(successor["generation_id"]) if successor else None, "detail": detail}
 
 
-def bootstrap_official_selection(database: Any, *, now: datetime | None = None) -> dict[str, Any]:
+def bootstrap_official_selection(database: Any) -> dict[str, Any]:
     """At process start (valuation worker) or by CLI: turn the latest universe cycle of every market into prediction
     records (idempotent — records are unique per cycle) and activate the first generation if all three are valid, so
-    that a deploy of Passo 0 does not leave the screeners empty until every market publishes a new cycle."""
+    that a deploy of Passo 0 does not leave the screeners empty until every market publishes a new cycle. Records of
+    EVERY market first, ONE activation after (records before selection; the receipt counts what this call recorded).
+    The activation is dated by the wall clock at its INSERT, as every automatic activation (Y1), never before the head
+    it chains on (Z1); the mesa's last explicit order stands over the targeted cycles registered before it (Z2) and over
+    the universe cycles published before it (W1): a bootstrap never undoes a rollback."""
     recorded: dict[str, int] = {}
     for market in MARKETS:
         raw = database.latest_analysis_snapshot(UNIVERSE_ANALYSIS, f"{market}_UNIVERSE")
         if raw:
-            recorded[market] = record_snapshot(database, _normalized_snapshot(raw, analysis_type=UNIVERSE_ANALYSIS, entity_key=f"{market}_UNIVERSE"), now=now)["recorded"]
-    activated = activate_generation_if_changed(database, now=_utc(now) if now is not None else datetime.now(timezone.utc))
+            recorded[market] = record_cycle_predictions(database, _normalized_snapshot(raw, analysis_type=UNIVERSE_ANALYSIS, entity_key=f"{market}_UNIVERSE"))
+    activated = activate_generation_if_changed(database)
     generation = activated or current_generation(database)
     logger.info("valuation_official bootstrap: recorded %s; generation %s", recorded, generation["generation_id"] if generation else None)
     return {"recorded": recorded, "generation": generation}
@@ -669,8 +1079,7 @@ def main(argv: list[str] | None = None) -> int:
     from .config import get_settings
     from .database import Database
     database = Database(get_settings())
-    now = datetime.now(timezone.utc)
-    result = bootstrap_official_selection(database, now=now) if args.bootstrap else selection_health(database, now=now)
+    result = bootstrap_official_selection(database) if args.bootstrap else selection_health(database, now=datetime.now(timezone.utc))
     print(json.dumps(result, sort_keys=True, default=str))
     return 0
 

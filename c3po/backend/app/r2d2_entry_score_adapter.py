@@ -225,7 +225,8 @@ class R2D2EntryScoreAdapter:
             output[market] = {}
             # V3.2 rev 7 §7-bis / §10.8 (F393-7): the official records of the generation IN FORCE AT THE DECISION are a study
             # source of their own — a replay never reads the current selection (a later switch cannot turn 100 into N/D)
-            output[market]["official_prediction"] = official_prediction_snapshot(self.database, market, generation=generation_at(self.database, decision_at))
+            official = official_prediction_snapshot(self.database, market, generation=generation_at(self.database, decision_at))
+            output[market]["official_prediction"] = self._official_view_identity(official, market)
             for role, (analysis_type, entity_template) in _SOURCE_SPECS.items():
                 entity_key = entity_template.format(market=market, peer_market=peer_market)
                 cache_key = (analysis_type, entity_key)
@@ -257,6 +258,18 @@ class R2D2EntryScoreAdapter:
                     self._snapshot_cache[cache_key] = snapshot
                 output[market][role] = snapshot
         return output
+
+    @staticmethod
+    def _official_view_identity(snapshot: dict[str, Any] | None, market: str) -> dict[str, Any] | None:
+        """F393-7: the official view is a VIRTUAL snapshot — the records of one generation — not the producer's cycle,
+        so its reference carries an identity of its own, ``official:<generation_id>:<market>``: never the cycle's id
+        (which names the canonical snapshot of that cycle) nor another generation's view of the same cycle (a
+        rollback). The reference cache, the recorded ``snapshot_id`` and the ``snapshot_sha256``/``published_at`` then
+        belong to that generation's view alone."""
+        if snapshot is None:
+            return None
+        generation_id = str(snapshot["outputs"]["generation_id"])
+        return {**snapshot, "id": f"official:{generation_id}:{market}"}
 
     def _comparisons(
         self,

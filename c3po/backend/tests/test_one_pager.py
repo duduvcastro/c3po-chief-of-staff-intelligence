@@ -1039,6 +1039,64 @@ def test_report_json_and_pdf_carry_the_full_official_stamp(tmp_path) -> None:
 def test_pdf_stamp_label_degrades_when_the_stamp_is_absent() -> None:
     label = PremiumOnePagerRenderer._official_stamp_label({"upside_percent": 12.0})
     assert label == "+12.0% upside · sem fonte oficial · ger. - · sessão - · reg. -"
+    assert PremiumOnePagerRenderer._official_stamp_lines({"upside_percent": 12.0}) == ("+12.0% upside", "sem fonte oficial · ger. -", "sessão - · reg. -")
+
+
+def test_pdf_official_stamp_is_drawn_in_lines_that_fit_the_summary_column(tmp_path, monkeypatch) -> None:
+    """F393-6 (rev 5): the one-line stamp measured 142 pt in the 82 pt NOSSO TP column. The PDF now draws it as three
+    short lines at one size; every line actually drawn on the canvas is measured (``stringWidth``) against the width
+    the band hands the layout, and a producer name that cannot fit even at the minimum size is cut with an ellipsis."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.pdfgen import canvas as pdf_canvas
+
+    from app.one_pager_pdf import STAMP_FONT, STAMP_FONT_MAX, STAMP_FONT_MIN, STAMP_LINES
+
+    service = service_for(tmp_path)
+    analysis = sample_analysis(service)
+    band_widths: list[float] = []
+    original_band = PremiumOnePagerRenderer._valuation_summary_band
+
+    def spy_band(self, pdf, x, y, w, h, data):
+        band_widths.append(w)
+        return original_band(self, pdf, x, y, w, h, data)
+
+    drawn: list[tuple[str, str, float]] = []
+    original_draw = pdf_canvas.Canvas.drawCentredString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        drawn.append((text, self._fontname, self._fontsize))
+        return original_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(PremiumOnePagerRenderer, "_valuation_summary_band", spy_band)
+    monkeypatch.setattr(pdf_canvas.Canvas, "drawCentredString", spy_draw)
+    history = [{"date": (datetime(2025, 8, 5, tzinfo=timezone.utc) + timedelta(days=round(index * 365 / 260))).date().isoformat(),
+                "close": 400 + index * 0.3} for index in range(261)]
+
+    service._write_report(analysis, history)
+
+    # the band was drawn once, at the width the page geometry gives it; one column is a third of it
+    assert len(band_widths) == 1
+    slot = band_widths[0] / 3
+    assert slot == pytest.approx(PremiumOnePagerRenderer.summary_slot_width())
+    assert slot < 90  # the column the auditor measured (82 pt)
+    width = slot - 6  # what the band hands the layout
+    lines = PremiumOnePagerRenderer._official_stamp_lines(analysis)
+    assert len(lines) == STAMP_LINES
+    assert lines[1] == "official_blend_v1 · ger. gen-test" and lines[2] == "sessão 2026-09-04 · reg. 1a2b3c4d"
+    # the one-line label of rev 4 does not fit the column even at the minimum size — hence the lines
+    assert stringWidth(PremiumOnePagerRenderer._official_stamp_label(analysis), STAMP_FONT, STAMP_FONT_MIN) > width
+    # every stamp line actually drawn on the canvas fits the column, at one legible size, nothing clipped
+    drawn_stamp = [(text, font, size) for text, font, size in drawn if text in lines]
+    assert [text for text, _, _ in drawn_stamp] == list(lines)
+    assert {font for _, font, _ in drawn_stamp} == {STAMP_FONT} and len({size for _, _, size in drawn_stamp}) == 1
+    for text, font, size in drawn_stamp:
+        assert STAMP_FONT_MIN <= size <= STAMP_FONT_MAX
+        assert stringWidth(text, font, size) <= width
+    # a producer name that cannot fit at the minimum size is cut with an ellipsis rather than drawn past the column
+    overflow = PremiumOnePagerRenderer._official_stamp_lines({**analysis, "tp_source": "x" * 80})
+    clipped = PremiumOnePagerRenderer._stamp_layout(overflow, width)
+    assert clipped[1][1] == STAMP_FONT_MIN and clipped[1][0].endswith("…")
+    assert all(stringWidth(text, STAMP_FONT, size) <= width for text, size in clipped)
 
 
 def test_producer_role_stamps_explicit_none_for_the_full_stamp(tmp_path) -> None:
@@ -1055,3 +1113,66 @@ def test_producer_role_stamps_explicit_none_for_the_full_stamp(tmp_path) -> None
     for analysis_key, _ in FULL_STAMP_KEYS:
         assert analysis_key in analysis and analysis[analysis_key] is None
 
+
+
+def test_pdf_summary_band_value_never_overlaps_the_stamp_and_single_line_columns_keep_their_size(tmp_path, monkeypatch) -> None:
+    """X7 (rev 5): the NOSSO TP value (8.6 pt at y+15.5) overlapped the first stamp line (4.2 pt at y+11.2) by 0.5 pt —
+    Helvetica ascent 718 / descent -207 per 1000 em. Every baseline actually drawn on the canvas is captured: the
+    value's descender bottom stays ≥ 0.5 pt above the first stamp line's ascender top, the label above the value, the
+    last line inside the band; the one-line columns (CONSENSO, BUY-IN) keep their 4.6 pt cap, the stamp its 4.2 pt."""
+    from reportlab.pdfgen import canvas as pdf_canvas
+
+    from app.one_pager_pdf import (
+        STAMP_FONT, STAMP_FONT_MAX, STAMP_LEADING, STAMP_LINES, SUBTEXT_FONT_MAX, SUMMARY_VALUE_FONT,
+    )
+
+    ascent, descent = 0.718, 0.207  # Helvetica / Helvetica-Bold, per 1 pt of size
+    service = service_for(tmp_path)
+    analysis = sample_analysis(service)
+    band: dict[str, float] = {}
+    original_band = PremiumOnePagerRenderer._valuation_summary_band
+
+    def spy_band(self, pdf, x, y, w, h, data):
+        band.update({"x": x, "y": y, "w": w, "h": h})
+        return original_band(self, pdf, x, y, w, h, data)
+
+    drawn: list[tuple[str, str, float, float]] = []
+    original_draw = pdf_canvas.Canvas.drawCentredString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        drawn.append((text, self._fontname, self._fontsize, y))
+        return original_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(PremiumOnePagerRenderer, "_valuation_summary_band", spy_band)
+    monkeypatch.setattr(pdf_canvas.Canvas, "drawCentredString", spy_draw)
+    history = [{"date": (datetime(2025, 8, 5, tzinfo=timezone.utc) + timedelta(days=round(index * 365 / 260))).date().isoformat(),
+                "close": 400 + index * 0.3} for index in range(261)]
+
+    service._write_report(analysis, history)
+
+    y0, h = band["y"], band["h"]
+    lines = PremiumOnePagerRenderer._official_stamp_lines(analysis)
+    value_text = PremiumOnePagerRenderer._money(analysis["c3po_tp"], analysis["currency"])
+    label = next(item for item in drawn if item[0] == "NOSSO TP")
+    value = next(item for item in drawn if item[0] == value_text and item[1] == "Helvetica-Bold" and item[2] == SUMMARY_VALUE_FONT)
+    stamp = [item for item in drawn if item[0] in lines]
+    assert [item[0] for item in stamp] == list(lines) and len(stamp) == STAMP_LINES
+    first, last = stamp[0], stamp[-1]
+    assert first[1] == STAMP_FONT and first[2] <= STAMP_FONT_MAX
+    value_bottom = value[3] - descent * value[2]
+    first_stamp_top = first[3] + ascent * first[2]
+    assert value_bottom - first_stamp_top >= 0.5, (value_bottom, first_stamp_top)  # the value never touches the stamp
+    assert label[3] - descent * label[2] > value[3] + ascent * value[2]  # the label sits above the value
+    assert last[3] - descent * last[2] > y0 and label[3] + ascent * label[2] < y0 + h  # the whole column is inside the band
+    assert first[3] - last[3] == pytest.approx((STAMP_LINES - 1) * STAMP_LEADING)
+    # the one-line columns keep the legible 4.6 pt cap — per column, not the stamp's 4.2 pt for everyone
+    consensus = next(item for item in drawn if item[0] == PremiumOnePagerRenderer._consensus_provenance_label(analysis))
+    buy_in = next(item for item in drawn if item[0] == "entrada disciplinada")
+    assert buy_in[2] == SUBTEXT_FONT_MAX and STAMP_FONT_MAX < consensus[2] <= SUBTEXT_FONT_MAX
+    assert PremiumOnePagerRenderer.summary_column_max_font(lines) == STAMP_FONT_MAX
+    assert PremiumOnePagerRenderer.summary_column_max_font(("entrada disciplinada",)) == SUBTEXT_FONT_MAX
+    width = band["w"] / 3 - 6
+    assert PremiumOnePagerRenderer._stamp_layout(("entrada disciplinada",), width, max_size=SUBTEXT_FONT_MAX) == [("entrada disciplinada", SUBTEXT_FONT_MAX)]
+    assert PremiumOnePagerRenderer._stamp_layout(lines, width)[0][1] <= STAMP_FONT_MAX
+    # a one-line column's text sits in the same vertical area, centred: above the band's bottom and below the value
+    assert buy_in[3] - descent * buy_in[2] > y0 and buy_in[3] + ascent * buy_in[2] < value_bottom

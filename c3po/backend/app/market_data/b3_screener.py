@@ -16,7 +16,7 @@ from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
 from .sector_taxonomy import SECTOR_TAXONOMY_VERSION, canonical_b3_company_name, resolve_b3_sector
-from ..valuation_official import current_generation, item_stamp, official_rows, official_stamp, provenance_sha256
+from ..valuation_official import UNRESOLVED, current_generation, item_stamp, official_rows, official_stamp, provenance_sha256
 from ..valuation_policy import (
     C3PO_VALUATION_POLICY,
     METHODOLOGY_KEY,
@@ -192,36 +192,88 @@ class B3ScreenerService:
         self._calibration_factors: dict[str, float] = {}
 
     def screen(self, *, refresh: bool = False) -> B3CandidateResponse:
-        if not refresh:
-            self._hydrate_persisted_state()
-            if self._cached:
-                return self._cached
+        """The candidates of ONE generation per request (V3.2 rev 7 §7-bis; F393-3). The generation is resolved once,
+        BEFORE the cache is consulted, and the cached response is served only if it was built for that very generation
+        (its own stamp says so): a response built under G1 is never served while G2 is in force, whatever the cache
+        age. A cached response of another generation — or NO cached response at all (a cold API container, X6) — is
+        re-served from the official selection (records → rows), never by running the producer: the producer runs on
+        ``refresh`` only (the nightly worker), publishes a cycle and resolves after publishing. With no generation in
+        force the empty official view is served and no earlier response survives. The cached object is read ONCE per
+        check and that same object is returned (X5): a concurrent writer swapping the attribute between the check and
+        the return cannot hand this request another generation's response, or ``None``."""
+        if refresh:
+            with self._lock:
+                now = datetime.now(timezone.utc)
+                self._load_calibration_factors()
+                response = self._build(now)
+                self._cached = response
+                self._cache_expires_at = None
+                return response
+        self._hydrate_persisted_state()
+        generation = current_generation(self.database)  # resolved ONCE per request (F393-3)
+        cached = self._cached
+        if cached is not None and self._serves_generation(cached, generation):
+            return cached
         with self._lock:
-            if not refresh:
-                self._hydrate_persisted_state(force=True)
-                if self._cached:
-                    return self._cached
-            now = datetime.now(timezone.utc)
-            self._load_calibration_factors()
-            response = self._build(now)
+            self._hydrate_persisted_state(force=True)
+            cached = self._cached
+            if cached is not None and self._serves_generation(cached, generation):
+                return cached
+            response = self._reserved_candidates(generation)
             self._cached = response
-            self._cache_expires_at = None
             return response
 
     def matrix(self) -> MatrixPowerResponse:
+        """The matrix of ONE generation per request (F393-3): the quote cache (``MATRIX_QUOTE_CACHE_SECONDS``) is
+        honoured only for a response built under the generation in force now — a new generation makes the cached
+        matrix stale at once, and with no generation in force nothing cached is served. The generation is resolved
+        after any re-serve this request itself triggered, so the response is never one cycle behind. The cached
+        matrix and its expiry are read ONCE and the very object that passed the check is returned (X5)."""
         self._hydrate_persisted_state()
-        now = datetime.now(timezone.utc)
         if not self._matrix_rows:
             self.screen(refresh=False)
+        generation = current_generation(self.database)  # resolved ONCE per request (F393-3)
 
         with self._matrix_lock:
             now = datetime.now(timezone.utc)
-            if self._matrix_cached and self._matrix_cache_expires_at and now < self._matrix_cache_expires_at:
-                return self._matrix_cached
-            response = self._build_matrix(now)
+            cached = self._matrix_cached
+            expires_at = self._matrix_cache_expires_at
+            if cached is not None and expires_at is not None and now < expires_at and self._serves_generation(cached, generation):
+                return cached
+            response = self._build_matrix(now, generation=generation)
             self._matrix_cached = response
             self._matrix_cache_expires_at = now + timedelta(seconds=MATRIX_QUOTE_CACHE_SECONDS)
             return response
+
+    @staticmethod
+    def _serves_generation(response: B3CandidateResponse | MatrixPowerResponse, generation: dict[str, Any] | None) -> bool:
+        """Whether a cached response may be served for the generation this request resolved (F393-3): only when the
+        response's own stamp carries that generation's id — the id travels inside the response, so a response
+        hydrated from the persisted candidate snapshot is keyed the same way. With no generation in force only the
+        EMPTY official view is servable (no stamp, no items — exactly what the empty selection serves), so no response
+        built under a generation outlives it, and a process without a generation does not re-hydrate the persisted
+        state and re-serve on every request (Y7)."""
+        if not generation:
+            return response.official_generation_id is None and not response.items
+        return response.official_generation_id == generation.get("generation_id")
+
+    def _reserved_candidates(self, generation: dict[str, Any] | None) -> B3CandidateResponse:
+        """Re-serve the candidates from the official selection for a generation this process holds no response for
+        (F393-3) — a response of another generation, or none at all (a cold API container, X6): no provider call and
+        no new cycle — the served numbers are the generation's records. The universe size is the process's basis (the
+        persisted universe, as the matrix uses) when it holds one, else the ``universe_size`` the generation's B3 cycle
+        published, else the number of rows served — never 0 with items served (Y6)."""
+        cached = self._cached
+        universe_size = self._matrix_universe_size or self._cycle_universe_size(generation) or (cached.universe_size if cached else 0)
+        return self._candidate_response(datetime.now(timezone.utc), universe_size, self._matrix_rows, self._matrix_macro, generation=generation)
+
+    def _cycle_universe_size(self, generation: dict[str, Any] | None) -> int:
+        """The ``outputs.universe_size`` the generation's B3 universe cycle published (0 when there is none)."""
+        cycle_id = ((generation or {}).get("cycles") or {}).get("B3")
+        snapshot = self.database.official_cycle_snapshot(str(cycle_id)) if cycle_id else None
+        outputs = snapshot.get("outputs") if snapshot else None
+        size = number(outputs.get("universe_size")) if isinstance(outputs, dict) else None
+        return int(size) if size is not None and size > 0 else 0
 
     def valuation_for(self, symbol: str, *, build_if_missing: bool = False) -> dict[str, Any] | None:
         """Return the shared valuation basis, optionally building an on-demand B3 valuation."""
@@ -607,8 +659,12 @@ class B3ScreenerService:
         universe_size: int,
         rows: list[dict[str, Any]],
         macro: dict[str, float],
+        generation: Any = UNRESOLVED,
     ) -> B3CandidateResponse:
-        generation = current_generation(self.database)  # resolved ONCE per response (F393-3)
+        """``generation`` is the one the request resolved (``None`` = resolved and found none: nothing is served); the
+        ``UNRESOLVED`` default is for the producer, which resolves AFTER publishing its cycle (F393-3)."""
+        if generation is UNRESOLVED:
+            generation = current_generation(self.database)  # resolved ONCE per response (F393-3)
         # served numbers come from the official selection's B3 cycle and its immutable records (F393-5); without a
         # generation in force nothing is served — the producer's fresh rows are never a fallback (F393-3)
         rows = list(official_rows(self.database, "B3", generation=generation).values())
@@ -617,7 +673,7 @@ class B3ScreenerService:
             source=self._source_label(),
             methodology=METHODOLOGY_NAME,
             methodology_version=METHODOLOGY_VERSION,
-            universe_size=universe_size,
+            universe_size=universe_size or len(rows),  # never 0 with rows served (Y6)
             eligible_count=len(rows),
             generated_at=generated_at,
             items=items,
@@ -2469,8 +2525,11 @@ class B3ScreenerService:
         denominator = max(high - cutoff, 0.01)
         return clamp(52 + (value - cutoff) / denominator * 44, 52, 96)
 
-    def _build_matrix(self, generated_at: datetime) -> MatrixPowerResponse:
-        generation = current_generation(self.database)  # resolved ONCE per response (F393-3): the matrix reads the official selection, never the raw build
+    def _build_matrix(self, generated_at: datetime, generation: Any = UNRESOLVED) -> MatrixPowerResponse:
+        """``generation`` is the one the request resolved (``None``: nothing is served); ``UNRESOLVED`` resolves here
+        (F393-3). The matrix reads the official selection, never the raw build."""
+        if generation is UNRESOLVED:
+            generation = current_generation(self.database)  # resolved ONCE per response (F393-3)
         served_rows = list(official_rows(self.database, "B3", generation=generation).values())
         eligible_rows: list[dict[str, Any]] = []
         for source_row in served_rows:

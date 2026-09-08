@@ -19,6 +19,7 @@ from app.market_data.realtime import (
 )
 from app.market_data.service import MarketDataService
 from app.schemas import LiveMarketItem, NormalizedQuote, RealtimeMarketLeader
+from app.valuation_official import current_generation
 from app.valuation_policy import METHODOLOGY_VERSION
 
 
@@ -2877,3 +2878,232 @@ def test_day_change_is_absent_when_the_window_has_no_earlier_session() -> None:
 
     assert response.previous_close is None
     assert response.day_change_percent is None  # frontend cai em "desde a abertura"
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Valuation V3.2 rev 7 §7-bis, Passo 0 — F393-3 (rev 5): the B3 caches are keyed by the official generation.
+# A response built under G1 is never served while G2 is in force, whatever the cache age; without a generation in
+# force nothing cached is served. The producer is never run to re-serve: ``brapi_token=""`` makes ``_build`` raise.
+# ---------------------------------------------------------------------------------------------------------------------
+
+def _official_b3_row(symbol: str, *, tp: float, price: float = 20.0, risk: float = 10.0) -> dict:
+    """A published universe row that is a usable prediction record (symbol, price, TP, buy-in, internal TP) AND carries
+    every display field the candidate ranking and the matrix read."""
+    return {
+        "symbol": symbol, "issuer": symbol[:4], "name": f"{symbol} SA", "logo_url": None, "sector": "Utilities",
+        "valuation_profile": "utilities", "price": price, "change_percent": 0.5, "volume": 1_000_000.0,
+        "adtv_90d": 25_000_000.0, "market_cap": 2_000_000_000.0, "our_tp": tp, "internal_tp": tp * 0.98,
+        "buy_in": price * 0.95, "upside_percent": (tp / price - 1) * 100, "expected_total_return_percent": 30.0,
+        "price_vs_buy_in_percent": 5.0, "buy_in_models": {"Market Structure": price * 0.95}, "score": 90.0,
+        "risk_score": risk, "valuation_confidence": 80.0, "method_dispersion_percent": 20.0, "quality_score": 80,
+        "status": "full_match", "thesis": "t", "risk": "r", "as_of": "2026-09-04T21:00:00+00:00",
+        "tp_validation_status": "validated", "tp_validation_score": 85.0,
+    }
+
+
+_B3_MACRO = {"selic": 0.12, "ipca12m": 0.045}
+_B3_CYCLE_AT = datetime(2026, 9, 4, 21, 0, tzinfo=timezone.utc)
+
+
+def _generation_keyed_b3_service() -> tuple[B3ScreenerService, Database]:
+    settings = Settings(brapi_token="", auth_cookie_secure=False)  # no credential: any producer build raises at once
+    database = Database(settings)
+    service = B3ScreenerService(settings, database, StubHttp({}))  # type: ignore[arg-type]
+    service._quotes = lambda _: {}  # type: ignore[method-assign]
+    for market, symbol in (("NASDAQ", "AAPL"), ("NYSE", "KO")):  # the official selection needs every market recorded once
+        database.save_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE", "mv-1", {"methodology_version": METHODOLOGY_VERSION},
+                                        {"rows": [{"symbol": symbol, "our_tp": 250.0, "buy_in": 200.0, "price": 220.0, "internal_tp": 245.0}], "universe_size": 1}, _B3_CYCLE_AT)
+    service._matrix_rows = [_official_b3_row("AAAA3", tp=30.0), _official_b3_row("BBBB3", tp=27.0, risk=30.0)]
+    service._matrix_macro = dict(_B3_MACRO)
+    service._matrix_universe_size = 2
+    return service, database
+
+
+def _publish_b3_cycle(database: Database, *, tp: float, at: datetime) -> tuple[str, str]:
+    """Publish a B3 universe cycle with ``tp`` for AAAA3; returns ``(generation_id, cycle_id)`` of the generation it activated."""
+    rows = [_official_b3_row("AAAA3", tp=tp), _official_b3_row("BBBB3", tp=tp * 0.9, risk=30.0)]
+    cycle_id = database.save_analysis_snapshot("valuation_universe", "B3_UNIVERSE", "mv-1", {"methodology_version": METHODOLOGY_VERSION},
+                                               {"rows": rows, "universe_size": 2, "macro": _B3_MACRO}, at)
+    generation = current_generation(database)
+    assert generation is not None and generation["cycles"]["B3"] == cycle_id
+    return generation["generation_id"], cycle_id
+
+
+def test_b3_screen_never_serves_a_cached_response_of_another_generation() -> None:
+    """F393-3: G1/TP30 in the cache, G2/TP80 activated — ``screen()`` WITHOUT refresh serves G2's numbers under G2's
+    stamp, from the selection (no producer run), and the re-served response becomes the cache for G2."""
+    service, database = _generation_keyed_b3_service()
+    first_generation, first_cycle = _publish_b3_cycle(database, tp=30.0, at=_B3_CYCLE_AT)
+    service._cached = service._candidate_response(_B3_CYCLE_AT, 2, service._matrix_rows, _B3_MACRO)  # built under G1
+
+    served_first = service.screen()
+    assert served_first is service._cached
+    assert served_first.official_generation_id == first_generation and served_first.official_cycle_id == first_cycle
+    assert [(item.symbol, item.our_tp, item.official_generation_id) for item in served_first.items] == [("AAAA3", 30.0, first_generation)]
+
+    second_generation, second_cycle = _publish_b3_cycle(database, tp=80.0, at=_B3_CYCLE_AT + timedelta(minutes=1))
+    assert second_generation != first_generation
+
+    served_second = service.screen()  # no refresh: the cache was built under G1, the request resolved G2
+
+    assert served_second is not served_first
+    assert served_second.official_generation_id == second_generation and served_second.official_cycle_id == second_cycle
+    assert [(item.symbol, item.our_tp, item.official_generation_id, item.official_cycle_id) for item in served_second.items] == [
+        ("AAAA3", 80.0, second_generation, second_cycle),
+    ]
+    assert served_second.tp_source == "official_blend_v1" and served_second.official_session_date == "2026-09-04"
+    assert service._cached is served_second and service.screen() is served_second  # keyed by G2 from now on
+    assert service.http.calls == []  # re-served from the selection: the producer never ran
+
+
+def test_b3_matrix_quote_cache_is_stale_the_moment_a_new_generation_is_in_force() -> None:
+    """F393-3: the matrix quote cache (``MATRIX_QUOTE_CACHE_SECONDS``, 45 s) is honoured only within the same generation; G3 replaces G2 at once."""
+    service, database = _generation_keyed_b3_service()
+    second_generation, _ = _publish_b3_cycle(database, tp=80.0, at=_B3_CYCLE_AT + timedelta(minutes=1))
+
+    first_matrix = service.matrix()
+    assert first_matrix.official_generation_id == second_generation
+    assert [(item.symbol, item.our_tp) for item in first_matrix.items] == [("AAAA3", 80.0), ("BBBB3", 72.0)]
+    assert service._matrix_cache_expires_at is not None and datetime.now(timezone.utc) < service._matrix_cache_expires_at
+    assert service.matrix() is first_matrix  # inside the TTL, same generation: the cache is served
+
+    third_generation, third_cycle = _publish_b3_cycle(database, tp=50.0, at=_B3_CYCLE_AT + timedelta(minutes=2))
+    second_matrix = service.matrix()  # the TTL has not expired
+
+    assert second_matrix is not first_matrix
+    assert second_matrix.official_generation_id == third_generation and second_matrix.official_cycle_id == third_cycle
+    assert [(item.symbol, item.our_tp, item.official_generation_id) for item in second_matrix.items] == [
+        ("AAAA3", 50.0, third_generation), ("BBBB3", 45.0, third_generation),
+    ]
+    assert service.matrix() is second_matrix
+    assert service.http.calls == []
+
+
+def test_b3_caches_serve_nothing_without_a_generation_in_force() -> None:
+    """F393-3: the process holds responses built under a generation, but the store it reads now has none (an empty
+    selection): nothing stale is served — the empty official view is, with an explicit ``None`` stamp — and the
+    producer is not run to fill the gap."""
+    service, database = _generation_keyed_b3_service()
+    generation, _ = _publish_b3_cycle(database, tp=80.0, at=_B3_CYCLE_AT + timedelta(minutes=1))
+    service._cached = service._candidate_response(_B3_CYCLE_AT, 2, service._matrix_rows, _B3_MACRO)
+    stale_matrix = service.matrix()
+    assert service._cached.official_generation_id == generation and stale_matrix.official_generation_id == generation
+
+    service.database = Database(service.settings)  # no generation in force
+
+    candidates = service.screen()
+    matrix = service.matrix()
+
+    assert candidates.items == [] and candidates.official_generation_id is None and candidates.tp_source is None
+    assert matrix.items == [] and matrix.official_generation_id is None and matrix.tp_source is None
+    assert service._cached is candidates and service._matrix_cached is matrix  # the stale responses did not survive
+    assert service.http.calls == []
+
+
+def test_b3_caches_return_the_object_that_passed_the_generation_check_even_if_the_attribute_is_swapped_meanwhile(monkeypatch) -> None:
+    """X5 (rev 5, TOCTOU): ``screen()``/``matrix()`` checked ``self._cached`` / ``self._matrix_cached`` and then returned the
+    attribute AGAIN — a writer swapping it between the check and the return handed the request another object, or
+    ``None``. The attribute is now read once and the very object that passed the check is returned."""
+    service, database = _generation_keyed_b3_service()
+    generation, _ = _publish_b3_cycle(database, tp=80.0, at=_B3_CYCLE_AT + timedelta(minutes=1))
+    original = service._candidate_response(_B3_CYCLE_AT, 2, service._matrix_rows, _B3_MACRO)
+    service._cached = original
+    matrix_original = service.matrix()
+    matrix_expiry = service._matrix_cache_expires_at
+    assert original.official_generation_id == generation and service._matrix_cached is matrix_original and matrix_expiry is not None
+    real = B3ScreenerService._serves_generation
+
+    def swapping(response, resolved):  # another thread clears both caches right after this request's check
+        verdict = real(response, resolved)
+        service._cached = None
+        service._matrix_cached = None
+        service._matrix_cache_expires_at = None
+        return verdict
+
+    monkeypatch.setattr(service, "_serves_generation", swapping)
+    assert service.screen() is original  # not None, not a re-served response: the object that passed the check
+    service._cached = original
+    service._matrix_cached, service._matrix_cache_expires_at = matrix_original, matrix_expiry
+    assert service.matrix() is matrix_original
+    assert service.http.calls == []
+
+
+def test_b3_screen_without_refresh_serves_the_official_selection_in_a_cold_process_and_never_runs_the_producer() -> None:
+    """X6 (rev 5): with a generation in force, no persisted candidate screen and nothing cached (a cold API container),
+    ``screen(refresh=False)`` used to run the producer (``_build``) — in the API container, with no credential, a
+    ``RuntimeError``; with one, a provider run outside the nightly worker. It now serves the official selection; the
+    producer runs on ``refresh=True`` only."""
+    service, database = _generation_keyed_b3_service()  # brapi_token="": any producer build raises at once
+    generation, cycle = _publish_b3_cycle(database, tp=80.0, at=_B3_CYCLE_AT + timedelta(minutes=1))
+    assert service._cached is None and database.latest_analysis_snapshot("candidate_screen", "B3_TOP_10") is None
+
+    served = service.screen()
+
+    assert served.official_generation_id == generation and served.official_cycle_id == cycle and served.universe_size == 2
+    assert [(item.symbol, item.our_tp, item.official_generation_id) for item in served.items] == [("AAAA3", 80.0, generation)]
+    assert service._cached is served and service.screen() is served
+    assert service.http.calls == []  # no provider call
+    with pytest.raises(RuntimeError, match="Brapi credential is not configured"):
+        service.screen(refresh=True)  # the producer's path, and only it
+    assert service._cached is served
+
+
+def test_b3_reserved_candidates_in_a_cold_container_report_the_universe_size_of_the_generations_cycle() -> None:
+    """Y6 (rev 5): a cold API container (no persisted basis in the process: ``_matrix_universe_size == 0``, nothing cached)
+    re-served the candidates with ``universe_size == 0`` while serving items. The size now falls back to the
+    ``universe_size`` the generation's B3 cycle published, else to the number of rows served — never 0 with items."""
+    service, database = _generation_keyed_b3_service()
+    service._matrix_rows, service._matrix_universe_size = [], 0  # cold: this process holds no persisted universe basis
+    rows = [_official_b3_row("AAAA3", tp=80.0), _official_b3_row("BBBB3", tp=72.0, risk=30.0)]
+    cycle = database.save_analysis_snapshot("valuation_universe", "B3_UNIVERSE", "mv-1", {"methodology_version": METHODOLOGY_VERSION},
+                                            {"rows": rows, "universe_size": 350, "macro": _B3_MACRO}, _B3_CYCLE_AT + timedelta(minutes=1))
+    generation = current_generation(database)
+    assert generation is not None and generation["cycles"]["B3"] == cycle and service._cached is None
+
+    served = service.screen()
+
+    assert served.universe_size == 350 and served.eligible_count == 2 and [item.symbol for item in served.items] == ["AAAA3"]
+    assert served.official_generation_id == generation["generation_id"] and served.official_cycle_id == cycle
+    service._cached = None
+    without_size = database.save_analysis_snapshot("valuation_universe", "B3_UNIVERSE", "mv-1", {"methodology_version": METHODOLOGY_VERSION},
+                                                   {"rows": rows, "macro": _B3_MACRO}, _B3_CYCLE_AT + timedelta(minutes=2))  # a cycle that published no size
+    served_again = service.screen()
+    assert served_again.official_cycle_id == without_size and served_again.universe_size == 2 == served_again.eligible_count
+    assert service.http.calls == []  # never the producer
+
+
+class _ColdApiDatabase(Database):
+    """The store as a cold API container sees it: PostgreSQL-shaped (a ``database_url``, so the screener polls the persisted
+    state), holding no persisted snapshot and no generation; every snapshot read is counted. Never connects."""
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings)
+        self.database_url = "postgresql://cold-api-container/never-connected"
+        self.snapshot_reads = 0
+
+    def latest_analysis_snapshot(self, analysis_type: str, entity_key: str) -> dict | None:
+        self.snapshot_reads += 1
+        return None
+
+    def latest_valuation_official_selection(self) -> dict | None:
+        return None
+
+
+def test_b3_screen_without_a_generation_serves_the_cached_empty_view_and_does_not_rehydrate_on_every_request() -> None:
+    """Y7 (rev 5): with no generation in force the cached empty response never passed the generation check, so EVERY request
+    took the lock, re-read the persisted state (``_hydrate_persisted_state(force=True)``) and rebuilt the empty view. An
+    empty response without a stamp is exactly what the empty selection serves: it is servable while no generation is in force."""
+    settings = Settings(brapi_token="", auth_cookie_secure=False)
+    database = _ColdApiDatabase(settings)
+    service = B3ScreenerService(settings, database, StubHttp({}))  # type: ignore[arg-type]
+    service._quotes = lambda _: {}  # type: ignore[method-assign]
+
+    first = service.screen()
+    assert first.items == [] and first.official_generation_id is None and first.tp_source is None and service._cached is first
+    reads = database.snapshot_reads
+    assert reads > 0  # the first request hydrated (candidate screen, universe basis, calibration)
+
+    second = service.screen()
+
+    assert second is first and database.snapshot_reads == reads  # served from the cache: no re-hydration, no rebuild
+    assert service.http.calls == []

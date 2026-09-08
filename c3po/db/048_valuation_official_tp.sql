@@ -57,6 +57,9 @@ CREATE INDEX IF NOT EXISTS valuation_official_selection_activated
 -- generations form a chain: two concurrent writers cannot both extend the same predecessor (rev 4, B2)
 CREATE UNIQUE INDEX IF NOT EXISTS valuation_official_selection_chain
     ON valuation_official_selection (previous_generation_id) WHERE previous_generation_id IS NOT NULL;
+-- ...and the chain has ONE root: a second bootstrap (previous_generation_id NULL) cannot escape the partial index above (rev 5, F393-9)
+CREATE UNIQUE INDEX IF NOT EXISTS valuation_official_selection_root
+    ON valuation_official_selection ((1)) WHERE previous_generation_id IS NULL;
 
 -- Append-only: predictions and selections are history; the application never updates or deletes them (I-TP2, I-TP3).
 CREATE OR REPLACE FUNCTION valuation_official_append_only() RETURNS trigger AS $$

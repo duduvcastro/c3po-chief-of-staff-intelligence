@@ -385,3 +385,63 @@ def test_resume_requires_policy_epoch() -> None:
         r2d2_entry_control.main([
             "--resume", "--operator", "Dudu", "--reason", "Missing epoch",
         ])
+
+
+def _official_row(symbol: str, *, tp: float, buy_in: float, price: float, internal_tp: float) -> dict:
+    """A universe row that becomes a prediction record (symbol, price, TP, buy-in, internal TP)."""
+    return {"symbol": symbol, "our_tp": tp, "buy_in": buy_in, "price": price, "internal_tp": internal_tp}
+
+
+def test_official_prediction_reference_has_its_own_identity_per_generation() -> None:
+    """F393-7 (rev 5): the official view is a virtual snapshot of ONE generation. Its reference is identified as
+    ``official:<generation_id>:<market>`` — never the cycle id, which names the canonical snapshot — so two generations
+    over the same cycle (a rollback) yield two distinct references with their own hash and instant, from the same
+    adapter instance (the reference cache cannot hand back the previous generation's), and the canonical reference of
+    the cycle is untouched."""
+    from app.valuation_official import current_generation, select_generation
+
+    settings = _settings(adapter_enabled=True)
+    database = Database(settings)
+    repository = R2D2Repository(database)
+    experiment = repository.ensure_experiment(settings)
+    cycle_id = repository.start_cycle(experiment["id"], ["NASDAQ"])
+    source_at = datetime.now(timezone.utc) - timedelta(hours=2)
+
+    canonical_id = _seed(database, "valuation_universe", "NASDAQ_UNIVERSE", {
+        "rows": [_official_row("AAA", tp=130.0, buy_in=90.0, price=100.0, internal_tp=125.0)], "universe_size": 1,
+    }, source_at)
+    _seed(database, "valuation_universe", "B3_UNIVERSE", {"rows": [_official_row("PETR4", tp=40.0, buy_in=32.0, price=36.0, internal_tp=39.0)], "universe_size": 1}, source_at)
+    _seed(database, "valuation_universe", "NYSE_UNIVERSE", {"rows": [_official_row("KO", tp=70.0, buy_in=60.0, price=65.0, internal_tp=68.0)], "universe_size": 1}, source_at)
+    first = current_generation(database)
+    assert first is not None
+    first_activated = datetime.fromisoformat(first["activated_at"])
+    # the same cycles selected again (a rollback drill): a NEW generation, no new cycle
+    second = select_generation(database, cycles=first["cycles"], now=first_activated + timedelta(seconds=1), activated_by="mesa", reason="rollback drill")
+    second_activated = datetime.fromisoformat(second["activated_at"])
+    assert second["generation_id"] != first["generation_id"] and second["cycles"] == first["cycles"]
+
+    adapter = R2D2EntryScoreAdapter(database)
+    for decision_at in (first_activated + timedelta(milliseconds=500), second_activated + timedelta(milliseconds=500)):
+        adapter.record_cycle(
+            experiment_id=experiment["id"], cycle_id=cycle_id, policy_epoch="policy-a-resume-2026-08-26",
+            candidates=[_candidate("AAA", price=100.0, composite=80)], decision_at=decision_at,
+        )
+
+    under_first, under_second = adapter.observations()
+    first_reference = under_first["source_references"]["official_prediction"]
+    second_reference = under_second["source_references"]["official_prediction"]
+
+    assert first_reference["snapshot_id"] == f"official:{first['generation_id']}:NASDAQ"
+    assert second_reference["snapshot_id"] == f"official:{second['generation_id']}:NASDAQ"
+    assert canonical_id not in (first_reference["snapshot_id"], second_reference["snapshot_id"])
+    assert first_reference["snapshot_sha256"] != second_reference["snapshot_sha256"]
+    assert len(first_reference["snapshot_sha256"]) == 64 and len(second_reference["snapshot_sha256"]) == 64
+    assert first_reference["published_at"] == first_activated.isoformat()
+    assert second_reference["published_at"] == second_activated.isoformat()
+    assert first_reference["status"] == "eligible" and second_reference["status"] == "eligible"
+    for observation in (under_first, under_second):
+        assert observation["source_references"]["canonical"]["snapshot_id"] == canonical_id
+        assert observation["valuation_comparisons"]["official_prediction"] == {"upside_percent": 30.0, "rank_percentile": 100.0}
+    assert under_first["source_references"]["canonical"] == under_second["source_references"]["canonical"]
+    # three identities in the reference cache: the cycle's canonical snapshot and one official view per generation
+    assert set(adapter._reference_cache) == {canonical_id, first_reference["snapshot_id"], second_reference["snapshot_id"]}
