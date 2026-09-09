@@ -16,6 +16,7 @@ from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
 from .sector_taxonomy import SECTOR_TAXONOMY_VERSION, canonical_b3_company_name, resolve_b3_sector
+from ..valuation_official import UNRESOLVED, current_generation, item_stamp, official_rows, official_stamp, provenance_sha256
 from ..valuation_policy import (
     C3PO_VALUATION_POLICY,
     METHODOLOGY_KEY,
@@ -191,36 +192,88 @@ class B3ScreenerService:
         self._calibration_factors: dict[str, float] = {}
 
     def screen(self, *, refresh: bool = False) -> B3CandidateResponse:
-        if not refresh:
-            self._hydrate_persisted_state()
-            if self._cached:
-                return self._cached
+        """The candidates of ONE generation per request (V3.2 rev 7 §7-bis; F393-3). The generation is resolved once,
+        BEFORE the cache is consulted, and the cached response is served only if it was built for that very generation
+        (its own stamp says so): a response built under G1 is never served while G2 is in force, whatever the cache
+        age. A cached response of another generation — or NO cached response at all (a cold API container, X6) — is
+        re-served from the official selection (records → rows), never by running the producer: the producer runs on
+        ``refresh`` only (the nightly worker), publishes a cycle and resolves after publishing. With no generation in
+        force the empty official view is served and no earlier response survives. The cached object is read ONCE per
+        check and that same object is returned (X5): a concurrent writer swapping the attribute between the check and
+        the return cannot hand this request another generation's response, or ``None``."""
+        if refresh:
+            with self._lock:
+                now = datetime.now(timezone.utc)
+                self._load_calibration_factors()
+                response = self._build(now)
+                self._cached = response
+                self._cache_expires_at = None
+                return response
+        self._hydrate_persisted_state()
+        generation = current_generation(self.database)  # resolved ONCE per request (F393-3)
+        cached = self._cached
+        if cached is not None and self._serves_generation(cached, generation):
+            return cached
         with self._lock:
-            if not refresh:
-                self._hydrate_persisted_state(force=True)
-                if self._cached:
-                    return self._cached
-            now = datetime.now(timezone.utc)
-            self._load_calibration_factors()
-            response = self._build(now)
+            self._hydrate_persisted_state(force=True)
+            cached = self._cached
+            if cached is not None and self._serves_generation(cached, generation):
+                return cached
+            response = self._reserved_candidates(generation)
             self._cached = response
-            self._cache_expires_at = None
             return response
 
     def matrix(self) -> MatrixPowerResponse:
+        """The matrix of ONE generation per request (F393-3): the quote cache (``MATRIX_QUOTE_CACHE_SECONDS``) is
+        honoured only for a response built under the generation in force now — a new generation makes the cached
+        matrix stale at once, and with no generation in force nothing cached is served. The generation is resolved
+        after any re-serve this request itself triggered, so the response is never one cycle behind. The cached
+        matrix and its expiry are read ONCE and the very object that passed the check is returned (X5)."""
         self._hydrate_persisted_state()
-        now = datetime.now(timezone.utc)
         if not self._matrix_rows:
             self.screen(refresh=False)
+        generation = current_generation(self.database)  # resolved ONCE per request (F393-3)
 
         with self._matrix_lock:
             now = datetime.now(timezone.utc)
-            if self._matrix_cached and self._matrix_cache_expires_at and now < self._matrix_cache_expires_at:
-                return self._matrix_cached
-            response = self._build_matrix(now)
+            cached = self._matrix_cached
+            expires_at = self._matrix_cache_expires_at
+            if cached is not None and expires_at is not None and now < expires_at and self._serves_generation(cached, generation):
+                return cached
+            response = self._build_matrix(now, generation=generation)
             self._matrix_cached = response
             self._matrix_cache_expires_at = now + timedelta(seconds=MATRIX_QUOTE_CACHE_SECONDS)
             return response
+
+    @staticmethod
+    def _serves_generation(response: B3CandidateResponse | MatrixPowerResponse, generation: dict[str, Any] | None) -> bool:
+        """Whether a cached response may be served for the generation this request resolved (F393-3): only when the
+        response's own stamp carries that generation's id — the id travels inside the response, so a response
+        hydrated from the persisted candidate snapshot is keyed the same way. With no generation in force only the
+        EMPTY official view is servable (no stamp, no items — exactly what the empty selection serves), so no response
+        built under a generation outlives it, and a process without a generation does not re-hydrate the persisted
+        state and re-serve on every request (Y7)."""
+        if not generation:
+            return response.official_generation_id is None and not response.items
+        return response.official_generation_id == generation.get("generation_id")
+
+    def _reserved_candidates(self, generation: dict[str, Any] | None) -> B3CandidateResponse:
+        """Re-serve the candidates from the official selection for a generation this process holds no response for
+        (F393-3) — a response of another generation, or none at all (a cold API container, X6): no provider call and
+        no new cycle — the served numbers are the generation's records. The universe size is the process's basis (the
+        persisted universe, as the matrix uses) when it holds one, else the ``universe_size`` the generation's B3 cycle
+        published, else the number of rows served — never 0 with items served (Y6)."""
+        cached = self._cached
+        universe_size = self._matrix_universe_size or self._cycle_universe_size(generation) or (cached.universe_size if cached else 0)
+        return self._candidate_response(datetime.now(timezone.utc), universe_size, self._matrix_rows, self._matrix_macro, generation=generation)
+
+    def _cycle_universe_size(self, generation: dict[str, Any] | None) -> int:
+        """The ``outputs.universe_size`` the generation's B3 universe cycle published (0 when there is none)."""
+        cycle_id = ((generation or {}).get("cycles") or {}).get("B3")
+        snapshot = self.database.official_cycle_snapshot(str(cycle_id)) if cycle_id else None
+        outputs = snapshot.get("outputs") if snapshot else None
+        size = number(outputs.get("universe_size")) if isinstance(outputs, dict) else None
+        return int(size) if size is not None and size > 0 else 0
 
     def valuation_for(self, symbol: str, *, build_if_missing: bool = False) -> dict[str, Any] | None:
         """Return the shared valuation basis, optionally building an on-demand B3 valuation."""
@@ -336,6 +389,7 @@ class B3ScreenerService:
                 self._matrix_basis_at = generated_at
                 self._matrix_cached = None
                 self._matrix_cache_expires_at = None
+                methodology_id = self._persist_universe(generated_at, self._matrix_macro)
                 response = self._candidate_response(
                     generated_at,
                     self._matrix_universe_size or len(self._matrix_rows),
@@ -343,7 +397,7 @@ class B3ScreenerService:
                     self._matrix_macro,
                 )
                 self._cached = response
-                self._persist_snapshot(response, self._matrix_macro)
+                self._persist_candidates(response, self._matrix_macro, methodology_id)
             return {"updated": updated, "targeted_only": targeted_only, "missing": missing}
 
     def _build_targeted_valuation(self, symbol: str) -> dict[str, Any] | None:
@@ -423,6 +477,7 @@ class B3ScreenerService:
                     "sector_taxonomy_version": SECTOR_TAXONOMY_VERSION,
                     "source": self._source_label(),
                     "scope": "on_demand_outside_screening_gates",
+                    "source_manifest_sha256": provenance_sha256([row]),  # the targeted producer records its provenance too (E1)
                 },
                 self._json_safe({"row": row}),
                 generated_at,
@@ -593,8 +648,9 @@ class B3ScreenerService:
             self.database.finish_ingestion_run(run_id, "failed", 0, 0, str(exc))
             raise
 
+        methodology_id = self._persist_universe(generated_at, macro)  # the cycle is published (records → generation) BEFORE anything is served
         response = self._candidate_response(generated_at, len(symbols), rows, macro)
-        self._persist_snapshot(response, macro)
+        self._persist_candidates(response, macro, methodology_id)
         return response
 
     def _candidate_response(
@@ -603,16 +659,25 @@ class B3ScreenerService:
         universe_size: int,
         rows: list[dict[str, Any]],
         macro: dict[str, float],
+        generation: Any = UNRESOLVED,
     ) -> B3CandidateResponse:
+        """``generation`` is the one the request resolved (``None`` = resolved and found none: nothing is served); the
+        ``UNRESOLVED`` default is for the producer, which resolves AFTER publishing its cycle (F393-3)."""
+        if generation is UNRESOLVED:
+            generation = current_generation(self.database)  # resolved ONCE per response (F393-3)
+        # served numbers come from the official selection's B3 cycle and its immutable records (F393-5); without a
+        # generation in force nothing is served — the producer's fresh rows are never a fallback (F393-3)
+        rows = list(official_rows(self.database, "B3", generation=generation).values())
         items, tp_upside_cutoff, risk_cutoff = self._rank(rows, macro)
         return B3CandidateResponse(
             source=self._source_label(),
             methodology=METHODOLOGY_NAME,
             methodology_version=METHODOLOGY_VERSION,
-            universe_size=universe_size,
+            universe_size=universe_size or len(rows),  # never 0 with rows served (Y6)
             eligible_count=len(rows),
             generated_at=generated_at,
             items=items,
+            **official_stamp(self.database, "B3", generation=generation),
             criteria={
                 "ranking": "C3PO TP upside, descending, inside the validated-TP Jedi Force Power Zone",
                 "universe": "350 liquid B3 stocks; issuer share classes deduplicated",
@@ -2460,9 +2525,14 @@ class B3ScreenerService:
         denominator = max(high - cutoff, 0.01)
         return clamp(52 + (value - cutoff) / denominator * 44, 52, 96)
 
-    def _build_matrix(self, generated_at: datetime) -> MatrixPowerResponse:
+    def _build_matrix(self, generated_at: datetime, generation: Any = UNRESOLVED) -> MatrixPowerResponse:
+        """``generation`` is the one the request resolved (``None``: nothing is served); ``UNRESOLVED`` resolves here
+        (F393-3). The matrix reads the official selection, never the raw build."""
+        if generation is UNRESOLVED:
+            generation = current_generation(self.database)  # resolved ONCE per response (F393-3)
+        served_rows = list(official_rows(self.database, "B3", generation=generation).values())
         eligible_rows: list[dict[str, Any]] = []
-        for source_row in self._matrix_rows:
+        for source_row in served_rows:
             row = dict(source_row)
             if not positive(row.get("our_tp")) or not positive(row.get("buy_in")):
                 continue
@@ -2552,6 +2622,7 @@ class B3ScreenerService:
             x_position = clamp(x_position + jitter_x, 4, 48) if x_position < 50 else clamp(x_position + jitter_x, 52, 96)
             y_position = clamp(y_position + jitter_y, 4, 48) if y_position < 50 else clamp(y_position + jitter_y, 52, 96)
             items.append(MatrixPowerItem(
+                **item_stamp(row),
                 symbol=row["symbol"],
                 name=row["name"],
                 logo_url=row.get("logo_url"),
@@ -2608,11 +2679,12 @@ class B3ScreenerService:
         )
 
         return MatrixPowerResponse(
+            **official_stamp(self.database, "B3", generation=generation),
             source=self._source_label(),
             methodology_name=METHODOLOGY_NAME,
             methodology_version=METHODOLOGY_VERSION,
             universe_size=self._matrix_universe_size or UNIVERSE_LIMIT,
-            source_eligible_count=len(self._matrix_rows),
+            source_eligible_count=len(served_rows),
             item_count=len(items),
             validated_count=validated_count,
             provisional_count=provisional_count,
@@ -2736,6 +2808,7 @@ class B3ScreenerService:
         output: list[B3Candidate] = []
         for rank, row in enumerate(selected, 1):
             output.append(B3Candidate(
+                **item_stamp(row),
                 rank=rank,
                 symbol=row["symbol"],
                 name=row["name"],
@@ -2791,7 +2864,10 @@ class B3ScreenerService:
             ))
         return output, tp_upside_cutoff, risk_cutoff
 
-    def _persist_snapshot(self, response: B3CandidateResponse, macro: dict[str, float]) -> None:
+    def _persist_universe(self, generated_at: datetime, macro: dict[str, float]) -> str:
+        """Publish the cycle FIRST (V3.2 rev 7 §7-bis, Passo 0): the universe snapshot becomes prediction records and
+        may activate a generation, so the response built right after is served from the selection that includes this
+        cycle — never one cycle behind. Returns the methodology id for the candidate snapshot."""
         score_weights = self._score_weights(macro)
         parameters = {
             "universe_limit": UNIVERSE_LIMIT,
@@ -2835,21 +2911,14 @@ class B3ScreenerService:
             f"{C3PO_VALUATION_POLICY.label}: {C3PO_VALUATION_POLICY.release_note}",
         )
         self.database.save_analysis_snapshot(
-            "candidate_screen",
-            "B3_TOP_10",
-            methodology_id,
-            {"source": response.source, "universe_size": response.universe_size, "criteria": response.criteria, "macro": macro},
-            response.model_dump(mode="json"),
-            response.generated_at,
-        )
-        self.database.save_analysis_snapshot(
             "valuation_universe",
             "B3_UNIVERSE",
             methodology_id,
             {
-                "source": response.source,
-                "methodology_version": response.methodology_version,
+                "source": self._source_label(),
+                "methodology_version": METHODOLOGY_VERSION,
                 "cvm_first": True,
+                "source_manifest_sha256": provenance_sha256(self._matrix_rows),  # the provenance manifest every record of this cycle points at (E1)
             },
             self._json_safe({
                 "rows": self._matrix_rows,
@@ -2857,11 +2926,19 @@ class B3ScreenerService:
                 "universe_size": self._matrix_universe_size,
                 "coverage_audit": self._matrix_coverage_audit,
                 "sector_audit": self._matrix_sector_audit,
-                "basis_at": response.generated_at,
+                "basis_at": generated_at,
             }),
-            response.generated_at,
+            generated_at,
         )
-        self._persist_calibration(methodology_id, response.generated_at, self._matrix_rows)
+        self._persist_calibration(methodology_id, generated_at, self._matrix_rows)
+        return methodology_id
+
+    def _persist_candidates(self, response: B3CandidateResponse, macro: dict[str, float], methodology_id: str) -> None:
+        self.database.save_analysis_snapshot(
+            "candidate_screen", "B3_TOP_10", methodology_id,
+            {"source": response.source, "universe_size": response.universe_size, "criteria": response.criteria, "macro": macro},
+            response.model_dump(mode="json"), response.generated_at,
+        )
 
     def _persist_calibration(
         self,

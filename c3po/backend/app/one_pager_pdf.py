@@ -17,6 +17,23 @@ from reportlab.platypus import Paragraph
 
 PAGE_W, PAGE_H = landscape(A4)
 MARGIN = 8 * mm
+LEFT_W = 520  # the metric/bullet column; the valuation column takes what is left of the page
+COLUMN_GAP = 10
+BAND_INSET = 10  # the valuation summary band is drawn inside the valuation box, inset on both sides
+STAMP_FONT = "Helvetica"
+STAMP_FONT_MAX = 4.2  # the official stamp under NOSSO TP (F393-6): three short lines, one size, never clipped
+SUBTEXT_FONT_MAX = 4.6  # the one-line sub-text of the other summary columns (CONSENSO, BUY-IN) keeps its legible size
+STAMP_FONT_MIN = 3.4
+STAMP_LEADING = 3.9
+STAMP_LINES = 3
+# vertical geometry of a summary column (points above the band's bottom edge), Helvetica ascent 718 / descent -207
+# per 1000 em: the value's descender bottom (16.5 - 0.207 × 8.6 = 14.72) stays ≥ 0.5 pt above the first stamp line's
+# ascender top (10.7 + 0.718 × 4.2 = 13.72), and the third line's descender (10.7 - 2 × 3.9 - 0.207 × 4.2 = 2.03) stays
+# inside the band (X7: at 15.5 / 11.2 the value and the first stamp line overlapped by 0.5 pt)
+SUMMARY_LABEL_BASELINE = 24.5
+SUMMARY_VALUE_BASELINE = 16.5
+SUMMARY_VALUE_FONT = 8.6
+STAMP_FIRST_BASELINE = 10.7
 
 INK = colors.HexColor("#111827")
 SUB = colors.HexColor("#59636E")
@@ -83,8 +100,8 @@ class PremiumOnePagerRenderer:
         self._header(pdf, data)
 
         left_x = MARGIN
-        left_w = 520
-        right_x = left_x + left_w + 10
+        left_w = LEFT_W
+        right_x = left_x + left_w + COLUMN_GAP
         right_w = PAGE_W - MARGIN - right_x
 
         self._metric_table(pdf, left_x, 354, left_w, 150, data)
@@ -344,7 +361,7 @@ class PremiumOnePagerRenderer:
 
         pdf.setStrokeColor(BORDER)
         pdf.line(x + 10, y + 34, x + w - 10, y + 34)
-        self._valuation_summary_band(pdf, x + 10, y + 5, w - 20, 32, data)
+        self._valuation_summary_band(pdf, x + BAND_INSET, y + 5, w - 2 * BAND_INSET, 32, data)
 
     def _performance_chart(
         self,
@@ -493,6 +510,63 @@ class PremiumOnePagerRenderer:
         return f"{source} · {int(count)} analistas" if count else source
 
     @staticmethod
+    def _official_stamp_lines(data: dict[str, Any]) -> tuple[str, ...]:
+        """The full Passo 0 stamp under NOSSO TP (F393-6) in three short lines that fit the summary column: the upside;
+        the producer and the generation; the session and the record hash. Each piece degrades on its own when absent;
+        nothing is computed here."""
+        session = str(data.get("official_session_date") or "")[:10]
+        record_hash = str(data.get("official_row_sha256") or "")[:8]
+        return (
+            f"{data['upside_percent']:+.1f}% upside",
+            f"{data.get('tp_source') or 'sem fonte oficial'} · ger. {str(data.get('official_generation_id') or '-')[:8]}",
+            f"sessão {session or '-'} · reg. {record_hash or '-'}",
+        )
+
+    @classmethod
+    def _official_stamp_label(cls, data: dict[str, Any]) -> str:
+        """The same stamp on one line (logs and tests); the PDF draws ``_official_stamp_lines`` — the one-line form
+        measured 142 pt in an 82 pt column (F393-6)."""
+        return " · ".join(cls._official_stamp_lines(data))
+
+    @staticmethod
+    def summary_slot_width() -> float:
+        """The width of one column of the valuation summary band on the rendered page — three columns share the band
+        drawn inside the valuation box (``render`` → ``_valuation_table`` → ``_valuation_summary_band``)."""
+        right_x = MARGIN + LEFT_W + COLUMN_GAP
+        right_w = PAGE_W - MARGIN - right_x
+        return (right_w - 2 * BAND_INSET) / 3
+
+    @classmethod
+    def _stamp_layout(cls, lines: tuple[str, ...], width: float, *, max_size: float = STAMP_FONT_MAX) -> list[tuple[str, float]]:
+        """How the stamp lines are drawn in ``width`` (F393-6, legible area): ONE size for the whole stamp — the largest
+        between ``max_size`` (``STAMP_FONT_MAX`` for the three-line stamp, ``SUBTEXT_FONT_MAX`` for a one-line column,
+        X7) and ``STAMP_FONT_MIN`` at which every line fits — and a line that still overflows at the minimum is cut
+        with an ellipsis rather than drawn past the column. Returns ``(text, font size)``."""
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+
+        size = max_size
+        while size > STAMP_FONT_MIN and any(stringWidth(line, STAMP_FONT, size) > width for line in lines):
+            size = round(size - 0.2, 1)
+        return [(cls._clip(line, STAMP_FONT, size, width), size) for line in lines]
+
+    @staticmethod
+    def summary_column_max_font(lines: tuple[str, ...]) -> float:
+        """The largest sub-text size of a summary column: the three-line stamp is capped at ``STAMP_FONT_MAX``, a
+        single line (CONSENSO, BUY-IN) at ``SUBTEXT_FONT_MAX`` — per column, never one cap for all (X7)."""
+        return STAMP_FONT_MAX if len(lines) > 1 else SUBTEXT_FONT_MAX
+
+    @staticmethod
+    def _clip(text: str, font: str, size: float, width: float) -> str:
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+
+        if stringWidth(text, font, size) <= width:
+            return text
+        clipped = text
+        while clipped and stringWidth(clipped.rstrip() + "…", font, size) > width:
+            clipped = clipped[:-1]
+        return clipped.rstrip() + "…"
+
+    @staticmethod
     def _coverage_label(data: dict[str, Any]) -> str:
         total = int(data["analyst_count"]) if data.get("analyst_count") else None
         buy = data.get("analyst_buy")
@@ -560,23 +634,27 @@ class PremiumOnePagerRenderer:
         pdf.line(x + slot, y + 8, x + slot, y + h - 8)
         pdf.line(x + 2 * slot, y + 8, x + 2 * slot, y + h - 8)
         consensus_text = self._consensus_provenance_label(data)
+        # every column's sub-text is a stack of up to STAMP_LINES lines drawn in the same legible area (F393-6): the
+        # NOSSO TP stamp uses three, the other columns one, vertically centred in that area
         summaries = (
-            ("NOSSO TP", self._money(data["c3po_tp"], data["currency"]), f"{data['upside_percent']:+.1f}% upside", BLUE),
-            ("CONSENSO", self._money(data.get("consensus_tp"), data["currency"]), consensus_text, INK),
-            ("BUY-IN", self._money(data["buy_in"], data["currency"]), "entrada disciplinada", AMBER),
+            ("NOSSO TP", self._money(data["c3po_tp"], data["currency"]), self._official_stamp_lines(data), BLUE),
+            ("CONSENSO", self._money(data.get("consensus_tp"), data["currency"]), (consensus_text,), INK),
+            ("BUY-IN", self._money(data["buy_in"], data["currency"]), ("entrada disciplinada",), AMBER),
         )
-        for index, (label, value, sub, color) in enumerate(summaries):
+        for index, (label, value, lines, color) in enumerate(summaries):
             center = x + slot * (index + 0.5)
             pdf.setFillColor(SUB)
             pdf.setFont("Helvetica-Bold", 5.0)
-            pdf.drawCentredString(center, y + h - 9, label)
+            pdf.drawCentredString(center, y + SUMMARY_LABEL_BASELINE, label)
             pdf.setFillColor(color)
-            pdf.setFont("Helvetica-Bold", 8.6)
-            pdf.drawCentredString(center, y + 13, value)
+            pdf.setFont("Helvetica-Bold", SUMMARY_VALUE_FONT)
+            pdf.drawCentredString(center, y + SUMMARY_VALUE_BASELINE, value)
             pdf.setFillColor(SUB)
-            sub_font = self._fit_font(sub, "Helvetica", 4.6, 3.6, slot - 6)
-            pdf.setFont("Helvetica", sub_font)
-            pdf.drawCentredString(center, y + 4, sub)
+            layout = self._stamp_layout(lines, slot - 6, max_size=self.summary_column_max_font(lines))
+            first_baseline = y + STAMP_FIRST_BASELINE - (STAMP_LINES - len(layout)) * STAMP_LEADING / 2
+            for offset, (text, size) in enumerate(layout):
+                pdf.setFont(STAMP_FONT, size)
+                pdf.drawCentredString(center, first_baseline - offset * STAMP_LEADING, text)
 
     def _bullet_box(
         self,

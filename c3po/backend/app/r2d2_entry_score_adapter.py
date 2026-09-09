@@ -7,6 +7,7 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from .database import Database
+from .valuation_official import generation_at, official_prediction_snapshot
 
 
 ADAPTER_VERSION = "R2D2-ENTRY-SCORE-ADAPTER-v1"
@@ -110,6 +111,7 @@ def _result_rows(snapshot: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 def _target_price(source: str, item: Mapping[str, Any]) -> float | None:
     fields = {
         "canonical": ("our_tp", "internal_tp"),
+        "official_prediction": ("tp",),
         "v2_shadow": ("v2_tp",),
         "v3_shadow": ("v3_tp",),
     }.get(source, ())
@@ -221,6 +223,10 @@ class R2D2EntryScoreAdapter:
         for market in sorted(markets):
             peer_market = "B3" if market == "B3" else "US"
             output[market] = {}
+            # V3.2 rev 7 §7-bis / §10.8 (F393-7): the official records of the generation IN FORCE AT THE DECISION are a study
+            # source of their own — a replay never reads the current selection (a later switch cannot turn 100 into N/D)
+            official = official_prediction_snapshot(self.database, market, generation=generation_at(self.database, decision_at))
+            output[market]["official_prediction"] = self._official_view_identity(official, market)
             for role, (analysis_type, entity_template) in _SOURCE_SPECS.items():
                 entity_key = entity_template.format(market=market, peer_market=peer_market)
                 cache_key = (analysis_type, entity_key)
@@ -253,6 +259,18 @@ class R2D2EntryScoreAdapter:
                 output[market][role] = snapshot
         return output
 
+    @staticmethod
+    def _official_view_identity(snapshot: dict[str, Any] | None, market: str) -> dict[str, Any] | None:
+        """F393-7: the official view is a VIRTUAL snapshot — the records of one generation — not the producer's cycle,
+        so its reference carries an identity of its own, ``official:<generation_id>:<market>``: never the cycle's id
+        (which names the canonical snapshot of that cycle) nor another generation's view of the same cycle (a
+        rollback). The reference cache, the recorded ``snapshot_id`` and the ``snapshot_sha256``/``published_at`` then
+        belong to that generation's view alone."""
+        if snapshot is None:
+            return None
+        generation_id = str(snapshot["outputs"]["generation_id"])
+        return {**snapshot, "id": f"official:{generation_id}:{market}"}
+
     def _comparisons(
         self,
         candidates: list[dict[str, Any]],
@@ -263,7 +281,7 @@ class R2D2EntryScoreAdapter:
         for market in sorted({str(item["market"]) for item in candidates}):
             market_candidates = [item for item in candidates if str(item["market"]) == market]
             source_upside: dict[str, dict[str, float]] = {}
-            for source in ("canonical", "v2_shadow", "v3_shadow"):
+            for source in ("canonical", "official_prediction", "v2_shadow", "v3_shadow"):
                 snapshot = snapshots.get(market, {}).get(source)
                 if snapshot is None:
                     source_upside[source] = {}
@@ -287,7 +305,7 @@ class R2D2EntryScoreAdapter:
                         "upside_percent": source_upside[source].get(key[1]),
                         "rank_percentile": rankings[source].get(key[1]),
                     }
-                    for source in ("canonical", "v2_shadow", "v3_shadow")
+                    for source in ("canonical", "official_prediction", "v2_shadow", "v3_shadow")
                 }
         return output
 

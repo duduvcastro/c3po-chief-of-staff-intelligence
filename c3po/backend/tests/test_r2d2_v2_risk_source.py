@@ -58,6 +58,7 @@ def legacy_risk(values):
             fundamentals["quarterlyIncome"] = [{"ebitda": -100.0}]
     return legacy_service()._analyze(
         "SYNTH", "US", {"price": 100.0, "as_of": COMPUTED}, fundamentals,
+        role="producer",  # the original engine path (V3.2 rev 7 §7-bis Passo 0 split the One Pager into producer/consumer roles)
         insider_activity=asdict(values.insider_activity) if values.insider_activity is not None else None,
         institutional_positions=asdict(values.institutional_positions) if values.institutional_positions is not None else None,
         recent_grades=[{"action": a} for a in values.recent_grade_actions] if values.recent_grade_actions is not None else None,

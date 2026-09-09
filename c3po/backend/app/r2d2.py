@@ -33,6 +33,7 @@ from .r2d2_shadow_candidate_log import (
     build_observation as build_shadow_candidate_observation,
     entry_rejection_reason_id,
 )
+from .valuation_official import UNRESOLVED, current_generation, official_rows
 from .schemas import (
     R2D2CycleStatus,
     R2D2DashboardResponse,
@@ -2852,9 +2853,14 @@ class R2D2PaperService:
             candidates: list[dict[str, Any]] = []
             self._us_scan_counts = {}
             self._eodhd_call_counts = {}
-            for market in ACTIVE_MARKETS:
-                if market in markets:
-                    candidates.extend(self._us_candidates(market, now))
+            # V3.2 rev 7 §7-bis (F393-3): ONE official generation per cycle — NASDAQ and NYSE are read through the same one
+            self._batch_generation = current_generation(self.repo.database)  # None = resolved, none in force: the whole batch is served nothing
+            try:
+                for market in ACTIVE_MARKETS:
+                    if market in markets:
+                        candidates.extend(self._us_candidates(market, now))
+            finally:
+                self._batch_generation = UNRESOLVED  # the batch's generation never leaks into a later ad-hoc read
             shadow_population_count = len(candidates)
             scanned = sum(
                 self._us_scan_counts.get(market, {}).get(
@@ -3885,7 +3891,10 @@ class R2D2PaperService:
             item["composite_score"] = self._composite(item)
         return sorted(output, key=lambda item: item["composite_score"], reverse=True)[:40]
 
-    def _us_candidates(self, market: str, now: datetime) -> list[dict[str, Any]]:
+    def _us_candidates(self, market: str, now: datetime, generation: Any = UNRESOLVED) -> list[dict[str, Any]]:
+        # the same convention as every official_* reader: None = "resolved, none in force" → nothing canonical is served;
+        # UNRESOLVED (default) = the batch's pinned generation, or (outside a batch) the current one resolved once here
+        generation = generation if generation is not UNRESOLVED else getattr(self, "_batch_generation", UNRESOLVED)
         rows = self.realtime._us_investable_rows(market, now)
         catalog = self.realtime._us_symbol_catalog(now)
         catalog_securities = [
@@ -3952,61 +3961,13 @@ class R2D2PaperService:
         if not shortlist:
             return []
 
-        snapshot = self.repo.database.latest_analysis_snapshot(
-            "valuation_universe", f"{market}_UNIVERSE",
-        )
-        snapshot_outputs = snapshot.get("outputs") if snapshot and isinstance(snapshot.get("outputs"), dict) else {}
-        snapshot_rows = snapshot_outputs.get("rows") if isinstance(snapshot_outputs.get("rows"), list) else []
-        canonical = {
-            str(item.get("symbol") or "").upper(): item
-            for item in snapshot_rows
-            if isinstance(item, dict) and item.get("symbol")
-        }
+        # Valuation V3.2 rev 7, §7-bis (Passo 0): the canonical rows are the OFFICIAL selection (current generation),
+        # stamped with generation_id/tp_source — never a raw snapshot, never a TP computed here.
+        canonical = official_rows(self.repo.database, market, generation=generation)  # ONE generation for the whole batch (F393-3)
 
         today = now.date()
-        missing = [
-            row.symbol
-            for row, security_type in stocks
-            if row.symbol not in canonical
-            and (row.symbol not in self._us_basis or self._us_basis[row.symbol][0] != today)
-            and self._us_backfill_attempted.get(row.symbol) != today
-        ][:US_FUNDAMENTAL_BACKFILL_PER_CYCLE]
-        if missing and self.one_pagers is not None:
-            self._us_backfill_attempted.update({symbol: today for symbol in missing})
-            client = EodhdClient(
-                self.settings.eodhd_base_url,
-                self.settings.eodhd_api_token,
-                self.one_pagers.market_data.http,
-            )
-            fundamentals = client.fundamentals(missing, exchange="US", workers=8)
-            histories = client.histories(missing, exchange="US", days=365, workers=8)
-            self._eodhd_call_counts["backfill_fundamentals_symbols"] = (
-                self._eodhd_call_counts.get("backfill_fundamentals_symbols", 0) + len(missing)
-            )
-            self._eodhd_call_counts["backfill_history_symbols"] = (
-                self._eodhd_call_counts.get("backfill_history_symbols", 0) + len(missing)
-            )
-            quote_by_symbol = {row.symbol: row for row, _ in shortlist}
-            for symbol in missing:
-                row = quote_by_symbol.get(symbol)
-                fundamental = fundamentals.get(symbol)
-                history = histories.get(symbol, [])
-                if not row or not fundamental or len(history) < 40:
-                    continue
-                try:
-                    analysis = self.one_pagers._analyze(
-                        symbol, "US", {"price": row.price, "currency": "USD", "as_of": row.as_of,
-                                        "change_percent": row.change_percent}, fundamental, history,
-                    )
-                except Exception:
-                    continue
-                operating_quality = clamp(
-                    50
-                    + (normalized_percent(fundamental.get("returnOnEquity")) or 0) * 0.45
-                    + (normalized_percent(fundamental.get("profitMargins")) or 0) * 0.30,
-                    20, 95,
-                )
-                self._us_basis[symbol] = (today, analysis, operating_quality)
+        # Valuation V3.2 rev 7, §7-bis (Passo 0): no same-day 'valuation backfill' — a symbol without an official row gets no
+        # TP here (it falls to the provisional technical tier below); this service never computes a TP of its own.
 
         output: list[dict[str, Any]] = []
         for row, security_type in shortlist:
@@ -4085,6 +4046,14 @@ class R2D2PaperService:
                 "stop_price": row.price * (1 - self.settings.r2d2_max_position_loss_percent / 100),
                 "thesis": thesis,
                 "valuation_basis": basis_source,
+                "tp_source": (canonical_row or {}).get("tp_source"),
+                "official_generation_id": (canonical_row or {}).get("generation_id"),
+                "official_cycle_id": (canonical_row or {}).get("official_cycle_id"),
+                # F393-6: the full stamp of the served record stays on the item (persisted whole in r2d2_decisions.inputs)
+                "tp_source_version": (canonical_row or {}).get("tp_source_version"),
+                "official_session_date": (canonical_row or {}).get("official_session_date"),
+                "prediction_instant": (canonical_row or {}).get("prediction_instant"),
+                "official_row_sha256": (canonical_row or {}).get("official_row_sha256"),
             }
             item["composite_score"] = self._composite(item)
             item["pretrade_rank"] = round(

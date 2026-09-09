@@ -1,3 +1,4 @@
+import json
 import statistics
 from datetime import datetime, timedelta, timezone
 
@@ -9,6 +10,8 @@ from app.foreign_listings import normalize_foreign_fundamentals, policy_for
 from app.market_data.service import MarketDataService
 from app.market_data.http import MarketDataRequestError
 from app.one_pager import OnePagerGenerationError, OnePagerService
+from app.one_pager_pdf import PremiumOnePagerRenderer
+from app.schemas import OnePagerReport
 from app.valuation_policy import METHODOLOGY_VERSION
 
 
@@ -20,7 +23,31 @@ def service_for(tmp_path):
         auth_cookie_secure=False,
     )
     database = Database(settings)
-    return OnePagerService(settings, database, MarketDataService(settings, database), output_dir=tmp_path)
+    service = OnePagerService(settings, database, MarketDataService(settings, database), output_dir=tmp_path)
+    with_official(service)  # Passo 0 (V3.2 rev 7 §7-bis): the One Pager never computes a TP; tests inject the official row
+    return service
+
+
+DEFAULT_OFFICIAL_ROW = {"our_tp": 560.0, "buy_in": 470.0, "tp_source": "official_blend_v1",
+                        "generation_id": "gen-test", "official_cycle_id": "cycle-test",
+                        # the rest of the served record's stamp (F393-6), exactly as `_served` names it
+                        "tp_source_version": "v1-test", "official_session_date": "2026-09-04",
+                        "prediction_instant": "2026-09-04T21:05:00+00:00",
+                        "official_row_sha256": "1a2b3c4d" + "0" * 56}
+
+# analysis/report key -> served row key (the report renames generation_id only)
+FULL_STAMP_KEYS = (("tp_source", "tp_source"), ("official_generation_id", "generation_id"),
+                   ("official_cycle_id", "official_cycle_id"), ("tp_source_version", "tp_source_version"),
+                   ("official_session_date", "official_session_date"), ("prediction_instant", "prediction_instant"),
+                   ("official_row_sha256", "official_row_sha256"))
+
+
+def with_official(service, **overrides):
+    """What the official selection would return for any symbol in these tests (see test_valuation_official.py for
+    the real resolution path). Returns the row installed."""
+    row = {**DEFAULT_OFFICIAL_ROW, **overrides}
+    service._official_valuation = lambda symbol, market: dict(row)  # type: ignore[method-assign]
+    return row
 
 
 def sample_analysis(service):
@@ -259,6 +286,7 @@ def test_b3_one_pager_uses_shared_candidate_and_matrix_valuation(tmp_path) -> No
 
 def test_mhvyf_uses_primary_listing_currency_and_public_coverage(tmp_path) -> None:
     service = service_for(tmp_path)
+    with_official(service, our_tp=34.149, buy_in=19.522)  # the official producer carries the primary-listing bridge values
     policy = policy_for("MHVYF")
     assert policy is not None
     fundamentals = normalize_foreign_fundamentals(
@@ -745,7 +773,9 @@ def test_analyze_uses_live_peer_medians_over_the_fallback_constants(tmp_path) ->
         peer_medians={"technology": {"pe": 8.0, "ev_ebitda": 6.0}},
     )
 
-    assert with_low_peer_pe["c3po_tp"] < without_peers["c3po_tp"]
+    # the internal framework reacts to live peer medians (diagnostic); the TP shown is the official one in both cases
+    assert with_low_peer_pe["internal_framework_tp"] < without_peers["internal_framework_tp"]
+    assert with_low_peer_pe["c3po_tp"] == without_peers["c3po_tp"] == DEFAULT_OFFICIAL_ROW["our_tp"]
 
 
 def test_us_consensus_weight_scales_with_analyst_breadth_and_zeroes_without_coverage() -> None:
@@ -812,6 +842,7 @@ def test_analyze_skips_ev_ebitda_and_dcf_for_the_financial_profile(tmp_path) -> 
     reproduction of JPM's real inputs.
     """
     service = service_for(tmp_path)
+    with_official(service, our_tp=400.0, buy_in=330.0)
     fundamentals = {
         "companyName": "JPM", "sector": "Financial Services", "industry": "Banks-Diversified",
         "marketCap": 950_000_000_000, "trailingEps": 24.0, "forwardEps": 25.007,
@@ -829,7 +860,7 @@ def test_analyze_skips_ev_ebitda_and_dcf_for_the_financial_profile(tmp_path) -> 
     # Before this fix, Morgan Stanley (72% dcf_tp weight) alone hit $555+
     # and enterprise-heavy methods blew past $1,000; every method should
     # now be a plausible multiple of price, not 2-3x it.
-    assert all(value < 2.0 * quote["price"] for value in result["methods"].values())
+    assert all(value < 2.0 * quote["price"] for value in result["internal_framework_methods"].values())
     assert result["c3po_tp"] < 1.5 * quote["price"]
 
 
@@ -862,17 +893,16 @@ def test_analyze_pulls_the_final_tp_toward_a_well_covered_consensus(tmp_path) ->
         risk_free_rate=0.042,
     )
 
-    assert with_consensus["methods"] == pytest.approx(without_consensus["methods"])
-    assert statistics.mean(with_consensus["methods"].values()) == pytest.approx(
-        statistics.mean(without_consensus["methods"].values())
-    )
-    expected_weight = service._us_consensus_weight(374.57, 27)
-    expected_tp = (
-        statistics.mean(with_consensus["methods"].values()) * (1 - expected_weight)
-        + 374.57 * expected_weight
-    )
-    assert with_consensus["c3po_tp"] == pytest.approx(expected_tp)
-    assert abs(with_consensus["c3po_tp"] - 374.57) < abs(without_consensus["c3po_tp"] - 374.57)
+    # Valuation V3.2 rev 7 (P1/P2): the consensus never enters the TP shown — it remains a diagnostic weight — and the
+    # internal framework is unchanged by it; the TP is the official one in both cases.
+    assert with_consensus["internal_framework_methods"] == pytest.approx(without_consensus["internal_framework_methods"])
+    assert with_consensus["consensus_weight_diagnostic"] == pytest.approx(service._us_consensus_weight(374.57, 27))
+    assert with_consensus["consensus_weight_diagnostic"] > 0 and without_consensus["consensus_weight_diagnostic"] == 0
+    assert with_consensus["c3po_tp"] == without_consensus["c3po_tp"] == DEFAULT_OFFICIAL_ROW["our_tp"]
+    assert with_consensus["tp_source"] == "official_blend_v1" and with_consensus["official_generation_id"] == "gen-test"
+    # F393-6: the full stamp of the served record, not only producer/generation
+    for analysis_key, row_key in FULL_STAMP_KEYS:
+        assert with_consensus[analysis_key] == DEFAULT_OFFICIAL_ROW[row_key]
 
 
 def test_consensus_does_not_leak_into_internal_methods_without_fundamentals(tmp_path) -> None:
@@ -892,9 +922,9 @@ def test_consensus_does_not_leak_into_internal_methods_without_fundamentals(tmp_
         {**fundamentals, "targetMeanPrice": 140.0, "numberOfAnalystOpinions": 10},
     )
 
-    assert with_consensus["methods"] == pytest.approx(without_consensus["methods"])
-    internal_tp = statistics.mean(with_consensus["methods"].values())
-    assert with_consensus["c3po_tp"] == pytest.approx(internal_tp * 0.65 + 140.0 * 0.35)
+    assert with_consensus["internal_framework_methods"] == pytest.approx(without_consensus["internal_framework_methods"])
+    assert with_consensus["internal_framework_tp"] == pytest.approx(without_consensus["internal_framework_tp"])
+    assert with_consensus["c3po_tp"] == DEFAULT_OFFICIAL_ROW["our_tp"]  # the consensus never enters the TP (rev 7, P1)
 
 
 def test_v2_shadow_band_renders_without_replacing_the_official_tp(tmp_path) -> None:
@@ -952,3 +982,197 @@ def test_valuation_v2_shadow_lookup_reads_the_persisted_snapshot(tmp_path) -> No
         "v2_tp": 99.0, "low_conviction": True
     }
     assert service._valuation_v2_shadow("UNKNOWN", "US") is None
+
+
+def test_generate_refuses_without_an_official_tp_and_never_computes_one(tmp_path) -> None:
+    # Valuation V3.2 rev 7 §7-bis (Passo 0): without an official row there is no One Pager — no local blend, no fallback.
+    service = service_for(tmp_path)
+    service._official_valuation = lambda symbol, market: None  # type: ignore[method-assign]
+    with pytest.raises(OnePagerGenerationError, match="TP oficial"):
+        sample_analysis(service)
+
+
+def test_report_json_and_pdf_carry_the_full_official_stamp(tmp_path) -> None:
+    """F393-6 (V3.2 rev 7 §7-bis, I-TP3): the session, the record's instant, the record hash and the producer version
+    of the served number must not be lost between the official selection and the One Pager's JSON, sidecar and PDF."""
+    service = service_for(tmp_path)
+    analysis = sample_analysis(service)
+    for analysis_key, row_key in FULL_STAMP_KEYS:
+        assert analysis[analysis_key] == DEFAULT_OFFICIAL_ROW[row_key]
+
+    rendered: list[dict] = []
+    original_render = service._render_pdf
+
+    def capture_render(path, data, history, generated_at):
+        rendered.append(dict(data))
+        original_render(path, data, history, generated_at)
+
+    service._render_pdf = capture_render  # type: ignore[method-assign]
+    history = [{"date": (datetime(2025, 8, 5, tzinfo=timezone.utc) + timedelta(days=round(index * 365 / 260))).date().isoformat(),
+                "close": 400 + index * 0.3} for index in range(261)]
+
+    report = service._write_report(analysis, history)
+
+    # the dict the PDF renderer receives carries the whole stamp...
+    assert len(rendered) == 1
+    for analysis_key, row_key in FULL_STAMP_KEYS:
+        assert rendered[0][analysis_key] == DEFAULT_OFFICIAL_ROW[row_key]
+    # ...the report (the API's JSON) too...
+    assert report.tp_source == "official_blend_v1" and report.official_generation_id == "gen-test"
+    assert report.official_cycle_id == "cycle-test" and report.tp_source_version == "v1-test"
+    assert report.official_session_date == "2026-09-04"
+    assert report.prediction_instant == datetime(2026, 9, 4, 21, 5, tzinfo=timezone.utc)
+    assert report.official_row_sha256 == DEFAULT_OFFICIAL_ROW["official_row_sha256"]
+    # ...and the persisted sidecar next to the PDF round-trips it
+    sidecar = (tmp_path / report.filename).with_suffix(".json").read_text(encoding="utf-8")
+    persisted = json.loads(sidecar)
+    for key in ("tp_source", "official_generation_id", "official_cycle_id", "tp_source_version",
+                "official_session_date", "official_row_sha256"):
+        assert persisted[key] == getattr(report, key)
+    assert OnePagerReport.model_validate_json(sidecar).prediction_instant == report.prediction_instant
+    # the PDF's NOSSO TP line shows the session and the record hash prefix on the same line as producer/generation
+    label = PremiumOnePagerRenderer._official_stamp_label(rendered[0])
+    assert "official_blend_v1 · ger. gen-test · sessão 2026-09-04 · reg. 1a2b3c4d" in label
+    assert "\n" not in label
+
+
+def test_pdf_stamp_label_degrades_when_the_stamp_is_absent() -> None:
+    label = PremiumOnePagerRenderer._official_stamp_label({"upside_percent": 12.0})
+    assert label == "+12.0% upside · sem fonte oficial · ger. - · sessão - · reg. -"
+    assert PremiumOnePagerRenderer._official_stamp_lines({"upside_percent": 12.0}) == ("+12.0% upside", "sem fonte oficial · ger. -", "sessão - · reg. -")
+
+
+def test_pdf_official_stamp_is_drawn_in_lines_that_fit_the_summary_column(tmp_path, monkeypatch) -> None:
+    """F393-6 (rev 5): the one-line stamp measured 142 pt in the 82 pt NOSSO TP column. The PDF now draws it as three
+    short lines at one size; every line actually drawn on the canvas is measured (``stringWidth``) against the width
+    the band hands the layout, and a producer name that cannot fit even at the minimum size is cut with an ellipsis."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.pdfgen import canvas as pdf_canvas
+
+    from app.one_pager_pdf import STAMP_FONT, STAMP_FONT_MAX, STAMP_FONT_MIN, STAMP_LINES
+
+    service = service_for(tmp_path)
+    analysis = sample_analysis(service)
+    band_widths: list[float] = []
+    original_band = PremiumOnePagerRenderer._valuation_summary_band
+
+    def spy_band(self, pdf, x, y, w, h, data):
+        band_widths.append(w)
+        return original_band(self, pdf, x, y, w, h, data)
+
+    drawn: list[tuple[str, str, float]] = []
+    original_draw = pdf_canvas.Canvas.drawCentredString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        drawn.append((text, self._fontname, self._fontsize))
+        return original_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(PremiumOnePagerRenderer, "_valuation_summary_band", spy_band)
+    monkeypatch.setattr(pdf_canvas.Canvas, "drawCentredString", spy_draw)
+    history = [{"date": (datetime(2025, 8, 5, tzinfo=timezone.utc) + timedelta(days=round(index * 365 / 260))).date().isoformat(),
+                "close": 400 + index * 0.3} for index in range(261)]
+
+    service._write_report(analysis, history)
+
+    # the band was drawn once, at the width the page geometry gives it; one column is a third of it
+    assert len(band_widths) == 1
+    slot = band_widths[0] / 3
+    assert slot == pytest.approx(PremiumOnePagerRenderer.summary_slot_width())
+    assert slot < 90  # the column the auditor measured (82 pt)
+    width = slot - 6  # what the band hands the layout
+    lines = PremiumOnePagerRenderer._official_stamp_lines(analysis)
+    assert len(lines) == STAMP_LINES
+    assert lines[1] == "official_blend_v1 · ger. gen-test" and lines[2] == "sessão 2026-09-04 · reg. 1a2b3c4d"
+    # the one-line label of rev 4 does not fit the column even at the minimum size — hence the lines
+    assert stringWidth(PremiumOnePagerRenderer._official_stamp_label(analysis), STAMP_FONT, STAMP_FONT_MIN) > width
+    # every stamp line actually drawn on the canvas fits the column, at one legible size, nothing clipped
+    drawn_stamp = [(text, font, size) for text, font, size in drawn if text in lines]
+    assert [text for text, _, _ in drawn_stamp] == list(lines)
+    assert {font for _, font, _ in drawn_stamp} == {STAMP_FONT} and len({size for _, _, size in drawn_stamp}) == 1
+    for text, font, size in drawn_stamp:
+        assert STAMP_FONT_MIN <= size <= STAMP_FONT_MAX
+        assert stringWidth(text, font, size) <= width
+    # a producer name that cannot fit at the minimum size is cut with an ellipsis rather than drawn past the column
+    overflow = PremiumOnePagerRenderer._official_stamp_lines({**analysis, "tp_source": "x" * 80})
+    clipped = PremiumOnePagerRenderer._stamp_layout(overflow, width)
+    assert clipped[1][1] == STAMP_FONT_MIN and clipped[1][0].endswith("…")
+    assert all(stringWidth(text, STAMP_FONT, size) <= width for text, size in clipped)
+
+
+def test_producer_role_stamps_explicit_none_for_the_full_stamp(tmp_path) -> None:
+    # The producer branch (the screeners' engine) is what BECOMES the record: it carries no served stamp, explicitly.
+    service = service_for(tmp_path)
+    analysis = service._analyze(
+        "MSFT", "US",
+        {"price": 500.0, "currency": "USD", "change_percent": 1.25, "as_of": datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)},
+        {"companyName": "Microsoft Corporation", "sector": "Technology", "trailingEps": 16.0, "forwardEps": 18.5,
+         "bookValue": 42.0, "sharesOutstanding": 7_430_000_000, "freeCashflow": 92_000_000_000, "ebitda": 150_000_000_000},
+        role="producer",
+    )
+    assert analysis["analysis_role"] == "producer"
+    for analysis_key, _ in FULL_STAMP_KEYS:
+        assert analysis_key in analysis and analysis[analysis_key] is None
+
+
+
+def test_pdf_summary_band_value_never_overlaps_the_stamp_and_single_line_columns_keep_their_size(tmp_path, monkeypatch) -> None:
+    """X7 (rev 5): the NOSSO TP value (8.6 pt at y+15.5) overlapped the first stamp line (4.2 pt at y+11.2) by 0.5 pt —
+    Helvetica ascent 718 / descent -207 per 1000 em. Every baseline actually drawn on the canvas is captured: the
+    value's descender bottom stays ≥ 0.5 pt above the first stamp line's ascender top, the label above the value, the
+    last line inside the band; the one-line columns (CONSENSO, BUY-IN) keep their 4.6 pt cap, the stamp its 4.2 pt."""
+    from reportlab.pdfgen import canvas as pdf_canvas
+
+    from app.one_pager_pdf import (
+        STAMP_FONT, STAMP_FONT_MAX, STAMP_LEADING, STAMP_LINES, SUBTEXT_FONT_MAX, SUMMARY_VALUE_FONT,
+    )
+
+    ascent, descent = 0.718, 0.207  # Helvetica / Helvetica-Bold, per 1 pt of size
+    service = service_for(tmp_path)
+    analysis = sample_analysis(service)
+    band: dict[str, float] = {}
+    original_band = PremiumOnePagerRenderer._valuation_summary_band
+
+    def spy_band(self, pdf, x, y, w, h, data):
+        band.update({"x": x, "y": y, "w": w, "h": h})
+        return original_band(self, pdf, x, y, w, h, data)
+
+    drawn: list[tuple[str, str, float, float]] = []
+    original_draw = pdf_canvas.Canvas.drawCentredString
+
+    def spy_draw(self, x, y, text, *args, **kwargs):
+        drawn.append((text, self._fontname, self._fontsize, y))
+        return original_draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(PremiumOnePagerRenderer, "_valuation_summary_band", spy_band)
+    monkeypatch.setattr(pdf_canvas.Canvas, "drawCentredString", spy_draw)
+    history = [{"date": (datetime(2025, 8, 5, tzinfo=timezone.utc) + timedelta(days=round(index * 365 / 260))).date().isoformat(),
+                "close": 400 + index * 0.3} for index in range(261)]
+
+    service._write_report(analysis, history)
+
+    y0, h = band["y"], band["h"]
+    lines = PremiumOnePagerRenderer._official_stamp_lines(analysis)
+    value_text = PremiumOnePagerRenderer._money(analysis["c3po_tp"], analysis["currency"])
+    label = next(item for item in drawn if item[0] == "NOSSO TP")
+    value = next(item for item in drawn if item[0] == value_text and item[1] == "Helvetica-Bold" and item[2] == SUMMARY_VALUE_FONT)
+    stamp = [item for item in drawn if item[0] in lines]
+    assert [item[0] for item in stamp] == list(lines) and len(stamp) == STAMP_LINES
+    first, last = stamp[0], stamp[-1]
+    assert first[1] == STAMP_FONT and first[2] <= STAMP_FONT_MAX
+    value_bottom = value[3] - descent * value[2]
+    first_stamp_top = first[3] + ascent * first[2]
+    assert value_bottom - first_stamp_top >= 0.5, (value_bottom, first_stamp_top)  # the value never touches the stamp
+    assert label[3] - descent * label[2] > value[3] + ascent * value[2]  # the label sits above the value
+    assert last[3] - descent * last[2] > y0 and label[3] + ascent * label[2] < y0 + h  # the whole column is inside the band
+    assert first[3] - last[3] == pytest.approx((STAMP_LINES - 1) * STAMP_LEADING)
+    # the one-line columns keep the legible 4.6 pt cap — per column, not the stamp's 4.2 pt for everyone
+    consensus = next(item for item in drawn if item[0] == PremiumOnePagerRenderer._consensus_provenance_label(analysis))
+    buy_in = next(item for item in drawn if item[0] == "entrada disciplinada")
+    assert buy_in[2] == SUBTEXT_FONT_MAX and STAMP_FONT_MAX < consensus[2] <= SUBTEXT_FONT_MAX
+    assert PremiumOnePagerRenderer.summary_column_max_font(lines) == STAMP_FONT_MAX
+    assert PremiumOnePagerRenderer.summary_column_max_font(("entrada disciplinada",)) == SUBTEXT_FONT_MAX
+    width = band["w"] / 3 - 6
+    assert PremiumOnePagerRenderer._stamp_layout(("entrada disciplinada",), width, max_size=SUBTEXT_FONT_MAX) == [("entrada disciplinada", SUBTEXT_FONT_MAX)]
+    assert PremiumOnePagerRenderer._stamp_layout(lines, width)[0][1] <= STAMP_FONT_MAX
+    # a one-line column's text sits in the same vertical area, centred: above the band's bottom and below the value
+    assert buy_in[3] - descent * buy_in[2] > y0 and buy_in[3] + ascent * buy_in[2] < value_bottom

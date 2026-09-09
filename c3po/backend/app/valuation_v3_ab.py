@@ -603,6 +603,7 @@ def _market_context(
     quality_index = build_quality_index(quality_packets, quality_items, as_of=AB_AS_OF)
     return {
         "rows": rows_by_market[market],
+        "official_records": {},  # frozen A/B cycles precede Passo 0: no prediction records exist for them (labelled in results)
         "packets": packets_by_market[market],
         "multiples": multiples,
         "multiples_with_quality": attach_quality_to_multiples(multiples, quality_index),
@@ -656,11 +657,16 @@ def _evaluate_market(
 def _decorate_v2_results(
     results: dict[str, dict[str, Any]],
     rows: Iterable[Mapping[str, Any]],
+    records: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> None:
+    """The A/B's official reference is the immutable prediction record of the cycle when one exists (V3.2 rev 7 §7-bis,
+    §10.8); the frozen A/B cycles of 24–25/08 precede Passo 0 and carry none, so their row value is used and labelled."""
     rows_by_symbol = {str(row.get("symbol")): row for row in rows}
     for symbol, result in results.items():
         row = rows_by_symbol[symbol]
-        final_tp = _number(row.get("our_tp"))
+        record = (records or {}).get(symbol)
+        result["v1_final_tp_source"] = "valuation_predictions" if record else "universe_row"
+        final_tp = _number(record.get("tp")) if record else _number(row.get("our_tp"))
         internal_tp = _number(row.get("internal_tp"))
         if final_tp is None:
             final_tp = internal_tp
@@ -690,7 +696,7 @@ def _v2_outputs_for_rate(
         today=evaluation_date,
     )
     results = _evaluate_market(engine, context, v3=False)
-    _decorate_v2_results(results, context["rows"])
+    _decorate_v2_results(results, context["rows"], context.get("official_records"))
     return {
         "results": results,
         "summary": ValuationV2ShadowService._summary(list(results.values())),

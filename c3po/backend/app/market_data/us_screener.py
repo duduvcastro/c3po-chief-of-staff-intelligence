@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings
 from ..database import Database
 from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixPowerResponse
+from ..valuation_official import current_generation, item_stamp, official_row, official_rows, official_stamp, provenance_sha256
 from ..valuation_policy import C3PO_VALUATION_POLICY, METHODOLOGY_KEY, METHODOLOGY_NAME, METHODOLOGY_VERSION
 from .b3_screener import ABSOLUTE_LOW_RISK_LIMIT, LATEST_COPOM_SELIC, MAX_ENTRY_DISTANCE, TP_UPSIDE_PREMIUM
 from .eodhd import EodhdClient
@@ -92,6 +93,7 @@ class USScreeningService:
         self._matrix_lock = Lock()
         self._rows: dict[USMarket, list[dict[str, Any]]] = {"NASDAQ": [], "NYSE": []}
         self._basis_at: dict[USMarket, datetime | None] = {"NASDAQ": None, "NYSE": None}
+        self._basis_cycle_id: dict[USMarket, str | None] = {"NASDAQ": None, "NYSE": None}
         self._universe_size: dict[USMarket, int] = {"NASDAQ": STOCK_LIMIT + ETF_LIMIT, "NYSE": STOCK_LIMIT + ETF_LIMIT}
         self._coverage: dict[USMarket, dict[str, int]] = {"NASDAQ": {}, "NYSE": {}}
         self._calibration_factors: dict[USMarket, dict[str, float]] = {"NASDAQ": {}, "NYSE": {}}
@@ -145,15 +147,9 @@ class USScreeningService:
         return {market: len(self._build(market)) for market in ("NASDAQ", "NYSE")}
 
     def valuation_for(self, symbol: str, market: str | None = None) -> dict[str, Any] | None:
-        clean = symbol.strip().upper().removesuffix(".US")
-        markets = [self._market(market)] if market else ["NASDAQ", "NYSE"]
-        for selected_market in markets:
-            if not self._rows[selected_market] or self._rows_are_stale(selected_market):
-                self._hydrate(selected_market)
-            row = next((item for item in self._rows[selected_market] if item["symbol"] == clean), None)
-            if row:
-                return dict(row)
-        return None
+        """A consumer read (V3.2 rev 7 §7-bis, F393-3): the OFFICIAL row through the current generation — never the
+        producer's in-memory build."""
+        return official_row(self.database, self._market(market) if market else "US", symbol)
 
     def peer_medians(self, market: str | None = None) -> dict[str, dict[str, float]]:
         """Latest batch-computed peer-median multiples, reused by the
@@ -370,6 +366,7 @@ class USScreeningService:
         symbol = str(quote["symbol"])
         analysis = self.one_pagers._analyze(
             symbol, "US", quote, fundamentals, history,
+            role="producer",  # the official engine (Passo 0): this row becomes a prediction record, never a consumer read
             insider_activity=insider_activity,
             news_sentiment=news_sentiment,
             risk_free_rate=risk_free_rate,
@@ -615,8 +612,26 @@ class USScreeningService:
             "as_of": quote.get("as_of") or datetime.now(timezone.utc),
         }
 
+    def _served_rows(self, market: USMarket, generation: dict[str, Any] | None) -> list[dict[str, Any]]:
+        """What the API serves (V3.2 rev 7 §7-bis, F393-3/F393-5): the rows of the official selection's cycle for this
+        market, with the numbers taken from the immutable prediction records — never a fresher in-memory build stamped
+        with a generation whose numbers differ. Without a generation in force NOTHING is served (no raw fallback):
+        ``generation`` is the one the caller resolved for the whole response (``None`` = resolved, none in force)."""
+        if not generation or not (generation.get("cycles") or {}).get(market):
+            return []
+        served: list[dict[str, Any]] = []
+        for row in official_rows(self.database, market, generation=generation).values():
+            if isinstance(row.get("as_of"), str):
+                try:
+                    row["as_of"] = datetime.fromisoformat(row["as_of"].replace("Z", "+00:00"))
+                except ValueError:
+                    row["as_of"] = None
+            served.append(row)
+        return served
+
     def _candidate_response(self, market: USMarket) -> B3CandidateResponse:
-        rows = self._rows[market]
+        generation = current_generation(self.database)  # resolved ONCE per response
+        rows = self._served_rows(market, generation)
         tp_cutoff = self._tp_cutoff()
         risk_cutoff = self._risk_cutoff(rows)
         selected = sorted(
@@ -634,6 +649,7 @@ class USScreeningService:
             eligible_count=len(rows),
             generated_at=self._basis_at[market] or datetime.now(timezone.utc),
             items=items,
+            **official_stamp(self.database, market, generation=generation),
             criteria={
                 "ranking": "C3PO TP upside descending inside the validated Power Zone",
                 "universe": f"Up to {STOCK_LIMIT} liquid stocks and {ETF_LIMIT} liquid ETFs listed in {market}",
@@ -650,7 +666,8 @@ class USScreeningService:
 
     def _matrix_response(self, market: USMarket) -> MatrixPowerResponse:
         now = datetime.now(timezone.utc)
-        rows = [dict(row) for row in self._rows[market]]
+        generation = current_generation(self.database)  # resolved ONCE per response (F393-3): the matrix reads the official selection, never the raw build
+        rows = self._served_rows(market, generation)
         self._refresh_quotes(market, rows, now)
         tp_cutoff = self._tp_cutoff()
         risk_cutoff = self._risk_cutoff(rows)
@@ -662,6 +679,7 @@ class USScreeningService:
         for row in sorted(rows, key=lambda item: item["upside_percent"], reverse=True):
             quadrant = self._quadrant(row["upside_percent"], row["risk_score"], tp_cutoff, risk_cutoff)
             items.append(MatrixPowerItem(
+                **item_stamp(row),
                 symbol=row["symbol"], name=row["name"], security_type=row["security_type"], logo_url=EodhdClient.normalize_logo_url(row.get("logo_url")) or None,
                 sector=row["sector"], industry=row.get("industry"), peer_group=row.get("peer_group"),
                 sector_source=row.get("sector_source"), sector_confidence=row.get("sector_confidence"),
@@ -696,6 +714,7 @@ class USScreeningService:
             tp_upside_cutoff_percent=tp_cutoff, risk_cutoff=risk_cutoff,
             quote_refresh_seconds=MATRIX_REFRESH_SECONDS, provider_delay_minutes=PROVIDER_DELAY_MINUTES,
             basis_generated_at=self._basis_at[market] or now, generated_at=now, items=items,
+            **official_stamp(self.database, market, generation=generation),
             methodology={
                 "return": "Raw C3PO TP upside is the return axis and must exceed live Selic + 6 p.p. for the Power Zone.",
                 "risk": "Market volatility, beta, drawdown, balance-sheet evidence and liquidity produce the shared 0-100 risk score.",
@@ -708,6 +727,7 @@ class USScreeningService:
 
     def _candidate(self, row: dict[str, Any], rank: int) -> B3Candidate:
         return B3Candidate(
+            **item_stamp(row),
             rank=rank, symbol=row["symbol"], name=row["name"], security_type=row["security_type"], logo_url=EodhdClient.normalize_logo_url(row.get("logo_url")) or None,
             sector=row["sector"], industry=row.get("industry"), peer_group=row.get("peer_group"),
             sector_source=row.get("sector_source"), sector_confidence=row.get("sector_confidence"), valuation_profile=row["valuation_profile"],
@@ -738,9 +758,10 @@ class USScreeningService:
         )
         rows = [{**row, "as_of": row["as_of"].isoformat() if isinstance(row.get("as_of"), datetime) else row.get("as_of")} for row in self._rows[market]]
         generated_at = self._basis_at[market] or datetime.now(timezone.utc)
-        self.database.save_analysis_snapshot(
+        self._basis_cycle_id[market] = self.database.save_analysis_snapshot(
             "valuation_universe", f"{market}_UNIVERSE", methodology_id,
-            {"methodology_version": METHODOLOGY_VERSION, "market": market, "coverage": self._coverage[market]},
+            {"methodology_version": METHODOLOGY_VERSION, "market": market, "coverage": self._coverage[market],
+             "source_manifest_sha256": provenance_sha256(rows)},  # the provenance manifest every record of this cycle points at (E1)
             {"rows": rows, "universe_size": self._universe_size[market]}, generated_at,
         )
         self._persist_calibration(market, methodology_id, generated_at, rows)
@@ -877,6 +898,7 @@ class USScreeningService:
                     row["as_of"] = snapshot["published_at"]
         self._rows[market] = [dict(row) for row in rows if isinstance(row, dict)]
         self._basis_at[market] = snapshot.get("published_at")
+        self._basis_cycle_id[market] = str(snapshot.get("id") or "") or None
         self._universe_size[market] = int(outputs.get("universe_size") or STOCK_LIMIT + ETF_LIMIT)
         self._coverage[market] = {str(key): int(value) for key, value in inputs.get("coverage", {}).items()}
 

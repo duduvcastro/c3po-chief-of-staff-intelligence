@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable
+
+logger = logging.getLogger(__name__)
 
 CONFIDENCE_BUCKETS: tuple[tuple[float, float, str], ...] = (
     (0.0, 60.0, "<60"),
@@ -50,6 +53,11 @@ class ValuationCall:
     price_at_call: float
     target_price: float
     confidence: float
+    source: str | None = None  # V3.2 rev 7 TP-C (F393-7): the producer/version/cycle of a prediction record travel with the call
+    source_version: str | None = None
+    cycle_id: str | None = None
+    row_sha256: str | None = None
+    published_at: datetime | None = None  # rev 6 (B2): when the record became available (a re-run's re-run date); changed_at is the prediction's instant
 
     @property
     def predicted_return_percent(self) -> float:
@@ -212,3 +220,53 @@ def coverage_summary(calls: list[ValuationCall]) -> dict[str, Any]:
         "distinct_symbols": len(symbols),
         "date_range": (min(dates), max(dates)),
     }
+
+
+def load_prediction_calls(records: Iterable[dict[str, Any]]) -> list[ValuationCall]:
+    """Immutable prediction records (`valuation_predictions`, one per source/version/instant) as calls to grade with the
+    same machinery as `valuation_change_records` (V3.2 rev 7, TP-C; §10.8). Grading by source never re-reads the current
+    selection: the record is the call. `market` collapses NASDAQ/NYSE into 'US' like the change records do. The call's
+    identity is the prediction (`prediction_instant`, price, TP): a record whose `published_at` (B2) is absent or malformed
+    is still a call — `published_at = None`, with a WARNING when malformed — never dropped for its second clock (S8)."""
+    calls: list[ValuationCall] = []
+    for record in records:
+        try:
+            price = float(record.get("price") or 0.0)
+            target = float(record.get("tp") or 0.0)
+            instant = record.get("prediction_instant")
+            changed_at = instant if isinstance(instant, datetime) else _parse_timestamp(str(instant))
+        except (TypeError, ValueError):
+            continue
+        if price <= 0 or target <= 0:
+            continue
+        available = record.get("published_at")  # B2: the record's own publication clock; absent on a legacy record
+        published_at: datetime | None = None
+        if isinstance(available, datetime):
+            published_at = available
+        elif available not in (None, ""):
+            try:
+                published_at = _parse_timestamp(str(available))
+            except (TypeError, ValueError):
+                logger.warning("valuation_accuracy: record %s/%s of cycle %s carries a malformed published_at (%r) — the call is kept without it (S8)",
+                               record.get("market"), record.get("symbol"), record.get("cycle_id"), available)
+        raw_decomposition = record.get("decomposition")
+        decomposition: dict[str, Any] = raw_decomposition if isinstance(raw_decomposition, dict) else {}
+        confidence = _float(decomposition.get("valuation_confidence"), 50.0)
+        market = "B3" if str(record.get("market")) == "B3" else "US"
+        calls.append(ValuationCall(market=market, symbol=str(record.get("symbol")), changed_at=changed_at, price_at_call=price,
+                                   target_price=target, confidence=confidence, source=str(record.get("source")) if record.get("source") else None,
+                                   source_version=str(record.get("source_version")) if record.get("source_version") else None,
+                                   cycle_id=str(record.get("cycle_id")) if record.get("cycle_id") else None,
+                                   row_sha256=str(record.get("row_sha256")) if record.get("row_sha256") else None,
+                                   published_at=published_at))
+    return calls
+
+
+def calls_by_source(calls: Iterable[ValuationCall]) -> dict[str, list[ValuationCall]]:
+    """Grading by producer/version (rev 7 TP-C): the identity of every call is its record, never the current selection."""
+    groups: dict[str, list[ValuationCall]] = {}
+    for call in calls:
+        key = f"{call.source}:{call.source_version}" if call.source else "valuation_change_records"
+        groups.setdefault(key, []).append(call)
+    return groups
+
