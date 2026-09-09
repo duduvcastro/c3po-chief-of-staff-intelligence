@@ -2,19 +2,50 @@ import copy
 import json
 import hashlib
 import logging
+import math
 import re
 import threading
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
 from contextlib import contextmanager
+from decimal import Decimal
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 from uuid import uuid4
 
 from .config import Settings
 
 logger = logging.getLogger(__name__)
 LEGACY_SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
+# what the price-series producer hands the capture writer once it knows the latest stored hashes (V3.2, migration 049):
+# (manifest inputs, manifest outputs, published_at == the capture clock, snapshot_id, bars to insert)
+PriceHistoryCapture = tuple[dict[str, Any], dict[str, Any], datetime, str, list[dict[str, Any]]]
+PriceHistoryBuild = Callable[[dict[tuple[str, str], str]], PriceHistoryCapture]
+PriceBarKey = tuple[str, str, str, str, str]  # (market, symbol, session_date, source, fetched_at as a UTC instant) — the table's UNIQUE key
+
+
+class AlreadyPublishedError(ValueError):
+    """The capture writer found, INSIDE the market's lock, a publication of the market at/after the phase's due instant:
+    the market already published since the phase came due (another process or thread got there first), so this run is
+    refused with nothing written — a skip for the caller (``run_all`` records it as ``already published``), never a failure."""
+
+    def __init__(self, entity_key: str, due: datetime, available_at: datetime) -> None:
+        super().__init__(f"already published since {due.isoformat()}: the latest publication of {entity_key} is at {available_at.isoformat()}, nothing written")
+        self.entity_key, self.due, self.available_at = entity_key, due, available_at
+
+
+class AlreadyCapturedError(ValueError):
+    """The capture writer found, INSIDE the market's lock, a MANIFEST of the market captured at/after the phase's due instant
+    and no publication since the due (A2; with one it is ``AlreadyPublishedError``, checked first): another process captured
+    this phase's vintage and is publishing it — or died or failed (any exception) between its capture and its publication, or had its
+    publication refused by the availability stamp (a ``ValueError`` in that run's log). Either way this run never captures a second vintage for the same phase (the
+    advisory lock ends at the capture commit, so without this check two processes could interleave capture/capture/
+    publish/publish and leave two vintages for one night): refused with nothing written, a skip for ``run_all`` — which
+    fails the phase at its end if that vintage is still unpublished, so a dead producer stays loud until the next due."""
+
+    def __init__(self, entity_key: str, due: datetime, fetched_at: datetime) -> None:
+        super().__init__(f"already captured since {due.isoformat()}: the latest manifest of {entity_key} was captured at {fetched_at.isoformat()} "
+                         "and has no publication yet, nothing written")
+        self.entity_key, self.due, self.fetched_at = entity_key, due, fetched_at
 
 
 class SelectionConflict(RuntimeError):
@@ -45,6 +76,9 @@ class Database:
         self._valuation_official_selections: list[dict[str, Any]] = []
         self._official_cycle_cache: dict[str, dict[str, Any]] = {}
         self._cycle_records_cache: dict[str, dict[str, dict[str, Any]]] = {}
+        self._price_bars: list[dict[str, Any]] = []  # V3.2 price series (in-memory mirror of valuation_price_bars)
+        self._price_history_locks: dict[str, threading.RLock] = {}  # one critical section per market (C394-9); PostgreSQL: advisory lock
+        self._price_history_locks_guard = threading.Lock()
         self._valuation_changes: list[dict[str, Any]] = []
         self._server_usage_samples: list[dict[str, Any]] = []
         self._api_performance_buckets: list[dict[str, Any]] = []
@@ -3275,8 +3309,9 @@ class Database:
         inputs: dict[str, Any],
         outputs: dict[str, Any],
         published_at: datetime,
+        snapshot_id: str | None = None,
     ) -> str:
-        snapshot_id = str(uuid4())
+        snapshot_id = snapshot_id or str(uuid4())
         prior_snapshot: dict[str, Any] | None = None
         if not self.database_url:
             prior_snapshot = self.latest_analysis_snapshot(analysis_type, entity_key)
@@ -3289,7 +3324,10 @@ class Database:
                 "outputs": copy.deepcopy(outputs),
                 "published_at": published_at,
             }
-            self._analysis_snapshots.append(current_snapshot)
+            # the store keeps what the JSONB column would give back (T4): the JSON round-trip of inputs/outputs — fresh objects, a
+            # datetime/date/Decimal/UUID as its string, a tuple as a list — never the caller's dicts (which the change capture
+            # below still reads, as the PostgreSQL path does)
+            self._analysis_snapshots.append({**current_snapshot, "inputs": self._jsonb_mirror(inputs), "outputs": self._jsonb_mirror(outputs)})
             self._capture_valuation_changes(current_snapshot, prior_snapshot)
             self._record_official_predictions(current_snapshot)
             return snapshot_id
@@ -3717,10 +3755,370 @@ class Database:
             ).fetchone()
         return self._selection_record(row)
 
+    # ------------------------------------------------------------------ V3.2 price series (rev 7 §2.2; migration 049)
+
+    _PRICE_BAR_KEYS = ("id", "market", "symbol", "session_date", "close", "adjusted_close", "volume", "currency", "source", "provider_symbol",
+                       "fetched_at", "snapshot_id", "bar_sha256")
+    _PRICE_BAR_REQUIRED = tuple(key for key in _PRICE_BAR_KEYS if key != "volume")  # every column but volume is NOT NULL in migration 049
+    _PRICE_BAR_MARKETS = ("B3", "NASDAQ", "NYSE")  # migration 049: CHECK (market IN ('B3', 'NASDAQ', 'NYSE')) — pinned to valuation_price_history.MARKETS by a test
+    _PRICE_BAR_SHA256 = re.compile(r"^[0-9a-f]{64}$")  # migration 049: CHECK (bar_sha256 ~ '^[0-9a-f]{64}$')
+    _PRICE_BAR_SESSION = re.compile(r"^\d{4}-\d{2}-\d{2}$")  # the canonical ISO date the series writes and compares as text (DATE column)
+
+    @staticmethod
+    def _jsonb_mirror(value: dict[str, Any]) -> dict[str, Any]:
+        """What the JSONB column gives back for ``value``: its JSON round-trip (T4). Fresh objects on every call (never the
+        caller's dicts), a datetime/date/Decimal/UUID as its string, a tuple as a list, a non-string key as a string —
+        what a later reader of the in-memory double must cope with, exactly as with PostgreSQL."""
+        return json.loads(json.dumps(value, default=str))
+
+    def insert_price_bars(self, bars: list[dict[str, Any]]) -> int:
+        """Append-only: a bar already persisted for the same (market, symbol, session, source, fetched_at) is skipped."""
+        if not bars:
+            return 0
+        if not self.database_url:
+            return self._insert_price_bars_memory(bars)
+        with self.connection() as connection:
+            inserted = self._insert_price_bars_pg(connection, bars)
+            connection.commit()
+        return inserted
+
+    @staticmethod
+    def _checked_price_bar(bar: dict[str, Any]) -> dict[str, Any]:
+        """A bar every store can persist — the in-memory double mirrors migration 049 (S5, T4): every column but ``volume``
+        present (NOT NULL), ``market`` in the enum, ``session_date`` a canonical ISO date (``YYYY-MM-DD`` text or a ``date`` —
+        the DATE column, and the form the series compares as text), ``close`` and ``adjusted_close`` numbers > 0 (the
+        CHECKs), ``volume`` — when present — a finite number (NUMERIC: int, float or Decimal; never a bool or a string),
+        ``bar_sha256`` 64 lowercase hex characters (the CHECK) and ``fetched_at`` a parseable instant (TIMESTAMPTZ). Checked
+        BEFORE any write, so a malformed bar leaves nothing behind — PostgreSQL rolls the capture's transaction back; the
+        in-memory double validates every bar before it appends the manifest (R12)."""
+        missing = [key for key in Database._PRICE_BAR_REQUIRED if bar.get(key) is None]
+        if missing:
+            raise ValueError(f"price bar {bar.get('symbol')!r} {bar.get('session_date')!r} lacks {', '.join(missing)}")
+        where = f"price bar {bar['symbol']!r} {bar['session_date']!r}"
+        if bar["market"] not in Database._PRICE_BAR_MARKETS:
+            raise ValueError(f"{where} has market {bar['market']!r}, not one of {', '.join(Database._PRICE_BAR_MARKETS)}")
+        if not Database._iso_session(bar["session_date"]):
+            raise ValueError(f"{where} has session_date {bar['session_date']!r}, not an ISO date (YYYY-MM-DD)")
+        for field in ("close", "adjusted_close"):
+            if not Database._positive_price(bar[field]):
+                raise ValueError(f"{where} has {field} {bar[field]!r}, not a number > 0")
+        if bar.get("volume") is not None and not Database._finite_number(bar["volume"]):
+            raise ValueError(f"{where} has volume {bar['volume']!r}, not a finite number")
+        if not isinstance(bar["bar_sha256"], str) or not Database._PRICE_BAR_SHA256.fullmatch(bar["bar_sha256"]):  # fullmatch: PostgreSQL's $ never precedes a newline
+            raise ValueError(f"{where} has bar_sha256 {bar['bar_sha256']!r}, not 64 lowercase hex characters")
+        try:
+            Database._price_bar_instant(bar["fetched_at"])
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{where} has no parseable fetched_at ({bar['fetched_at']!r})") from error
+        return bar
+
+    @staticmethod
+    def _iso_session(value: Any) -> bool:
+        """Whether a bar's ``session_date`` is a canonical ISO date: a ``date`` (never a ``datetime``) or ``YYYY-MM-DD`` text
+        that parses (``2026-9-4``, ``20260904``, ``soon`` and a datetime's text are refused: the series compares sessions as
+        text, so only the canonical form is comparable)."""
+        if isinstance(value, datetime):
+            return False
+        if isinstance(value, date):
+            return True
+        if not isinstance(value, str) or not Database._PRICE_BAR_SESSION.fullmatch(value):
+            return False
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+
+    @staticmethod
+    def _finite_number(value: Any) -> bool:
+        """What a NUMERIC column admits from this code: an int of any size (NUMERIC has no float range — never converted to
+        float, so a huge int raises no OverflowError, T3), a finite float or a finite Decimal; never a bool, a string, NaN
+        or an infinity."""
+        if isinstance(value, bool):
+            return False
+        if isinstance(value, float):
+            return math.isfinite(value)
+        if isinstance(value, Decimal):
+            return value.is_finite()  # before any comparison: Decimal("NaN") > 0 raises InvalidOperation
+        return isinstance(value, int)
+
+    @staticmethod
+    def _positive_price(value: Any) -> bool:
+        """What ``CHECK (close > 0)`` on a NUMERIC column admits: a finite real number (``_finite_number``) strictly greater
+        than zero, compared in its own type — an int is never converted to float (``10**400`` is a NUMERIC PostgreSQL
+        accepts, T3)."""
+        return Database._finite_number(value) and value > 0
+
+    @staticmethod
+    def _price_bar_key(bar: dict[str, Any]) -> PriceBarKey:
+        return (str(bar["market"]), str(bar["symbol"]), str(bar["session_date"]), str(bar["source"]), Database._price_bar_instant(bar["fetched_at"]).isoformat())
+
+    @staticmethod
+    def _price_bar_instant(value: Any) -> datetime:
+        """The real instant of a bar's clock (UTC), never its string: offsets differ, strings mislead."""
+        instant = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+        return instant.replace(tzinfo=timezone.utc) if instant.tzinfo is None else instant.astimezone(timezone.utc)
+
+    def _insert_price_bars_memory(self, bars: list[dict[str, Any]]) -> int:
+        return self._append_price_bars_memory(self._prepare_price_bars_memory(bars))
+
+    def _prepare_price_bars_memory(self, bars: list[dict[str, Any]]) -> list[tuple[PriceBarKey, dict[str, Any]]]:
+        """Every bar checked and keyed BEFORE anything is appended (R12): a malformed bar raises here, with the store untouched."""
+        return [(self._price_bar_key(self._checked_price_bar(bar)), dict(bar)) for bar in bars]
+
+    def _append_price_bars_memory(self, prepared: list[tuple[PriceBarKey, dict[str, Any]]]) -> int:
+        existing = {self._price_bar_key(b) for b in self._price_bars}
+        added = 0
+        for key, row in prepared:  # the same key twice in one batch: the first row wins, exactly like ON CONFLICT DO NOTHING
+            if key in existing:
+                continue
+            existing.add(key)
+            self._price_bars.append(row)
+            added += 1
+        return added
+
+    PRICE_BAR_BATCH = 5000
+    _PRICE_BAR_INSERT_SQL = """
+        INSERT INTO valuation_price_bars
+            (id, market, symbol, session_date, close, adjusted_close, volume, currency, source, provider_symbol, fetched_at, snapshot_id, bar_sha256)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (market, symbol, session_date, source, fetched_at) DO NOTHING
+    """
+
+    @staticmethod
+    def _price_bar_params(bar: dict[str, Any]) -> tuple[Any, ...]:
+        bar = Database._checked_price_bar(bar)  # the same refusal as the in-memory double (inside the transaction: nothing is committed)
+        return (bar["id"], bar["market"], bar["symbol"], bar["session_date"], bar["close"], bar["adjusted_close"], bar.get("volume"), bar["currency"],
+                bar["source"], bar["provider_symbol"], bar["fetched_at"], bar["snapshot_id"], bar["bar_sha256"])
+
+    def _insert_price_bars_pg(self, connection: Any, bars: list[dict[str, Any]]) -> int:
+        """Batched inside the caller's transaction: one ``executemany`` per chunk of 5000 bars (psycopg pipelines the
+        round-trips) — never one statement per bar for a 36-month backfill (C394-8). ``rowcount`` after ``executemany``
+        is the total of affected rows (psycopg ≥ 3.1)."""
+        inserted = 0
+        with connection.cursor() as cursor:
+            for start in range(0, len(bars), self.PRICE_BAR_BATCH):
+                chunk = bars[start:start + self.PRICE_BAR_BATCH]
+                cursor.executemany(self._PRICE_BAR_INSERT_SQL, [self._price_bar_params(bar) for bar in chunk])
+                inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+        return inserted
+
+    # -- the per-market critical section (C394-9): clock re-check, dedupe read, manifest + bars, publication -------------
+
+    def price_history_lock(self, market: str) -> threading.RLock:
+        """The in-process critical section of one market's price series: the producer holds it from the capture to the
+        publication, and the two writers below re-take it (re-entrant). PostgreSQL serializes the same section across
+        processes with a transaction-level advisory lock on ``valuation_price_history:<market>``, taken as the FIRST
+        statement of each writer's transaction, after which the previous clocks are re-read and re-checked — and, for the
+        capture, the dedupe read happens in that same transaction, after the lock (never before it). The advisory lock
+        ends at the capture's commit, so across processes the whole-cycle exclusion of a phase is NOT this lock: it is the
+        capture writer's refusal of a second capture at/after the phase's due (``AlreadyCapturedError``, A2)."""
+        with self._price_history_locks_guard:
+            return self._price_history_locks.setdefault(market, threading.RLock())
+
+    @staticmethod
+    def _lock_price_history_pg(connection: Any, market: str) -> None:
+        connection.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"valuation_price_history:{market}",))
+
+    def _price_history_previous_memory(self, analysis_type: str, publication_type: str, entity_key: str) -> dict[str, Any]:
+        """The clocks a writer must advance beyond: the previous manifest's ``published_at`` (= its capture) and the previous
+        publication's ``published_at`` (= its availability) plus the capture that publication attests."""
+        rows = [item for item in self._analysis_snapshots if item.get("entity_key") == entity_key]
+        manifest = max((r for r in rows if r.get("analysis_type") == analysis_type), key=lambda r: self._price_bar_instant(r["published_at"]), default=None)
+        publication = max((r for r in rows if r.get("analysis_type") == publication_type), key=lambda r: self._price_bar_instant(r["published_at"]), default=None)
+        inputs = publication.get("inputs") if publication else None
+        captured = inputs.get("fetched_at") if isinstance(inputs, dict) else None
+        return {"manifest_id": manifest["id"] if manifest else None,
+                "manifest_fetched_at": self._price_bar_instant(manifest["published_at"]) if manifest else None,
+                "publication_id": publication["id"] if publication else None,
+                "publication_available_at": self._price_bar_instant(publication["published_at"]) if publication else None,
+                "publication_fetched_at": self._attested_capture(publication["id"], entity_key, captured) if publication else None}
+
+    def _price_history_previous_pg(self, connection: Any, analysis_type: str, publication_type: str, entity_key: str) -> dict[str, Any]:
+        manifest = connection.execute(
+            "SELECT id::text, published_at FROM analysis_snapshots WHERE analysis_type = %s AND entity_key = %s ORDER BY published_at DESC LIMIT 1",
+            (analysis_type, entity_key),
+        ).fetchone()
+        publication = connection.execute(
+            "SELECT id::text, published_at, inputs->>'fetched_at' FROM analysis_snapshots WHERE analysis_type = %s AND entity_key = %s "
+            "ORDER BY published_at DESC LIMIT 1",
+            (publication_type, entity_key),
+        ).fetchone()
+        return {"manifest_id": manifest[0] if manifest else None,
+                "manifest_fetched_at": self._price_bar_instant(manifest[1]) if manifest else None,
+                "publication_id": publication[0] if publication else None,
+                "publication_available_at": self._price_bar_instant(publication[1]) if publication else None,
+                "publication_fetched_at": self._attested_capture(publication[0], entity_key, publication[2]) if publication else None}
+
+    @staticmethod
+    def _attested_capture(publication_id: Any, entity_key: str, fetched_at: Any) -> datetime:
+        """The capture the previous publication attests (``inputs.fetched_at``): the clock the next capture must advance
+        beyond. A publication that carries none, or one that does not parse, is refused EXPLICITLY, by id (R10) — never a
+        bare parse error from the writer, never skipped (the clock chain would lose a link)."""
+        try:
+            if fetched_at is None or not str(fetched_at).strip():
+                raise ValueError("missing")
+            return Database._price_bar_instant(fetched_at)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"previous publication {publication_id} of {entity_key} has no parseable fetched_at ({fetched_at!r}): "
+                             "the writer cannot prove the next capture advances beyond it") from error
+
+    @staticmethod
+    def _refuse_if_published_since(entity_key: str, due: datetime | None, previous: dict[str, Any]) -> None:
+        """The strong form of a phase's "already published tonight" skip (T5): decided INSIDE the market's lock, on the
+        previous publication just re-read (its ``published_at`` is exactly ``latest_analysis_snapshot_published_at`` of the
+        publication type), right before the capture write — so a market that published since ``due`` while this run was
+        fetching is refused here with nothing written, whichever process or thread published. ``None`` = not a phase."""
+        if due is None or previous["publication_available_at"] is None:
+            return
+        due = Database._price_bar_instant(due)
+        if previous["publication_available_at"] >= due:
+            raise AlreadyPublishedError(entity_key, due, previous["publication_available_at"])
+
+    @staticmethod
+    def _refuse_if_captured_since(entity_key: str, due: datetime | None, previous: dict[str, Any]) -> None:
+        """At most ONE capture per market and phase, across processes (A2): decided INSIDE the market's lock, on the previous
+        manifest just re-read, after ``_refuse_if_published_since`` (so a published vintage says "already published") and
+        before the dedupe read. A manifest captured at/after ``due`` whose publication is not visible belongs to another
+        process's attempt at this phase — in flight, dead or failed (any exception) between its capture and its publication, or whose publication the
+        availability stamp refused —, and this run must not capture a second vintage for the same night:
+        ``AlreadyCapturedError``, nothing written. ``None`` = not a phase."""
+        if due is None or previous["manifest_fetched_at"] is None:
+            return
+        due = Database._price_bar_instant(due)
+        if previous["manifest_fetched_at"] >= due:
+            raise AlreadyCapturedError(entity_key, due, previous["manifest_fetched_at"])
+
+    @staticmethod
+    def _refuse_unless_capture_advances(entity_key: str, fetched_at: datetime, previous: dict[str, Any]) -> None:
+        """Two vintages can never share a clock, and a capture never precedes the availability of the vintage before it:
+        otherwise "the vintage a cut sees" would not be unique (C394-9). Checked INSIDE the lock, right before the write."""
+        if previous["manifest_fetched_at"] is not None and fetched_at <= previous["manifest_fetched_at"]:
+            raise ValueError(f"vintage clock {fetched_at.isoformat()} does not advance beyond the previous manifest of {entity_key} "
+                             f"({previous['manifest_fetched_at'].isoformat()})")
+        if previous["publication_available_at"] is not None and fetched_at <= previous["publication_available_at"]:
+            raise ValueError(f"vintage clock {fetched_at.isoformat()} does not advance beyond the previous publication of {entity_key} "
+                             f"(available {previous['publication_available_at'].isoformat()})")
+
+    _ANALYSIS_SNAPSHOT_INSERT_SQL = """
+        INSERT INTO analysis_snapshots
+            (id, analysis_type, entity_key, methodology_version_id, inputs, outputs, published_at, supersedes_id)
+        VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+    """
+
+    def persist_price_history_run(self, analysis_type: str, publication_type: str, entity_key: str, methodology_version_id: str, *, fetched_at: datetime,
+                                  symbols: list[str], source: str, build: PriceHistoryBuild, due: datetime | None = None) -> int:
+        """The CAPTURE of one vintage in ONE critical section and ONE transaction, in this order: the market's lock (in
+        PostgreSQL ``pg_advisory_xact_lock`` as the first statement), the previous clocks re-read — the capture refused
+        when the previous publication is at/after ``due`` (the phase's due instant, when the caller is a phase: the market
+        already published since it came due, ``AlreadyPublishedError``, a skip for the caller — T5), when — without such a
+        publication — the previous MANIFEST was captured at/after ``due`` (another process captured this phase's vintage and
+        has not published it yet: ``AlreadyCapturedError``, at most one capture per market and phase across processes — A2;
+        a manifest since the due WITH a publication since the due is ``AlreadyPublishedError``, because
+        ``_refuse_if_published_since`` runs first) or unless it advances
+        beyond both previous clocks (nothing written either way) —, the DEDUPE READ (the latest content hash per (symbol,
+        session) for ``symbols``/``source`` — in the same transaction, so two processes can never both see "no row yet" for
+        the same bar), then ``build(latest_hashes)`` → ``(inputs, outputs, published_at, snapshot_id, bars_to_insert)`` with
+        ``published_at`` == ``fetched_at`` (the clock that was checked; refused otherwise), the manifest snapshot
+        (``published_at`` = ``fetched_at``) and its bars (FK to the manifest), and a single commit: either both exist or
+        neither. The vintage is NOT available yet: readers only see it through ``publish_price_history_run``. Returns the
+        bars inserted. The in-memory double stores the JSON mirror of the manifest (the builder's dicts stay the caller's,
+        T4) and is as atomic as the transaction: every bar is checked before the manifest is appended, and the manifest is
+        removed if the bars still fail to append (R12)."""
+        fetched_at = self._price_bar_instant(fetched_at)
+        if not self.database_url:
+            with self.price_history_lock(entity_key):
+                previous = self._price_history_previous_memory(analysis_type, publication_type, entity_key)
+                self._refuse_if_published_since(entity_key, due, previous)
+                self._refuse_if_captured_since(entity_key, due, previous)  # A2: the same rule under the market lock, before the dedupe read
+                self._refuse_unless_capture_advances(entity_key, fetched_at, previous)
+                inputs, outputs, snapshot_id, bars = self._build_price_history_capture(build, self._latest_price_bar_hashes_memory(entity_key, symbols, source=source),
+                                                                                       fetched_at)
+                prepared = self._prepare_price_bars_memory(bars)  # R12: a malformed bar is refused here, before the manifest exists
+                self.save_analysis_snapshot(analysis_type, entity_key, methodology_version_id, inputs, outputs, fetched_at, snapshot_id=snapshot_id)
+                try:
+                    return self._append_price_bars_memory(prepared)
+                except Exception:  # the rollback psycopg's context manager performs for the PostgreSQL path: manifest and bars, or neither
+                    manifest_row = next(item for item in reversed(self._analysis_snapshots) if item.get("id") == snapshot_id)  # the row just appended
+                    self._analysis_snapshots.remove(manifest_row)  # that row alone (S3): never a rebuild of the list, never another row that shares the id
+                    raise
+        with self.connection() as connection:
+            self._lock_price_history_pg(connection, entity_key)
+            previous = self._price_history_previous_pg(connection, analysis_type, publication_type, entity_key)
+            self._refuse_if_published_since(entity_key, due, previous)
+            self._refuse_if_captured_since(entity_key, due, previous)  # A2: inside the advisory-locked transaction, after the clock reads, before DISTINCT ON
+            self._refuse_unless_capture_advances(entity_key, fetched_at, previous)
+            inputs, outputs, snapshot_id, bars = self._build_price_history_capture(build, self._latest_price_bar_hashes_pg(connection, entity_key, symbols, source=source),
+                                                                                   fetched_at)
+            connection.execute(self._ANALYSIS_SNAPSHOT_INSERT_SQL, (snapshot_id, analysis_type, entity_key, methodology_version_id, json.dumps(inputs),
+                                                                    json.dumps(outputs), fetched_at, previous["manifest_id"]))
+            inserted = self._insert_price_bars_pg(connection, bars)
+            connection.commit()
+        return inserted
+
+    def _build_price_history_capture(self, build: PriceHistoryBuild, latest: dict[tuple[str, str], str],
+                                     fetched_at: datetime) -> tuple[dict[str, Any], dict[str, Any], str, list[dict[str, Any]]]:
+        inputs, outputs, published_at, snapshot_id, bars = build(latest)
+        if self._price_bar_instant(published_at) != fetched_at:
+            raise ValueError(f"capture clock {self._price_bar_instant(published_at).isoformat()} of the manifest differs from the checked clock {fetched_at.isoformat()}")
+        return inputs, outputs, snapshot_id, bars
+
+    def publish_price_history_run(self, publication_type: str, analysis_type: str, entity_key: str, methodology_version_id: str, inputs: dict[str, Any],
+                                  outputs: dict[str, Any], *, fetched_at: datetime, clock: Callable[[], datetime]) -> tuple[str, datetime]:
+        """The PUBLICATION of a vintage already committed by ``persist_price_history_run``: an append-only row of
+        ``publication_type`` whose ``published_at`` = ``available_at`` — the clock read from ``clock`` as the LAST step before
+        the insert, inside the market's lock, after the previous publication has been re-read. Publications are monotone in
+        both clocks: the capture must advance beyond the previous publication's capture and the availability beyond its
+        availability (refused otherwise: the manifest then stays captured-never-published, invisible to every reader).
+        Returns ``(publication_id, available_at)``. The window between the availability stamp and the commit of this row is
+        the one every store has; it is kept to the insert itself, and a cut inside it sees nothing (strict ``<``). The row
+        must attest the capture it was checked against — ``inputs.fetched_at`` an ISO-8601 ``str`` (what the JSON column
+        stores and a later writer parses back) equal to ``fetched_at`` — or it is refused BEFORE the lock and before any
+        write (R10, S6): a future writer reads that field back to prove its own capture advances. The in-memory double
+        stores the JSON mirror of the row (fresh objects, never the caller's dicts — R12, T4)."""
+        fetched_at = self._price_bar_instant(fetched_at)
+        attested = inputs.get("fetched_at")
+        try:
+            attested_at = self._price_bar_instant(attested) if isinstance(attested, str) and attested.strip() else None
+        except (TypeError, ValueError):
+            attested_at = None
+        if attested_at != fetched_at:
+            raise ValueError(f"publication of {entity_key} attests fetched_at {attested!r}, not the checked capture {fetched_at.isoformat()} as an ISO-8601 "
+                             "string: refused before any write (a later writer could not trust it)")
+        publication_id = str(uuid4())
+        if not self.database_url:
+            with self.price_history_lock(entity_key):
+                previous = self._price_history_previous_memory(analysis_type, publication_type, entity_key)
+                available_at = self._stamp_availability(entity_key, fetched_at, previous, clock)
+                self.save_analysis_snapshot(publication_type, entity_key, methodology_version_id, {**inputs, "available_at": available_at.isoformat()}, outputs,
+                                            available_at, snapshot_id=publication_id)
+                return publication_id, available_at
+        with self.connection() as connection:
+            self._lock_price_history_pg(connection, entity_key)
+            previous = self._price_history_previous_pg(connection, analysis_type, publication_type, entity_key)
+            available_at = self._stamp_availability(entity_key, fetched_at, previous, clock)
+            connection.execute(self._ANALYSIS_SNAPSHOT_INSERT_SQL, (publication_id, publication_type, entity_key, methodology_version_id,
+                                                                    json.dumps({**inputs, "available_at": available_at.isoformat()}), json.dumps(outputs),
+                                                                    available_at, previous["publication_id"]))
+            connection.commit()
+        return publication_id, available_at
+
+    def _stamp_availability(self, entity_key: str, fetched_at: datetime, previous: dict[str, Any], clock: Callable[[], datetime]) -> datetime:
+        if previous["publication_fetched_at"] is not None and fetched_at <= previous["publication_fetched_at"]:
+            raise ValueError(f"vintage clock {fetched_at.isoformat()} does not advance beyond the capture the previous publication of {entity_key} attests "
+                             f"({previous['publication_fetched_at'].isoformat()})")
+        available_at = self._price_bar_instant(clock())  # as late as possible: nothing but the insert follows
+        if available_at < fetched_at:
+            raise ValueError(f"availability {available_at.isoformat()} of {entity_key} precedes its capture {fetched_at.isoformat()} (clock went backwards)")
+        if previous["publication_available_at"] is not None and available_at <= previous["publication_available_at"]:
+            raise ValueError(f"availability {available_at.isoformat()} does not advance beyond the previous publication of {entity_key} "
+                             f"({previous['publication_available_at'].isoformat()})")
+        return available_at
+
     def analysis_snapshot_by_id(self, snapshot_id: str) -> dict[str, Any] | None:
-        if not self.database_url:  # a deep copy, as a PostgreSQL read is a fresh object: the store is never aliased (F393-5)
+        if not self.database_url:
             match = next((item for item in self._analysis_snapshots if item.get("id") == snapshot_id), None)
-            return copy.deepcopy(match) if match else None
+            return copy.deepcopy(match) if match else None  # R12: a reader never gets the store's own dicts (PostgreSQL decodes fresh JSON)
         with self.connection() as connection:
             row = connection.execute(
                 """
@@ -3771,6 +4169,101 @@ class Database:
         """Both official caches: cycles and their records (D1 — a poisoned empty answer never survives a generation)."""
         self._official_cycle_cache.clear()
         self._cycle_records_cache.clear()
+    def latest_price_bar_hashes(self, market: str, symbols: list[str], *, source: str) -> dict[tuple[str, str], str]:
+        """The content hash of the LATEST stored row per (symbol, session) — what a run compares its fetch against. The
+        producer never calls this outside the capture: ``persist_price_history_run`` performs the same read inside its
+        transaction, after the market's lock (this entry point is for readers/diagnostics)."""
+        if not symbols:
+            return {}
+        if not self.database_url:
+            return self._latest_price_bar_hashes_memory(market, symbols, source=source)
+        with self.connection() as connection:
+            return self._latest_price_bar_hashes_pg(connection, market, symbols, source=source)
+
+    def _latest_price_bar_hashes_memory(self, market: str, symbols: list[str], *, source: str) -> dict[tuple[str, str], str]:
+        wanted = set(symbols)
+        latest: dict[tuple[str, str], tuple[datetime, str]] = {}
+        for bar in self._price_bars:
+            if bar["market"] != market or bar["source"] != source or bar["symbol"] not in wanted:
+                continue
+            key = (str(bar["symbol"]), str(bar["session_date"]))
+            instant = self._price_bar_instant(bar["fetched_at"])
+            if key not in latest or instant > latest[key][0]:
+                latest[key] = (instant, str(bar["bar_sha256"]))
+        return {key: value[1] for key, value in latest.items()}
+
+    @staticmethod
+    def _latest_price_bar_hashes_pg(connection: Any, market: str, symbols: list[str], *, source: str) -> dict[tuple[str, str], str]:
+        if not symbols:
+            return {}
+        rows = connection.execute(
+            """
+            SELECT DISTINCT ON (symbol, session_date) symbol, session_date::text, bar_sha256
+            FROM valuation_price_bars
+            WHERE market = %s AND source = %s AND symbol = ANY(%s)
+            ORDER BY symbol, session_date, fetched_at DESC
+            """,
+            (market, source, list(symbols)),
+        ).fetchall()
+        return {(str(row[0]), str(row[1])): str(row[2]) for row in rows}
+
+    def price_bars(self, market: str, symbol: str, *, as_of: datetime, since: date | None = None, until: date | None = None) -> dict[str, dict[str, Any]]:
+        """By session: the latest bar with fetched_at <= as_of — the chain a vintage stamped at ``as_of`` reproduces
+        (the service verifies it against the vintage's series hash before serving it)."""
+        as_of = self._price_bar_instant(as_of)
+        if not self.database_url:
+            chosen: dict[str, dict[str, Any]] = {}
+            for bar in sorted(self._price_bars, key=lambda b: self._price_bar_instant(b["fetched_at"])):  # real instants, never strings
+                if bar["market"] != market or bar["symbol"] != symbol:
+                    continue
+                if self._price_bar_instant(bar["fetched_at"]) > as_of:
+                    continue
+                session = str(bar["session_date"])
+                if (since and session < since.isoformat()) or (until and session > until.isoformat()):
+                    continue
+                chosen[session] = dict(bar)
+            return chosen
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT ON (session_date) id::text, market, symbol, session_date::text, close, adjusted_close, volume, currency, source,
+                       provider_symbol, fetched_at, snapshot_id::text, bar_sha256
+                FROM valuation_price_bars
+                WHERE market = %s AND symbol = %s AND fetched_at <= %s AND (%s::date IS NULL OR session_date >= %s) AND (%s::date IS NULL OR session_date <= %s)
+                ORDER BY session_date, fetched_at DESC
+                """,
+                (market, symbol, as_of, since, since, until, until),
+            ).fetchall()
+        output: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            record = dict(zip(self._PRICE_BAR_KEYS, row))
+            for key in ("close", "adjusted_close", "volume"):
+                record[key] = float(record[key]) if record[key] is not None else None
+            if isinstance(record.get("fetched_at"), datetime):
+                record["fetched_at"] = record["fetched_at"].isoformat()
+            output[str(record["session_date"])] = record
+        return output
+
+    def v3_shadow_symbols(self, market: str) -> list[str]:
+        """Every symbol that has a V3 shadow evaluation (its labels still need bars) — the coverage floor of the series."""
+        entity_key = f"{market}_V3_SHADOW"
+        if not self.database_url:
+            symbols: set[str] = set()
+            for item in self._analysis_snapshots:
+                if item.get("analysis_type") == "valuation_v3_shadow" and item.get("entity_key") == entity_key:
+                    results = (item.get("outputs") or {}).get("results")
+                    if isinstance(results, dict):
+                        symbols.update(str(key).upper() for key in results)
+            return sorted(symbols)
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT jsonb_object_keys(outputs->'results') FROM analysis_snapshots
+                WHERE analysis_type = 'valuation_v3_shadow' AND entity_key = %s AND jsonb_typeof(outputs->'results') = 'object'
+                """,
+                (entity_key,),
+            ).fetchall()
+        return sorted(str(row[0]).upper() for row in rows)
 
     def latest_analysis_snapshot_published_at(self, analysis_type: str, entity_key: str) -> datetime | None:
         """Timestamp-only counterpart of latest_analysis_snapshot(), for
@@ -3794,13 +4287,41 @@ class Database:
             ).fetchone()
         return row[0] if row else None
 
+    def latest_analysis_snapshot_before(self, analysis_type: str, entity_key: str, before: datetime, *, schema_version: str | None = None) -> dict[str, Any] | None:
+        """The snapshot with the greatest published_at STRICTLY before ``before`` (the single vintage a cut sees) — of the
+        given ``outputs.schema_version`` when one is asked, so a newer manifest of another schema never hides an older
+        compatible vintage from a historical cut."""
+        before = self._price_bar_instant(before)
+        if not self.database_url:
+            matches = [
+                item for item in self._analysis_snapshots
+                if item.get("analysis_type") == analysis_type and item.get("entity_key") == entity_key
+                and self._price_bar_instant(item["published_at"]) < before
+                and (schema_version is None or (item.get("outputs") or {}).get("schema_version") == schema_version)
+            ]
+            return copy.deepcopy(max(matches, key=lambda item: self._price_bar_instant(item["published_at"]))) if matches else None  # S4: never the store's dicts
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT id::text, inputs, outputs, published_at, methodology_version_id::text
+                FROM analysis_snapshots
+                WHERE analysis_type = %s AND entity_key = %s AND published_at < %s
+                  AND (%s::text IS NULL OR outputs->>'schema_version' = %s)
+                ORDER BY published_at DESC LIMIT 1
+                """,
+                (analysis_type, entity_key, before, schema_version, schema_version),
+            ).fetchone()
+        if not row:
+            return None
+        return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row))
+
     def latest_analysis_snapshot(self, analysis_type: str, entity_key: str) -> dict[str, Any] | None:
         if not self.database_url:  # a deep copy, as a PostgreSQL read is a fresh object: the store is never aliased (F393-5)
             matches = [
                 item for item in self._analysis_snapshots
                 if item.get("analysis_type") == analysis_type and item.get("entity_key") == entity_key
             ]
-            return copy.deepcopy(max(matches, key=lambda item: item["published_at"])) if matches else None
+            return copy.deepcopy(max(matches, key=lambda item: item["published_at"])) if matches else None  # S4: never the store's dicts (PostgreSQL decodes fresh JSON)
         with self.connection() as connection:
             row = connection.execute(
                 """
