@@ -192,10 +192,49 @@ def test_every_consumer_resolves_the_same_official_row_for_the_same_generation()
     one_pager_view = official.official_row(database, "US", "AAPL", generation=generation)
     r2d2_view = official.official_rows(database, "NASDAQ", generation=generation)["AAPL"]
     served = official.official_stamp(database, "NASDAQ", generation=generation)
-    record = database.valuation_predictions_for_cycle(cycles["NASDAQ"])["AAPL"]
+    record = database.valuation_predictions_for_cycle(cycles["NASDAQ"], source=official.SOURCE_OFFICIAL)["AAPL"]
     assert one_pager_view is not None
     assert one_pager_view["our_tp"] == r2d2_view["our_tp"] == record["tp"] == 250.0 and one_pager_view["buy_in"] == r2d2_view["buy_in"] == record["buy_in"] == 200.0
     assert one_pager_view["generation_id"] == r2d2_view["generation_id"] == served["official_generation_id"] == generation["generation_id"]
     assert one_pager_view["official_cycle_id"] == r2d2_view["official_cycle_id"] == served["official_cycle_id"] == cycles["NASDAQ"]
     assert one_pager_view["tp_source"] == r2d2_view["tp_source"] == served["tp_source"] == official.SOURCE_OFFICIAL
     assert one_pager_view["official_row_sha256"] == r2d2_view["official_row_sha256"] == record["row_sha256"] and len(record["row_sha256"]) == 64
+
+
+def test_every_consumer_serves_the_internal_tp_with_its_stamp_after_the_switch_without_being_edited(monkeypatch) -> None:
+    """Passo 1 (I-TP1/I-TP3/I-TP4): the switch is a new selection line; One Pager, R2D2 v1 and the screeners' served
+    responses resolve the SAME internal record for the same (market, symbol, generation), stamped ``official_internal_v1``,
+    the consensus beside — no consumer module changed (the sweep above still passes on the same tree)."""
+    from app.valuation_official_engine import SOURCE_INTERNAL
+
+    database = _database()
+    now = datetime(2026, 9, 7, 23, 0, tzinfo=timezone.utc)
+    rows = {
+        "B3": [{"symbol": "PETR4", "our_tp": 40.0, "buy_in": 32.0, "price": 36.0, "internal_tp": 39.0, "internal_buy_in": 31.0, "signal_quality": "validated"}],
+        "NASDAQ": [{"symbol": "AAPL", "our_tp": 250.0, "buy_in": 200.0, "price": 220.0, "internal_tp": 245.0, "internal_buy_in": 196.0, "public_consensus_tp": 275.0,
+                    "analyst_count": 20, "consensus_weight_percent": 35.0, "signal_quality": "validated"}],
+        "NYSE": [{"symbol": "KO", "our_tp": 70.0, "buy_in": 60.0, "price": 65.0, "internal_tp": 68.0, "internal_buy_in": 58.0, "signal_quality": "validated"}],
+    }
+    cycles = {market: database.save_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE", "mv-1", {"methodology_version": 7},
+                                                       {"rows": rows[market], "universe_size": 1}, now + timedelta(minutes=i))
+              for i, market in enumerate(official.MARKETS)}
+    blend = official.current_generation(database)
+    assert blend is not None and blend["source"] == official.SOURCE_OFFICIAL
+    report = official.before_after_report(database)
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
+    generation = official.select_generation(database, cycles=cycles, now=datetime.now(timezone.utc), activated_by="mesa", reason="P1",
+                                            source=SOURCE_INTERNAL, source_version="7", before_after_sha256=report["report_sha256"])
+    assert generation["source"] == SOURCE_INTERNAL and official.current_generation(database) == generation
+    one_pager_view = official.official_row(database, "US", "AAPL", generation=generation)
+    r2d2_view = official.official_rows(database, "NASDAQ", generation=generation)["AAPL"]
+    served = official.official_stamp(database, "NASDAQ", generation=generation)
+    record = database.valuation_predictions_for_cycle(cycles["NASDAQ"], source=SOURCE_INTERNAL)["AAPL"]
+    assert one_pager_view is not None
+    assert one_pager_view["our_tp"] == r2d2_view["our_tp"] == record["tp"] == 245.0 and one_pager_view["buy_in"] == r2d2_view["buy_in"] == record["buy_in"] == 196.0
+    assert one_pager_view["public_consensus_tp"] == r2d2_view["public_consensus_tp"] == record["consensus_tp"] == 275.0  # displayed beside, never inside
+    assert one_pager_view["consensus_weight_percent"] == r2d2_view["consensus_weight_percent"] == record["consensus_weight_percent"] == 0.0
+    assert one_pager_view["generation_id"] == r2d2_view["generation_id"] == served["official_generation_id"] == generation["generation_id"]
+    assert one_pager_view["tp_source"] == r2d2_view["tp_source"] == served["tp_source"] == official.item_stamp(r2d2_view)["tp_source"] == SOURCE_INTERNAL
+    assert one_pager_view["official_row_sha256"] == r2d2_view["official_row_sha256"] == record["row_sha256"]
+    # the previous generation still resolves the blend for a replay
+    assert official.official_row(database, "US", "AAPL", generation=blend)["our_tp"] == 250.0  # type: ignore[index]

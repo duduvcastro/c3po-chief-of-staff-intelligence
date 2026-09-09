@@ -13,6 +13,7 @@ from typing import Any, Callable, Iterator
 from uuid import uuid4
 
 from .config import Settings
+from .valuation_official_engine import OFFICIAL_SOURCES  # the sources a generation may select (Q3); the engine imports no storage
 
 logger = logging.getLogger(__name__)
 LEGACY_SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
@@ -75,7 +76,7 @@ class Database:
         self._valuation_predictions: list[dict[str, Any]] = []
         self._valuation_official_selections: list[dict[str, Any]] = []
         self._official_cycle_cache: dict[str, dict[str, Any]] = {}
-        self._cycle_records_cache: dict[str, dict[str, dict[str, Any]]] = {}
+        self._cycle_records_cache: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}  # (cycle_id, source) → records by symbol (Passo 1)
         self._price_bars: list[dict[str, Any]] = []  # V3.2 price series (in-memory mirror of valuation_price_bars)
         self._price_history_locks: dict[str, threading.RLock] = {}  # one critical section per market (C394-9); PostgreSQL: advisory lock
         self._price_history_locks_guard = threading.Lock()
@@ -3419,10 +3420,10 @@ class Database:
             added = [r for r in records if (r["source"], r["source_version"], r["market"], r["symbol"], r["cycle_id"]) not in existing]
             self._valuation_predictions.extend(copy.deepcopy(r) for r in added)
             for record in added:
-                self._cycle_records_cache.pop(str(record["cycle_id"]), None)
+                self._cycle_records_cache.pop((str(record["cycle_id"]), str(record["source"])), None)
             return len(added)
         inserted = 0
-        touched: set[str] = set()
+        touched: set[tuple[str, str]] = set()
         with self.connection() as connection:
             for record in records:
                 cursor = connection.execute(
@@ -3442,10 +3443,10 @@ class Database:
                      json.dumps(record.get("decomposition") or {}), record["row_sha256"]),
                 )
                 inserted += cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
-                touched.add(str(record["cycle_id"]))
+                touched.add((str(record["cycle_id"]), str(record["source"])))
             connection.commit()
-        for cycle_id in touched:  # invalidated AFTER the commit: a concurrent reader cannot refill the cache with the pre-commit view (F393-5)
-            self._cycle_records_cache.pop(cycle_id, None)
+        for key in touched:  # invalidated AFTER the commit: a concurrent reader cannot refill the cache with the pre-commit view (F393-5)
+            self._cycle_records_cache.pop(key, None)
         return inserted
 
     def _prediction_record(self, row: Any) -> dict[str, Any] | None:
@@ -3485,18 +3486,22 @@ class Database:
         from .valuation_official import stored_prediction  # local import: that module depends on this storage API
         return stored_prediction(copy.deepcopy(record))
 
-    def valuation_predictions_for_cycle(self, cycle_id: str) -> dict[str, dict[str, Any]]:
-        """The immutable records of one producer cycle, by symbol — what the official selection SERVES (F393-5).
-        Cycles are immutable, so a small cache is exact — but ONLY for a non-empty answer: an empty one may be the
-        window between a cycle's publication and its records (another process), and must never be pinned (D1).
-        Callers receive a deep copy — on a hit AND on the cold read: neither the cache nor the store is ever aliased.
-        A stored row whose identity does not verify is absent from the answer (F393-11 b): the cycle is then not
-        selectable (``cycle_validation`` counts its symbol unrecorded)."""
-        cached = self._cycle_records_cache.get(cycle_id)
+    def valuation_predictions_for_cycle(self, cycle_id: str, *, source: str) -> dict[str, dict[str, Any]]:
+        """The immutable records of one producer cycle FOR ONE SOURCE, by symbol — what the official selection SERVES
+        (F393-5). Since Passo 1 a cycle carries two sources (``official_blend_v1`` and ``official_internal_v1``) with
+        different numbers for the same symbol: a reader that did not name the source would serve whichever row it met
+        first (proved on the double), so ``source`` is REQUIRED — the caller passes the source the generation selected.
+        Cycles are immutable, so a small cache keyed by ``(cycle_id, source)`` is exact — but ONLY for a non-empty answer:
+        an empty one may be the window between a cycle's publication and its records (another process), and must never
+        be pinned (D1). Callers receive a deep copy — on a hit AND on the cold read: neither the cache nor the store is
+        ever aliased. A stored row whose identity does not verify is absent from the answer (F393-11 b): the cycle is then
+        not selectable (``cycle_validation`` counts its symbol unrecorded)."""
+        key = (cycle_id, source)
+        cached = self._cycle_records_cache.get(key)
         if cached is not None:
             return copy.deepcopy(cached)
         if not self.database_url:
-            served = (self._stored_prediction(r) for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id)
+            served = (self._stored_prediction(r) for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id and str(r["source"]) == source)
             records = {str(r["symbol"]): r for r in served if r is not None}
         else:
             with self.connection() as connection:
@@ -3505,15 +3510,15 @@ class Database:
                     SELECT id::text, source, source_version, market, symbol, scope, session_date::text, cycle_id::text, prediction_instant, published_at,
                            tp, buy_in, internal_tp, consensus_tp, consensus_source, analyst_count, consensus_weight_percent, price, currency,
                            decomposition, row_sha256
-                    FROM valuation_predictions WHERE cycle_id = %s
+                    FROM valuation_predictions WHERE cycle_id = %s AND source = %s
                     """,
-                    (cycle_id,),
+                    (cycle_id, source),
                 ).fetchall()
             records = {str(r["symbol"]): r for r in (self._prediction_record(row) for row in rows) if r is not None}
         if records:
             if len(self._cycle_records_cache) >= 12:
                 self._cycle_records_cache.pop(next(iter(self._cycle_records_cache)))
-            self._cycle_records_cache[cycle_id] = copy.deepcopy(records)
+            self._cycle_records_cache[key] = copy.deepcopy(records)
         return records
 
     # The recency of a prediction record, for every reader of the newest one (S4): ``(prediction_instant, published_at,
@@ -3610,7 +3615,13 @@ class Database:
         """One generation chains on ``previous_generation_id`` (UNIQUE where not null, migration 048): two writers
         extending the same predecessor cannot both succeed — the loser gets ``SelectionConflict`` (B2). The ROOT is
         unique too (partial unique index where the predecessor is null, F393-9): two bootstraps cannot both succeed.
-        The double mirrors both indexes."""
+        The double mirrors both indexes. A generation selecting a source that is not one of ``OFFICIAL_SOURCES`` is
+        refused before either store is touched (``ValueError``, Q3): a reader meeting such a head serves nothing, so the
+        writer never creates one."""
+        source = generation.get("source")
+        if source not in OFFICIAL_SOURCES:
+            raise ValueError(f"valuation_official_selection.source {source!r} is not an official source (expected one of {OFFICIAL_SOURCES}): "
+                             f"generation {generation.get('generation_id')} is not written — nothing could be served under it (Q3)")
         previous = generation.get("previous_generation_id")
         conflict = f"generation {previous} already has a successor" if previous is not None else "a root generation already exists"
         if not self.database_url:
@@ -4144,14 +4155,16 @@ class Database:
         self._official_cycle_cache[cycle_id] = copy.deepcopy(snapshot)
         return copy.deepcopy(snapshot)  # a miss is a copy too: the in-memory master row is never handed out
 
-    def valuation_prediction_record(self, cycle_id: str, symbol: str) -> dict[str, Any] | None:
-        """ONE record of a cycle (a copy) — what a single-symbol reader needs, without copying the whole cycle."""
-        cached = self._cycle_records_cache.get(cycle_id)
+    def valuation_prediction_record(self, cycle_id: str, symbol: str, *, source: str) -> dict[str, Any] | None:
+        """ONE record of a cycle for ONE source (a copy) — what a single-symbol reader needs, without copying the whole
+        cycle. ``source`` is required for the same reason as in ``valuation_predictions_for_cycle`` (Passo 1)."""
+        cached = self._cycle_records_cache.get((cycle_id, source))
         if cached is not None:
             record = cached.get(symbol)
             return copy.deepcopy(record) if record is not None else None
         if not self.database_url:
-            match = next((r for r in self._valuation_predictions if str(r["cycle_id"]) == cycle_id and str(r["symbol"]) == symbol), None)
+            match = next((r for r in self._valuation_predictions
+                          if str(r["cycle_id"]) == cycle_id and str(r["symbol"]) == symbol and str(r["source"]) == source), None)
             return self._stored_prediction(match) if match else None
         with self.connection() as connection:
             row = connection.execute(
@@ -4159,9 +4172,9 @@ class Database:
                 SELECT id::text, source, source_version, market, symbol, scope, session_date::text, cycle_id::text, prediction_instant, published_at,
                        tp, buy_in, internal_tp, consensus_tp, consensus_source, analyst_count, consensus_weight_percent, price, currency,
                        decomposition, row_sha256
-                FROM valuation_predictions WHERE cycle_id = %s AND symbol = %s
+                FROM valuation_predictions WHERE cycle_id = %s AND symbol = %s AND source = %s
                 """,
-                (cycle_id, symbol),
+                (cycle_id, symbol, source),
             ).fetchone()
         return self._prediction_record(row) if row else None
 
