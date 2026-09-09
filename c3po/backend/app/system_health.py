@@ -22,7 +22,6 @@ from .observability import HealthcheckPing
 from .schemas import AiUsageMetric, ApiUsageMetric, IntegrationHealth, SystemHealthGroup, SystemHealthResponse
 from .valuation_worker_contract import (
     VALUATION_WORKER_CANONICAL_PHASE,
-    VALUATION_WORKER_OFFHOURS_PHASES,
     VALUATION_WORKER_PHASES,
 )
 
@@ -1404,7 +1403,8 @@ class SystemHealthService:
         definitions = {
             phase: definition
             for phase, definition in VALUATION_WORKER_PHASES.items()
-            if phase != "cash_yield" or self.settings.r2d2_cash_yield_accounting_enabled
+            if (phase != "cash_yield" or self.settings.r2d2_cash_yield_accounting_enabled)
+            and (phase != "price_history" or getattr(self.settings, "valuation_price_history_enabled", False))
         }
         codes = [definition["code"] for definition in definitions.values()]
         try:
@@ -1423,8 +1423,8 @@ class SystemHealthService:
         window_end = midnight.replace(hour=8)
         phase_due_at = {
             phase: midnight.replace(hour=6) if phase == "cash_yield" else offhours_due
-            for phase in VALUATION_WORKER_OFFHOURS_PHASES
-            if phase in definitions
+            for phase in definitions  # every ENABLED off-hours phase (price_history included once the mesa enables it)
+            if phase != VALUATION_WORKER_CANONICAL_PHASE
         }
         expected_at = {
             VALUATION_WORKER_CANONICAL_PHASE: midnight,
@@ -1459,7 +1459,7 @@ class SystemHealthService:
             success_local = (
                 last_success if last_success.tzinfo else last_success.replace(tzinfo=timezone.utc)
             ).astimezone(SAO_PAULO)
-            if success_local < expected_at[phase]:
+            if success_local < expected_at.get(phase, offhours_due):  # a phase without a due entry can never break the card
                 pending.append(phase)
 
         if failed:

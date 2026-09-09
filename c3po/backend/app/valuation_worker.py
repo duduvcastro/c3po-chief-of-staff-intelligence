@@ -25,6 +25,7 @@ from .valuation_v2_data import ValuationV2DataService
 from .valuation_v2_peer_quality import ValuationV2PeerQualityService
 from .valuation_v2_shadow import ValuationV2ShadowService
 from .valuation_v3_shadow import ValuationV3ShadowService
+from .valuation_price_history import PriceHistoryService
 from .valuation_worker_contract import (
     VALUATION_WORKER_CANONICAL_PHASE,
     VALUATION_WORKER_PHASES,
@@ -357,6 +358,7 @@ def main() -> None:
     )
     v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
     v3_shadow = ValuationV3ShadowService(database)
+    price_history = PriceHistoryService(settings, database, market_data.http)
     cash_yield = R2D2CashYieldService(
         settings,
         database,
@@ -381,6 +383,8 @@ def main() -> None:
             v2_peer_quality.refresh_all,
         ),
         OffhoursPhase("v3_shadow", v3_shadow.last_run_at, v3_shadow.run_all),
+        *((OffhoursPhase("price_history", price_history.last_run_at, price_history.run_all),)
+          if settings.valuation_price_history_enabled else ()),  # V3.2 price series (rev 7 §2.2): dormant until the mesa enables it
         *((
             OffhoursPhase(
                 CASH_YIELD_PHASE_KEY,

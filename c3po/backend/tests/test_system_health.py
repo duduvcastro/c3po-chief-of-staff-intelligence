@@ -593,6 +593,22 @@ def test_governance_card_describes_the_daily_window_without_claiming_fixed_sched
     )
 
 
+def test_valuation_worker_phase_health_survives_an_enabled_price_history_success() -> None:
+    # C394-6 (V3.2 price series): the phase is expected only when enabled, and its SUCCESS must not break the card
+    now = datetime.now(timezone.utc)
+    states = {
+        definition["code"]: {"last_status": "succeeded", "started_at": now, "completed_at": now, "last_success_at": now, "last_error": None,
+                             "metadata": {"phase": phase}}
+        for phase, definition in VALUATION_WORKER_PHASES.items()
+    }
+    service = _service(valuation_phase_states=states)
+    service.settings.valuation_price_history_enabled = True
+    item = service._valuation_worker_phase_health(now)
+    assert item.status != "offline" and "price_history" not in (item.detail or "")
+    service.settings.valuation_price_history_enabled = False
+    assert service._valuation_worker_phase_health(now).status != "offline"  # dormant: neither expected nor pending
+
+
 def test_valuation_worker_phase_failure_is_persistently_visible() -> None:
     now = datetime.now(timezone.utc)
     states = {

@@ -32,6 +32,10 @@ VALUATION_WORKER_PHASES: dict[str, dict[str, str]] = {
         "code": "valuation-worker-r2d2-cash-yield",
         "name": "R2D2 cash-yield accounting cycle",
     },
+    "price_history": {
+        "code": "valuation-worker-price-history",
+        "name": "Valuation V3.2 price series cycle",
+    },
 }
 
 VALUATION_WORKER_CANONICAL_PHASE = "canonical"
