@@ -185,6 +185,7 @@ class B3ScreenerService:
         self._matrix_cached: MatrixPowerResponse | None = None
         self._matrix_cache_expires_at: datetime | None = None
         self._eodhd_fundamentals: dict[str, dict[str, Any]] = {}
+        self._eodhd_fetched_at: dict[str, datetime] = {}  # per symbol: the instant its EODHD fundamentals were RECEIVED (a cache read keeps it; PROMO-2 c)
         self._eodhd_cache_expires_at: datetime | None = None
         self._eodhd_history: dict[str, dict[str, float]] = {}
         self._eodhd_history_cache_expires_at: datetime | None = None
@@ -348,6 +349,7 @@ class B3ScreenerService:
             existing_symbols = {str(row.get("symbol") or "") for row in self._matrix_rows}
             for symbol in clean_symbols:
                 self._eodhd_fundamentals.pop(symbol, None)
+                self._eodhd_fetched_at.pop(symbol, None)
                 self._eodhd_history.pop(symbol, None)
 
             updated: list[str] = []
@@ -416,6 +418,7 @@ class B3ScreenerService:
             quotes.update(self._eodhd_quote_map([symbol]))
         statistics_map = self._optional_fundamental_map("statistics", [symbol])
         financial_map = self._optional_fundamental_map("financial-data", [symbol])
+        brapi_fetched_at = datetime.now(timezone.utc)
         historical_map = self._optional_historical_map([symbol])
         eodhd_map = self._eodhd_fundamental_map([symbol]) if self.settings.eodhd_api_token else {}
         reference_symbols = self._targeted_consensus_reference_symbols(symbol)
@@ -424,6 +427,7 @@ class B3ScreenerService:
             self._fundamental_map("financial-data", list(reference_quotes))
             if reference_quotes else {}
         )
+        reference_brapi_at = datetime.now(timezone.utc)
         reference_eodhd = (
             self._eodhd_fundamental_map(list(reference_quotes))
             if self.settings.eodhd_api_token and reference_quotes else {}
@@ -432,6 +436,7 @@ class B3ScreenerService:
             reference_quotes,
             reference_financial,
             reference_eodhd,
+            consensus_fetched_at={"brapi": reference_brapi_at, "eodhd": self._eodhd_receipts(list(reference_quotes))},
         )
         if historical_map.get(symbol, {}).get("history_days", 0) < MIN_HISTORY_DAYS:
             fallback = self._eodhd_historical_map([symbol]).get(symbol)
@@ -439,7 +444,6 @@ class B3ScreenerService:
                 historical_map[symbol] = fallback
 
         macro = dict(self._matrix_macro or self._macro_context())
-        generated_at = datetime.now(timezone.utc)  # the cycle clock, taken BEFORE the row is built: the consensus instant never exceeds the prediction instant (PROMO-2 c)
         rows = self._prepare_rows(
             catalog,
             quotes,
@@ -451,7 +455,7 @@ class B3ScreenerService:
             consensus_references,
             enforce_screening_gates=False,
             enforce_quality_gate=False,
-            observed_at=generated_at,
+            consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": self._eodhd_receipts([symbol])},
         )
         if not rows:
             return None
@@ -468,6 +472,7 @@ class B3ScreenerService:
         )
         basis = self.database.latest_analysis_snapshot("valuation_universe", "B3_UNIVERSE")
         methodology_id = basis.get("methodology_version_id") if basis else None
+        generated_at = datetime.now(timezone.utc)  # the publication instant of this targeted cycle: after every provider answer it consumed
         if methodology_id:
             self.database.save_analysis_snapshot(
                 "security_valuation",
@@ -581,6 +586,7 @@ class B3ScreenerService:
             self.database.save_quotes("brapi", run_id, list(quotes.values()))
             statistics_map = self._fundamental_map("statistics", symbols)
             financial_map = self._fundamental_map("financial-data", symbols)
+            brapi_fetched_at = datetime.now(timezone.utc)  # FACT: brapi's financial data (targetMeanPrice) received
             historical_map = self._historical_map(symbols)
             eodhd_map: dict[str, dict[str, Any]] = {}
             if self.settings.eodhd_api_token and symbols:
@@ -610,14 +616,16 @@ class B3ScreenerService:
                 historical_map,
                 macro,
                 eodhd_map,
-                observed_at=generated_at,
+                consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": self._eodhd_receipts(symbols)},
             )
             reference_symbols = self._consensus_reference_symbols(catalog, base_rows)
             reference_quotes = self._quotes(reference_symbols) if reference_symbols else {}
             reference_financial = self._fundamental_map("financial-data", list(reference_quotes)) if reference_quotes else {}
+            reference_brapi_at = datetime.now(timezone.utc)  # FACT: brapi's financial data for the reference units received
             if self.settings.eodhd_api_token and reference_quotes:
                 eodhd_map.update(self._eodhd_fundamental_map(list(reference_quotes)))
-            consensus_references = self._consensus_reference_rows(reference_quotes, reference_financial, eodhd_map)
+            consensus_references = self._consensus_reference_rows(reference_quotes, reference_financial, eodhd_map,
+                                                                  consensus_fetched_at={"brapi": reference_brapi_at, "eodhd": self._eodhd_receipts(list(reference_quotes))})
             coverage_audit: dict[str, int] = {}
             rows = self._prepare_rows(
                 catalog,
@@ -629,7 +637,7 @@ class B3ScreenerService:
                 eodhd_map,
                 consensus_references,
                 coverage_audit=coverage_audit,
-                observed_at=generated_at,
+                consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": self._eodhd_receipts(symbols)},
             )
             sector_audit, sector_counts = self._sector_coverage_audit(catalog, eodhd_map)
             coverage_audit.update(sector_counts)
@@ -707,6 +715,7 @@ class B3ScreenerService:
         cache_is_fresh = bool(self._eodhd_cache_expires_at and now < self._eodhd_cache_expires_at)
         if not cache_is_fresh:
             self._eodhd_fundamentals = {}
+            self._eodhd_fetched_at = {}
         missing_symbols = [symbol for symbol in clean_symbols if symbol not in self._eodhd_fundamentals]
         if not missing_symbols:
             cached = {symbol: self._eodhd_fundamentals[symbol] for symbol in clean_symbols}
@@ -722,6 +731,8 @@ class B3ScreenerService:
             client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.http)
             payload = client.fundamentals(missing_symbols, exchange="SA", workers=10)
             self._eodhd_fundamentals.update(payload)
+            received = datetime.now(timezone.utc)  # FACT: the instant this answer was received; a later cache read keeps it
+            self._eodhd_fetched_at.update({symbol: received for symbol in payload})
             self._eodhd_cache_expires_at = now + timedelta(hours=AUXILIARY_CACHE_HOURS)
             self.database.finish_ingestion_run(run_id, "succeeded", len(missing_symbols), len(payload))
             fresh = {symbol: self._eodhd_fundamentals[symbol] for symbol in clean_symbols if symbol in self._eodhd_fundamentals}
@@ -730,6 +741,21 @@ class B3ScreenerService:
             self.database.finish_ingestion_run(run_id, "failed", len(missing_symbols), 0, str(exc))
             fallback = {symbol: self._eodhd_fundamentals[symbol] for symbol in clean_symbols if symbol in self._eodhd_fundamentals}
             return apply_official_fundamentals_map(self.database, fallback, market="B3")
+
+    def _eodhd_receipts(self, symbols: list[str]) -> dict[str, datetime]:
+        """The receipt instant of each symbol's EODHD fundamentals as held now — the instant the provider's answer arrived,
+        whether this build fetched it or read it from the cache (a failed re-fetch keeps the old receipt). Symbols never
+        received are absent: no instant is invented (PROMO-2 c)."""
+        return {symbol.upper(): self._eodhd_fetched_at[symbol.upper()] for symbol in symbols if symbol and symbol.upper() in self._eodhd_fetched_at}
+
+    @staticmethod
+    def _receipt_of(consensus_fetched_at: dict[str, Any] | None, provider: str, symbol: str) -> datetime | None:
+        """The receipt instant handed over for ``provider`` — one instant for the whole build (brapi, fetched fresh every
+        build) or a per-symbol map (EODHD, cached per symbol)."""
+        value = (consensus_fetched_at or {}).get(provider)
+        if isinstance(value, dict):
+            value = value.get(symbol.upper())
+        return value if isinstance(value, datetime) else None
 
     def _eodhd_historical_map(self, symbols: list[str]) -> dict[str, dict[str, float]]:
         if not self.settings.eodhd_api_token or not symbols:
@@ -850,6 +876,7 @@ class B3ScreenerService:
         quotes: dict[str, Any],
         financial: dict[str, dict[str, Any]],
         eodhd: dict[str, dict[str, Any]],
+        consensus_fetched_at: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         references: list[dict[str, Any]] = []
         for symbol, quote in quotes.items():
@@ -868,6 +895,7 @@ class B3ScreenerService:
                 "brapi_analysts": brapi_analysts,
                 "eodhd_consensus_tp": cls._valid_target(eod.get("targetMeanPrice"), price, eodhd_analysts),
                 "eodhd_analysts": eodhd_analysts,
+                "_consensus_fetched_at": {provider: cls._receipt_of(consensus_fetched_at, provider, symbol) for provider in ("brapi", "eodhd")},
             })
         return references
 
@@ -1080,7 +1108,7 @@ class B3ScreenerService:
         coverage_audit: dict[str, int] | None = None,
         enforce_screening_gates: bool = True,
         enforce_quality_gate: bool = True,
-        observed_at: datetime | None = None,  # the cycle clock (= the cycle's prediction instant): stamps the consensus instant (PROMO-2 c)
+        consensus_fetched_at: dict[str, Any] | None = None,  # per provider: brapi = one receipt instant for this build; eodhd = per-symbol receipts (cached) — facts, never the cycle clock (PROMO-2 c)
     ) -> list[dict[str, Any]]:
         eodhd = eodhd or {}
         if coverage_audit is not None:
@@ -1296,6 +1324,7 @@ class B3ScreenerService:
                 "brapi_analysts": brapi_analysts,
                 "eodhd_consensus_tp": eodhd_consensus_tp,
                 "eodhd_analysts": eodhd_analysts,
+                "_consensus_fetched_at": {provider: self._receipt_of(consensus_fetched_at, provider, symbol) for provider in ("brapi", "eodhd")},  # receipt instants; consumed and dropped by the reconciliation
                 "public_consensus_tp": None,
                 "analyst_count": 0,
                 "consensus_origin_symbol": None,
@@ -1341,7 +1370,7 @@ class B3ScreenerService:
             else:
                 reject("fundamental_quality_gate")
 
-        self._reconcile_issuer_consensus(rows, consensus_references, observed_at=observed_at)
+        self._reconcile_issuer_consensus(rows, consensus_references)
         self._apply_official_consensus(rows)
         sector_medians = self._sector_medians(rows)
         for row in rows:
@@ -1428,7 +1457,6 @@ class B3ScreenerService:
         cls,
         rows: list[dict[str, Any]],
         references: list[dict[str, Any]] | None = None,
-        observed_at: datetime | None = None,
     ) -> None:
         groups: dict[str, list[dict[str, Any]]] = {}
         for row in [*rows, *(references or [])]:
@@ -1447,6 +1475,7 @@ class B3ScreenerService:
                             "ratio": ratio,
                             "analysts": analysts,
                             "weight": max(analysts, 1) * (1.15 if str(row["symbol"]).endswith("11") else 1.0),
+                            "fetched_at": (row.get("_consensus_fetched_at") or {}).get(source),  # the receipt instant of THIS provider's answer for THIS row
                         })
             row["_direct_consensus_observations"] = observations
             groups.setdefault(str(row.get("issuer") or row["symbol"]), []).append(row)
@@ -1466,6 +1495,7 @@ class B3ScreenerService:
                 selected_analysts = 0
                 selected_symbol: str | None = None
                 selected_source: str | None = None
+                selected_fetched_at: datetime | None = None
 
                 if direct:
                     direct_center = cls._weighted_median_observation(direct)
@@ -1474,6 +1504,7 @@ class B3ScreenerService:
                         selected_analysts = max(observation["analysts"] for observation in direct)
                         selected_symbol = row["symbol"]
                         selected_source = direct_center["source"]
+                        selected_fetched_at = direct_center.get("fetched_at")
 
                     # A better-covered issuer class can override a lone outlying direct
                     # target while preserving the implied upside, not its nominal price.
@@ -1487,25 +1518,32 @@ class B3ScreenerService:
                         selected_analysts = canonical["analysts"]
                         selected_symbol = canonical["symbol"]
                         selected_source = canonical["source"]
+                        selected_fetched_at = canonical.get("fetched_at")
                 elif canonical:
                     selected_ratio = canonical_ratio
                     selected_analysts = canonical["analysts"]
                     selected_symbol = canonical["symbol"]
                     selected_source = canonical["source"]
+                    selected_fetched_at = canonical.get("fetched_at")
 
                 row["public_consensus_tp"] = row["price"] * selected_ratio if selected_ratio else None
                 row["analyst_count"] = selected_analysts
                 row["consensus_origin_symbol"] = selected_symbol
                 row["consensus_origin_source"] = selected_source
-                # PROMO-2 (c): the consensus this prediction consumed, stamped with the CYCLE clock (= the cycle's prediction
-                # instant, taken before any provider call — never a quote's own timestamp, which can post-date it); the emitter
-                # persists it as the block's published_at. Without a consensus, or without a clock, there is no instant.
-                row["consensus_published_at"] = observed_at.isoformat() if (selected_source and observed_at is not None) else None
+                # PROMO-2 (c): the instant the SELECTED observation's provider answer was received in this build — a receipt, never
+                # the build's start clock (which precedes the answer and would back-date it) and never the quote's own timestamp
+                # (which can post-date the cycle); the emitter persists it as the block's published_at, and the cycle's
+                # publication instant (the prediction instant) is taken after it. Without a consensus or a receipt: no instant.
+                row["consensus_published_at"] = (selected_fetched_at.isoformat()
+                                                 if (selected_source and isinstance(selected_fetched_at, datetime)) else None)
                 row["consensus_source_count"] = sum(
                     1 for observation in issuer_observations
                     if observation["symbol"] == selected_symbol
                 ) if selected_symbol else 0
                 row["consensus_implied_upside_percent"] = (selected_ratio - 1) * 100 if selected_ratio else None
+
+        for row in [*rows, *(references or [])]:
+            row.pop("_consensus_fetched_at", None)  # receipt instants never travel into snapshots or responses
 
     @staticmethod
     def _apply_official_consensus(rows: list[dict[str, Any]]) -> None:
@@ -2920,6 +2958,11 @@ class B3ScreenerService:
             parameters,
             f"{C3PO_VALUATION_POLICY.label}: {C3PO_VALUATION_POLICY.release_note}",
         )
+        # The cycle's PUBLICATION instant = the prediction instant of every record of this cycle (spec §2.2 R3): taken here,
+        # after every provider answer the rows consumed — never the build's start clock (`generated_at`, kept as the
+        # response/basis clock) which precedes those answers. _matrix_basis_at follows it (staleness compares like with like).
+        published_at = datetime.now(timezone.utc)
+        self._matrix_basis_at = published_at
         self.database.save_analysis_snapshot(
             "valuation_universe",
             "B3_UNIVERSE",
@@ -2938,9 +2981,9 @@ class B3ScreenerService:
                 "sector_audit": self._matrix_sector_audit,
                 "basis_at": generated_at,
             }),
-            generated_at,
+            published_at,
         )
-        self._persist_calibration(methodology_id, generated_at, self._matrix_rows)
+        self._persist_calibration(methodology_id, published_at, self._matrix_rows)
         return methodology_id
 
     def _persist_candidates(self, response: B3CandidateResponse, macro: dict[str, float], methodology_id: str) -> None:

@@ -2700,7 +2700,10 @@ def test_consensus_is_reconciled_across_b3_share_classes_and_units():
         },
     ]
 
-    B3ScreenerService._reconcile_issuer_consensus(rows, observed_at=datetime(2026, 9, 10, 20, 0, tzinfo=timezone.utc))  # the cycle clock
+    for row in rows:  # receipt instants of THIS build, per provider (brapi answered first, EODHD five seconds later)
+        row["_consensus_fetched_at"] = {"brapi": datetime(2026, 9, 10, 20, 0, 0, tzinfo=timezone.utc), "eodhd": datetime(2026, 9, 10, 20, 0, 5, tzinfo=timezone.utc)}
+
+    B3ScreenerService._reconcile_issuer_consensus(rows)
 
     expected_ratio = 42.1573 / 34.81
     assert rows[1]["public_consensus_tp"] == pytest.approx(6.87 * expected_ratio)
@@ -2708,11 +2711,34 @@ def test_consensus_is_reconciled_across_b3_share_classes_and_units():
     assert rows[1]["analyst_count"] == 9
     assert rows[1]["public_consensus_tp"] < 10
     assert rows[0]["public_consensus_tp"] == pytest.approx(7.55 * expected_ratio)
-    # PROMO-2 (c): every row that received a consensus carries the CYCLE clock as its instant, ISO — never the quote's own timestamp
-    assert all(row["consensus_published_at"] == "2026-09-10T20:00:00+00:00" for row in rows)
+    # PROMO-2 (c) / F398-1: the instant is the RECEIPT of the selected observation's provider (EODHD, via SAPR11) — a fact of this
+    # build, never the cycle's start clock and never the quote's own timestamp; the private receipt map never leaves the function
+    assert all(row["consensus_published_at"] == "2026-09-10T20:00:05+00:00" for row in rows)
+    assert all("_consensus_fetched_at" not in row for row in rows)
     bare = [{"symbol": "SAPR11", "issuer": "SAPR", "price": 34.81, "brapi_consensus_tp": None, "brapi_analysts": 0, "eodhd_consensus_tp": 42.1573, "eodhd_analysts": 9}]
-    B3ScreenerService._reconcile_issuer_consensus(bare)  # no clock handed over: no instant is invented
+    B3ScreenerService._reconcile_issuer_consensus(bare)  # no receipt handed over: no instant is invented
     assert bare[0]["consensus_origin_source"] == "eodhd" and bare[0]["consensus_published_at"] is None
+
+
+def test_eodhd_receipts_survive_cache_reads_and_are_never_invented() -> None:
+    # F398-1 precision: EODHD fundamentals are cached for hours; the receipt instant of a symbol is the instant its answer
+    # ARRIVED, kept across cache reads — never "now" at a cache hit, never invented for a symbol never received.
+    settings = Settings(brapi_token="configured", eodhd_api_token="configured", auth_cookie_secure=False)
+    service = B3ScreenerService(settings, Database(settings), StubHttp({"results": []}))  # type: ignore[arg-type]
+    received = datetime(2026, 9, 10, 3, 0, 5, tzinfo=timezone.utc)
+    service._eodhd_fundamentals = {"PETR4": {"targetMeanPrice": 50.0, "numberOfAnalystOpinions": 8}}
+    service._eodhd_fetched_at = {"PETR4": received}
+    service._eodhd_cache_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    assert service._eodhd_fundamental_map(["PETR4"])["PETR4"]["targetMeanPrice"] == 50.0  # a cache read: no fetch, no ingestion run
+    assert service._eodhd_receipts(["PETR4", "VALE3"]) == {"PETR4": received}  # VALE3 never received: absent, not invented
+    assert B3ScreenerService._receipt_of({"brapi": received, "eodhd": {"PETR4": received}}, "eodhd", "petr4") == received
+    assert B3ScreenerService._receipt_of({"brapi": received, "eodhd": {"PETR4": received}}, "eodhd", "VALE3") is None
+    assert B3ScreenerService._receipt_of({"brapi": received}, "brapi", "VALE3") == received
+    rows = service._consensus_reference_rows({"PETR4": NormalizedQuote(provider="brapi", symbol="PETR4", provider_symbol="PETR4", exchange="B3", currency="BRL",
+                                                                        price=40.0, change_percent=0.0, volume=1.0, market_cap=1.0, as_of=received,
+                                                                        collected_at=received, quality_score=90)},
+                                             {}, service._eodhd_fundamentals, consensus_fetched_at={"brapi": received, "eodhd": service._eodhd_receipts(["PETR4"])})
+    assert rows[0]["_consensus_fetched_at"] == {"brapi": received, "eodhd": received}
 
 
 def test_targeted_valuation_looks_up_the_issuer_unit_for_public_consensus() -> None:

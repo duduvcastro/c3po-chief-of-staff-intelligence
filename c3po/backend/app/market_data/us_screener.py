@@ -269,6 +269,7 @@ class USScreeningService:
         symbols = [quote.symbol for _, quote, _ in selected]
         client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.realtime.http)
         fundamentals = client.fundamentals(symbols, exchange="US", workers=10)
+        eodhd_fetched_at = datetime.now(timezone.utc)  # FACT: the instant EODHD's fundamentals (WallStreetTargetPrice) were received in this build
         histories = client.histories(symbols, exchange="US", days=400, workers=10)
         ir_events = self.database.latest_valuation_ir_events(symbols, market=market)
         insider_since = datetime.now(timezone.utc) - timedelta(days=INSIDER_GOVERNANCE_LOOKBACK_DAYS)
@@ -278,6 +279,8 @@ class USScreeningService:
         peer_medians = self.one_pagers._us_peer_medians(fundamentals)
         self._peer_medians[market] = peer_medians
         fmp_consensus_data = self.one_pagers._fmp_consensus_batch(symbols)
+        fmp_fetched_at = datetime.now(timezone.utc)  # FACT: the instant FMP's price targets were received in this build
+        consensus_fetched_at = {"fmp": fmp_fetched_at, "eodhd": eodhd_fetched_at}  # PROMO-2 (c): the consensus instant is a receipt, never the cycle clock
         fmp_institutional_data = self.one_pagers._fmp_institutional_batch(symbols)
         fmp_grades_data = self.one_pagers._fmp_recent_grades_batch(symbols)
         rows: list[dict[str, Any]] = []
@@ -311,7 +314,7 @@ class USScreeningService:
                         peer_medians=peer_medians,
                         fmp_consensus=fmp_consensus,
                         fmp_summary=fmp_summary,
-                        observed_at=now,
+                        consensus_fetched_at=consensus_fetched_at,
                         institutional_positions=fmp_institutional_data.get(symbol),
                         recent_grades=fmp_grades_data.get(symbol),
                     )
@@ -363,7 +366,7 @@ class USScreeningService:
         fmp_summary: dict[str, Any] | None = None,
         institutional_positions: dict[str, Any] | None = None,
         recent_grades: list[dict[str, Any]] | None = None,
-        observed_at: datetime | None = None,  # the cycle clock (= the cycle's prediction instant): the consensus this prediction consumed was observed no later than it (PROMO-2 c)
+        consensus_fetched_at: dict[str, datetime] | None = None,  # per provider ("fmp"/"eodhd"): the instant its answer was received in THIS build — a fact; None = no instant, never invented (PROMO-2 c)
     ) -> dict[str, Any]:
         symbol = str(quote["symbol"])
         analysis = self.one_pagers._analyze(
@@ -381,6 +384,8 @@ class USScreeningService:
         methods = {str(key): float(value) for key, value in analysis["methods"].items() if positive(value)}
         consensus = positive(analysis.get("consensus_tp"))
         consensus_source = str(analysis.get("consensus_source") or "") or None  # fmp_last_month / fmp_last_quarter / fmp_all_time / eodhd
+        consensus_observed_at = ((consensus_fetched_at or {}).get("fmp" if consensus_source.startswith("fmp") else "eodhd")
+                                 if consensus_source else None)  # the receipt instant of the provider the resolver actually used
         internal_tp = statistics.mean(methods.values())
         profile = str(analysis.get("profile") or "general")
         market_factors = self._calibration_factors.get(market, {})
@@ -421,7 +426,7 @@ class USScreeningService:
             consensus=consensus,
             analyst_count=analyst_count,
             consensus_source=consensus_source,
-            consensus_observed_at=observed_at,
+            consensus_observed_at=consensus_observed_at,
             buy_in=float(analysis["buy_in"]),
             methods=methods,
             risk=float(analysis["risk_score"]),
@@ -588,9 +593,11 @@ class USScreeningService:
             "public_consensus_tp": consensus,
             "analyst_count": analyst_count,
             # PROMO-2 (c): the consensus a record persists must carry source, horizon, currency, INSTANT and hash — the emitter
-            # (valuation_official.consensus_block) reads these two; horizon/currency it defaults. Null without a consensus.
+            # (valuation_official.consensus_block) reads these two; horizon/currency it defaults. The instant is the FACTUAL receipt
+            # of the provider's answer in this build (≤ the cycle's publication, which is the prediction instant) — never the
+            # build's start clock, which would back-date it. Null without a consensus or without a receipt.
             "consensus_origin_source": consensus_source if consensus is not None else None,
-            "consensus_published_at": (consensus_observed_at or datetime.now(timezone.utc)).isoformat() if consensus is not None else None,
+            "consensus_published_at": consensus_observed_at.isoformat() if (consensus is not None and consensus_observed_at is not None) else None,  # a receipt instant or nothing
             "pe": positive(fundamentals.get("trailingPE")),
             "forward_pe": positive(fundamentals.get("forwardPE")) or positive(fundamentals.get("etfForwardPE")),
             "ev_ebitda": positive(fundamentals.get("enterpriseToEbitda")),
@@ -768,7 +775,12 @@ class USScreeningService:
             C3PO_VALUATION_POLICY.release_note,
         )
         rows = [{**row, "as_of": row["as_of"].isoformat() if isinstance(row.get("as_of"), datetime) else row.get("as_of")} for row in self._rows[market]]
-        generated_at = self._basis_at[market] or datetime.now(timezone.utc)
+        # The cycle's PUBLICATION instant = the prediction instant of every record of this cycle (spec §2.2 R3: a live
+        # prediction exists from its publication): taken here, after every provider answer the rows consumed — never the
+        # build's start clock, which precedes those answers and would make consensus.published_at ≤ prediction_instant
+        # true by assignment. _basis_at follows it, so the staleness check compares like with like.
+        generated_at = datetime.now(timezone.utc)
+        self._basis_at[market] = generated_at
         self._basis_cycle_id[market] = self.database.save_analysis_snapshot(
             "valuation_universe", f"{market}_UNIVERSE", methodology_id,
             {"methodology_version": METHODOLOGY_VERSION, "market": market, "coverage": self._coverage[market],
