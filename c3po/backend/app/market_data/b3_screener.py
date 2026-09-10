@@ -184,8 +184,9 @@ class B3ScreenerService:
         self._matrix_sector_audit: list[dict[str, Any]] = []
         self._matrix_cached: MatrixPowerResponse | None = None
         self._matrix_cache_expires_at: datetime | None = None
-        self._eodhd_fundamentals: dict[str, dict[str, Any]] = {}
-        self._eodhd_fetched_at: dict[str, datetime] = {}  # per symbol: the instant its EODHD fundamentals were RECEIVED (a cache read keeps it; PROMO-2 c)
+        # per symbol: ONE immutable pair (payload, receipt instant) — installed by a single assignment and read as one object, so a
+        # payload can never be paired with another answer's receipt, even with targeted builds running concurrently (F398-2)
+        self._eodhd_cache: dict[str, tuple[dict[str, Any], datetime]] = {}
         self._eodhd_cache_expires_at: datetime | None = None
         self._eodhd_history: dict[str, dict[str, float]] = {}
         self._eodhd_history_cache_expires_at: datetime | None = None
@@ -348,8 +349,7 @@ class B3ScreenerService:
                 self.screen(refresh=True)
             existing_symbols = {str(row.get("symbol") or "") for row in self._matrix_rows}
             for symbol in clean_symbols:
-                self._eodhd_fundamentals.pop(symbol, None)
-                self._eodhd_fetched_at.pop(symbol, None)
+                self._eodhd_cache.pop(symbol, None)
                 self._eodhd_history.pop(symbol, None)
 
             updated: list[str] = []
@@ -420,7 +420,7 @@ class B3ScreenerService:
         financial_map = self._optional_fundamental_map("financial-data", [symbol])
         brapi_fetched_at = datetime.now(timezone.utc)
         historical_map = self._optional_historical_map([symbol])
-        eodhd_map = self._eodhd_fundamental_map([symbol]) if self.settings.eodhd_api_token else {}
+        eodhd_map, eodhd_receipts = self._eodhd_fundamentals_with_receipts([symbol]) if self.settings.eodhd_api_token else ({}, {})
         reference_symbols = self._targeted_consensus_reference_symbols(symbol)
         reference_quotes = self._optional_quotes(reference_symbols)
         reference_financial = (
@@ -428,15 +428,15 @@ class B3ScreenerService:
             if reference_quotes else {}
         )
         reference_brapi_at = datetime.now(timezone.utc)
-        reference_eodhd = (
-            self._eodhd_fundamental_map(list(reference_quotes))
-            if self.settings.eodhd_api_token and reference_quotes else {}
+        reference_eodhd, reference_receipts = (
+            self._eodhd_fundamentals_with_receipts(list(reference_quotes))
+            if self.settings.eodhd_api_token and reference_quotes else ({}, {})
         )
         consensus_references = self._consensus_reference_rows(
             reference_quotes,
             reference_financial,
             reference_eodhd,
-            consensus_fetched_at={"brapi": reference_brapi_at, "eodhd": self._eodhd_receipts(list(reference_quotes))},
+            consensus_fetched_at={"brapi": reference_brapi_at, "eodhd": reference_receipts},
         )
         if historical_map.get(symbol, {}).get("history_days", 0) < MIN_HISTORY_DAYS:
             fallback = self._eodhd_historical_map([symbol]).get(symbol)
@@ -455,7 +455,7 @@ class B3ScreenerService:
             consensus_references,
             enforce_screening_gates=False,
             enforce_quality_gate=False,
-            consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": self._eodhd_receipts([symbol])},
+            consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
         )
         if not rows:
             return None
@@ -589,10 +589,11 @@ class B3ScreenerService:
             brapi_fetched_at = datetime.now(timezone.utc)  # FACT: brapi's financial data (targetMeanPrice) received
             historical_map = self._historical_map(symbols)
             eodhd_map: dict[str, dict[str, Any]] = {}
+            eodhd_receipts: dict[str, datetime] = {}
             if self.settings.eodhd_api_token and symbols:
                 # EODHD must run before the quality gate so it can rescue missing
                 # Brapi fields instead of only confirming rows that already passed.
-                eodhd_map = self._eodhd_fundamental_map(symbols)
+                eodhd_map, eodhd_receipts = self._eodhd_fundamentals_with_receipts(symbols)  # payload and receipt from the same pairs
                 missing_history = [
                     symbol for symbol in symbols
                     if historical_map.get(symbol, {}).get("history_days", 0) < MIN_HISTORY_DAYS
@@ -616,16 +617,19 @@ class B3ScreenerService:
                 historical_map,
                 macro,
                 eodhd_map,
-                consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": self._eodhd_receipts(symbols)},
+                consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
             )
             reference_symbols = self._consensus_reference_symbols(catalog, base_rows)
             reference_quotes = self._quotes(reference_symbols) if reference_symbols else {}
             reference_financial = self._fundamental_map("financial-data", list(reference_quotes)) if reference_quotes else {}
             reference_brapi_at = datetime.now(timezone.utc)  # FACT: brapi's financial data for the reference units received
+            reference_receipts: dict[str, datetime] = {}
             if self.settings.eodhd_api_token and reference_quotes:
-                eodhd_map.update(self._eodhd_fundamental_map(list(reference_quotes)))
+                reference_eodhd, reference_receipts = self._eodhd_fundamentals_with_receipts(list(reference_quotes))
+                eodhd_map.update(reference_eodhd)
+                eodhd_receipts.update(reference_receipts)  # a unit re-read here overwrites BOTH maps from the same pairs (never payload2 with receipt1)
             consensus_references = self._consensus_reference_rows(reference_quotes, reference_financial, eodhd_map,
-                                                                  consensus_fetched_at={"brapi": reference_brapi_at, "eodhd": self._eodhd_receipts(list(reference_quotes))})
+                                                                  consensus_fetched_at={"brapi": reference_brapi_at, "eodhd": reference_receipts})
             coverage_audit: dict[str, int] = {}
             rows = self._prepare_rows(
                 catalog,
@@ -637,7 +641,7 @@ class B3ScreenerService:
                 eodhd_map,
                 consensus_references,
                 coverage_audit=coverage_audit,
-                consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": self._eodhd_receipts(symbols)},
+                consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
             )
             sector_audit, sector_counts = self._sector_coverage_audit(catalog, eodhd_map)
             coverage_audit.update(sector_counts)
@@ -710,43 +714,48 @@ class B3ScreenerService:
         return "Brapi Pro + EODHD All-In-One" if self.settings.eodhd_api_token else "Brapi Pro"
 
     def _eodhd_fundamental_map(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
+        return self._eodhd_fundamentals_with_receipts(symbols)[0]
+
+    def _eodhd_fundamentals_with_receipts(self, symbols: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, datetime]]:
+        """EODHD fundamentals for ``symbols`` AND the receipt instant of each — the instant the provider's answer carrying
+        that payload arrived (a cache read keeps it; a failed re-fetch keeps the old pair). Payload and receipt are ONE
+        immutable pair per symbol, installed by a single assignment after the answer arrives and read as one object, so
+        the receipt a row is stamped with belongs to the payload the row consumed even when a targeted build installs a
+        newer answer concurrently (F398-2). Symbols never received are absent from both maps: no instant is invented."""
         now = datetime.now(timezone.utc)
         clean_symbols = list(dict.fromkeys(symbol.upper() for symbol in symbols if symbol))
         cache_is_fresh = bool(self._eodhd_cache_expires_at and now < self._eodhd_cache_expires_at)
         if not cache_is_fresh:
-            self._eodhd_fundamentals = {}
-            self._eodhd_fetched_at = {}
-        missing_symbols = [symbol for symbol in clean_symbols if symbol not in self._eodhd_fundamentals]
-        if not missing_symbols:
-            cached = {symbol: self._eodhd_fundamentals[symbol] for symbol in clean_symbols}
-            return apply_official_fundamentals_map(self.database, cached, market="B3")
-
-        run_id = self.database.begin_ingestion_run(
-            "eodhd",
-            "EODHD",
-            "fundamental_data",
-            {"operation": "b3_fundamentals", "symbols": missing_symbols, "methodology_version": METHODOLOGY_VERSION},
-        )
-        try:
-            client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.http)
-            payload = client.fundamentals(missing_symbols, exchange="SA", workers=10)
-            self._eodhd_fundamentals.update(payload)
-            received = datetime.now(timezone.utc)  # FACT: the instant this answer was received; a later cache read keeps it
-            self._eodhd_fetched_at.update({symbol: received for symbol in payload})
-            self._eodhd_cache_expires_at = now + timedelta(hours=AUXILIARY_CACHE_HOURS)
-            self.database.finish_ingestion_run(run_id, "succeeded", len(missing_symbols), len(payload))
-            fresh = {symbol: self._eodhd_fundamentals[symbol] for symbol in clean_symbols if symbol in self._eodhd_fundamentals}
-            return apply_official_fundamentals_map(self.database, fresh, market="B3")
-        except Exception as exc:
-            self.database.finish_ingestion_run(run_id, "failed", len(missing_symbols), 0, str(exc))
-            fallback = {symbol: self._eodhd_fundamentals[symbol] for symbol in clean_symbols if symbol in self._eodhd_fundamentals}
-            return apply_official_fundamentals_map(self.database, fallback, market="B3")
+            self._eodhd_cache = {}
+        missing_symbols = [symbol for symbol in clean_symbols if symbol not in self._eodhd_cache]
+        if missing_symbols:
+            run_id = self.database.begin_ingestion_run(
+                "eodhd",
+                "EODHD",
+                "fundamental_data",
+                {"operation": "b3_fundamentals", "symbols": missing_symbols, "methodology_version": METHODOLOGY_VERSION},
+            )
+            try:
+                client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.http)
+                payload = client.fundamentals(missing_symbols, exchange="SA", workers=10)
+                received = datetime.now(timezone.utc)  # FACT: the arrival instant of THIS answer, taken before anything is installed
+                for symbol, data in payload.items():
+                    self._eodhd_cache[symbol] = (data, received)  # one assignment: payload and receipt are never observable apart
+                self._eodhd_cache_expires_at = now + timedelta(hours=AUXILIARY_CACHE_HOURS)
+                self.database.finish_ingestion_run(run_id, "succeeded", len(missing_symbols), len(payload))
+            except Exception as exc:
+                self.database.finish_ingestion_run(run_id, "failed", len(missing_symbols), 0, str(exc))
+        cache = self._eodhd_cache  # one attribute load: a concurrent expiry rebinding the dict cannot split the reads below
+        entries = {symbol: entry for symbol in clean_symbols if (entry := cache.get(symbol)) is not None}  # one dict read per symbol: the pair
+        fundamentals = apply_official_fundamentals_map(self.database, {symbol: entry[0] for symbol, entry in entries.items()}, market="B3")
+        return fundamentals, {symbol: entry[1] for symbol, entry in entries.items()}
 
     def _eodhd_receipts(self, symbols: list[str]) -> dict[str, datetime]:
         """The receipt instant of each symbol's EODHD fundamentals as held now — the instant the provider's answer arrived,
         whether this build fetched it or read it from the cache (a failed re-fetch keeps the old receipt). Symbols never
         received are absent: no instant is invented (PROMO-2 c)."""
-        return {symbol.upper(): self._eodhd_fetched_at[symbol.upper()] for symbol in symbols if symbol and symbol.upper() in self._eodhd_fetched_at}
+        cache = self._eodhd_cache
+        return {symbol.upper(): entry[1] for symbol in symbols if symbol and (entry := cache.get(symbol.upper())) is not None}
 
     @staticmethod
     def _receipt_of(consensus_fetched_at: dict[str, Any] | None, provider: str, symbol: str) -> datetime | None:

@@ -2726,10 +2726,11 @@ def test_eodhd_receipts_survive_cache_reads_and_are_never_invented() -> None:
     settings = Settings(brapi_token="configured", eodhd_api_token="configured", auth_cookie_secure=False)
     service = B3ScreenerService(settings, Database(settings), StubHttp({"results": []}))  # type: ignore[arg-type]
     received = datetime(2026, 9, 10, 3, 0, 5, tzinfo=timezone.utc)
-    service._eodhd_fundamentals = {"PETR4": {"targetMeanPrice": 50.0, "numberOfAnalystOpinions": 8}}
-    service._eodhd_fetched_at = {"PETR4": received}
+    service._eodhd_cache = {"PETR4": ({"targetMeanPrice": 50.0, "numberOfAnalystOpinions": 8}, received)}  # one pair per symbol
     service._eodhd_cache_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
     assert service._eodhd_fundamental_map(["PETR4"])["PETR4"]["targetMeanPrice"] == 50.0  # a cache read: no fetch, no ingestion run
+    fundamentals, receipts = service._eodhd_fundamentals_with_receipts(["PETR4", "VALE3"])
+    assert fundamentals["PETR4"]["targetMeanPrice"] == 50.0 and receipts == {"PETR4": received} and "VALE3" not in fundamentals
     assert service._eodhd_receipts(["PETR4", "VALE3"]) == {"PETR4": received}  # VALE3 never received: absent, not invented
     assert B3ScreenerService._receipt_of({"brapi": received, "eodhd": {"PETR4": received}}, "eodhd", "petr4") == received
     assert B3ScreenerService._receipt_of({"brapi": received, "eodhd": {"PETR4": received}}, "eodhd", "VALE3") is None
@@ -2737,8 +2738,59 @@ def test_eodhd_receipts_survive_cache_reads_and_are_never_invented() -> None:
     rows = service._consensus_reference_rows({"PETR4": NormalizedQuote(provider="brapi", symbol="PETR4", provider_symbol="PETR4", exchange="B3", currency="BRL",
                                                                         price=40.0, change_percent=0.0, volume=1.0, market_cap=1.0, as_of=received,
                                                                         collected_at=received, quality_score=90)},
-                                             {}, service._eodhd_fundamentals, consensus_fetched_at={"brapi": received, "eodhd": service._eodhd_receipts(["PETR4"])})
+                                             {}, fundamentals, consensus_fetched_at={"brapi": received, "eodhd": receipts})
     assert rows[0]["_consensus_fetched_at"] == {"brapi": received, "eodhd": received}
+
+
+def test_eodhd_cache_never_pairs_a_payload_with_another_answers_receipt_under_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    # F398-2 (Codex): two legitimate misses for the same symbol; A installs value 14 with its receipt; B receives value 18 later and
+    # is paused at its clock call. A reader must NEVER see (18, receipt of 14): payload and receipt are one pair, installed as one.
+    import threading
+    from app.market_data import b3_screener as module
+    settings = Settings(brapi_token="configured", eodhd_api_token="configured", auth_cookie_secure=False)
+    service = B3ScreenerService(settings, Database(settings), StubHttp({"results": []}))  # type: ignore[arg-type]
+    a_may_return, b_may_return, b_at_clock, b_may_stamp = threading.Event(), threading.Event(), threading.Event(), threading.Event()
+    a_at_fetch, b_at_fetch = threading.Event(), threading.Event()  # both misses computed (each thread reached its fetch) before any answer
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:  # noqa: ANN
+            pass
+
+        def fundamentals(self, symbols: list[str], exchange: str = "SA", workers: int = 10) -> dict:
+            if threading.current_thread().name == "A":
+                a_at_fetch.set()
+                a_may_return.wait(5)
+                return {"SYM": {"targetMeanPrice": 14.0, "numberOfAnalystOpinions": 5}}
+            b_at_fetch.set()
+            b_may_return.wait(5)
+            return {"SYM": {"targetMeanPrice": 18.0, "numberOfAnalystOpinions": 5}}
+
+    real_datetime = module.datetime
+
+    class PausingDatetime(real_datetime):  # B is paused exactly at the receipt clock, after its answer arrived
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            value = real_datetime.now(tz)
+            if threading.current_thread().name == "B" and b_may_return.is_set():
+                b_at_clock.set()
+                b_may_stamp.wait(5)
+            return cls.fromtimestamp(value.timestamp(), tz=value.tzinfo)
+
+    monkeypatch.setattr(module, "EodhdClient", FakeClient)
+    monkeypatch.setattr(module, "datetime", PausingDatetime)
+    a = threading.Thread(name="A", target=lambda: service._eodhd_fundamentals_with_receipts(["SYM"]))
+    b = threading.Thread(name="B", target=lambda: service._eodhd_fundamentals_with_receipts(["SYM"]))
+    a.start(); b.start()
+    assert a_at_fetch.wait(5) and b_at_fetch.wait(5)  # both computed the miss and are inside their fetch before any answer
+    a_may_return.set(); a.join(5)
+    first, first_receipts = service._eodhd_fundamentals_with_receipts(["SYM"])
+    assert first["SYM"]["targetMeanPrice"] == 14.0 and "SYM" in first_receipts
+    b_may_return.set(); assert b_at_clock.wait(5)  # B holds its answer (18) but has not installed anything
+    during, during_receipts = service._eodhd_fundamentals_with_receipts(["SYM"])
+    assert (during["SYM"]["targetMeanPrice"], during_receipts["SYM"]) == (14.0, first_receipts["SYM"])  # never (18, receipt of 14)
+    b_may_stamp.set(); b.join(5)
+    after, after_receipts = service._eodhd_fundamentals_with_receipts(["SYM"])
+    assert after["SYM"]["targetMeanPrice"] == 18.0 and after_receipts["SYM"] > first_receipts["SYM"]  # the new pair, whole
 
 
 def test_targeted_valuation_looks_up_the_issuer_unit_for_public_consensus() -> None:
