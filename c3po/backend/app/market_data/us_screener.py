@@ -311,6 +311,7 @@ class USScreeningService:
                         peer_medians=peer_medians,
                         fmp_consensus=fmp_consensus,
                         fmp_summary=fmp_summary,
+                        observed_at=now,
                         institutional_positions=fmp_institutional_data.get(symbol),
                         recent_grades=fmp_grades_data.get(symbol),
                     )
@@ -362,6 +363,7 @@ class USScreeningService:
         fmp_summary: dict[str, Any] | None = None,
         institutional_positions: dict[str, Any] | None = None,
         recent_grades: list[dict[str, Any]] | None = None,
+        observed_at: datetime | None = None,  # the cycle clock (= the cycle's prediction instant): the consensus this prediction consumed was observed no later than it (PROMO-2 c)
     ) -> dict[str, Any]:
         symbol = str(quote["symbol"])
         analysis = self.one_pagers._analyze(
@@ -378,6 +380,7 @@ class USScreeningService:
         )
         methods = {str(key): float(value) for key, value in analysis["methods"].items() if positive(value)}
         consensus = positive(analysis.get("consensus_tp"))
+        consensus_source = str(analysis.get("consensus_source") or "") or None  # fmp_last_month / fmp_last_quarter / fmp_all_time / eodhd
         internal_tp = statistics.mean(methods.values())
         profile = str(analysis.get("profile") or "general")
         market_factors = self._calibration_factors.get(market, {})
@@ -417,6 +420,8 @@ class USScreeningService:
             internal_tp=internal_tp,
             consensus=consensus,
             analyst_count=analyst_count,
+            consensus_source=consensus_source,
+            consensus_observed_at=observed_at,
             buy_in=float(analysis["buy_in"]),
             methods=methods,
             risk=float(analysis["risk_score"]),
@@ -538,6 +543,8 @@ class USScreeningService:
         thesis: str,
         risk_text: str,
         quality_score: int = 70,
+        consensus_source: str | None = None,
+        consensus_observed_at: datetime | None = None,
     ) -> dict[str, Any]:
         price = float(quote["price"])
         upside = (our_tp / price - 1) * 100
@@ -580,6 +587,10 @@ class USScreeningService:
             "methods": methods,
             "public_consensus_tp": consensus,
             "analyst_count": analyst_count,
+            # PROMO-2 (c): the consensus a record persists must carry source, horizon, currency, INSTANT and hash — the emitter
+            # (valuation_official.consensus_block) reads these two; horizon/currency it defaults. Null without a consensus.
+            "consensus_origin_source": consensus_source if consensus is not None else None,
+            "consensus_published_at": (consensus_observed_at or datetime.now(timezone.utc)).isoformat() if consensus is not None else None,
             "pe": positive(fundamentals.get("trailingPE")),
             "forward_pe": positive(fundamentals.get("forwardPE")) or positive(fundamentals.get("etfForwardPE")),
             "ev_ebitda": positive(fundamentals.get("enterpriseToEbitda")),

@@ -439,6 +439,7 @@ class B3ScreenerService:
                 historical_map[symbol] = fallback
 
         macro = dict(self._matrix_macro or self._macro_context())
+        generated_at = datetime.now(timezone.utc)  # the cycle clock, taken BEFORE the row is built: the consensus instant never exceeds the prediction instant (PROMO-2 c)
         rows = self._prepare_rows(
             catalog,
             quotes,
@@ -450,6 +451,7 @@ class B3ScreenerService:
             consensus_references,
             enforce_screening_gates=False,
             enforce_quality_gate=False,
+            observed_at=generated_at,
         )
         if not rows:
             return None
@@ -466,7 +468,6 @@ class B3ScreenerService:
         )
         basis = self.database.latest_analysis_snapshot("valuation_universe", "B3_UNIVERSE")
         methodology_id = basis.get("methodology_version_id") if basis else None
-        generated_at = datetime.now(timezone.utc)
         if methodology_id:
             self.database.save_analysis_snapshot(
                 "security_valuation",
@@ -609,6 +610,7 @@ class B3ScreenerService:
                 historical_map,
                 macro,
                 eodhd_map,
+                observed_at=generated_at,
             )
             reference_symbols = self._consensus_reference_symbols(catalog, base_rows)
             reference_quotes = self._quotes(reference_symbols) if reference_symbols else {}
@@ -627,6 +629,7 @@ class B3ScreenerService:
                 eodhd_map,
                 consensus_references,
                 coverage_audit=coverage_audit,
+                observed_at=generated_at,
             )
             sector_audit, sector_counts = self._sector_coverage_audit(catalog, eodhd_map)
             coverage_audit.update(sector_counts)
@@ -1077,6 +1080,7 @@ class B3ScreenerService:
         coverage_audit: dict[str, int] | None = None,
         enforce_screening_gates: bool = True,
         enforce_quality_gate: bool = True,
+        observed_at: datetime | None = None,  # the cycle clock (= the cycle's prediction instant): stamps the consensus instant (PROMO-2 c)
     ) -> list[dict[str, Any]]:
         eodhd = eodhd or {}
         if coverage_audit is not None:
@@ -1337,7 +1341,7 @@ class B3ScreenerService:
             else:
                 reject("fundamental_quality_gate")
 
-        self._reconcile_issuer_consensus(rows, consensus_references)
+        self._reconcile_issuer_consensus(rows, consensus_references, observed_at=observed_at)
         self._apply_official_consensus(rows)
         sector_medians = self._sector_medians(rows)
         for row in rows:
@@ -1424,6 +1428,7 @@ class B3ScreenerService:
         cls,
         rows: list[dict[str, Any]],
         references: list[dict[str, Any]] | None = None,
+        observed_at: datetime | None = None,
     ) -> None:
         groups: dict[str, list[dict[str, Any]]] = {}
         for row in [*rows, *(references or [])]:
@@ -1492,6 +1497,10 @@ class B3ScreenerService:
                 row["analyst_count"] = selected_analysts
                 row["consensus_origin_symbol"] = selected_symbol
                 row["consensus_origin_source"] = selected_source
+                # PROMO-2 (c): the consensus this prediction consumed, stamped with the CYCLE clock (= the cycle's prediction
+                # instant, taken before any provider call — never a quote's own timestamp, which can post-date it); the emitter
+                # persists it as the block's published_at. Without a consensus, or without a clock, there is no instant.
+                row["consensus_published_at"] = observed_at.isoformat() if (selected_source and observed_at is not None) else None
                 row["consensus_source_count"] = sum(
                     1 for observation in issuer_observations
                     if observation["symbol"] == selected_symbol
@@ -1525,6 +1534,7 @@ class B3ScreenerService:
             row["consensus_source_count"] = max(int(row.get("consensus_source_count") or 0), 1)
             row["consensus_implied_upside_percent"] = (target / price - 1) * 100
             row["consensus_as_of"] = official["as_of"]
+            row["consensus_published_at"] = official["as_of"]  # the override's own date replaces the provider instant (PROMO-2 c)
             row["consensus_source_url"] = official["source_url"]
 
     @staticmethod

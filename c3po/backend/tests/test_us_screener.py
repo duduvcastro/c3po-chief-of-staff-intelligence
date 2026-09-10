@@ -37,6 +37,7 @@ class DummyOnePagers:
         return {
             "c3po_tp": 145.0,
             "consensus_tp": 150.0,
+            "consensus_source": "fmp_last_month",
             "analyst_count": 12,
             "buy_in": 94.0,
             "confidence": 82.0,
@@ -162,6 +163,9 @@ def test_stock_analysis_uses_canonical_five_method_output() -> None:
     assert result["our_tp"] == 145.0
     assert result["signal_quality"] == "validated"
     assert result["valuation_method_count"] == 6
+    # PROMO-2 (c): the row carries the consensus source and the instant it was observed (≤ now), for the emitter to persist
+    assert result["consensus_origin_source"] == "fmp_last_month"
+    assert datetime.fromisoformat(result["consensus_published_at"]) <= datetime.now(timezone.utc)
 
 
 def test_etf_analysis_uses_fund_evidence_instead_of_corporate_dcf() -> None:
@@ -193,6 +197,7 @@ def test_etf_analysis_uses_fund_evidence_instead_of_corporate_dcf() -> None:
     assert result["internal_method_count"] == 5
     assert "Asset allocation" in result["buy_in_models"]
     assert result["public_consensus_tp"] is None
+    assert result["consensus_origin_source"] is None and result["consensus_published_at"] is None  # no consensus: no source, no instant
 
 
 def test_spcx_never_uses_etf_screening_path() -> None:

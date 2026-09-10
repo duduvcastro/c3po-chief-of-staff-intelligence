@@ -341,6 +341,7 @@ def test_official_issuer_consensus_overrides_narrower_provider_coverage() -> Non
     assert rows[0]["analyst_count"] == 12
     assert rows[0]["consensus_origin_source"] == "Petrobras RI"
     assert rows[0]["consensus_as_of"] == "2026-05-13"
+    assert rows[0]["consensus_published_at"] == "2026-05-13"  # the override's own date is the instant the emitter persists
 
 
 def test_petrobras_like_valuation_converges_after_cyclical_reconciliation() -> None:
@@ -2699,7 +2700,7 @@ def test_consensus_is_reconciled_across_b3_share_classes_and_units():
         },
     ]
 
-    B3ScreenerService._reconcile_issuer_consensus(rows)
+    B3ScreenerService._reconcile_issuer_consensus(rows, observed_at=datetime(2026, 9, 10, 20, 0, tzinfo=timezone.utc))  # the cycle clock
 
     expected_ratio = 42.1573 / 34.81
     assert rows[1]["public_consensus_tp"] == pytest.approx(6.87 * expected_ratio)
@@ -2707,6 +2708,11 @@ def test_consensus_is_reconciled_across_b3_share_classes_and_units():
     assert rows[1]["analyst_count"] == 9
     assert rows[1]["public_consensus_tp"] < 10
     assert rows[0]["public_consensus_tp"] == pytest.approx(7.55 * expected_ratio)
+    # PROMO-2 (c): every row that received a consensus carries the CYCLE clock as its instant, ISO — never the quote's own timestamp
+    assert all(row["consensus_published_at"] == "2026-09-10T20:00:00+00:00" for row in rows)
+    bare = [{"symbol": "SAPR11", "issuer": "SAPR", "price": 34.81, "brapi_consensus_tp": None, "brapi_analysts": 0, "eodhd_consensus_tp": 42.1573, "eodhd_analysts": 9}]
+    B3ScreenerService._reconcile_issuer_consensus(bare)  # no clock handed over: no instant is invented
+    assert bare[0]["consensus_origin_source"] == "eodhd" and bare[0]["consensus_published_at"] is None
 
 
 def test_targeted_valuation_looks_up_the_issuer_unit_for_public_consensus() -> None:
