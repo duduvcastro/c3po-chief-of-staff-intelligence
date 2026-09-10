@@ -17,8 +17,14 @@ revision 2, of the shadow generator) from the provider's end-of-day endpoints:
   that window (bulk splits endpoint), `adjustment = RAW_UNADJUSTED`, per-bar
   `source_at` / `available_at` = the receipt instant of the provider response
   with the bar.
-- Per-instrument `daily` components (61 official sessions + full split history)
-  for the names of a causal list, consumed by the 10:00 ET snapshot assembler.
+- Per-instrument `daily` components (61 official sessions + the split history
+  since `SPLIT_HISTORY_FROM`, 1990-01-01) for the names of a causal list,
+  consumed by the 10:00 ET snapshot assembler. The XNYS calendar is built to
+  cover that history (the library's default starts twenty years before today —
+  2006-09-11 on 2026-09-10 — and RAISES `DateOutOfBounds` for any earlier date:
+  a 2:1 split of 2000 stopped the components phase of the night of D=10/09); a
+  split row dated outside the calendar's domain is named `DATE_OUTSIDE_CALENDAR`
+  (coverage unknown), never asked to the calendar and never a crash.
 
 The two port documents carry exactly the fields the signed reader accepts; the
 producer's own evidence (payload hashes, counts, conflicts, unreadable rows) is
@@ -42,6 +48,7 @@ default: the CLI refuses to run unless `C3PO_R2D2_V2_PRODUCERS_ENABLED=true`.
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -70,6 +77,7 @@ TYPE_MAP = {
 }
 LIQUIDITY_SESSIONS = 20
 ATR_SESSIONS = 61
+SPLIT_HISTORY_FROM = date(1990, 1, 1)  # the split history a component carries (provider `from`); the calendar starts at its first session on/after it (1990-01-02)
 DAILY_ELIGIBLE_TYPES = ("COMMON_STOCK", "COMMON_STOCK_ADR")  # the only classes the signed list builder selects
 SYMBOL_RE_ALLOWED = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
 
@@ -80,9 +88,28 @@ class ProducerError(RuntimeError):
 
 # ---------------------------------------------------------------- calendar (XNYS, official sessions)
 
+@functools.lru_cache(maxsize=1)
 def _xnys():
+    """XNYS from ``SPLIT_HISTORY_FROM``: the library's default start is twenty years before today, and ``is_session``/
+    ``session_open`` RAISE ``DateOutOfBounds`` for any date before it. Cached here (the library keeps ONE calendar per
+    name and rebuilds — ~80 ms — whenever another module asks for the default kwargs)."""
     import exchange_calendars
-    return exchange_calendars.get_calendar("XNYS")
+    return exchange_calendars.get_calendar("XNYS", start=SPLIT_HISTORY_FROM.isoformat())
+
+
+def calendar_bounds() -> tuple[date, date]:
+    """First and last session the calendar answers for; a date outside is out of its domain (``session_status``)."""
+    calendar = _xnys()
+    return calendar.first_session.date(), calendar.last_session.date()
+
+
+def session_status(day: date) -> str:
+    """``SESSION`` / ``NOT_SESSION`` / ``OUT_OF_CALENDAR`` — a date outside the calendar's domain is named as such and never
+    asked to the calendar (which would raise); use this for dates that come from the provider, ``is_session`` for our own."""
+    first, last = calendar_bounds()
+    if day < first or day > last:
+        return "OUT_OF_CALENDAR"
+    return "SESSION" if _xnys().is_session(day.isoformat()) else "NOT_SESSION"
 
 
 def is_session(day: date) -> bool:
@@ -399,7 +426,9 @@ def build_daily_contract(registry: Mapping[str, Any], bulk_by_session: Mapping[d
 # ---------------------------------------------------------------- per-instrument 61-bar component (snapshot input)
 
 def build_instrument_component(symbol: str, eod: Response, splits: Response, *, sessions: Sequence[date]) -> dict[str, Any]:
-    """The `daily` component of one snapshot instrument: exactly the 61 official sessions, full split history."""
+    """The `daily` component of one snapshot instrument: exactly the 61 official sessions, the split history since
+    ``SPLIT_HISTORY_FROM``. A split row is dated by the provider: a date outside the calendar's domain is an unreadable
+    row (``DATE_OUTSIDE_CALENDAR``, coverage unknown) — never a calendar exception, never dropped in silence."""
     window = _official_window(sessions, ATR_SESSIONS, "ATR_WINDOW_INVALID")
     last_close = session_close(window[-1])
     if eod.received_at <= last_close or splits.received_at <= last_close:
@@ -442,7 +471,9 @@ def build_instrument_component(symbol: str, eod: Response, splits: Response, *, 
                 reason = "FACTOR_UNREADABLE"
             elif effective is None:
                 reason = "DATE_UNREADABLE"
-            elif not is_session(effective):
+            elif (status := session_status(effective)) == "OUT_OF_CALENDAR":
+                reason = "DATE_OUTSIDE_CALENDAR"
+            elif status == "NOT_SESSION":
                 reason = "DATE_NOT_AN_OFFICIAL_SESSION"
         if reason is not None:
             unreadable.append({"index": index, "reason": reason})
@@ -494,7 +525,7 @@ def produce_instrument_components(fetch: Fetcher, symbols: Sequence[str], *, ses
         if not _symbol_ok(symbol):
             raise ProducerError("SYMBOL_INVALID")
         eod = fetch(f"/api/eod/{symbol}.US", {"period": "d", "from": sessions[0].isoformat(), "to": sessions[-1].isoformat()})
-        splits = fetch(f"/api/splits/{symbol}.US", {"from": "1990-01-01"})
+        splits = fetch(f"/api/splits/{symbol}.US", {"from": SPLIT_HISTORY_FROM.isoformat()})
         component = build_instrument_component(symbol, eod, splits, sessions=sessions)
         if not (component["daily"]["coverage_verified"] and component["daily"]["split_coverage_verified"]):
             incomplete.append(symbol)
