@@ -1673,12 +1673,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.targeted and args.purge_targeted:
         parser.error("--targeted and --purge-targeted are exclusive")
 
-    def _pairs(items: list[str] | None, flag: str) -> dict[str, str]:
+    def _pairs(items: list[str] | None, flag: str, *, keys: tuple[str, ...] | None = None) -> dict[str, str]:
         pairs: dict[str, str] = {}
         for item in items or []:
             key, sep, value = item.partition("=")
             if not sep or not key.strip() or not value.strip():
                 parser.error(f"{flag} expects KEY=CYCLE_ID, got {item!r}")
+            if keys is not None and key.strip() not in keys:  # an unknown market is refused, never ignored (Codex P3-2 on #395)
+                parser.error(f"{flag} names an unknown market {key.strip()!r}; expected one of {', '.join(keys)}")
+            if key.strip().upper() in {k.upper() for k in pairs}:  # case-insensitive: symbols normalize upper-case downstream
+                parser.error(f"{flag} names {key.strip()!r} twice")
             pairs[key.strip()] = value.strip()
         return pairs
 
@@ -1690,7 +1694,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.before_after:
         if args.cycles or args.targeted or args.purge_targeted:  # a PROPOSAL: the head's cycles overlaid by --cycles; targeted = --targeted (or none)
             head = database.latest_valuation_official_selection() or {}
-            proposal = {**{market: str(cycle) for market, cycle in dict(head.get("cycles") or {}).items()}, **_pairs(args.cycles, "--cycles")}
+            proposal = {**{market: str(cycle) for market, cycle in dict(head.get("cycles") or {}).items()}, **_pairs(args.cycles, "--cycles", keys=tuple(MARKETS))}
             result = before_after_report(database, private_detail_path=args.private_detail, cycles=proposal, targeted=_pairs(args.targeted, "--targeted"),
                                          source_version=args.source_version)
         else:

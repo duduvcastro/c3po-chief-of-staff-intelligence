@@ -409,7 +409,9 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.before_after_report(database, cycles=generation["cycles"], targeted={})))
     assert official.main(["--before-after", "--cycles", f"B3={b3}", "--source-version", "9"]) == 0
     assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.before_after_report(database, cycles={**generation["cycles"], "B3": b3}, targeted={}, source_version="9")))
-    for argv in (["--cycles", f"B3={b3}"], ["--before-after", "--targeted", "WEGE3=x", "--purge-targeted"], ["--before-after", "--cycles", "B3"]):
+    for argv in (["--cycles", f"B3={b3}"], ["--before-after", "--targeted", "WEGE3=x", "--purge-targeted"], ["--before-after", "--cycles", "B3"],
+                 ["--before-after", "--cycles", "B33=nonexistent-cycle"], ["--before-after", "--cycles", f"B3={b3}", "--cycles", f"B3={b3}"],
+                 ["--before-after", "--targeted", "WEGE3=x", "--targeted", "wege3=y"]):  # unknown market / twice (case-insensitive): refused, never ignored
         with pytest.raises(SystemExit):
             official.main(argv)
     # a generation with a row missing in the internal source (BBDC4) cannot be switched — the receipt says so (`missing_internal`) and the order is refused
