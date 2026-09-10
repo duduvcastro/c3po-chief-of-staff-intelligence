@@ -219,9 +219,9 @@ def test_instrument_component_unreadable_split_rows_make_split_coverage_unknown(
 
 
 def test_instrument_component_split_history_covers_1990_and_out_of_calendar_dates_are_named_never_raised() -> None:
-    # The night of D=10/09 stopped in the components phase with DateOutOfBounds. The default XNYS calendar starts twenty years
-    # before today (2006-09-11): a split row dated before it, asked to the calendar, reproduces that exception — a compatible
-    # hypothesis for the stop, not its proven cause (the provider's response was not preserved; no replay, C397-N1). The calendar
+    # The components phase of the night of D=10/09 ended with ValueError / VALUE_ERROR (all its receipts preserved). The default XNYS
+    # calendar starts twenty years before today (2006-09-11): the offline counter-proof of a split row dated before it produces
+    # DateOutOfBounds — a compatible hypothesis, the real cause still N/D, no replay (C397-N1). The calendar
     # now covers the split history requested (SPLIT_HISTORY_FROM = 1990-01-01) and a date outside its domain is named, never asked, never a crash.
     first, last = prod.calendar_bounds()
     assert prod.SPLIT_HISTORY_FROM == date(1990, 1, 1) and first == date(1990, 1, 2) and last >= D
