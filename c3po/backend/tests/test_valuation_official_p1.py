@@ -84,7 +84,7 @@ def _switch(database: Database, monkeypatch: pytest.MonkeyPatch, *, cycles: dict
             reason: str = "P1 switch") -> tuple[dict[str, Any], dict[str, Any]]:
     """The mesa's order as it will be executed once the lock is flipped by the receipt's commit: the before/after receipt,
     then ``select_generation(source=SOURCE_INTERNAL, before_after_sha256=<its hash>)``. Returns ``(generation, report)``."""
-    report = official.before_after_report(database)
+    report = official.before_after_report(database, cycles=cycles, targeted=targeted or {})  # C395-1: the receipt is of THIS proposal
     monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
     generation = official.select_generation(database, cycles=cycles, targeted=targeted, now=_wall(), activated_by="mesa", reason=reason,
                                             source=SOURCE_INTERNAL, source_version="7", before_after_sha256=report["report_sha256"])
@@ -205,7 +205,7 @@ def test_a_cycle_is_selectable_per_source_and_a_pre_p1_cycle_is_never_selectable
     # a targeted cycle produced before Passo 1 named by the order is refused for the internal source too — and admitted for the blend
     wege_legacy = _targeted(database, "WEGE3", _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0), _wall())
     assert official.official_row(database, "B3", "WEGE3")["tp_source"] == SOURCE_BLEND  # type: ignore[index]  # admitted into the blend generation
-    report = official.before_after_report(database)  # the admission moved the head: the order cites the receipt of the generation in force (Q1)
+    report = official.before_after_report(database, cycles=cycles, targeted={})  # the admission moved the head: the order cites the receipt of the generation in force (Q1), computed over the composition it proposes — the legacy targeted cycle purged (C395-1)
     with pytest.raises(ValueError, match=f"targeted cycle for WEGE3 is not complete/valid/recorded for source {SOURCE_INTERNAL}"):
         official.select_generation(database, cycles=cycles, targeted={"WEGE3": wege_legacy}, now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL,
                                    before_after_sha256=report["report_sha256"])
@@ -362,7 +362,7 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     detail_path = tmp_path / "private" / "detail.json"
     detail_path.parent.mkdir()
     report = official.before_after_report(database, private_detail_path=detail_path)
-    assert report["schema"] == "VALUATION_P1_BEFORE_AFTER_V1" and report["generation_id"] == generation["generation_id"] and report["generation_source"] == SOURCE_BLEND
+    assert report["schema"] == "VALUATION_P1_BEFORE_AFTER_V2" and report["generation_id"] == generation["generation_id"] and report["generation_source"] == SOURCE_BLEND
     assert report["source_from"] == SOURCE_BLEND and report["source_to"] == SOURCE_INTERNAL and report["cycles"] == {"B3": b3, "NASDAQ": nasdaq, "NYSE": nyse}
     assert report["session_dates"] == {"B3": "2026-09-04", "NASDAQ": "2026-09-04", "NYSE": "2026-09-04"} and report["source_version"] == "7" and report["targeted_cycles"] == 0
     assert report["p90_method"] == "linear interpolation at (n-1)*0.9"
@@ -384,7 +384,7 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     # the detail exists only in the private file, named symbol by symbol, and its bytes hash to the aggregate's private_detail_sha256
     assert hashlib.sha256(detail_path.read_bytes()).hexdigest() == report["private_detail_sha256"]
     detail = json.loads(detail_path.read_text(encoding="utf-8"))
-    assert detail["schema"] == "VALUATION_P1_BEFORE_AFTER_V1_DETAIL" and detail["generation_id"] == generation["generation_id"]
+    assert detail["schema"] == "VALUATION_P1_BEFORE_AFTER_V2_DETAIL" and detail["generation_id"] == generation["generation_id"]
     assert detail["markets"]["B3"]["missing_internal"] == ["BBDC4"] and set(detail["markets"]["B3"]["pairs"]) == {"PETR4", "VALE3", "ITUB4"}
     assert detail["markets"]["B3"]["pairs"]["ITUB4"] == {"tp_blend": 30.0, "tp_internal": 33.0, "tp_ratio": pytest.approx(0.1), "buy_in_blend": 25.0, "buy_in_internal": 27.5, "buy_in_ratio": pytest.approx(0.1)}
     # a market with NO pair reports n = 0 and null statistics (never a fabricated number)
@@ -403,6 +403,15 @@ def test_the_before_after_report_aggregates_per_market_and_keeps_the_detail_priv
     assert printed == json.loads(json.dumps(report)) and "PETR4" not in json.dumps(printed) and cli_detail.read_bytes() == detail_path.read_bytes()
     with pytest.raises(SystemExit):
         official.main(["--private-detail", str(cli_detail)])
+    # the CLI publishes the receipt of a PROPOSAL too (C395-1): --cycles overlays the head's cycles, --targeted/--purge-targeted set the admissions,
+    # --source-version the declared version; each equals the library call the order recomputes
+    assert official.main(["--before-after", "--purge-targeted"]) == 0
+    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.before_after_report(database, cycles=generation["cycles"], targeted={})))
+    assert official.main(["--before-after", "--cycles", f"B3={b3}", "--source-version", "9"]) == 0
+    assert json.loads(capsys.readouterr().out) == json.loads(json.dumps(official.before_after_report(database, cycles={**generation["cycles"], "B3": b3}, targeted={}, source_version="9")))
+    for argv in (["--cycles", f"B3={b3}"], ["--before-after", "--targeted", "WEGE3=x", "--purge-targeted"], ["--before-after", "--cycles", "B3"]):
+        with pytest.raises(SystemExit):
+            official.main(argv)
     # a generation with a row missing in the internal source (BBDC4) cannot be switched — the receipt says so (`missing_internal`) and the order is refused
     monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
     with pytest.raises(ValueError, match=f"cycle for B3 is not complete/valid/recorded for source {SOURCE_INTERNAL}"):
@@ -542,8 +551,12 @@ def test_q3_an_unknown_source_is_refused_at_write_time_and_served_nothing_loudly
     assert rolled["source"] == SOURCE_BLEND and rolled["previous_generation_id"] == "hand-edited"
     assert rolled["receipt"]["source_switch"] == {"from": "v3_2_shadow", "to": SOURCE_BLEND, "before_after_sha256": None}
     assert official.official_row(database, "NYSE", "KO")["our_tp"] == 75.0 and official.official_row(database, "B3", "WEGE3")["our_tp"] == 50.0  # type: ignore[index]
-    assert official.selection_health(database, now=_wall())["status"] == "ok" and official.selection_health(database, now=_wall())["unknown_source"] is None
-    assert official.selection_health(_database(), now=_wall())["unknown_source"] is None  # every key explicit, without a generation too
+    # C395-2: the freshness is measured against a CONTROLLED clock, never the real one: at NOW + 1 h no market's session is behind
+    # (B3/NASDAQ published at NOW; the NYSE re-run at _wall() is at or after it) — the real wall clock would make the head "stale"
+    # two sessions after the fixture date; the rule is unchanged
+    fixed = NOW + timedelta(hours=1)
+    assert official.selection_health(database, now=fixed)["status"] == "ok" and official.selection_health(database, now=fixed)["unknown_source"] is None
+    assert official.selection_health(_database(), now=fixed)["unknown_source"] is None  # every key explicit, without a generation too
 
 
 def test_q4_a_pre_p1_cycle_under_an_internal_head_triggers_no_re_record_on_every_pass(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -648,6 +661,58 @@ def test_q6_a_switch_without_an_explicit_source_version_stamps_the_cycles_versio
     rolled = official.select_generation(database, cycles=auto["cycles"], now=_wall(), activated_by="mesa", reason="rollback", source_version="7")
     assert rolled["source_version"] == "7"
     report = official.before_after_report(database)
+    assert report["after_source_version"] == "7+8"  # the version the switch would stamp is in the receipt (C395-1)
+    with pytest.raises(ValueError, match="EXACTLY the cycles and targeted admissions"):  # a receipt of the derived version does not authorize another one
+        official.select_generation(database, cycles=auto["cycles"], now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL, source_version="8",
+                                   before_after_sha256=report["report_sha256"])
+    report = official.before_after_report(database, source_version="8")
+    assert report["after_source_version"] == "8"
     declared = official.select_generation(database, cycles=auto["cycles"], now=_wall(), activated_by="mesa", reason="switch", source=SOURCE_INTERNAL, source_version="8",
                                           before_after_sha256=report["report_sha256"])
     assert declared["source_version"] == "8" and declared["receipt"]["source_switch"]["from"] == SOURCE_BLEND
+
+
+def test_c395_1_the_cited_hash_binds_the_proposed_cycles_and_targeted_admissions(monkeypatch: pytest.MonkeyPatch) -> None:
+    # C395-1: the approved before/after receipt used to hash only the head (the "before"); the switch then validated and wrote the
+    # order's cycles/targeted separately, so the SAME hash was accepted with another composition (a B3 cycle serving 100→10 instead
+    # of 100→99). Now the aggregate binds the AFTER composition (after_cycles + after_targeted_sha256) and select_generation recomputes
+    # the receipt over the exact cycles/targeted of the order: another cycle, a targeted admission added or dropped, is refused.
+    database = _database()
+    cycles = _three_markets(database)
+    g0 = official.current_generation(database)
+    assert g0 is not None and g0["cycles"] == cycles
+    benign = _publish_universe(database, "B3", [_row("PETR4", tp=100.0, buy_in=80.0, price=90.0, internal_tp=99.0, internal_buy_in=79.0)], _wall())
+    brutal = _publish_universe(database, "B3", [_row("PETR4", tp=100.0, buy_in=80.0, price=90.0, internal_tp=10.0, internal_buy_in=8.0)], _wall())
+    rerun = _publish_universe(database, "B3", [_row("PETR4", tp=100.0, buy_in=80.0, price=90.0, internal_tp=99.0, internal_buy_in=79.0)], _wall())  # benign, re-run
+    wege = _targeted(database, "WEGE3", _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0, internal_buy_in=41.0), _wall())
+    head = official.current_generation(database)
+    assert head is not None  # the automatic pass activated the latest B3 cycle; the mesa reads THIS head
+    proposal = {**head["cycles"], "B3": benign}
+    approved = official.before_after_report(database, cycles=proposal, targeted={})
+    assert approved["after_cycles"] == proposal and approved["after_targeted_count"] == 0 and approved["markets"]["B3"]["tp"]["median"] == pytest.approx(-0.01)
+    assert approved["after_source_version"] == "7" and approved == official.before_after_report(database, cycles=proposal)  # a proposal without targeted admits none, as the order
+    # a re-run cycle with IDENTICAL rows: the statistics coincide, the hash does not — only the binding of after_cycles tells them apart
+    twin = official.before_after_report(database, cycles={**proposal, "B3": rerun}, targeted={})
+    assert twin["markets"] == approved["markets"] and twin["after_cycles"] != approved["after_cycles"] and twin["report_sha256"] != approved["report_sha256"]
+    other = official.before_after_report(database, cycles={**proposal, "B3": brutal}, targeted={})
+    assert other["report_sha256"] != approved["report_sha256"] and other["markets"]["B3"]["tp"]["median"] == pytest.approx(-0.9)
+    with_targeted = official.before_after_report(database, cycles=proposal, targeted={"wege3": wege})
+    assert with_targeted["report_sha256"] not in (approved["report_sha256"], other["report_sha256"]) and with_targeted["after_targeted_count"] == 1
+    assert "WEGE3" not in json.dumps(with_targeted) and with_targeted["after_targeted_sha256"] == official.canonical_sha256({"WEGE3": wege})
+    monkeypatch.setattr(official, "OFFICIAL_TP_REPLACEMENT_AUTHORIZED", True)
+    for bad_cycles, bad_targeted in (({**proposal, "B3": brutal}, {}), (proposal, {"WEGE3": wege}), ({**proposal, "B3": brutal}, {"WEGE3": wege})):
+        with pytest.raises(ValueError, match="EXACTLY the cycles and targeted admissions"):
+            official.select_generation(database, cycles=bad_cycles, targeted=bad_targeted, now=_wall(), activated_by="mesa", reason="switch",
+                                       source=SOURCE_INTERNAL, before_after_sha256=approved["report_sha256"])
+    assert official.current_generation(database) == head  # nothing landed
+    with pytest.raises(ValueError, match="EXACTLY the cycles and targeted admissions"):  # a receipt WITH the admission does not authorize dropping it
+        official.select_generation(database, cycles=proposal, targeted={}, now=_wall(), activated_by="mesa", reason="switch",
+                                   source=SOURCE_INTERNAL, before_after_sha256=with_targeted["report_sha256"])
+    switched = official.select_generation(database, cycles=proposal, targeted={}, now=_wall(), activated_by="mesa", reason="switch",
+                                          source=SOURCE_INTERNAL, before_after_sha256=approved["report_sha256"])
+    assert switched["cycles"]["B3"] == benign and switched["source"] == SOURCE_INTERNAL and switched["receipt"]["source_switch"]["before_after_sha256"] == approved["report_sha256"]
+    assert official.official_row(database, "B3", "PETR4")["our_tp"] == 99.0  # type: ignore[index]  # the approved −1 %, never the −90 %
+    # the receipt without a proposal is the head's own composition: it equals the proposal receipt only when they coincide
+    same = official.before_after_report(database)
+    assert same["after_cycles"] == official.current_generation(database)["cycles"]  # type: ignore[index]
+    assert same == official.before_after_report(database, cycles=same["after_cycles"], targeted=official.current_generation(database)["targeted"])  # type: ignore[index]

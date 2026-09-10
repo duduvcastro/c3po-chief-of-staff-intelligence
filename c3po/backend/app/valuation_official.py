@@ -176,7 +176,7 @@ selection line, never by editing a number:
   the mesa's order to switch cites ``report_sha256``.
 
 Rev 8 / P1 residuals (Q1–Q6, internal adversarial verification):
-* the hash a switch cites is CHECKED, not just shaped (Q1): ``select_generation`` recomputes ``before_after_report`` on the
+* the hash a switch cites is CHECKED, not just shaped (Q1) and BINDS the proposed composition (C395-1): ``select_generation`` recomputes ``before_after_report`` over the order's exact ``cycles``/``targeted`` — a hash computed over another cycle or another targeted set is refused; on the
   head it read in the same attempt and refuses (``ValueError`` naming both hashes) any ``before_after_sha256`` that is not
   that generation's ``report_sha256`` — a receipt computed on another generation (the head moved since the mesa read it)
   is refused too; the report is deterministic (canonical JSON, sorted keys, no clock), so the mesa's receipt recomputes;
@@ -221,7 +221,7 @@ logger = logging.getLogger(__name__)
 
 SOURCE_OFFICIAL = SOURCE_BLEND  # "official_blend_v1": the Passo 0 source, the default of every explicit order (a rollback target)
 OFFICIAL_TP_REPLACEMENT_AUTHORIZED = False  # the Passo 1 lock (spec §7-bis item 4): a switch to SOURCE_INTERNAL is refused while False; flips ONLY by a commit citing the mesa's receipt
-BEFORE_AFTER_SCHEMA = "VALUATION_P1_BEFORE_AFTER_V1"
+BEFORE_AFTER_SCHEMA = "VALUATION_P1_BEFORE_AFTER_V2"  # V2 (C395-1): the aggregate binds the AFTER composition (cycles + targeted)
 P90_METHOD = "linear interpolation at (n-1)*0.9"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 PREDICTION_SCHEMA = "VALUATION_PREDICTION_V2"  # V2 (rev 6, B2): `published_at` joined the hashed core
@@ -1153,10 +1153,13 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
     refused for ``SOURCE_INTERNAL``). A switch to any source other than ``SOURCE_OFFICIAL`` is REFUSED while the lock
     ``OFFICIAL_TP_REPLACEMENT_AUTHORIZED`` is ``False`` (it flips only by a commit citing the mesa's receipt) and requires
     ``before_after_sha256`` — the ``report_sha256`` of the before/after receipt (``before_after_report``) the order cites,
-    which is CHECKED (Q1): the receipt is recomputed here on the head read in this same attempt (deterministic — no clock,
-    canonical JSON) and a hash that is not that generation's ``report_sha256`` is refused, naming both — so a well-formed
-    but foreign hash, or the receipt of a generation the chain has moved past, never lands; a switch needs a generation in
-    force (there is no "before" to compare otherwise).
+    which is CHECKED (Q1) and BINDS the proposal (C395-1): after the cycle/targeted validations (an invalid cycle is named
+    as such first) the receipt is recomputed here on the head read in this same attempt, over EXACTLY this order's
+    ``cycles``/``targeted`` (normalized) and the ``source_version`` it stamps (deterministic — no clock, canonical JSON),
+    and a hash that is not that ``report_sha256`` is refused, naming both — so a well-formed but foreign hash, the receipt
+    of a generation the chain has moved past, or a receipt approved over ANOTHER composition (a different cycle in a market,
+    a targeted admission added or dropped, another version) never lands; a switch needs a generation in force (there is no
+    "before" to compare otherwise — refused before anything else is read).
     ``source_version`` (Q6): the mesa's declaration when given; when omitted, a switch stamps the methodology versions of
     the validated universe cycles (``"+".join(sorted(set))``, exactly as the automatic pass stamps its generations) and a
     rollback to the blend stamps ``"rollback"`` (the Passo 0 behaviour) — a switch is never stamped ``"rollback"``.
@@ -1182,16 +1185,9 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
         raise ValueError(f"cycles must name every market; missing: {', '.join(missing)}")
     admissions = _normalized_targeted(targeted or {})
     current = database.latest_valuation_official_selection()
-    if source != SOURCE_OFFICIAL:  # Q1: the cited receipt must be THE receipt of the generation in force — recomputed on the head read here
-        if current is None:
-            raise ValueError(f"a switch to {source!r} requires a generation in force: the before/after receipt compares the cycles it serves, "
-                             "and there is none — bootstrap the blend first")
-        expected = before_after_report(database, generation=current)["report_sha256"]
-        if str(before_after_sha256) != expected:
-            raise ValueError(f"a switch to {source!r} must cite the before/after receipt of the generation in force ({current['generation_id']}): "
-                             f"before_after_sha256 {str(before_after_sha256)[:12]}… does not match its report_sha256 {expected[:12]}… — "
-                             "the receipt was computed on another generation (the chain moved since the mesa read it) or is not this receipt; "
-                             "re-run before_after_report on the head and cite it")
+    if source != SOURCE_OFFICIAL and current is None:  # Q1: no "before" to compare — refused before anything else is read
+        raise ValueError(f"a switch to {source!r} requires a generation in force: the before/after receipt compares the cycles it serves, "
+                         "and there is none — bootstrap the blend first")
     session_dates: dict[str, str] = {}
     versions: set[str] = set()
     for market in MARKETS:
@@ -1214,6 +1210,15 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
         if not validation["valid"] or symbol not in recorded:
             raise ValueError(f"targeted cycle for {symbol} is not complete/valid/recorded for source {source}: {cycle_id} "
                              f"({ {k: validation[k] for k in ('invalid_count', 'unrecorded_count', 'rows', 'calendar_unavailable')} })")
+    if source != SOURCE_OFFICIAL:  # Q1 (after the validations, so an invalid cycle is named as such first): the cited receipt must be THE receipt of the generation in force, recomputed here over THIS proposal (C395-1)
+        expected = before_after_report(database, generation=current, cycles=cycles, targeted=admissions, source_version=source_version)["report_sha256"]  # C395-1: bound to THIS composition
+        if str(before_after_sha256) != expected:
+            raise ValueError(f"a switch to {source!r} must cite the before/after receipt of the generation in force ({current['generation_id']}) "
+                             f"computed over EXACTLY the cycles and targeted admissions this order proposes (and the source_version it stamps): before_after_sha256 "
+                             f"{str(before_after_sha256)[:12]}… does not match its report_sha256 {expected[:12]}… — the receipt was computed on "
+                             "another generation (the chain moved since the mesa read it), over another composition (a different cycle in a "
+                             "market, a targeted admission added or dropped, another declared source_version), or is not this receipt; re-run "
+                             "before_after_report on the head with the order's cycles/targeted/source_version and cite it (C395-1)")
     receipt: dict[str, Any] = {"reason": reason, "explicit": True}  # the marker of an order — written here and nowhere else (W3)
     if current is not None and current.get("source") != source:  # a switch or a rollback of the SOURCE: named in the receipt (Passo 1) — as STORED, so
         receipt["source_switch"] = {"from": current.get("source"), "to": source, "before_after_sha256": before_after_sha256}  # an unknown source is named (Q3)
@@ -1533,9 +1538,23 @@ def _ratio_stats(values: list[float]) -> dict[str, float | None]:
             "abs_median": statistics.median(magnitudes) if magnitudes else None, "abs_p90": _percentile(magnitudes, 0.9)}
 
 
-def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_detail_path: str | Path | None = None) -> dict[str, Any]:
-    """The before/after receipt of Passo 1 (spec §7-bis item 4): for ONE generation — its own cycles, universe and the
-    targeted admissions it serves (same cycles, both sources) — per market ``n`` (symbols recorded in BOTH sources),
+def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_detail_path: str | Path | None = None,
+                        cycles: Mapping[str, str] | None = None, targeted: Mapping[str, str] | None = None,
+                        source_version: str | None = None) -> dict[str, Any]:
+    """The before/after receipt of Passo 1 (spec §7-bis item 4): BEFORE = ONE generation (the head unless ``generation``
+    is given) as it serves the blend; AFTER = the composition the order PROPOSES — ``cycles`` (every market) and
+    ``targeted`` (symbol → cycle, normalized; with ``cycles`` given and ``targeted`` omitted the proposal admits NO
+    targeted cycle — exactly as the order ``select_generation(cycles=…)`` without ``targeted`` purges them), both under
+    ``SOURCE_INTERNAL`` — or, when no proposal is given, the same generation's own cycles and admissions (same cycles,
+    both sources). The aggregate BINDS the after composition (C395-1): ``after_cycles`` (per market),
+    ``after_targeted_sha256`` (the canonical hash of the normalized targeted mapping — the aggregate names no symbol;
+    ``after_targeted_count`` is the count) and ``after_source_version`` (``source_version`` when the mesa declares it,
+    else the union of the after cycles' methodology versions, ``"+".join(sorted(set))`` — the very string
+    ``select_generation`` stamps when the order omits it, Q6), so the hash the mesa cites is the hash of THIS proposal:
+    ``select_generation`` recomputes it with the exact ``cycles``/``targeted``/``source_version`` of the order and a
+    receipt computed over another composition (another cycle in a market, a targeted admission added or dropped,
+    another declared version) is refused.
+    Per market ``n`` (symbols recorded in BOTH sources),
     ``missing_internal`` (recorded in the blend only: rows produced before Passo 1), and the median / p90 (signed and in
     magnitude, ``P90_METHOD``) of ``tp_internal / tp_blend − 1`` and of ``buy_in_internal / buy_in_blend − 1``. The
     AGGREGATE (returned, printable) names no symbol; ``report_sha256`` is the canonical hash of the aggregate without
@@ -1554,11 +1573,29 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
     if generation_source is None:
         raise ValueError(f"the generation in force ({resolved.get('generation_id')}) selects an unknown source {resolved.get('source')!r}: "
                          "nothing is served under it and nothing to compare — roll back to the blend by explicit order first (Q3)")
+    if cycles is not None:  # the proposal (C395-1): every market named; the after arm reads THESE cycles, not the head's
+        missing = [market for market in MARKETS if market not in cycles]
+        if missing:
+            raise ValueError(f"the proposal's cycles must name every market; missing: {', '.join(missing)}")
+        after_cycles = {market: str(cycles[market]) for market in MARKETS}
+        after_targeted = _normalized_targeted(targeted or {}, strict=True)  # a proposal without targeted admits none — as the order does
+    else:
+        after_cycles = {market: str(cycle_id) for market, cycle_id in dict(resolved.get("cycles") or {}).items()}
+        after_targeted = _normalized_targeted(targeted if targeted is not None else (resolved.get("targeted") or {}), strict=targeted is not None)
+    if source_version is None:  # the version the switch would stamp (Q6): the union of the after cycles' methodology versions
+        versions: set[str] = set()
+        for cycle_id in after_cycles.values():
+            snapshot = database.analysis_snapshot_by_id(cycle_id)
+            versions.add(_source_version(snapshot) if snapshot else "unknown")
+        after_source_version = "+".join(sorted(versions))
+    else:
+        after_source_version = str(source_version)
+    after_generation: dict[str, Any] = {**resolved, "cycles": after_cycles, "targeted": after_targeted}
     markets: dict[str, dict[str, Any]] = {}
     detail_markets: dict[str, dict[str, Any]] = {}
     for market in MARKETS:
         blend, _ = _generation_records(database, resolved, market, source=SOURCE_OFFICIAL)
-        internal, _ = _generation_records(database, resolved, market, source=SOURCE_INTERNAL)
+        internal, _ = _generation_records(database, after_generation, market, source=SOURCE_INTERNAL)
         pairs: dict[str, dict[str, float]] = {}
         missing: list[str] = []
         for symbol in sorted(blend):
@@ -1582,6 +1619,10 @@ def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_
         "source_to": SOURCE_INTERNAL,
         "cycles": dict(resolved.get("cycles") or {}),
         "targeted_cycles": len(resolved.get("targeted") or {}),  # a count: the aggregate names no symbol
+        "after_cycles": after_cycles,  # C395-1: the AFTER composition the hash binds — the order's cycles, per market
+        "after_targeted_count": len(after_targeted),
+        "after_targeted_sha256": canonical_sha256(dict(sorted(after_targeted.items()))),  # the targeted mapping, hashed: no symbol in the aggregate
+        "after_source_version": after_source_version,  # the version the switch stamps (declared, or the after cycles' union): bound too
         "session_dates": dict(resolved.get("session_dates") or {}),
         "source_version": resolved.get("source_version"),
         "markets": markets,
@@ -1619,16 +1660,41 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--health", action="store_true")
     group.add_argument("--before-after", action="store_true", help="the before/after receipt of the current generation (Passo 1); prints the aggregate only")
     parser.add_argument("--private-detail", metavar="PATH", default=None, help="with --before-after: write the per-symbol detail to PATH (never printed)")
+    parser.add_argument("--cycles", metavar="MARKET=CYCLE_ID", action="append", default=None,
+                        help="with --before-after: the proposal's universe cycle for MARKET (repeatable; markets not named keep the head's cycle) — "
+                             "the receipt then binds THIS proposal (C395-1) and, unless --targeted names them, admits no targeted cycle")
+    parser.add_argument("--targeted", metavar="SYMBOL=CYCLE_ID", action="append", default=None,
+                        help="with --before-after: a targeted admission of the proposal (repeatable)")
+    parser.add_argument("--purge-targeted", action="store_true", help="with --before-after: the proposal admits no targeted cycle (the head's cycles, targeted={})")
+    parser.add_argument("--source-version", metavar="VERSION", default=None, help="with --before-after: the source_version the order will declare (else the cycles' union)")
     args = parser.parse_args(argv)
-    if args.private_detail and not args.before_after:
-        parser.error("--private-detail requires --before-after")
+    if (args.private_detail or args.cycles or args.targeted or args.purge_targeted or args.source_version) and not args.before_after:
+        parser.error("--private-detail/--cycles/--targeted/--purge-targeted/--source-version require --before-after")
+    if args.targeted and args.purge_targeted:
+        parser.error("--targeted and --purge-targeted are exclusive")
+
+    def _pairs(items: list[str] | None, flag: str) -> dict[str, str]:
+        pairs: dict[str, str] = {}
+        for item in items or []:
+            key, sep, value = item.partition("=")
+            if not sep or not key.strip() or not value.strip():
+                parser.error(f"{flag} expects KEY=CYCLE_ID, got {item!r}")
+            pairs[key.strip()] = value.strip()
+        return pairs
+
     from .config import get_settings
     from .database import Database
     database = Database(get_settings())
     if args.bootstrap:
         result = bootstrap_official_selection(database)
     elif args.before_after:
-        result = before_after_report(database, private_detail_path=args.private_detail)
+        if args.cycles or args.targeted or args.purge_targeted:  # a PROPOSAL: the head's cycles overlaid by --cycles; targeted = --targeted (or none)
+            head = database.latest_valuation_official_selection() or {}
+            proposal = {**{market: str(cycle) for market, cycle in dict(head.get("cycles") or {}).items()}, **_pairs(args.cycles, "--cycles")}
+            result = before_after_report(database, private_detail_path=args.private_detail, cycles=proposal, targeted=_pairs(args.targeted, "--targeted"),
+                                         source_version=args.source_version)
+        else:
+            result = before_after_report(database, private_detail_path=args.private_detail, source_version=args.source_version)
     else:
         result = selection_health(database, now=datetime.now(timezone.utc))
     print(json.dumps(result, sort_keys=True, default=str))
