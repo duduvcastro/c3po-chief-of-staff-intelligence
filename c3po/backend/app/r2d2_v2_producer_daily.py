@@ -21,10 +21,13 @@ revision 2, of the shadow generator) from the provider's end-of-day endpoints:
   since `SPLIT_HISTORY_FROM`, 1990-01-01) for the names of a causal list,
   consumed by the 10:00 ET snapshot assembler. The XNYS calendar is built to
   cover that history (the library's default starts twenty years before today —
-  2006-09-11 on 2026-09-10 — and RAISES `DateOutOfBounds` for any earlier date:
-  a 2:1 split of 2000 stopped the components phase of the night of D=10/09); a
-  split row dated outside the calendar's domain is named `DATE_OUTSIDE_CALENDAR`
-  (coverage unknown), never asked to the calendar and never a crash.
+  2006-09-11 on 2026-09-10 — and RAISES `DateOutOfBounds` for any earlier date;
+  the components phase of the night of D=10/09 stopped with that exception —
+  a split row dated before the calendar is the reproduced defect and a
+  COMPATIBLE HYPOTHESIS for it, not the proven cause: the provider's response
+  was not preserved and the night is not replayed, C397-N1); a split row dated
+  outside the calendar's domain is named `DATE_OUTSIDE_CALENDAR` (coverage
+  unknown), never asked to the calendar and never a crash.
 
 The two port documents carry exactly the fields the signed reader accepts; the
 producer's own evidence (payload hashes, counts, conflicts, unreadable rows) is
