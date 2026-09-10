@@ -61,7 +61,8 @@ def _row(symbol: str, *, tp: float, buy_in: float, price: float | None, internal
     return {"symbol": symbol, "our_tp": tp, "buy_in": buy_in, "price": price, "internal_tp": internal_tp, "public_consensus_tp": tp * 1.1,
             "analyst_count": 12, "consensus_weight_percent": 25.0, "methods": {"dcf": tp * 1.01, "multiples": tp * 0.99},
             "calibration_factor": 1.02, "risk_score": 40.0, "valuation_confidence": 70.0, "method_dispersion_percent": 3.0,
-            "signal_quality": "validated", "bear_tp": tp * 0.8, "bull_tp": tp * 1.2, "as_of": "2026-09-07T22:00:00+00:00", **extra}
+            "signal_quality": "validated", "bear_tp": tp * 0.8, "bull_tp": tp * 1.2, "as_of": "2026-09-07T22:00:00+00:00",
+            "consensus_origin_source": "brapi", **extra}  # the five fields of PROMO-2 (c) travel in the emitter's block (source here; horizon/currency defaulted by it)
 
 
 def _resigned(record: dict, **changes: object) -> dict:
@@ -210,16 +211,23 @@ def test_observation_resolves_labels_adjustment_basis_bands_and_the_persisted_co
     assert at_instant["consensus_status"] == "present" and at_instant["horizons"]["21"]["e_consensus"] == h21["e_consensus"]
     dated = panel.observation(_record("NASDAQ", "AAPL", tp=250.0, price=230.0, instant=instant, consensus_published_at="", consensus_as_of="2026-09-04"), at_session, labels)
     assert dated["consensus"]["published_at"] == "2026-09-04" and dated["consensus_status"] == "present"  # a date-only clock: that day's midnight UTC, before 22:00
-    # an unattested block — no instant, no currency, no hash, or an unparseable instant — is never the consensus of PROMO-2 c
-    for field, value in (("published_at", None), ("published_at", ""), ("published_at", "soon"), ("currency", None), ("payload_sha256", None)):
+    # an unattested block — any of the FIVE fields of PROMO-2 c missing (source, horizon, currency, instant, hash; C396-4), or an unparseable
+    # instant — is never the consensus that existed: excluded by the explicit cause, the source's own error untouched
+    for field, value, cause in (("source", None, "source"), ("source", "", "source"), ("horizon", None, "horizon"), ("horizon", "", "horizon"),
+                                ("currency", None, "currency"), ("published_at", None, "published_at"), ("published_at", "", "published_at"),
+                                ("published_at", "soon", "instant_unparseable"), ("payload_sha256", None, "payload_sha256")):
         block = {**record["decomposition"]["consensus"], field: value}
         unattested = panel.observation({**record, "decomposition": {**record["decomposition"], "consensus": block}}, at_session, labels)
-        assert unattested["consensus_status"] == "consensus_unattested" and unattested["consensus"]["tp"] == 275.0 and unattested["horizons"]["21"]["e_consensus"] is None, field
+        assert unattested["consensus_status"] == f"consensus_unattested:{cause}" and unattested["consensus"]["tp"] == 275.0 and unattested["horizons"]["21"]["e_consensus"] is None, field
         assert unattested["horizons"]["21"]["e_source"] == h21["e_source"]
-    # a record without the block (not the official emitter's shape): the flat column is reported as the tp, and attests nothing
+    # the valid control: the emitter's own block, all five fields present, is the consensus of PROMO-2 c
+    assert {field: record["decomposition"]["consensus"][field] for field in panel.CONSENSUS_FIELDS} == {**{field: record["decomposition"]["consensus"][field] for field in panel.CONSENSUS_FIELDS},
+                                                                                                        "source": "brapi", "horizon": "12m", "currency": "USD"}
+    assert all(record["decomposition"]["consensus"][field] not in (None, "") for field in panel.CONSENSUS_FIELDS) and row["consensus_status"] == "present"
+    # a record without the block (not the official emitter's shape): the flat column is reported as the tp, and attests nothing (no source first)
     flat = panel.observation({**record, "decomposition": {**record["decomposition"], "consensus": {}}, "consensus_tp": 280.0}, at_session, labels)
-    assert flat["consensus_status"] == "consensus_unattested" and flat["consensus"] == {"tp": 280.0, "source": None, "horizon": None, "currency": None, "published_at": None,
-                                                                                        "payload_sha256": None}
+    assert flat["consensus_status"] == "consensus_unattested:source" and flat["consensus"] == {"tp": 280.0, "source": None, "horizon": None, "currency": None, "published_at": None,
+                                                                                               "payload_sha256": None}
     assert flat["horizons"]["21"]["e_consensus"] is None and flat["horizons"]["21"]["e_source"] == h21["e_source"]
     assert panel.observation({**record, "decomposition": {}, "consensus_tp": None}, at_session, labels)["consensus_status"] == "absent"
     # null bands: no coverage verdict, counted by the metrics
@@ -342,7 +350,7 @@ def test_the_protocol_constants_are_pre_registered_and_travel_inside_the_hashed_
     assert panel.HORIZONS == (21, 42, 63, 126) and panel.DECISORY_HORIZON == 126 and panel.CONSENSUS_DECLARED_HORIZON == 252
     assert (panel.K_PRIMARY, panel.K_SECONDARY, panel.N_EVAL, panel.MIN_NAMES, panel.MIN_SESSIONS, panel.ATTRITION_CAP) == (1.0, 1.05, 30, 10, 10, 0.1)
     assert (panel.SANITY_P50, panel.SANITY_P90, panel.TOL_BASIS, panel.QUANTILES) == (0.15, 0.30, 0.02, (0.10, 0.25, 0.75, 0.90))
-    assert panel.LABEL_CONVENTION == "total_return:adjusted_close" and panel.SCHEMA_VERSION == "VALUATION-PANEL-7-3-v1"
+    assert panel.LABEL_CONVENTION == "total_return:adjusted_close" and panel.SCHEMA_VERSION == "VALUATION-PANEL-7-3-v2"
     assert panel.CALENDARS == {"B3": "BVMF", "NASDAQ": "XNYS", "NYSE": "XNYS"} == series.CALENDARS == official.CALENDARS
     protocol = panel.protocol()
     assert protocol["calendar"] == {"markets": panel.CALENDARS, "exchange_calendars": xcals.__version__} and protocol["gate"] is False  # the installed version (>=4.13,<5)
@@ -551,7 +559,8 @@ def test_the_decisory_horizon_end_to_end_tie_ratio_and_k_1_05() -> None:
     # published_at enters); the S06 re-run without its original is admissible, and counted
     assert shadow_cell["records"] == {"read": 101, "admissible": 100, "refused": {"duplicate_session": 1}, "reruns": 1}
     for cell in (official_cell, shadow_cell):
-        assert cell["observations"] == {"n": 100, "names": 10, "sessions": 10, "max_share_single_name": 0.1, "basis": {"ok": 100}}
+        assert cell["observations"] == {"n": 100, "names": 10, "sessions": 10, "max_share_single_name": 0.1, "basis": {"ok": 100}, "cohort": {"live": 100}, "admissible": 100}
+        assert cell["retrospective"]["observations"]["n"] == 0 and cell["retrospective"]["decision"] is None and cell["decision"]["live_n"] == 100
         decisory = cell["horizons"]["126"]
         assert decisory["diagnostic_only"] is False and decisory["eligible"] == 100 and decisory["ineligible"] == {}
         assert decisory["attrition"] == {"rate": pytest.approx(0.01), "unavailable": 1, "by_cause": {"missing_bar": 1}}
@@ -779,3 +788,115 @@ def test_the_cli_prints_the_receipt_without_symbols_refuses_naive_clocks_and_wri
     with pytest.raises(SystemExit):
         panel.main(["--as-of", "2026-09-12T00:00:00+00:00", "--markets", "NASDAQ", "--detail", str(link)])
     assert not (tmp_path / "nowhere.json").exists() and capsys.readouterr().out == ""
+
+
+# ------------------------------------------------------------------ C396-1..4 (Codex audit of #396, 5616606004)
+def test_c396_1_the_dedup_is_a_total_order_never_the_store_enumeration() -> None:
+    # two versions of the same source/symbol/session/cycle with EQUAL clocks: the sort used to stop at cycle_id, so the enumeration
+    # order of the store (a list here; SQL rows tied on created_at) chose TP100 or TP200 and the hash moved. Now the order is total.
+    instant = datetime(2026, 9, 4, 22, 0, tzinfo=UTC)
+    cut = datetime(2026, 9, 10, tzinfo=UTC)
+    a = _record("NASDAQ", "AAPL", tp=100.0, price=100.0, instant=instant, cycle_id="nasdaq-0904", source_version="7")
+    b = _record("NASDAQ", "AAPL", tp=200.0, price=100.0, instant=instant, cycle_id="nasdaq-0904", source_version="8")
+    c = _record("NASDAQ", "AAPL", tp=300.0, price=100.0, instant=instant, cycle_id="nasdaq-0904", source_version="10")
+    for order in ([a, b, c], [c, b, a], [b, c, a], [c, a, b]):
+        kept, refusals = panel.admissible_records(order, cut=cut)
+        assert [(row["source_version"], row["tp"]) for row in kept] == [("7", 100.0)] and refusals == {"duplicate_session": 2}
+    assert panel._version_key("7") < panel._version_key("10") < panel._version_key("rc1") < panel._version_key("v7")  # numeric first, in numeric order
+    d = _resigned(a, tp=150.0)  # same version and cycle, another identity: the record's own hash decides, the same way in every enumeration
+    assert {panel.admissible_records(order, cut=cut)[0][0]["row_sha256"] for order in ([a, d], [d, a])} == {min(a["row_sha256"], d["row_sha256"])}
+    database, _ = _friday_store()
+    database.insert_valuation_predictions([_record("NASDAQ", "AAPL", tp=999.0, price=230.0, instant=datetime(2026, 9, 4, 22, 0, tzinfo=UTC), cycle_id="nasdaq-0904", source_version="8")])
+    first, rows1 = panel.PanelService(database, settings=_settings()).run(cut=datetime(2026, 9, 12, tzinfo=UTC), markets=("NASDAQ",))
+    database._valuation_predictions.reverse()
+    second, rows2 = panel.PanelService(database, settings=_settings()).run(cut=datetime(2026, 9, 12, tzinfo=UTC), markets=("NASDAQ",))
+    assert first["payload_sha256"] == second["payload_sha256"] and rows1 == rows2 and _by_symbol(rows1, "NASDAQ", "AAPL")["tp"] == 250.0
+    assert first["payload"]["results"]["NASDAQ"]["official_blend_v1"]["records"]["refused"] == {"duplicate_session": 1}
+    assert first["payload"]["protocol"]["dedup_order"].startswith("(published_at, prediction_instant, symbol, source_version")
+
+
+def test_c396_2_a_reused_service_reads_exactly_what_a_new_one_reads() -> None:
+    # the vintage memo lived on the instance: after a publication between two runs with the same (future) cut, a reused instance kept
+    # vintage=None while a new one saw the vintage. The memo now lives one run.
+    database = Database(_settings())
+    instant = datetime(2026, 9, 4, 22, tzinfo=UTC)
+    cut = datetime(2026, 10, 16, tzinfo=UTC)
+    database.insert_valuation_predictions([_record("NASDAQ", "AAPL", tp=250.0, price=230.0, instant=instant)])
+    service = panel.PanelService(database, settings=_settings())
+    first, _ = service.run(cut=cut, markets=("NASDAQ",))
+    first_reads = service.reads
+    assert first["payload"]["results"]["NASDAQ"]["official_blend_v1"]["vintage"]["status"] is None and first_reads is not None and first_reads.reads == 1
+    target, _ = series.sessions_after("NASDAQ", date(2026, 9, 4), 21)
+    assert target is not None
+    _producer(database, {"AAPL.US": [_bar("2026-09-04", 230.0), _bar(target.isoformat(), 232.0)], "MSFT.US": [_bar("2026-09-04", 400.0), _bar(target.isoformat(), 405.0)]}).persist_run(
+        "NASDAQ", start=date(2026, 9, 1), end=date(2026, 10, 15), symbols=["AAPL", "MSFT"], now=datetime(2026, 10, 15, 22, tzinfo=UTC))
+    database.insert_valuation_predictions([_record("NASDAQ", "MSFT", tp=450.0, price=400.0, instant=instant)])
+    reused, reused_rows = service.run(cut=cut, markets=("NASDAQ",))
+    fresh, fresh_rows = panel.PanelService(database, settings=_settings()).run(cut=cut, markets=("NASDAQ",))
+    assert reused["payload_sha256"] == fresh["payload_sha256"] and reused_rows == fresh_rows
+    cell = reused["payload"]["results"]["NASDAQ"]["official_blend_v1"]
+    assert cell["records"]["read"] == 2 and cell["vintage"]["status"] == "ok" and cell["horizons"]["21"]["labelled"] == 2
+    assert service.reads is not first_reads and service.http is not None and service.http.calls == 0  # a fresh memo per run; one network counter, still zero
+
+
+def test_c396_3_only_the_live_cohort_reaches_the_decision_and_late_reruns_are_measured_apart(monkeypatch: pytest.MonkeyPatch) -> None:
+    # R3(a): a re-execution published after the live deadline never is a prediction. 100 late re-runs with mature labels gave TIE n=96;
+    # now they are `retrospective` (diagnostic apart) and, alone, leave the decision UNMEASURED: no_live_cohort.
+    monkeypatch.setattr(panel, "HORIZONS", (2,))
+    monkeypatch.setattr(panel, "DECISORY_HORIZON", 2)
+    friday = datetime(2026, 9, 4, 22, 0, tzinfo=UTC)
+    deadline = series.session_close("NASDAQ", date(2026, 9, 8))  # the session after Friday (09-07 is Labor Day): live iff published_at <= its close
+    assert panel.live_deadline("NASDAQ", friday) == deadline == datetime(2026, 9, 8, 20, 0, tzinfo=UTC)
+    assert panel.live_deadline("B3", friday) == series.session_close("B3", date(2026, 9, 8)) and panel.live_deadline("XETRA", friday) is None
+    database = Database(_settings())
+    database.insert_valuation_predictions([
+        _record("NASDAQ", "AAPL", tp=250.0, price=230.0, instant=friday, cycle_id="live"),  # published at the instant: live
+        _record("NASDAQ", "MSFT", tp=450.0, price=400.0, instant=friday, cycle_id="holiday-rerun", published_at=datetime(2026, 9, 7, 12, tzinfo=UTC), rerun_of="lost"),  # before the deadline: live
+        _record("NASDAQ", "NVDA", tp=100.0, price=90.0, instant=friday, cycle_id="late-rerun", published_at=deadline + timedelta(seconds=1), rerun_of="lost-too"),  # one second late: retrospective
+    ])
+    _producer(database, {"AAPL.US": [_bar("2026-09-04", 230.0), _bar("2026-09-09", 232.0)], "MSFT.US": [_bar("2026-09-04", 400.0), _bar("2026-09-09", 405.0)],
+                         "NVDA.US": [_bar("2026-09-04", 90.0), _bar("2026-09-09", 91.0)]}).persist_run(
+        "NASDAQ", start=date(2026, 9, 1), end=date(2026, 9, 10), symbols=["AAPL", "MSFT", "NVDA"], now=datetime(2026, 9, 11, 2, tzinfo=UTC))
+    receipt, detail = panel.PanelService(database, settings=_settings()).run(cut=datetime(2026, 9, 20, tzinfo=UTC), markets=("NASDAQ",))
+    cell = receipt["payload"]["results"]["NASDAQ"]["official_blend_v1"]
+    assert {row["symbol"]: row["cohort"] for row in detail} == {"AAPL": "live", "MSFT": "live", "NVDA": "retrospective"}
+    assert all(row["live_deadline"] == deadline.isoformat() for row in detail)
+    assert cell["records"]["admissible"] == 3 and cell["records"]["reruns"] == 2 and cell["observations"]["cohort"] == {"live": 2, "retrospective": 1}
+    assert cell["observations"]["n"] == 2 and cell["horizons"]["2"]["labelled"] == 2 and cell["decision"]["live_n"] == 2 and cell["decision"]["cohort"] == "live"
+    assert cell["decision"]["status"] == "INSUFFICIENT" and cell["decision"]["reasons"] == ["n_below_n_eval:2<30", "names_below_min:2<10", "sessions_below_min:1<10"]
+    assert cell["level_dispersion"]["7"]["n"] == 2
+    apart = cell["retrospective"]
+    assert apart["observations"]["n"] == 1 and apart["observations"]["cohort"] == {"retrospective": 1} and apart["horizons"]["2"]["labelled"] == 1 and apart["decision"] is None
+    assert apart["horizons"]["2"]["source"]["mse"] == pytest.approx(math.log(100.0 / 91.0) ** 2) and apart["level_dispersion"]["7"]["n"] == 1
+    assert receipt["payload"]["protocol"]["live_publication_sessions"] == 1 and "R3(a)" in receipt["payload"]["protocol"]["cohort_rule"]
+    # a store with ONLY late re-runs, mature and labelled: the decision is not evaluable — never a TIE out of retrospective rows
+    late_only = Database(_settings())
+    late_only.insert_valuation_predictions([_record("NASDAQ", symbol, tp=100.0, price=100.0, instant=friday, cycle_id=f"late-{symbol}", published_at=friday + 200 * D, rerun_of="x",
+                                                    public_consensus_tp=100.0) for symbol in ("AAPL", "MSFT", "NVDA")])
+    _producer(late_only, {f"{symbol}.US": [_bar("2026-09-04", 100.0), _bar("2026-09-09", 100.0)] for symbol in ("AAPL", "MSFT", "NVDA")}).persist_run(
+        "NASDAQ", start=date(2026, 9, 1), end=date(2026, 9, 10), symbols=["AAPL", "MSFT", "NVDA"], now=datetime(2026, 9, 11, 2, tzinfo=UTC))
+    only, rows = panel.PanelService(late_only, settings=_settings()).run(cut=friday + 201 * D, markets=("NASDAQ",))
+    cell = only["payload"]["results"]["NASDAQ"]["official_blend_v1"]
+    assert cell["decision"] == {**cell["decision"], "status": "UNMEASURED", "reasons": ["no_live_cohort"], "live_n": 0, "tie": False, "passes_k_1_00": False}
+    assert cell["observations"]["n"] == 0 and cell["observations"]["cohort"] == {"retrospective": 3} and cell["horizons"]["2"]["labelled"] == 0
+    assert cell["retrospective"]["horizons"]["2"]["labelled"] == 3 and cell["retrospective"]["horizons"]["2"]["source"]["mse"] == 0.0 and cell["retrospective"]["horizons"]["2"]["consensus"]["mse"] == 0.0
+    assert only["payload"]["combination"]["official_blend_v1"]["status"] == "NOT_EVALUABLE" and all(row["cohort"] == "retrospective" for row in rows)
+
+
+def test_c396_4_an_incomplete_consensus_is_excluded_from_the_mask_and_the_level_by_its_cause(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(panel, "HORIZONS", (2,))
+    monkeypatch.setattr(panel, "DECISORY_HORIZON", 2)
+    database, _ = _friday_store()
+    friday = datetime(2026, 9, 4, 22, 0, tzinfo=UTC)
+    database.insert_valuation_predictions([_record("NASDAQ", "NVDA", tp=100.0, price=90.0, instant=friday, cycle_id="no-source", consensus_origin_source=None)])
+    _producer(database, {"AAPL.US": [_bar("2026-09-04", 230.0, 115.0), _bar("2026-09-08", 231.0, 115.5), _bar("2026-09-09", 232.0, 116.0)],  # a later vintage with the three names
+                         "MSFT.US": [_bar("2026-09-04", 400.0), _bar("2026-09-08", 401.0)], "NVDA.US": [_bar("2026-09-04", 90.0), _bar("2026-09-09", 91.0)]}).persist_run(
+        "NASDAQ", start=date(2026, 9, 1), end=date(2026, 9, 10), symbols=["AAPL", "MSFT", "NVDA"], now=datetime(2026, 9, 11, 3, tzinfo=UTC))
+    receipt, detail = panel.PanelService(database, settings=_settings()).run(cut=datetime(2026, 9, 12, tzinfo=UTC), markets=("NASDAQ",))
+    cell = receipt["payload"]["results"]["NASDAQ"]["official_blend_v1"]
+    nvda = _by_symbol(detail, "NASDAQ", "NVDA")
+    assert nvda["consensus_status"] == "consensus_unattested:source" and nvda["consensus"]["tp"] == pytest.approx(110.0) and nvda["horizons"]["2"]["e_consensus"] is None
+    assert nvda["horizons"]["2"]["e_source"] == pytest.approx(math.log(100.0 / 91.0))  # the source's own metric is kept
+    assert cell["horizons"]["2"]["labelled"] == 2 and cell["horizons"]["2"]["common_mask"]["n"] == 1 and cell["horizons"]["2"]["common_mask"]["excluded"] == {"consensus_unattested:source": 1}
+    assert cell["level_dispersion"]["7"]["n"] == 1 and cell["level_dispersion"]["7"]["consensus_excluded"] == {"absent": 1, "consensus_unattested:source": 1}
+    assert receipt["payload"]["protocol"]["consensus_fields"] == ["source", "horizon", "currency", "published_at", "payload_sha256"]

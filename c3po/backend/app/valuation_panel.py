@@ -34,6 +34,17 @@ travel inside the hashed payload, and the payload carries NO symbol (the per-sym
 written only on request, ``O_EXCL | O_NOFOLLOW``, mode 0600). The cut is always explicit and time-zone aware (never
 ``now()``), and the service never reaches the network: its price reader is built on an HTTP client that raises on any
 call.
+
+v2 (Codex audit of #396, C396-1..4): the deduplication of ``admissible_records`` is a TOTAL pre-registered order
+(``published_at``, ``prediction_instant``, symbol, source version — numeric before lexical —, ``cycle_id``,
+``row_sha256``: the enumeration order of the store never decides); the vintage memo lives ONE run (a fresh
+``_CutReads`` + ``PriceHistoryService`` per ``run``: a reused instance reads exactly what a new one reads); the
+DECISION reads the LIVE cohort only — §2.2 R3(a): a record is a prediction only when ``published_at`` is at most
+``LIVE_PUBLICATION_SESSIONS`` (= 1) session after the last session completed at ``prediction_instant``; a late
+re-execution/publication is ``retrospective``, measured APART (``retrospective`` block, never in the decision), and
+without a live cohort the decision is ``UNMEASURED`` with ``no_live_cohort``; and the persisted consensus is
+``present`` only when ALL FIVE fields of PROMO-2 (c) are there — source, horizon, currency, instant, hash — a missing
+one is ``consensus_unattested:<field>``, excluded from the common mask and from level/dispersion by that cause.
 """
 from __future__ import annotations
 
@@ -59,7 +70,7 @@ from .valuation_price_history import LABEL_ADJUSTMENT_UNKNOWN, PriceHistoryServi
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "VALUATION-PANEL-7-3-v1"
+SCHEMA_VERSION = "VALUATION-PANEL-7-3-v2"  # v2: total dedup order, per-run reads, live cohort (R3 a), five-field consensus (C396-1..4)
 MARKETS: tuple[str, ...] = price_history_module.MARKETS
 CALENDARS: dict[str, str] = dict(price_history_module.CALENDARS)
 DEFAULT_SOURCES: tuple[str, ...] = ("official_blend_v1",)
@@ -76,6 +87,7 @@ ATTRITION_CAP = 0.10
 SANITY_P50 = 0.15
 SANITY_P90 = 0.30
 TOL_BASIS = 0.02
+LIVE_PUBLICATION_SESSIONS = 1  # §2.2 R3(a): a record is a PREDICTION only if published_at ≤ close of the session this many sessions after the one completed at prediction_instant
 QUANTILES: tuple[float, ...] = (0.10, 0.25, 0.75, 0.90)
 LABEL_CONVENTION = "total_return:adjusted_close"
 BASIS_MISMATCH = "label_unavailable:basis_mismatch"
@@ -85,7 +97,11 @@ INELIGIBLE: tuple[str, ...] = ("not_yet_mature", "beyond_calendar")  # outside t
 # --- the persisted consensus and the common mask (PROMO-2 c): every status but ``present`` is excluded and counted by cause
 CONSENSUS_PRESENT = "present"
 CONSENSUS_ABSENT = "absent"  # no tp
-CONSENSUS_UNATTESTED = "consensus_unattested"  # no block, or a block without currency / published_at / payload_sha256, or an unparseable instant
+CONSENSUS_UNATTESTED = "consensus_unattested"  # prefix: ``consensus_unattested:<field>`` — the FIRST of the five fields of PROMO-2 (c) missing (source, horizon, currency, published_at, payload_sha256), or ``:instant_unparseable``
+CONSENSUS_FIELDS: tuple[str, ...] = ("source", "horizon", "currency", "published_at", "payload_sha256")  # PROMO-2 (c): all five persisted, else not the consensus that existed
+COHORT_LIVE = "live"
+COHORT_RETROSPECTIVE = "retrospective"  # R3(a): published after the live deadline — diagnostic apart, never in the decision
+COHORT_UNKNOWN = "cohort_unknown"  # the calendar could not place the deadline: not shown to be live, never in the decision
 CONSENSUS_AFTER_PREDICTION = "consensus_after_prediction"  # the block's published_at is LATER than prediction_instant: not the consensus that existed then
 CONSENSUS_CURRENCY_MISMATCH = "consensus_currency_mismatch"  # the block's currency is not the record's
 
@@ -106,6 +122,10 @@ def protocol() -> dict[str, Any]:
         "sanity_p50": SANITY_P50,
         "sanity_p90": SANITY_P90,
         "tol_basis": TOL_BASIS,
+        "live_publication_sessions": LIVE_PUBLICATION_SESSIONS,
+        "cohort_rule": "R3(a): live iff published_at <= close of the session LIVE_PUBLICATION_SESSIONS after the last session completed at prediction_instant; the decision reads the live cohort only",
+        "consensus_fields": list(CONSENSUS_FIELDS),
+        "dedup_order": "(published_at, prediction_instant, symbol, source_version numeric-then-lexical, cycle, record identity hash)",  # the payload names no field that carries a symbol
         "quantiles": list(QUANTILES),
         "label_convention": LABEL_CONVENTION,
         "log_error": "ln(tp * adjusted_close(T) / close(T)) - ln(adjusted_close(T + h))",
@@ -171,6 +191,18 @@ def _mapping(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _version_key(value: Any) -> tuple[int, int, str]:
+    """A total order on source versions, pre-registered and independent of any number the record carries: numeric
+    versions first, in numeric order (``"7"`` < ``"10"``), then the others lexically. A tie-break of the dedup (C396-1)."""
+    text = str(value if value is not None else "")
+    if text.isdecimal():  # not isdigit(): "²"/"①" are digits int() refuses
+        try:
+            return (0, int(text), text)
+        except ValueError:
+            pass
+    return (1, 0, text)
+
+
 def _counts(counter: Mapping[str, int]) -> dict[str, int]:
     return {key: int(counter[key]) for key in sorted(counter)}
 
@@ -221,6 +253,26 @@ def calendar_horizon(market: str) -> datetime | None:
         return None
 
 
+def live_deadline(market: str, prediction_instant: datetime) -> datetime | None:
+    """§2.2 R3(a): the latest ``published_at`` at which a record is still a PREDICTION — the close of the session
+    ``LIVE_PUBLICATION_SESSIONS`` after the last session of the market completed at ``prediction_instant`` (a nightly
+    record published before the next close is live; a re-execution published later is retrospective). ``None`` when
+    the calendar cannot place it (unknown market, out of bounds): the record is then not shown to be live."""
+    if market not in CALENDARS:
+        return None
+    try:
+        base = date.fromisoformat(session_date_of(market, prediction_instant))
+    except (CalendarUnavailable, ValueError):
+        return None
+    target, _reason = price_history_module.sessions_after(market, base, LIVE_PUBLICATION_SESSIONS)
+    if target is None:
+        return None
+    try:
+        return price_history_module.session_close(market, target)
+    except Exception:  # the calendar cannot answer for the target
+        return None
+
+
 def resolve_label(label: Mapping[str, Any], *, cut: datetime, calendar_close: datetime | None) -> dict[str, Any]:
     """``label_bar``'s answer as the panel classifies it. ``beyond_calendar`` means the target session ``T + h`` lies past
     the END of the calendar — a bound set by the day the calendar was built, not by the store. When the calendar's last
@@ -248,12 +300,15 @@ def admissible_records(records: Iterable[Mapping[str, Any]], *, cut: datetime, s
     version of the source, a re-run, a second cycle of the same session — are ``duplicate_session``: counted, never
     summed (§2.2). Re-runs (``provenance.rerun_of``) are admissible when their ``published_at < C`` and no earlier record
     of the same ``(source, symbol, session)`` exists; the caller counts them. Deterministic: candidates ordered by
-    ``(published_at, prediction_instant, symbol, cycle_id)``, output ordered by (symbol, session, prediction_instant)."""
+    ``(published_at, prediction_instant, symbol, source_version, cycle_id, row_sha256)`` — a TOTAL order (C396-1: two
+    versions of the same source with equal clocks and cycle are told apart by the version, numeric first, then by the
+    record's own identity; the enumeration order of the store — a list, or SQL rows tied on ``created_at`` — never
+    decides); output ordered by (symbol, session, prediction_instant)."""
     cut_utc = _utc(cut)
     lower = _utc(since) if since is not None else None
     upper = _utc(until) if until is not None else None
     refusals: Counter[str] = Counter()
-    candidates: list[tuple[datetime, datetime, str, str, dict[str, Any]]] = []
+    candidates: list[tuple[datetime, datetime, str, tuple[int, int, str], str, str, dict[str, Any]]] = []
     for record in records:
         instant = _parse_instant(record.get("prediction_instant"))
         if instant is None:
@@ -280,11 +335,12 @@ def admissible_records(records: Iterable[Mapping[str, Any]], *, cut: datetime, s
         if _positive(record.get("tp")) is None:
             refusals["tp_not_positive"] += 1
             continue
-        candidates.append((instant, available, symbol, str(record.get("cycle_id") or ""), dict(record)))
-    candidates.sort(key=lambda item: (item[1], item[0], item[2], item[3]))  # (published_at, prediction_instant, symbol, cycle): the first that existed
+        candidates.append((instant, available, symbol, _version_key(record.get("source_version")), str(record.get("cycle_id") or ""),
+                           str(record.get("row_sha256") or ""), dict(record)))
+    candidates.sort(key=lambda item: (item[1], item[0], item[2], item[3], item[4], item[5]))  # the first that existed; then a TOTAL pre-registered order (C396-1)
     kept: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
-    for _instant, _available, symbol, _cycle, record in candidates:
+    for _instant, _available, symbol, _version, _cycle, _identity, record in candidates:
         key = (str(record.get("source")), symbol, str(record.get("session_date"))[:10])
         if key in seen:
             refusals["duplicate_session"] += 1
@@ -298,8 +354,9 @@ def admissible_records(records: Iterable[Mapping[str, Any]], *, cut: datetime, s
 # ------------------------------------------------------------------ one observation (i, T)
 def _consensus_of(record: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
     """The consensus block the record PERSISTED (``decomposition.consensus``: tp, source, horizon, currency, instant,
-    hash) and its status for the common mask. ``present`` only when the block is attested — currency, ``published_at``
-    and ``payload_sha256`` all there, the instant parseable — its ``published_at ≤ prediction_instant`` (the consensus
+    hash) and its status for the common mask. ``present`` only when the block is attested — ALL FIVE fields of PROMO-2
+    (c) there: source, horizon, currency, ``published_at`` and ``payload_sha256`` (C396-4: a missing one is
+    ``consensus_unattested:<field>``, the first missing in that order), the instant parseable — its ``published_at ≤ prediction_instant`` (the consensus
     that EXISTED at the prediction instant, PROMO-2 c: a re-run whose block was published later is
     ``consensus_after_prediction``) and its currency the record's (else ``consensus_currency_mismatch``). ``absent``
     without a tp; ``consensus_unattested`` for a block without those fields — the flat ``consensus_tp`` column of a
@@ -314,11 +371,12 @@ def _consensus_of(record: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
                  "published_at": block.get("published_at"), "payload_sha256": block.get("payload_sha256")}
     if tp is None:
         return consensus, CONSENSUS_ABSENT
-    if currency in (None, "") or consensus["published_at"] in (None, "") or consensus["payload_sha256"] in (None, ""):
-        return consensus, CONSENSUS_UNATTESTED
+    for field in CONSENSUS_FIELDS:  # PROMO-2 (c): the five persisted fields; the first missing names the cause
+        if consensus[field] in (None, ""):
+            return consensus, f"{CONSENSUS_UNATTESTED}:{field}"
     consensus_instant, prediction_instant = _parse_instant(consensus["published_at"]), _parse_instant(record.get("prediction_instant"))
     if consensus_instant is None or prediction_instant is None:
-        return consensus, CONSENSUS_UNATTESTED
+        return consensus, f"{CONSENSUS_UNATTESTED}:instant_unparseable"
     if consensus_instant > prediction_instant:
         return consensus, CONSENSUS_AFTER_PREDICTION
     if record.get("currency") is not None and str(currency) != str(record.get("currency")):
@@ -333,7 +391,8 @@ def _bands_of(record: Mapping[str, Any]) -> tuple[float | None, float | None]:
     return bear, bull
 
 
-def observation(record: Mapping[str, Any], bar_at_session: Mapping[str, Any] | None, labels_by_horizon: Mapping[int, Mapping[str, Any]]) -> dict[str, Any]:
+def observation(record: Mapping[str, Any], bar_at_session: Mapping[str, Any] | None, labels_by_horizon: Mapping[int, Mapping[str, Any]],
+                *, deadline: datetime | None = None) -> dict[str, Any]:
     """One row of the panel for ``(i, T)``: the record's identity and numbers, its persisted consensus and bands, the
     adjustment ``a(T)`` with the basis check of §2.2 (the bar's currency must be the record's, else
     ``label_unavailable:currency_mismatch``; ``|price − close(T)| / close(T) ≤ TOL_BASIS``, else
@@ -342,7 +401,9 @@ def observation(record: Mapping[str, Any], bar_at_session: Mapping[str, Any] | N
     closed before the cut — ``not_yet_mature``/``beyond_calendar`` are not), the realized adjusted close, the log-errors
     of the source and of the consensus (only when the consensus is ``present``), and whether the realized price IN THE
     BASIS OF ``T`` (``adjusted_close(T+h) / a(T)``) lies inside ``[bear_tp, bull_tp]`` (``None`` without bands). A
-    labelled bar under a failed basis check is the basis cause, never a label."""
+    labelled bar under a failed basis check is the basis cause, never a label. ``cohort`` (R3 a, C396-3): ``live`` when
+    ``published_at ≤ deadline`` (the ``live_deadline`` of the record's market and instant), ``retrospective`` when later,
+    ``cohort_unknown`` without a deadline — only the live cohort reaches the decision."""
     tp = float(record["tp"])
     price = _positive(record.get("price"))
     consensus, consensus_status = _consensus_of(record)
@@ -385,8 +446,14 @@ def observation(record: Mapping[str, Any], bar_at_session: Mapping[str, Any] | N
                     entry["within_bands"] = bool(bear <= in_basis_of_session <= bull)
         horizons[str(horizon)] = entry
     provenance = _mapping(_mapping(record.get("decomposition")).get("provenance"))
+    published = _utc(record["published_at"])
+    if deadline is None:
+        cohort = COHORT_UNKNOWN
+    else:
+        cohort = COHORT_LIVE if published <= _utc(deadline) else COHORT_RETROSPECTIVE
     return {
         "symbol": str(record["symbol"]), "session": str(record["session_date"])[:10], "market": record.get("market"), "source": record.get("source"),
+        "cohort": cohort, "live_deadline": _utc(deadline).isoformat() if deadline is not None else None,
         "source_version": str(record.get("source_version")), "cycle_id": record.get("cycle_id"), "row_sha256": record.get("row_sha256"),
         "prediction_instant": _utc(record["prediction_instant"]).isoformat(), "published_at": _utc(record["published_at"]).isoformat(),
         "rerun_of": provenance.get("rerun_of"), "tp": tp, "price": price, "currency": record.get("currency"),  # the record's TP, read — never computed here (I-TP1)
@@ -451,16 +518,21 @@ def horizon_metrics(observations: Sequence[Mapping[str, Any]], horizon: int) -> 
 
 
 # ------------------------------------------------------------------ the pre-registered decision (PROMO-2 e, PROMO-2-ZERO)
-def decision(source_mse: float | None, consensus_mse: float | None, n: int, names: int, sessions: int, attrition: float | None) -> dict[str, Any]:
+def decision(source_mse: float | None, consensus_mse: float | None, n: int, names: int, sessions: int, attrition: float | None,
+             *, live_n: int | None = None) -> dict[str, Any]:
     """``MSE_source ≤ k × MSE_consensus`` at the decisory horizon, in the pre-registered order: attrition above the cap
     (or no eligible observation at all) → ``UNMEASURED`` before any count; the minimums after the intersection
     (``N_EVAL``, names, sessions) → ``INSUFFICIENT``; both MSE zero → ``TIE`` (satisfies the inequality, counts as
     passed, marker ``tie``); consensus zero and source > 0 → ``FAIL`` with ratio ``N/D``; otherwise the ratio is
     reported and the status is ``PASS`` at ``k = 1.00`` (``passes_k_1_05`` reported alongside). No epsilon, no policy
-    chosen after the result."""
+    chosen after the result. ``live_n`` (C396-3): the size of the LIVE cohort the metrics were computed over — zero
+    means there is no admissible prediction at all (R3 a) and the decision is ``UNMEASURED`` with ``no_live_cohort``."""
     result: dict[str, Any] = {"status": "UNMEASURED", "ratio": "N/D", "passes_k_1_00": False, "passes_k_1_05": False, "tie": False, "reasons": [],
                               "n": n, "names": names, "sessions": sessions, "attrition": attrition, "mse_source": source_mse, "mse_consensus": consensus_mse,
-                              "k_primary": K_PRIMARY, "k_secondary": K_SECONDARY}
+                              "k_primary": K_PRIMARY, "k_secondary": K_SECONDARY, "cohort": COHORT_LIVE, "live_n": live_n}
+    if live_n == 0:
+        result["reasons"].append("no_live_cohort")
+        return result
     if attrition is None:
         result["reasons"].append("no_eligible_observations")
         return result
@@ -628,19 +700,29 @@ class PanelService:
 
     def __init__(self, database: Database, *, settings: Settings | None = None, price_history: PriceHistoryService | None = None) -> None:
         self.database = database
-        self.reads = _CutReads(database)
-        self.http: _NoNetworkHttp | None = None
-        if price_history is None:
-            self.http = _NoNetworkHttp()
-            price_history = PriceHistoryService(settings if settings is not None else get_settings(), cast(Database, self.reads), self.http)
-        self.price_history = price_history
+        self._caller_price_history = price_history  # a caller's reader is used as given (its cache is the caller's)
+        self._settings = settings if settings is not None else (None if price_history is not None else get_settings())
+        self.http: _NoNetworkHttp | None = None if price_history is not None else _NoNetworkHttp()  # one counter per service, pinned at 0
+        self.reads: _CutReads | None = None  # the memo of the LAST run (introspection); never shared between runs (C396-2)
+        self.price_history: PriceHistoryService | None = price_history
 
-    def _labels(self, market: str, symbol: str, session: date, cut: datetime, calendar_close: datetime | None) -> dict[int, dict[str, Any]]:
-        return {horizon: resolve_label(self.price_history.label_bar(market, symbol, session, horizon, available_before=cut), cut=cut, calendar_close=calendar_close)
+    def _reader(self) -> PriceHistoryService:
+        """The price reader of ONE run (C396-2): a fresh ``_CutReads`` memo per run, so a reused instance reads exactly
+        what a new one reads — a publication between two runs is seen by the second; two concurrent runs share nothing."""
+        if self._caller_price_history is not None:
+            return self._caller_price_history
+        assert self.http is not None and self._settings is not None
+        reads = _CutReads(self.database)
+        reader = PriceHistoryService(self._settings, cast(Database, reads), self.http)
+        self.reads, self.price_history = reads, reader  # exposed for introspection after the run; the run itself holds its own reference
+        return reader
+
+    def _labels(self, reader: PriceHistoryService, market: str, symbol: str, session: date, cut: datetime, calendar_close: datetime | None) -> dict[int, dict[str, Any]]:
+        return {horizon: resolve_label(reader.label_bar(market, symbol, session, horizon, available_before=cut), cut=cut, calendar_close=calendar_close)
                 for horizon in (*HORIZONS, CONSENSUS_DECLARED_HORIZON)}
 
-    def _vintage_header(self, market: str, cut: datetime) -> dict[str, Any]:
-        vintage = self.price_history.vintage(market, available_before=cut)
+    def _vintage_header(self, reader: PriceHistoryService, market: str, cut: datetime) -> dict[str, Any]:
+        vintage = reader.vintage(market, available_before=cut)
         if vintage is None:
             return {"status": None, "publication_id": None, "price_snapshot_id": None, "available_at": None, "fetched_at": None, "window": None}
         return {"status": vintage["status"], "publication_id": vintage["publication_id"], "price_snapshot_id": vintage["price_snapshot_id"],
@@ -648,11 +730,14 @@ class PanelService:
                 "window": [vintage["from"], vintage["to"]] if vintage["status"] == "ok" else None}
 
     def measure(self, market: str, source: str, *, cut: datetime, since: datetime | None, until: datetime | None,
-                profile_label: str | None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+                profile_label: str | None, reader: PriceHistoryService | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """One (market, source) cell: the records in the window, their admissibility, one observation per (i, T) with
         the bar at ``T`` and the labels at every horizon (all as of the cut; ``beyond_calendar`` resolved against the
-        calendar's horizon, ``resolve_label``), then the pure functions. Returns the aggregate (no symbol) and the
-        observations (the detail)."""
+        calendar's horizon, ``resolve_label``), then the pure functions — over the LIVE cohort (R3 a): the metrics, the
+        decision and the level/dispersion read the live observations; the retrospective ones (and those the calendar
+        could not place) are measured APART in ``retrospective`` (diagnostic, never a decision). Returns the aggregate
+        (no symbol) and the observations (the detail). ``reader`` is the run's price reader (a fresh memo per run)."""
+        reader = reader if reader is not None else self._reader()
         records = self.database.list_valuation_predictions_in_window(market, source=source, since=since, until=until)
         kept, refusals = admissible_records(records, cut=cut, since=since, until=until)
         calendar_close = calendar_horizon(market)
@@ -661,28 +746,42 @@ class PanelService:
         for record in kept:
             symbol = str(record["symbol"])
             if symbol not in bars_by_symbol:
-                bars_by_symbol[symbol] = self.price_history.bars(market, symbol, available_before=cut)
+                bars_by_symbol[symbol] = reader.bars(market, symbol, available_before=cut)
             session = date.fromisoformat(str(record["session_date"])[:10])
-            observations.append(observation(record, bars_by_symbol[symbol].get(session.isoformat()), self._labels(market, symbol, session, cut, calendar_close)))
+            observations.append(observation(record, bars_by_symbol[symbol].get(session.isoformat()), self._labels(reader, market, symbol, session, cut, calendar_close),
+                                            deadline=live_deadline(market, _utc(record["prediction_instant"]))))
         observations.sort(key=lambda row: (row["symbol"], row["session"], row["prediction_instant"]))  # the order every sum runs in
-        horizons = {str(horizon): horizon_metrics(observations, horizon) for horizon in HORIZONS}
+        live = [row for row in observations if row["cohort"] == COHORT_LIVE]
+        apart = [row for row in observations if row["cohort"] != COHORT_LIVE]
+        horizons = {str(horizon): horizon_metrics(live, horizon) for horizon in HORIZONS}
         decisory = horizons[str(DECISORY_HORIZON)]
         decided = decision(decisory["source_on_common_mask"]["mse"], decisory["consensus"]["mse"], decisory["common_mask"]["n"],
-                           decisory["common_mask"]["names"], decisory["common_mask"]["sessions"], decisory["attrition"]["rate"])
-        declared = horizon_metrics(observations, CONSENSUS_DECLARED_HORIZON)
+                           decisory["common_mask"]["names"], decisory["common_mask"]["sessions"], decisory["attrition"]["rate"], live_n=len(live))
+        declared = horizon_metrics(live, CONSENSUS_DECLARED_HORIZON)
         for key in ("source", "source_on_common_mask", "band_coverage", "diagnostic_only"):  # 252 sessions: the consensus at its declared horizon only
             declared.pop(key)
         declared["consensus_only"] = True
+        profile_of = lambda row: profile_label or str(row["source_version"])  # noqa: E731
         aggregate = {
-            "records": {"read": len(records), "admissible": len(kept), "refused": refusals, "reruns": sum(1 for row in observations if row["rerun_of"])},
-            "observations": {**_mask_stats(observations), "basis": _counts(Counter(str(row["basis_status"]) for row in observations))},
-            "vintage": self._vintage_header(market, cut),
+            "records": {"read": len(records), "admissible": len(kept), "refused": refusals, "reruns": sum(1 for row in observations if row["rerun_of"])},  # reruns: over ALL admissible (live + retrospective)
+            "observations": {**_mask_stats(live), "basis": _counts(Counter(str(row["basis_status"]) for row in live)),
+                             "cohort": _counts(Counter(str(row["cohort"]) for row in observations)), "admissible": len(observations)},
+            "vintage": self._vintage_header(reader, market, cut),
             "last_closed_session": last_closed_session(market, cut),
             "cut_within_calendar_horizon": calendar_close is not None and calendar_close >= cut,  # false: beyond_calendar may hide matured targets; the receipt is then not (C, store) alone
             "horizons": horizons,
             "decision": decided,
             "consensus_declared_horizon": declared,
-            "level_dispersion": level_dispersion(observations, lambda row: profile_label or str(row["source_version"])),
+            "level_dispersion": level_dispersion(live, profile_of),
+            "retrospective": {  # R3(a): late re-executions/publications — a diagnostic published apart with this name; NEVER a decision (C396-3)
+                "rule": "published_at after the live deadline (or cohort_unknown): diagnostic only, outside the decision",
+                "diagnostic_only": True,  # every number below, sanity labels included, is a reading — never a verdict
+                "observations": {**_mask_stats(apart), "basis": _counts(Counter(str(row["basis_status"]) for row in apart)),
+                                 "cohort": _counts(Counter(str(row["cohort"]) for row in apart))},
+                "horizons": {str(horizon): horizon_metrics(apart, horizon) for horizon in HORIZONS},
+                "level_dispersion": level_dispersion(apart, profile_of),
+                "decision": None,
+            },
         }
         return aggregate, observations
 
@@ -704,10 +803,11 @@ class PanelService:
             raise ValueError("no sources: name at least one prediction source (e.g. official_blend_v1)")
         results: dict[str, dict[str, Any]] = {}
         detail: list[dict[str, Any]] = []
+        reader = self._reader()  # ONE memo for this run, held here — not on the instance (C396-2)
         for market in market_list:
             results[market] = {}
             for source in source_list:
-                aggregate, observations = self.measure(market, source, cut=cut_utc, since=lower, until=upper, profile_label=profile_label)
+                aggregate, observations = self.measure(market, source, cut=cut_utc, since=lower, until=upper, profile_label=profile_label, reader=reader)
                 results[market][source] = aggregate
                 detail.extend(observations)
         window = {"since": lower.isoformat() if lower else None, "until": upper.isoformat() if upper else None, "profile_label": profile_label}
