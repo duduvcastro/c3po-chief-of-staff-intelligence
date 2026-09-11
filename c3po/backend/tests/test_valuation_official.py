@@ -140,7 +140,7 @@ def test_what_is_served_is_the_record_not_the_snapshot_and_selection_never_prece
     stored["outputs"]["rows"][0]["our_tp"] = 999.0  # a mutated snapshot (memory) — the record still says 250
     database.drop_official_cycle_cache()
     assert official.official_row(database, "NASDAQ", "AAPL")["our_tp"] == 250.0  # type: ignore[index]
-    assert official.official_rows(database, "NASDAQ")["AAPL"]["official_row_sha256"] == database.valuation_predictions_for_cycle(cycles["NASDAQ"])["AAPL"]["row_sha256"]
+    assert official.official_rows(database, "NASDAQ")["AAPL"]["official_row_sha256"] == database.valuation_predictions_for_cycle(cycles["NASDAQ"], source=official.SOURCE_OFFICIAL)["AAPL"]["row_sha256"]
     # F393-5 (b): selection never precedes the records. A cycle whose records are still being written by another
     # process (SOME recorded, D1) is NOT selectable, whatever thread looks at it...
     partial = {"id": "cycle-half-recorded", "analysis_type": "valuation_universe", "entity_key": "NYSE_UNIVERSE", "methodology_version_id": "mv-1",
@@ -154,16 +154,16 @@ def test_what_is_served_is_the_record_not_the_snapshot_and_selection_never_prece
     assert official.selectable_cycles(database)["NYSE"]["unrecorded_count"] == 1 and official.selectable_cycles(database)["NYSE"]["valid"] is False
     assert official.activate_generation_if_changed(database) is None
     assert official.current_generation(database) == generation and official.official_row(database, "NYSE", "KO")["our_tp"] == 70.0  # type: ignore[index]
-    assert database.valuation_predictions_for_cycle("cycle-half-recorded").keys() == {"KO"}  # the pass wrote nothing into a half-written cycle
+    assert database.valuation_predictions_for_cycle("cycle-half-recorded", source=official.SOURCE_OFFICIAL).keys() == {"KO"}  # the pass wrote nothing into a half-written cycle
     # ...while a cycle with NO record at all (published while nothing was recordable, X4) is recorded BY the activation pass
     # before it is validated — the records exist before the selection that points at them, never the other way round
     unrecorded = {**partial, "id": "cycle-without-records", "outputs": {"rows": [_row("KO", tp=81.0, buy_in=67.0, price=68.0, internal_tp=80.0)], "universe_size": 2},
                   "published_at": NOW + timedelta(minutes=40)}
     database._analysis_snapshots.append(unrecorded)
-    assert database.valuation_predictions_for_cycle("cycle-without-records") == {}
+    assert database.valuation_predictions_for_cycle("cycle-without-records", source=official.SOURCE_OFFICIAL) == {}
     recovered = official.activate_generation_if_changed(database)
     assert recovered is not None and recovered["cycles"]["NYSE"] == "cycle-without-records" and recovered["receipt"]["validation"]["NYSE"]["unrecorded_count"] == 0
-    record = database.valuation_predictions_for_cycle("cycle-without-records")["KO"]
+    record = database.valuation_predictions_for_cycle("cycle-without-records", source=official.SOURCE_OFFICIAL)["KO"]
     assert record["tp"] == 81.0 and record["session_date"] == official.session_date_of("NYSE", NOW + timedelta(minutes=40))
     assert official.official_row(database, "NYSE", "KO")["official_row_sha256"] == record["row_sha256"]  # type: ignore[index]
 
@@ -350,8 +350,8 @@ def test_targeted_admission_requires_a_valid_cycle_and_a_symbol_the_universe_doe
     admitted = official.current_generation(database)
     assert admitted is not None and admitted["targeted"] == {"WEGE3": good} and admitted["validated_complete"] is True
     served = official.official_row(database, "B3", "WEGE3")
-    assert served and served["official_scope"] == "targeted" and served["official_row_sha256"] == database.valuation_prediction_record(good, "WEGE3")["row_sha256"]  # type: ignore[index]
-    assert database.valuation_prediction_record(good, "WEGE3")["decomposition"]["provenance"]["source_manifest_sha256"] == "b" * 64  # type: ignore[index]
+    assert served and served["official_scope"] == "targeted" and served["official_row_sha256"] == database.valuation_prediction_record(good, "WEGE3", source=official.SOURCE_OFFICIAL)["row_sha256"]  # type: ignore[index]
+    assert database.valuation_prediction_record(good, "WEGE3", source=official.SOURCE_OFFICIAL)["decomposition"]["provenance"]["source_manifest_sha256"] == "b" * 64  # type: ignore[index]
 
 
 def test_activation_carries_a_market_over_when_its_new_cycle_is_invalid() -> None:
@@ -382,16 +382,16 @@ def test_an_empty_answer_is_never_pinned_and_served_objects_are_copies() -> None
                "inputs": {"methodology_version": 7}, "outputs": {"rows": [_row("KO", tp=70.0, buy_in=60.0, price=65.0, internal_tp=68.0)], "universe_size": 2},
                "published_at": NOW}
     database._analysis_snapshots.append(pending)  # published, records not yet written
-    assert database.valuation_predictions_for_cycle("cycle-pending") == {} and "cycle-pending" not in database._cycle_records_cache
+    assert database.valuation_predictions_for_cycle("cycle-pending", source=official.SOURCE_OFFICIAL) == {} and ("cycle-pending", official.SOURCE_OFFICIAL) not in database._cycle_records_cache
     official.record_snapshot(database, pending)  # the other process finishes
-    assert database.valuation_predictions_for_cycle("cycle-pending")["KO"]["tp"] == 70.0
+    assert database.valuation_predictions_for_cycle("cycle-pending", source=official.SOURCE_OFFICIAL)["KO"]["tp"] == 70.0
     # F393-5: what a caller receives is a copy — mutating it changes neither the cache nor the next answer
     _three_markets(database)
     served = official.official_rows(database, "NASDAQ")["AAPL"]
     served["our_tp"] = 999.0
     served["methods"]["dcf"] = 0.0
     assert official.official_rows(database, "NASDAQ")["AAPL"]["our_tp"] == 250.0 and official.official_rows(database, "NASDAQ")["AAPL"]["methods"]["dcf"] == 252.5
-    records = database.valuation_predictions_for_cycle(official.current_generation(database)["cycles"]["NASDAQ"])  # type: ignore[index]
+    records = database.valuation_predictions_for_cycle(official.current_generation(database)["cycles"]["NASDAQ"], source=official.SOURCE_OFFICIAL)  # type: ignore[index]
     records["AAPL"]["tp"] = 1.0
     assert official.official_row(database, "US", "AAPL")["our_tp"] == 250.0  # type: ignore[index]
     generation = official.current_generation(database)
@@ -407,10 +407,10 @@ def test_an_empty_answer_is_never_pinned_and_served_objects_are_copies() -> None
     assert database.analysis_snapshot_by_id(cycle)["outputs"]["rows"][0]["our_tp"] == 40.0  # type: ignore[index]
     assert database.official_cycle_snapshot(cycle)["outputs"]["rows"][0]["our_tp"] == 40.0  # type: ignore[index]
     # a single-symbol read copies ONE record (REV4-5) and agrees with the whole-cycle read
-    one = database.valuation_prediction_record(cycle, "PETR4")
-    assert one is not None and one["tp"] == 40.0 and database.valuation_prediction_record(cycle, "NOPE") is None
+    one = database.valuation_prediction_record(cycle, "PETR4", source=official.SOURCE_OFFICIAL)
+    assert one is not None and one["tp"] == 40.0 and database.valuation_prediction_record(cycle, "NOPE", source=official.SOURCE_OFFICIAL) is None
     one["tp"] = 1.0
-    assert database.valuation_prediction_record(cycle, "PETR4")["tp"] == 40.0  # type: ignore[index]
+    assert database.valuation_prediction_record(cycle, "PETR4", source=official.SOURCE_OFFICIAL)["tp"] == 40.0  # type: ignore[index]
 
 
 def test_the_generation_chain_refuses_a_second_successor_and_orders_like_postgresql() -> None:
@@ -482,7 +482,7 @@ def test_an_explicit_selection_validates_targeted_cycles_like_the_automatic_admi
     assert base is not None
     bad = database.save_analysis_snapshot("security_valuation", "WEGE3", "mv-1", {"methodology_version": 7},
                                           {"row": {**_row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0), "price": 0, "internal_tp": None}}, later(1))
-    assert "WEGE3" in database.valuation_predictions_for_cycle(bad)  # a record exists (TP and buy-in are positive)...
+    assert "WEGE3" in database.valuation_predictions_for_cycle(bad, source=official.SOURCE_OFFICIAL)  # a record exists (TP and buy-in are positive)...
     assert official.current_generation(database) == base  # ...but the automatic admission refused the cycle
     with pytest.raises(ValueError, match="targeted cycle for WEGE3 is not complete/valid/recorded"):
         official.select_generation(database, cycles=base["cycles"], targeted={"WEGE3": bad}, now=later(2), activated_by="mesa", reason="bad")
@@ -515,14 +515,14 @@ def test_the_store_is_sealed_against_the_callers_structures_on_insert_and_on_col
     assert database.insert_valuation_predictions([record]) == 1
     record["tp"] = 1.0
     record["decomposition"]["methods"]["dcf"] = 0.0
-    stored = database.valuation_prediction_record("cycle-x", "ITUB4")
+    stored = database.valuation_prediction_record("cycle-x", "ITUB4", source=official.SOURCE_OFFICIAL)
     assert stored is not None and stored["tp"] == 30.0 and stored["decomposition"]["methods"]["dcf"] == dcf
     # every cold return is a deep copy: mutating it changes neither the store nor the next answer
     database.drop_official_cycle_cache()
-    cold = database.valuation_predictions_for_cycle("cycle-x")
+    cold = database.valuation_predictions_for_cycle("cycle-x", source=official.SOURCE_OFFICIAL)
     cold["ITUB4"]["decomposition"]["methods"]["dcf"] = -1.0
     database.drop_official_cycle_cache()
-    assert database.valuation_predictions_for_cycle("cycle-x")["ITUB4"]["decomposition"]["methods"]["dcf"] == dcf
+    assert database.valuation_predictions_for_cycle("cycle-x", source=official.SOURCE_OFFICIAL)["ITUB4"]["decomposition"]["methods"]["dcf"] == dcf
     listed = database.list_valuation_predictions("B3", "ITUB4")[0]
     listed["decomposition"]["bands"]["bear_tp"] = -1.0
     latest = database.latest_valuation_prediction("B3", "ITUB4", source=official.SOURCE_OFFICIAL)
@@ -576,7 +576,7 @@ def test_the_postgresql_row_reader_rebuilds_the_canonical_shape_and_the_stored_h
     assert database._prediction_record(tuple(as_text)) == record
     # the memory double serves the same shape the PG reader rebuilds
     database.insert_valuation_predictions([record])
-    assert database.valuation_prediction_record("cycle-pg", "PETR4") == record
+    assert database.valuation_prediction_record("cycle-pg", "PETR4", source=official.SOURCE_OFFICIAL) == record
 
 
 def test_the_consensus_of_a_record_carries_its_own_identity_with_explicit_nulls() -> None:
@@ -619,7 +619,7 @@ def test_an_unavailable_calendar_is_an_unavailability_never_a_civil_date(monkeyp
         assert official.prediction_from_row(_row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0), market="NASDAQ", scope="universe",
                                             cycle_id="c", source_version="7", prediction_instant=sunday) is None  # not recordable
         outage_cycle = _publish_universe(database, "NYSE", [_row("KO", tp=75.0, buy_in=63.0, price=66.0, internal_tp=74.0)], later(1))
-        assert database.valuation_predictions_for_cycle(outage_cycle) == {}  # nothing recorded under a guessed session
+        assert database.valuation_predictions_for_cycle(outage_cycle, source=official.SOURCE_OFFICIAL) == {}  # nothing recorded under a guessed session
         assert official.current_generation(database) == base  # nothing selected either
         validation = official.selectable_cycles(database)["NYSE"]
         assert validation["calendar_unavailable"] is True and validation["valid"] is False and validation["session_date"] is None
@@ -631,7 +631,7 @@ def test_an_unavailable_calendar_is_an_unavailability_never_a_civil_date(monkeyp
     # the calendar is back: the cycle published during the outage is recorded and selected by the bootstrap, with its real session
     recovered = official.bootstrap_official_selection(database)
     assert recovered["recorded"] == {"B3": 0, "NASDAQ": 0, "NYSE": 1} and recovered["generation"]["cycles"]["NYSE"] == outage_cycle
-    assert database.valuation_predictions_for_cycle(outage_cycle)["KO"]["session_date"] == official.session_date_of("NYSE", later(1))
+    assert database.valuation_predictions_for_cycle(outage_cycle, source=official.SOURCE_OFFICIAL)["KO"]["session_date"] == official.session_date_of("NYSE", later(1))
 
 
 def test_the_studies_official_arm_includes_the_targeted_admissions_of_the_generation() -> None:
@@ -841,7 +841,7 @@ def test_a_universe_cycle_published_during_a_calendar_outage_is_recovered_by_the
         outage_cycle = _publish_universe(database, "NYSE", [_row("KO", tp=75.0, buy_in=63.0, price=66.0, internal_tp=74.0)], published_at)
         outage_targeted = database.save_analysis_snapshot("security_valuation", "WEGE3", "mv-1", {"methodology_version": 7},
                                                           {"row": _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0)}, published_at)
-        assert database.valuation_predictions_for_cycle(outage_cycle) == {} and database.valuation_predictions_for_cycle(outage_targeted) == {}
+        assert database.valuation_predictions_for_cycle(outage_cycle, source=official.SOURCE_OFFICIAL) == {} and database.valuation_predictions_for_cycle(outage_targeted, source=official.SOURCE_OFFICIAL) == {}
         assert official.current_generation(database) == base
     # the calendar answers again; the next producer cycle of ANOTHER market runs the ordinary activation pass (wall clock)
     caplog.set_level(logging.INFO, logger="app.valuation_official")
@@ -850,13 +850,13 @@ def test_a_universe_cycle_published_during_a_calendar_outage_is_recovered_by_the
     assert recovered is not None and recovered["cycles"] == {**cycles, "NASDAQ": nasdaq_new, "NYSE": outage_cycle}
     assert recovered["receipt"]["changed_markets"] == ["NASDAQ", "NYSE"] and recovered["receipt"]["carried_markets"] == []
     assert recovered["session_dates"]["NYSE"] == official.session_date_of("NYSE", published_at)
-    record = database.valuation_predictions_for_cycle(outage_cycle)["KO"]
+    record = database.valuation_predictions_for_cycle(outage_cycle, source=official.SOURCE_OFFICIAL)["KO"]
     assert record["session_date"] == official.session_date_of("NYSE", published_at) and record["prediction_instant"] == published_at.isoformat()
     assert official.official_row(database, "NYSE", "KO")["our_tp"] == 75.0 and official.official_row(database, "NYSE", "KO")["official_row_sha256"] == record["row_sha256"]  # type: ignore[index]
     assert any("recorded at selection time" in message for message in caplog.messages)
     assert official.selectable_cycles(database)["NYSE"]["valid"] is True and official.selection_health(database, now=later(3))["calendar_unavailable"] == []
     # the targeted cycle of the outage stays unrecorded and unadmitted; re-running it (a new cycle) admits it
-    assert database.valuation_predictions_for_cycle(outage_targeted) == {} and recovered["targeted"] == {} and official.official_row(database, "B3", "WEGE3") is None
+    assert database.valuation_predictions_for_cycle(outage_targeted, source=official.SOURCE_OFFICIAL) == {} and recovered["targeted"] == {} and official.official_row(database, "B3", "WEGE3") is None
     rerun = database.save_analysis_snapshot("security_valuation", "WEGE3", "mv-1", {"methodology_version": 7},
                                             {"row": _row("WEGE3", tp=50.0, buy_in=42.0, price=45.0, internal_tp=49.0)}, later(3))
     assert official.current_generation(database)["targeted"] == {"WEGE3": rerun} and official.official_row(database, "B3", "WEGE3")["our_tp"] == 50.0  # type: ignore[index]
@@ -992,13 +992,13 @@ def test_a_registered_targeted_cycle_that_was_not_admitted_is_admitted_by_the_ne
     with pytest.MonkeyPatch.context() as race:
         race.setattr(database, "insert_valuation_official_selection", another_host_wins)
         wege = database.save_analysis_snapshot("security_valuation", "WEGE3", "mv-1", {"methodology_version": 7}, {"row": _targeted("WEGE3")}, later(1))
-    assert "WEGE3" in database.valuation_predictions_for_cycle(wege)  # registered...
+    assert "WEGE3" in database.valuation_predictions_for_cycle(wege, source=official.SOURCE_OFFICIAL)  # registered...
     assert official.current_generation(database) == g0 and official.official_row(database, "B3", "WEGE3") is None  # ...not admitted
     assert any("recomposition attempts" in message and "WEGE3" in message for message in caplog.messages)
     petr = database.save_analysis_snapshot("security_valuation", "PETR4", "mv-1", {"methodology_version": 7}, {"row": _targeted("PETR4", 90.0)}, later(1))  # the universe serves it (A1)
     bad = database.save_analysis_snapshot("security_valuation", "ITUB4", "mv-1", {"methodology_version": 7},
                                           {"row": {**_targeted("ITUB4"), "price": 0, "internal_tp": None}}, later(1))  # registered (TP, buy-in), invalid (price)
-    assert "PETR4" in database.valuation_predictions_for_cycle(petr) and "ITUB4" in database.valuation_predictions_for_cycle(bad)
+    assert "PETR4" in database.valuation_predictions_for_cycle(petr, source=official.SOURCE_OFFICIAL) and "ITUB4" in database.valuation_predictions_for_cycle(bad, source=official.SOURCE_OFFICIAL)
     assert official.current_generation(database) == g0
     nasdaq_new = _publish_universe(database, "NASDAQ", [_row("AAPL", tp=260.0, buy_in=210.0, price=230.0, internal_tp=255.0)], later(2))  # the next pass
     recovered = official.current_generation(database)
@@ -1184,7 +1184,7 @@ def test_a_refused_registered_targeted_cycle_is_a_warning_once_and_is_named_in_t
         return [record.levelno for record in caplog.records if "refused" in record.getMessage() and "ITUB4" in record.getMessage()]
 
     bad = _targeted_cycle(database, "ITUB4", _wall(), price=0, internal_tp=None)  # registered (TP, buy-in), invalid (price, internal TP)
-    assert "ITUB4" in database.valuation_predictions_for_cycle(bad) and refusals() == [logging.WARNING]  # the admission warns once
+    assert "ITUB4" in database.valuation_predictions_for_cycle(bad, source=official.SOURCE_OFFICIAL) and refusals() == [logging.WARNING]  # the admission warns once
     caplog.clear()
     assert official.activate_generation_if_changed(database) is None and official.activate_generation_if_changed(database) is None
     assert official.bootstrap_official_selection(database)["generation"] == g0
@@ -1480,7 +1480,7 @@ def test_a_re_run_of_the_same_refused_targeted_cycle_is_info_once_the_receipt_na
     fresh = _database()
     another_process()
     fresh_bad = _targeted_cycle(fresh, "ITUB4", _wall(), price=0, internal_tp=None)
-    assert "ITUB4" in fresh.valuation_predictions_for_cycle(fresh_bad) and official.current_generation(fresh) is None and refusals() == []
+    assert "ITUB4" in fresh.valuation_predictions_for_cycle(fresh_bad, source=official.SOURCE_OFFICIAL) and official.current_generation(fresh) is None and refusals() == []
     _three_markets(fresh)
     assert refusals() == [logging.WARNING] and official.current_generation(fresh)["receipt"]["targeted_refused"] == {"ITUB4": fresh_bad}  # type: ignore[index]
 
@@ -1524,7 +1524,7 @@ def test_a_record_carries_its_own_publication_clock_distinct_from_the_prediction
     # original's, published_at = the re-run's, the session the original's, the original named in the provenance
     rerun_at = _wall()
     rerun = _rerun_universe(database, "NASDAQ", [row], rerun_of=cycles["NASDAQ"], prediction_instant=live["prediction_instant"], at=rerun_at)
-    record = database.valuation_prediction_record(rerun, "AAPL")
+    record = database.valuation_prediction_record(rerun, "AAPL", source=official.SOURCE_OFFICIAL)
     assert record is not None and record["cycle_id"] == rerun and record["prediction_instant"] == live["prediction_instant"]
     assert record["published_at"] == rerun_at.isoformat() and record["published_at"] != record["prediction_instant"]
     assert record["session_date"] == live["session_date"] == "2026-09-04" and record["decomposition"]["provenance"]["rerun_of"] == cycles["NASDAQ"]
@@ -1550,10 +1550,10 @@ def test_a_record_carries_its_own_publication_clock_distinct_from_the_prediction
     caplog.set_level(logging.WARNING, logger="app.valuation_official")
     ko = [_row("KO", tp=70.0, buy_in=60.0, price=65.0, internal_tp=68.0)]
     nameless = _rerun_universe(database, "NYSE", ko, rerun_of=cycles["NYSE"], prediction_instant=None, at=_wall())
-    assert database.valuation_predictions_for_cycle(nameless) == {} and official.current_generation(database) == head
+    assert database.valuation_predictions_for_cycle(nameless, source=official.SOURCE_OFFICIAL) == {} and official.current_generation(database) == head
     assert any("names no original prediction_instant — not recordable (B2)" in message for message in caplog.messages)
     forward = _rerun_universe(database, "NYSE", ko, rerun_of=cycles["NYSE"], prediction_instant=(_wall() + timedelta(days=1)).isoformat(), at=_wall())
-    assert database.valuation_predictions_for_cycle(forward) == {} and official.current_generation(database) == head
+    assert database.valuation_predictions_for_cycle(forward, source=official.SOURCE_OFFICIAL) == {} and official.current_generation(database) == head
     assert any("AFTER its own publication" in message and "not recordable (B2)" in message for message in caplog.messages)
     for cycle_id in (nameless, forward):
         snapshot = database.analysis_snapshot_by_id(cycle_id)
@@ -1590,7 +1590,7 @@ def test_the_explicit_order_governs_the_direct_admission_and_a_replay_of_an_old_
     assert snapshot is not None and official.record_snapshot(database, snapshot) == {"recorded": 0, "generation": None}
     assert official.admit_targeted_cycle(database, symbol=" wege3 ", cycle_id=c1) is None  # the direct call too
     assert [item["generation_id"] for item in database._valuation_official_selections] == chain and official.current_generation(database) == purged
-    assert official.official_row(database, "B3", "WEGE3") is None and len(database.valuation_predictions_for_cycle(c1)) == 1
+    assert official.official_row(database, "B3", "WEGE3") is None and len(database.valuation_predictions_for_cycle(c1, source=official.SOURCE_OFFICIAL)) == 1
     held = [record for record in caplog.records if "held, not admitted" in record.getMessage()]
     assert len(held) == 2 and {record.levelno for record in held} == {logging.INFO} and c1 in held[0].getMessage() and purged["generation_id"] in held[0].getMessage()
     assert not any(record.levelno >= logging.WARNING for record in caplog.records)  # nothing validated, nothing warned for a held cycle
@@ -1653,14 +1653,14 @@ def test_a_re_run_published_after_an_explicit_order_never_re_opens_what_the_orde
     database = _database()
     cycles = _three_markets(database)
     c1 = _targeted_cycle(database, "WEGE3", _wall())
-    c1_record = database.valuation_prediction_record(c1, "WEGE3")
+    c1_record = database.valuation_prediction_record(c1, "WEGE3", source=official.SOURCE_OFFICIAL)
     assert c1_record is not None and official.current_generation(database)["targeted"] == {"WEGE3": c1}  # type: ignore[index]
     purged = official.select_generation(database, cycles=cycles, targeted={}, now=_wall(), activated_by="mesa", reason="purge")
     caplog.set_level(logging.INFO, logger="app.valuation_official")
     caplog.clear()
     # the direct admission (the persistence hook on the re-run: a NEW cycle, so its record IS inserted) holds the re-run
     rerun = _rerun_targeted(database, "WEGE3", rerun_of=c1, prediction_instant=c1_record["prediction_instant"], at=_wall())
-    rerun_record = database.valuation_prediction_record(rerun, "WEGE3")
+    rerun_record = database.valuation_prediction_record(rerun, "WEGE3", source=official.SOURCE_OFFICIAL)
     assert rerun_record is not None and rerun_record["prediction_instant"] == c1_record["prediction_instant"] and rerun_record["published_at"] > official._utc(purged["activated_at"]).isoformat()
     assert official.current_generation(database) == purged and official.official_row(database, "B3", "WEGE3") is None
     held = [record for record in caplog.records if "held, not admitted" in record.getMessage() and rerun in record.getMessage()]
@@ -1677,11 +1677,11 @@ def test_a_re_run_published_after_an_explicit_order_never_re_opens_what_the_orde
     assert official.official_row(database, "B3", "WEGE3")["our_tp"] == 80.0  # type: ignore[index]
     # a rollback to c1 while c2 is registered: a re-run of c2 (published after the rollback) restores nothing; a re-run of c1 changes nothing
     rolled = official.select_generation(database, cycles=cycles, targeted={"WEGE3": c1}, now=_wall(), activated_by="mesa", reason="rollback to c1")
-    c2_record = database.valuation_prediction_record(c2, "WEGE3")
+    c2_record = database.valuation_prediction_record(c2, "WEGE3", source=official.SOURCE_OFFICIAL)
     assert c2_record is not None
     rerun_c2 = _rerun_targeted(database, "WEGE3", rerun_of=c2, prediction_instant=c2_record["prediction_instant"], at=_wall(), tp=80.0)
     rerun_c1 = _rerun_targeted(database, "WEGE3", rerun_of=c1, prediction_instant=c1_record["prediction_instant"], at=_wall())
-    assert database.valuation_prediction_record(rerun_c2, "WEGE3") is not None and database.valuation_prediction_record(rerun_c1, "WEGE3") is not None
+    assert database.valuation_prediction_record(rerun_c2, "WEGE3", source=official.SOURCE_OFFICIAL) is not None and database.valuation_prediction_record(rerun_c1, "WEGE3", source=official.SOURCE_OFFICIAL) is not None
     assert official.current_generation(database) == rolled and official.official_row(database, "B3", "WEGE3")["official_cycle_id"] == c1  # type: ignore[index]
     assert official.activate_generation_if_changed(database) is None and official.bootstrap_official_selection(database)["generation"] == rolled
     # the universe path (W1): a re-run of the rolled-back universe cycle, published after the rollback, is held — the market stays on the order's cycle
@@ -1692,7 +1692,7 @@ def test_a_re_run_published_after_an_explicit_order_never_re_opens_what_the_orde
     b3_snapshot = database.analysis_snapshot_by_id(b3_new)
     assert b3_snapshot is not None
     b3_rerun = _rerun_universe(database, "B3", b3_snapshot["outputs"]["rows"], rerun_of=b3_new, prediction_instant=official._utc(b3_snapshot["published_at"]).isoformat(), at=_wall())
-    assert database.valuation_prediction_record(b3_rerun, "PETR4") is not None  # recorded (a new cycle)...
+    assert database.valuation_prediction_record(b3_rerun, "PETR4", source=official.SOURCE_OFFICIAL) is not None  # recorded (a new cycle)...
     assert official.current_generation(database) == rolled_b3 and official.official_row(database, "B3", "PETR4")["our_tp"] == 40.0  # type: ignore[index]  # ...not activated
     assert official.selectable_cycles(database)["B3"]["cycle_id"] == b3_rerun and official.selectable_cycles(database)["B3"]["prediction_instant"] == official._utc(b3_snapshot["published_at"]).isoformat()
     nasdaq_new = _publish_universe(database, "NASDAQ", [_row("AAPL", tp=260.0, buy_in=210.0, price=230.0, internal_tp=255.0)], _wall())  # a live cycle after the order
@@ -1702,7 +1702,7 @@ def test_a_re_run_published_after_an_explicit_order_never_re_opens_what_the_orde
     assert official.bootstrap_official_selection(database)["generation"] == after
     # a re-run whose clocks cannot be read is held too (nothing unknown is admitted over an order)
     nameless = _rerun_targeted(database, "WEGE3", rerun_of=c1, prediction_instant=None, at=_wall())
-    assert database.valuation_predictions_for_cycle(nameless) == {} and official._predicted_at_or_before(database, nameless, rolled_b3) is True
+    assert database.valuation_predictions_for_cycle(nameless, source=official.SOURCE_OFFICIAL) == {} and official._predicted_at_or_before(database, nameless, rolled_b3) is True
     assert official.admit_targeted_cycle(database, symbol="WEGE3", cycle_id=nameless) is None and official.current_generation(database) == after
 
 
@@ -1744,10 +1744,10 @@ def test_a_replay_of_an_old_targeted_cycle_with_no_order_after_it_is_not_admitte
     # a genuinely newer cycle is admitted; a re-run of the held cycle (tied on prediction_instant) is not
     f3 = _targeted_cycle(fresh, "WEGE3", _wall(), 90.0)
     assert official.current_generation(fresh)["targeted"] == {"WEGE3": f3}  # type: ignore[index]
-    f3_record = fresh.valuation_prediction_record(f3, "WEGE3")
+    f3_record = fresh.valuation_prediction_record(f3, "WEGE3", source=official.SOURCE_OFFICIAL)
     assert f3_record is not None
     f3_rerun = _rerun_targeted(fresh, "WEGE3", rerun_of=f3, prediction_instant=f3_record["prediction_instant"], at=_wall(), tp=90.0)
-    assert fresh.valuation_prediction_record(f3_rerun, "WEGE3") is not None and official.current_generation(fresh)["targeted"] == {"WEGE3": f3}  # type: ignore[index]
+    assert fresh.valuation_prediction_record(f3_rerun, "WEGE3", source=official.SOURCE_OFFICIAL) is not None and official.current_generation(fresh)["targeted"] == {"WEGE3": f3}  # type: ignore[index]
     assert official.activate_generation_if_changed(fresh) is None
 
 
@@ -1788,7 +1788,7 @@ def test_readers_tie_break_on_published_at_so_a_re_run_is_the_latest_record_for_
     assert [record["cycle_id"] for record in database.list_valuation_predictions("NASDAQ", "AAPL")] == [rerun, cycles["NASDAQ"]]
     assert [record["cycle_id"] for record in official.prediction_records(database, "US", "AAPL")] == [rerun, cycles["NASDAQ"]]
     wege = _targeted_cycle(database, "WEGE3", _wall())
-    wege_record = database.valuation_prediction_record(wege, "WEGE3")
+    wege_record = database.valuation_prediction_record(wege, "WEGE3", source=official.SOURCE_OFFICIAL)
     assert wege_record is not None
     wege_rerun = _rerun_targeted(database, "WEGE3", rerun_of=wege, prediction_instant=wege_record["prediction_instant"], at=_wall())
     assert database.latest_targeted_predictions("B3", source=official.SOURCE_OFFICIAL)["WEGE3"]["cycle_id"] == wege_rerun
@@ -1848,7 +1848,7 @@ def test_an_unrecordable_re_run_is_a_warning_once_per_cycle_and_info_after(monke
     nameless = _rerun_universe(database, "NYSE", ko, rerun_of=cycles["NYSE"], prediction_instant=None, at=_wall())
     # the hook's pass meets the cycle three times: record_snapshot records it (1), then the activation pass records it at selection time (2) and validates it (3)
     assert unrecordable(nameless) == [logging.WARNING, logging.INFO, logging.INFO]
-    assert official.current_generation(database) == head and database.valuation_predictions_for_cycle(nameless) == {}
+    assert official.current_generation(database) == head and database.valuation_predictions_for_cycle(nameless, source=official.SOURCE_OFFICIAL) == {}
     caplog.clear()
     for _ in range(3):
         assert official.activate_generation_if_changed(database) is None
@@ -1968,7 +1968,7 @@ def test_a_legacy_v1_row_is_read_verified_and_served_as_v1_never_relabelled_v2(c
     # a V1 row is rebuilt as V1, its hash verified as V1, served without official_published_at (never derived) — never relabelled.
     database = _database()
     cycles = _three_markets(database)
-    v2 = database.valuation_prediction_record(cycles["NASDAQ"], "AAPL")
+    v2 = database.valuation_prediction_record(cycles["NASDAQ"], "AAPL", source=official.SOURCE_OFFICIAL)
     assert v2 is not None and v2["schema"] == official.PREDICTION_SCHEMA == "VALUATION_PREDICTION_V2"
     row = _row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0)
     v1 = _legacy_v1_record(row, market="NASDAQ", scope="universe", cycle_id=cycles["NASDAQ"], prediction_instant=NOW + timedelta(minutes=1))
@@ -1982,11 +1982,11 @@ def test_a_legacy_v1_row_is_read_verified_and_served_as_v1_never_relabelled_v2(c
     # the memory double behaves the same: the legacy row REPLACES the cycle's V2 record (a table recorded by rev 5) and every reader keeps it V1
     database._valuation_predictions[:] = [record for record in database._valuation_predictions if record["cycle_id"] != cycles["NASDAQ"]] + [v1]
     database.drop_official_cycle_cache()
-    for served in (database.valuation_prediction_record(cycles["NASDAQ"], "AAPL"), database.valuation_predictions_for_cycle(cycles["NASDAQ"])["AAPL"],
+    for served in (database.valuation_prediction_record(cycles["NASDAQ"], "AAPL", source=official.SOURCE_OFFICIAL), database.valuation_predictions_for_cycle(cycles["NASDAQ"], source=official.SOURCE_OFFICIAL)["AAPL"],
                    database.latest_valuation_prediction("NASDAQ", "AAPL", source=official.SOURCE_OFFICIAL), database.list_valuation_predictions("NASDAQ", "AAPL")[0],
                    official.prediction_records(database, "US", "AAPL")[0]):
         assert served == v1 and served["schema"] == official.LEGACY_PREDICTION_SCHEMA and "published_at" not in served
-    assert database.valuation_prediction_record(cycles["NASDAQ"], "AAPL") == v1  # the cache hit, too
+    assert database.valuation_prediction_record(cycles["NASDAQ"], "AAPL", source=official.SOURCE_OFFICIAL) == v1  # the cache hit, too
     # served: the stamp carries official_published_at = None (never derived from the prediction's instant) and the V1 hash
     stamped = official.official_row(database, "US", "AAPL")
     assert stamped is not None and stamped["our_tp"] == 250.0 and stamped["official_published_at"] is None and stamped["official_row_sha256"] == v1["row_sha256"]
@@ -1995,7 +1995,7 @@ def test_a_legacy_v1_row_is_read_verified_and_served_as_v1_never_relabelled_v2(c
     # the cycle stays selectable — its identity is verifiable: the validator, the activation pass and an explicit order accept it
     snapshot = database.analysis_snapshot_by_id(cycles["NASDAQ"])
     assert snapshot is not None
-    validation = official.cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(cycles["NASDAQ"]))
+    validation = official.cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(cycles["NASDAQ"], source=official.SOURCE_OFFICIAL))
     assert validation["valid"] is True and validation["unrecorded_count"] == 0
     assert official.selectable_cycles(database)["NASDAQ"]["valid"] is True and official.activate_generation_if_changed(database) is None
     head = official.current_generation(database)
@@ -2023,7 +2023,7 @@ def test_a_legacy_v1_row_is_read_verified_and_served_as_v1_never_relabelled_v2(c
     assert not any("is not served" in record.getMessage() for record in caplog.records)
     database._valuation_predictions[:] = [record for record in database._valuation_predictions if record["cycle_id"] != cycles["NASDAQ"]] + [{**filled, "schema": official.LEGACY_PREDICTION_SCHEMA}]
     database.drop_official_cycle_cache()
-    assert database.valuation_prediction_record(cycles["NASDAQ"], "AAPL") == v1 and official.official_row(database, "US", "AAPL")["official_published_at"] is None  # type: ignore[index]
+    assert database.valuation_prediction_record(cycles["NASDAQ"], "AAPL", source=official.SOURCE_OFFICIAL) == v1 and official.official_row(database, "US", "AAPL")["official_published_at"] is None  # type: ignore[index]
 
 
 def test_a_row_that_claims_v2_without_its_clock_is_an_integrity_failure_not_served(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
@@ -2032,7 +2032,7 @@ def test_a_row_that_claims_v2_without_its_clock_is_an_integrity_failure_not_serv
     # in force carries the market, nothing is served in the row's place.
     database = _database()
     cycles = _three_markets(database)
-    v2 = database.valuation_prediction_record(cycles["NYSE"], "KO")
+    v2 = database.valuation_prediction_record(cycles["NYSE"], "KO", source=official.SOURCE_OFFICIAL)
     assert v2 is not None
     snapshot = database.analysis_snapshot_by_id(cycles["NYSE"])
     assert snapshot is not None
@@ -2043,12 +2043,12 @@ def test_a_row_that_claims_v2_without_its_clock_is_an_integrity_failure_not_serv
     for broken in (nulled, absent):  # the memory double: the stored dict claims V2 without its clock
         database._valuation_predictions[:] = [record for record in database._valuation_predictions if record["cycle_id"] != cycles["NYSE"]] + [broken]
         database.drop_official_cycle_cache()
-        assert database.valuation_prediction_record(cycles["NYSE"], "KO") is None and database.valuation_predictions_for_cycle(cycles["NYSE"]) == {}
-        assert cycles["NYSE"] not in database._cycle_records_cache  # an empty answer is never pinned (D1)
+        assert database.valuation_prediction_record(cycles["NYSE"], "KO", source=official.SOURCE_OFFICIAL) is None and database.valuation_predictions_for_cycle(cycles["NYSE"], source=official.SOURCE_OFFICIAL) == {}
+        assert (cycles["NYSE"], official.SOURCE_OFFICIAL) not in database._cycle_records_cache  # an empty answer is never pinned (D1)
         assert database.latest_valuation_prediction("NYSE", "KO", source=official.SOURCE_OFFICIAL) is None and database.list_valuation_predictions("NYSE", "KO") == []
         assert database.latest_targeted_predictions("NYSE", source=official.SOURCE_OFFICIAL) == {}
         assert official.official_row(database, "NYSE", "KO") is None and official.official_rows(database, "NYSE") == {}
-        validation = official.cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(cycles["NYSE"]))
+        validation = official.cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(cycles["NYSE"], source=official.SOURCE_OFFICIAL))
         assert validation["valid"] is False and validation["unrecorded_count"] == 1
         assert official.selectable_cycles(database)["NYSE"]["valid"] is False  # the re-record is idempotent on the unique key: nothing replaces the row
         assert official.activate_generation_if_changed(database) is None and official.current_generation(database)["cycles"]["NYSE"] == cycles["NYSE"]  # type: ignore[index]
@@ -2066,7 +2066,7 @@ def test_a_row_that_claims_v2_without_its_clock_is_an_integrity_failure_not_serv
     assert database._prediction_record(_pg_row(tampered, ZoneInfo("UTC"))) is None and database._prediction_record(_pg_row(v1, ZoneInfo("UTC"))) == v1
     database._valuation_predictions[:] = [record for record in database._valuation_predictions if record["cycle_id"] != cycles["NYSE"]] + [tampered]
     database.drop_official_cycle_cache()
-    assert database.valuation_prediction_record(cycles["NYSE"], "KO") is None and official.official_row(database, "NYSE", "KO") is None
+    assert database.valuation_prediction_record(cycles["NYSE"], "KO", source=official.SOURCE_OFFICIAL) is None and official.official_row(database, "NYSE", "KO") is None
     # an unknown schema is refused too; a V2 row is served exactly as before (no hash is recomputed for it)
     assert official.stored_prediction({**v2, "schema": "VALUATION_PREDICTION_V9"}) is None
     assert official.stored_prediction(v2) == v2 and official.stored_prediction({key: value for key, value in v2.items() if key != "schema"}) == v2
@@ -2092,10 +2092,10 @@ def test_a_row_that_claims_v2_without_its_clock_is_an_integrity_failure_not_serv
         yield Handing()
 
     monkeypatch.setattr(pg, "connection", fake_connection)
-    assert pg.latest_valuation_prediction("NYSE", "KO", source=official.SOURCE_OFFICIAL) is None and pg.valuation_prediction_record(cycles["NYSE"], "KO") is None
-    assert pg.valuation_predictions_for_cycle(cycles["NYSE"]) == {"KO": v1} and pg.list_valuation_predictions("NYSE", "KO") == [v1]
+    assert pg.latest_valuation_prediction("NYSE", "KO", source=official.SOURCE_OFFICIAL) is None and pg.valuation_prediction_record(cycles["NYSE"], "KO", source=official.SOURCE_OFFICIAL) is None
+    assert pg.valuation_predictions_for_cycle(cycles["NYSE"], source=official.SOURCE_OFFICIAL) == {"KO": v1} and pg.list_valuation_predictions("NYSE", "KO") == [v1]
     assert pg.latest_targeted_predictions("NYSE", source=official.SOURCE_OFFICIAL) == {"KO": v1}
-    assert pg.valuation_prediction_record(cycles["NYSE"], "KO") == v1  # the cycle read pinned the verifiable rows only: a cache hit serves the V1 row
+    assert pg.valuation_prediction_record(cycles["NYSE"], "KO", source=official.SOURCE_OFFICIAL) == v1  # the cycle read pinned the verifiable rows only: a cache hit serves the V1 row
 
 
 def test_a_mixed_table_keeps_each_schema_and_hash_per_row(caplog: pytest.LogCaptureFixture) -> None:
@@ -2108,7 +2108,7 @@ def test_a_mixed_table_keeps_each_schema_and_hash_per_row(caplog: pytest.LogCapt
     v1 = _legacy_v1_record(row, market="NYSE", scope="universe", cycle_id=legacy_cycle, prediction_instant=old_at)
     database._valuation_predictions[:] = [v1]  # the cycle was recorded by rev 5
     cycles = _three_markets(database)  # rev 6 records for the same market and symbol, in the same table
-    v2 = database.valuation_prediction_record(cycles["NYSE"], "KO")
+    v2 = database.valuation_prediction_record(cycles["NYSE"], "KO", source=official.SOURCE_OFFICIAL)
     assert v2 is not None and v2["schema"] == official.PREDICTION_SCHEMA and v2["published_at"] == v2["prediction_instant"]
     caplog.set_level(logging.INFO, logger="app.valuation_official")
     caplog.clear()
