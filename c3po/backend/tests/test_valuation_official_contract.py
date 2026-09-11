@@ -26,6 +26,7 @@ PRODUCERS_AND_ENGINES = {
     "valuation_v2_engine.py", "valuation_v2_shadow.py", "valuation_v2_data.py", "valuation_v2_peer_quality.py",
     "valuation_v3_engine.py", "valuation_v3_shadow.py", "valuation_v3_ab.py", "valuation_v3_inputs.py", "valuation_v3_macro.py",
     "valuation_official.py", "ir_valuation.py", "valuation_accuracy.py",
+    "valuation_pit_rerun.py",  # the point-in-time re-execution of the V3 engine: a PRODUCER of the diagnostic `v3_2_shadow` records (never served, never selectable)
 }
 CONVERSIONS = {"float", "int", "round", "_float", "_positive", "positive", "number", "_number", "_bounded_tp", "_clamp", "clamp", "str"}
 ENGINE_CALLS = {"official_blend_v1", "official_buy_in_v1", "foreign_bridge_tp_v1"}  # the producer engine, callable only in producer role

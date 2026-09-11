@@ -4363,6 +4363,38 @@ class Database:
             return None
         return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id"), row))
 
+    def latest_analysis_snapshot_by_inputs(self, analysis_type: str, inputs_match: dict[str, str]) -> dict[str, Any] | None:
+        """The latest snapshot of ``analysis_type`` whose ``inputs`` carry EVERY ``key = value`` of ``inputs_match`` (text
+        equality on ``inputs->>key``), whatever its ``entity_key`` — how the point-in-time re-executor finds the previous
+        run of the same (market, T) when its ``run_key`` (part of the entity key) changed (``inputs.supersedes``). A deep
+        copy in memory, a fresh row from PostgreSQL."""
+        if not inputs_match:
+            raise ValueError("latest_analysis_snapshot_by_inputs requires at least one input to match")
+        if not self.database_url:
+            matches = [
+                item for item in self._analysis_snapshots
+                if item.get("analysis_type") == analysis_type and isinstance(item.get("inputs"), dict)
+                and all(str(item["inputs"].get(key)) == value and key in item["inputs"] for key, value in inputs_match.items())
+            ]
+            return copy.deepcopy(max(matches, key=lambda item: item["published_at"])) if matches else None
+        clauses = " AND ".join("inputs->>%s = %s" for _ in inputs_match)
+        params: list[Any] = [analysis_type]
+        for key, value in inputs_match.items():
+            params.extend([key, value])
+        with self.connection() as connection:
+            row = connection.execute(
+                f"""
+                SELECT id::text, inputs, outputs, published_at, methodology_version_id::text, analysis_type, entity_key
+                FROM analysis_snapshots
+                WHERE analysis_type = %s AND {clauses}
+                ORDER BY published_at DESC LIMIT 1
+                """,
+                params,
+            ).fetchone()
+        if not row:
+            return None
+        return dict(zip(("id", "inputs", "outputs", "published_at", "methodology_version_id", "analysis_type", "entity_key"), row))
+
     def latest_analysis_snapshot(self, analysis_type: str, entity_key: str) -> dict[str, Any] | None:
         if not self.database_url:  # a deep copy, as a PostgreSQL read is a fresh object: the store is never aliased (F393-5)
             matches = [
