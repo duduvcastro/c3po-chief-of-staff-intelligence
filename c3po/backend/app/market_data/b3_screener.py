@@ -184,7 +184,9 @@ class B3ScreenerService:
         self._matrix_sector_audit: list[dict[str, Any]] = []
         self._matrix_cached: MatrixPowerResponse | None = None
         self._matrix_cache_expires_at: datetime | None = None
-        self._eodhd_fundamentals: dict[str, dict[str, Any]] = {}
+        # per symbol: ONE immutable pair (payload, receipt instant) — installed by a single assignment and read as one object, so a
+        # payload can never be paired with another answer's receipt, even with targeted builds running concurrently (F398-2)
+        self._eodhd_cache: dict[str, tuple[dict[str, Any], datetime]] = {}
         self._eodhd_cache_expires_at: datetime | None = None
         self._eodhd_history: dict[str, dict[str, float]] = {}
         self._eodhd_history_cache_expires_at: datetime | None = None
@@ -347,7 +349,7 @@ class B3ScreenerService:
                 self.screen(refresh=True)
             existing_symbols = {str(row.get("symbol") or "") for row in self._matrix_rows}
             for symbol in clean_symbols:
-                self._eodhd_fundamentals.pop(symbol, None)
+                self._eodhd_cache.pop(symbol, None)
                 self._eodhd_history.pop(symbol, None)
 
             updated: list[str] = []
@@ -416,22 +418,25 @@ class B3ScreenerService:
             quotes.update(self._eodhd_quote_map([symbol]))
         statistics_map = self._optional_fundamental_map("statistics", [symbol])
         financial_map = self._optional_fundamental_map("financial-data", [symbol])
+        brapi_fetched_at = datetime.now(timezone.utc)
         historical_map = self._optional_historical_map([symbol])
-        eodhd_map = self._eodhd_fundamental_map([symbol]) if self.settings.eodhd_api_token else {}
+        eodhd_map, eodhd_receipts = self._eodhd_fundamentals_with_receipts([symbol]) if self.settings.eodhd_api_token else ({}, {})
         reference_symbols = self._targeted_consensus_reference_symbols(symbol)
         reference_quotes = self._optional_quotes(reference_symbols)
         reference_financial = (
             self._fundamental_map("financial-data", list(reference_quotes))
             if reference_quotes else {}
         )
-        reference_eodhd = (
-            self._eodhd_fundamental_map(list(reference_quotes))
-            if self.settings.eodhd_api_token and reference_quotes else {}
+        reference_brapi_at = datetime.now(timezone.utc)
+        reference_eodhd, reference_receipts = (
+            self._eodhd_fundamentals_with_receipts(list(reference_quotes))
+            if self.settings.eodhd_api_token and reference_quotes else ({}, {})
         )
         consensus_references = self._consensus_reference_rows(
             reference_quotes,
             reference_financial,
             reference_eodhd,
+            consensus_fetched_at={"brapi": reference_brapi_at, "eodhd": reference_receipts},
         )
         if historical_map.get(symbol, {}).get("history_days", 0) < MIN_HISTORY_DAYS:
             fallback = self._eodhd_historical_map([symbol]).get(symbol)
@@ -450,6 +455,7 @@ class B3ScreenerService:
             consensus_references,
             enforce_screening_gates=False,
             enforce_quality_gate=False,
+            consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
         )
         if not rows:
             return None
@@ -466,7 +472,7 @@ class B3ScreenerService:
         )
         basis = self.database.latest_analysis_snapshot("valuation_universe", "B3_UNIVERSE")
         methodology_id = basis.get("methodology_version_id") if basis else None
-        generated_at = datetime.now(timezone.utc)
+        generated_at = datetime.now(timezone.utc)  # the publication instant of this targeted cycle: after every provider answer it consumed
         if methodology_id:
             self.database.save_analysis_snapshot(
                 "security_valuation",
@@ -580,12 +586,14 @@ class B3ScreenerService:
             self.database.save_quotes("brapi", run_id, list(quotes.values()))
             statistics_map = self._fundamental_map("statistics", symbols)
             financial_map = self._fundamental_map("financial-data", symbols)
+            brapi_fetched_at = datetime.now(timezone.utc)  # FACT: brapi's financial data (targetMeanPrice) received
             historical_map = self._historical_map(symbols)
             eodhd_map: dict[str, dict[str, Any]] = {}
+            eodhd_receipts: dict[str, datetime] = {}
             if self.settings.eodhd_api_token and symbols:
                 # EODHD must run before the quality gate so it can rescue missing
                 # Brapi fields instead of only confirming rows that already passed.
-                eodhd_map = self._eodhd_fundamental_map(symbols)
+                eodhd_map, eodhd_receipts = self._eodhd_fundamentals_with_receipts(symbols)  # payload and receipt from the same pairs
                 missing_history = [
                     symbol for symbol in symbols
                     if historical_map.get(symbol, {}).get("history_days", 0) < MIN_HISTORY_DAYS
@@ -609,13 +617,19 @@ class B3ScreenerService:
                 historical_map,
                 macro,
                 eodhd_map,
+                consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
             )
             reference_symbols = self._consensus_reference_symbols(catalog, base_rows)
             reference_quotes = self._quotes(reference_symbols) if reference_symbols else {}
             reference_financial = self._fundamental_map("financial-data", list(reference_quotes)) if reference_quotes else {}
+            reference_brapi_at = datetime.now(timezone.utc)  # FACT: brapi's financial data for the reference units received
+            reference_receipts: dict[str, datetime] = {}
             if self.settings.eodhd_api_token and reference_quotes:
-                eodhd_map.update(self._eodhd_fundamental_map(list(reference_quotes)))
-            consensus_references = self._consensus_reference_rows(reference_quotes, reference_financial, eodhd_map)
+                reference_eodhd, reference_receipts = self._eodhd_fundamentals_with_receipts(list(reference_quotes))
+                eodhd_map.update(reference_eodhd)
+                eodhd_receipts.update(reference_receipts)  # a unit re-read here overwrites BOTH maps from the same pairs (never payload2 with receipt1)
+            consensus_references = self._consensus_reference_rows(reference_quotes, reference_financial, eodhd_map,
+                                                                  consensus_fetched_at={"brapi": reference_brapi_at, "eodhd": reference_receipts})
             coverage_audit: dict[str, int] = {}
             rows = self._prepare_rows(
                 catalog,
@@ -627,6 +641,7 @@ class B3ScreenerService:
                 eodhd_map,
                 consensus_references,
                 coverage_audit=coverage_audit,
+                consensus_fetched_at={"brapi": brapi_fetched_at, "eodhd": eodhd_receipts},
             )
             sector_audit, sector_counts = self._sector_coverage_audit(catalog, eodhd_map)
             coverage_audit.update(sector_counts)
@@ -699,34 +714,57 @@ class B3ScreenerService:
         return "Brapi Pro + EODHD All-In-One" if self.settings.eodhd_api_token else "Brapi Pro"
 
     def _eodhd_fundamental_map(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
+        return self._eodhd_fundamentals_with_receipts(symbols)[0]
+
+    def _eodhd_fundamentals_with_receipts(self, symbols: list[str]) -> tuple[dict[str, dict[str, Any]], dict[str, datetime]]:
+        """EODHD fundamentals for ``symbols`` AND the receipt instant of each — the instant the provider's answer carrying
+        that payload arrived (a cache read keeps it; a failed re-fetch keeps the old pair). Payload and receipt are ONE
+        immutable pair per symbol, installed by a single assignment after the answer arrives and read as one object, so
+        the receipt a row is stamped with belongs to the payload the row consumed even when a targeted build installs a
+        newer answer concurrently (F398-2). Symbols never received are absent from both maps: no instant is invented."""
         now = datetime.now(timezone.utc)
         clean_symbols = list(dict.fromkeys(symbol.upper() for symbol in symbols if symbol))
         cache_is_fresh = bool(self._eodhd_cache_expires_at and now < self._eodhd_cache_expires_at)
         if not cache_is_fresh:
-            self._eodhd_fundamentals = {}
-        missing_symbols = [symbol for symbol in clean_symbols if symbol not in self._eodhd_fundamentals]
-        if not missing_symbols:
-            cached = {symbol: self._eodhd_fundamentals[symbol] for symbol in clean_symbols}
-            return apply_official_fundamentals_map(self.database, cached, market="B3")
+            self._eodhd_cache = {}
+        missing_symbols = [symbol for symbol in clean_symbols if symbol not in self._eodhd_cache]
+        if missing_symbols:
+            run_id = self.database.begin_ingestion_run(
+                "eodhd",
+                "EODHD",
+                "fundamental_data",
+                {"operation": "b3_fundamentals", "symbols": missing_symbols, "methodology_version": METHODOLOGY_VERSION},
+            )
+            try:
+                client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.http)
+                payload = client.fundamentals(missing_symbols, exchange="SA", workers=10)
+                received = datetime.now(timezone.utc)  # FACT: the arrival instant of THIS answer, taken before anything is installed
+                for symbol, data in payload.items():
+                    self._eodhd_cache[symbol] = (data, received)  # one assignment: payload and receipt are never observable apart
+                self._eodhd_cache_expires_at = now + timedelta(hours=AUXILIARY_CACHE_HOURS)
+                self.database.finish_ingestion_run(run_id, "succeeded", len(missing_symbols), len(payload))
+            except Exception as exc:
+                self.database.finish_ingestion_run(run_id, "failed", len(missing_symbols), 0, str(exc))
+        cache = self._eodhd_cache  # one attribute load: a concurrent expiry rebinding the dict cannot split the reads below
+        entries = {symbol: entry for symbol in clean_symbols if (entry := cache.get(symbol)) is not None}  # one dict read per symbol: the pair
+        fundamentals = apply_official_fundamentals_map(self.database, {symbol: entry[0] for symbol, entry in entries.items()}, market="B3")
+        return fundamentals, {symbol: entry[1] for symbol, entry in entries.items()}
 
-        run_id = self.database.begin_ingestion_run(
-            "eodhd",
-            "EODHD",
-            "fundamental_data",
-            {"operation": "b3_fundamentals", "symbols": missing_symbols, "methodology_version": METHODOLOGY_VERSION},
-        )
-        try:
-            client = EodhdClient(self.settings.eodhd_base_url, self.settings.eodhd_api_token, self.http)
-            payload = client.fundamentals(missing_symbols, exchange="SA", workers=10)
-            self._eodhd_fundamentals.update(payload)
-            self._eodhd_cache_expires_at = now + timedelta(hours=AUXILIARY_CACHE_HOURS)
-            self.database.finish_ingestion_run(run_id, "succeeded", len(missing_symbols), len(payload))
-            fresh = {symbol: self._eodhd_fundamentals[symbol] for symbol in clean_symbols if symbol in self._eodhd_fundamentals}
-            return apply_official_fundamentals_map(self.database, fresh, market="B3")
-        except Exception as exc:
-            self.database.finish_ingestion_run(run_id, "failed", len(missing_symbols), 0, str(exc))
-            fallback = {symbol: self._eodhd_fundamentals[symbol] for symbol in clean_symbols if symbol in self._eodhd_fundamentals}
-            return apply_official_fundamentals_map(self.database, fallback, market="B3")
+    def _eodhd_receipts(self, symbols: list[str]) -> dict[str, datetime]:
+        """The receipt instant of each symbol's EODHD fundamentals as held now — the instant the provider's answer arrived,
+        whether this build fetched it or read it from the cache (a failed re-fetch keeps the old receipt). Symbols never
+        received are absent: no instant is invented (PROMO-2 c)."""
+        cache = self._eodhd_cache
+        return {symbol.upper(): entry[1] for symbol in symbols if symbol and (entry := cache.get(symbol.upper())) is not None}
+
+    @staticmethod
+    def _receipt_of(consensus_fetched_at: dict[str, Any] | None, provider: str, symbol: str) -> datetime | None:
+        """The receipt instant handed over for ``provider`` — one instant for the whole build (brapi, fetched fresh every
+        build) or a per-symbol map (EODHD, cached per symbol)."""
+        value = (consensus_fetched_at or {}).get(provider)
+        if isinstance(value, dict):
+            value = value.get(symbol.upper())
+        return value if isinstance(value, datetime) else None
 
     def _eodhd_historical_map(self, symbols: list[str]) -> dict[str, dict[str, float]]:
         if not self.settings.eodhd_api_token or not symbols:
@@ -847,6 +885,7 @@ class B3ScreenerService:
         quotes: dict[str, Any],
         financial: dict[str, dict[str, Any]],
         eodhd: dict[str, dict[str, Any]],
+        consensus_fetched_at: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         references: list[dict[str, Any]] = []
         for symbol, quote in quotes.items():
@@ -865,6 +904,7 @@ class B3ScreenerService:
                 "brapi_analysts": brapi_analysts,
                 "eodhd_consensus_tp": cls._valid_target(eod.get("targetMeanPrice"), price, eodhd_analysts),
                 "eodhd_analysts": eodhd_analysts,
+                "_consensus_fetched_at": {provider: cls._receipt_of(consensus_fetched_at, provider, symbol) for provider in ("brapi", "eodhd")},
             })
         return references
 
@@ -1077,6 +1117,7 @@ class B3ScreenerService:
         coverage_audit: dict[str, int] | None = None,
         enforce_screening_gates: bool = True,
         enforce_quality_gate: bool = True,
+        consensus_fetched_at: dict[str, Any] | None = None,  # per provider: brapi = one receipt instant for this build; eodhd = per-symbol receipts (cached) — facts, never the cycle clock (PROMO-2 c)
     ) -> list[dict[str, Any]]:
         eodhd = eodhd or {}
         if coverage_audit is not None:
@@ -1292,6 +1333,7 @@ class B3ScreenerService:
                 "brapi_analysts": brapi_analysts,
                 "eodhd_consensus_tp": eodhd_consensus_tp,
                 "eodhd_analysts": eodhd_analysts,
+                "_consensus_fetched_at": {provider: self._receipt_of(consensus_fetched_at, provider, symbol) for provider in ("brapi", "eodhd")},  # receipt instants; consumed and dropped by the reconciliation
                 "public_consensus_tp": None,
                 "analyst_count": 0,
                 "consensus_origin_symbol": None,
@@ -1442,6 +1484,7 @@ class B3ScreenerService:
                             "ratio": ratio,
                             "analysts": analysts,
                             "weight": max(analysts, 1) * (1.15 if str(row["symbol"]).endswith("11") else 1.0),
+                            "fetched_at": (row.get("_consensus_fetched_at") or {}).get(source),  # the receipt instant of THIS provider's answer for THIS row
                         })
             row["_direct_consensus_observations"] = observations
             groups.setdefault(str(row.get("issuer") or row["symbol"]), []).append(row)
@@ -1461,6 +1504,7 @@ class B3ScreenerService:
                 selected_analysts = 0
                 selected_symbol: str | None = None
                 selected_source: str | None = None
+                selected_fetched_at: datetime | None = None
 
                 if direct:
                     direct_center = cls._weighted_median_observation(direct)
@@ -1469,6 +1513,7 @@ class B3ScreenerService:
                         selected_analysts = max(observation["analysts"] for observation in direct)
                         selected_symbol = row["symbol"]
                         selected_source = direct_center["source"]
+                        selected_fetched_at = direct_center.get("fetched_at")
 
                     # A better-covered issuer class can override a lone outlying direct
                     # target while preserving the implied upside, not its nominal price.
@@ -1482,21 +1527,32 @@ class B3ScreenerService:
                         selected_analysts = canonical["analysts"]
                         selected_symbol = canonical["symbol"]
                         selected_source = canonical["source"]
+                        selected_fetched_at = canonical.get("fetched_at")
                 elif canonical:
                     selected_ratio = canonical_ratio
                     selected_analysts = canonical["analysts"]
                     selected_symbol = canonical["symbol"]
                     selected_source = canonical["source"]
+                    selected_fetched_at = canonical.get("fetched_at")
 
                 row["public_consensus_tp"] = row["price"] * selected_ratio if selected_ratio else None
                 row["analyst_count"] = selected_analysts
                 row["consensus_origin_symbol"] = selected_symbol
                 row["consensus_origin_source"] = selected_source
+                # PROMO-2 (c): the instant the SELECTED observation's provider answer was received in this build — a receipt, never
+                # the build's start clock (which precedes the answer and would back-date it) and never the quote's own timestamp
+                # (which can post-date the cycle); the emitter persists it as the block's published_at, and the cycle's
+                # publication instant (the prediction instant) is taken after it. Without a consensus or a receipt: no instant.
+                row["consensus_published_at"] = (selected_fetched_at.isoformat()
+                                                 if (selected_source and isinstance(selected_fetched_at, datetime)) else None)
                 row["consensus_source_count"] = sum(
                     1 for observation in issuer_observations
                     if observation["symbol"] == selected_symbol
                 ) if selected_symbol else 0
                 row["consensus_implied_upside_percent"] = (selected_ratio - 1) * 100 if selected_ratio else None
+
+        for row in [*rows, *(references or [])]:
+            row.pop("_consensus_fetched_at", None)  # receipt instants never travel into snapshots or responses
 
     @staticmethod
     def _apply_official_consensus(rows: list[dict[str, Any]]) -> None:
@@ -1525,6 +1581,7 @@ class B3ScreenerService:
             row["consensus_source_count"] = max(int(row.get("consensus_source_count") or 0), 1)
             row["consensus_implied_upside_percent"] = (target / price - 1) * 100
             row["consensus_as_of"] = official["as_of"]
+            row["consensus_published_at"] = official["as_of"]  # the override's own date replaces the provider instant (PROMO-2 c)
             row["consensus_source_url"] = official["source_url"]
 
     @staticmethod
@@ -2945,6 +3002,11 @@ class B3ScreenerService:
             parameters,
             f"{C3PO_VALUATION_POLICY.label}: {C3PO_VALUATION_POLICY.release_note}",
         )
+        # The cycle's PUBLICATION instant = the prediction instant of every record of this cycle (spec §2.2 R3): taken here,
+        # after every provider answer the rows consumed — never the build's start clock (`generated_at`, kept as the
+        # response/basis clock) which precedes those answers. _matrix_basis_at follows it (staleness compares like with like).
+        published_at = datetime.now(timezone.utc)
+        self._matrix_basis_at = published_at
         self.database.save_analysis_snapshot(
             "valuation_universe",
             "B3_UNIVERSE",
@@ -2963,9 +3025,9 @@ class B3ScreenerService:
                 "sector_audit": self._matrix_sector_audit,
                 "basis_at": generated_at,
             }),
-            generated_at,
+            published_at,
         )
-        self._persist_calibration(methodology_id, generated_at, self._matrix_rows)
+        self._persist_calibration(methodology_id, published_at, self._matrix_rows)
         return methodology_id
 
     def _persist_candidates(self, response: B3CandidateResponse, macro: dict[str, float], methodology_id: str) -> None:

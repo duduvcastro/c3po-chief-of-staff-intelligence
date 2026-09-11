@@ -38,6 +38,7 @@ class DummyOnePagers:
         return {
             "c3po_tp": 145.0,
             "consensus_tp": 150.0,
+            "consensus_source": "fmp_last_month",
             "analyst_count": 12,
             "buy_in": 94.0,
             "confidence": 82.0,
@@ -173,6 +174,8 @@ def test_stock_analysis_uses_canonical_five_method_output() -> None:
     assert result["our_tp"] == 145.0
     assert result["signal_quality"] == "validated"
     assert result["valuation_method_count"] == 6
+    # PROMO-2 (c): the row carries the consensus source; without a receipt instant handed over, NO instant is invented
+    assert result["consensus_origin_source"] == "fmp_last_month" and result["consensus_published_at"] is None
 
 
 STOCK_QUOTE = {"symbol": "TEST", "name": "Test Corp", "price": 100.0, "change_percent": 1.2, "volume": 3_000_000, "as_of": datetime(2026, 9, 7, 21, 0, tzinfo=timezone.utc)}
@@ -234,6 +237,7 @@ def test_etf_analysis_uses_fund_evidence_instead_of_corporate_dcf() -> None:
     assert "Asset allocation" in result["buy_in_models"]
     assert result["public_consensus_tp"] is None
     assert result["internal_tp"] == result["our_tp"] and result["internal_buy_in"] == result["buy_in"] > 0  # Passo 1: no consensus, the internal TP is the served one
+    assert result["consensus_origin_source"] is None and result["consensus_published_at"] is None  # no consensus: no source, no instant
 
 
 def test_spcx_never_uses_etf_screening_path() -> None:
@@ -507,3 +511,47 @@ def test_load_calibration_factors_clamps_persisted_values_to_the_documented_limi
 
     assert svc._calibration_factors["NASDAQ"]["global"] == 1.05
     assert svc._calibration_factors["NASDAQ"]["technology"] == 0.95
+
+
+def test_stock_row_stamps_the_receipt_instant_of_the_provider_the_resolver_used_never_the_cycle_start() -> None:
+    # F398-1 (Codex): the consensus instant must be a FACT — the receipt of the provider's answer — never the build's start
+    # clock, which precedes every fetch and would make "consensus existed at the prediction instant" true by assignment.
+    fmp_at = datetime(2026, 9, 10, 21, 0, 10, tzinfo=timezone.utc)
+    eodhd_at = datetime(2026, 9, 10, 21, 0, 4, tzinfo=timezone.utc)
+    quote = {"symbol": "TEST", "name": "Test Corp", "price": 100.0, "change_percent": 1.2, "volume": 3_000_000, "as_of": datetime.now(timezone.utc)}
+    fundamentals = {"companyName": "Test Corp", "sector": "Technology", "industry": "Software", "marketCap": 5_000_000_000,
+                    "returnOnEquity": 0.24, "profitMargins": 0.18, "dividendYield": 0.01}
+    row = service()._analyze_stock("NASDAQ", quote, fundamentals, rising_history(), 300_000_000,
+                                   consensus_fetched_at={"fmp": fmp_at, "eodhd": eodhd_at})
+    assert row["consensus_origin_source"] == "fmp_last_month" and row["consensus_published_at"] == fmp_at.isoformat()  # the resolver used FMP
+    # the emitter persists that receipt as the block's instant; the cycle's publication (= prediction instant) comes AFTER it
+    from app import valuation_official as official
+    published = datetime(2026, 9, 10, 21, 3, tzinfo=timezone.utc)
+    record = official.prediction_from_row(row, market="NASDAQ", scope="universe", cycle_id="c1", source_version="7", prediction_instant=published)
+    assert record is not None and record["decomposition"]["consensus"]["published_at"] == fmp_at.isoformat()
+    assert datetime.fromisoformat(record["decomposition"]["consensus"]["published_at"]) <= datetime.fromisoformat(record["prediction_instant"])
+
+
+def test_persist_publishes_the_cycle_at_its_publication_instant_after_every_receipt() -> None:
+    # F398-1: the universe snapshot's published_at (= prediction_instant of every record) is taken at publication, after the
+    # provider answers the rows consumed — a consensus received after the build started is still BEFORE the prediction instant.
+    screener = service()
+    started = datetime(2026, 9, 10, 10, 0, 0, tzinfo=timezone.utc)  # in the past: the publication instant is the wall clock at persist
+    received = datetime(2026, 9, 10, 10, 0, 10, tzinfo=timezone.utc)  # the provider answered ten seconds after the build started
+    screener._basis_at["NASDAQ"] = started
+    screener._rows["NASDAQ"] = [{"symbol": "TEST", "market": "NASDAQ", "security_type": "Stock", "our_tp": 145.0, "buy_in": 120.0, "price": 100.0,
+                                 "internal_tp": 140.0, "public_consensus_tp": 150.0, "analyst_count": 12, "consensus_weight_percent": 35.0,
+                                 "consensus_origin_source": "fmp_last_month", "consensus_published_at": received.isoformat(),
+                                 "methods": {"dcf": 140.0}, "as_of": started}]
+    screener._universe_size["NASDAQ"] = 1
+    screener._coverage["NASDAQ"] = {}
+    screener._persist("NASDAQ")
+    snapshot = screener.database.latest_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE")
+    assert snapshot is not None
+    published_at = snapshot["published_at"] if isinstance(snapshot["published_at"], datetime) else datetime.fromisoformat(str(snapshot["published_at"]))
+    assert published_at > received > started  # publication after the receipt, which is after the start: no back-dating anywhere
+    assert screener._basis_at["NASDAQ"] == published_at  # the staleness check compares against the instant actually persisted
+    assert snapshot["outputs"]["rows"][0]["consensus_published_at"] == received.isoformat()
+    from app import valuation_official as official
+    clocks = official.cycle_clocks(snapshot)
+    assert clocks is not None and clocks[0] == published_at  # the prediction instant IS the publication

@@ -2152,3 +2152,32 @@ def test_a_mixed_table_keeps_each_schema_and_hash_per_row(caplog: pytest.LogCapt
     assert calls[0].published_at == datetime.fromisoformat(v2["published_at"]) and calls[0].row_sha256 == v2["row_sha256"]
     assert calls[1].published_at is None and calls[1].row_sha256 == v1["row_sha256"] and calls[1].changed_at == old_at
     assert not any(record.levelno >= logging.WARNING for record in caplog.records)  # nothing refused, nothing warned
+
+
+def test_a_producer_row_attests_the_five_consensus_fields_of_promo_2_c() -> None:
+    # PROMO-2 (c): the consensus a record persists carries source, horizon, currency, instant and hash. The producers now hand the
+    # emitter `consensus_origin_source` (US: the one-pager's resolver; B3: brapi/eodhd or the official override) and
+    # `consensus_published_at` (the instant the consensus was observed; the override's own date). The emitter defaults horizon
+    # ("12m") and currency (the market's) and hashes the block: all five present.
+    row = {"symbol": "AAPL", "our_tp": 250.0, "buy_in": 200.0, "price": 220.0, "internal_tp": 245.0, "public_consensus_tp": 275.0,
+           "analyst_count": 12, "consensus_weight_percent": 35.0, "consensus_origin_source": "fmp_last_month",
+           "consensus_published_at": "2026-09-04T21:30:00+00:00"}
+    record = official.prediction_from_row(row, market="NASDAQ", scope="universe", cycle_id="c1", source_version="7",
+                                          prediction_instant=datetime(2026, 9, 4, 22, tzinfo=timezone.utc))
+    assert record is not None
+    block = record["decomposition"]["consensus"]
+    assert {key: block[key] for key in ("tp", "source", "horizon", "currency", "published_at")} == {
+        "tp": 275.0, "source": "fmp_last_month", "horizon": "12m", "currency": "USD", "published_at": "2026-09-04T21:30:00+00:00"}
+    assert isinstance(block["payload_sha256"], str) and len(block["payload_sha256"]) == 64
+    assert all(block[key] not in (None, "") for key in ("source", "horizon", "currency", "published_at", "payload_sha256"))
+    # a B3 override row: the override's date is the instant, in BRL
+    b3 = official.prediction_from_row({**row, "symbol": "PETR4", "consensus_origin_source": "Petrobras RI", "consensus_as_of": "2026-05-13",
+                                       "consensus_published_at": "2026-05-13"}, market="B3", scope="universe", cycle_id="c2", source_version="7",
+                                      prediction_instant=datetime(2026, 9, 4, 22, tzinfo=timezone.utc))
+    assert b3 is not None and b3["decomposition"]["consensus"]["published_at"] == "2026-05-13" and b3["decomposition"]["consensus"]["currency"] == "BRL"
+    # without a consensus the producers hand no source and no instant: the block is explicit nulls, never a fabricated attestation
+    bare = official.prediction_from_row({**row, "public_consensus_tp": None, "consensus_origin_source": None, "consensus_published_at": None},
+                                        market="NASDAQ", scope="universe", cycle_id="c3", source_version="7",
+                                        prediction_instant=datetime(2026, 9, 4, 22, tzinfo=timezone.utc))
+    assert bare is not None and bare["decomposition"]["consensus"]["tp"] is None and bare["decomposition"]["consensus"]["source"] is None
+    assert bare["decomposition"]["consensus"]["published_at"] is None
