@@ -342,7 +342,9 @@ def test_rerun_persists_one_snapshot_and_explicit_records_with_the_three_clocks_
     consensus = aaa["decomposition"]["consensus"]
     assert consensus["tp"] == 140.0 and consensus["horizon"] == "N/D" and consensus["currency"] == "USD" and consensus["published_at"] == (T - timedelta(days=1)).isoformat()
     assert consensus["source"] == "fmp:price-target-news" and aaa["analyst_count"] == 3 and len(consensus["payload_sha256"]) == 64
-    assert panel._consensus_of(aaa)[1] == "present"  # attested (five fields) and dated before T — the horizon literal is N/D, declared
+    assert panel._consensus_of(aaa)[1] == "consensus_unattested:horizon"  # design §3: the horizon N/D attests nothing — the panel never compares it
+    assert provenance["run_key"] == receipt["run_key"] and provenance["declared_assumptions"] == pit.DECLARED_ASSUMPTIONS and provenance["beta"]["proxy_includes_symbol"] is True
+    assert run.manifest["declared_assumptions"] == pit.DECLARED_ASSUMPTIONS and "consensus_published_date_zone" in pit.DECLARED_ASSUMPTIONS
     bbb = records["BBB"]
     assert bbb["consensus_tp"] is None and bbb["decomposition"]["consensus"]["tp"] is None and bbb["decomposition"]["consensus"]["horizon"] is None
     # the engine saw no consensus: identical TP whether or not the block exists (TP sem consenso dentro)
@@ -430,6 +432,10 @@ def test_price_vintage_is_pinned_at_run_start_and_a_publication_mid_run_is_never
         pinned.bars("BBB")
     with pytest.raises(pit.PitRerunInputError, match="no verifiable price vintage"):
         service.pin_vintage("NASDAQ", as_of=T, pinned_at=VINTAGE_AT - timedelta(days=1))  # nothing published before that cut
+    # P3-2: a T whose session is after the vintage's last session (2026-09-10) is refused — a stale close is never the close of a later session
+    assert service.pin_vintage("NASDAQ", as_of=datetime(2026, 9, 10, 21, 0, tzinfo=UTC), pinned_at=NOW).session_date == "2026-09-10"  # the last session: accepted
+    with pytest.raises(pit.PitRerunInputError, match="after the last session 2026-09-10"):
+        service.pin_vintage("NASDAQ", as_of=datetime(2026, 9, 14, 21, 0, tzinfo=UTC), pinned_at=NOW)
 
 
 # ------------------------------------------------------------------ §4 (auditor ii): identity, idempotency, interruption, changed inputs, concurrency
@@ -493,6 +499,87 @@ def test_changed_inputs_make_a_new_run_key_naming_the_superseded_one() -> None:
     # another T is another run, never a supersession
     other, _ = _service(database).rerun("NASDAQ", as_of=T - timedelta(days=7), clock=lambda: NOW + timedelta(hours=2))
     assert other["supersedes"] is None and other["run_key"] not in (first["run_key"], second["run_key"])
+
+
+def _panel_cell(database: Database, *, cut: datetime) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    reader = series.PriceHistoryService(_settings(), database, panel._NoNetworkHttp())
+    receipt, detail = panel.PanelService(database, price_history=reader).run(cut=cut, markets=["NASDAQ"], sources=[pit.SOURCE])
+    return receipt["payload"]["results"]["NASDAQ"][pit.SOURCE], detail
+
+
+def test_the_panel_serves_the_current_run_and_refuses_the_superseded_one() -> None:
+    # P2-2 (a): run 1 → changed fundamentals → run 2 (supersedes run 1): the panel serves run 2's cycle, run 1's rows are ``superseded_run``
+    database = _ready()
+    first, _ = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW)
+    _publish_sources(database, symbols=("AAA",), at=VINTAGE_AT + timedelta(hours=1), scale={"AAA": 1.3}, catalogue=False)
+    second, _ = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(hours=1))
+    assert second["supersedes"] == first["run_key"] and len(database._valuation_predictions) == 12
+    assert panel.superseded_run_keys(database, market="NASDAQ", as_of=T.isoformat()) == {first["run_key"]}
+    cell, detail = _panel_cell(database, cut=NOW + timedelta(hours=2))
+    assert cell["records"] == {"read": 12, "admissible": 6, "refused": {"superseded_run": 6}, "reruns": 0}  # never ``duplicate_session`` on the OLD cycle
+    assert {row["cycle_id"] for row in detail} == {second["cycle_id"]} and len(detail) == 6
+    # a third run (inputs changed again) supersedes transitively: both earlier cycles refused
+    _publish_sources(database, symbols=("BBB",), at=VINTAGE_AT + timedelta(hours=2), scale={"BBB": 0.8}, catalogue=False)
+    third, _ = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(hours=3))
+    assert third["supersedes"] == second["run_key"]
+    assert panel.superseded_run_keys(database, market="NASDAQ", as_of=T.isoformat()) == {first["run_key"], second["run_key"]}
+    cell, detail = _panel_cell(database, cut=NOW + timedelta(hours=4))
+    assert cell["records"]["refused"] == {"superseded_run": 12} and {row["cycle_id"] for row in detail} == {third["cycle_id"]}
+    # another T is untouched by the chain
+    assert panel.superseded_run_keys(database, market="NASDAQ", as_of=(T - timedelta(days=7)).isoformat()) == set()
+
+
+def test_the_panel_never_mixes_a_crashed_partial_cycle_with_the_run_that_superseded_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    # P2-2 (a), crash variant: 3 rows persisted, then the inputs change → a new run; the panel serves ONLY the new cycle
+    database = _ready()
+    real_insert = database.insert_valuation_predictions
+
+    def three_then_die(records: list[dict]) -> int:
+        real_insert(records[:3])
+        raise RuntimeError("killed after three rows")
+
+    monkeypatch.setattr(database, "insert_valuation_predictions", three_then_die)
+    with pytest.raises(RuntimeError, match="killed"):
+        _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW)
+    monkeypatch.undo()
+    partial = next(s for s in database._analysis_snapshots if s["analysis_type"] == pit.ANALYSIS_TYPE)
+    assert len(database._valuation_predictions) == 3
+    _publish_sources(database, symbols=("AAA",), at=VINTAGE_AT + timedelta(hours=1), scale={"AAA": 1.3}, catalogue=False)
+    receipt, _ = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(hours=1))
+    assert receipt["supersedes"] == partial["inputs"]["run_key"] and receipt["cycle_id"] != partial["id"] and receipt["records"]["inserted"] == 6
+    cell, detail = _panel_cell(database, cut=NOW + timedelta(hours=2))
+    assert cell["records"] == {"read": 9, "admissible": 6, "refused": {"superseded_run": 3}, "reruns": 0}
+    assert {row["cycle_id"] for row in detail} == {receipt["cycle_id"]} and len(detail) == 6
+
+
+def test_an_identical_catalogue_republished_is_the_same_run() -> None:
+    # P2-2 (b): the manifest names the catalogue by the canonical hash of the admitted classification, never by snapshot id/clock
+    database = _ready()
+    first, run = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW)
+    catalogue_ref = next(ref for ref in run.manifest["sources"] if ref["role"] == "catalogue")
+    assert set(catalogue_ref) == {"role", "market", "classification_sha256", "rows", "fields_admitted"} and catalogue_ref["rows"] == 6
+    assert catalogue_ref["classification_sha256"] == official.canonical_sha256(sorted(({"symbol": s, "sector": SECTOR, "industry": "Machinery", "valuation_profile": "general",
+                                                                                          "security_type": "Stock"} for s in SYMBOLS), key=lambda r: r["symbol"]))
+    database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "mv-cat", {"methodology_version": 7},  # the nightly re-publication of the SAME universe
+                                    {"rows": [{"symbol": s, "sector": SECTOR, "industry": "Machinery", "valuation_profile": "general", "security_type": "Stock",
+                                               "price": 2.0, "pe": 1.0, "our_tp": 3.0} for s in reversed(SYMBOLS)]}, VINTAGE_AT + timedelta(days=1, hours=1))  # other order, other current numbers
+    second, again = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(days=1, hours=2))
+    assert second["run_key"] == first["run_key"] and second["idempotent"] is True and second["records"]["inserted"] == 0 and len(database._valuation_predictions) == 6
+    assert again.resolver.catalogue_snapshot_id != run.resolver.catalogue_snapshot_id and second["catalogue_snapshot_id"] == again.resolver.catalogue_snapshot_id
+    # a changed classification IS another run
+    database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "mv-cat", {"methodology_version": 7},
+                                    {"rows": [{"symbol": s, "sector": SECTOR if s != "AAA" else "Energy", "industry": "Machinery", "valuation_profile": "general", "security_type": "Stock"}
+                                              for s in SYMBOLS]}, VINTAGE_AT + timedelta(days=2))
+    third, _ = _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW + timedelta(days=2))
+    assert third["run_key"] != first["run_key"] and third["supersedes"] == first["run_key"]
+
+
+def test_persist_raises_when_the_cycle_would_stay_incomplete(monkeypatch: pytest.MonkeyPatch) -> None:
+    # P3-5: stored + inserted != expected is an integrity failure, never a silent ``complete: false``
+    database = _ready()
+    monkeypatch.setattr(database, "insert_valuation_predictions", lambda records: 0)
+    with pytest.raises(pit.PitRerunIntegrityError, match=r"0 stored \+ 0 inserted != 6 expected"):
+        _service(database).rerun("NASDAQ", as_of=T, clock=lambda: NOW)
 
 
 def test_two_concurrent_runs_leave_one_cycle() -> None:
@@ -593,6 +680,14 @@ def test_fetch_persists_dated_hashed_snapshots_and_prints_nothing_nominal(capsys
     assert macro is not None and macro["outputs"]["payload"]["series"]["US3Y.GBOND"] == [{"date": "2024-06-13", "close": 4.3}] and len(macro["outputs"]["payload_sha256"]) == 64
     assert sum(1 for url in http.calls if "fundamentals" in url) == 2 and sum(1 for url in http.calls if "price-target-news" in url) == 2  # one read per symbol and provider
     assert pit.curve_package_at(macro["outputs"]["payload"], as_of=T, economic_date=date(2024, 6, 14)) is not None
+    # P3-4: a price-target payload that is not the provider's list (an error object) is refused, never persisted as an empty history
+    broken = ScriptedHttp({"/api/v1.1/fundamentals/CCC.US": _payload("CCC"), "/stable/price-target-news": {"Error Message": "limit reached"}})
+    fetcher = pit.PitFetchService(_settings(), database, broken)  # type: ignore[arg-type]
+    with pytest.raises(pit.PitRerunInputError, match="not a list"):
+        fetcher.fetch_targets("NASDAQ", "CCC")
+    counts = fetcher.fetch("NASDAQ", ["CCC"], macro=False)
+    assert counts["fundamentals_persisted"] == 1 and counts["targets_failed:PitRerunInputError"] == 1 and "targets_persisted" not in counts
+    assert database.latest_analysis_snapshot(pit.SOURCE_ANALYSIS_TYPE, pit.source_entity_key("NASDAQ", pit.PROVIDER_FMP, "CCC")) is None
 
 
 def test_cli_rerun_requires_a_zoned_as_of_writes_the_private_detail_exclusively_and_prints_aggregates_only(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

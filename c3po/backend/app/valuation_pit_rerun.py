@@ -113,7 +113,7 @@ BCB_SELIC_SERIES_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados"
 B3_AVAILABILITY_LAG_DAYS = 90  # §2: a HYPOTHESIS (the B3 filing_date coincides with the period end in 346/348 payloads: not evidence)
 CONSENSUS_WINDOW_DAYS = 90
 MIN_CONSENSUS_HOUSES = 3
-CONSENSUS_HORIZON = "N/D"  # the provider does not expose the horizon per target; the literal "12m" attests nothing (§3)
+CONSENSUS_HORIZON = "N/D"  # the provider does not expose the horizon per target; the literal "12m" attests nothing (§3) — the panel reads it ``consensus_unattested:horizon`` and never compares it
 MIN_VALID_SESSIONS = 90  # §7: admissibility per symbol and T, verified in the run, never presumed from the calendar
 TTM_QUARTERS = 4
 TTM_MAX_SPAN_DAYS = 400
@@ -127,6 +127,11 @@ FORBIDDEN_PAYLOAD_BLOCKS: tuple[str, ...] = ("General", "Highlights", "Valuation
                                              "ESGScores", "Holders", "InsiderTransactions", "SplitsDividends", "ETF_Data")
 CURRENT_FIELDS_ADMITTED: tuple[str, ...] = ("sector", "industry", "valuation_profile", "security_type")  # the catalogue's classification (§3), declared
 AVAILABILITY_RULE = "as available per evidence (provider filing_date) or declared hypothesis (B3: period_end+90d); original vintage N/D"
+DECLARED_ASSUMPTIONS: dict[str, str] = {  # P3-6: interpretations the record and the manifest DECLARE (never silent)
+    "consensus_published_date_zone": "a publishedDate without a zone is read as UTC (assumption: the provider states no zone)",
+    "beta_proxy_membership": "the equal-weight universe proxy of daily log returns INCLUDES the symbol itself (it is not excluded from its own proxy)",
+    "ttm_basis_mix": "ttm.basis is four_quarters or latest_fiscal_year; the prior period of revenue_growth may be previous_fiscal_year while the TTM is four_quarters (the bases can mix)",
+}
 _RUN_LOCKS: dict[str, threading.Lock] = {}
 _RUN_LOCKS_GUARD = threading.Lock()
 
@@ -145,6 +150,7 @@ def _utc(value: datetime) -> datetime:
 
 
 def _instant(value: Any) -> datetime:
+    """An ISO instant as UTC; a NAIVE one is read as UTC (declared: ``DECLARED_ASSUMPTIONS['consensus_published_date_zone']``)."""
     return _utc(value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00")))
 
 
@@ -471,6 +477,9 @@ class PinnedPrices:
             self.session_date = session_date_of(market, self.as_of)
         except CalendarUnavailable as error:
             raise PitRerunInputError(f"{market} calendar cannot place T={self.as_of.isoformat()}: {error}") from error
+        if self.session_date > str(self.window[1]):  # P3-2: a T after the vintage's last session would label a stale close to a later session
+            raise PitRerunInputError(f"T={self.as_of.isoformat()} (session {self.session_date}) is after the last session {self.window[1]} of the pinned "
+                                     f"{market} price vintage {self.publication_id}: the run refuses to serve a stale close as the close of a later session")
         self._bars: dict[str, dict[str, dict[str, Any]]] = {}
         self._returns: dict[str, dict[str, float]] = {}
         self._proxy: dict[str, float] | None = None
@@ -540,7 +549,7 @@ class PinnedPrices:
             return None, {"status": "proxy_without_variance", "sessions": len(common)}
         covariance = statistics.fmean((x - statistics.fmean(xs)) * (y - statistics.fmean(ys)) for x, y in zip(xs, ys))
         return covariance / variance, {"status": "recomputed", "method": "ols_daily_log_returns_vs_equal_weight_universe_proxy", "sessions": len(common),
-                                       "window_sessions": BETA_WINDOW_SESSIONS}
+                                       "window_sessions": BETA_WINDOW_SESSIONS, "proxy_includes_symbol": True}
 
 
 # ------------------------------------------------------------------ macro at T (§3): dated packages ≤ T
@@ -645,6 +654,7 @@ class PitSourceResolver:
         self.per_symbol: dict[str, dict[str, Any]] = {}
         self.consensus: dict[str, dict[str, Any]] = {}
         self.not_evaluable: dict[str, str] = {}
+        self.catalogue_snapshot_id: str | None = None  # a pointer for the reader; NOT part of the manifest hashed into run_key
 
     # ---- catalogue (the only current fields admitted: classification)
     def catalogue(self, market: str) -> list[dict[str, Any]]:
@@ -652,10 +662,14 @@ class PitSourceResolver:
         if snapshot is None:
             return []
         rows = _mapping(snapshot.get("outputs")).get("rows")
-        self.references.append({"role": "catalogue", "market": market, "snapshot_id": str(snapshot["id"]),
-                                "published_at": _instant(snapshot["published_at"]).isoformat(), "fields_admitted": list(CURRENT_FIELDS_ADMITTED)})
-        return [{"symbol": str(row["symbol"]).strip().upper(), **{field: row.get(field) for field in CURRENT_FIELDS_ADMITTED}}
-                for row in (rows if isinstance(rows, list) else []) if isinstance(row, dict) and row.get("symbol")]
+        catalogue = sorted(({"symbol": str(row["symbol"]).strip().upper(), **{field: row.get(field) for field in CURRENT_FIELDS_ADMITTED}}
+                            for row in (rows if isinstance(rows, list) else []) if isinstance(row, dict) and row.get("symbol")), key=lambda row: row["symbol"])
+        # the reference is the CONTENT admitted (symbol + classification), never the snapshot's id/clock: a nightly re-publication of an
+        # identical catalogue is the same run (P2-2 b); the snapshot id is kept as a pointer only, outside the key
+        self.references.append({"role": "catalogue", "market": market, "classification_sha256": canonical_sha256(catalogue), "rows": len(catalogue),
+                                "fields_admitted": list(CURRENT_FIELDS_ADMITTED)})
+        self.catalogue_snapshot_id = str(snapshot["id"])
+        return catalogue
 
     def _source_snapshot(self, market: str, provider: str, symbol: str) -> dict[str, Any] | None:
         snapshot = self.database.latest_analysis_snapshot(SOURCE_ANALYSIS_TYPE, source_entity_key(market, provider, symbol))
@@ -872,6 +886,7 @@ class PitComputation:
             "price_vintage": {"publication_id": self.manifest["price_vintage"]["publication_id"], "available_at": self.manifest["price_vintage"]["available_at"],
                               "historical_vintage": "N/D"},
             "availability_rule": AVAILABILITY_RULE,
+            "declared_assumptions": dict(DECLARED_ASSUMPTIONS),
             "availability_hypotheses": list(self.resolver.hypotheses.get(symbol) or []),
             "pit_excluded_inputs": dict(sorted(excluded.items())),
             "current_fields_admitted": list(CURRENT_FIELDS_ADMITTED),
@@ -924,7 +939,8 @@ class PitComputation:
         return {"evaluated": len(self.results), "with_internal_tp": with_tp, "not_evaluable": dict(Counter(self.resolver.not_evaluable.values())),
                 "with_consensus": len(self.resolver.consensus), "pit_excluded_inputs": dict(sorted(self.resolver.excluded.items())),
                 "hypotheses": sum(len(items) for items in self.resolver.hypotheses.values()), "calibration": self.calibration["status"],
-                "macro_as_of": self.macro.macro_as_of(self.market).isoformat(), "price_vintage": self.manifest["price_vintage"]["publication_id"]}
+                "macro_as_of": self.macro.macro_as_of(self.market).isoformat(), "price_vintage": self.manifest["price_vintage"]["publication_id"],
+                "catalogue_snapshot_id": self.resolver.catalogue_snapshot_id}  # a pointer only: the run_key names the catalogue by its classification hash
 
 
 @contextmanager
@@ -939,12 +955,12 @@ def _run_lock(database: Database, run_key: str) -> Iterator[None]:
             return
         key = advisory_lock_key(run_key)
         with database.connection() as connection:
+            connection.autocommit = True  # P3-1: the lock call must not open a transaction that sits idle across the write section
             connection.execute("SELECT pg_advisory_lock(%s)", (key,))
             try:
                 yield
             finally:
                 connection.execute("SELECT pg_advisory_unlock(%s)", (key,))
-                connection.commit()
 
 
 class PitRerunService:
@@ -980,7 +996,7 @@ class PitRerunService:
             "sources": sorted(resolver.references, key=lambda item: json.dumps(item, sort_keys=True)),
             "price_vintage": prices.manifest(), "macro": macro.references, "calibration": calibration,
             "availability_rule": AVAILABILITY_RULE, "consensus_rule": {"window_days": CONSENSUS_WINDOW_DAYS, "min_houses": MIN_CONSENSUS_HOUSES, "horizon": CONSENSUS_HORIZON},
-            "external_api_calls": 0,
+            "declared_assumptions": dict(DECLARED_ASSUMPTIONS), "external_api_calls": 0,
         }
         manifest["manifest_sha256"] = canonical_sha256({key: value for key, value in manifest.items() if key != "manifest_sha256"})
         run_key = run_key_of(source_version_text=version, market=market, as_of=as_of, manifest=manifest)
@@ -1026,9 +1042,13 @@ class PitRerunService:
             missing = [expected[key] for key in sorted(set(expected) - stored)]
             inserted = self.database.insert_valuation_predictions(missing) if missing else 0
             self.database.drop_official_cycle_cache()
+            if len(stored) + inserted != len(expected):  # P3-5: a row the store holds but does not serve (an identity that does not verify, a
+                raise PitRerunIntegrityError(  # UNIQUE conflict with a foreign row) is never a silent ``complete: false``
+                    f"cycle {cycle_id} of run {run_key[:16]}: {len(stored)} stored + {inserted} inserted != {len(expected)} expected — a stored row not served "
+                    "by the reader, or refused by the UNIQUE key, would leave the cycle incomplete")
         return {"schema_version": SCHEMA_VERSION, "market": market, "as_of": computation.as_of.isoformat(), "run_key": run_key, "cycle_id": cycle_id,
                 "entity_key": computation.entity_key, "published_at": published_at.isoformat(), "idempotent": idempotent, "supersedes": supersedes,
-                "records": {"expected": len(expected), "stored_before": len(stored), "inserted": inserted, "complete": len(stored) + inserted == len(expected)},
+                "records": {"expected": len(expected), "stored_before": len(stored), "inserted": inserted, "complete": True},
                 "source_version": computation.source_version, "manifest_sha256": computation.manifest["manifest_sha256"], **computation.summary()}
 
     def rerun(self, market: str, *, as_of: datetime, clock: Callable[[], datetime] | None = None) -> tuple[dict[str, Any], PitComputation]:
@@ -1081,7 +1101,9 @@ class PitFetchService:
         rows: list[dict[str, Any]] = []
         for page in range(pages):
             payload = self.http.get_json(f"{self.fmp.base_url}/stable/price-target-news", params={"symbol": symbol, "page": page, "limit": limit, "apikey": self.fmp.token})
-            batch = [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
+            if not isinstance(payload, list):  # P3-4: an error object or anything but the provider's list is a refusal, never an empty history persisted
+                raise PitRerunInputError(f"price-target payload is not a list (page {page}: {type(payload).__name__})")
+            batch = [row for row in payload if isinstance(row, dict)]
             rows.extend(batch)
             if len(batch) < limit:
                 break
@@ -1200,7 +1222,8 @@ def main(argv: list[str] | None = None, *, database: Database | None = None, set
         write_private_detail(args.detail, {"schema": f"{SCHEMA_VERSION}:detail", "run_key": receipt["run_key"], "cycle_id": receipt["cycle_id"],
                                            "results": computation.results, "not_evaluable": dict(computation.resolver.not_evaluable),
                                            "consensus": computation.resolver.consensus, "hypotheses": computation.resolver.hypotheses})
-    assert service.http is None or service.http.calls == 0
+    if service.http is not None and service.http.calls != 0:  # P3-3: the network-free guarantee is checked, not asserted (never stripped by -O)
+        raise PitRerunIntegrityError(f"--rerun made {service.http.calls} network call(s): the re-execution reads the store only")
     print(json.dumps(receipt, sort_keys=True, default=str))
     return 0
 
