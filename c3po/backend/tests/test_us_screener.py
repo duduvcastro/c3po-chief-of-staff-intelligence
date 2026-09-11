@@ -1,3 +1,4 @@
+import statistics
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -66,9 +67,19 @@ def _publish_official_universes(database, nasdaq_rows: list[dict], *, at: dateti
                                     {"rows": nasdaq_rows, "universe_size": len(nasdaq_rows)}, at)
 
 
-def service() -> USScreeningService:
+def service(one_pagers: DummyOnePagers | None = None) -> USScreeningService:
     settings = Settings(eodhd_api_token="test", auth_cookie_secure=False)
-    return USScreeningService(settings, Database(settings), DummyRealtime(), DummyOnePagers())
+    return USScreeningService(settings, Database(settings), DummyRealtime(), one_pagers or DummyOnePagers())
+
+
+class OverridingOnePagers(DummyOnePagers):
+    """The producer framework answering with a variant of the canonical analysis (no consensus; the foreign bridge)."""
+
+    def __init__(self, **overrides):
+        self.overrides = overrides
+
+    def _analyze(self, *args, **kwargs):
+        return {**super()._analyze(*args, **kwargs), **self.overrides}
 
 
 @pytest.mark.parametrize(
@@ -164,6 +175,35 @@ def test_stock_analysis_uses_canonical_five_method_output() -> None:
     assert result["valuation_method_count"] == 6
 
 
+STOCK_QUOTE = {"symbol": "TEST", "name": "Test Corp", "price": 100.0, "change_percent": 1.2, "volume": 3_000_000, "as_of": datetime(2026, 9, 7, 21, 0, tzinfo=timezone.utc)}
+STOCK_FUNDAMENTALS = {"companyName": "Test Corp", "sector": "Technology", "industry": "Software", "marketCap": 5_000_000_000,
+                      "returnOnEquity": 0.24, "profitMargins": 0.18, "dividendYield": 0.01}
+
+
+def test_stock_rows_carry_the_internal_buy_in_derived_by_the_producers_own_entry_rule() -> None:
+    """Passo 1 (official_internal_v1): the SAME row emits the buy-in of the INTERNAL TP — the uncalibrated method mean —
+    by the rule the producer applied to the blend (``official_buy_in_v1`` with the mirrored entry hurdle of the pinned
+    One Pager, ``official_entry_discount_v1``); no method is recomputed. Without a consensus the blend IS the internal
+    TP and the producer's buy-in is the internal one; the primary-listing bridge keeps its registered buy-in."""
+    from app.valuation_official_engine import official_buy_in_v1, official_entry_discount_v1
+
+    with_consensus = service()._analyze_stock("NASDAQ", STOCK_QUOTE, STOCK_FUNDAMENTALS, rising_history(), 300_000_000)
+    methods = {"Goldman Sachs": 140.0, "Morgan Stanley": 146.0, "Bridgewater": 138.0, "JPMorgan": 149.0, "BlackRock": 152.0}
+    expected = official_buy_in_v1(methods.values(), official_entry_discount_v1("US", 29.0, 82.0), statistics.mean(methods.values()))
+    assert with_consensus["buy_in"] == 94.0 and with_consensus["internal_buy_in"] == expected and expected != 94.0
+    assert with_consensus["internal_buy_in"] == pytest.approx(145.0 / (1 + 0.12 + 0.29 * 0.11 + 0.18 * 0.06))  # the 90 % cap never binds for the internal TP
+    assert with_consensus["internal_tp"] == 145.0 and with_consensus["public_consensus_tp"] == 150.0
+    without_consensus = service(OverridingOnePagers(consensus_tp=None, analyst_count=None))._analyze_stock("NASDAQ", STOCK_QUOTE, STOCK_FUNDAMENTALS, rising_history(), 300_000_000)
+    assert without_consensus["public_consensus_tp"] is None and without_consensus["internal_buy_in"] == without_consensus["buy_in"] == 94.0
+    bridged = service(OverridingOnePagers(method_estimate_registered_on="2026-08-01"))._analyze_stock("NASDAQ", STOCK_QUOTE, STOCK_FUNDAMENTALS, rising_history(), 300_000_000)
+    assert bridged["public_consensus_tp"] == 150.0 and bridged["internal_buy_in"] == bridged["buy_in"] == 94.0
+    # the internal record of the cycle reads exactly these two fields
+    from app import valuation_official as official
+    record = official.prediction_from_row(with_consensus, market="NASDAQ", scope="universe", cycle_id="c", source_version="7",
+                                          prediction_instant=datetime(2026, 9, 7, 21, 0, tzinfo=timezone.utc), source=official.SOURCE_INTERNAL)
+    assert record is not None and record["tp"] == 145.0 and record["buy_in"] == expected and record["consensus_tp"] == 150.0 and record["consensus_weight_percent"] == 0.0
+
+
 def test_etf_analysis_uses_fund_evidence_instead_of_corporate_dcf() -> None:
     result = service()._analyze_etf(
         "NYSE",
@@ -193,6 +233,7 @@ def test_etf_analysis_uses_fund_evidence_instead_of_corporate_dcf() -> None:
     assert result["internal_method_count"] == 5
     assert "Asset allocation" in result["buy_in_models"]
     assert result["public_consensus_tp"] is None
+    assert result["internal_tp"] == result["our_tp"] and result["internal_buy_in"] == result["buy_in"] > 0  # Passo 1: no consensus, the internal TP is the served one
 
 
 def test_spcx_never_uses_etf_screening_path() -> None:
