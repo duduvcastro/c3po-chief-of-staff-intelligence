@@ -3557,6 +3557,41 @@ class Database:
             ).fetchall()
         return [record for record in (self._prediction_record(row) for row in rows) if record is not None]
 
+    def list_valuation_predictions_in_window(self, market: str, *, source: str, since: datetime | None = None,
+                                             until: datetime | None = None) -> list[dict[str, Any]]:
+        """Every record of one market and source whose ``prediction_instant`` lies in ``[since, until)`` (either bound
+        optional), ordered by symbol then ``_PREDICTION_ORDER`` (S4) — what the §7.3 panel reads (``valuation_panel``,
+        rev 7 TP-C): an explicit window and NO LIMIT (the panel counts every record it refuses). Copies; a row whose
+        identity does not verify is absent (F393-11 b), as in every reader."""
+        lower = self._selection_instant(since) if since is not None else None
+        upper = self._selection_instant(until) if until is not None else None
+        if not self.database_url:
+            matches: list[tuple[str, tuple[datetime, datetime, int], dict[str, Any]]] = []
+            for index, record in enumerate(self._valuation_predictions):
+                if record["market"] != market or record["source"] != source:
+                    continue
+                instant = self._selection_instant(record["prediction_instant"])
+                if (lower is not None and instant < lower) or (upper is not None and instant >= upper):
+                    continue
+                matches.append((str(record["symbol"]), self._prediction_order_key(index, record), record))
+            matches.sort(key=lambda entry: entry[1], reverse=True)  # newest first inside a symbol (_PREDICTION_ORDER), then by symbol: a stable two-pass sort
+            matches.sort(key=lambda entry: entry[0])
+            return [record for record in (self._stored_prediction(r) for _, _, r in matches) if record is not None]
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id::text, source, source_version, market, symbol, scope, session_date::text, cycle_id::text, prediction_instant, published_at,
+                       tp, buy_in, internal_tp, consensus_tp, consensus_source, analyst_count, consensus_weight_percent, price, currency,
+                       decomposition, row_sha256
+                FROM valuation_predictions
+                WHERE market = %s AND source = %s
+                  AND (%s::timestamptz IS NULL OR prediction_instant >= %s) AND (%s::timestamptz IS NULL OR prediction_instant < %s)
+                ORDER BY symbol, {self._PREDICTION_ORDER}
+                """,
+                (market, source, lower, lower, upper, upper),
+            ).fetchall()
+        return [record for record in (self._prediction_record(row) for row in rows) if record is not None]
+
     def latest_targeted_predictions(self, market: str, *, source: str) -> dict[str, dict[str, Any]]:
         """The most recent TARGETED record of every symbol of ``market`` for ``source`` (newest by ``_PREDICTION_ORDER``
         per symbol, S4), keyed by symbol — what the activation pass reads to admit a registered targeted cycle the
