@@ -59,7 +59,7 @@ def select_catalog(market: str, eodhd: list[dict[str, Any]], brapi: list[dict[st
         row, classification = eod.get(symbol, {}), b3.get(symbol)
         venue = str(row.get("Exchange") or "").upper()
         if market != "B3" and venue not in (NASDAQ if market == "NASDAQ" else NYSE):
-            excluded[symbol] = "outside_market"
+            excluded[symbol] = "outside_market" if row.get("Type") in US_TYPES and row.get("Currency") == "USD" else "outside_market_ineligible"
             continue
         if not SYMBOL.fullmatch(symbol):
             excluded[symbol] = "invalid_symbol"
@@ -177,12 +177,15 @@ class PriceCoverageCatalog:
                 self._cache[market] = (today, plan)
             result = copy.deepcopy(self._cache[market][1])
         retained = []
-        # A previously positively classified stock/ETF disappearing from a listing
-        # feed keeps its series requested. A current explicit exclusion wins.
+        # Previously classified names keep their label series when delisted or
+        # transferred to another venue. A known incompatible type/currency wins.
         for symbol, identity in previous.items():
-            if symbol not in result["selected"] and symbol not in result["excluded"] and isinstance(identity, dict) and identity.get("kind") in ELIGIBLE:
+            if (symbol not in result["selected"] and result["excluded"].get(symbol) in {None, "outside_market"}
+                    and isinstance(identity, dict) and identity.get("kind") in ELIGIBLE):
                 result["selected"][symbol] = identity
                 retained.append(symbol)
+                result["excluded"].pop(symbol, None)
+        result["counts"] = dict(sorted(Counter(result["excluded"].values()).items()))
         result["retained_from_previous"] = sorted(retained)
         result["legacy_not_selected"] = {s: result["excluded"].get(s, "absent_unclassified") for s in legacy if s not in result["selected"]}
         result["selected"] = dict(sorted(result["selected"].items()))

@@ -36,7 +36,10 @@ não são incluídos. Esses metadados não substituem os hashes das barras/séri
 
 Uma ação/ETF positivamente classificada na captura anterior publicada continua
 solicitada se desaparecer do catálogo, evitando que o recorte encolha a cada
-noite. Uma exclusão explícita no catálogo corrente prevalece e fica registrada.
+noite. Transferência de praça também mantém essa série legada no mercado lógico
+anterior, enquanto a ação/ETF continuar identificada em USD; isso não abre o
+catálogo inteiro de outras bolsas. Uma exclusão por tipo/moeda no catálogo
+corrente prevalece e fica registrada.
 O histórico persistido não é apagado. Isso não equivale a reconstruir o universo
 de ativos deslistados dos 36 meses: permanece a limitação de sobrevivência do
 catálogo inicial ativo.

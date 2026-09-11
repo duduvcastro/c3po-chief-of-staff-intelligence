@@ -157,3 +157,19 @@ def test_scope_default_remains_monitored_until_explicit_activation():
     assert Settings().valuation_price_history_scope == "monitored"
     with pytest.raises(ValueError):
         Settings(valuation_price_history_scope="anything")
+
+
+def test_prior_classified_stock_moving_venue_keeps_its_label_series_not_new_otc_names():
+    http = Http()
+    catalog = PriceCoverageCatalog(Settings(eodhd_api_token="test"), http)
+    first = catalog.plan("NASDAQ", previous={}, legacy=[])
+    http.rows = [listing("A"), listing("WIDE", venue="NYSE"), listing("NEWOTC", venue="OTC")]
+    catalog._cache.clear()
+    second = catalog.plan("NASDAQ", previous=first["selected"], legacy=list(first["selected"]))
+    assert "WIDE" in second["selected"] and "WIDE" not in second["excluded"]
+    assert "NEWOTC" not in second["selected"]
+    assert sum(second["counts"].values()) == len(second["excluded"])
+    http.rows[1] = listing("WIDE", kind="FUND", venue="NYSE")
+    catalog._cache.clear()
+    third = catalog.plan("NASDAQ", previous=second["selected"], legacy=list(second["selected"]))
+    assert "WIDE" not in third["selected"]

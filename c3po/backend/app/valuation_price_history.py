@@ -324,7 +324,9 @@ class PriceHistoryService:
         return self.coverage_plan(market)[0]
 
     def coverage_plan(self, market: str) -> tuple[list[str], dict[str, Any] | None]:
-        """Current universe rows ∪ every symbol with V3 shadow evaluations (labels still to come) — never fewer (§2.2)."""
+        """Monitored: universe ∪ V3 evaluations (§2.2). Expanded: classified catalog
+        plus previously published stock/ETF identities. Catalog reads precede the
+        three bar-run clocks; failures cannot silently publish smaller coverage."""
         symbols: set[str] = set()
         universe = self.database.latest_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE")
         raw_rows = _mapping((universe or {}).get("outputs")).get("rows")
