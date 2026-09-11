@@ -259,7 +259,7 @@ class Settings(BaseSettings):
     r2d2_microstructure_telemetry_interval_seconds: float = 1.0
     # Valuation V3.2 price series (rev 7 §2.2): OFF by default; the nightly phase runs only when enabled by the mesa
     valuation_price_history_enabled: bool = False
-    valuation_price_history_scope: Literal["monitored", "stocks_etfs"] = "monitored"
+    valuation_price_history_scope: Literal["monitored", "stocks_etfs_bdrs"] = "monitored"
     valuation_price_history_backfill_months: int = Field(default=36, ge=1, le=120)
     r2d2_fmp_prefilter_enabled: bool = True
     r2d2_fmp_prefilter_cache_seconds: int = 15

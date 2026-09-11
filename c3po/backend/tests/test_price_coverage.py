@@ -31,7 +31,7 @@ def test_us_full_catalog_includes_illiquid_and_preferred_and_all_family_etfs():
     assert select_catalog("NASDAQ", list(reversed(rows))) == nasdaq
 
 
-def test_b3_taxonomy_excludes_bdr_fii_and_fractional_without_suffix_type_guess():
+def test_b3_taxonomy_includes_bdr_but_excludes_fii_and_fractional_without_suffix_type_guess():
     raw = [listing("PETR4", venue="SA", currency="BRL"),
            listing("BDRX34", venue="SA", currency="BRL"),
            listing("ONLY3", venue="SA", currency="BRL", isin="BRONLYACNOR1"),
@@ -40,11 +40,12 @@ def test_b3_taxonomy_excludes_bdr_fii_and_fractional_without_suffix_type_guess()
                 b3("FII11", "fii", "fund"), b3("BDRX34", "bdr", "bdr"), b3("OFF3", active=False),
                 b3("EUR11", "etf", "fund")]
     result = select_catalog("B3", raw, taxonomy)
-    assert set(result["selected"]) == {"PETR4", "UNIT11", "ETF11", "ONLY3"}
+    assert set(result["selected"]) == {"PETR4", "UNIT11", "ETF11", "ONLY3", "BDRX34"}
     assert result["selected"]["ETF11"]["provider_listed"] is False  # try it; do not hide this lack of provider coverage
     assert result["excluded"]["EUR11"] == "provider_currency_conflict"
     assert result["excluded"]["PETR4F"] == "fractional_alias"
-    assert result["excluded"]["BDRX34"] == "excluded_instrument_type"
+    assert result["selected"]["BDRX34"]["kind"] == "bdr"
+    assert result["excluded"]["FII11"] == "excluded_instrument_type"
 
 
 def test_conflicting_identity_never_uses_first_row():
@@ -97,7 +98,7 @@ def test_brapi_pagination_complete_not_first_page_and_inconsistent_total_refused
 
 def test_catalog_failure_is_sanitized_and_no_monitored_fallback_or_bar_request():
     http = Http()
-    settings = Settings(eodhd_api_token="test", valuation_price_history_scope="stocks_etfs")
+    settings = Settings(eodhd_api_token="test", valuation_price_history_scope="stocks_etfs_bdrs")
     database = Database(settings)
     database.save_analysis_snapshot("valuation_universe", "NASDAQ_UNIVERSE", "m", {}, {"rows": [{"symbol": "A"}]}, datetime.now(timezone.utc))
     service = PriceHistoryService(settings, database, http)
@@ -123,7 +124,7 @@ def test_ordinary_allowance_reserves_retries_and_never_counts_extra_credit():
 
 def test_two_nights_keep_full_coverage_new_listings_and_prior_classified_delistings(monkeypatch):
     http = Http()
-    settings = Settings(eodhd_api_token="test", valuation_price_history_scope="stocks_etfs")
+    settings = Settings(eodhd_api_token="test", valuation_price_history_scope="stocks_etfs_bdrs")
     database = Database(settings)
     service = PriceHistoryService(settings, database, http)
     monkeypatch.setattr(service.coverage_catalog, "throttle", lambda: None)
@@ -173,3 +174,40 @@ def test_prior_classified_stock_moving_venue_keeps_its_label_series_not_new_otc_
     catalog._cache.clear()
     third = catalog.plan("NASDAQ", previous=second["selected"], legacy=list(second["selected"]))
     assert "WIDE" not in third["selected"]
+
+
+def test_bdr_positive_identity_and_brl_are_required_not_ticker_suffix():
+    rows = [listing("CERT34", venue="SA", currency="BRL", isin="BRAAAABDR007"),
+            listing("FAKE34", venue="SA", currency="BRL"),
+            listing("USD34", venue="SA", currency="USD")]
+    taxonomy = [b3("ETFBDR39", "bdr", "bdr"), b3("USD34", "bdr", "bdr"),
+                b3("FII11", "fii", "fund")]
+    result = select_catalog("B3", rows, taxonomy)
+    assert set(result["selected"]) == {"CERT34", "ETFBDR39"}
+    assert all(r["kind"] == "bdr" for r in result["selected"].values())
+    assert result["excluded"]["FAKE34"] == "unclassified_or_outside_scope"
+    assert result["excluded"]["USD34"] == "provider_currency_conflict"
+    assert result["excluded"]["FII11"] == "excluded_instrument_type"
+
+
+def test_bdr_is_collected_in_brl_and_retained_next_night_without_reviving_fii(monkeypatch):
+    http = Http()
+    http.rows = [listing("A3", venue="SA", currency="BRL"), listing("BDRX34", venue="SA", currency="BRL")]
+    http.pages = [[b3("A3")], [b3("BDRX34", "bdr", "bdr")]]
+    settings = Settings(eodhd_api_token="test", valuation_price_history_scope="stocks_etfs_bdrs")
+    database = Database(settings)
+    service = PriceHistoryService(settings, database, http)
+    monkeypatch.setattr(service.coverage_catalog, "throttle", lambda: None)
+    now = datetime(2026, 9, 11, 17, tzinfo=timezone.utc)
+    first = service.backfill("B3", now=now)
+    assert set(first["series_bars"]) == {"A3", "BDRX34"}
+    bdr_bar = next(b for b in database._price_bars if b["symbol"] == "BDRX34")
+    assert bdr_bar["currency"] == "BRL" and bdr_bar["provider_symbol"] == "BDRX34.SA"
+    http.rows = [listing("A3", venue="SA", currency="BRL")]
+    http.pages[1] = [b3("FII11", "fii", "fund")]
+    service.coverage_catalog._cache.clear()
+    second = service.nightly("B3", now=now + timedelta(days=1))
+    assert set(second["series_bars"]) == {"A3", "BDRX34"}
+    assert second["coverage"]["retained_from_previous"] == ["BDRX34"]
+    assert second["coverage"]["excluded"]["FII11"] == "excluded_instrument_type"
+    assert second["bars_unchanged"] == 2 and second["bars_inserted"] == 0

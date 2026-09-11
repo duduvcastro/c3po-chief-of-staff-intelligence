@@ -1,6 +1,6 @@
 """Price collection identity, separate from liquidity/fundamental/ranking eligibility.
 
-B3: Brapi's paginated stock/unit/ETF taxonomy plus positively identified EODHD
+B3: Brapi's paginated stock/unit/ETF/BDR taxonomy plus positively identified EODHD
 listings. US: stocks and ETFs on Nasdaq and the NYSE family (including Arca and
 American). No OTC/Cboe expansion or ticker-suffix guesses about instrument type.
 Catalog failures refuse the run; they never fall back to the smaller screener.
@@ -20,12 +20,12 @@ from typing import Any
 from .config import Settings
 from .market_data.http import JsonHttpClient
 
-POLICY = "STOCKS_ETFS_B3_NASDAQ_NYSE_V1"
+POLICY = "STOCKS_ETFS_BDRS_B3_NASDAQ_NYSE_V2"
 SYMBOL = re.compile(r"[A-Z0-9][A-Z0-9.-]{0,31}\Z")
 NASDAQ = {"NASDAQ", "XNAS", "NASDAQ GLOBAL SELECT", "NASDAQ GLOBAL MARKET", "NASDAQ CAPITAL MARKET"}
 NYSE = {"NYSE", "XNYS", "NYSE ARCA", "ARCA", "NYSE AMERICAN", "NYSE MKT", "AMEX", "AMERICAN"}
 US_TYPES = {"Common Stock": "stock", "Preferred Stock": "preferred_stock", "ETF": "etf"}
-ELIGIBLE = {"stock", "preferred_stock", "unit", "etf"}
+ELIGIBLE = {"stock", "preferred_stock", "unit", "etf", "bdr"}
 
 
 def digest(value: Any) -> str:
@@ -78,6 +78,8 @@ def select_catalog(market: str, eodhd: list[dict[str, Any]], brapi: list[dict[st
                     kind = subtype
                 elif asset == "fund" and subtype == "etf":
                     kind = "etf"
+                elif asset == "bdr" and subtype == "bdr":
+                    kind = "bdr"
                 if kind is None:
                     excluded[symbol] = "excluded_instrument_type"
                     continue
@@ -86,7 +88,7 @@ def select_catalog(market: str, eodhd: list[dict[str, Any]], brapi: list[dict[st
                     excluded[symbol] = "fractional_alias"
                     continue
                 isin = str(row.get("Isin") or "")
-                if len(isin) == 12 and isin.startswith("BR") and isin[6:9] == "BDR":
+                if kind != "bdr" and len(isin) == 12 and isin.startswith("BR") and isin[6:9] == "BDR":
                     raise ValueError("Brapi stock/ETF conflicts with BDR ISIN")
                 source = "brapi"
             else:
@@ -96,7 +98,10 @@ def select_catalog(market: str, eodhd: list[dict[str, Any]], brapi: list[dict[st
                     kind = US_TYPES[str(row["Type"])]
                 elif asset_class in {"CDA", "UNT"} and row.get("Type") == "Common Stock":
                     kind = "unit"
-                # ETF alone in this catalog can describe a BDR of an ETF. Require Brapi.
+                elif asset_class == "BDR":
+                    kind = "bdr"
+                # An ETF type alone cannot identify a domestic ETF versus its BDR.
+                # Require positive Brapi taxonomy or a BDR ISIN rather than guess.
                 if kind is None:
                     excluded[symbol] = "unclassified_or_outside_scope"
                     continue
@@ -114,7 +119,7 @@ def select_catalog(market: str, eodhd: list[dict[str, Any]], brapi: list[dict[st
         selected[symbol] = {"kind": kind, "venue": "B3" if market == "B3" else venue, "classifier": source,
                             "provider_listed": symbol in eod}
     if not selected:
-        raise ValueError("empty stocks/ETFs catalog refused")
+        raise ValueError("empty stocks/ETFs/BDRs catalog refused")
     return {"policy": POLICY, "market": market, "selected": selected, "excluded": excluded,
             "counts": dict(sorted(Counter(excluded.values()).items())),
             "catalog_sha256": digest({"eodhd": eod, "brapi": b3 if market == "B3" else {}})}

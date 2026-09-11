@@ -1,24 +1,27 @@
-# Série de preços: todas as ações e ETFs dos mercados suportados
+# Série de preços: ações, ETFs e BDRs dos mercados suportados
 
 Pedido do proprietário em 11/09/2026: ampliar os 1.047 símbolos da W3 para
-“todas as acoes, ETFs apenas”. O histórico continua com 36 meses. Essa cobertura
+ações, ETFs e BDRs, conforme o ajuste explícito “BDR's tb, so não quero os FII's”.
+O histórico continua com 36 meses. Essa cobertura
 é da série de preços; não altera a elegibilidade de recomendações ou ordens.
 
 ## Seleção e manutenção
 
-`C3PO_VALUATION_PRICE_HISTORY_SCOPE=stocks_etfs` seleciona o catálogo completo,
+`C3PO_VALUATION_PRICE_HISTORY_SCOPE=stocks_etfs_bdrs` seleciona o catálogo completo,
 tanto no backfill quanto em cada fase noturna. O padrão `monitored` preserva o
 comportamento implantado até a ativação coordenada. A flag de habilitação da
 fase continua sendo `C3PO_VALUATION_PRICE_HISTORY_ENABLED`.
 
-* B3: catálogo Brapi paginado integralmente, subtipos stock, unit e etf. ON/PN
-  estão incluídas; aliases fracionários não duplicam a mesma ação. Exclui BDRs,
-  FIIs, outros fundos e índices. EODHD complementa ações/units ausentes da Brapi
-  somente com identificação positiva por classe ISIN ACN/CDA/UNT. Tipo ETF do
+* B3: catálogo Brapi paginado integralmente, subtipos stock, unit, etf e bdr. ON/PN
+  estão incluídas; aliases fracionários não duplicam a mesma ação. Exclui FIIs,
+  outros fundos e índices. EODHD complementa ações/units/BDRs ausentes da Brapi
+  somente com identificação positiva por classe ISIN ACN/CDA/UNT/BDR. BDRs de
+  ações e de ETFs permanecem identificados como certificados em BRL, sem
+  fundir sua série com a ação ou ETF subjacente em USD. Tipo ETF do
   EODHD isolado não basta para distinguir ETF doméstico de certificado.
 * Nasdaq: Common Stock, Preferred Stock e ETF, sem filtro de liquidez, tamanho,
   preço, ranking ou quantidade. ADRs classificados como ações negociadas nos
-  EUA permanecem nesse universo; BDRs brasileiros estão fora.
+  EUA permanecem nesse universo; BDRs brasileiros entram no mercado lógico B3.
 * NYSE: os mesmos tipos, incluindo as praças Arca e American/AMEX/MKT, registradas
   individualmente no manifesto e agrupadas no mercado lógico NYSE do C3PO.
   Cboe/BATS, OTC e outras bolsas não pertencem a esses três mercados suportados.
@@ -34,7 +37,7 @@ incluindo política, hash do catálogo, hash e identidades da seleção, exclus�
 legado não selecionado e franquia observada. Credenciais, nomes e dados da conta
 não são incluídos. Esses metadados não substituem os hashes das barras/séries.
 
-Uma ação/ETF positivamente classificada na captura anterior publicada continua
+Uma ação/ETF/BDR positivamente classificada na captura anterior publicada continua
 solicitada se desaparecer do catálogo, evitando que o recorte encolha a cada
 noite. Transferência de praça também mantém essa série legada no mercado lógico
 anterior, enquanto a ação/ETF continuar identificada em USD; isso não abre o
