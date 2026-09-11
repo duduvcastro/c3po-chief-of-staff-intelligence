@@ -1099,6 +1099,43 @@ def test_pdf_official_stamp_is_drawn_in_lines_that_fit_the_summary_column(tmp_pa
     assert all(stringWidth(text, STAMP_FONT, size) <= width for text, size in clipped)
 
 
+def test_the_engine_mirror_of_the_producers_entry_hurdle_reproduces_its_buy_in_bit_for_bit(tmp_path) -> None:
+    """Passo 1: the US screener derives the internal buy-in with ``official_entry_discount_v1`` — the literal mirror of
+    the entry hurdle the pinned One Pager applies in producer role. Proved on the producer itself: the engine's
+    ``official_buy_in_v1(methods, mirror(risk, confidence), c3po_tp)`` IS ``analysis["buy_in"]``, with a real consensus in
+    the blend (weight > 0), so the internal buy-in is the same rule applied to the internal TP."""
+    from app.valuation_official_engine import official_blend_v1, official_buy_in_v1, official_entry_discount_v1
+
+    service = service_for(tmp_path)
+    analysis = service._analyze(
+        "MSFT", "US",
+        {"price": 500.0, "currency": "USD", "change_percent": 1.25, "as_of": datetime(2026, 8, 5, 18, 0, tzinfo=timezone.utc)},
+        {"companyName": "Microsoft Corporation", "sector": "Technology", "marketCap": 3_700_000_000_000, "trailingPE": 31.0, "forwardPE": 27.0,
+         "enterpriseToEbitda": 22.0, "pegRatio": 1.8, "trailingEps": 16.0, "forwardEps": 18.5, "bookValue": 42.0, "sharesOutstanding": 7_430_000_000,
+         "freeCashflow": 92_000_000_000, "ebitda": 150_000_000_000, "totalDebt": 80_000_000_000, "totalCash": 90_000_000_000,
+         "targetMeanPrice": 610.0, "numberOfAnalystOpinions": 48, "returnOnEquity": 0.34, "profitMargins": 0.36, "revenueGrowthAnnual": 0.15,
+         "earningsGrowthAnnual": 0.17, "beta": 0.95},
+        role="producer",
+    )
+    assert analysis["analysis_role"] == "producer" and analysis["consensus_tp"] and analysis["consensus_weight_diagnostic"] > 0
+    internal_tp = statistics.mean(analysis["methods"].values())
+    assert analysis["internal_framework_tp"] == internal_tp and analysis["c3po_tp"] == official_blend_v1(internal_tp, analysis["consensus_tp"], analysis["consensus_weight_diagnostic"])
+    assert analysis["c3po_tp"] != internal_tp  # the consensus is inside the blend: the internal buy-in cannot be read off the row without the rule
+    discount = official_entry_discount_v1("US", analysis["risk_score"], analysis["confidence"])
+    assert discount == 0.12 + analysis["risk_score"] / 100 * 0.11 + (100 - analysis["confidence"]) / 100 * 0.06
+    assert official_buy_in_v1(analysis["methods"].values(), discount, analysis["c3po_tp"]) == analysis["buy_in"]  # exact, not approx
+    internal_buy_in = official_buy_in_v1(analysis["methods"].values(), discount, internal_tp)
+    assert internal_buy_in == statistics.mean(value / (1 + discount) for value in analysis["methods"].values())  # the 90 % cap never binds: discount ≥ 0.14 > 1/9
+    assert 0 < internal_buy_in < internal_tp
+    # a fact of the producer's rule, not a shortcut: the discounted method mean does not depend on the TP, so the internal buy-in
+    # equals the blend's whenever the blend's 90 % cap does not bind (here), and is HIGHER than the blend's when it does —
+    # a consensus pulling the blend far below the method mean caps the blend buy-in, never the internal one
+    assert internal_buy_in == analysis["buy_in"]
+    capped_blend = official_buy_in_v1(analysis["methods"].values(), discount, internal_tp * 0.5)
+    assert capped_blend == internal_tp * 0.5 * 0.90 < internal_buy_in
+    assert official_entry_discount_v1("B3", 50.0, 80.0) == 0.20 + 0.5 * 0.11 + 0.2 * 0.06
+
+
 def test_producer_role_stamps_explicit_none_for_the_full_stamp(tmp_path) -> None:
     # The producer branch (the screeners' engine) is what BECOMES the record: it carries no served stamp, explicitly.
     service = service_for(tmp_path)

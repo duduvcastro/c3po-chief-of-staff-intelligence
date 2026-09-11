@@ -218,6 +218,29 @@ def test_instrument_component_unreadable_split_rows_make_split_coverage_unknown(
     assert [s["factor"] for s in mixed["daily"]["splits"]] == [4.0] and mixed["daily"]["split_coverage_verified"] is False
 
 
+def test_instrument_component_split_history_covers_1990_and_out_of_calendar_dates_are_named_never_raised() -> None:
+    # The components phase of the night of D=10/09 ended with ValueError / VALUE_ERROR (all its receipts preserved). The default XNYS
+    # calendar starts twenty years before today (2006-09-11): the offline counter-proof of a split row dated before it produces
+    # DateOutOfBounds — a compatible hypothesis, the real cause still N/D, no replay (C397-N1). The calendar
+    # now covers the split history requested (SPLIT_HISTORY_FROM = 1990-01-01) and a date outside its domain is named, never asked, never a crash.
+    first, last = prod.calendar_bounds()
+    assert prod.SPLIT_HISTORY_FROM == date(1990, 1, 1) and first == date(1990, 1, 2) and last >= D
+    sessions = prod.xnys_sessions_ending(PREVIOUS, 61)
+    received = _after_close(PREVIOUS, 200)
+    eod = _response(_rows61(sessions), received)
+    old = prod.build_instrument_component("MSFT", eod, _response([{"date": "2000-01-03", "split": "2/1"}, {"date": "2020-08-31", "split": "4/1"}], received), sessions=sessions)
+    assert [s["factor"] for s in old["daily"]["splits"]] == [2.0, 4.0] and old["daily"]["split_coverage_verified"] is True
+    assert datetime.fromisoformat(old["daily"]["splits"][0]["effective_at"]) == prod.session_open(date(2000, 1, 3))
+    assert old["receipt"]["unreadable_split_rows"] == []
+    assert prod.session_status(date(2000, 1, 3)) == "SESSION" and prod.session_status(date(2000, 1, 1)) == "NOT_SESSION"  # a Saturday
+    assert prod.session_status(first) == "SESSION" and prod.session_status(first - timedelta(days=1)) == "OUT_OF_CALENDAR"
+    for stamp in ("1985-06-03", "1989-12-29", (last + timedelta(days=1)).isoformat(), "2099-01-04"):
+        assert prod.session_status(date.fromisoformat(stamp)) == "OUT_OF_CALENDAR"
+        component = prod.build_instrument_component("MSFT", eod, _response([{"date": stamp, "split": "2/1"}, {"date": "2020-08-31", "split": "4/1"}], received), sessions=sessions)
+        assert [s["factor"] for s in component["daily"]["splits"]] == [4.0] and component["daily"]["split_coverage_verified"] is False
+        assert component["receipt"]["unreadable_split_rows"] == [{"index": 0, "reason": "DATE_OUTSIDE_CALENDAR"}]
+
+
 def test_instrument_component_conflicts_and_early_receipts_are_never_resolved_silently() -> None:
     sessions = prod.xnys_sessions_ending(PREVIOUS, 61)
     received = _after_close(PREVIOUS, 200)

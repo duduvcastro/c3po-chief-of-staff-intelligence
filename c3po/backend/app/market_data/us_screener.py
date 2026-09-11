@@ -11,6 +11,7 @@ from ..config import Settings
 from ..database import Database
 from ..schemas import B3Candidate, B3CandidateResponse, MatrixPowerItem, MatrixPowerResponse
 from ..valuation_official import current_generation, item_stamp, official_row, official_rows, official_stamp, provenance_sha256
+from ..valuation_official_engine import official_buy_in_v1, official_entry_discount_v1
 from ..valuation_policy import C3PO_VALUATION_POLICY, METHODOLOGY_KEY, METHODOLOGY_NAME, METHODOLOGY_VERSION
 from .b3_screener import ABSOLUTE_LOW_RISK_LIMIT, LATEST_COPOM_SELIC, MAX_ENTRY_DISTANCE, TP_UPSIDE_PREMIUM
 from .eodhd import EodhdClient
@@ -414,6 +415,17 @@ class USScreeningService:
         if data_sources < 2:
             reasons.append("public consensus unavailable")
         validated = not reasons and validation_score >= 65
+        buy_in = float(analysis["buy_in"])
+        # Passo 1 (official_internal_v1): the buy-in the SAME entry rule derives from the INTERNAL TP (the uncalibrated
+        # method mean the producer blends — its `c3po_tp` when the weight is 0), emitted on the same row so the internal
+        # record needs no recomputation of any method. The primary-listing bridge keeps its registered buy-in (it does not
+        # derive from a TP), and without a consensus the blend IS the internal TP: the producer's buy-in is the internal one.
+        if analysis.get("method_estimate_registered_on") or consensus is None:
+            internal_buy_in = buy_in
+        else:
+            internal_buy_in = official_buy_in_v1(
+                methods.values(), official_entry_discount_v1("US", float(analysis["risk_score"]), confidence), statistics.mean(methods.values()),
+            )
         return self._common_row(
             market,
             quote,
@@ -427,7 +439,8 @@ class USScreeningService:
             analyst_count=analyst_count,
             consensus_source=consensus_source,
             consensus_observed_at=consensus_observed_at,
-            buy_in=float(analysis["buy_in"]),
+            buy_in=buy_in,
+            internal_buy_in=internal_buy_in,
             methods=methods,
             risk=float(analysis["risk_score"]),
             confidence=confidence,
@@ -508,6 +521,7 @@ class USScreeningService:
             consensus=None,
             analyst_count=None,
             buy_in=buy_in,
+            internal_buy_in=buy_in,  # an ETF has no consensus: the internal TP is the served TP and so is its buy-in (Passo 1)
             methods=methods,
             risk=risk,
             confidence=confidence,
@@ -536,6 +550,7 @@ class USScreeningService:
         consensus: float | None,
         analyst_count: int | None,
         buy_in: float,
+        internal_buy_in: float,
         methods: dict[str, float],
         risk: float,
         confidence: float,
@@ -587,6 +602,7 @@ class USScreeningService:
             "upside_percent": upside,
             "expected_total_return_percent": expected_return,
             "buy_in": buy_in,
+            "internal_buy_in": internal_buy_in,  # Passo 1: the buy-in of the internal TP by the same rule (the official_internal_v1 record reads it)
             "price_vs_buy_in_percent": entry_distance,
             "buy_in_models": {name: target / (1 + 0.12 + risk / 100 * 0.10) for name, target in methods.items()},
             "methods": methods,

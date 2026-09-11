@@ -142,6 +142,59 @@ Rev 7 (Codex F393-11 on rev 6 — the historical reference is never rewritten si
   whose V1 hash does not verify, is an integrity failure: not served (WARNING once per record per process, INFO after),
   and its cycle is not selectable (``cycle_validation`` counts the row unrecorded). PostgreSQL reader and memory double
   apply the same rule; V2 rows are served exactly as before.
+
+Rev 8 / P1 — Passo 1 (spec rev 7 §7.5 item 5, §7-bis item 4; I-TP4): the consensus leaves the official TP by a NEW
+selection line, never by editing a number:
+* a SECOND official source, ``SOURCE_INTERNAL`` (``official_internal_v1``): the SAME producer cycles, the record ``tp``
+  being the row's ``internal_tp`` (``consensus_weight_percent = 0``), its ``buy_in`` the row's ``internal_buy_in`` — the
+  producer's own entry rule applied to the internal TP, emitted on the same row (US: ``official_buy_in_v1`` with the
+  mirrored entry hurdle; B3: ``_entry_from_tp(internal_tp, …)``; ETFs and the foreign bridge: the same buy-in) — and the
+  consensus persisted beside it exactly as in the blend record (``consensus_block``, same ``payload_sha256``); bands
+  come from ``internal_bear_tp``/``internal_bull_tp`` (no producer emits bands today: null, never rescaled);
+* DUAL RECORDING: ``record_cycle_predictions`` writes, for every cycle, the blend rows as before AND the internal rows in
+  ONE insert (same ``source_version`` — the cycle's methodology version; the ``v1`` lives in the source name); a row
+  without a positive ``internal_buy_in`` (a cycle produced before Passo 1) has no internal record and the cycle is not
+  selectable for the internal source (``unrecorded``) — it is carried, never patched;
+* SOURCE-AWARE SELECTION: every per-cycle reader names the source (``Database.valuation_predictions_for_cycle`` /
+  ``valuation_prediction_record`` REQUIRE it — a reader blind to the source served the internal row under a blend
+  generation, proved on the double); the automatic pass composes generations for the CURRENTLY SELECTED source only
+  (``_selected_source``: the head's ``source``, blend when there is no head), so a switch is never undone by the next
+  pass and a new cycle without internal records is a carry-over for an internal generation;
+* the SWITCH (blend → internal) is ``select_generation(source=SOURCE_INTERNAL, before_after_sha256=<report hash>)`` — an
+  explicit order (W3), REFUSED (``ValueError``) while ``OFFICIAL_TP_REPLACEMENT_AUTHORIZED`` is ``False`` (a module
+  constant: it flips only by a commit citing the mesa's receipt) and without the hash of the before/after receipt;
+  the ROLLBACK is ``select_generation(source=SOURCE_OFFICIAL, cycles=<the previous generation's>)`` by the same path,
+  never locked; ``receipt.source_switch`` names ``from``/``to``/``before_after_sha256``;
+* CONSUMERS are untouched: they read the selection and their stamps say ``tp_source = official_internal_v1`` after the
+  switch; ``_served`` overlays, besides ``our_tp``/``buy_in``, the record's ``consensus_weight_percent`` and the two
+  arithmetic identities of the producer (``upside_percent``, ``price_vs_buy_in_percent`` — bit for bit the blend's values
+  for a blend record); ``score``/``status``/``expected_total_return_percent`` remain the producer's blend view (a declared
+  residue, see the P1 doc); the frozen V3 engine and the pinned ``one_pager.py`` are not edited;
+* BEFORE/AFTER: ``before_after_report`` (CLI ``--before-after [--private-detail PATH]``) publishes, for the generation's
+  own cycles, per market ``n``, median and p90 of ``tp_internal / tp_blend − 1`` and of ``buy_in_internal / buy_in_blend − 1``
+  as an aggregate receipt with ``report_sha256``; the per-symbol detail goes ONLY to the private file, never printed —
+  the mesa's order to switch cites ``report_sha256``.
+
+Rev 8 / P1 residuals (Q1–Q6, internal adversarial verification):
+* the hash a switch cites is CHECKED, not just shaped (Q1) and BINDS the proposed composition (C395-1): ``select_generation`` recomputes ``before_after_report`` over the order's exact ``cycles``/``targeted`` — a hash computed over another cycle or another targeted set is refused; on the
+  head it read in the same attempt and refuses (``ValueError`` naming both hashes) any ``before_after_sha256`` that is not
+  that generation's ``report_sha256`` — a receipt computed on another generation (the head moved since the mesa read it)
+  is refused too; the report is deterministic (canonical JSON, sorted keys, no clock), so the mesa's receipt recomputes;
+  a switch needs a generation in force (there is no "before" otherwise);
+* the served ``buy_in_models`` are the RECORD's (Q2): ``_served`` overlays ``decomposition.buy_in_models`` when the record
+  carries any — the internal record's are the producer's ``internal_buy_in_models`` — so a consumer no longer shows the
+  blend's entry models under the internal buy-in; for a blend record they are the row's own values, bit for bit;
+* an UNKNOWN source is refused at write time (Q3: ``_new_generation`` and ``Database.insert_valuation_official_selection``
+  — ``ValueError``, nothing stored) and, should a head carry one anyway (a hand edit), it is NOT servable, loudly:
+  ``_selected_source`` returns ``None`` with an ERROR, the readers serve nothing, the automatic pass and the direct
+  admission activate nothing under it, the health is ``status = "error"`` naming ``unknown_source``, and the only way
+  out is the explicit rollback to the blend (never locked; ``receipt.source_switch.from`` names the unknown source);
+* ``selectable_cycles`` re-records a latest cycle with no record of the selected source ONLY when at least one of its rows
+  is usable for that source (Q4): a pre-P1 cycle under an internal head is skipped without N no-op inserts per pass;
+* the private before/after detail is written with ``O_CREAT | O_EXCL | O_NOFOLLOW`` and mode ``0o600`` (Q5): an existing
+  path (a file or a symlink) is refused (``FileExistsError``), nothing is overwritten or followed, the owner alone reads it;
+* a switch without an explicit ``source_version`` stamps the validated cycles' methodology versions (Q6: ``"+".join(sorted)``,
+  exactly as the automatic pass), never ``"rollback"``; a rollback to the blend keeps ``"rollback"`` unless given.
 """
 from __future__ import annotations
 
@@ -150,16 +203,27 @@ import copy
 import hashlib
 import json
 import logging
+import math
+import os
+import re
+import statistics
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Mapping
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals
 
+from .valuation_official_engine import OFFICIAL_SOURCES, SOURCE_BLEND, SOURCE_INTERNAL
+
 logger = logging.getLogger(__name__)
 
-SOURCE_OFFICIAL = "official_blend_v1"
+SOURCE_OFFICIAL = SOURCE_BLEND  # "official_blend_v1": the Passo 0 source, the default of every explicit order (a rollback target)
+OFFICIAL_TP_REPLACEMENT_AUTHORIZED = False  # the Passo 1 lock (spec §7-bis item 4): a switch to SOURCE_INTERNAL is refused while False; flips ONLY by a commit citing the mesa's receipt
+BEFORE_AFTER_SCHEMA = "VALUATION_P1_BEFORE_AFTER_V2"  # V2 (C395-1): the aggregate binds the AFTER composition (cycles + targeted)
+P90_METHOD = "linear interpolation at (n-1)*0.9"
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 PREDICTION_SCHEMA = "VALUATION_PREDICTION_V2"  # V2 (rev 6, B2): `published_at` joined the hashed core
 LEGACY_PREDICTION_SCHEMA = "VALUATION_PREDICTION_V1"  # rev 5: one clock — a stored V1 row is read, verified and served as V1, never relabelled (F393-11)
 SELECTION_SCHEMA = "VALUATION_OFFICIAL_SELECTION_V1"
@@ -320,7 +384,8 @@ def consensus_block(row: Mapping[str, Any], *, market: str) -> dict[str, Any]:
 
 def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycle_id: str, source_version: str,
                         prediction_instant: datetime, source_manifest_sha256: str | None = None,
-                        published_at: datetime | None = None, rerun_of: str | None = None) -> dict[str, Any] | None:
+                        published_at: datetime | None = None, rerun_of: str | None = None,
+                        source: str = SOURCE_OFFICIAL) -> dict[str, Any] | None:
     """The immutable record of one canonical row. ``None`` when the row carries no usable official TP
     (no symbol, TP or buy-in) — such rows are not predictions and never become official — or when the market's
     session is unknown (``CalendarUnavailable``: an identity cannot be minted from a civil date, rev 5). Every field
@@ -330,9 +395,22 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
     (defaults to ``prediction_instant`` — a live cycle; a re-run passes its own date and names ``rerun_of``). Both are
     hashed. A ``published_at`` BEFORE ``prediction_instant`` is a ``ValueError`` (S3) — the PostgreSQL CHECK, applied
     before any record exists. ``Database._prediction_record`` rebuilds EXACTLY this shape from a PostgreSQL row: change
-    both together."""
+    both together.
+    ``source`` (Passo 1): ``SOURCE_OFFICIAL`` reads the blend (``our_tp``/``buy_in``, the producer's weight and models);
+    ``SOURCE_INTERNAL`` reads the SAME row's ``internal_tp``/``internal_buy_in`` (the buy-in the producer derived from the
+    internal TP by its own rule; absent or non-positive → ``None``: not recordable in that source), writes
+    ``consensus_weight_percent = 0`` (top level and ``decomposition.weights``), ``decomposition.buy_in_models`` from
+    ``internal_buy_in_models`` (else the producer's), bands from ``internal_bear_tp``/``internal_bull_tp`` (null when the
+    producer emits none — never rescaled) — and keeps EVERYTHING else identical: the consensus of reference with its own
+    identity (``consensus_block``, same ``payload_sha256``), methods, calibration, provenance, both clocks."""
+    if source not in OFFICIAL_SOURCES:
+        raise ValueError(f"unknown official source {source!r}; expected one of {OFFICIAL_SOURCES}")
+    internal = source == SOURCE_INTERNAL
     symbol = str(row.get("symbol") or "").strip().upper()
-    tp, buy_in = _positive(row.get("our_tp")), _positive(row.get("buy_in"))
+    if internal:
+        tp, buy_in = _positive(row.get("internal_tp")), _positive(row.get("internal_buy_in"))
+    else:
+        tp, buy_in = _positive(row.get("our_tp")), _positive(row.get("buy_in"))
     if not symbol or tp is None or buy_in is None:
         return None
     instant = _utc(prediction_instant)
@@ -347,9 +425,14 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
         return None
     methods = row.get("methods")
     buy_in_models = row.get("buy_in_models")
+    if internal and isinstance(row.get("internal_buy_in_models"), Mapping):
+        buy_in_models = row.get("internal_buy_in_models")
+    bear_key, bull_key = ("internal_bear_tp", "internal_bull_tp") if internal else ("bear_tp", "bull_tp")
+    bear_tp, bull_tp = _positive(row.get(bear_key)), _positive(row.get(bull_key))
+    consensus_weight_percent = 0.0 if internal else _number(row.get("consensus_weight_percent"))
     core = {
         "schema": PREDICTION_SCHEMA,
-        "source": SOURCE_OFFICIAL,
+        "source": source,
         "source_version": str(source_version),
         "market": market,
         "symbol": symbol,
@@ -361,12 +444,12 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
         "tp": tp,
         "buy_in": buy_in,
         "internal_tp": _positive(row.get("internal_tp")),
-        "bear_tp": _positive(row.get("bear_tp")),
-        "bull_tp": _positive(row.get("bull_tp")),
+        "bear_tp": bear_tp,
+        "bull_tp": bull_tp,
         "consensus_tp": _positive(row.get("public_consensus_tp")),
         "consensus_source": _text_or_none(row.get("consensus_origin_source")),
         "analyst_count": _analyst_count(row),
-        "consensus_weight_percent": _number(row.get("consensus_weight_percent")),
+        "consensus_weight_percent": consensus_weight_percent,
         "price": _positive(row.get("price")),
         "currency": currency_of(market),
         "decomposition": {
@@ -375,9 +458,9 @@ def prediction_from_row(row: Mapping[str, Any], *, market: str, scope: str, cycl
             "weights": {
                 "calibration_factor": _number(row.get("calibration_factor")),
                 "convergence_weight": _number(row.get("convergence_weight")),
-                "consensus_weight_percent": _number(row.get("consensus_weight_percent")),
+                "consensus_weight_percent": consensus_weight_percent,
             },
-            "bands": {"bear_tp": _positive(row.get("bear_tp")), "bull_tp": _positive(row.get("bull_tp"))},
+            "bands": {"bear_tp": bear_tp, "bull_tp": bull_tp},
             "consensus": consensus_block(row, market=market),
             "valuation_profile": row.get("valuation_profile"),
             "risk_score": _number(row.get("risk_score")),
@@ -507,25 +590,31 @@ def cycle_clocks(snapshot: Mapping[str, Any]) -> tuple[datetime, datetime, str |
     return None
 
 
-def _usable(row: Mapping[str, Any]) -> bool:
-    return bool(str(row.get("symbol") or "").strip() and _positive(row.get("price")) and _positive(row.get("our_tp"))
+def _usable(row: Mapping[str, Any], source: str = SOURCE_OFFICIAL) -> bool:
+    """A row with everything a prediction of ``source`` needs: symbol, price, blend TP, buy-in, internal TP — and, for
+    ``SOURCE_INTERNAL``, the buy-in the producer derived from the internal TP (``internal_buy_in``, Passo 1)."""
+    base = bool(str(row.get("symbol") or "").strip() and _positive(row.get("price")) and _positive(row.get("our_tp"))
                 and _positive(row.get("buy_in")) and _positive(row.get("internal_tp")))
+    return base and (source != SOURCE_INTERNAL or _positive(row.get("internal_buy_in")) is not None)
 
 
-def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, Any]:
-    """Whether a cycle is COMPLETE, VALID and RECORDED enough to be selectable: it finished (it was published), it has
-    rows, every row is a usable prediction (symbol, price, TP, buy-in, internal TP), its market session is KNOWN
-    (the exchange calendar answered for ``published_at`` — an unavailable calendar makes the cycle unselectable, never
-    a civil-date session, rev 5) and — when ``recorded`` is given — every usable row already has its immutable
-    prediction record (selection never precedes the records, F393-5). Coverage against the producer's universe size
-    is recorded, never presumed. The same rule admits targeted cycles (automatic and explicit paths alike, F393-4)."""
+def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapping[str, Any]] | None = None,
+                     source: str = SOURCE_OFFICIAL) -> dict[str, Any]:
+    """Whether a cycle is COMPLETE, VALID and RECORDED enough to be selectable FOR ``source``: it finished (it was
+    published), it has rows, every row is a usable prediction (symbol, price, TP, buy-in, internal TP; for the internal
+    source the internal buy-in too, Passo 1), its market session is KNOWN (the exchange calendar answered for
+    ``published_at`` — an unavailable calendar makes the cycle unselectable, never a civil-date session, rev 5) and —
+    when ``recorded`` (the records of THAT source) is given — every usable row already has its immutable prediction
+    record (selection never precedes the records, F393-5). Coverage against the producer's universe size is recorded,
+    never presumed. The same rule admits targeted cycles (automatic and explicit paths alike, F393-4). A cycle produced
+    before Passo 1 (no ``internal_buy_in``) is invalid for the internal source and valid for the blend: it is carried."""
     rows = cycle_rows(snapshot)
     outputs = snapshot.get("outputs") if isinstance(snapshot.get("outputs"), Mapping) else {}
     universe_size = _number(outputs.get("universe_size")) if isinstance(outputs, Mapping) else None
-    invalid = [str(row.get("symbol") or "?") for row in rows if not _usable(row)]
+    invalid = [str(row.get("symbol") or "?") for row in rows if not _usable(row, source)]
     unrecorded: list[str] = []
     if recorded is not None:
-        unrecorded = [str(row["symbol"]).strip().upper() for row in rows if _usable(row) and str(row["symbol"]).strip().upper() not in recorded]
+        unrecorded = [str(row["symbol"]).strip().upper() for row in rows if _usable(row, source) and str(row["symbol"]).strip().upper() not in recorded]
     market = market_of_entity(str(snapshot.get("analysis_type") or ""), str(snapshot.get("entity_key") or ""))
     session_date: str | None = None
     calendar_unavailable = False
@@ -537,6 +626,7 @@ def cycle_validation(snapshot: Mapping[str, Any], *, recorded: Mapping[str, Mapp
             calendar_unavailable = True
     return {
         "cycle_id": str(snapshot.get("id")),
+        "source": source,
         "rows": len(rows),
         "universe_size": universe_size,
         "coverage": (len(rows) / universe_size) if universe_size else None,
@@ -568,9 +658,13 @@ def _manifest_sha(snapshot: Mapping[str, Any]) -> str | None:
 
 def record_cycle_predictions(database: Any, snapshot: Mapping[str, Any]) -> int:
     """The records of one producer cycle, written (append-only, idempotent: the unique key ignores a re-insert) —
-    NOTHING else: no activation, no admission. Returns how many records were new. An unavailable calendar makes NO
-    row recordable (one warning per cycle, not one per row); the cycle can be recorded later, when the calendar
-    answers again (``selectable_cycles`` does so before validating, X4)."""
+    NOTHING else: no activation, no admission. Returns how many records were new, over BOTH official sources (Passo 1,
+    dual recording): the blend rows as before AND the internal rows (``SOURCE_INTERNAL``), in ONE insert, the same
+    ``source_version`` (the cycle's methodology version; the unique key differs by ``source``). A row without a usable
+    internal buy-in yields no internal record — a cycle produced before Passo 1 records 0 internal rows and is not
+    selectable for the internal source. An unavailable calendar makes NO row recordable (one warning per cycle, not one
+    per row); the cycle can be recorded later, when the calendar answers again (``selectable_cycles`` does so before
+    validating, X4)."""
     analysis_type = str(snapshot.get("analysis_type") or "")
     market = market_of_entity(analysis_type, str(snapshot.get("entity_key") or ""))
     if market is None:
@@ -585,20 +679,40 @@ def record_cycle_predictions(database: Any, snapshot: Mapping[str, Any]) -> int:
     except CalendarUnavailable as error:
         logger.warning("valuation_official: cycle %s (%s) not recorded — %s", snapshot.get("id"), market, error)
         return 0
+    rows = cycle_rows(snapshot)
     records = [record for record in (prediction_from_row(row, market=market, scope=scope, cycle_id=str(snapshot["id"]),
                                                           source_version=_source_version(snapshot), prediction_instant=instant,
-                                                          source_manifest_sha256=_manifest_sha(snapshot), published_at=available, rerun_of=rerun_of)
-                                     for row in cycle_rows(snapshot)) if record is not None]
+                                                          source_manifest_sha256=_manifest_sha(snapshot), published_at=available, rerun_of=rerun_of,
+                                                          source=source)
+                                     for source in OFFICIAL_SOURCES for row in rows) if record is not None]
     return int(database.insert_valuation_predictions(records)) if records else 0
+
+
+def _selected_source(generation: Mapping[str, Any] | None) -> str | None:
+    """The source the official selection is on (Passo 1): the head's ``source``; the blend when there is no head yet
+    (the bootstrap) — the automatic pass composes generations for this source only, and every reader of a generation's
+    records names it. A generation whose ``source`` is not one of ``OFFICIAL_SOURCES`` (never written by this module —
+    a hand edit of the row) is NOT servable (Q3): ``None``, with an ERROR on every read — the readers serve nothing,
+    the writers activate nothing under it, the health says so; the explicit rollback to the blend is the way out."""
+    if not generation:
+        return SOURCE_OFFICIAL
+    source = generation.get("source")
+    if source in OFFICIAL_SOURCES:
+        return str(source)
+    logger.error("valuation_official: generation %s selects an UNKNOWN source %r (expected one of %s) — nothing is served and nothing is "
+                 "activated under it until the mesa selects a known source by explicit order (rollback to the blend, never locked; Q3)",
+                 generation.get("generation_id"), source, OFFICIAL_SOURCES)
+    return None
 
 
 def record_snapshot(database: Any, snapshot: Mapping[str, Any]) -> dict[str, Any]:
     """Called by the persistence layer right after a producer publishes a cycle: turns the cycle's rows into
-    prediction records FIRST, then (universe cycles) activates a new generation when the set of selectable cycles
-    changed, or (targeted cycles) admits the symbol into a new generation. Idempotent per cycle. No clock is taken
-    here: the activation instant is the wall clock the activation reads immediately before its INSERT — after the
-    records are written — never the cycle's ``published_at`` and never an instant from before the records (a clock
-    taken here and reused by the activation dated a generation before generations activated meanwhile, Y1)."""
+    prediction records FIRST (both official sources, Passo 1), then (universe cycles) activates a new generation when
+    the set of selectable cycles changed, or (targeted cycles) admits the symbol into a new generation. Idempotent per
+    cycle. No clock is taken here: the activation instant is the wall clock the activation reads immediately before its
+    INSERT — after the records are written — never the cycle's ``published_at`` and never an instant from before the
+    records (a clock taken here and reused by the activation dated a generation before generations activated meanwhile,
+    Y1). ``recorded`` counts the new records of both sources."""
     analysis_type = str(snapshot.get("analysis_type") or "")
     market = market_of_entity(analysis_type, str(snapshot.get("entity_key") or ""))
     if market is None:
@@ -608,17 +722,22 @@ def record_snapshot(database: Any, snapshot: Mapping[str, Any]) -> dict[str, Any
         generation = activate_generation_if_changed(database)
     else:
         symbol = str(snapshot.get("entity_key") or "").strip().upper()
-        has_record = bool(recorded) or symbol in database.valuation_predictions_for_cycle(str(snapshot["id"]))  # an unrecordable cycle is never admitted
+        # an unrecordable cycle is never admitted; the admission itself validates against the SELECTED source's records
+        has_record = bool(recorded) or any(symbol in database.valuation_predictions_for_cycle(str(snapshot["id"]), source=source) for source in OFFICIAL_SOURCES)
         generation = admit_targeted_cycle(database, symbol=symbol, cycle_id=str(snapshot["id"])) if has_record else None
     return {"recorded": recorded, "generation": generation}
 
 
-def selectable_cycles(database: Any) -> dict[str, dict[str, Any]]:
-    """The latest COMPLETE, VALID and RECORDED universe cycle per market (the candidates for the next generation).
-    A latest cycle with NO record at all is recorded here first (idempotent, records before selection): it was
+def selectable_cycles(database: Any, *, source: str = SOURCE_OFFICIAL) -> dict[str, dict[str, Any]]:
+    """The latest COMPLETE, VALID and RECORDED universe cycle per market FOR ``source`` (the candidates for the next
+    generation of that source — the automatic pass passes the selected one, Passo 1).
+    A latest cycle with NO record of that source is recorded here first (idempotent, records before selection): it was
     published while the calendar could not answer (nothing was recordable then, X4) or before Passo 0 — the moment
     the calendar answers, the next activation pass recovers it with its real session instead of leaving the market on
-    a stale generation. A cycle with SOME records missing is left alone: another process may still be writing them
+    a stale generation. The re-record is attempted ONLY when at least one row of the cycle is usable for ``source``
+    (Q4): a cycle produced before Passo 1 (no internal buy-in) has no row the internal source could record, so under an
+    internal head it is skipped — ``invalid`` for that source, carried, never patched — instead of N no-op inserts on
+    every automatic pass. A cycle with SOME records missing is left alone: another process may still be writing them
     (D1) and it is simply not selectable yet."""
     cycles: dict[str, dict[str, Any]] = {}
     for market in MARKETS:
@@ -626,11 +745,12 @@ def selectable_cycles(database: Any) -> dict[str, dict[str, Any]]:
         if not raw:
             continue
         snapshot = _normalized_snapshot(raw, analysis_type=UNIVERSE_ANALYSIS, entity_key=f"{market}_UNIVERSE")
-        recorded = database.valuation_predictions_for_cycle(str(snapshot["id"]))
-        if not recorded and cycle_rows(snapshot) and record_cycle_predictions(database, snapshot) > 0:
+        recorded = database.valuation_predictions_for_cycle(str(snapshot["id"]), source=source)
+        recordable = any(_usable(row, source) for row in cycle_rows(snapshot))  # Q4: nothing to record for this source → no insert attempted
+        if not recorded and recordable and record_cycle_predictions(database, snapshot) > 0:
             logger.info("valuation_official: %s cycle %s recorded at selection time (published while unrecordable)", market, snapshot["id"])
-            recorded = database.valuation_predictions_for_cycle(str(snapshot["id"]))
-        validation = cycle_validation(snapshot, recorded=recorded)
+            recorded = database.valuation_predictions_for_cycle(str(snapshot["id"]), source=source)
+        validation = cycle_validation(snapshot, recorded=recorded, source=source)
         validation["source_version"] = _source_version(snapshot)
         cycles[market] = validation
     return cycles
@@ -675,8 +795,12 @@ def _new_generation(database: Any, *, expected_previous: str | None, cycles: Map
     stale head: the chain was locked, Z1). Nothing is ever half-written.
     The marker of an explicit order (``receipt.explicit``) is written by ``select_generation`` alone: the non-strict
     path strips it from any receipt it is handed, so no automatic generation is ever read as an order (W3).
-    A conflict that finds the head UNMOVED is a legacy row chained behind its predecessor (W4, see ``_repaired``)."""
+    A conflict that finds the head UNMOVED is a legacy row chained behind its predecessor (W4, see ``_repaired``).
+    ``source`` must be one of ``OFFICIAL_SOURCES`` (Q3): a generation selecting an unknown source is never written —
+    ``ValueError`` on both paths, before anything is read (the storage layer refuses it too)."""
     from .database import SelectionConflict  # the storage layer raises it on the UNIQUE previous_generation_id / root
+    if source not in OFFICIAL_SOURCES:
+        raise ValueError(f"unknown official source {source!r}; expected one of {OFFICIAL_SOURCES} — a generation selecting it is never written (Q3)")
     current = database.latest_valuation_official_selection()
     head = current.get("generation_id") if current else None
     if head != expected_previous:
@@ -775,16 +899,18 @@ def _repaired(database: Any, generation: dict[str, Any], *, expected_previous: s
     return repaired
 
 
-def _admissible_targeted(database: Any, *, symbol: str, cycle_id: str, known_refusal: str | None = None) -> dict[str, Any] | None:
+def _admissible_targeted(database: Any, *, symbol: str, cycle_id: str, known_refusal: str | None = None,
+                         source: str = SOURCE_OFFICIAL) -> dict[str, Any] | None:
     """The validation of a targeted cycle for ``symbol`` when it may be admitted — the SAME validator as a universe
-    cycle (F393-4) and the symbol's own record present — else ``None``, logged: a WARNING the first time this cycle is
-    refused (the admission, or a recovery pass meeting a refused cycle id it did not know), INFO when the refusal is
-    already known — by this process (``_refusals_logged``) or by the head's receipt (``known_refusal``, Z3)."""
+    cycle (F393-4), for the SELECTED source (Passo 1), and the symbol's own record of that source present — else
+    ``None``, logged: a WARNING the first time this cycle is refused (the admission, or a recovery pass meeting a refused
+    cycle id it did not know), INFO when the refusal is already known — by this process (``_refusals_logged``) or by the
+    head's receipt (``known_refusal``, Z3)."""
     snapshot = database.official_cycle_snapshot(str(cycle_id))
     if not snapshot or snapshot.get("analysis_type") != TARGETED_ANALYSIS:
         return None
-    recorded = database.valuation_predictions_for_cycle(str(cycle_id))
-    validation = cycle_validation(snapshot, recorded=recorded)
+    recorded = database.valuation_predictions_for_cycle(str(cycle_id), source=source)
+    validation = cycle_validation(snapshot, recorded=recorded, source=source)
     if not validation["valid"] or symbol not in recorded:
         level = logging.INFO if str(cycle_id) in (known_refusal, _refusals_logged.get(symbol)) else logging.WARNING
         logger.log(level, "valuation_official: targeted cycle %s for %s refused: %s", cycle_id, symbol,
@@ -808,7 +934,8 @@ def _predicted_at_or_before(database: Any, cycle_id: str, order: Mapping[str, An
 
 
 def _recovered_targeted(database: Any, carried: Mapping[str, str], universe_cycle: str | None, *,
-                        head: Mapping[str, Any] | None, order: Mapping[str, Any] | None) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+                        head: Mapping[str, Any] | None, order: Mapping[str, Any] | None,
+                        source: str = SOURCE_OFFICIAL) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     """The targeted admissions of the next generation (Y3): the carried ones, then — for every symbol with a REGISTERED
     targeted cycle newer than the one carried (or none carried) — that cycle, if it passes the validator and the
     universe cycle does not serve the symbol (A1). A targeted cycle that was recorded but never admitted (its admission
@@ -823,24 +950,24 @@ def _recovered_targeted(database: Any, carried: Mapping[str, str], universe_cycl
     head's receipt (or this process) already names that cycle for the symbol, at WARNING when the refused cycle id
     changes (Z3). The authority clock is the record's ``prediction_instant`` (a re-run keeps the ORIGINAL's instant, so
     a re-run published after the order never re-opens what it decided, S1), as on the admission and the universe path (W1).
-    Returns ``(targeted, recovered, refused)``."""
+    Every record read here is of the SELECTED ``source`` (Passo 1). Returns ``(targeted, recovered, refused)``."""
     targeted = dict(carried)
     recovered: dict[str, str] = {}
     refused: dict[str, str] = {}
-    served = set(database.valuation_predictions_for_cycle(str(universe_cycle))) if universe_cycle else set()
+    served = set(database.valuation_predictions_for_cycle(str(universe_cycle), source=source)) if universe_cycle else set()
     authority = _utc(order["activated_at"]) if order else None
     known_refusals = ((head or {}).get("receipt") or {}).get("targeted_refused") or {}
-    for symbol, record in sorted(database.latest_targeted_predictions("B3", source=SOURCE_OFFICIAL).items()):
+    for symbol, record in sorted(database.latest_targeted_predictions("B3", source=source).items()):
         clean = str(symbol).strip().upper()
         candidate = str(record["cycle_id"])
         if clean in served or targeted.get(clean) == candidate:
             continue
         if authority is not None and _utc(record["prediction_instant"]) <= authority:
             continue  # predicted at or before the mesa's last explicit order: that order decided over it (Z2; a re-run keeps the original's instant, S1)
-        admitted = database.valuation_prediction_record(str(targeted[clean]), clean) if clean in targeted else None
+        admitted = database.valuation_prediction_record(str(targeted[clean]), clean, source=source) if clean in targeted else None
         if admitted is not None and _utc(record["prediction_instant"]) <= _utc(admitted["prediction_instant"]):
             continue  # the generation already holds a cycle at least as recent
-        if _admissible_targeted(database, symbol=clean, cycle_id=candidate, known_refusal=known_refusals.get(clean)) is None:
+        if _admissible_targeted(database, symbol=clean, cycle_id=candidate, known_refusal=known_refusals.get(clean), source=source) is None:
             refused[clean] = candidate
             continue
         targeted[clean] = candidate
@@ -870,10 +997,19 @@ def activate_generation_if_changed(database: Any) -> dict[str, Any] | None:
     refused and the decision is recomposed on the new head (F393-9), up to ``RECOMPOSITION_ATTEMPTS`` times (Y2) —
     each attempt is a new activation, dated by the wall clock read at its own INSERT (Y1), never before the head it
     chains on (Z1); past the limit the pass gives up with a WARNING and the next pass (the next cycle of any market, or
-    the bootstrap) composes the decision again."""
+    the bootstrap) composes the decision again.
+    Passo 1: the pass composes for the CURRENTLY SELECTED source only (``_selected_source`` of the head read on this
+    attempt; the blend when there is no head): candidates, targeted recovery and the new generation all carry that
+    source — a switch ordered by the mesa is never undone by the next pass, and a market whose new cycle has no records
+    of the selected source (a cycle produced before Passo 1, for an internal generation) is carried over. A head whose
+    source is unknown activates NOTHING (Q3, ERROR logged by ``_selected_source``): the pass never composes a blend
+    generation over it — the mesa rolls back by explicit order."""
     for attempt in range(RECOMPOSITION_ATTEMPTS):
-        candidates = selectable_cycles(database)
         current = database.latest_valuation_official_selection()
+        selected = _selected_source(current)
+        if selected is None:
+            return None  # Q3: an unknown head source is not a source to compose for; the ERROR is logged, the health says so
+        candidates = selectable_cycles(database, source=selected)
         order = database.latest_explicit_valuation_official_selection() if current else None  # the mesa's last order, once (W1/W3)
         authority = _utc(order["activated_at"]) if order else None
         cycles: dict[str, str] = {}
@@ -902,16 +1038,16 @@ def activate_generation_if_changed(database: Any) -> dict[str, Any] | None:
                 logger.warning("valuation_official: %s has no valid recorded cycle and no generation to carry — nothing activated", market)
                 return None
         carried_targeted = _normalized_targeted((current or {}).get("targeted") or {}, strict=False)
-        targeted, recovered, refused = _recovered_targeted(database, carried_targeted, cycles.get("B3"), head=current, order=order)
-        if current and current.get("cycles") == cycles and current.get("targeted") == targeted and current.get("source") == SOURCE_OFFICIAL:
-            return None
+        targeted, recovered, refused = _recovered_targeted(database, carried_targeted, cycles.get("B3"), head=current, order=order, source=selected)
+        if current and current.get("cycles") == cycles and current.get("targeted") == targeted:
+            return None  # nothing changed for the selected source: only the cycles and the targeted admissions decide (Passo 1)
         generation = _new_generation(
-            database, expected_previous=current.get("generation_id") if current else None, cycles=cycles, targeted=targeted, source=SOURCE_OFFICIAL,
+            database, expected_previous=current.get("generation_id") if current else None, cycles=cycles, targeted=targeted, source=selected,
             source_version="+".join(sorted(set(versions.values()))), session_dates=session_dates, activated_by=ACTIVATED_BY,
             receipt={"validation": {market: {k: v for k, v in candidates[market].items() if k != "invalid_rows"} for market in MARKETS if market in candidates},
                      "changed_markets": [market for market in MARKETS if not current or (current.get("cycles") or {}).get(market) != cycles[market]],
                      "carried_markets": carried, "held_by_explicit_order": held, "explicit_order": str(order["generation_id"]) if order else None,
-                     "versions": versions, "targeted_recovered": recovered, "targeted_refused": refused, "attempt": attempt + 1},
+                     "versions": versions, "source": selected, "targeted_recovered": recovered, "targeted_refused": refused, "attempt": attempt + 1},
         )
         if generation is not None:
             return generation
@@ -952,6 +1088,9 @@ def admit_targeted_cycle(database: Any, *, symbol: str, cycle_id: str) -> dict[s
         current = database.latest_valuation_official_selection()
         if not current:
             return None
+        selected = _selected_source(current)  # every record read below is of the head's source (Passo 1)
+        if selected is None:
+            return None  # Q3: nothing is admitted under a head whose source is unknown (ERROR logged); the mesa rolls back
         carried = _normalized_targeted(current.get("targeted") or {}, strict=False)  # the head's admissions as they are served (Y4, U1)
         held_cycle = carried.get(clean)
         if held_cycle == str(cycle_id):
@@ -961,23 +1100,23 @@ def admit_targeted_cycle(database: Any, *, symbol: str, cycle_id: str) -> dict[s
             logger.info("valuation_official: targeted cycle %s for %s was predicted at or before the mesa's last explicit order %s (%s) — held, not "
                         "admitted: the order decided over it (B3)", cycle_id, clean, order["generation_id"], order["activated_at"])
             return None
-        held_record = database.valuation_prediction_record(str(held_cycle), clean) if held_cycle else None
-        candidate = database.valuation_prediction_record(str(cycle_id), clean)
+        held_record = database.valuation_prediction_record(str(held_cycle), clean, source=selected) if held_cycle else None
+        candidate = database.valuation_prediction_record(str(cycle_id), clean, source=selected)
         if held_record is not None and candidate is not None and _utc(candidate["prediction_instant"]) <= _utc(held_record["prediction_instant"]):
             logger.info("valuation_official: targeted cycle %s for %s (predicted %s) is not newer than the cycle the generation holds, %s (%s) — not "
                         "admitted (S2)", cycle_id, clean, candidate["prediction_instant"], held_cycle, held_record["prediction_instant"])
             return None
-        if validation is None:  # validated once, against the head's known refusals (W5)
+        if validation is None or validation.get("source") != selected:  # validated once per source, against the head's known refusals (W5)
             known = ((current.get("receipt") or {}).get("targeted_refused") or {}).get(clean)
-            validation = _admissible_targeted(database, symbol=clean, cycle_id=str(cycle_id), known_refusal=str(known) if known else None)
+            validation = _admissible_targeted(database, symbol=clean, cycle_id=str(cycle_id), known_refusal=str(known) if known else None, source=selected)
             if validation is None:
                 return None
         universe_cycle = (current.get("cycles") or {}).get("B3")
-        if universe_cycle and clean in database.valuation_predictions_for_cycle(str(universe_cycle)):
+        if universe_cycle and clean in database.valuation_predictions_for_cycle(str(universe_cycle), source=selected):
             return None
         generation = _new_generation(
             database, expected_previous=str(current["generation_id"]), cycles=current["cycles"],
-            targeted={**carried, clean: str(cycle_id)}, source=str(current["source"]),
+            targeted={**carried, clean: str(cycle_id)}, source=selected,
             source_version=str(current["source_version"]), session_dates=dict(current.get("session_dates") or {}), activated_by=ACTIVATED_BY,
             receipt={"targeted_admission": {"symbol": clean, "cycle_id": str(cycle_id), "validation": {k: v for k, v in validation.items() if k != "invalid_rows"}},
                      "changed_markets": [], "attempt": attempt + 1,
@@ -991,7 +1130,8 @@ def admit_targeted_cycle(database: Any, *, symbol: str, cycle_id: str) -> dict[s
 
 
 def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime, activated_by: str, reason: str,
-                      targeted: Mapping[str, str] | None = None, source: str = SOURCE_OFFICIAL, source_version: str = "rollback") -> dict[str, Any]:
+                      targeted: Mapping[str, str] | None = None, source: str = SOURCE_OFFICIAL, source_version: str | None = None,
+                      before_after_sha256: str | None = None) -> dict[str, Any]:
     """Explicit selection (rollback or a mesa-ordered switch): a new generation pointing at complete, recorded cycles
     that already exist — each market cycle must be a universe cycle OF THAT MARKET, each targeted cycle a targeted
     cycle OF THAT SYMBOL, and BOTH must pass ``cycle_validation`` (the validator of the automatic path: a targeted row
@@ -1007,7 +1147,34 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
     ``now`` is the mesa's WALL CLOCK at the order: a clock behind the head is refused (D3) and so is a clock further
     ahead of this host's than ``EXPLICIT_CLOCK_TOLERANCE`` (60 s; W2) — an order dated in the future would stand over
     cycles not yet published. The order is marked ``receipt.explicit = True`` — the ONLY marker the automatic path
-    reads as an order (W3). Never used by the nightly path."""
+    reads as an order (W3). Never used by the nightly path.
+    ``source`` (Passo 1): the source the new generation SELECTS, one of ``OFFICIAL_SOURCES``; every named cycle is
+    validated against the records OF THAT SOURCE (a cycle produced before Passo 1 has no internal records and is
+    refused for ``SOURCE_INTERNAL``). A switch to any source other than ``SOURCE_OFFICIAL`` is REFUSED while the lock
+    ``OFFICIAL_TP_REPLACEMENT_AUTHORIZED`` is ``False`` (it flips only by a commit citing the mesa's receipt) and requires
+    ``before_after_sha256`` — the ``report_sha256`` of the before/after receipt (``before_after_report``) the order cites,
+    which is CHECKED (Q1) and BINDS the proposal (C395-1): after the cycle/targeted validations (an invalid cycle is named
+    as such first) the receipt is recomputed here on the head read in this same attempt, over EXACTLY this order's
+    ``cycles``/``targeted`` (normalized) and the ``source_version`` it stamps (deterministic — no clock, canonical JSON),
+    and a hash that is not that ``report_sha256`` is refused, naming both — so a well-formed but foreign hash, the receipt
+    of a generation the chain has moved past, or a receipt approved over ANOTHER composition (a different cycle in a market,
+    a targeted admission added or dropped, another version) never lands; a switch needs a generation in force (there is no
+    "before" to compare otherwise — refused before anything else is read).
+    ``source_version`` (Q6): the mesa's declaration when given; when omitted, a switch stamps the methodology versions of
+    the validated universe cycles (``"+".join(sorted(set))``, exactly as the automatic pass stamps its generations) and a
+    rollback to the blend stamps ``"rollback"`` (the Passo 0 behaviour) — a switch is never stamped ``"rollback"``.
+    The ROLLBACK to the blend is this same call with ``source=SOURCE_OFFICIAL`` and the previous generation's cycles:
+    never locked, no hash required — and the way out of a head whose source is unknown (Q3). When the source changes,
+    ``receipt.source_switch`` names ``from`` (the head's source as stored)/``to``/hash."""
+    if source not in OFFICIAL_SOURCES:
+        raise ValueError(f"unknown official source {source!r}; expected one of {OFFICIAL_SOURCES}")
+    if source != SOURCE_OFFICIAL:
+        if not OFFICIAL_TP_REPLACEMENT_AUTHORIZED:
+            raise ValueError(f"official_tp_replacement_authorized is false: a switch of the official source to {source!r} is refused until the "
+                             "mesa's receipt flips the lock (V3.2 rev 7 §7-bis, Passo 1); the rollback to the blend is never locked")
+        if not before_after_sha256 or not _SHA256.match(str(before_after_sha256)):
+            raise ValueError(f"a switch to {source!r} must cite the before/after receipt: before_after_sha256 (hex-64, the report_sha256 of "
+                             "before_after_report) is missing or malformed")
     instant = _utc(now)
     wall = datetime.now(timezone.utc)
     if instant > wall + EXPLICIT_CLOCK_TOLERANCE:
@@ -1018,28 +1185,47 @@ def select_generation(database: Any, *, cycles: Mapping[str, str], now: datetime
         raise ValueError(f"cycles must name every market; missing: {', '.join(missing)}")
     admissions = _normalized_targeted(targeted or {})
     current = database.latest_valuation_official_selection()
+    if source != SOURCE_OFFICIAL and current is None:  # Q1: no "before" to compare — refused before anything else is read
+        raise ValueError(f"a switch to {source!r} requires a generation in force: the before/after receipt compares the cycles it serves, "
+                         "and there is none — bootstrap the blend first")
     session_dates: dict[str, str] = {}
+    versions: set[str] = set()
     for market in MARKETS:
         snapshot = database.analysis_snapshot_by_id(str(cycles[market]))
         if not snapshot or snapshot.get("analysis_type") != UNIVERSE_ANALYSIS or market_of_entity(UNIVERSE_ANALYSIS, str(snapshot.get("entity_key") or "")) != market:
             raise ValueError(f"cycle for {market} is not a universe cycle of {market}: {cycles.get(market)}")
-        validation = cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(str(cycles[market])))
+        validation = cycle_validation(snapshot, recorded=database.valuation_predictions_for_cycle(str(cycles[market]), source=source), source=source)
         if not validation["valid"]:
-            raise ValueError(f"cycle for {market} is not complete/valid/recorded: {cycles[market]}")
+            raise ValueError(f"cycle for {market} is not complete/valid/recorded for source {source}: {cycles[market]}")
         session_dates[market] = str(validation["session_date"])
+        versions.add(_source_version(snapshot))
+    if source_version is None:  # Q6: a switch is stamped with the validated cycles' methodology versions, as the automatic pass; a rollback keeps "rollback"
+        source_version = "rollback" if source == SOURCE_OFFICIAL else "+".join(sorted(versions))
     for symbol, cycle_id in admissions.items():
         snapshot = database.analysis_snapshot_by_id(cycle_id)
         if not snapshot or snapshot.get("analysis_type") != TARGETED_ANALYSIS or str(snapshot.get("entity_key") or "").strip().upper() != symbol:
             raise ValueError(f"targeted cycle for {symbol} is not a targeted cycle of {symbol}: {cycle_id}")
-        recorded = database.valuation_predictions_for_cycle(cycle_id)
-        validation = cycle_validation(snapshot, recorded=recorded)
+        recorded = database.valuation_predictions_for_cycle(cycle_id, source=source)
+        validation = cycle_validation(snapshot, recorded=recorded, source=source)
         if not validation["valid"] or symbol not in recorded:
-            raise ValueError(f"targeted cycle for {symbol} is not complete/valid/recorded: {cycle_id} "
+            raise ValueError(f"targeted cycle for {symbol} is not complete/valid/recorded for source {source}: {cycle_id} "
                              f"({ {k: validation[k] for k in ('invalid_count', 'unrecorded_count', 'rows', 'calendar_unavailable')} })")
+    if source != SOURCE_OFFICIAL:  # Q1 (after the validations, so an invalid cycle is named as such first): the cited receipt must be THE receipt of the generation in force, recomputed here over THIS proposal (C395-1)
+        expected = before_after_report(database, generation=current, cycles=cycles, targeted=admissions, source_version=source_version)["report_sha256"]  # C395-1: bound to THIS composition
+        if str(before_after_sha256) != expected:
+            raise ValueError(f"a switch to {source!r} must cite the before/after receipt of the generation in force ({current['generation_id']}) "
+                             f"computed over EXACTLY the cycles and targeted admissions this order proposes (and the source_version it stamps): before_after_sha256 "
+                             f"{str(before_after_sha256)[:12]}… does not match its report_sha256 {expected[:12]}… — the receipt was computed on "
+                             "another generation (the chain moved since the mesa read it), over another composition (a different cycle in a "
+                             "market, a targeted admission added or dropped, another declared source_version), or is not this receipt; re-run "
+                             "before_after_report on the head with the order's cycles/targeted/source_version and cite it (C395-1)")
+    receipt: dict[str, Any] = {"reason": reason, "explicit": True}  # the marker of an order — written here and nowhere else (W3)
+    if current is not None and current.get("source") != source:  # a switch or a rollback of the SOURCE: named in the receipt (Passo 1) — as STORED, so
+        receipt["source_switch"] = {"from": current.get("source"), "to": source, "before_after_sha256": before_after_sha256}  # an unknown source is named (Q3)
     generation = _new_generation(
         database, expected_previous=current.get("generation_id") if current else None, cycles=cycles, targeted=admissions,
         source=source, source_version=source_version, session_dates=session_dates, now=instant, activated_by=activated_by,
-        receipt={"reason": reason, "explicit": True}, strict=True,  # the marker of an order — written here and nowhere else (W3)
+        receipt=receipt, strict=True,
     )
     assert generation is not None  # strict mode raises instead of returning None
     return generation
@@ -1074,11 +1260,31 @@ def _markets_for(market: str | None) -> tuple[str, ...]:
 def _served(row: Mapping[str, Any], record: Mapping[str, Any], *, generation: Mapping[str, Any], cycle_id: str, scope: str, market: str) -> dict[str, Any]:
     """What a consumer receives: a DEEP COPY of the cycle row for display fields, with the SERVED numbers taken from
     the immutable record (``our_tp``, ``buy_in``) and the full stamp (F393-3, F393-5, F393-6). Mutating the result
-    never reaches a cache or a record."""
+    never reaches a cache or a record.
+    Passo 1: the record's ``consensus_weight_percent`` (0 for an internal record) and the producer's two arithmetic
+    identities over the served numbers — ``upside_percent = (tp / price − 1) × 100`` and ``price_vs_buy_in_percent =
+    (price / buy_in − 1) × 100``, the very expressions the US and B3 producers evaluate — are overlaid too, so a consumer
+    that displays or ranks by them sees the served TP; for a blend record they are bit for bit the row's own values.
+    The entry models behind the served buy-in — ``buy_in_models`` — are the RECORD's ``decomposition.buy_in_models`` when
+    it carries any (Q2): the internal record's are the producer's ``internal_buy_in_models`` (else the producer's, as
+    ``prediction_from_row`` stored them), so the models shown beside the internal buy-in are its own; for a blend record
+    they are the row's own values, bit for bit (a record without models leaves the row's untouched).
+    The producer's other display fields (``score``, ``status``, ``expected_total_return_percent``) stay as the producer
+    computed them over the blend (a declared residue of Passo 1, closed by Passo 3)."""
     stamped = copy.deepcopy(dict(row))
+    tp, buy_in, price = float(record["tp"]), float(record["buy_in"]), _positive(record.get("price"))
+    if price is not None:
+        stamped["upside_percent"] = (tp / price - 1) * 100
+        stamped["price_vs_buy_in_percent"] = (price / buy_in - 1) * 100
+    if record.get("consensus_weight_percent") is not None:
+        stamped["consensus_weight_percent"] = float(record["consensus_weight_percent"])
+    decomposition = record.get("decomposition")
+    models = decomposition.get("buy_in_models") if isinstance(decomposition, Mapping) else None
+    if isinstance(models, Mapping) and models:
+        stamped["buy_in_models"] = copy.deepcopy(dict(models))  # Q2: the models of the served buy-in, never the blend's under an internal record
     stamped.update({
-        "our_tp": float(record["tp"]),
-        "buy_in": float(record["buy_in"]),
+        "our_tp": tp,
+        "buy_in": buy_in,
         "tp_source": record["source"],
         "tp_source_version": record["source_version"],
         "generation_id": generation["generation_id"],
@@ -1109,6 +1315,9 @@ def official_rows(database: Any, market: str, *, generation: Any = UNRESOLVED) -
     resolved = _resolve(database, generation)
     if not resolved:
         return {}
+    source = _selected_source(resolved)  # the records of the generation's own source (Passo 1)
+    if source is None:
+        return {}  # Q3: an unknown source serves nothing (ERROR logged) — never a guess
     result: dict[str, dict[str, Any]] = {}
     for selected in _markets_for(market):
         cycle_id = (resolved.get("cycles") or {}).get(selected)
@@ -1117,7 +1326,7 @@ def official_rows(database: Any, market: str, *, generation: Any = UNRESOLVED) -
         snapshot = database.official_cycle_snapshot(str(cycle_id))
         if not snapshot:
             continue
-        records = database.valuation_predictions_for_cycle(str(cycle_id))
+        records = database.valuation_predictions_for_cycle(str(cycle_id), source=source)
         rows_by_symbol = {str(row.get("symbol") or "").strip().upper(): row for row in cycle_rows(snapshot)}
         for symbol, record in records.items():
             row = rows_by_symbol.get(symbol)
@@ -1136,9 +1345,12 @@ def official_row(database: Any, market: str, symbol: str, *, generation: Any = U
     resolved = _resolve(database, generation)
     if not resolved:
         return None
+    source = _selected_source(resolved)  # the record of the generation's own source (Passo 1)
+    if source is None:
+        return None  # Q3: an unknown source serves nothing (ERROR logged) — never a guess
     for selected in _markets_for(market):
         cycle_id = (resolved.get("cycles") or {}).get(selected)
-        record = database.valuation_prediction_record(str(cycle_id), clean) if cycle_id else None  # one record, one copy
+        record = database.valuation_prediction_record(str(cycle_id), clean, source=source) if cycle_id else None  # one record, one copy
         if record is None:
             continue
         snapshot = database.official_cycle_snapshot(str(cycle_id))
@@ -1150,7 +1362,7 @@ def official_row(database: Any, market: str, symbol: str, *, generation: Any = U
     targeted_cycle = (resolved.get("targeted") or {}).get(clean)
     if targeted_cycle and "B3" in _markets_for(market):
         snapshot = database.official_cycle_snapshot(str(targeted_cycle))
-        record = database.valuation_prediction_record(str(targeted_cycle), clean)
+        record = database.valuation_prediction_record(str(targeted_cycle), clean, source=source)
         if snapshot and record is not None:
             for row in cycle_rows(snapshot):
                 if str(row.get("symbol") or "").strip().upper() == clean:
@@ -1183,6 +1395,24 @@ def prediction_records(database: Any, market: str, symbol: str, *, source: str |
     return rows[:limit]
 
 
+def _generation_records(database: Any, generation: Mapping[str, Any], market: str, *, source: str) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    """Everything a generation serves for ``market`` in ONE source, keyed by symbol: the universe cycle's records plus
+    the records of the targeted cycles it admitted for that market (universe wins on a collision, as ``official_row``
+    serves) — and the targeted cycles included. Copies. Read by the studies' arm and by the before/after report."""
+    cycle_id = (generation.get("cycles") or {}).get(market)
+    results: dict[str, dict[str, Any]] = database.valuation_predictions_for_cycle(str(cycle_id), source=source) if cycle_id else {}
+    targeted_cycles: dict[str, str] = {}
+    for symbol, targeted_cycle in sorted((generation.get("targeted") or {}).items()):
+        clean = str(symbol).strip().upper()
+        if clean in results or market_of_entity(TARGETED_ANALYSIS, clean) != market:
+            continue
+        record = database.valuation_prediction_record(str(targeted_cycle), clean, source=source)
+        if record is not None:
+            results[clean] = record
+            targeted_cycles[clean] = str(targeted_cycle)
+    return results, targeted_cycles
+
+
 def official_prediction_snapshot(database: Any, market: str, *, generation: Any = UNRESOLVED) -> dict[str, Any] | None:
     """The official records of one market for one generation, in the shape the studies adapter reads (``outputs.results``
     keyed by symbol), with ``published_at`` = the generation's activation — the provenance a study needs. A study
@@ -1197,16 +1427,11 @@ def official_prediction_snapshot(database: Any, market: str, *, generation: Any 
     cycle_id = (resolved.get("cycles") or {}).get(market)
     if not cycle_id:
         return None
-    results = database.valuation_predictions_for_cycle(str(cycle_id))  # a deep copy: the store is never handed out
-    targeted_cycles: dict[str, str] = {}
-    for symbol, targeted_cycle in sorted((resolved.get("targeted") or {}).items()):
-        clean = str(symbol).strip().upper()
-        if clean in results or market_of_entity(TARGETED_ANALYSIS, clean) != market:
-            continue
-        record = database.valuation_prediction_record(str(targeted_cycle), clean)
-        if record is not None:
-            results[clean] = record
-            targeted_cycles[clean] = str(targeted_cycle)
+    # the records of the generation's own source (Passo 1): after a switch, the internal ones; an unknown source: nothing (Q3)
+    source = _selected_source(resolved)
+    if source is None:
+        return None
+    results, targeted_cycles = _generation_records(database, resolved, market, source=source)
     return {
         "id": str(cycle_id),
         "analysis_type": "valuation_official_prediction",
@@ -1224,11 +1449,14 @@ def selection_health(database: Any, *, now: datetime) -> dict[str, Any]:
     calendar cannot answer is reported as such (``calendar_unavailable``) and counted stale: its freshness is unknown
     and its next cycle cannot be selected until the calendar is back (rev 5). ``head_has_successor`` names the successor
     of the head when the head (``max(activated_at)``) is not the chain tip — a row chained behind its predecessor; the
-    next activation chains on the tip (W4)."""
+    next activation chains on the tip (W4). A head whose source is unknown (Q3) is ``status = "error"``: ``source`` is
+    ``None``, ``unknown_source`` names what the row carries, and the detail says nothing is served until the mesa rolls
+    back by explicit order."""
     current = current_generation(database)
     if not current:
-        return {"status": "none", "generation_id": None, "markets": {}, "head_has_successor": None,
+        return {"status": "none", "generation_id": None, "source": None, "unknown_source": None, "markets": {}, "head_has_successor": None,
                 "detail": "no official generation in force — screeners serve nothing"}
+    source = _selected_source(current)
     successor = database.valuation_official_selection_successor(str(current["generation_id"]))
     today = _utc(now)
     markets: dict[str, dict[str, Any]] = {}
@@ -1259,8 +1487,14 @@ def selection_health(database: Any, *, now: datetime) -> dict[str, Any]:
         detail += f"; calendar unavailable: {', '.join(unavailable)}"
     if successor:
         detail += f"; the head has a successor dated behind it ({successor['generation_id']}) — the next activation chains on the chain tip"
-    return {"status": "stale" if stale else "ok", "generation_id": current["generation_id"], "activated_at": current["activated_at"], "markets": markets,
-            "stale_markets": stale, "calendar_unavailable": unavailable,
+    status = "stale" if stale else "ok"
+    if source is None:  # Q3: loud on the card too — nothing is served under this head
+        status = "error"
+        detail = (f"the generation in force selects an UNKNOWN source {current.get('source')!r} — nothing is served and nothing is activated "
+                  f"until the mesa selects a known source by explicit order (rollback to the blend); {detail}")
+    return {"status": status, "generation_id": current["generation_id"], "source": source,
+            "unknown_source": None if source is not None else current.get("source"),
+            "activated_at": current["activated_at"], "markets": markets, "stale_markets": stale, "calendar_unavailable": unavailable,
             "head_has_successor": str(successor["generation_id"]) if successor else None, "detail": detail}
 
 
@@ -1283,16 +1517,190 @@ def bootstrap_official_selection(database: Any) -> dict[str, Any]:
     return {"recorded": recorded, "generation": generation}
 
 
+def _percentile(values: list[float], fraction: float) -> float | None:
+    """``P90_METHOD``: linear interpolation at position ``(n − 1) × fraction`` over the sorted sample; ``None`` when empty.
+    Local on purpose — the screener's helper lives in a module that imports this one (no cycle), and the method is
+    declared in the receipt so the mesa can recompute it."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * fraction
+    lower, upper = math.floor(position), math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    weight = position - lower
+    return ordered[lower] * (1 - weight) + ordered[upper] * weight
+
+
+def _ratio_stats(values: list[float]) -> dict[str, float | None]:
+    magnitudes = [abs(value) for value in values]
+    return {"median": statistics.median(values) if values else None, "p90": _percentile(values, 0.9),
+            "abs_median": statistics.median(magnitudes) if magnitudes else None, "abs_p90": _percentile(magnitudes, 0.9)}
+
+
+def before_after_report(database: Any, *, generation: Any = UNRESOLVED, private_detail_path: str | Path | None = None,
+                        cycles: Mapping[str, str] | None = None, targeted: Mapping[str, str] | None = None,
+                        source_version: str | None = None) -> dict[str, Any]:
+    """The before/after receipt of Passo 1 (spec §7-bis item 4): BEFORE = ONE generation (the head unless ``generation``
+    is given) as it serves the blend; AFTER = the composition the order PROPOSES — ``cycles`` (every market) and
+    ``targeted`` (symbol → cycle, normalized; with ``cycles`` given and ``targeted`` omitted the proposal admits NO
+    targeted cycle — exactly as the order ``select_generation(cycles=…)`` without ``targeted`` purges them), both under
+    ``SOURCE_INTERNAL`` — or, when no proposal is given, the same generation's own cycles and admissions (same cycles,
+    both sources). The aggregate BINDS the after composition (C395-1): ``after_cycles`` (per market),
+    ``after_targeted_sha256`` (the canonical hash of the normalized targeted mapping — the aggregate names no symbol;
+    ``after_targeted_count`` is the count) and ``after_source_version`` (``source_version`` when the mesa declares it,
+    else the union of the after cycles' methodology versions, ``"+".join(sorted(set))`` — the very string
+    ``select_generation`` stamps when the order omits it, Q6), so the hash the mesa cites is the hash of THIS proposal:
+    ``select_generation`` recomputes it with the exact ``cycles``/``targeted``/``source_version`` of the order and a
+    receipt computed over another composition (another cycle in a market, a targeted admission added or dropped,
+    another declared version) is refused.
+    Per market ``n`` (symbols recorded in BOTH sources),
+    ``missing_internal`` (recorded in the blend only: rows produced before Passo 1), and the median / p90 (signed and in
+    magnitude, ``P90_METHOD``) of ``tp_internal / tp_blend − 1`` and of ``buy_in_internal / buy_in_blend − 1``. The
+    AGGREGATE (returned, printable) names no symbol; ``report_sha256`` is the canonical hash of the aggregate without
+    itself — the hash the mesa's order to switch cites (``select_generation(before_after_sha256=…)``). The per-symbol
+    DETAIL exists only in ``private_detail_path`` when given (written as the canonical JSON whose sha256 is the aggregate's
+    ``private_detail_sha256``), never printed. ``ValueError`` without a generation in force, or under a generation whose
+    source is unknown (Q3). Deterministic: no clock — the hash recomputes wherever the same generation is read, which is
+    what lets ``select_generation`` check the hash a switch cites (Q1).
+    The private file is created EXCLUSIVELY (Q5): ``O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW``, mode ``0o600`` (then
+    ``fchmod`` so the umask cannot widen it) — an existing path, a file or a symlink (dangling or not), is refused with
+    ``FileExistsError`` and nothing is overwritten or followed; the report is returned only after the bytes are written."""
+    resolved = _resolve(database, generation)
+    if not resolved:
+        raise ValueError("no official generation in force: nothing to compare")
+    generation_source = _selected_source(resolved)
+    if generation_source is None:
+        raise ValueError(f"the generation in force ({resolved.get('generation_id')}) selects an unknown source {resolved.get('source')!r}: "
+                         "nothing is served under it and nothing to compare — roll back to the blend by explicit order first (Q3)")
+    if cycles is not None:  # the proposal (C395-1): every market named; the after arm reads THESE cycles, not the head's
+        missing = [market for market in MARKETS if market not in cycles]
+        if missing:
+            raise ValueError(f"the proposal's cycles must name every market; missing: {', '.join(missing)}")
+        after_cycles = {market: str(cycles[market]) for market in MARKETS}
+        after_targeted = _normalized_targeted(targeted or {}, strict=True)  # a proposal without targeted admits none — as the order does
+    else:
+        after_cycles = {market: str(cycle_id) for market, cycle_id in dict(resolved.get("cycles") or {}).items()}
+        after_targeted = _normalized_targeted(targeted if targeted is not None else (resolved.get("targeted") or {}), strict=targeted is not None)
+    if source_version is None:  # the version the switch would stamp (Q6): the union of the after cycles' methodology versions
+        versions: set[str] = set()
+        for cycle_id in after_cycles.values():
+            snapshot = database.analysis_snapshot_by_id(cycle_id)
+            versions.add(_source_version(snapshot) if snapshot else "unknown")
+        after_source_version = "+".join(sorted(versions))
+    else:
+        after_source_version = str(source_version)
+    after_generation: dict[str, Any] = {**resolved, "cycles": after_cycles, "targeted": after_targeted}
+    markets: dict[str, dict[str, Any]] = {}
+    detail_markets: dict[str, dict[str, Any]] = {}
+    for market in MARKETS:
+        blend, _ = _generation_records(database, resolved, market, source=SOURCE_OFFICIAL)
+        internal, _ = _generation_records(database, after_generation, market, source=SOURCE_INTERNAL)
+        pairs: dict[str, dict[str, float]] = {}
+        missing: list[str] = []
+        for symbol in sorted(blend):
+            before, after = blend[symbol], internal.get(symbol)
+            if after is None:
+                missing.append(symbol)
+                continue
+            pairs[symbol] = {"tp_blend": float(before["tp"]), "tp_internal": float(after["tp"]), "tp_ratio": float(after["tp"]) / float(before["tp"]) - 1,
+                             "buy_in_blend": float(before["buy_in"]), "buy_in_internal": float(after["buy_in"]),
+                             "buy_in_ratio": float(after["buy_in"]) / float(before["buy_in"]) - 1}
+        markets[market] = {"n": len(pairs), "missing_internal": len(missing),
+                           "tp": _ratio_stats([pair["tp_ratio"] for pair in pairs.values()]),
+                           "buy_in": _ratio_stats([pair["buy_in_ratio"] for pair in pairs.values()])}
+        detail_markets[market] = {"pairs": pairs, "missing_internal": missing}
+    detail = {"schema": f"{BEFORE_AFTER_SCHEMA}_DETAIL", "generation_id": resolved["generation_id"], "markets": detail_markets}
+    aggregate = {
+        "schema": BEFORE_AFTER_SCHEMA,
+        "generation_id": resolved["generation_id"],
+        "generation_source": generation_source,
+        "source_from": SOURCE_OFFICIAL,
+        "source_to": SOURCE_INTERNAL,
+        "cycles": dict(resolved.get("cycles") or {}),
+        "targeted_cycles": len(resolved.get("targeted") or {}),  # a count: the aggregate names no symbol
+        "after_cycles": after_cycles,  # C395-1: the AFTER composition the hash binds — the order's cycles, per market
+        "after_targeted_count": len(after_targeted),
+        "after_targeted_sha256": canonical_sha256(dict(sorted(after_targeted.items()))),  # the targeted mapping, hashed: no symbol in the aggregate
+        "after_source_version": after_source_version,  # the version the switch stamps (declared, or the after cycles' union): bound too
+        "session_dates": dict(resolved.get("session_dates") or {}),
+        "source_version": resolved.get("source_version"),
+        "markets": markets,
+        "p90_method": P90_METHOD,
+        "private_detail_sha256": canonical_sha256(detail),
+    }
+    report = {**aggregate, "report_sha256": canonical_sha256(aggregate)}
+    if private_detail_path is not None:
+        _write_private_detail(Path(private_detail_path), detail)
+    return report
+
+
+def _write_private_detail(path: Path, detail: Mapping[str, Any]) -> None:
+    """The per-symbol detail as the canonical JSON bytes ``private_detail_sha256`` hashes, into a file created EXCLUSIVELY
+    (Q5): ``O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW`` with mode ``0o600`` — an existing path (a file, or a symlink whether
+    dangling or not: ``O_EXCL`` refuses the name, ``O_NOFOLLOW`` never follows it) is a ``FileExistsError`` and nothing is
+    overwritten; ``fchmod(0o600)`` after the open, so a permissive umask cannot widen what the owner alone may read."""
+    encoded = json.dumps(detail, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str).encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(str(path), flags, 0o600)
+    except FileExistsError as error:
+        raise FileExistsError(f"private detail path {path} already exists (a file or a symlink): the receipt's detail is never overwritten nor "
+                              "written through a link — name a new file (Q5)") from error
+    with os.fdopen(descriptor, "wb") as handle:
+        os.fchmod(handle.fileno(), 0o600)
+        handle.write(encoded)
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Official TP selection (V3.2 rev 7 §7-bis): bootstrap records/generation, or show the health.")
+    parser = argparse.ArgumentParser(description="Official TP selection (V3.2 rev 7 §7-bis): bootstrap records/generation, show the health, "
+                                                 "or publish the Passo 1 before/after receipt (aggregate only; the per-symbol detail goes to --private-detail).")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--bootstrap", action="store_true")
     group.add_argument("--health", action="store_true")
+    group.add_argument("--before-after", action="store_true", help="the before/after receipt of the current generation (Passo 1); prints the aggregate only")
+    parser.add_argument("--private-detail", metavar="PATH", default=None, help="with --before-after: write the per-symbol detail to PATH (never printed)")
+    parser.add_argument("--cycles", metavar="MARKET=CYCLE_ID", action="append", default=None,
+                        help="with --before-after: the proposal's universe cycle for MARKET (repeatable; markets not named keep the head's cycle) — "
+                             "the receipt then binds THIS proposal (C395-1) and, unless --targeted names them, admits no targeted cycle")
+    parser.add_argument("--targeted", metavar="SYMBOL=CYCLE_ID", action="append", default=None,
+                        help="with --before-after: a targeted admission of the proposal (repeatable)")
+    parser.add_argument("--purge-targeted", action="store_true", help="with --before-after: the proposal admits no targeted cycle (the head's cycles, targeted={})")
+    parser.add_argument("--source-version", metavar="VERSION", default=None, help="with --before-after: the source_version the order will declare (else the cycles' union)")
     args = parser.parse_args(argv)
+    if (args.private_detail or args.cycles or args.targeted or args.purge_targeted or args.source_version) and not args.before_after:
+        parser.error("--private-detail/--cycles/--targeted/--purge-targeted/--source-version require --before-after")
+    if args.targeted and args.purge_targeted:
+        parser.error("--targeted and --purge-targeted are exclusive")
+
+    def _pairs(items: list[str] | None, flag: str, *, keys: tuple[str, ...] | None = None) -> dict[str, str]:
+        pairs: dict[str, str] = {}
+        for item in items or []:
+            key, sep, value = item.partition("=")
+            if not sep or not key.strip() or not value.strip():
+                parser.error(f"{flag} expects KEY=CYCLE_ID, got {item!r}")
+            if keys is not None and key.strip() not in keys:  # an unknown market is refused, never ignored (Codex P3-2 on #395)
+                parser.error(f"{flag} names an unknown market {key.strip()!r}; expected one of {', '.join(keys)}")
+            if key.strip().upper() in {k.upper() for k in pairs}:  # case-insensitive: symbols normalize upper-case downstream
+                parser.error(f"{flag} names {key.strip()!r} twice")
+            pairs[key.strip()] = value.strip()
+        return pairs
+
     from .config import get_settings
     from .database import Database
     database = Database(get_settings())
-    result = bootstrap_official_selection(database) if args.bootstrap else selection_health(database, now=datetime.now(timezone.utc))
+    if args.bootstrap:
+        result = bootstrap_official_selection(database)
+    elif args.before_after:
+        if args.cycles or args.targeted or args.purge_targeted:  # a PROPOSAL: the head's cycles overlaid by --cycles; targeted = --targeted (or none)
+            head = database.latest_valuation_official_selection() or {}
+            proposal = {**{market: str(cycle) for market, cycle in dict(head.get("cycles") or {}).items()}, **_pairs(args.cycles, "--cycles", keys=tuple(MARKETS))}
+            result = before_after_report(database, private_detail_path=args.private_detail, cycles=proposal, targeted=_pairs(args.targeted, "--targeted"),
+                                         source_version=args.source_version)
+        else:
+            result = before_after_report(database, private_detail_path=args.private_detail, source_version=args.source_version)
+    else:
+        result = selection_health(database, now=datetime.now(timezone.utc))
     print(json.dumps(result, sort_keys=True, default=str))
     return 0
 

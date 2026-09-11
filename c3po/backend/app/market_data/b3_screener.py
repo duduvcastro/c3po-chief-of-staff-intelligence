@@ -2156,35 +2156,9 @@ class B3ScreenerService:
         risk_premium = clamp(risk_score / 100 * 0.08, 0.0, 0.08)
         confidence_penalty = clamp((100 - valuation_confidence) / 100 * 0.06, 0.0, 0.06)
         valuation_discount = 1 + dynamic_required_return + risk_premium + confidence_penalty
-        earnings_base = normalized_methods.get("earnings") or normalized_methods.get("cycle_earnings")
-        enterprise_base = normalized_methods.get("enterprise") or normalized_methods.get("cycle_enterprise")
-        goldman_base = enterprise_base or normalized_methods.get("book") or earnings_base
-        buy_in_models: dict[str, float] = {}
-        if normalized_methods.get("dcf"):
-            buy_in_models["Morgan Stanley"] = normalized_methods["dcf"] / valuation_discount
-        if earnings_base:
-            buy_in_models["JPMorgan"] = earnings_base / valuation_discount
-        if goldman_base:
-            buy_in_models["Goldman Sachs"] = goldman_base / valuation_discount
-        buy_in_models["Bridgewater"] = our_tp / (
-            1 + dynamic_required_return + risk_premium * 1.50 + confidence_penalty
-        )
-        buy_in_models["BlackRock"] = (our_tp + expected_dividend) / (
-            1 + dynamic_required_return + risk_premium * 0.50 + confidence_penalty * 0.50
-        )
-        framework_weights = {
-            "Morgan Stanley": 0.30,
-            "JPMorgan": 0.25,
-            "Goldman Sachs": 0.20,
-            "Bridgewater": 0.15,
-            "BlackRock": 0.10,
-        }
-        framework_entry = robust_weighted_mean(buy_in_models, framework_weights)
         entry_return_hurdle = self._entry_return_hurdle_percent(macro)
         sustainable_growth = self._sustainable_growth(profile, growth)
         convergence_years = 3.0 if valuation_confidence >= MIN_VALUATION_CONFIDENCE and method_dispersion <= MAX_METHOD_DISPERSION else 5.0
-        forward_tp = our_tp * (1 + sustainable_growth)
-        hurdle_entry = (forward_tp + expected_dividend) / (1 + entry_return_hurdle / 100)
         annual_volatility = row.get("volatility_90d") or 0.35
         swing_buffer = clamp(annual_volatility * math.sqrt(10 / 252), 0.025, 0.12)
         raw_technical_entry = median([
@@ -2195,9 +2169,19 @@ class B3ScreenerService:
         quarterly_drawdown = clamp(annual_volatility * math.sqrt(63 / 252), 0.10, 0.30)
         technical_floor = (row.get("last_close") or row["price"]) * (1 - quarterly_drawdown)
         technical_entry = max(raw_technical_entry, technical_floor)
-        buy_in_models["Market Structure"] = technical_entry
-        buy_in_models["Return Hurdle"] = hurdle_entry
-        buy_in = min(framework_entry, hurdle_entry, technical_entry)
+        # The entry rule is applied to ONE target price (`_entry_from_tp`): to the blend, as always (bit for bit the same
+        # buy-in and models as before the extraction), and — Passo 1, official_internal_v1 — to the INTERNAL TP, so the
+        # internal record carries a buy-in derived by the same rule without recomputing any method.
+        buy_in, buy_in_models = self._entry_from_tp(
+            our_tp, normalized_methods, valuation_discount=valuation_discount, dynamic_required_return=dynamic_required_return,
+            risk_premium=risk_premium, confidence_penalty=confidence_penalty, expected_dividend=expected_dividend,
+            sustainable_growth=sustainable_growth, entry_return_hurdle=entry_return_hurdle, technical_entry=technical_entry,
+        )
+        internal_buy_in, internal_buy_in_models = self._entry_from_tp(
+            internal_tp, normalized_methods, valuation_discount=valuation_discount, dynamic_required_return=dynamic_required_return,
+            risk_premium=risk_premium, confidence_penalty=confidence_penalty, expected_dividend=expected_dividend,
+            sustainable_growth=sustainable_growth, entry_return_hurdle=entry_return_hurdle, technical_entry=technical_entry,
+        )
         upside = (our_tp / row["price"] - 1) * 100
         total_return = self._expected_12m_return(
             row["price"],
@@ -2250,6 +2234,8 @@ class B3ScreenerService:
             ),
             "buy_in": buy_in,
             "buy_in_models": buy_in_models,
+            "internal_buy_in": internal_buy_in,  # Passo 1: the same entry rule applied to internal_tp (official_internal_v1 reads these two)
+            "internal_buy_in_models": internal_buy_in_models,
             "expected_dividend": expected_dividend,
             "price_vs_buy_in_percent": distance,
             "fcf_yield_percent": fcf_yield * 100 if row.get("fcf") else None,
@@ -2269,6 +2255,55 @@ class B3ScreenerService:
             "thesis": self._thesis(row, relative_discount, growth, fcf_yield),
             "risk": self._risk(row, risk_penalty),
         })
+
+    @staticmethod
+    def _entry_from_tp(
+        tp: float,
+        methods: dict[str, float],
+        *,
+        valuation_discount: float,
+        dynamic_required_return: float,
+        risk_premium: float,
+        confidence_penalty: float,
+        expected_dividend: float,
+        sustainable_growth: float,
+        entry_return_hurdle: float,
+        technical_entry: float,
+    ) -> tuple[float, dict[str, float]]:
+        """The disciplined buy-in the B3 producer derives from ONE target price, and its models: the three models that
+        discount a method (Morgan Stanley / JPMorgan / Goldman Sachs) do not depend on the TP; Bridgewater, BlackRock and
+        the Return Hurdle do; Market Structure is technical. ``buy_in = min(framework, hurdle, technical)``. Extracted
+        from ``_value_row`` unchanged (same operations, same order — the blend's buy-in is bit for bit what it was) so that
+        Passo 1 can apply the SAME rule to the internal TP (``official_internal_v1``) without recomputing a method."""
+        earnings_base = methods.get("earnings") or methods.get("cycle_earnings")
+        enterprise_base = methods.get("enterprise") or methods.get("cycle_enterprise")
+        goldman_base = enterprise_base or methods.get("book") or earnings_base
+        buy_in_models: dict[str, float] = {}
+        if methods.get("dcf"):
+            buy_in_models["Morgan Stanley"] = methods["dcf"] / valuation_discount
+        if earnings_base:
+            buy_in_models["JPMorgan"] = earnings_base / valuation_discount
+        if goldman_base:
+            buy_in_models["Goldman Sachs"] = goldman_base / valuation_discount
+        buy_in_models["Bridgewater"] = tp / (
+            1 + dynamic_required_return + risk_premium * 1.50 + confidence_penalty
+        )
+        buy_in_models["BlackRock"] = (tp + expected_dividend) / (
+            1 + dynamic_required_return + risk_premium * 0.50 + confidence_penalty * 0.50
+        )
+        framework_weights = {
+            "Morgan Stanley": 0.30,
+            "JPMorgan": 0.25,
+            "Goldman Sachs": 0.20,
+            "Bridgewater": 0.15,
+            "BlackRock": 0.10,
+        }
+        framework_entry = robust_weighted_mean(buy_in_models, framework_weights)
+        forward_tp = tp * (1 + sustainable_growth)
+        hurdle_entry = (forward_tp + expected_dividend) / (1 + entry_return_hurdle / 100)
+        buy_in_models["Market Structure"] = technical_entry
+        buy_in_models["Return Hurdle"] = hurdle_entry
+        return min(framework_entry, hurdle_entry, technical_entry), buy_in_models
 
     @staticmethod
     def _validate_target_price(
