@@ -326,3 +326,373 @@ def test_leah_sync_guard_rejections_map_to_retry_after_responses(monkeypatch) ->
     assert busy.headers["retry-after"] == "30"
     assert ok.status_code == 200
     assert ok.json()["items"] == []
+
+
+def test_command_center_without_include_keeps_the_legacy_contract(monkeypatch) -> None:
+    calls = {"health": 0}
+    real = app_main.system_health.snapshot
+
+    def counted():
+        calls["health"] += 1
+        return real()
+
+    monkeypatch.setattr(app_main.system_health, "snapshot", counted)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/command-center")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sections"] is None
+    assert payload["section_status"] == {}
+    assert calls == {"health": 0}
+
+
+def test_command_center_aggregate_isolates_a_failing_section(monkeypatch) -> None:
+    def broken():
+        raise RuntimeError("probe timeout storm")
+
+    monkeypatch.setattr(app_main.system_health, "snapshot", broken)
+    app_main.command_center_cache.invalidate()
+    app_main.r2d2_read_cache.invalidate()
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/command-center",
+            params={"include": "alerts,navigation_indicators,system_health,reports,market_data_providers,r2d2,markets_live,markets_index"},
+        )
+    app_main.command_center_cache.invalidate()
+    assert response.status_code == 200
+    payload = response.json()
+    statuses = payload["section_status"]
+    assert set(statuses) == {
+        "alerts", "navigation_indicators", "system_health", "reports",
+        "market_data_providers", "r2d2", "markets_live", "markets_index",
+    }
+    assert statuses["system_health"]["status"] == "error"
+    assert statuses["system_health"]["error"] == "RuntimeError"  # redacted: class only
+    assert "probe timeout storm" not in statuses["system_health"]["error"]
+    assert payload["sections"]["system_health"] is None
+    assert statuses["reports"]["status"] == "ok"
+    assert isinstance(payload["sections"]["reports"], list)
+    assert statuses["r2d2"]["status"] == "ok"
+    assert payload["sections"]["r2d2"]["starting_capital_usd"] == 1_000_000
+    assert statuses["alerts"]["status"] == "ok"
+    assert "unread_count" in payload["sections"]["alerts"]
+    for name, item in statuses.items():
+        assert item["status"] in {"ok", "error", "skipped"}, name
+        assert item["duration_ms"] >= 0
+    assert payload["report_title"].endswith(datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y"))
+
+
+def test_command_center_aggregate_rejects_unknown_sections() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/v1/command-center", params={"include": "alerts,shell_exec"})
+    assert response.status_code == 422
+
+
+def test_command_center_aggregate_cache_is_segregated_by_actor_and_permissions(monkeypatch) -> None:
+    calls = {"reports": 0}
+    real_history = app_main.legacy.report_history
+
+    def counted():
+        calls["reports"] += 1
+        return real_history()
+
+    monkeypatch.setattr(app_main.legacy, "report_history", counted)
+    actors = {
+        "owner": {"email": "owner@example.com", "permissions": ["command", "alerts", "candidates"], "role": "owner"},
+        "member": {"email": "member@example.com", "permissions": ["command"], "role": "member"},
+    }
+    current = {"key": "owner"}
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actors[current["key"]])
+    monkeypatch.setattr(app_main.command_center_cache, "_ttl_seconds", lambda: 60.0)
+    app_main.command_center_cache.invalidate()
+    with TestClient(app) as client:
+        first = client.get("/api/v1/command-center", params={"include": "reports,alerts"})
+        second = client.get("/api/v1/command-center", params={"include": "reports,alerts"})
+        current["key"] = "member"
+        third = client.get("/api/v1/command-center", params={"include": "reports,alerts"})
+    app_main.command_center_cache.invalidate()
+    assert first.status_code == second.status_code == third.status_code == 200
+    assert calls["reports"] == 2  # owner computed once (cached), member computed once
+    assert first.json()["section_status"]["alerts"]["status"] == "ok"
+    assert third.json()["section_status"]["alerts"]["status"] == "skipped"  # no 'alerts' permission
+    assert third.json()["sections"]["alerts"] is None
+
+
+def test_command_center_sections_follow_the_canonical_route_permissions(monkeypatch) -> None:
+    actors = {
+        "command_only": {"email": "cmd@example.com", "permissions": ["command"], "role": "member"},
+        "with_r2d2": {"email": "r2d2@example.com", "permissions": ["command", "r2d2"], "role": "member"},
+    }
+    current = {"key": "command_only"}
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actors[current["key"]])
+    app_main.command_center_cache.invalidate()
+    with TestClient(app) as client:
+        limited = client.get("/api/v1/command-center", params={"include": "r2d2,markets_live,markets_index,system_health"})
+        current["key"] = "with_r2d2"
+        allowed = client.get("/api/v1/command-center", params={"include": "r2d2,markets_live"})
+    app_main.command_center_cache.invalidate()
+    assert limited.status_code == 200
+    statuses = limited.json()["section_status"]
+    # Same rule as the direct routes: /api/v1/r2d2 needs "r2d2", /api/v1/markets/live needs "markets".
+    assert statuses["r2d2"]["status"] == "skipped"
+    assert statuses["markets_live"]["status"] == "skipped"
+    assert statuses["markets_index"]["status"] == "skipped"
+    assert statuses["system_health"]["status"] in {"ok", "error"}
+    assert limited.json()["sections"]["r2d2"] is None
+    assert allowed.json()["section_status"]["r2d2"]["status"] == "ok"
+    assert allowed.json()["section_status"]["markets_live"]["status"] == "skipped"
+
+
+def test_command_center_hung_section_becomes_a_timeout_without_blocking_the_rest(monkeypatch) -> None:
+    import threading
+
+    release = threading.Event()
+
+    def hung():
+        release.wait(timeout=10)
+        return {"generated_at": datetime.now(timezone.utc).isoformat(), "unread_count": 0, "items": []}
+
+    monkeypatch.setattr(app_main, "build_alert_feed", lambda email: hung())
+    monkeypatch.setattr(app_main.settings, "command_center_section_timeout_seconds", 0.3)
+    app_main.command_center_cache.invalidate()
+    try:
+        with TestClient(app) as client:
+            started = datetime.now(timezone.utc)
+            response = client.get("/api/v1/command-center", params={"include": "alerts,reports"})
+            elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    finally:
+        release.set()
+        app_main.command_center_cache.invalidate()
+    assert response.status_code == 200
+    statuses = response.json()["section_status"]
+    assert statuses["alerts"] == {"status": "error", "duration_ms": 300.0, "error": "timeout"}
+    assert statuses["reports"]["status"] == "ok"
+    assert elapsed < 5
+
+
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+
+
+@pytest.fixture
+def isolated_command_center(monkeypatch):
+    executor = ThreadPoolExecutor(max_workers=len(app_main.COMMAND_CENTER_SECTIONS))
+    release = threading.Event()
+    monkeypatch.setattr(app_main, "_command_center_executor", executor)
+    monkeypatch.setattr(app_main.settings, "command_center_section_timeout_seconds", 0.05)
+    monkeypatch.setattr(app_main.settings, "auth_required", False)
+    monkeypatch.setattr(app_main, "_command_center_base", lambda: app_main.CommandCenterResponse.model_construct())
+    monkeypatch.setattr(app_main, "command_center_cache", app_main.SingleFlightReadCache(lambda: 60.0, max_entries=256))
+    monkeypatch.setattr(app_main, "_command_center_section_slots", {name: threading.Semaphore(1) for name in app_main.COMMAND_CENTER_SECTIONS})
+    try:
+        yield executor, release
+    finally:
+        release.set()
+        executor.shutdown(wait=True, cancel_futures=True)
+
+
+def test_healthy_reports_survive_repeated_hung_alerts(monkeypatch, isolated_command_center) -> None:
+    """Codex contraproof (#374 P1): a hung source must occupy one slot, not the pool."""
+    executor, release = isolated_command_center
+    running: list[bool] = []
+    reports: list[bool] = []
+    actor = {"email": "first@example.test", "permissions": ["command", "alerts"]}
+
+    def hung_alerts():
+        running.append(True)
+        assert release.wait(5)
+        return {"items": [], "unread_count": 0}
+
+    def healthy_reports():
+        reports.append(True)
+        return {"items": []}
+
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actor)
+    monkeypatch.setattr(app_main, "_command_center_section_producers", lambda current: {
+        "alerts": hung_alerts,
+        "reports": healthy_reports,
+    })
+    for number in range(8):
+        actor["email"] = f"actor-{number}@example.test"
+        result = app_main.command_center(None, include="alerts")
+        assert result.section_status["alerts"].error == "timeout"
+    actor["email"] = "healthy@example.test"
+    result = app_main.command_center(None, include="reports")
+    assert result.section_status["reports"].status == "ok"
+    assert len(running) == 1  # only ONE hung worker ever admitted
+    assert reports == [True]
+
+
+def test_actual_r2d2_singleflight_waiters_do_not_exhaust_the_aggregate_pool(monkeypatch, isolated_command_center) -> None:
+    """Codex contraproof (#374 P1): coalesced waiters behind a hung dashboard must not fill the pool."""
+    executor, release = isolated_command_center
+    actor = {"email": "a@example.test", "permissions": ["command", "r2d2"]}
+    healthy: list[bool] = []
+
+    def hung_dashboard():
+        assert release.wait(5)
+        return app_main.R2D2DashboardResponse.model_construct()
+
+    def healthy_history():
+        healthy.append(True)
+        return []
+
+    monkeypatch.setattr(app_main, "r2d2_read_cache", app_main.SingleFlightReadCache(lambda: 60.0))
+    monkeypatch.setattr(app_main.r2d2, "dashboard", hung_dashboard)
+    monkeypatch.setattr(app_main.legacy, "report_history", healthy_history)
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actor)
+    for number in range(8):
+        actor["email"] = f"actor-{number}@example.test"
+        result = app_main.command_center(None, include="r2d2")
+        assert result.section_status["r2d2"].error == "timeout"
+    actor["email"] = "healthy@example.test"
+    result = app_main.command_center(None, include="reports")
+    assert result.section_status["reports"].status == "ok"
+    assert healthy == [True]
+
+
+@pytest.mark.parametrize("has_command", [True, False])
+def test_boot_renews_valid_session_near_idle_expiry(monkeypatch, has_command) -> None:
+    """Codex contraproof (#374 P2): opening the app renews the idle window for EVERY role."""
+    from uuid import uuid4
+
+    token = f"idle-boot-{uuid4()}"
+    email = f"{uuid4()}@example.test"
+    clock = {"now": datetime.now(timezone.utc)}
+    idle = app_main.settings.auth_member_idle_minutes * 60
+    last_seen = clock["now"] - timedelta(seconds=idle - 30)
+    permissions = ["candidates"] + (["command"] if has_command else [])
+    monkeypatch.setattr(app_main.settings, "auth_required", True)
+    monkeypatch.setattr(app_main.auth_service, "now", lambda: clock["now"])
+    monkeypatch.setattr(app_main.market_data, "health", lambda: [])
+    monkeypatch.setattr(app_main.legacy, "report_history", lambda: [])
+    health = app_main.system_health._startup_degraded_response(clock["now"])
+    monkeypatch.setattr(app_main.system_health, "snapshot", lambda: health)
+    monkeypatch.setattr(app_main, "command_center_cache", app_main.SingleFlightReadCache(lambda: 60.0))
+    app_main.database.upsert_access_user({
+        "email": email, "display_name": "Audit", "role": "member", "is_active": True,
+        "permissions": permissions, "capabilities": ["read"], "created_by": app_main.settings.auth_email,
+    })
+    token_hash = app_main.auth_service.session_hash(token)
+    app_main.database.create_session({
+        "id": str(uuid4()), "email": email, "token_hash": token_hash,
+        "expires_at": clock["now"] + timedelta(hours=24), "created_at": last_seen,
+        "last_seen_at": last_seen, "created_ip": "127.0.0.1", "idle_timeout_seconds": idle,
+    })
+    try:
+        with TestClient(app) as client:
+            client.cookies.set(app_main.SESSION_COOKIE, token)
+            session = client.get("/api/v1/auth/session")
+            assert session.status_code == 200 and session.json()["authenticated"]
+            urls = (
+                ["/api/v1/command-center?include=reports,market_data_providers,system_health"]
+                if has_command else
+                ["/api/v1/reports", "/api/v1/market-data/providers", "/api/v1/system-health"]
+            )
+            statuses = [client.get(url).status_code for url in urls]
+            assert statuses == [200] * len(urls)
+            touched = app_main.database._sessions[token_hash]["last_seen_at"] > last_seen
+            clock["now"] += timedelta(seconds=31)
+            after = client.get("/api/v1/auth/session")
+            assert touched and after.json()["authenticated"]
+    finally:
+        app_main.database._sessions.pop(token_hash, None)
+        app_main.database.delete_access_user(email)
+
+
+def test_outer_aggregate_does_not_extend_r2d2_snapshot_past_inner_ttl(monkeypatch, isolated_command_center) -> None:
+    """Codex contraproof (#374 P2): the aggregate returns exactly what the direct route returns."""
+    clock = {"now": 0.0}
+    calls: list[float] = []
+    actor = {"email": "actor@example.test", "permissions": ["command", "r2d2"]}
+
+    def dashboard():
+        calls.append(clock["now"])
+        return app_main.R2D2DashboardResponse.model_construct(starting_capital_usd=float(len(calls)))
+
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actor)
+    monkeypatch.setattr(app_main.r2d2, "dashboard", dashboard)
+    monkeypatch.setattr(app_main, "r2d2_read_cache", app_main.SingleFlightReadCache(lambda: 5.0, clock=lambda: clock["now"]))
+    monkeypatch.setattr(app_main, "command_center_cache", app_main.SingleFlightReadCache(lambda: 10.0, clock=lambda: clock["now"], max_entries=256))
+    first_direct = app_main.r2d2_dashboard()
+    clock["now"] = 4.9
+    first_aggregate = app_main.command_center(None, include="r2d2")
+    assert first_aggregate.sections.r2d2 is first_direct
+    clock["now"] = 14.8
+    direct_now = app_main.r2d2_dashboard()
+    aggregate_now = app_main.command_center(None, include="r2d2")
+    assert aggregate_now.sections.r2d2 is direct_now
+    assert len(calls) == 2
+
+
+def test_live_and_cacheable_sections_share_one_request_deadline(monkeypatch, isolated_command_center) -> None:
+    """Codex contraproof (#374 P2, d960c0d): a mixed call whose cacheable AND live sources are
+    both hung must answer within ONE budget, and the live group must start concurrently with
+    the cacheable group instead of after it."""
+    executor, release = isolated_command_center
+    actor = {"email": "mixed@example.test", "permissions": ["command", "alerts", "r2d2"]}
+    starts: dict[str, float] = {}
+
+    def hung(name: str):
+        starts[name] = time.perf_counter()
+        assert release.wait(5)
+        return None
+
+    monkeypatch.setattr(app_main.settings, "command_center_section_timeout_seconds", 0.2)
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actor)
+    monkeypatch.setattr(app_main, "_command_center_section_producers", lambda current: {
+        "alerts": lambda: hung("alerts"),
+        "r2d2": lambda: hung("r2d2"),
+    })
+    started = time.perf_counter()
+    result = app_main.command_center(None, include="alerts,r2d2")
+    elapsed = time.perf_counter() - started
+    assert result.section_status["alerts"].error == "timeout"
+    assert result.section_status["r2d2"].error == "timeout"
+    assert elapsed < 0.35, elapsed  # one budget of 0.2 s, not two in sequence
+    assert abs(starts["r2d2"] - starts["alerts"]) < 0.1, starts  # concurrent start
+
+
+def test_follower_of_a_cacheable_computation_in_flight_keeps_its_own_deadline(monkeypatch, isolated_command_center) -> None:
+    """Codex reaudit (#374 P2): obtaining the cacheable content also spends only the remaining
+    budget — a request that joins another request's single-flight cannot wait past its own
+    deadline; it answers `timeout` for the cacheable sections, caches nothing, and the leader's
+    result still lands in the cache for the next caller."""
+    executor, release = isolated_command_center
+    actor = {"email": "follower@example.test", "permissions": ["command", "reports"]}
+    entered = threading.Event()
+    base_calls: list[bool] = []
+
+    def base():
+        base_calls.append(True)
+        if len(base_calls) == 1:  # only the leader's flight is stuck
+            entered.set()
+            assert release.wait(5)
+        return app_main.CommandCenterResponse.model_construct()
+
+    monkeypatch.setattr(app_main.settings, "command_center_section_timeout_seconds", 0.2)
+    monkeypatch.setattr(app_main, "current_access_actor", lambda request: actor)
+    monkeypatch.setattr(app_main, "_command_center_base", base)
+    monkeypatch.setattr(app_main, "_command_center_section_producers", lambda current: {
+        "reports": lambda: {"items": []},
+    })
+    leader_result: list = []
+    leader = threading.Thread(target=lambda: leader_result.append(app_main.command_center(None, include="reports")))
+    leader.start()
+    assert entered.wait(2)
+    started = time.perf_counter()
+    follower = app_main.command_center(None, include="reports")
+    elapsed = time.perf_counter() - started
+    assert elapsed < 0.35, elapsed
+    assert follower.section_status["reports"].error == "timeout"
+    assert follower.sections.reports is None
+    assert app_main.command_center_cache.counters.wait_timeouts == 1
+    assert app_main.command_center_cache.snapshot()["keys"] == []  # nothing cached by the follower
+    release.set()
+    leader.join(5)
+    assert leader_result and leader_result[0].section_status["reports"].status == "ok"
+    assert app_main.command_center(None, include="reports").section_status["reports"].status == "ok"
+    assert app_main.command_center_cache.counters.hits == 1
