@@ -1,0 +1,11 @@
+[Unit]
+Description=Permanent C3PO security watchdog
+
+[Timer]
+OnBootSec=3min
+OnCalendar=*-*-* *:05,35:00
+Persistent=true
+Unit=c3po-security-watchdog.service
+
+[Install]
+WantedBy=timers.target

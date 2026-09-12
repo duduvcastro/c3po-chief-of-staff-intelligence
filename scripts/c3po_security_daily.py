@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host-owned security scheduler. No LLM, provider calls, reboot or arbitrary commands."""
+"""Host-owned security scheduler with validated updates and maintenance reboot."""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +17,8 @@ from urllib.error import HTTPError
 
 from c3po_dependency_security import ALLOWED, RECEIPT, digest, merge_alerts, normalize_alerts, prepare, validate_candidate
 from c3po_container_remediation import validate_report, build_trigger
+from c3po_security_reboot import boot_receipt, request_reboot, MARKER
+from c3po_security_guard import trial_present
 
 ROOT = Path("/opt/chief-of-staff-digital")
 REPO = "duduvcastro/c3po-chief-of-staff-intelligence"
@@ -129,10 +131,20 @@ def write_report(path, report):
         os.fsync(handle.fileno())
     os.chmod(handle.name, 0o644)
     os.replace(handle.name, path)
+    directory_fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 def maintenance_open(now, config, hold):
-    return not hold and config.get("automatic_merge") is True and 10 <= now.hour < 12
+    return not hold and config.get("automatic_merge") is True and 10 <= now.hour < 12 and not trial_present(now)
+
+
+def reboot_window_open(now, config, hold):
+    # Leave fifteen minutes for boot and recovery before the window closes.
+    return maintenance_open(now, config, hold) and now.hour * 60 + now.minute < 705
 
 
 def proof_passed(gh, pr):
@@ -205,6 +217,7 @@ def promote(gh, alerts, deployed_sha, images, may_write=lambda: False):
 
 def cycle(root, gh, now, config, previous):
     directory = root / "runtime/security"
+    reboot = boot_receipt(root, write_report, healthy_host, now)
     alerts = normalize_alerts(gh.pages("/dependabot/alerts?state=open"))
     evidence_errors = []
     try:
@@ -252,6 +265,15 @@ def cycle(root, gh, now, config, previous):
               "image_report_sha256": images.get("report_sha256"), "errors": evidence_errors,
               "last_dispatch_date": previous.get("last_dispatch_date"),
               "last_dispatched_deploy": previous.get("last_dispatched_deploy"), "status": "observed"}
+    report["automatic_reboot"] = config.get("automatic_reboot") is True
+    report["reboot"] = reboot
+    try:
+        watchdog = load_evidence(directory / "security-watchdog-report.json", now, 1)
+        if watchdog.get("schema") != "C3PO_SECURITY_WATCHDOG-v1" or watchdog.get("errors"):
+            raise ValueError("Watchdog failed")
+        report["watchdog"] = {"status": watchdog["status"], "generated_at": watchdog["generated_at"]}
+    except (OSError, ValueError, KeyError):
+        evidence_errors.append("watchdog_evidence_unavailable")
     # Publish inventory before starting its consumer. A crash cannot masquerade as success.
     write_report(directory / REPORT, report)
     today = now.date().isoformat()
@@ -264,6 +286,8 @@ def cycle(root, gh, now, config, previous):
         report["last_dispatched_deploy"] = deployed
     if HOLD.exists():
         report["status"] = "maintenance_hold"
+    elif MARKER.exists():
+        report["status"] = "reboot_requested"
     elif not maintenance_open(now, config, False):
         report["status"] = "waiting_maintenance_window"
     elif evidence_errors:
@@ -271,9 +295,16 @@ def cycle(root, gh, now, config, previous):
     elif not healthy_host(root):
         report["status"] = "blocked_unhealthy_host"
     else:
-        report["status"], report["pull_request"] = promote(
-            gh, alerts, deployed, images,
-            may_write=lambda: maintenance_open(datetime.now(timezone.utc), config, HOLD.exists()) and healthy_host(root))
+        may_write = lambda: maintenance_open(datetime.now(timezone.utc), config, HOLD.exists()) and healthy_host(root)
+        # Finish already installed OS updates before starting another application deploy.
+        if report["reboot_required"] is True and deployed == main_sha:
+            report["reboot_action"] = request_reboot(root, gh, config, now, command=command,
+                healthy=healthy_host, write=write_report,
+                allowed=lambda: reboot_window_open(datetime.now(timezone.utc), config, HOLD.exists()))
+            report["status"] = "reboot_" + report["reboot_action"]
+        else:
+            report["status"], report["pull_request"] = promote(
+                gh, alerts, deployed, images, may_write=may_write)
     # No "resolved" state until fresh scanners and application health prove it.
     report["healthy"] = (deployed == main_sha and not evidence_errors and not alerts and report["security_pending"] == 0
                          and report["reboot_required"] is False and images.get("scan_status") == "complete"

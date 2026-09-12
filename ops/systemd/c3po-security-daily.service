@@ -13,4 +13,6 @@ PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
 ReadWritePaths=/opt/chief-of-staff-digital/runtime/security
-
+ReadWritePaths=/var/lib/dpkg/lock /var/lib/dpkg/lock-frontend
+RuntimeDirectory=c3po-security
+RuntimeDirectoryPreserve=yes

@@ -8936,6 +8936,7 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
                   : "acompanhando correções e validações"}.
             {Number(securityAutomation.pending_without_fix ?? 0) > 0
               ? ` ${Number(securityAutomation.pending_without_fix)} aviso(s) ainda sem correção publicada.` : ""}</p>
+          {securityAutomation.automatic_reboot === true && <p>Reinicialização automática quando necessária, na janela de manutenção, com verificação após o retorno.</p>}
           <div className="governance-source-list">
             <div className="governance-source-block">
               <header><div><span>REPOSITÓRIO</span><strong>Dependabot</strong></div><div className="dependabot-scanner-identity"><span className="service-logo service-logo-dependabot" aria-hidden="true"><DependabotMark /></span><em className={`governance-summary-${dependabotClass}`}>{dependabotLabel}</em></div></header>

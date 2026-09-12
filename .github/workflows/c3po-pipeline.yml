@@ -485,6 +485,14 @@ jobs:
           set -euo pipefail
 
           APP_DIR=/opt/chief-of-staff-digital
+          # Serialize container mutations against the native reboot controller.
+          mkdir -p "$APP_DIR/runtime/security"
+          exec 9>>"$APP_DIR/runtime/security/deployment.lock"
+          flock -w 120 9
+          if [ -e /run/c3po-security/reboot.pending ]; then
+            echo "Security reboot pending; deployment must retry after recovery" >&2
+            exit 1
+          fi
           ARCHIVE="/tmp/c3po-release-${REVISION}.tar.gz"
           IMAGE_ARCHIVE="/tmp/c3po-images-${REVISION}.tar.gz"
           IMAGE_SHA256="${IMAGE_ARCHIVE}.sha256"
@@ -592,6 +600,8 @@ jobs:
 
           if [ "$healthy" = true ]; then
             printf '%s\n' "$REVISION" > .deploy-version
+            # Install/update the reviewed native routine on every successful release.
+            sudo bash scripts/install-security-daily.sh
             rm -rf "$RELEASE_DIR" "$ARCHIVE" "$IMAGE_ARCHIVE" "$IMAGE_SHA256"
             docker image prune --force >/dev/null
             docker builder prune --force >/dev/null

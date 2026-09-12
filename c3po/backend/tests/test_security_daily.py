@@ -133,7 +133,8 @@ def test_stale_reports_still_dispatch_recovery_and_do_not_merge(tmp_path, monkey
     report = daily.cycle(tmp_path, gh, datetime(2026, 9, 12, 10, tzinfo=timezone.utc), {"automatic_merge": True}, {})
     assert len(gh.calls) == 2
     assert report["status"] == "blocked_missing_evidence" and report["healthy"] is False
-    assert len(report["errors"]) == 3
+    assert set(report["errors"]) == {"host_evidence_unavailable", "image_evidence_unavailable",
+                                      "npm_evidence_unavailable", "watchdog_evidence_unavailable"}
     daily.cycle(tmp_path, gh, datetime(2026, 9, 12, 11, tzinfo=timezone.utc), {"automatic_merge": True}, report)
     assert len(gh.calls) == 2
 
