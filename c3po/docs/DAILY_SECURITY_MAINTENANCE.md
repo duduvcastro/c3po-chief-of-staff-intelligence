@@ -84,8 +84,10 @@ ou incompatibilidade permanece visível e volta a ser consultada diariamente.
 ## Instalação e ativação
 
 O deploy instala/atualiza os scripts e unidades versionados após o portão de saúde,
-com `sudo bash scripts/install-security-daily.sh`. A primeira instalação ativa a
-política autorizada, incluindo automatic_reboot. Atualizações preservam configurações
+com `sudo bash scripts/install-security-daily.sh`. A primeira instalação cria um
+hold antes da política e dos timers. Após a aceitação, o executor autorizado remove
+somente o hold de bootstrap e registra a ativação, sem nova autorização do dono.
+A política autorizada inclui automatic_reboot. Atualizações preservam configurações
 locais e todo hold explícito. A credencial já configurada na API precisa ler
 Dependabot/Actions e escrever dispatches/merges; falhas nunca significam zero avisos.
 Não há credencial de provedor no controlador nem chamada de mercado.
@@ -95,6 +97,16 @@ promoções, reboot e recuperação de timers. Consultas continuam. Para pausar 
 a rotina, criar o hold antes de desabilitar os dois timers. Nunca reativar timers
 datados de ensaios anteriores. A revisão D14 precisa ser reconciliada com Fable
 após esta implantação; esta rotina não concede execução de ensaio/captura.
+
+Uma release CERTIFIED instalada em `/mnt/day-d-data/r2d2-v2-release-*.json` ou
+um marcador `/mnt/day-d-data/.r2d2-v2-pinned` também veta manutenção e recuperação,
+inclusive antes da primeira sessão e entre sessões. O rito de encerramento
+arquiva a release fora desse diretório ativo e remove o marcador somente depois
+de comprovar o encerramento da época. A rotina de segurança não declara uma época
+terminal nem remove esses arquivos; após o encerramento, retoma automaticamente.
+JSON inválido ou symlink bloqueia. A release DIAGNOSTIC válida é distinguida de
+CERTIFIED. Até existir protocolo aprovado de revisão por hashes dos módulos,
+atualizações que exigem deploy ficam pendentes durante a época CERTIFIED ativa.
 
 ## Evidência e falhas
 

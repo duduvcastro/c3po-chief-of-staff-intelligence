@@ -196,3 +196,39 @@ def test_workflow_inactivity_recovered_but_manual_suspension_preserved():
         daily.ensure_workflows(gh, False)
     assert not any(method == 'PUT' for _, method in gh.calls)
     daily.ensure_workflows(gh, True)
+
+@pytest.mark.parametrize('content', [
+    {'mode': 'CERTIFIED', 'epoch': 'R2D2-V2-SHADOW-20260916'},
+    {'mode': 'CERTIFIED', 'epoch': 'R2D2-V2-SHADOW-20260916', 'terminal': True},
+    {'mode': 'DIAGNOSTIC', 'epoch': 'R2D2-V2-SHADOW-20260916'},
+    {}, [], 'broken-json',
+])
+def test_installed_certified_or_unknown_release_vetoes_until_archived(tmp_path, content):
+    guard = importlib.import_module('c3po_security_guard')
+    now = datetime(2026, 9, 12, 10, tzinfo=timezone.utc)
+    release = tmp_path / 'r2d2-v2-release-session.json'
+    release.write_text(content if isinstance(content, str) else json.dumps(content))
+    assert not guard.recovery_allowed(now, tmp_path/'hold', tmp_path)
+    assert guard.trial_present(now.replace(year=2027), tmp_path)
+    archive = tmp_path / 'retired'
+    archive.mkdir()
+    release.rename(archive/release.name)
+    assert guard.recovery_allowed(now, tmp_path/'hold', tmp_path)
+
+
+def test_diagnostic_distinguished_but_pinned_marker_and_symlinks_veto(tmp_path):
+    guard = importlib.import_module('c3po_security_guard')
+    now = datetime(2026, 9, 12, 10, tzinfo=timezone.utc)
+    release = tmp_path / 'r2d2-v2-release-diagnostic.json'
+    release.write_text(json.dumps({'mode': 'DIAGNOSTIC', 'epoch': 'R2D2-V2-DIAG-example'}))
+    assert not guard.trial_present(now, tmp_path)
+    marker = tmp_path / '.r2d2-v2-pinned'
+    marker.touch()
+    assert guard.trial_present(now, tmp_path)
+    marker.unlink()
+    marker.symlink_to(tmp_path/'missing')
+    assert guard.trial_present(now, tmp_path)
+    marker.unlink()
+    release.unlink()
+    release.symlink_to(tmp_path/'missing')
+    assert guard.trial_present(now, tmp_path)
