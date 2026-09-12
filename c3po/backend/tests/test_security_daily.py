@@ -199,3 +199,26 @@ def test_promotion_rechecks_hold_and_never_promotes_without_all_checks(tmp_path,
     monkeypatch.setattr(daily, "proof_passed", lambda *_: True)
     assert daily.promote(gh, [alert()], "a" * 40, {}, may_write=lambda: True)[0] == "merged_waiting_deploy_and_rescan"
     assert gh.merged == [{"sha": "b" * 40, "merge_method": "squash"}]
+
+
+@pytest.mark.parametrize('prefix', ['/repos/' + daily.REPO, '/repositories/' + str(daily.REPO_ID)])
+def test_dependabot_uses_cursor_links_and_keeps_short_intermediate_page(prefix):
+    gh = daily.GitHub('test-token')
+    calls = []
+    def read(path, *, with_links=False):
+        calls.append(path)
+        assert with_links and 'page=' not in path.replace('per_page=', '')
+        if len(calls) == 1:
+            return [{'number': 1}], '<https://api.github.com' + prefix + '/dependabot/alerts?state=open&per_page=100&after=cursor>; rel="next"'
+        return [{'number': 2}], ''
+    gh.request = read
+    assert gh.pages('/dependabot/alerts?state=open') == [{'number': 1}, {'number': 2}]
+    assert 'after=cursor' in calls[1]
+
+
+@pytest.mark.parametrize('url', ['https://example.com/steal', 'http://api.github.com/repos/' + daily.REPO + '/dependabot/alerts', 'https://api.github.com/repos/other/repo/dependabot/alerts'])
+def test_pagination_never_sends_credential_to_other_target(url):
+    gh = daily.GitHub('test-token')
+    gh.request = lambda *a, **k: ([{'number': 1}], '<' + url + '>; rel="next"')
+    with pytest.raises(ValueError, match='pagination target'):
+        gh.pages('/dependabot/alerts?state=open')

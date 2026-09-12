@@ -7,6 +7,7 @@ import base64
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -14,6 +15,7 @@ import sys
 from datetime import datetime, timezone, timedelta
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from urllib.parse import urlsplit
 
 from c3po_dependency_security import ALLOWED, RECEIPT, digest, merge_alerts, normalize_alerts, prepare, validate_candidate
 from c3po_container_remediation import validate_report, build_trigger
@@ -22,6 +24,7 @@ from c3po_security_guard import trial_present
 
 ROOT = Path("/opt/chief-of-staff-digital")
 REPO = "duduvcastro/c3po-chief-of-staff-intelligence"
+REPO_ID = 1336399383
 REPORT = "security-automation-report.json"
 HOLD = Path("/etc/c3po/security-maintenance.hold")
 CONFIG = Path("/etc/c3po/security-automation.json")
@@ -52,7 +55,7 @@ class GitHub:
             raise RuntimeError("GitHub security automation credential unavailable")
         self.token = token
 
-    def request(self, path, method="GET", body=None):
+    def request(self, path, method="GET", body=None, *, with_links=False):
         if not path.startswith("/") or ".." in path:
             raise ValueError("Invalid GitHub endpoint")
         request = Request("https://api.github.com/repos/" + REPO + path,
@@ -67,18 +70,29 @@ class GitHub:
                 return None
         with build_opener(NoRedirect).open(request, timeout=20) as response:
             data = response.read()
-        return json.loads(data) if data else None
+            links = response.headers.get("Link", "")
+        result = json.loads(data) if data else None
+        return (result, links) if with_links else result
 
     def pages(self, path, key=None):
         items = []
-        for page in range(1, 21):
-            data = self.request(path + ("&" if "?" in path else "?") + f"per_page=100&page={page}")
+        resource_path = path.split("?")[0]
+        endpoints = {"/repos/" + REPO + resource_path, f"/repositories/{REPO_ID}" + resource_path}
+        next_path = path + ("&" if "?" in path else "?") + "per_page=100"
+        for _ in range(20):
+            # Dependabot requires cursor pagination; numbered page= is rejected.
+            data, links = self.request(next_path, with_links=True)
             chunk = data[key] if key else data
             if not isinstance(chunk, list):
                 raise ValueError("Invalid paginated GitHub response")
             items.extend(chunk)
-            if len(chunk) < 100:
+            next_url = next((url for url, rel in re.findall(r'<([^>]+)>;\s*rel="([^"]+)"', links) if rel == "next"), None)
+            if not next_url:
                 return items
+            parsed = urlsplit(next_url)
+            if parsed.scheme != "https" or parsed.netloc != "api.github.com" or parsed.path not in endpoints or parsed.fragment:
+                raise ValueError("Untrusted GitHub pagination target")
+            next_path = resource_path + "?" + parsed.query
         raise RuntimeError("GitHub pagination limit exceeded")
 
     def file(self, path, ref):
@@ -161,7 +175,7 @@ def ensure_workflows(gh, hold):
 
 def proof_passed(gh, pr):
     runs = gh.pages("/actions/workflows/c3po-pipeline.yml/runs?event=workflow_dispatch&branch="
-                    + pr["head"]["ref"], "workflow_runs")
+                    + pr["head"]["ref"] + "&head_sha=" + pr["head"]["sha"], "workflow_runs")
     exact = sorted((run for run in runs if run["head_sha"] == pr["head"]["sha"]),
                    key=lambda run: run["id"], reverse=True)
     if not exact or exact[0]["conclusion"] != "success":
