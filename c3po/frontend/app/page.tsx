@@ -8860,6 +8860,9 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const dependabot = objectValue(metadata.dependabot);
   const operatingSystem = objectValue(metadata.operating_system);
   const operatingSystemDeadMan = objectValue(operatingSystem.dead_man);
+  const securityAutomation = objectValue(metadata.security_automation);
+  const npmSeverities = objectValue(securityAutomation.additional_by_severity);
+  const npmAdditional = Number(securityAutomation.additional_count ?? 0);
   const productionImages = objectValue(metadata.production_images);
   const remediationLanes = objectValue(metadata.remediation_lanes);
   const remediationLaneItems = Array.isArray(remediationLanes.items)
@@ -8873,7 +8876,10 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const hasReport = Boolean(metadata.generated_at);
   const statusLabel = item.status === "healthy" ? "Operational" : item.status === "attention" ? "Needs attention" : "Critical";
   const statusClass = item.status === "healthy" ? "healthy" : item.status === "attention" ? "attention" : "offline";
-  const dependabotStatus = hasReport ? String(dependabot.status ?? "offline") : "pending";
+  const dependabotStatus = hasReport
+    ? Number(npmSeverities.critical ?? 0) + Number(npmSeverities.high ?? 0) > 0 ? "offline"
+      : npmAdditional > 0 && dependabot.status === "healthy" ? "attention" : String(dependabot.status ?? "offline")
+    : "pending";
   const dependabotClass = dependabotStatus === "healthy" ? "healthy" : dependabotStatus === "attention" ? "attention" : dependabotStatus === "pending" ? "pending" : "offline";
   const dependabotLabel = dependabotStatus === "healthy" ? "Operational" : dependabotStatus === "attention" ? "Needs attention" : dependabotStatus === "pending" ? "Aguardando atestado" : "Ação necessária";
   const layerClass = (status: unknown) => status === "healthy" ? "healthy" : status === "offline" ? "offline" : "attention";
@@ -8885,20 +8891,22 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
   const operatingSystemLabel = operatingSystem.available !== true
     ? "Sem atestado"
     : operatingSystem.reboot_required === true
-      ? "Reboot manual"
+      ? "Reinicialização pendente"
+      : osPending != null && osPending > 0
+        ? "Correções pendentes"
       : operatingSystemDeadMan.fresh !== true
         ? "Execução ausente"
-        : "Atualizado";
+        : operatingSystem.status === "healthy" ? "Atualizado" : "Verificação pendente";
   const productionImagesLabel = productionImages.available !== true
     ? "Sem atestado"
     : productionImages.dead_man_configured !== true
       ? "Dead-man ausente"
       : "Trivy";
   const knownTotal = hasReport && osPending != null && imageTotal != null
-    ? Number(dependabot.open_total ?? 0) + osPending + imageTotal
+    ? Number(dependabot.open_total ?? 0) + npmAdditional + osPending + imageTotal
     : null;
   const severityValue = (severity: "critical" | "high" | "medium" | "low") => (
-    hasReport ? Number(severities[severity] ?? 0).toLocaleString("pt-BR") : "—"
+    hasReport ? (Number(severities[severity] ?? 0) + Number(npmSeverities[severity] ?? 0)).toLocaleString("pt-BR") : "—"
   );
   return (
     <article className={`governance-health-card governance-health-${item.status}`}>
@@ -8920,10 +8928,19 @@ function GovernanceVulnerabilityRow({ item }: { item: Integration }) {
             <em className={`governance-summary-${statusClass}`}>{statusLabel}</em>
           </header>
           <div className="governance-open-total"><strong>{knownTotal == null ? "—" : knownTotal.toLocaleString("pt-BR")}</strong><span>alertas, pacotes e ocorrências</span></div>
+          <p>Rotina automática de segurança: {securityAutomation.available !== true
+            ? "sem execução recente"
+            : securityAutomation.status === "healthy" ? "verificada, sem pendências"
+              : securityAutomation.status === "offline" ? "falha na verificação"
+                : securityAutomation.detail === "maintenance_hold" ? "manutenção suspensa; verificações ativas"
+                  : "acompanhando correções e validações"}.
+            {Number(securityAutomation.pending_without_fix ?? 0) > 0
+              ? ` ${Number(securityAutomation.pending_without_fix)} aviso(s) ainda sem correção publicada.` : ""}</p>
+          {securityAutomation.automatic_reboot === true && <p>Reinicialização automática quando necessária, na janela de manutenção, com verificação após o retorno.</p>}
           <div className="governance-source-list">
             <div className="governance-source-block">
               <header><div><span>REPOSITÓRIO</span><strong>Dependabot</strong></div><div className="dependabot-scanner-identity"><span className="service-logo service-logo-dependabot" aria-hidden="true"><DependabotMark /></span><em className={`governance-summary-${dependabotClass}`}>{dependabotLabel}</em></div></header>
-              <div className="governance-source-total"><strong>{hasReport ? Number(dependabot.open_total ?? 0).toLocaleString("pt-BR") : "—"}</strong><span>abertos</span></div>
+              <div className="governance-source-total"><strong>{hasReport ? (Number(dependabot.open_total ?? 0) + npmAdditional).toLocaleString("pt-BR") : "—"}</strong><span>abertos{npmAdditional > 0 ? ` · ${npmAdditional} identificado(s) pela auditoria npm` : ""}</span></div>
               <dl>
                 {(["critical", "high", "medium", "low"] as const).map((severity) => (
                   <div className={`governance-severity governance-severity-${severity}`} key={severity}>

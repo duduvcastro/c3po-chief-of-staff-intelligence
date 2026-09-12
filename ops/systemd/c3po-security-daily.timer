@@ -1,0 +1,12 @@
+[Unit]
+Description=C3PO security checks (daily scans, hourly completion checks)
+
+[Timer]
+# Scans dispatched once daily after 07:00 BRT; hourly reconciliation has no AI calls.
+OnCalendar=*-*-* *:10:00
+RandomizedDelaySec=30
+Persistent=true
+Unit=c3po-security-daily.service
+
+[Install]
+WantedBy=timers.target

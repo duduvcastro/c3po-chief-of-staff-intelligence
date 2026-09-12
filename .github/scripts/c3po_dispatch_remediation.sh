@@ -31,7 +31,7 @@ previous_run_id=$(gh run list \
 gh workflow run c3po-pipeline.yml \
   --repo "$GITHUB_REPOSITORY" \
   --ref "$branch" \
-  -f "ref=$branch" \
+  -f "ref=$expected_sha" \
   -f deploy=false \
   -f remediation=true
 

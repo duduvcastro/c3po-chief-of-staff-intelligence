@@ -1,0 +1,34 @@
+name: Verify native security automation
+
+on:
+  schedule:
+    - cron: '35 12 * * *' # 09:35 BRT, after the maintenance window; no end date.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c3po-security-watchdog
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Recover and verify installed security supervision
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/security
+          chmod 600 ~/.ssh/security
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -i ~/.ssh/security "$USER@$HOST" \
+            'sudo systemctl start c3po-security-watchdog.service && sudo /usr/local/lib/c3po-security/c3po_security_watchdog.py --verify-daily'

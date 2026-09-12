@@ -169,8 +169,23 @@ jobs:
           corepack enable
           corepack prepare pnpm@${PNPM_VERSION} --activate
 
+      - name: Verify deterministic security lockfile
+        if: github.event_name == 'workflow_dispatch' && inputs.remediation && startsWith(github.ref_name, 'automation/dependency-security-')
+        run: |
+          git fetch --no-tags origin main
+          python3 ../../scripts/c3po_dependency_security.py --root ../.. --verify-lock
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Verify dependency fixes against current advisories
+        if: github.event_name == 'workflow_dispatch' && inputs.remediation && startsWith(github.ref_name, 'automation/dependency-security-')
+        run: |
+          rc=0
+          pnpm audit --json > "$RUNNER_TEMP/dependency-audit.json" || rc=$?
+          test "$rc" -le 1
+          python3 ../../scripts/c3po_dependency_security.py --root ../.. \
+            --audit-result "$RUNNER_TEMP/dependency-audit.json"
 
       - name: Test browser telemetry privacy and limits
         run: node --experimental-strip-types --test tests/sentry-privacy.test.mjs
@@ -301,6 +316,20 @@ jobs:
         run: |
           python3 scripts/c3po_container_remediation.py verify-zero \
             --report "$RUNNER_TEMP/c3po-trivy-pull-request.json"
+
+  security-remediation-proof:
+    name: Security remediation proof
+    needs: [sensitive-files, secret-scan, backend-tests, python-type-check, frontend-build]
+    if: github.event_name == 'workflow_dispatch' && inputs.remediation && !inputs.deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bind all passing checks to the immutable candidate
+        env:
+          VALIDATED_REF: ${{ inputs.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          [[ "$VALIDATED_REF" =~ ^[0-9a-f]{40}$ ]]
+          test "$VALIDATED_REF" = "$DISPATCH_SHA"
 
   deploy-production:
     name: Deploy production
@@ -456,6 +485,14 @@ jobs:
           set -euo pipefail
 
           APP_DIR=/opt/chief-of-staff-digital
+          # Serialize container mutations against the native reboot controller.
+          mkdir -p "$APP_DIR/runtime/security"
+          exec 9>>"$APP_DIR/runtime/security/deployment.lock"
+          flock -w 120 9
+          if [ -e /run/c3po-security/reboot.pending ]; then
+            echo "Security reboot pending; deployment must retry after recovery" >&2
+            exit 1
+          fi
           ARCHIVE="/tmp/c3po-release-${REVISION}.tar.gz"
           IMAGE_ARCHIVE="/tmp/c3po-images-${REVISION}.tar.gz"
           IMAGE_SHA256="${IMAGE_ARCHIVE}.sha256"
@@ -563,6 +600,8 @@ jobs:
 
           if [ "$healthy" = true ]; then
             printf '%s\n' "$REVISION" > .deploy-version
+            # Install/update the reviewed native routine on every successful release.
+            sudo bash scripts/install-security-daily.sh
             rm -rf "$RELEASE_DIR" "$ARCHIVE" "$IMAGE_ARCHIVE" "$IMAGE_SHA256"
             docker image prune --force >/dev/null
             docker builder prune --force >/dev/null

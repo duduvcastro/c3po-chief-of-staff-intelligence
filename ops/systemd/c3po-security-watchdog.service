@@ -1,0 +1,17 @@
+[Unit]
+Description=Recover C3PO security supervision and verify post-boot health
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/c3po-security/c3po_security_watchdog.py
+TimeoutStartSec=10min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/chief-of-staff-digital/runtime/security
+ReadWritePaths=/etc/systemd/system
+RuntimeDirectory=c3po-security
+RuntimeDirectoryPreserve=yes
