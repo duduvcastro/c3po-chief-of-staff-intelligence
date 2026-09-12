@@ -49,6 +49,10 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     networks:
       - c3po_internal
       - legacy_proxy
@@ -122,6 +126,10 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     networks:
       - c3po_internal
       - legacy_proxy
@@ -156,6 +164,10 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     networks:
       - c3po_internal
       - legacy_proxy
@@ -183,6 +195,10 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     networks:
       - c3po_internal
 
