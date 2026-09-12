@@ -46,10 +46,15 @@ def check(root, now, *, run=command, health=healthy_host, write=write_report, ho
                  "start", "db", "api", "web"])
         report["repairs"].append("recovered_required_services")
         report["reboot"] = boot_receipt(root, write, health, now, command=run)
-    if report["reboot"] and report["reboot"].get("state") in ("failed", "verifying"):
+    if report["reboot"] and report["reboot"].get("state") == "verifying":
         report["errors"].append("postboot_verification_pending_or_failed")
     report["healthy"] = not report["errors"] and not report["repairs"]
     report["status"] = "verified" if report["healthy"] else "repairing" if not report["errors"] else "failed"
+    if report["reboot"] and report["reboot"].get("state") == "failed" and not report["errors"]:
+        # The watchdog itself worked. Do not turn a failed reboot request into
+        # a permanent evidence veto that prevents the controller's bounded retry.
+        report["healthy"] = False
+        report["status"] = "reboot_retry_pending"
     return report
 
 

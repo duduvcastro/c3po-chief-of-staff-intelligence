@@ -101,6 +101,18 @@ def test_reboot_not_occurred_is_failed_after_fifteen_minutes(host):
     state = reboot.boot_receipt(host, daily.write_report, lambda _: True, datetime.now(timezone.utc) + timedelta(minutes=16))
     assert state['state'] == 'failed' and not reboot.MARKER.exists()
 
+def test_failed_reboot_does_not_disable_its_own_future_retry(host):
+    request(host)
+    now = datetime.now(timezone.utc) + timedelta(minutes=16)
+    def run(args):
+        if '-p' in args:
+            return 'enabled' if 'UnitFileState' in args else 'active'
+        return ''
+    report = watchdog.check(host, now, run=run, health=lambda _: True, hold=host/'hold')
+    assert report['status'] == 'reboot_retry_pending'
+    assert report['healthy'] is False and report['errors'] == []
+    assert report['reboot']['state'] == 'failed'
+
 def test_watchdog_recovers_timer_and_stale_cycle_preserving_hold(host):
     calls = []
     def run(args):
