@@ -147,6 +147,18 @@ def reboot_window_open(now, config, hold):
     return maintenance_open(now, config, hold) and now.hour * 60 + now.minute < 705
 
 
+def ensure_workflows(gh, hold):
+    for workflow in ("dependency-security.yml", "container-vulnerability-scan.yml", "security-watchdog.yml"):
+        path = "/actions/workflows/" + workflow
+        state = gh.request(path)["state"]
+        # Public-repository scheduled workflows can be disabled for inactivity.
+        # Restore that platform suspension; preserve explicit operator suspension.
+        if state == "disabled_inactivity" and not hold:
+            gh.request(path + "/enable", "PUT")
+        elif state != "active" and not hold:
+            raise RuntimeError("Security workflow explicitly disabled: " + workflow)
+
+
 def proof_passed(gh, pr):
     runs = gh.pages("/actions/workflows/c3po-pipeline.yml/runs?event=workflow_dispatch&branch="
                     + pr["head"]["ref"], "workflow_runs")
@@ -217,7 +229,7 @@ def promote(gh, alerts, deployed_sha, images, may_write=lambda: False):
 
 def cycle(root, gh, now, config, previous):
     directory = root / "runtime/security"
-    reboot = boot_receipt(root, write_report, healthy_host, now)
+    reboot = boot_receipt(root, write_report, healthy_host, now, command=command)
     alerts = normalize_alerts(gh.pages("/dependabot/alerts?state=open"))
     evidence_errors = []
     try:
@@ -341,6 +353,7 @@ def main():
         try:
             gh = GitHub(github_token(args.root))
             config = json.loads(CONFIG.read_text())
+            ensure_workflows(gh, HOLD.exists())
             report = cycle(args.root, gh, now, config, previous)
         except Exception as exc:
             report = {**previous, "schema": "C3PO_SECURITY_AUTOMATION-v1", "generated_at": now.isoformat(),

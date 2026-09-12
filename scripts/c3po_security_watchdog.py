@@ -35,7 +35,7 @@ def check(root, now, *, run=command, health=healthy_host, write=write_report, ho
     except (OSError, ValueError, KeyError):
         run(["systemctl", "start", "--no-block", "c3po-security-daily.service"])
         report["repairs"].append("requested_security_cycle")
-    reboot = boot_receipt(root, write, health, now)
+    reboot = boot_receipt(root, write, health, now, command=run)
     report["reboot"] = reboot
     if reboot and reboot.get("state") == "verifying" and recovery_allowed(now, hold):
         # Restart only the required app services; never revive intentionally paused workers.
@@ -45,7 +45,7 @@ def check(root, now, *, run=command, health=healthy_host, write=write_report, ho
             run(["docker", "compose", "--env-file", str(root / ".env"), "-f", str(root / "c3po/compose.yml"),
                  "start", "db", "api", "web"])
         report["repairs"].append("recovered_required_services")
-        report["reboot"] = boot_receipt(root, write, health, now)
+        report["reboot"] = boot_receipt(root, write, health, now, command=run)
     if report["reboot"] and report["reboot"].get("state") in ("failed", "verifying"):
         report["errors"].append("postboot_verification_pending_or_failed")
     report["healthy"] = not report["errors"] and not report["repairs"]

@@ -15,7 +15,12 @@ REQUIRED = Path("/var/run/reboot-required")
 DPKG_LOCKS = (Path("/var/lib/dpkg/lock-frontend"), Path("/var/lib/dpkg/lock"))
 
 
-def boot_receipt(root, write, healthy, now):
+def container_receipt(containers):
+    return [{"id": c["Id"], "name": c["Name"], "image": c["Image"], "started_at": c["State"]["StartedAt"]}
+            for c in containers]
+
+
+def boot_receipt(root, write, healthy, now, command=None):
     path = root / "runtime/security" / STATE
     if not path.exists():
         return None
@@ -34,6 +39,10 @@ def boot_receipt(root, write, healthy, now):
         ok = False
     state.update(state="verified" if ok else "verifying", verified_at=now.isoformat() if ok else None,
                  current_boot_id=BOOT_ID.read_text().strip())
+    if ok and command:
+        ids = command(["docker", "compose", "--env-file", str(root / ".env"), "-f", str(root / "c3po/compose.yml"), "ps", "-q"]).splitlines()
+        state["after"] = {"revision": (root / ".deploy-version").read_text().strip(),
+                          "containers": container_receipt(json.loads(command(["docker", "inspect", *ids])))}
     write(path, state)
     return state
 
@@ -86,7 +95,9 @@ def request_reboot(root, gh, config, now, *, command, healthy, write, allowed):
         if not allowed():
             return "deferred"
         state = {"schema": "C3PO_SECURITY_REBOOT-v1", "state": "requested", "boot_id": boot_id,
-                 "requested_at": datetime.now(timezone.utc).isoformat(), "reason": "security_updates_require_reboot"}
+                 "requested_at": datetime.now(timezone.utc).isoformat(), "reason": "security_updates_require_reboot",
+                 "before": {"revision": (root / ".deploy-version").read_text().strip(),
+                            "containers": container_receipt(containers)}}
         write(path, state)
         MARKER.parent.mkdir(parents=True, exist_ok=True)
         MARKER.write_text(boot_id + "\n")

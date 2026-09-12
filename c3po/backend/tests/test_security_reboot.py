@@ -13,6 +13,7 @@ daily = importlib.import_module('c3po_security_daily')
 @pytest.fixture
 def host(tmp_path, monkeypatch):
     (tmp_path / 'runtime/security').mkdir(parents=True)
+    (tmp_path / '.deploy-version').write_text('a' * 40)
     for name in ('BOOT_ID', 'REQUIRED', 'MARKER'):
         monkeypatch.setattr(reboot, name, tmp_path / name)
     reboot.BOOT_ID.write_text('old-boot')
@@ -35,7 +36,7 @@ def runner(calls, *, ingestion='0', active='0'):
         if args[0:2] == ['docker', 'compose']:
             return 'db-id'
         if args[0:2] == ['docker', 'inspect']:
-            return json.dumps([{'State': {'Running': True, 'StartedAt': '2026-09-11T16:48:21Z'}}])
+            return json.dumps([{'Id': 'id', 'Name': '/db', 'Image': 'sha256:image', 'State': {'Running': True, 'StartedAt': '2026-09-11T16:48:21Z'}}])
         if 'psql' in args:
             return ingestion if 'ingestion_runs' in args[-1] else active
         return ''
@@ -166,3 +167,20 @@ def test_current_trial_and_locked_history_veto_maintenance(tmp_path):
 @pytest.mark.parametrize('hour,minute,expected', [(10, 0, True), (11, 44, True), (11, 45, False), (12, 0, False), (20, 0, False)])
 def test_reboot_reserves_time_for_postboot_recovery(hour, minute, expected):
     assert daily.reboot_window_open(datetime(2026, 9, 12, hour, minute, tzinfo=timezone.utc), {'automatic_merge': True}, False) is expected
+
+def test_workflow_inactivity_recovered_but_manual_suspension_preserved():
+    class Workflows:
+        state = 'disabled_inactivity'
+        calls = []
+        def request(self, path, method='GET'):
+            self.calls.append((path, method))
+            return {'state': self.state}
+    gh = Workflows()
+    daily.ensure_workflows(gh, False)
+    assert sum(method == 'PUT' for _, method in gh.calls) == 3
+    gh.calls.clear()
+    gh.state = 'disabled_manually'
+    with pytest.raises(RuntimeError):
+        daily.ensure_workflows(gh, False)
+    assert not any(method == 'PUT' for _, method in gh.calls)
+    daily.ensure_workflows(gh, True)
