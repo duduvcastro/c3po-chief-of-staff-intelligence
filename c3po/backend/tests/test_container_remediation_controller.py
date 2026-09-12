@@ -119,9 +119,9 @@ def test_controller_builds_a_deduplicable_trigger_and_actionable_pr_body() -> No
     assert "CVE-CRITICAL-0" in body
     assert "CVE-HIGH-0" in body
     assert trigger["remediation_key"] in body
-    assert "Não há auto-merge" in body
-    assert "Fable audita" in body
-    assert "Dudu autoriza" in body
+    assert "CI/scan no SHA exato" in body
+    assert "ausência de freeze" in body
+    assert "exigindo auditoria e autorização nominal" in body
 
 
 def test_controller_accepts_a_zero_fixable_report_without_opening_work() -> None:

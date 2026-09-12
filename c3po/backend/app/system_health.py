@@ -1336,7 +1336,7 @@ class SystemHealthService:
         remediation_lanes = report.get("remediation_lanes") or {}
         governance = report.get("governance") or {}
         drift = governance.get("drift") or []
-        open_total = int(dependabot.get("open_total") or 0)
+        open_total = int(dependabot.get("open_total") or 0) + int((report.get("security_automation") or {}).get("additional_count") or 0)
         status = "offline" if stale else str(report.get("status") or "offline")
         layers_complete = bool(operating_system) and bool(production_images)
         remediation_lane_count = remediation_lanes.get("count")
@@ -1392,6 +1392,7 @@ class SystemHealthService:
                 "operating_system": operating_system,
                 "production_images": production_images,
                 "remediation_lanes": remediation_lanes,
+                "security_automation": report.get("security_automation") or {},
                 "known_vulnerabilities": report.get("known_vulnerabilities") or {},
                 "governance_checks": governance.get("checks") or [],
                 "drift_fields": [str(item.get("field")) for item in drift],

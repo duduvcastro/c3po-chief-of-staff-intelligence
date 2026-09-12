@@ -169,8 +169,23 @@ jobs:
           corepack enable
           corepack prepare pnpm@${PNPM_VERSION} --activate
 
+      - name: Verify deterministic security lockfile
+        if: github.event_name == 'workflow_dispatch' && inputs.remediation && startsWith(github.ref_name, 'automation/dependency-security-')
+        run: |
+          git fetch --no-tags origin main
+          python3 ../../scripts/c3po_dependency_security.py --root ../.. --verify-lock
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Verify dependency fixes against current advisories
+        if: github.event_name == 'workflow_dispatch' && inputs.remediation && startsWith(github.ref_name, 'automation/dependency-security-')
+        run: |
+          rc=0
+          pnpm audit --json > "$RUNNER_TEMP/dependency-audit.json" || rc=$?
+          test "$rc" -le 1
+          python3 ../../scripts/c3po_dependency_security.py --root ../.. \
+            --audit-result "$RUNNER_TEMP/dependency-audit.json"
 
       - name: Test browser telemetry privacy and limits
         run: node --experimental-strip-types --test tests/sentry-privacy.test.mjs
@@ -301,6 +316,20 @@ jobs:
         run: |
           python3 scripts/c3po_container_remediation.py verify-zero \
             --report "$RUNNER_TEMP/c3po-trivy-pull-request.json"
+
+  security-remediation-proof:
+    name: Security remediation proof
+    needs: [sensitive-files, secret-scan, backend-tests, python-type-check, frontend-build]
+    if: github.event_name == 'workflow_dispatch' && inputs.remediation && !inputs.deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bind all passing checks to the immutable candidate
+        env:
+          VALIDATED_REF: ${{ inputs.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          [[ "$VALIDATED_REF" =~ ^[0-9a-f]{40}$ ]]
+          test "$VALIDATED_REF" = "$DISPATCH_SHA"
 
   deploy-production:
     name: Deploy production

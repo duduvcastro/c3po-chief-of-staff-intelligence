@@ -1,0 +1,16 @@
+[Unit]
+Description=C3PO daily security remediation and verification
+After=network-online.target docker.service c3po-host-security-snapshot.service
+Wants=network-online.target c3po-host-security-snapshot.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/c3po-security/c3po_security_daily.py
+TimeoutStartSec=10min
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/chief-of-staff-digital/runtime/security
+

@@ -362,8 +362,10 @@ def render_pr_body(trigger: dict[str, Any]) -> str:
         lines.extend([
             "O commit inicial apenas força rebuild integral a partir das bases pinadas e dos ",
             "repositórios oficiais. Se o scan da PR não zerar os achados fixáveis, Codex ajusta ",
-            "pacotes ou digests nesta mesma PR. Fable audita a evidência final. Dudu autoriza ",
-            "o merge. **Não há auto-merge nem deploy antes desses portões.**",
+            "pacotes ou digests nesta mesma PR. O controlador diário do host pode promover ",
+            "somente o rebuild restrito após CI/scan no SHA exato, proteção estrita da branch, ",
+            "janela de manutenção e ausência de freeze. Mudanças de código ou digests ",
+            "continuam exigindo auditoria e autorização nominal.",
             "",
             "Após o deploy, o scan de produção deve ser reexecutado e o atestado deve consumir ",
             "o novo report.",

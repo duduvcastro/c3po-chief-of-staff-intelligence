@@ -1,0 +1,132 @@
+name: Repair vulnerable application dependencies
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: c3po-dependency-security
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Read current advisories through the host credential
+        env:
+          DEPLOY_KEY: ${{ secrets.C3PO_AWS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.C3PO_AWS_KNOWN_HOSTS }}
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/security
+          chmod 600 ~/.ssh/security
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/security "$USER@$HOST" \
+            'sudo /usr/local/lib/c3po-security/c3po_security_daily.py --observe' \
+            > "$RUNNER_TEMP/security-alerts.json"
+
+      - name: Activate the project package manager
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Query npm advisories independently of Dependabot delivery
+        working-directory: c3po/frontend
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.15.0 --activate
+          rc=0
+          pnpm audit --json > "$RUNNER_TEMP/npm-before.json" || rc=$?
+          test "$rc" -le 1
+
+      - name: Prepare compatible fixes and record unresolved advisories
+        id: fixes
+        run: |
+          python3 scripts/c3po_dependency_security.py \
+            --report "$RUNNER_TEMP/security-alerts.json" --base-sha "$(git rev-parse HEAD)" \
+            --npm-audit "$RUNNER_TEMP/npm-before.json" --npm-report-output "$RUNNER_TEMP/npm-report.json" \
+            > "$RUNNER_TEMP/security-plan.json"
+          jq -r '"applied=\(.applied)"' "$RUNNER_TEMP/security-plan.json" >> "$GITHUB_OUTPUT"
+
+      - name: Publish factual npm findings to the server
+        env:
+          HOST: ${{ secrets.C3PO_AWS_HOST }}
+          USER: ${{ secrets.C3PO_AWS_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/security "$USER@$HOST" \
+            'sudo /usr/local/lib/c3po-security/c3po_security_daily.py --import-npm' < "$RUNNER_TEMP/npm-report.json"
+
+      - name: Regenerate dependency resolutions
+        if: steps.fixes.outputs.applied != '0'
+        working-directory: c3po/frontend
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.15.0 --activate
+          pnpm install --lockfile-only --ignore-scripts
+
+      - name: Publish one deduplicated candidate and validate its exact revision
+        if: steps.fixes.outputs.applied != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=automation/dependency-security-daily
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --base main --state open --json number --jq '.[0].number // empty')
+          expected=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+          if [ -n "$expected" ]; then
+            git fetch origin "$branch"
+            # Identical manifests: keep the existing immutable head and its CI results.
+            if git diff --quiet FETCH_HEAD -- c3po/frontend/package.json c3po/frontend/pnpm-workspace.yaml c3po/frontend/pnpm-lock.yaml c3po/backend/requirements.txt c3po/security/dependency-remediation.json; then
+              sha=$(git rev-parse FETCH_HEAD)
+              outcome=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow c3po-pipeline.yml --branch "$branch" --event workflow_dispatch --limit 30 --json headSha,status,conclusion --jq "[.[] | select(.headSha == \"$sha\")][0] | if .status == \"completed\" then .conclusion else .status end")
+              case "$outcome" in
+                success|queued|in_progress|waiting|pending) exit 0 ;;
+              esac
+              gh workflow run c3po-pipeline.yml --repo "$GITHUB_REPOSITORY" --ref "$branch" \
+                -f "ref=$sha" -f deploy=false -f remediation=true
+              exit 0
+            fi
+          fi
+          git switch -C "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add c3po/frontend/package.json c3po/frontend/pnpm-workspace.yaml c3po/frontend/pnpm-lock.yaml c3po/backend/requirements.txt c3po/security/dependency-remediation.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'Fix dependencies with published compatible security updates'
+          git push --force-with-lease="refs/heads/$branch:$expected" origin "$branch"
+          if [ -z "$pr" ]; then
+            cat > "$RUNNER_TEMP/security-pr.md" <<'BODY'
+          Corrige dependências com versões corrigidas publicadas nos avisos de segurança. O recibo versionado registra avisos atendidos e pendências sem correção compatível.
+
+          O servidor só promove esta PR após os testes completos e o scan das imagens passarem no SHA exato, dentro da janela de manutenção e sem freeze. O deploy normal inclui verificações de saúde e rollback; um novo scan de produção e atestado confirmam o resultado.
+          BODY
+            gh pr create --repo "$GITHUB_REPOSITORY" --head "$branch" --base main \
+              --title 'Corrigir dependências vulneráveis do C3PO' --body-file "$RUNNER_TEMP/security-pr.md"
+          fi
+          sha=$(git rev-parse HEAD)
+          gh workflow run c3po-pipeline.yml --repo "$GITHUB_REPOSITORY" --ref "$branch" \
+            -f "ref=$sha" -f deploy=false -f remediation=true
+
+      - name: Keep evidence even when no compatible fix exists
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-security-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/security-alerts.json
+            ${{ runner.temp }}/security-plan.json
+            ${{ runner.temp }}/npm-report.json
+          retention-days: 30
