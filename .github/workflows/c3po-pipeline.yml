@@ -486,7 +486,26 @@ jobs:
 
           APP_DIR=/opt/chief-of-staff-digital
           # Serialize container mutations against the native reboot controller.
-          mkdir -p "$APP_DIR/runtime/security"
+          # The report directory may already be root-owned before first install.
+          # Open/create in place: never replace the inode of a held flock.
+          sudo python3 - "$APP_DIR/runtime/security/deployment.lock" "$(id -u)" "$(id -g)" <<'LOCK_BOOTSTRAP'
+          import os
+          from pathlib import Path
+          import stat
+          import sys
+
+          path = Path(sys.argv[1])
+          path.parent.mkdir(parents=True, exist_ok=True)
+          fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o644)
+          try:
+              current = os.fstat(fd)
+              if not stat.S_ISREG(current.st_mode) or current.st_nlink != 1:
+                  raise RuntimeError('Invalid deployment lock')
+              os.fchown(fd, int(sys.argv[2]), int(sys.argv[3]))
+              os.fchmod(fd, 0o644)
+          finally:
+              os.close(fd)
+          LOCK_BOOTSTRAP
           exec 9>>"$APP_DIR/runtime/security/deployment.lock"
           flock -w 120 9
           if [ -e /run/c3po-security/reboot.pending ]; then
