@@ -307,6 +307,7 @@ class Database:
         actor_email: str,
         detail: str,
         at: datetime,
+        recovered_through: datetime | None = None,
     ) -> dict[str, Any] | None:
         if event_type not in {"acknowledged", "resolved"}:
             raise ValueError("invalid incident transition")
@@ -315,6 +316,8 @@ class Database:
             None,
         )
         if not incident or incident["status"] == "resolved":
+            return incident
+        if recovered_through is not None and incident["last_seen_at"] > recovered_through:
             return incident
         if event_type == "acknowledged" and incident["status"] == "acknowledged":
             return incident
@@ -329,6 +332,21 @@ class Database:
             self._operational_incident_events.append(event)
         else:
             with self.connection() as connection:
+                if recovered_through is not None:
+                    # Serialize automatic recovery with new failure signals.
+                    connection.execute(
+                        "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                        (f"operational-incident:{incident['incident_key']}",),
+                    )
+                    latest = connection.execute(
+                        """SELECT occurred_at, event_type FROM operational_incident_events
+                           WHERE incident_id = %s
+                           ORDER BY occurred_at DESC, created_at DESC LIMIT 1""",
+                        (incident_id,),
+                    ).fetchone()
+                    if not latest or latest[0] > recovered_through or latest[1] == "resolved":
+                        connection.commit()
+                        return incident
                 inserted = connection.execute(
                     """INSERT INTO operational_incident_events
                        (id, incident_id, event_type, actor_email, detail, evidence,

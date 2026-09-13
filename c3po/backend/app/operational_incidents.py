@@ -101,3 +101,15 @@ class OperationalIncidentService:
             detail=detail,
             at=datetime.now(timezone.utc),
         )
+
+    def resolve_recovered_prefix(
+        self, prefix: str, *, observed_at: datetime, detail: str,
+    ) -> None:
+        """Close prior dated alerts only when the recovery evidence covers them."""
+        for incident in self.database.list_operational_incidents(limit=1000):
+            if incident["incident_key"].startswith(prefix) and incident["status"] != "resolved":
+                self.database.transition_operational_incident(
+                    incident_id=incident["id"], event_type="resolved", actor_email="system",
+                    detail=detail, at=datetime.now(timezone.utc),
+                    recovered_through=observed_at,
+                )
