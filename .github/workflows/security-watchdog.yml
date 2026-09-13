@@ -31,4 +31,4 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -i ~/.ssh/security "$USER@$HOST" \
-            'sudo systemctl start c3po-security-watchdog.service && sudo /usr/local/lib/c3po-security/c3po_security_watchdog.py --verify-daily'
+            '/usr/local/lib/c3po-security/c3po_maintenance_run.py sudo /usr/local/lib/c3po-security/c3po_security_watchdog.py --verify-daily'

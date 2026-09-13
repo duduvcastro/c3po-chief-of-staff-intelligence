@@ -218,17 +218,19 @@ SESSION_COOKIE = "c3po_session"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if settings.auth_required and settings.environment == "production" and len(settings.auth_secret) < 32:
-        raise RuntimeError("C3PO_AUTH_SECRET must contain at least 32 characters in production")
-    database.initialize()
-    database.ensure_access_owner(settings.auth_email, list(ALL_VIEW_PERMISSIONS), list(ALL_CAPABILITIES))
-    ensure_builtin_official_fundamentals(database)
-    r2d2.ensure_initialized()
-    eodhd_stream.start()
-    performance_stop = asyncio.Event()
-    performance_task = asyncio.create_task(
-        run_performance_flush_loop(performance_observability, performance_stop)
-    )
+    from .maintenance_gate import startup_job
+    with startup_job():
+        if settings.auth_required and settings.environment == "production" and len(settings.auth_secret) < 32:
+            raise RuntimeError("C3PO_AUTH_SECRET must contain at least 32 characters in production")
+        database.initialize()
+        database.ensure_access_owner(settings.auth_email, list(ALL_VIEW_PERMISSIONS), list(ALL_CAPABILITIES))
+        ensure_builtin_official_fundamentals(database)
+        r2d2.ensure_initialized()
+        eodhd_stream.start()
+        performance_stop = asyncio.Event()
+        performance_task = asyncio.create_task(
+            run_performance_flush_loop(performance_observability, performance_stop)
+        )
     try:
         yield
     finally:
@@ -1722,3 +1724,7 @@ def feedback(request: FeedbackRequest) -> FeedbackResponse:
         }
     )
     return FeedbackResponse(id=feedback_id)
+
+# Outermost ASGI boundary includes completion of response background tasks.
+from .maintenance_gate import MaintenanceMiddleware
+app.add_middleware(MaintenanceMiddleware)

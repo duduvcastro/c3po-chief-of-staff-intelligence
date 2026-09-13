@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from .maintenance_gate import job, startup_job
 from .config import get_settings
 from .database import Database
 from .observability import init_sentry
@@ -47,23 +48,28 @@ def run_due_sessions(database: Database, *, now: datetime | None = None) -> list
 
 
 def main() -> None:
-    settings = get_settings()
-    init_sentry(settings, service_name="r2d2-shadow-candidate-worker")
-    database = Database(settings)
-    database.initialize()
-    logger.info(
-        "R2D2 shadow-candidate nightly worker ready; enabled=%s evidence=%s",
-        settings.r2d2_shadow_candidate_outcomes_enabled,
-        settings.r2d2_shadow_candidate_evidence_dir,
-    )
+    with startup_job():
+        settings = get_settings()
+        init_sentry(settings, service_name="r2d2-shadow-candidate-worker")
+        database = Database(settings)
+        database.initialize()
+        logger.info(
+            "R2D2 shadow-candidate nightly worker ready; enabled=%s evidence=%s",
+            settings.r2d2_shadow_candidate_outcomes_enabled,
+            settings.r2d2_shadow_candidate_evidence_dir,
+        )
     while True:
-        try:
-            local_hour = datetime.now(timezone.utc).astimezone(SAO_PAULO).hour
-            if 0 <= local_hour < 8:
-                for summary in run_due_sessions(database):
-                    logger.info("R2D2 shadow-candidate report completed: %s", summary)
-        except Exception:
-            logger.exception("R2D2 shadow-candidate nightly run failed")
+        with job() as admitted:
+            if not admitted:
+                time.sleep(5)
+                continue
+            try:
+                local_hour = datetime.now(timezone.utc).astimezone(SAO_PAULO).hour
+                if 0 <= local_hour < 8:
+                    for summary in run_due_sessions(database):
+                        logger.info("R2D2 shadow-candidate report completed: %s", summary)
+            except Exception:
+                logger.exception("R2D2 shadow-candidate nightly run failed")
         time.sleep(60)
 
 

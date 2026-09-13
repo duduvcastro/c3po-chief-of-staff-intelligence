@@ -19,6 +19,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY work /app/work
+COPY c3po/backend/app/maintenance_gate.py /app/maintenance_gate.py
 
 RUN mkdir -p /app/outputs /app/work/billfish_reports
 

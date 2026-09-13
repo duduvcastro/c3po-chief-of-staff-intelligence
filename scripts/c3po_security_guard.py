@@ -52,5 +52,5 @@ def trial_present(now, base=TRIAL_ROOT):
 
 
 def recovery_allowed(now, hold, base=TRIAL_ROOT):
-    # Excludes every night (20Z–04Z) and all active-session hours (13Z–21:30Z).
-    return 10 <= now.hour < 12 and not hold.exists() and not trial_present(now, base)
+    # Recovery of an already requested reboot must not wait for a clock window.
+    return not hold.exists() and not trial_present(now, base)

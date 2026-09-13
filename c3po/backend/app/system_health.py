@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor, wait
+from .maintenance_gate import MaintenanceExecutor as ThreadPoolExecutor
+from concurrent.futures import Future, wait
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json

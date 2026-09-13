@@ -2,6 +2,7 @@ from __future__ import annotations
 import importlib
 import json
 import sys
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import pytest
@@ -18,6 +19,18 @@ def host(tmp_path, monkeypatch):
         monkeypatch.setattr(reboot, name, tmp_path / name)
     reboot.BOOT_ID.write_text('old-boot')
     reboot.REQUIRED.touch()
+    gate = tmp_path / 'runtime/security/maintenance'
+    gate.mkdir()
+    for name in ('admission.lock', 'work.lock'):
+        (gate / name).touch(mode=0o644)
+    monkeypatch.setattr(reboot, 'admission_coverage', lambda *args: True)
+    class Pause:
+        keep = False
+        def __init__(self, *args): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def idle(self): return True
+    monkeypatch.setattr(reboot, 'SchedulingPause', Pause)
     monkeypatch.setattr(reboot, 'DPKG_LOCKS', (tmp_path / 'dpkg1', tmp_path / 'dpkg2'))
     for path in reboot.DPKG_LOCKS:
         path.touch()
@@ -152,6 +165,102 @@ def test_concurrent_deploy_lock_prevents_reboot(host):
     assert not reboot.MARKER.exists()
     assert not any(c[:2] == ['systemctl', 'reboot'] for c in calls)
 
+
+def test_job_started_after_idle_check_prevents_reboot(host):
+    from app.maintenance_gate import admit
+    calls, leases = [], []
+    original = runner(calls)
+    def run(args):
+        # A new job enters after the optimistic DB check, before drain begins.
+        if args[:2] == ['docker', 'inspect'] and not leases:
+            leases.append(admit(host/'runtime/security/maintenance'))
+        return original(args)
+    try:
+        result, _ = request(host, command=run)
+        assert result == 'waiting_active_jobs'
+        assert not any(c[:2] == ['systemctl', 'reboot'] for c in calls)
+    finally:
+        for lease in leases:
+            lease.close()
+
+
+def test_admission_stays_closed_after_systemctl_returns(host, monkeypatch):
+    import app.maintenance_gate as gate
+    boot = '12345678-1234-1234-1234-123456789012'
+    reboot.BOOT_ID.write_text(boot)
+    monkeypatch.setattr(gate, 'boot_identity', lambda: reboot.BOOT_ID.read_text())
+    assert request(host)[0] == 'requested'
+    with pytest.raises(gate.MaintenanceBusy):
+        gate.admit(host/'runtime/security/maintenance')
+    reboot.BOOT_ID.write_text('12345678-1234-1234-1234-123456789013')
+    with gate.admit(host/'runtime/security/maintenance'):
+        pass
+
+
+def test_unknown_container_coverage_never_reboots(host, monkeypatch):
+    monkeypatch.setattr(reboot, 'admission_coverage', lambda *args: False)
+    result, calls = request(host)
+    assert result == 'waiting_admission_coverage'
+    assert not any(c[:2] == ['systemctl', 'reboot'] for c in calls)
+
+
+def test_scheduler_pause_never_stops_active_service_and_restores_on_deferral(host, monkeypatch):
+    import c3po_security_schedulers as schedulers
+    monkeypatch.setattr(schedulers, 'BOOT_ID', reboot.BOOT_ID)
+    calls = []
+    def run(args):
+        calls.append(args)
+        if args[1] == 'list-units':
+            return 'backup.timer loaded active waiting Backup\nc3po-security-watchdog.timer loaded active waiting Watchdog'
+        if 'MainPID' in args:
+            return '0'
+        if 'Triggers' in args:
+            return 'backup.service'
+        if 'ActiveState' in args:
+            return 'active'
+        return ''
+    with schedulers.SchedulingPause(host, run, daily.write_report) as pause:
+        assert not pause.idle()
+    assert ['systemctl', 'stop', 'backup.timer'] in calls
+    assert ['systemctl', 'start', 'backup.timer'] in calls
+    assert not any('backup.service' in c and 'stop' in c for c in calls)
+    receipt = json.loads((host/'runtime/security/reboot-schedulers.json').read_text())
+    assert receipt['restored'] is True
+
+
+@pytest.mark.skipif(not hasattr(os, 'pidfd_open'), reason='Linux pidfd integration')
+def test_scheduler_signal_pauses_only_parent_and_resumes_it(host, monkeypatch):
+    import subprocess
+    import signal
+    import time
+    import c3po_security_schedulers as schedulers
+    monkeypatch.setattr(schedulers, 'BOOT_ID', reboot.BOOT_ID)
+    code = "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); print(p.pid,flush=True); time.sleep(30)"
+    parent = subprocess.Popen([sys.executable, '-c', code], stdout=subprocess.PIPE, text=True)
+    child = int(parent.stdout.readline())
+    def status(pid):
+        return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0]
+    def run(args):
+        if 'MainPID' in args:
+            return str(parent.pid)
+        return ''
+    try:
+        with schedulers.SchedulingPause(host, run, daily.write_report):
+            deadline = time.monotonic() + 2
+            while status(parent.pid) != 'T' and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert status(parent.pid) == 'T'
+            assert status(child) != 'T'  # Existing job continues; no group signal.
+        deadline = time.monotonic() + 2
+        while status(parent.pid) == 'T' and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert status(parent.pid) != 'T'
+    finally:
+        os.kill(parent.pid, signal.SIGCONT)
+        os.kill(child, signal.SIGTERM)
+        parent.terminate()
+        parent.wait(timeout=5)
+
 def test_ingestion_filter_uses_oldest_current_container_without_editing_history(host):
     result, calls = request(host)
     assert result == 'requested'
@@ -176,9 +285,17 @@ def test_current_trial_and_locked_history_veto_maintenance(tmp_path):
     assert not guard.recovery_allowed(now, tmp_path/'hold', tmp_path)
     assert not guard.recovery_allowed(now.replace(hour=20), tmp_path/'hold', tmp_path)
 
-@pytest.mark.parametrize('hour,minute,expected', [(10, 0, True), (11, 44, True), (11, 45, False), (12, 0, False), (20, 0, False)])
-def test_reboot_reserves_time_for_postboot_recovery(hour, minute, expected):
-    assert daily.reboot_window_open(datetime(2026, 9, 12, hour, minute, tzinfo=timezone.utc), {'automatic_merge': True}, False) is expected
+@pytest.mark.parametrize('day,hour,minute,expected', [(12, 23, 0, True), (12, 12, 0, True),
+    (14, 12, 59, True), (14, 13, 0, False), (14, 21, 29, False), (14, 21, 30, True)])
+def test_reboot_flexible_hours_preserve_sessions_and_holds(day, hour, minute, expected, monkeypatch):
+    monkeypatch.setattr(daily, 'trial_present', lambda _: False)
+    now = datetime(2026, 9, day, hour, minute, tzinfo=timezone.utc)
+    config = {'automatic_reboot': True, 'automatic_merge': False}
+    assert daily.reboot_window_open(now, config, False) is expected
+    assert not daily.reboot_window_open(now, config, True)
+    monkeypatch.setattr(daily, 'trial_present', lambda _: True)
+    assert not daily.reboot_window_open(now, config, False)
+
 
 def test_workflow_inactivity_recovered_but_manual_suspension_preserved():
     class Workflows:

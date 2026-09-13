@@ -13,6 +13,12 @@ def test_bootstrap_is_held_before_timers_and_reinstall_preserves_activation(tmp_
     root.mkdir()
     shutil.copytree(source/'scripts', root/'scripts')
     shutil.copytree(source/'ops', root/'ops')
+    module = root/'c3po/backend/app'
+    module.mkdir(parents=True)
+    shutil.copyfile(source/'c3po/backend/app/maintenance_gate.py', module/'maintenance_gate.py')
+    initializer = root/'scripts/init-maintenance-gate.py'
+    initializer.write_text(initializer.read_text().replace('os.chown(directory, 0, 0)', 'pass')
+                           .replace('os.fchown(fd, 0, 0)', 'pass'))
     (root/'.deploy-version').write_text('a'*40)
     local = tmp_path/'local'
     etc = tmp_path/'etc'
