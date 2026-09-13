@@ -16,10 +16,26 @@ TIMERS = ("c3po-security-daily.timer", "c3po-security-watchdog.timer",
 
 
 def check(root, now, *, run=command, health=healthy_host, write=write_report, hold=HOLD):
+    # Never resume timers while a live controller is draining or requesting boot.
+    with (root / "runtime/security/deployment.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return {"schema": "C3PO_SECURITY_WATCHDOG-v1", "generated_at": now.isoformat(),
+                    "status": "maintenance_busy", "healthy": False, "repairs": [], "errors": []}
+        return _check_locked(root, now, run=run, health=health, write=write, hold=hold)
+
+
+def _check_locked(root, now, *, run, health, write, hold):
     report = {"schema": "C3PO_SECURITY_WATCHDOG-v1", "generated_at": now.isoformat(),
               "healthy": False, "repairs": [], "errors": []}
     if hold.exists():
         report["status"] = "explicit_maintenance_hold"
+        return report
+    reboot = boot_receipt(root, write, health, now, command=run, lock_held=True)
+    report["reboot"] = reboot
+    if reboot and reboot.get("state") == "requested":
+        report.update(status="reboot_pending", healthy=False)
         return report
     for timer in TIMERS:
         if run(["systemctl", "show", timer, "-p", "UnitFileState", "--value"]) != "enabled":
@@ -35,17 +51,13 @@ def check(root, now, *, run=command, health=healthy_host, write=write_report, ho
     except (OSError, ValueError, KeyError):
         run(["systemctl", "start", "--no-block", "c3po-security-daily.service"])
         report["repairs"].append("requested_security_cycle")
-    reboot = boot_receipt(root, write, health, now, command=run)
-    report["reboot"] = reboot
     if reboot and reboot.get("state") == "verifying" and recovery_allowed(now, hold):
         # Restart only the required app services; never revive intentionally paused workers.
-        with (root / "runtime/security/deployment.lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            # Start existing containers only: preserve their exact images, settings and IDs.
-            run(["docker", "compose", "--env-file", str(root / ".env"), "-f", str(root / "c3po/compose.yml"),
-                 "start", "db", "api", "web"])
+        # Start existing containers only: preserve their exact images, settings and IDs.
+        run(["docker", "compose", "--env-file", str(root / ".env"), "-f", str(root / "c3po/compose.yml"),
+             "start", "db", "api", "web"])
         report["repairs"].append("recovered_required_services")
-        report["reboot"] = boot_receipt(root, write, health, now, command=run)
+        report["reboot"] = boot_receipt(root, write, health, now, command=run, lock_held=True)
     if report["reboot"] and report["reboot"].get("state") == "verifying":
         report["errors"].append("postboot_verification_pending_or_failed")
     report["healthy"] = not report["errors"] and not report["repairs"]

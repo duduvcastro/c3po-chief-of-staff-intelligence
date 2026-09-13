@@ -243,3 +243,57 @@ def test_webhook_rejects_during_drain_without_appending(gate, tmp_path, monkeypa
         server.shutdown()
         server.server_close()
         thread.join(2)
+
+
+def test_raw_burst_uses_bounded_descriptors_and_retains_backlog_until_flush(tmp_path):
+    import subprocess
+    import sys
+    import textwrap
+    script = textwrap.dedent('''
+        import os, resource, sys, time
+        from pathlib import Path
+        from datetime import datetime, timezone
+        from app.microstructure_capture import AppendOnlyRawStreamCapture
+        from app.maintenance_gate import Drain
+        root=Path(sys.argv[1]); gate=root/'gate'; gate.mkdir()
+        for name in ('admission.lock','work.lock'): (gate/name).touch(mode=0o644)
+        os.environ['C3PO_MAINTENANCE_GATE_DIR']=str(gate)
+        capture=AppendOnlyRawStreamCapture(root/'raw', minimum_free_bytes=0, queue_size=5000)
+        old=resource.getrlimit(resource.RLIMIT_NOFILE)
+        resource.setrlimit(resource.RLIMIT_NOFILE,(min(128,old[0]),old[1]))
+        try:
+            for _ in range(3000):
+                assert capture.record('trade','{}',received_at=datetime.now(timezone.utc))
+            with Drain(gate) as drain:
+                assert not drain.try_drained()
+                assert not capture.record('trade','{}',received_at=datetime.now(timezone.utc))
+                capture.start()
+                deadline=time.monotonic()+10
+                while not drain.try_drained() and time.monotonic()<deadline: time.sleep(.01)
+                assert drain.try_drained()
+                assert capture.stats().written==3000
+                assert sum(len(p.read_text().splitlines()) for p in (root/'raw').rglob('*.ndjson'))==3000
+            capture.stop()
+        finally:
+            resource.setrlimit(resource.RLIMIT_NOFILE,old)
+    ''')
+    import os
+    env = dict(os.environ)
+    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1])
+    result = subprocess.run([sys.executable, "-c", script, str(tmp_path)], env=env,
+                            capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+
+
+def test_marker_removed_during_admission_read_is_already_reconciled(gate,monkeypatch):
+    marker=gate/'reboot.pending'
+    marker.write_text('12345678-1234-1234-1234-123456789012')
+    original=Path.read_text
+    def removed(path,*args,**kwargs):
+        if path==marker:
+            path.unlink()
+            raise FileNotFoundError(str(path))
+        return original(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'read_text',removed)
+    with admit(gate):
+        pass

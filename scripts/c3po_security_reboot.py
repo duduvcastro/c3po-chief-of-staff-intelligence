@@ -5,6 +5,8 @@ from __future__ import annotations
 import fcntl
 import json
 import hashlib
+import os
+import tempfile
 try:
     from maintenance_gate import Drain, MaintenanceBusy
 except ModuleNotFoundError:
@@ -26,12 +28,50 @@ def container_receipt(containers):
             for c in containers]
 
 
-def boot_receipt(root, write, healthy, now, command=None):
+def atomic_marker(path, boot_id):
+    """Publish a complete marker, never a temporarily empty/partial UUID."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(boot_id + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.chmod(0o644)
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def boot_receipt(root, write, healthy, now, command=None, *, lock_held=False):
+    if lock_held:
+        return _boot_receipt_locked(root, write, healthy, now, command)
+    with (root / "runtime/security/deployment.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            path = root / "runtime/security" / STATE
+            return json.loads(path.read_text()) if path.exists() else None
+        return _boot_receipt_locked(root, write, healthy, now, command)
+
+
+def _boot_receipt_locked(root, write, healthy, now, command):
     path = root / "runtime/security" / STATE
-    if not path.exists():
-        return None
-    state = json.loads(path.read_text())
-    if state.get("state") not in ("requested", "verifying"):
+    state = json.loads(path.read_text()) if path.exists() else None
+    if not state or state.get("state") not in ("requested", "verifying"):
+        # The controller may have died after stopping timers but before writing
+        # a reboot request. Recover its saved scheduler state in that case too.
+        if command:
+            restore_schedulers(root, command, write)
+        if state and state.get("state") == "verified" and state.get("current_boot_id") == BOOT_ID.read_text().strip():
+            MARKER.unlink(missing_ok=True)
+            (root / "runtime/security/maintenance/reboot.pending").unlink(missing_ok=True)
         return state
     if state["boot_id"] == BOOT_ID.read_text().strip():
         if now - datetime.fromisoformat(state["requested_at"]) > timedelta(minutes=15):
@@ -43,6 +83,8 @@ def boot_receipt(root, write, healthy, now, command=None):
         return state
     if command:
         restore_schedulers(root, command, write)
+    MARKER.unlink(missing_ok=True)
+    (root / "runtime/security/maintenance/reboot.pending").unlink(missing_ok=True)
     try:
         ok = healthy(root) and not REQUIRED.exists()
     except Exception:
@@ -127,10 +169,10 @@ def request_reboot(root, gh, config, now, *, command, healthy, write, allowed):
                  "before": {"revision": (root / ".deploy-version").read_text().strip(),
                             "containers": container_receipt(containers)}}
         write(path, state)
-        MARKER.parent.mkdir(parents=True, exist_ok=True)
-        MARKER.write_text(boot_id + "\n")
-        (gate / "reboot.pending").write_text(boot_id + "\n")
         try:
+            MARKER.parent.mkdir(parents=True, exist_ok=True)
+            atomic_marker(MARKER, boot_id)
+            atomic_marker(gate / "reboot.pending", boot_id)
             command(["systemctl", "reboot", "--no-block"])
         except Exception:
             state.update(state="failed", error="reboot_request_failed")
@@ -182,7 +224,7 @@ def admission_coverage(root, command):
             # The optional processor has an independent retained queue. Until it
             # implements the same drain protocol, its activation vetoes reboot.
             active = command(["docker", "exec", container["Id"], "python3", "-B", "-c",
-                              "from app.config import get_settings; print(int(get_settings().r2d2_microstructure_processor_enabled))"])
+                              "from app.config import get_settings; s=get_settings(); print(int(s.r2d2_microstructure_raw_capture_enabled and s.r2d2_microstructure_processor_enabled))"])
             if active != "0":
                 return False
     return backend | {"pluggy-webhook"} == found
