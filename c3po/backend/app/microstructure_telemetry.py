@@ -131,36 +131,41 @@ class MicrostructureResourceTelemetry:
         }
 
     def _run(self) -> None:
+        from .maintenance_gate import job
         handle = None
         current_session = None
         try:
             while not self._stop.is_set():
-                started = self._monotonic()
-                try:
-                    payload = self.snapshot()
-                    session = payload["session_date"]
-                    if current_session != session:
-                        if handle is not None:
-                            handle.flush()
-                            handle.close()
-                        directory = self.root / f"session_date={session}"
-                        directory.mkdir(parents=True, exist_ok=True)
-                        path = directory / f"run-{self._run_id}.ndjson"
-                        handle = path.open("x", encoding="utf-8")
-                        current_session = session
-                    record = json.dumps(
-                        payload,
-                        separators=(",", ":"),
-                        ensure_ascii=True,
-                    ) + "\n"
-                    if not self._disk_available(len(record.encode("utf-8"))):
-                        raise OSError("microstructure telemetry disk reserve reached")
-                    handle.write(record)
-                    handle.flush()
-                    self._samples_written += 1
-                except Exception:
-                    self._write_errors += 1
-                    logger.exception("Failed to write microstructure T0 telemetry")
+                with job() as admitted:
+                    if not admitted:
+                        self._stop.wait(5)
+                        continue
+                    started = self._monotonic()
+                    try:
+                        payload = self.snapshot()
+                        session = payload["session_date"]
+                        if current_session != session:
+                            if handle is not None:
+                                handle.flush()
+                                handle.close()
+                            directory = self.root / f"session_date={session}"
+                            directory.mkdir(parents=True, exist_ok=True)
+                            path = directory / f"run-{self._run_id}.ndjson"
+                            handle = path.open("x", encoding="utf-8")
+                            current_session = session
+                        record = json.dumps(
+                            payload,
+                            separators=(",", ":"),
+                            ensure_ascii=True,
+                        ) + "\n"
+                        if not self._disk_available(len(record.encode("utf-8"))):
+                            raise OSError("microstructure telemetry disk reserve reached")
+                        handle.write(record)
+                        handle.flush()
+                        self._samples_written += 1
+                    except Exception:
+                        self._write_errors += 1
+                        logger.exception("Failed to write microstructure T0 telemetry")
                 elapsed = self._monotonic() - started
                 self._stop.wait(max(0.0, self.interval_seconds - elapsed))
         finally:

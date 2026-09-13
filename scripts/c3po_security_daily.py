@@ -157,8 +157,12 @@ def maintenance_open(now, config, hold):
 
 
 def reboot_window_open(now, config, hold):
-    # Leave fifteen minutes for boot and recovery before the window closes.
-    return maintenance_open(now, config, hold) and now.hour * 60 + now.minute < 705
+    # Reboot is independent of merge scheduling. Keep business-session hours
+    # protected; weekends/off-hours require the same atomic drain and trial veto.
+    minutes = now.hour * 60 + now.minute
+    outside_session = now.weekday() >= 5 or minutes < 13 * 60 or minutes >= 21 * 60 + 30
+    return (not hold and config.get("automatic_reboot") is True
+            and outside_session and not trial_present(now))
 
 
 def ensure_workflows(gh, hold):
@@ -303,36 +307,46 @@ def cycle(root, gh, now, config, previous):
     # Publish inventory before starting its consumer. A crash cannot masquerade as success.
     write_report(directory / REPORT, report)
     today = now.date().isoformat()
+    dispatch_errors = []
     if now.hour >= 10 and (previous.get("last_dispatch_date") != today
                            or previous.get("last_dispatched_deploy") != deployed):
-        gh.request("/actions/workflows/dependency-security.yml/dispatches", "POST", {"ref": "main"})
-        gh.request("/actions/workflows/container-vulnerability-scan.yml/dispatches", "POST",
-                   {"ref": "main", "inputs": {"controller_dry_run_phase": "none"}})
-        report["last_dispatch_date"] = today
-        report["last_dispatched_deploy"] = deployed
+        try:
+            gh.request("/actions/workflows/dependency-security.yml/dispatches", "POST", {"ref": "main"})
+            gh.request("/actions/workflows/container-vulnerability-scan.yml/dispatches", "POST",
+                       {"ref": "main", "inputs": {"controller_dry_run_phase": "none"}})
+        except OSError as exc:
+            # A failed scan request remains an operational failure, but does not
+            # invalidate independent, fresh evidence for an OS reboot. Never
+            # include exception text (URLs or response bodies may carry secrets).
+            dispatch_errors.append("scan_dispatch:" + type(exc).__name__
+                                   + (f":{exc.code}" if isinstance(exc, HTTPError) else ""))
+        else:
+            report["last_dispatch_date"] = today
+            report["last_dispatched_deploy"] = deployed
     if HOLD.exists():
         report["status"] = "maintenance_hold"
     elif MARKER.exists():
         report["status"] = "reboot_requested"
-    elif not maintenance_open(now, config, False):
-        report["status"] = "waiting_maintenance_window"
     elif evidence_errors:
         report["status"] = "blocked_missing_evidence"
     elif not healthy_host(root):
         report["status"] = "blocked_unhealthy_host"
+    elif report["reboot_required"] is True and deployed == main_sha:
+        report["reboot_action"] = request_reboot(root, gh, config, now, command=command,
+            healthy=healthy_host, write=write_report,
+            allowed=lambda: reboot_window_open(datetime.now(timezone.utc), config, HOLD.exists()))
+        report["status"] = "reboot_" + report["reboot_action"]
+    elif not maintenance_open(now, config, False):
+        report["status"] = "waiting_maintenance_window"
+    elif dispatch_errors:
+        report["status"] = "blocked_scan_dispatch"
     else:
         may_write = lambda: maintenance_open(datetime.now(timezone.utc), config, HOLD.exists()) and healthy_host(root)
-        # Finish already installed OS updates before starting another application deploy.
-        if report["reboot_required"] is True and deployed == main_sha:
-            report["reboot_action"] = request_reboot(root, gh, config, now, command=command,
-                healthy=healthy_host, write=write_report,
-                allowed=lambda: reboot_window_open(datetime.now(timezone.utc), config, HOLD.exists()))
-            report["status"] = "reboot_" + report["reboot_action"]
-        else:
-            report["status"], report["pull_request"] = promote(
-                gh, alerts, deployed, images, may_write=may_write)
+        report["status"], report["pull_request"] = promote(
+            gh, alerts, deployed, images, may_write=may_write)
+    report["errors"] = evidence_errors + dispatch_errors
     # No "resolved" state until fresh scanners and application health prove it.
-    report["healthy"] = (deployed == main_sha and not evidence_errors and not alerts and report["security_pending"] == 0
+    report["healthy"] = (deployed == main_sha and not report["errors"] and not alerts and report["security_pending"] == 0
                          and report["reboot_required"] is False and images.get("scan_status") == "complete"
                          and images.get("errors") == [] and images.get("finding_total") == 0
                          and datetime.fromisoformat(images["generated_at"]).timestamp() >= (root / ".deploy-version").stat().st_mtime

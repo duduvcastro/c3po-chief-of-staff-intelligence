@@ -139,6 +139,66 @@ def test_stale_reports_still_dispatch_recovery_and_do_not_merge(tmp_path, monkey
     assert len(gh.calls) == 2
 
 
+@pytest.mark.parametrize("condition", ["ready", "stale_host", "hold", "no_reboot"])
+def test_dispatch_403_does_not_skip_independent_reboot_or_claim_success(tmp_path, monkeypatch, condition):
+    from urllib.error import HTTPError
+
+    now = datetime(2026, 9, 12, 10, tzinfo=timezone.utc)
+    (tmp_path / "runtime/security").mkdir(parents=True)
+    (tmp_path / ".deploy-version").write_text("a" * 40)
+    hold = tmp_path / "hold"
+    if condition == "hold":
+        hold.touch()
+    monkeypatch.setattr(daily, "HOLD", hold)
+    monkeypatch.setattr(daily, "MARKER", tmp_path / "marker")
+    monkeypatch.setattr(daily, "trial_present", lambda _: False)
+    monkeypatch.setattr(daily, "healthy_host", lambda _: True)
+    # Isolate scheduling from the separately tested evidence parsers and host
+    # reboot implementation. No subprocess, provider or real reboot is invoked.
+    monkeypatch.setattr(daily, "boot_receipt", lambda *args, **kwargs: None)
+    monkeypatch.setattr(daily, "validate_report", lambda _: None)
+    def evidence(path, *args):
+        if path.name == "host-os-vulnerability-report.json":
+            if condition == "stale_host":
+                raise ValueError("stale")
+            return {"schema": "C3PO_HOST_OS_VULNERABILITY_REPORT-v1", "updates": {"security_pending": 0},
+                    "reboot_required": condition != "no_reboot", "report_sha256": "0" * 64}
+        if path.name == "repository-npm-advisories.json":
+            return {"schema": "C3PO_NPM_ADVISORIES-v1", "source_revision": "a" * 40, "alerts": []}
+        if path.name == "security-watchdog-report.json":
+            return {"schema": "C3PO_SECURITY_WATCHDOG-v1", "errors": [], "status": "verified",
+                    "generated_at": now.isoformat()}
+        return {"report_sha256": "1" * 64, "scan_status": "complete", "errors": [], "finding_total": 0,
+                "generated_at": now.isoformat()}
+    monkeypatch.setattr(daily, "load_evidence", evidence)
+    requests = []
+    def reboot(*args, **kwargs):
+        requests.append("reboot")
+        return "requested"
+    monkeypatch.setattr(daily, "request_reboot", reboot)
+    monkeypatch.setattr(daily, "promote", lambda *args, **kwargs: pytest.fail("failed dispatch must veto promotion"))
+    class GH:
+        def pages(self, path):
+            return []
+        def request(self, path, method="GET", body=None):
+            if method == "POST":
+                raise HTTPError("https://api.github.com/private", 403, "sensitive response", {}, None)
+            if path == "/git/ref/heads/main":
+                return {"object": {"sha": "a" * 40}}
+            return {"workflow_runs": []}
+    report = daily.cycle(tmp_path, GH(), now, {"automatic_merge": True, "automatic_reboot": True}, {})
+    assert requests == (["reboot"] if condition == "ready" else [])
+    assert "scan_dispatch:HTTPError:403" in report["errors"]
+    assert report["healthy"] is False
+    assert report["last_dispatch_date"] is None
+    assert report["last_dispatched_deploy"] is None
+    assert "sensitive response" not in json.dumps(report)
+    if condition == "ready":
+        assert report["status"] == "reboot_requested"
+    if condition == "no_reboot":
+        assert report["status"] == "blocked_scan_dispatch"
+
+
 def test_registry_finds_advisories_before_dependabot_and_deduplicates():
     audit = {"metadata": {"vulnerabilities": {"critical": 1}}, "advisories": {"1": {
         "module_name": "next", "github_advisory_id": "GHSA-2xp9-vwfh-vxw4", "severity": "critical",

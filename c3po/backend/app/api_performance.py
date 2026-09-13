@@ -413,12 +413,15 @@ async def run_performance_flush_loop(
     service: PerformanceObservabilityService,
     stop_event: asyncio.Event,
 ) -> None:
+    from .maintenance_gate import job
     while not stop_event.is_set():
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=service.settings.performance_flush_seconds)
         except TimeoutError:
             try:
-                await asyncio.to_thread(service.flush)
+                with job() as admitted:
+                    if admitted:
+                        await asyncio.to_thread(service.flush)
             except Exception:
                 logger.exception("Persistent performance telemetry flush failed")
     try:

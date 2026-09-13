@@ -36,7 +36,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/security "$USER@$HOST" \
-            'sudo /usr/local/lib/c3po-security/c3po_security_daily.py --observe' \
+            '/usr/local/lib/c3po-security/c3po_maintenance_run.py sudo /usr/local/lib/c3po-security/c3po_security_daily.py --observe' \
             > "$RUNNER_TEMP/security-alerts.json"
 
       - name: Activate the project package manager
@@ -68,7 +68,7 @@ jobs:
           USER: ${{ secrets.C3PO_AWS_USER }}
         run: |
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/security "$USER@$HOST" \
-            'sudo /usr/local/lib/c3po-security/c3po_security_daily.py --import-npm' < "$RUNNER_TEMP/npm-report.json"
+            '/usr/local/lib/c3po-security/c3po_maintenance_run.py sudo /usr/local/lib/c3po-security/c3po_security_daily.py --import-npm' < "$RUNNER_TEMP/npm-report.json"
 
       - name: Regenerate dependency resolutions
         if: steps.fixes.outputs.applied != '0'

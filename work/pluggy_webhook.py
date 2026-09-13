@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hmac
+import hashlib
 import json
 import os
 import threading
@@ -7,6 +8,9 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
+from maintenance_gate import job, MODULE_SHA256
+
+HANDLER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 HOST = os.getenv("PLUGGY_WEBHOOK_BIND", "0.0.0.0")
@@ -60,7 +64,8 @@ class PluggyWebhookHandler(BaseHTTPRequestHandler):
         if urlsplit(self.path).path != "/health":
             self.send_empty(404)
             return
-        body = json.dumps({"status": "ok", "time": utc_now()}).encode("utf-8")
+        body = json.dumps({"status": "ok", "time": utc_now(), "maintenance_module_sha256": MODULE_SHA256,
+                           "maintenance_handler_sha256": HANDLER_SHA256}).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
@@ -69,6 +74,14 @@ class PluggyWebhookHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
+        # Shared, read-only bind mount; missing production gate fails closed.
+        with job() as admitted:
+            if not admitted:
+                self.send_empty(503)
+                return
+            self._admitted_post()
+
+    def _admitted_post(self):
         if urlsplit(self.path).path != "/pluggy/webhook":
             self.send_empty(404)
             return

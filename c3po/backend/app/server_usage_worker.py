@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .code_census import CodeCensusService
+from .maintenance_gate import job, startup_job
 from .config import get_settings
 from .database import Database
 from .governance_vulnerability import GovernanceVulnerabilityService
@@ -49,55 +50,60 @@ def notify_disk_threshold(
 
 
 def run_worker() -> None:
-    settings = get_settings()
-    init_sentry(settings, service_name="server-usage-worker")
-    database = Database(settings)
-    database.initialize()
-    push_notifications = PushNotificationService(settings, database)
-    operational_incidents = OperationalIncidentService(database)
-    collector = ServerUsageCollector(settings, database)
-    code_census = CodeCensusService(settings, database, push_notifications)
-    governance_vulnerability = GovernanceVulnerabilityService(
-        settings,
-        database,
-        push_notifications=push_notifications,
-        operational_incidents=operational_incidents,
-    )
-    market_alerts = PushMarketAlertsService(settings, database, push_notifications)
-    previous = collector.cpu_ticks()
+    with startup_job():
+        settings = get_settings()
+        init_sentry(settings, service_name="server-usage-worker")
+        database = Database(settings)
+        database.initialize()
+        push_notifications = PushNotificationService(settings, database)
+        operational_incidents = OperationalIncidentService(database)
+        collector = ServerUsageCollector(settings, database)
+        code_census = CodeCensusService(settings, database, push_notifications)
+        governance_vulnerability = GovernanceVulnerabilityService(
+            settings,
+            database,
+            push_notifications=push_notifications,
+            operational_incidents=operational_incidents,
+        )
+        market_alerts = PushMarketAlertsService(settings, database, push_notifications)
+        previous = collector.cpu_ticks()
     while True:
         time.sleep(max(15, settings.server_usage_interval_seconds))
-        try:
-            code_census.run_daily_if_due(Path(settings.server_usage_disk_path))
-        except Exception:
-            logger.exception("Daily code census failed; next attempt tomorrow")
-        try:
-            market_alerts.run_once()
-        except Exception:
-            logger.exception("Push market alerts tick failed; retrying next tick")
-        try:
-            governance_vulnerability.run_daily_if_due(
-                Path(settings.server_usage_disk_path)
+        with job() as admitted:
+            if not admitted:
+                time.sleep(5)
+                continue
+            try:
+                code_census.run_daily_if_due(Path(settings.server_usage_disk_path))
+            except Exception:
+                logger.exception("Daily code census failed; next attempt tomorrow")
+            try:
+                market_alerts.run_once()
+            except Exception:
+                logger.exception("Push market alerts tick failed; retrying next tick")
+            try:
+                governance_vulnerability.run_daily_if_due(
+                    Path(settings.server_usage_disk_path)
+                )
+            except Exception:
+                logger.exception(
+                    "Daily governance and vulnerability check failed; retry remains fail-closed"
+                )
+            current = collector.cpu_ticks()
+            sample = collector.sample(previous, current)
+            database.save_server_usage_samples([sample])
+            notify_disk_threshold(push_notifications, sample)
+            database.purge_server_usage_samples(
+                datetime.now(timezone.utc) - timedelta(days=max(2, settings.server_usage_retention_days))
             )
-        except Exception:
-            logger.exception(
-                "Daily governance and vulnerability check failed; retry remains fail-closed"
+            previous = current
+            logger.info(
+                "Server usage: cpu=%.2f%% steal=%.2f%% load1=%.2f disk=%.2f%%",
+                sample["cpu_percent"] or 0.0,
+                sample["cpu_steal_percent"] or 0.0,
+                sample["load_average_1m"],
+                sample["disk_used_bytes"] / sample["disk_total_bytes"] * 100,
             )
-        current = collector.cpu_ticks()
-        sample = collector.sample(previous, current)
-        database.save_server_usage_samples([sample])
-        notify_disk_threshold(push_notifications, sample)
-        database.purge_server_usage_samples(
-            datetime.now(timezone.utc) - timedelta(days=max(2, settings.server_usage_retention_days))
-        )
-        previous = current
-        logger.info(
-            "Server usage: cpu=%.2f%% steal=%.2f%% load1=%.2f disk=%.2f%%",
-            sample["cpu_percent"] or 0.0,
-            sample["cpu_steal_percent"] or 0.0,
-            sample["load_average_1m"],
-            sample["disk_used_bytes"] / sample["disk_total_bytes"] * 100,
-        )
 
 
 def import_sadf(path: Path) -> None:

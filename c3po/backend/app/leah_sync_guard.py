@@ -25,7 +25,8 @@ import json
 import logging
 import threading
 import time
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeout
+from .maintenance_gate import MaintenanceExecutor as ThreadPoolExecutor
+from concurrent.futures import Future, TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from typing import Any, Callable
 

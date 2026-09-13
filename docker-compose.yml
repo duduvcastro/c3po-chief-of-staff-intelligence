@@ -34,7 +34,13 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      C3PO_MAINTENANCE_GATE_DIR: /run/c3po-maintenance
+      PYTHONPATH: /app
     volumes:
+      - ./runtime/security/maintenance:/run/c3po-maintenance:ro
+      - ./c3po/backend/app/maintenance_gate.py:/app/maintenance_gate.py:ro
+      - ./work/pluggy_webhook.py:/app/work/pluggy_webhook.py:ro
       - ./outputs:/app/outputs
     restart: unless-stopped
     command: ["python", "work/pluggy_webhook.py"]

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
-from queue import Full, Queue
+from queue import Empty, Full, Queue
 import shutil
 from threading import Event, Lock, Thread
 import time
@@ -138,12 +138,19 @@ class AppendOnlyRawStreamCapture:
             if received_at.tzinfo
             else received_at.replace(tzinfo=timezone.utc)
         )
-        item = (str(feed), str(payload), observed)
+        from .maintenance_gate import MaintenanceBusy, retain_work
+        try:
+            lease = retain_work()
+        except MaintenanceBusy:
+            return False
+        item = (str(feed), str(payload), observed, lease)
         with self._stats_lock:
             self._last_received[str(feed)] = observed
         try:
             self._queue.put_nowait(item)
         except Full:
+            if lease is not None:
+                lease.close()
             with self._stats_lock:
                 self._dropped += 1
                 dropped = self._dropped
@@ -184,12 +191,26 @@ class AppendOnlyRawStreamCapture:
     def _run(self) -> None:
         handles: dict[tuple[str, str], tuple[int, object, int]] = {}
         writes_since_flush = 0
+        pending_leases = []
+        def flush_admitted():
+            for _, open_handle, _ in handles.values():
+                open_handle.flush()
+            for lease in pending_leases:
+                lease.close()
+            pending_leases.clear()
         try:
             while True:
-                queued = self._queue.get()
+                try:
+                    queued = self._queue.get(timeout=1)
+                except Empty:
+                    flush_admitted()
+                    writes_since_flush = 0
+                    continue
                 if queued is self._STOP:
                     break
-                feed, payload, received_at = queued  # type: ignore[misc]
+                feed, payload, received_at, lease = queued  # type: ignore[misc]
+                if lease is not None:
+                    pending_leases.append(lease)
                 try:
                     event_at = self._event_time(payload, received_at)
                     session = event_at.astimezone(NEW_YORK).date().isoformat()
@@ -232,14 +253,14 @@ class AppendOnlyRawStreamCapture:
                         self._written += 1
                         self._last_write_at = datetime.now(timezone.utc)
                     if writes_since_flush >= self.flush_every:
-                        for _, open_handle, _ in handles.values():
-                            open_handle.flush()
+                        flush_admitted()
                         writes_since_flush = 0
                 except Exception:
                     with self._stats_lock:
                         self._write_errors += 1
                     logger.exception("Failed to append EODHD raw stream payload")
         finally:
+            flush_admitted()
             for _, handle, _ in handles.values():
                 try:
                     handle.flush()

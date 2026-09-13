@@ -6,6 +6,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .chewie_fundamentals import ChewieFundamentalsService
+from .maintenance_gate import job, startup_job
 from .config import Settings, get_settings
 from .database import Database
 from .investor_relations import InvestorRelationsService
@@ -327,124 +328,129 @@ def run_nightly(
 
 
 def main() -> None:
-    settings = get_settings()
-    init_sentry(settings, service_name="valuation-worker")
-    database = Database(settings)
-    database.initialize()
-    push_notifications = PushNotificationService(settings, database)
-    ensure_builtin_official_fundamentals(database)
-    try:  # V3.2 rev 7 §7-bis Passo 0: records + first generation from the cycles already persisted (idempotent)
-        from .valuation_official import bootstrap_official_selection
-        bootstrap_official_selection(database)
-    except Exception as exc:  # never blocks the worker: the next cycle records and activates by itself
-        logger.warning("valuation_official bootstrap failed: %s", type(exc).__name__)
-    investor_relations = InvestorRelationsService(settings, database)
-    market_data = MarketDataService(settings, database)
-    screener = B3ScreenerService(settings, database, market_data.http)
-    realtime = RealtimeMarketsService(
-        settings,
-        database,
-        market_data.http,
-        stream=EodhdRealtimeStream(settings.eodhd_api_token, max_symbols=settings.r2d2_ws_max_symbols),
-    )
-    one_pagers = OnePagerService(
-        settings,
-        database,
-        market_data,
-        b3_screener=screener,
-        investor_relations=investor_relations,
-    )
-    us_screener = USScreeningService(settings, database, realtime, one_pagers)
-    one_pagers.set_us_screener(us_screener)
-    chewie = ChewieFundamentalsService(settings, database, market_data.http)
-    v2_data = ValuationV2DataService(settings, database, market_data.http)
-    v2_peer_quality = ValuationV2PeerQualityService(
-        settings, database, market_data.http
-    )
-    v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
-    v3_shadow = ValuationV3ShadowService(database)
-    price_history = PriceHistoryService(settings, database, market_data.http)
-    cash_yield = R2D2CashYieldService(
-        settings,
-        database,
-        _cash_yield_http_client(settings),
-    )
-    healthchecks = {
-        "valuation": HealthcheckPing(settings.healthcheck_valuation_worker_url),
-        CASH_YIELD_PHASE_KEY: HealthcheckPing(settings.healthcheck_cash_yield_url),
-    }
+    with startup_job():
+        settings = get_settings()
+        init_sentry(settings, service_name="valuation-worker")
+        database = Database(settings)
+        database.initialize()
+        push_notifications = PushNotificationService(settings, database)
+        ensure_builtin_official_fundamentals(database)
+        try:  # V3.2 rev 7 §7-bis Passo 0: records + first generation from the cycles already persisted (idempotent)
+            from .valuation_official import bootstrap_official_selection
+            bootstrap_official_selection(database)
+        except Exception as exc:  # never blocks the worker: the next cycle records and activates by itself
+            logger.warning("valuation_official bootstrap failed: %s", type(exc).__name__)
+        investor_relations = InvestorRelationsService(settings, database)
+        market_data = MarketDataService(settings, database)
+        screener = B3ScreenerService(settings, database, market_data.http)
+        realtime = RealtimeMarketsService(
+            settings,
+            database,
+            market_data.http,
+            stream=EodhdRealtimeStream(settings.eodhd_api_token, max_symbols=settings.r2d2_ws_max_symbols),
+        )
+        one_pagers = OnePagerService(
+            settings,
+            database,
+            market_data,
+            b3_screener=screener,
+            investor_relations=investor_relations,
+        )
+        us_screener = USScreeningService(settings, database, realtime, one_pagers)
+        one_pagers.set_us_screener(us_screener)
+        chewie = ChewieFundamentalsService(settings, database, market_data.http)
+        v2_data = ValuationV2DataService(settings, database, market_data.http)
+        v2_peer_quality = ValuationV2PeerQualityService(
+            settings, database, market_data.http
+        )
+        v2_shadow = ValuationV2ShadowService(settings, database, market_data.http)
+        v3_shadow = ValuationV3ShadowService(database)
+        price_history = PriceHistoryService(settings, database, market_data.http)
+        cash_yield = R2D2CashYieldService(
+            settings,
+            database,
+            _cash_yield_http_client(settings),
+        )
+        healthchecks = {
+            "valuation": HealthcheckPing(settings.healthcheck_valuation_worker_url),
+            CASH_YIELD_PHASE_KEY: HealthcheckPing(settings.healthcheck_cash_yield_url),
+        }
 
-    offhours_phases = (
-        OffhoursPhase(
-            "chewie",
-            chewie.last_refreshed_at,
-            lambda: chewie.refresh_all(budget=settings.chewie_daily_symbol_budget),
-        ),
-        OffhoursPhase("v2_data", v2_data.last_refreshed_at, v2_data.refresh_all),
-        OffhoursPhase("shadow", v2_shadow.last_run_at, v2_shadow.run_all),
-        OffhoursPhase(
-            "peer_quality",
-            v2_peer_quality.last_refreshed_at,
-            v2_peer_quality.refresh_all,
-        ),
-        OffhoursPhase("v3_shadow", v3_shadow.last_run_at, v3_shadow.run_all),
-        *((OffhoursPhase("price_history", price_history.last_run_at, price_history.run_all),)
-          if settings.valuation_price_history_enabled else ()),  # V3.2 price series (rev 7 §2.2): dormant until the mesa enables it
-        *((
+        offhours_phases = (
             OffhoursPhase(
-                CASH_YIELD_PHASE_KEY,
-                cash_yield.last_run_at,
-                lambda: cash_yield.run_through(datetime.now(SAO_PAULO).date()),
-                start_hour=6,
-                end_hour=10,
+                "chewie",
+                chewie.last_refreshed_at,
+                lambda: chewie.refresh_all(budget=settings.chewie_daily_symbol_budget),
             ),
-        ) if settings.r2d2_cash_yield_accounting_enabled else ()),
-    )
+            OffhoursPhase("v2_data", v2_data.last_refreshed_at, v2_data.refresh_all),
+            OffhoursPhase("shadow", v2_shadow.last_run_at, v2_shadow.run_all),
+            OffhoursPhase(
+                "peer_quality",
+                v2_peer_quality.last_refreshed_at,
+                v2_peer_quality.refresh_all,
+            ),
+            OffhoursPhase("v3_shadow", v3_shadow.last_run_at, v3_shadow.run_all),
+            *((OffhoursPhase("price_history", price_history.last_run_at, price_history.run_all),)
+              if settings.valuation_price_history_enabled else ()),  # V3.2 price series (rev 7 §2.2): dormant until the mesa enables it
+            *((
+                OffhoursPhase(
+                    CASH_YIELD_PHASE_KEY,
+                    cash_yield.last_run_at,
+                    lambda: cash_yield.run_through(datetime.now(SAO_PAULO).date()),
+                    start_hour=6,
+                    end_hour=10,
+                ),
+            ) if settings.r2d2_cash_yield_accounting_enabled else ()),
+        )
 
     while True:
-        now = datetime.now(SAO_PAULO)
-        candidate = database.latest_analysis_snapshot("candidate_screen", "B3_TOP_10")
-        universe = database.latest_analysis_snapshot("valuation_universe", "B3_UNIVERSE")
-        us_snapshots = [
-            database.latest_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE")
-            for market in ("NASDAQ", "NYSE")
-        ]
-        latest_at = candidate.get("published_at") if candidate else None
-        latest_local = latest_at.astimezone(SAO_PAULO) if latest_at and latest_at.tzinfo else latest_at
-        candidate_outputs = candidate.get("outputs") if candidate else None
-        universe_inputs = universe.get("inputs") if universe else None
-        version_is_current = (
-            isinstance(candidate_outputs, dict)
-            and candidate_outputs.get("methodology_version") == METHODOLOGY_VERSION
-            and isinstance(universe_inputs, dict)
-            and universe_inputs.get("methodology_version") == METHODOLOGY_VERSION
-        )
-        us_versions_current = all(
-            snapshot
-            and isinstance(snapshot.get("inputs"), dict)
-            and snapshot["inputs"].get("methodology_version") == METHODOLOGY_VERSION
-            for snapshot in us_snapshots
-        )
-        bootstrap_required = candidate is None or universe is None or not version_is_current or not us_versions_current
-        cycle_due = latest_local is None or latest_local < start_of_today(now)
-        result = run_worker_iteration(
-            database,
-            now=now,
-            canonical_due=bootstrap_required or cycle_due,
-            canonical_operation=lambda: run_nightly(
+        with job() as admitted:
+            if not admitted:
+                time.sleep(5)
+                continue
+            now = datetime.now(SAO_PAULO)
+            candidate = database.latest_analysis_snapshot("candidate_screen", "B3_TOP_10")
+            universe = database.latest_analysis_snapshot("valuation_universe", "B3_UNIVERSE")
+            us_snapshots = [
+                database.latest_analysis_snapshot("valuation_universe", f"{market}_UNIVERSE")
+                for market in ("NASDAQ", "NYSE")
+            ]
+            latest_at = candidate.get("published_at") if candidate else None
+            latest_local = latest_at.astimezone(SAO_PAULO) if latest_at and latest_at.tzinfo else latest_at
+            candidate_outputs = candidate.get("outputs") if candidate else None
+            universe_inputs = universe.get("inputs") if universe else None
+            version_is_current = (
+                isinstance(candidate_outputs, dict)
+                and candidate_outputs.get("methodology_version") == METHODOLOGY_VERSION
+                and isinstance(universe_inputs, dict)
+                and universe_inputs.get("methodology_version") == METHODOLOGY_VERSION
+            )
+            us_versions_current = all(
+                snapshot
+                and isinstance(snapshot.get("inputs"), dict)
+                and snapshot["inputs"].get("methodology_version") == METHODOLOGY_VERSION
+                for snapshot in us_snapshots
+            )
+            bootstrap_required = candidate is None or universe is None or not version_is_current or not us_versions_current
+            cycle_due = latest_local is None or latest_local < start_of_today(now)
+            result = run_worker_iteration(
                 database,
-                investor_relations,
-                screener,
-                us_screener,
-            ),
-            offhours_phases=offhours_phases,
-            healthchecks=healthchecks,
-            push_notifications=push_notifications,
-        )
+                now=now,
+                canonical_due=bootstrap_required or cycle_due,
+                canonical_operation=lambda: run_nightly(
+                    database,
+                    investor_relations,
+                    screener,
+                    us_screener,
+                ),
+                offhours_phases=offhours_phases,
+                healthchecks=healthchecks,
+                push_notifications=push_notifications,
+            )
 
-        now = datetime.now(SAO_PAULO)
-        wake_at = result.next_wake_at
-        logger.info("Next valuation-worker wake-up at %s", wake_at.isoformat())
+            now = datetime.now(SAO_PAULO)
+            wake_at = result.next_wake_at
+            logger.info("Next valuation-worker wake-up at %s", wake_at.isoformat())
         time.sleep(max(30, int((wake_at - now).total_seconds())))
 
 
