@@ -12,6 +12,8 @@ import time
 from typing import Any, Callable, Protocol
 from zoneinfo import ZoneInfo
 
+from .maintenance_gate import MaintenanceBusy, WorkLease, retain_work
+
 
 logger = logging.getLogger(__name__)
 NEW_YORK = ZoneInfo("America/New_York")
@@ -109,6 +111,8 @@ class AppendOnlyRawStreamCapture:
         self._stop = Event()
         self._thread: Thread | None = None
         self._stats_lock = Lock()
+        self._admission_lock = Lock()
+        self._batch_lease: WorkLease | None = None
         self._accepted = 0
         self._written = 0
         self._dropped = 0
@@ -138,19 +142,25 @@ class AppendOnlyRawStreamCapture:
             if received_at.tzinfo
             else received_at.replace(tzinfo=timezone.utc)
         )
-        from .maintenance_gate import MaintenanceBusy, retain_work
-        try:
-            lease = retain_work()
-        except MaintenanceBusy:
-            return False
-        item = (str(feed), str(payload), observed, lease)
+        item = (str(feed), str(payload), observed)
         with self._stats_lock:
             self._last_received[str(feed)] = observed
         try:
-            self._queue.put_nowait(item)
+            with self._admission_lock:
+                if self._stop.is_set():
+                    return False
+                try:
+                    lease = retain_work()
+                except MaintenanceBusy:
+                    return False
+                # Check admission for every message, but retain just one file
+                # descriptor for the complete queued/unflushed backlog.
+                if self._batch_lease is None:
+                    self._batch_lease = lease
+                elif lease is not None:
+                    lease.close()
+                self._queue.put_nowait(item)
         except Full:
-            if lease is not None:
-                lease.close()
             with self._stats_lock:
                 self._dropped += 1
                 dropped = self._dropped
@@ -165,7 +175,8 @@ class AppendOnlyRawStreamCapture:
     def stop(self) -> None:
         if not self._thread:
             return
-        self._stop.set()
+        with self._admission_lock:
+            self._stop.set()
         self._queue.put(self._STOP)
         self._thread.join(timeout=15)
         if self._thread.is_alive():
@@ -191,13 +202,15 @@ class AppendOnlyRawStreamCapture:
     def _run(self) -> None:
         handles: dict[tuple[str, str], tuple[int, object, int]] = {}
         writes_since_flush = 0
-        pending_leases = []
         def flush_admitted():
             for _, open_handle, _ in handles.values():
                 open_handle.flush()
-            for lease in pending_leases:
-                lease.close()
-            pending_leases.clear()
+            with self._admission_lock:
+                # The writer has flushed its current item. Synchronize the
+                # empty-queue check with enqueue so no new item loses coverage.
+                if self._queue.empty() and self._batch_lease is not None:
+                    self._batch_lease.close()
+                    self._batch_lease = None
         try:
             while True:
                 try:
@@ -208,9 +221,7 @@ class AppendOnlyRawStreamCapture:
                     continue
                 if queued is self._STOP:
                     break
-                feed, payload, received_at, lease = queued  # type: ignore[misc]
-                if lease is not None:
-                    pending_leases.append(lease)
+                feed, payload, received_at = queued  # type: ignore[misc]
                 try:
                     event_at = self._event_time(payload, received_at)
                     session = event_at.astimezone(NEW_YORK).date().isoformat()

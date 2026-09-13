@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
 reboot = importlib.import_module('c3po_security_reboot')
 watchdog = importlib.import_module('c3po_security_watchdog')
 daily = importlib.import_module('c3po_security_daily')
+ACTUAL_COVERAGE = reboot.admission_coverage
 
 @pytest.fixture
 def host(tmp_path, monkeypatch):
@@ -349,3 +350,123 @@ def test_diagnostic_distinguished_but_pinned_marker_and_symlinks_veto(tmp_path):
     release.unlink()
     release.symlink_to(tmp_path/'missing')
     assert guard.trial_present(now, tmp_path)
+
+
+def test_interrupted_controller_without_reboot_state_restores_scheduler_receipt(host, monkeypatch):
+    import subprocess
+    import c3po_security_schedulers as schedulers
+    monkeypatch.setattr(schedulers, 'BOOT_ID', reboot.BOOT_ID)
+    script = '''
+import os,sys,signal
+from pathlib import Path
+import c3po_security_schedulers as s
+from c3po_security_daily import write_report
+root=Path(sys.argv[1]);s.BOOT_ID=root/'BOOT_ID'
+def run(a):
+    if 'list-units' in a:return 'backup.timer loaded active waiting Backup'
+    if 'MainPID' in a:return '0'
+    return ''
+s.SchedulingPause(root,run,write_report).__enter__()
+os.kill(os.getpid(),signal.SIGKILL)
+'''
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(Path(__file__).resolve().parents[3] / 'scripts'), str(Path(__file__).resolve().parents[1])]))
+    result = subprocess.run([sys.executable, '-c', script, str(host)], env=env, capture_output=True, timeout=10)
+    assert result.returncode == -9
+    path = host/'runtime/security/reboot-schedulers.json'
+    assert json.loads(path.read_text())['restored'] is False
+    assert not (host/'runtime/security'/reboot.STATE).exists()
+    calls = []
+    assert reboot.boot_receipt(host, daily.write_report, lambda _: True, datetime.now(timezone.utc), command=lambda a:calls.append(a)) is None
+    assert ['systemctl','start','backup.timer'] in calls
+    assert json.loads(path.read_text())['restored'] is True
+
+
+def test_watchdog_never_resumes_schedulers_owned_by_live_controller(host, monkeypatch):
+    import fcntl
+    import c3po_security_schedulers as schedulers
+    monkeypatch.setattr(schedulers, 'BOOT_ID', reboot.BOOT_ID)
+    path=host/'runtime/security/reboot-schedulers.json'
+    daily.write_report(path, {'boot_id':'old-boot','cron_pid':0,'timers':['backup.timer'],'restored':False})
+    calls=[]
+    with (host/'runtime/security/deployment.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        assert reboot.boot_receipt(host,daily.write_report,lambda _:True,datetime.now(timezone.utc),command=lambda a:calls.append(a)) is None
+        result=watchdog.check(host,datetime.now(timezone.utc),run=lambda a:calls.append(a),hold=host/'hold')
+        assert result['status']=='maintenance_busy'
+    assert calls==[] and not json.loads(path.read_text())['restored']
+
+
+def test_watchdog_keeps_schedulers_paused_until_pending_boot_is_resolved(host, monkeypatch):
+    import c3po_security_schedulers as schedulers
+    monkeypatch.setattr(schedulers, 'BOOT_ID', reboot.BOOT_ID)
+    assert request(host)[0]=='requested'
+    path=host/'runtime/security/reboot-schedulers.json'
+    daily.write_report(path, {'boot_id':'old-boot','cron_pid':0,'timers':['backup.timer'],'restored':False})
+    calls=[]
+    result=watchdog.check(host,datetime.now(timezone.utc),run=lambda a:calls.append(a),hold=host/'hold')
+    assert result['status']=='reboot_pending' and calls==[]
+    assert json.loads(path.read_text())['restored'] is False
+
+
+def test_atomic_marker_never_exposes_incomplete_contents(host, monkeypatch):
+    marker=host/'runtime/security/maintenance/reboot.pending'
+    marker.write_text('old-complete\n')
+    original=os.replace
+    observed=[]
+    def replace(source,target):
+        assert marker.read_text()=='old-complete\n'
+        assert Path(source).read_text()=='new-complete\n'
+        observed.append(True)
+        original(source,target)
+    monkeypatch.setattr(reboot.os,'replace',replace)
+    reboot.atomic_marker(marker,'new-complete')
+    assert observed and marker.read_text()=='new-complete\n'
+    assert sorted(p.name for p in marker.parent.iterdir())==['admission.lock','reboot.pending','work.lock']
+
+
+def test_marker_write_failure_cleans_pending_state_without_requesting_boot(host,monkeypatch):
+    original=reboot.atomic_marker
+    def fail(path,boot):
+        if path.parent.name=='maintenance':raise OSError('simulated interrupted marker publication')
+        original(path,boot)
+    monkeypatch.setattr(reboot,'atomic_marker',fail)
+    calls=[]
+    with pytest.raises(OSError):request(host,command=runner(calls))
+    assert not reboot.MARKER.exists()
+    assert not (host/'runtime/security/maintenance/reboot.pending').exists()
+    assert not any(a[:2]==['systemctl','reboot'] for a in calls)
+    assert json.loads((host/'runtime/security'/reboot.STATE).read_text())['state']=='failed'
+
+
+def test_new_boot_cleans_gate_marker_before_health_has_finished_recovering(host):
+    assert request(host)[0]=='requested'
+    reboot.BOOT_ID.write_text('new-boot')
+    assert reboot.boot_receipt(host,daily.write_report,lambda _:False,datetime.now(timezone.utc))['state']=='verifying'
+    assert not reboot.MARKER.exists()
+    assert not (host/'runtime/security/maintenance/reboot.pending').exists()
+
+
+@pytest.mark.parametrize('raw,processor,expected',[(False,True,True),(False,False,True),(True,False,True),(True,True,False)])
+def test_coverage_veto_matches_actual_processor_activation(host,monkeypatch,raw,processor,expected):
+    import contextlib,hashlib,io
+    from types import SimpleNamespace
+    import app.config
+    source=host/'c3po/backend/app/maintenance_gate.py'
+    source.parent.mkdir(parents=True);source.write_text('reviewed gate')
+    handler=host/'work/pluggy_webhook.py';handler.parent.mkdir();handler.write_text('reviewed handler')
+    gate_hash=hashlib.sha256(source.read_bytes()).hexdigest()
+    handler_hash=hashlib.sha256(handler.read_bytes()).hexdigest()
+    services=['api','investor-relations-worker','valuation-worker','server-usage-worker','r2d2-worker','r2d2-shadow-candidate-worker','pluggy-webhook']
+    containers=[{'Id':s,'Config':{'Labels':{'com.docker.compose.service':s,'org.opencontainers.image.revision':'a'*40},'Env':['C3PO_MAINTENANCE_GATE_DIR=/run/c3po-maintenance']},'Mounts':[{'Source':str(host/'runtime/security/maintenance'),'Destination':'/run/c3po-maintenance','RW':False}]} for s in services]
+    monkeypatch.setattr(app.config,'get_settings',lambda:SimpleNamespace(r2d2_microstructure_raw_capture_enabled=raw,r2d2_microstructure_processor_enabled=processor))
+    def run(args):
+        if args[:2]==['docker','ps']:return '\n'.join(services)
+        if args[:2]==['docker','inspect']:return json.dumps(containers)
+        if 'sha256sum' in args:return gate_hash+'  module'
+        if args[2]=='pluggy-webhook':return json.dumps({'maintenance_module_sha256':gate_hash,'maintenance_handler_sha256':handler_hash})
+        if args[2]=='r2d2-worker':
+            output=io.StringIO()
+            with contextlib.redirect_stdout(output):exec(args[-1],{})
+            return output.getvalue().strip()
+        raise AssertionError(args)
+    assert ACTUAL_COVERAGE(host,run) is expected

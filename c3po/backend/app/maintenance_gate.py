@@ -201,11 +201,14 @@ def admit(directory: Path) -> WorkLease:
         except BlockingIOError:
             raise MaintenanceBusy("Maintenance is waiting for existing work") from None
         marker = directory / "reboot.pending"
-        if marker.exists():
+        try:
+            value = marker.read_text().strip()
+        except FileNotFoundError:
+            value = None
+        if value is not None:
             # Persistent marker closes the gap between systemctl's acknowledgement
             # and actual shutdown. A new kernel boot automatically retires it.
             boot = boot_identity()
-            value = marker.read_text().strip()
             try:
                 uuid.UUID(value)
             except ValueError:
