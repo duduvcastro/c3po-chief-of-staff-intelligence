@@ -98,10 +98,11 @@ def main(argv: list[str] | None = None) -> int:
         print('{"status":"OFF","collection":false}')
         return 0
     if args.export_cohort:
-        saved = collector.store.read(collector.release.epoch)
+        saved, journal = collector.store.read_with_journal(collector.release.epoch)
         if saved is None:
             raise ShadowIntegrityError("EPOCH_NOT_FOUND")
-        _private_export(args.output, export_cohort(saved["state"], args.export_cohort, now=now, calendar=collector.calendar))
+        _private_export(args.output, export_cohort(saved["state"], args.export_cohort, now=now,
+                        calendar=collector.calendar, archive=(saved, journal)))
         print('{"status":"EXPORTED","statistical_verdict":"NOT_COMPUTED"}')
         return 0
     logging.basicConfig(level=logging.INFO)

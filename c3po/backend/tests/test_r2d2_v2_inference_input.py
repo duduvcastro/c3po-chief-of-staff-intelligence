@@ -58,6 +58,31 @@ def export(size=40):
                  "statistical_verdict": "NOT_COMPUTED"})
 
 
+def test_eod_category_preserves_denominator_without_entering_barrier_p():
+    from app.r2d2_v2_eod import AMENDMENT_SHA as eod_sha
+    value = export()
+    row = value["sessions"][1]
+    row.update(schema_version="R2D2_V2_SESSION_STATISTICS_v2", eod_amendment_sha=eod_sha)
+    for arm in row["arms"].values():
+        arm["eod_positive_exit"] = 2
+        arm["episodes"] += 2
+    adapted = adapt_collector_export(seal(value)).to_session_rows()[1]
+    assert adapted["upper_e"] == 2 and adapted["lower_e"] == 7
+    assert adapted["pnl_sum_usd"] == -1.25
+    del row["arms"]["CONTROL"]["eod_positive_exit"]
+    with pytest.raises(InferenceInputError, match="NONNEGATIVE_NATIVE_INTEGER_REQUIRED"):
+        adapt_collector_export(seal(value))
+
+
+def test_legacy_session_cannot_smuggle_eod_category_without_signed_binding():
+    value = export()
+    row = value["sessions"][1]
+    row["arms"]["ELIGIBLE"].update(eod_positive_exit=1)
+    row["arms"]["ELIGIBLE"]["episodes"] += 1
+    with pytest.raises(InferenceInputError, match="EOD_REQUIRES_AMENDED_SESSION_SCHEMA"):
+        adapt_collector_export(seal(value))
+
+
 @pytest.mark.parametrize("size", [40, 60])
 def test_nine_exact_fields_and_fixed_ten_session_batches_preserve_empty_slots(size):
     source = export(size)

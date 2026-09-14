@@ -11,6 +11,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 from typing import Any
+from .r2d2_v2_eod import AMENDMENT_SHA as EOD_AMENDMENT_SHA
 
 EARNINGS_AMENDMENT_SHA = "3319407afcd7760668e6ec73bb4686ecb95a38eecf47fc157050899f80a6cc9c"
 EARNINGS_CLOSED_MANIFEST_SHA = "1a927ca41df89ccb28a276726626672b7d76a9e828f12e4fc5b126860dbb4e72"
@@ -25,7 +26,9 @@ PACKAGE_FILES = (
     "r2d2_v2_earnings_package.py", "r2d2_v2_earnings_policy.py",
     "r2d2_v2_earnings_events.py", "r2d2_v2_contract.py", "r2d2_v2_portfolio.py",
     "r2d2_v2_sources.py", "r2d2_v2_shadow.py", "r2d2_v2_inference_input.py",
-    "r2d2_v2_shadow_worker.py", "config.py",
+    "r2d2_v2_shadow_worker.py", "r2d2_v2_eod.py", "r2d2_v2_calendar.py",
+    "r2d2_v2_counterfactual.py", "r2d2_v2_counterfactual_archive.py", "r2d2_v2_store.py",
+    "r2d2_v2_mirror.py", "config.py",
 )
 
 
@@ -43,6 +46,12 @@ def earnings_contract() -> dict[str, Any]:
         "amendment_one_sha": AMENDMENT_ONE_SHA,
         "earnings_amendment_sha": EARNINGS_AMENDMENT_SHA,
         "earnings_closed_manifest_sha": EARNINGS_CLOSED_MANIFEST_SHA,
+        "eod_amendment_sha": EOD_AMENDMENT_SHA,
+        "eod_closed_manifest_sha": "7b8dacf3857691a7650dc5e9b83eb316213bae62f90eb4383d74aff5733427f8",
+        "eod_quote_window": "[official_close-30s,official_close)",
+        "eod_rule": "FIRST_OBSERVED_VALID_STRICTLY_POSITIVE_NET_QUOTE",
+        "eod_precedence": ["STOP", "TARGET", "EVENT", "EOD_POSITIVE", "TIME"],
+        "p5_no_eod": "DESCRIPTIVE_ARCHIVED_EVIDENCE_ONLY_EXPLICIT_ND_PAIRED_COVERAGE",
         "policy_rule": "EXCLUSION_RULE_V1",
         "component_keys": ["available_at", "coverage_verified", "events", "evidence",
                            "exclusion", "policy", "source_at", "window_end", "window_start"],

@@ -513,7 +513,10 @@ def test_state_policy_cannot_silently_cross_into_new_collector(calendar,field,va
 def test_implementation_manifest_hashes_bytes_without_asserting_authorization():
     descriptor=implementation_package()
     assert descriptor['status']=='DESCRIPTOR_NOT_AUTHORIZATION'
-    assert len(descriptor['source_sha256'])==10
+    assert len(descriptor['source_sha256'])==16
+    assert {'r2d2_v2_eod.py', 'r2d2_v2_calendar.py', 'r2d2_v2_counterfactual.py',
+            'r2d2_v2_mirror.py', 'r2d2_v2_store.py', 'r2d2_v2_counterfactual_archive.py'} <= set(descriptor['source_sha256'])
+    assert descriptor['contract']['eod_amendment_sha']=='399db28ba31cc4d0b33aefe7fa025e15cd2d8164596c36fc5ab6a4a070729e30'
     assert descriptor['implementation_contract_sha']==implementation_contract_sha()
     assert descriptor['contract']['descriptor_is_authorization'] is False
     assert descriptor['contract']['estimator_algorithm_changed'] is False

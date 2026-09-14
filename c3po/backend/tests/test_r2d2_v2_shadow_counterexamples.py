@@ -77,6 +77,54 @@ def test_quote_known_exactly_at_close_is_processed_before_close_clock():
     assert not record["horizon_breach"]
 
 
+def test_eod_collector_consumes_every_quote_and_archives_actual_receipt_clock():
+    collector, state, _ = setup_state()
+    now = utc("2026-09-08T19:59:45+00:00")
+    for book in ("research", "portfolio"):
+        state["ledger"][book]["synthetic-entry"]["maturity_at"] = "2026-09-21T19:55:00+00:00"
+    state["coverage_until"][INSTRUMENT] = now.isoformat()
+    events = []
+    for sequence, (stamp, bid, ask) in enumerate([
+        ("2026-09-08T19:59:35+00:00", 102, 99),
+        ("2026-09-08T19:59:36+00:00", 99, 99),
+        ("2026-09-08T19:59:40+00:00", 101, 101),
+        ("2026-09-08T19:59:44+00:00", 103, 103)]):
+        events.append(source_event("QUOTE", at=stamp, sequence=sequence,
+            bid=bid, ask=ask, bid_at=stamp, ask_at=stamp, regular=True))
+    journals = []
+    collector._events(state, journals, list(reversed(events)), [], now, DAY)
+    assert not state["data_issues"]
+    for book in ("research", "portfolio"):
+        row = state["ledger"][book]["synthetic-entry"]
+        assert row["exit_cause"] == "EOD_POSITIVE"
+        assert row["exit_price"] == 101
+        assert row["exit_at"] == now.isoformat()
+        window = row["eod_windows"][DAY]
+        assert window["invalid_quotes"] == 1 and window["valid_quotes"] == 2
+        assert window["source"] == "synthetic-source"
+        assert window["source_at"] == events[2]["at"]
+    assert len([j for j in journals if j["type"] == "SOURCE_EVENT"]) == 4
+    public = shadow.public_summary(state)["eod_observation_dates"][0]
+    assert public["research"]["ELIGIBLE"]["EOD_POSITIVE"] == 1
+    assert "SYNTH" not in str(public)
+
+
+def test_eod_shared_collector_receipt_prioritizes_trade_over_earlier_producer_quote_receipt():
+    collector, state, _ = setup_state()
+    stamp = "2026-09-08T19:59:40+00:00"
+    now = utc("2026-09-08T19:59:45+00:00")
+    for book in ("research", "portfolio"):
+        state["ledger"][book]["synthetic-entry"]["maturity_at"] = "2026-09-21T19:55:00+00:00"
+    state["coverage_until"][INSTRUMENT] = now.isoformat()
+    quote = source_event("QUOTE", at=stamp, bid=101, ask=101,
+        bid_at=stamp, ask_at=stamp, regular=True)
+    trade = source_event("TRADE", at=stamp, sequence=1, price=90, regular=True)
+    trade["available_at"] = "2026-09-08T19:59:41+00:00"
+    collector._events(state, [], [quote, trade], [], now, DAY)
+    assert all(state["ledger"][book]["synthetic-entry"]["exit_cause"] == "STOP"
+               for book in ("research", "portfolio"))
+
+
 def test_intention_precedes_simultaneous_mark_in_collector_and_ledger():
     collector, state, _ = setup_state()
     now = utc("2026-09-08T14:01:00+00:00")

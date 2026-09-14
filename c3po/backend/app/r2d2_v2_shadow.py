@@ -24,7 +24,7 @@ from .r2d2_v2_earnings_package import (
     implementation_package_sha as current_package_sha,
 )
 from .r2d2_v2_portfolio import PortfolioBatch, apply_events, export_session_statistics, new_portfolio, register_candidate
-from .r2d2_v2_portfolio import earnings_public_sessions
+from .r2d2_v2_portfolio import earnings_public_sessions, eod_public_sessions
 from .r2d2_v2_sources import MANIFEST_SHA
 from .r2d2_v2_store import ShadowIntegrityError, canonical, digest, utc, validate_epoch
 
@@ -577,7 +577,11 @@ class ShadowCollector:
             if item["sequence"] != expected:
                 self._gap(state, journals, now, session, "EVENT_SEQUENCE_GAP", portfolio=portfolio)
             state["event_sequences"][source] = max(item["sequence"], expected - 1)
-        pending.sort(key=lambda e: (utc(e["available_at"]), utc(e["at"]), priority.get(e["type"], 10), e["sequence"], e["event_id"]))
+        # All packets become known to this collector at `now` below. Order that
+        # shared receipt by source instant and event precedence; unequal
+        # producer receipt times must not let a quote beat a simultaneous stop.
+        pending.sort(key=lambda e: (utc(e["at"]), priority.get(e["type"], 10),
+                                   utc(e["available_at"]), e["source_id"], e["sequence"], e["event_id"]))
         for item in pending:
             raw = {k: v for k, v in item.items() if k not in {"source_id", "source_at", "sequence", "provenance",
                     "manifest_sha", "amendment_sha", "self_sha256", "envelope_sha256", "envelope_available_at"}}
@@ -586,6 +590,10 @@ class ShadowCollector:
             # Producer receipt and collector receipt are both archived. A file
             # read later never grants the collector knowledge at an earlier time.
             event = {**raw, "source_available_at": raw["available_at"], "available_at": now.isoformat(), "session": session}
+            if event["type"] == "QUOTE":
+                # Identity comes only from the validated envelope. Each packet
+                # reaches the ledger; never collapse these into a latest quote.
+                event["source_id"] = item["source_id"]
             identity_parts = str(event.get("instrument_key", "")).split(":")
             if len(identity_parts) == 2 and identity_parts[0] in {"NYSE", "NASDAQ", "US"}:
                 event["instrument_key"] = "US:" + identity_parts[1]
@@ -830,6 +838,8 @@ def public_summary(state: dict) -> dict:
             "mode": state["mode"], "last_cycle_at": state["last_cycle_at"], "sessions": sessions,
             "earnings_observation_dates": [{"date": day, **summary}
                 for day, summary in sorted(observed.items())],
+            "eod_observation_dates": [{"date": day, **summary} for day, summary in
+                sorted(eod_public_sessions(state["ledger"]).items())] if state["ledger"] is not None else [],
             "cohort_clock_started": state["mode"] == "CERTIFIED" and bool(state["sessions"]),
             "data_gate_unknown": bool(active_issues), "data_gate_scope": "CURRENT_SESSION_OBSERVATION",
             "data_issue_count": len(state["data_issues"]),
@@ -837,7 +847,8 @@ def public_summary(state: dict) -> dict:
             "certification_computed": False, "production_orders": False}
 
 
-def export_cohort(state: dict, size: int, *, now: datetime, calendar: ShadowCalendar) -> dict:
+def export_cohort(state: dict, size: int, *, now: datetime, calendar: ShadowCalendar,
+                  archive: tuple[dict, list[dict]] | None = None) -> dict:
     """Sufficient statistics for the signed estimator, only after maturity.
 
 This does not compute a bootstrap or authorize a GO. Every programmed session,
@@ -892,4 +903,10 @@ including zero days, remains in order. Diagnostic epochs cannot be promoted.
         "terminal_veto": veto_through(calendar.details(maturity_day)["close"]),
         "observation_cutoff_at": calendar.details(maturity_day)["close"].isoformat(),
         "statistical_verdict": "NOT_COMPUTED"}
+    from .r2d2_v2_counterfactual_archive import summarize
+    saved, journal = archive if archive is not None else ({"state": state, "state_sha": digest(state)}, None)
+    if saved["state_sha"] != digest(state):
+        raise ShadowIntegrityError("P5_ARCHIVE_STATE_MISMATCH")
+    result["p5_no_eod"] = summarize(saved, journal, sessions=schedule[:size],
+                                    cutoff=result["observation_cutoff_at"])
     return {**result, "sha256": digest(result)}
