@@ -8794,7 +8794,7 @@ function objectValue(value: unknown): Record<string, unknown> {
 
 function OperationalIncidentsRow({ item, canManage }: { item: Integration; canManage: boolean }) {
   const incidents = Array.isArray(item.metadata?.incidents)
-    ? item.metadata.incidents.map(objectValue)
+    ? item.metadata.incidents.map(objectValue).filter((incident) => incident.status !== "resolved")
     : [];
   const [busy, setBusy] = useState("");
   const transition = async (incidentId: string, action: "acknowledge" | "resolve") => {
@@ -8844,7 +8844,7 @@ function OperationalIncidentsRow({ item, canManage }: { item: Integration; canMa
             );
           })}
         </div>
-      ) : <div className="operational-incidents-empty"><Check size={18} /><span>Nenhum incidente registrado.</span></div>}
+      ) : <div className="operational-incidents-empty"><Check size={18} /><span>Nenhum incidente operacional ativo.</span></div>}
     </article>
   );
 }
