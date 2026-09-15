@@ -60,8 +60,9 @@ def test_first_nonpositive_then_positive_exits_first_positive_once_in_every_arm(
 @pytest.mark.parametrize("bad", [dict(bid=102., ask=100.), dict(bid=0.),
     dict(bid_at="2026-09-08T20:00:00+00:00"), dict(regular=False),
     dict(bid_at="2026-09-08T19:59:00+00:00"), dict(source_id="")])
-def test_invalid_quote_does_not_erase_later_positive(bad):
-    state, _, _ = candidate()
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+def test_invalid_quote_does_not_erase_later_positive(arm, bad):
+    state, _, _ = candidate(arm=arm)
     invalid = {**q(), **bad}
     state = apply(state, invalid)
     state = apply(state, q(2, seconds=15))
@@ -71,8 +72,9 @@ def test_invalid_quote_does_not_erase_later_positive(bad):
 
 
 @pytest.mark.parametrize("negative", [True, False])
-def test_nonpositive_and_absent_windows_finalize_once_without_exit_or_gate_reclassification(negative):
-    state, _, _ = candidate()
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+def test_nonpositive_and_absent_windows_finalize_once_without_exit_or_gate_reclassification(arm, negative):
+    state, _, _ = candidate(arm=arm)
     if negative:
         state = apply(state, q(price=99))
     state = close(state)
@@ -87,38 +89,43 @@ def test_nonpositive_and_absent_windows_finalize_once_without_exit_or_gate_recla
 
 
 @pytest.mark.parametrize("seconds", [31, 0, -1])
-def test_positive_outside_observation_window_never_retroactively_exits(seconds):
-    state, _, _ = candidate()
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+def test_positive_outside_observation_window_never_retroactively_exits(arm, seconds):
+    state, _, _ = candidate(arm=arm)
     state = apply(state, q(seconds=seconds))
     assert all(r["status"] == "OPEN" for r in rows(state))
 
 
-def test_late_collector_receipt_ignores_on_time_source_tick():
-    state, _, _ = candidate()
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+def test_late_collector_receipt_ignores_on_time_source_tick(arm):
+    state, _, _ = candidate(arm=arm)
     state = apply(state, q(seconds=1, available_at="2026-09-08T20:00:00+00:00"))
     assert all(r["status"] == "OPEN" for r in rows(state))
 
 
-def test_short_session_uses_official_thirteen_oclock_close():
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+def test_short_session_uses_official_thirteen_oclock_close(arm):
     session = "2026-11-27"
     assert official_close(session).isoformat() == "2026-11-27T18:00:00+00:00"
-    state, _, _ = candidate(session=session, opened_at="2026-11-27T15:00:00+00:00",
+    state, _, _ = candidate(arm=arm, session=session, opened_at="2026-11-27T15:00:00+00:00",
                             maturity_at="2026-12-10T20:55:00+00:00")
     state = apply(state, q(seconds=30, session=session))
     assert all(r["exit_cause"] == "EOD_POSITIVE" for r in rows(state))
 
 
 @pytest.mark.parametrize("price,cause", [(90, "STOP"), (110, "TARGET")])
-def test_same_instant_barrier_precedes_eod_quote(price, cause):
-    state, _, _ = candidate()
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+def test_same_instant_barrier_precedes_eod_quote(arm, price, cause):
+    state, _, _ = candidate(arm=arm)
     item = q(2)
     state = apply(state, event("TRADE", at=item["at"], price=price, regular=True))
     state = apply(state, item)
     assert all(r["exit_cause"] == cause for r in rows(state))
 
 
-def test_event_same_instant_blocks_eod_and_waits_for_strictly_later_quote():
-    state, _, _ = candidate()
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+def test_event_same_instant_blocks_eod_and_waits_for_strictly_later_quote(arm):
+    state, _, _ = candidate(arm=arm)
     item = q(2)
     # Pending detection is a persisted ledger intention. EVENT's existing
     # strict post-detection quote requirement must survive the new exit rule.
@@ -131,14 +138,16 @@ def test_event_same_instant_blocks_eod_and_waits_for_strictly_later_quote():
 
 
 @pytest.mark.parametrize("seconds,expected", [(25, "EOD_POSITIVE"), (24, "TIME")])
-def test_eod_precedes_only_simultaneous_time_not_earlier_time(seconds, expected):
-    state, _, _ = candidate(maturity_at=q()["at"])
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+def test_eod_precedes_only_simultaneous_time_not_earlier_time(arm, seconds, expected):
+    state, _, _ = candidate(arm=arm, maturity_at=q()["at"])
     state = apply(state, q(seconds=seconds))
     assert all(r["exit_cause"] == expected for r in rows(state))
 
 
-def test_split_and_paid_dividend_are_counted_once_in_economic_profit():
-    state, _, _ = candidate()
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+def test_split_and_paid_dividend_are_counted_once_in_economic_profit(arm):
+    state, _, _ = candidate(arm=arm)
     state = apply(state, event("SPLIT", factor=2))
     state = apply(state, event("DIVIDEND_ENTITLEMENT", 2,
         at="2026-09-08T14:02:00+00:00", entitlement_id="d", net_per_share=1))
@@ -152,8 +161,9 @@ def test_split_and_paid_dividend_are_counted_once_in_economic_profit():
     assert portfolio_summary(state)["cash_identity_passed"]
 
 
-def test_unidentified_accounting_cannot_manufacture_positive_exit():
-    state, _, _ = candidate()
+@pytest.mark.parametrize("arm", ["ELIGIBLE", "CONTROL"])
+def test_unidentified_accounting_cannot_manufacture_positive_exit(arm):
+    state, _, _ = candidate(arm=arm)
     state = apply(state, event("DIVIDEND_ENTITLEMENT", entitlement_id="unknown", net_per_share=None))
     state = apply(state, q(2, price=101))
     state = close(state)
