@@ -146,18 +146,18 @@ def test_proof_changes_group_then_expires_and_restart_cannot_replay(tmp_path, cl
     c, stream, saved, now, policy = setup_controller(tmp_path, clock)
     tmp_path.chmod(0o700)
     policy.update(mode="PROOF", valid_from=now[0].isoformat(),
-                  valid_until=(now[0]+timedelta(seconds=30)).isoformat(), symbols=["A", "B"])
+                  valid_until=(now[0]+timedelta(seconds=60)).isoformat(), symbols=["A", "B"])
     assert c.step()["subscription"]["desired_count"] == 1
-    now[0] += timedelta(seconds=10); clock[0] += 10
+    now[0] += timedelta(seconds=20); clock[0] += 20
     assert c.step()["subscription"]["desired_count"] == 2
-    now[0] += timedelta(seconds=10); clock[0] += 10
+    now[0] += timedelta(seconds=20); clock[0] += 20
     assert c.step()["subscription"]["desired_count"] == 1
     c._persist(c.last_receipt)
     assert (tmp_path / "policy.json.proof.ndjson").exists()
-    now[0] += timedelta(seconds=10); clock[0] += 10
+    now[0] += timedelta(seconds=20); clock[0] += 20
     assert c.step()["readiness"] == "BLOCKED"
     assert stream._desired_symbols() == ("OLD",)
-    rebuilt = live.LiveGroupController(c.settings, stream, clock=lambda: now[0]-timedelta(seconds=30),
+    rebuilt = live.LiveGroupController(c.settings, stream, clock=lambda: now[0]-timedelta(seconds=60),
                                        policy_reader=c.policy_reader)
     assert rebuilt.step()["readiness"] == "BLOCKED"
 
@@ -175,14 +175,14 @@ def test_real_policy_hash_window_and_attestations(tmp_path, monkeypatch):
          "mode": "PROOF", "capacity": 10, "package_sha": "b"*64, "code_revision": "c"*40,
          "c8_receipt_sha": "d"*64, "head_go_sha": "e"*64, "causal_list_receipt_sha": "f"*64,
          "symbols": ["A", "B"], "list_sha": digest(["A", "B"]),
-         "valid_from": now.isoformat(), "valid_until": (now+timedelta(seconds=30)).isoformat()}
+         "valid_from": now.isoformat(), "valid_until": (now+timedelta(seconds=60)).isoformat()}
     path = tmp_path / "policy.json"
     data = json.dumps(p).encode(); path.write_bytes(data); path.chmod(0o600)
     settings = SimpleNamespace(r2d2_v2_live_policy_file=str(path),
         r2d2_v2_live_policy_sha=hashlib.sha256(data).hexdigest(), build_sha="c"*40)
     assert live.read_policy(settings, now)["symbols"] == ["A", "B"]
     with pytest.raises(ShadowIntegrityError, match="OUTSIDE"):
-        live.read_policy(settings, now+timedelta(seconds=30))
+        live.read_policy(settings, now+timedelta(seconds=60))
     path.write_bytes(data+b" ")
     with pytest.raises(ShadowIntegrityError, match="HASH"):
         live.read_policy(settings, now)
@@ -227,3 +227,57 @@ def test_thread_start_failure_does_not_escape_into_worker(tmp_path, monkeypatch)
     monkeypatch.setattr(live.Thread, "start", fail)
     c.start()
     assert stream.v2_status()["desired_count"] == 0
+
+
+def test_capacity_refusal_keeps_reason_and_withdrawal_evidence(tmp_path, clock):
+    c, stream, saved, now, policy = setup_controller(tmp_path, clock)
+    c.step()
+    policy["capacity"] = 1
+    receipt = c.step()
+    assert receipt["status"] == "V2_CAPACITY_EXCEEDED"
+    assert receipt["subscription"]["status"] == "CAPACITY_EXCEEDED"
+    assert receipt["subscription"]["withdrawals"][-1]["reason"] == "CAPACITY_EXCEEDED"
+
+
+def test_withdrawal_evidence_survives_drop_and_records_actual_send(clock):
+    stream = streams.EodhdRealtimeStream("")
+    stream.set_v2_group(["SYNTH"], capacity=2, ttl=15)
+    stream._set_feed_state("quote", "connected")
+    stream._v2_sent("quote", {"SYNTH"}, stream._v2_generation)
+    stream._v2_received("quote", "SYNTH")
+    stream.set_group("r2d2-v2-live", [])
+    stream._v2_unsubscribed("quote", {"SYNTH"})
+    receipt = stream.v2_status()["withdrawals"][-1]
+    assert receipt["feeds_before"]["quote"]["received_count"] == 1
+    assert receipt["unsubscribe_sent"]["quote"]["count"] == 1
+    assert "SYNTH" not in json.dumps(receipt)
+
+
+def test_live_journal_and_stale_temporary_file(tmp_path, clock):
+    c, stream, saved, now, policy = setup_controller(tmp_path, clock)
+    tmp_path.chmod(0o700)
+    (tmp_path / 'policy.json.status.json.tmp').write_text('stale')
+    receipt = c.step()
+    c._persist(receipt)
+    c._persist(receipt)
+    assert len((tmp_path / 'policy.json.live.ndjson').read_text().splitlines()) == 2
+    assert stream.v2_status()["desired_count"] == 1
+
+
+def test_stop_event_checked_inside_stream_lock(clock):
+    from threading import Event
+    stream = streams.EodhdRealtimeStream("")
+    stopped = Event(); stopped.set()
+    with pytest.raises(ValueError, match="LIVE_CONTROLLER_STOPPED"):
+        stream.set_v2_group(["SYNTH"], capacity=1, ttl=15, stop_event=stopped)
+    assert stream.v2_status()["desired_count"] == 0
+
+
+def test_proof_can_start_after_one_poll_plus_small_io_delay(tmp_path, clock):
+    c, stream, saved, now, policy = setup_controller(tmp_path, clock)
+    tmp_path.chmod(0o700)
+    policy.update(mode="PROOF", valid_from=now[0].isoformat(),
+                  valid_until=(now[0]+timedelta(seconds=60)).isoformat(), symbols=["A", "B"])
+    now[0] += timedelta(seconds=5.1)
+    assert c.step()["status"] == "SUBSCRIPTION_REQUESTED"
+    assert c.proof_used

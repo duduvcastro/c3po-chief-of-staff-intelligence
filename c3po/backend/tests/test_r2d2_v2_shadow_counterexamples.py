@@ -98,7 +98,8 @@ def test_eod_collector_consumes_every_quote_and_archives_actual_receipt_clock():
         row = state["ledger"][book]["synthetic-entry"]
         assert row["exit_cause"] == "EOD_POSITIVE"
         assert row["exit_price"] == 101
-        assert row["exit_at"] == now.isoformat()
+        assert row["exit_at"] == events[2]["at"]
+        assert row["exit_available_at"] == now.isoformat()
         window = row["eod_windows"][DAY]
         assert window["invalid_quotes"] == 1 and window["valid_quotes"] == 2
         assert window["source"] == "synthetic-source"

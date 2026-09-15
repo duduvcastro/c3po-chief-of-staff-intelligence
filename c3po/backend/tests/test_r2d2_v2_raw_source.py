@@ -132,7 +132,8 @@ def test_real_collector_commits_first_positive_and_cursor_together_then_restarts
     for book in ("research", "portfolio"):
         row = saved["state"]["ledger"][book]["synthetic-entry"]
         assert row["exit_cause"] == "EOD_POSITIVE" and row["exit_price"] == 101
-        assert row["exit_at"] == NOW.isoformat()
+        assert row["exit_at"] == AT.isoformat()
+        assert row["exit_available_at"] == NOW.isoformat()
     journal = collector.store.journal(collector.release.epoch)
     assert len([r for r in journal if r["payload"]["type"] == "SOURCE_EVENT"]) == 3
     assert len([r for r in journal if r["payload"]["type"] == "SOURCE_CURSOR"]) == 1
@@ -219,7 +220,7 @@ def test_failed_source_leaves_durable_cursor_unchanged(source):
     collector.cycle(NOW + timedelta(seconds=1))
     after = collector.store.read(collector.release.epoch)['state']
     assert after['raw_source_cursor'] == before
-    assert after['data_issues']
+    assert not after['data_issues']
 
 
 @pytest.mark.parametrize('mode', ['CERTIFIED', 'DIAGNOSTIC'])
@@ -279,3 +280,38 @@ def test_boundary_rewrite_during_short_read_never_reseals_changed_history(source
     assert changed
     assert batch["diagnostics"] == [{"code": "RAW_CHANGED_DURING_READ"}]
     assert batch["events"] == [] and batch["cursor"] == cursor
+
+
+def test_partial_append_defers_then_recovers_without_a_global_gap(source):
+    path = write(source, line(99))
+    collector = seed_collector(source)
+    collector.cycle(NOW)
+    before = collector.store.read(collector.release.epoch)["state"]
+    final = line(101, at=AT + timedelta(seconds=1))
+    with path.open("ab") as output:
+        output.write(final[:-20])
+    result = collector.cycle(NOW + timedelta(seconds=1))
+    after = collector.store.read(collector.release.epoch)["state"]
+    assert result["raw_poll_deferred"] == ["RAW_APPEND_IN_PROGRESS"]
+    assert after == before
+    with path.open("ab") as output:
+        output.write(final[-20:])
+    collector.cycle(NOW + timedelta(seconds=2))
+    after = collector.store.read(collector.release.epoch)["state"]
+    assert collector._admission_block(after, "2026-09-08", INSTRUMENT) is None
+    assert after["ledger"]["research"]["synthetic-entry"]["exit_cause"] == "EOD_POSITIVE"
+
+
+def test_preopen_drains_existing_raw_without_opening_a_session(source):
+    at = datetime(2026, 9, 8, 12, tzinfo=timezone.utc)
+    write(source, line(99, at=at))
+    collector, state, _ = setup_state(position=False)
+    state = collector._initial()
+    collector.source = source
+    collector.store.atomic(collector.release.epoch, collector._initial(),
+                           lambda unused: (state, [], {}), at-timedelta(hours=1))
+    collector.cycle(at+timedelta(minutes=30))
+    saved = collector.store.read(collector.release.epoch)["state"]
+    assert saved["raw_source_cursor"]["files"][PART]["offset"] == len(line(99, at=at))
+    assert saved["sessions"] == {} and saved["ledger"]["session"] is None
+    assert any(r["payload"]["type"] == "SOURCE_EVENT" for r in collector.store.journal(collector.release.epoch))

@@ -519,7 +519,7 @@ def _observe_eod(state: dict[str, Any], record: dict[str, Any], event: Mapping[s
                "observed_at": available.isoformat(), "reason": decision.reason,
                "pnl": decision.pnl}
     windows[session] = {**decision.state, "session_close": close.isoformat(),
-                        "observations": [*old.get("observations", []), receipt]}
+                        "last_observation": receipt}
     if decision.reason != "EOD_POSITIVE":
         return False
     assert decision.midpoint is not None
@@ -534,7 +534,7 @@ def _observe_eod(state: dict[str, Any], record: dict[str, Any], event: Mapping[s
                               "exit_quote": dict(event)}
     record["intent"] = {"cause": "EOD_POSITIVE", "at": available.isoformat()}
     _close(state, record, cause="EOD_POSITIVE", price=decision.midpoint,
-           at=available.isoformat(), available_at=available.isoformat(),
+           at=event["at"], available_at=available.isoformat(),
            category="eod_positive_exit", evidence="DEMONSTRATED_QUOTE_REFERENCE")
     return True
 

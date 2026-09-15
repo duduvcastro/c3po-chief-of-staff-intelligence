@@ -42,7 +42,8 @@ def test_first_nonpositive_then_positive_exits_first_positive_once_in_every_arm(
         assert window["valid_quotes"] == 2
         assert window["observed_at"] == positive["available_at"] == row["intent"]["at"]
         assert window["pnl"] == pytest.approx(row["exit_proceeds"] - row["entry_cost"])
-        assert len(window["observations"]) == 2
+        assert window["last_observation"]["event_id"] == positive["event_id"]
+        assert "observations" not in window
     assert state["cash"] == before
     assert portfolio_summary(state)["cash_identity_passed"]
     for row in state["research"].values():

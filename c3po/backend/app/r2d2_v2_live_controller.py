@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import uuid
 from threading import Event, Thread
 from time import monotonic
 from typing import Any, Callable
@@ -40,6 +41,7 @@ def read_policy(settings: Any, now: datetime) -> dict:
     policy = json.loads(data)
     if (policy.get("schema") != "R2D2_V2_LIVE_POLICY_V1"
             or policy.get("order_sha") != ORDER_SHA
+            or not re.fullmatch(r"[0-9a-f]{40}", str(policy.get("code_revision", "")))
             or policy.get("code_revision") != settings.build_sha
             or policy.get("package_sha") != current_package_sha()
             or any(not re.fullmatch(r"[0-9a-f]{64}", str(policy.get(k, "")))
@@ -57,7 +59,7 @@ def read_policy(settings: Any, now: datetime) -> dict:
                 or len(set(names)) != len(names) or len(names) < 2
                 or digest(names) != policy.get("list_sha")
                 or not re.fullmatch(r"[0-9a-f]{64}", str(policy.get("causal_list_receipt_sha", "")))
-                or not 30 <= (end-start).total_seconds() <= 60):
+                or (end-start).total_seconds() != 60):
             raise ShadowIntegrityError("LIVE_PROOF_INVALID")
         day = start.date().isoformat()
         if day == "2026-09-16":
@@ -140,7 +142,7 @@ class LiveGroupController:
                 if self.proof_started is None:
                     if self.proof_used:
                         raise ShadowIntegrityError("LIVE_PROOF_ALREADY_USED")
-                    if (now - utc(policy["valid_from"])).total_seconds() > 5:
+                    if (now - utc(policy["valid_from"])).total_seconds() > 10:
                         raise ShadowIntegrityError("LIVE_PROOF_START_MISSED")
                     self._proof_claim()
                 elapsed = (now - utc(policy["valid_from"])).total_seconds()
@@ -171,19 +173,25 @@ class LiveGroupController:
                 ttl = min(ttl, (utc(policy["valid_until"]) - after).total_seconds() - 5)
             if self.stop_event.is_set():
                 raise ShadowIntegrityError("LIVE_CONTROLLER_STOPPED")
-            status = self.stream.set_v2_group(names, capacity=policy["capacity"], ttl=ttl)
+            status = self.stream.set_v2_group(names, capacity=policy["capacity"], ttl=ttl, stop_event=self.stop_event)
             receipt = {"at": after.isoformat(), "policy_sha": identity, "mode": policy["mode"],
                        "state_sha": state_sha, "status": "SUBSCRIPTION_REQUESTED", "readiness": "NOT_PROVEN",
                        "subscription": status, "disk_written": "REQUIRES_INDEPENDENT_SESSION_FILE_READ"}
         except Exception as exc:
+            before_drop = self.stream.v2_status()
             self.stream.set_group(GROUP_NAME, [])
             if self.proof_used:
                 self.proof_started = None
-            code = str(exc) if isinstance(exc, ShadowIntegrityError) else type(exc).__name__
+            code = str(exc) if isinstance(exc, (ShadowIntegrityError, ValueError)) else type(exc).__name__
             # Never expose connection strings, symbol lists or provider errors.
-            if not re.fullmatch(r"[A-Z_]{1,100}", code):
+            if not re.fullmatch(r"[A-Z0-9_]{1,100}", code):
                 code = "LIVE_CONTROLLER_FAILURE"
-            receipt = {"at": now.isoformat(), "status": code, "readiness": "BLOCKED"}
+            if isinstance(exc, FileExistsError):
+                code = "LIVE_PROOF_ALREADY_USED"
+            elif isinstance(exc, FileNotFoundError):
+                code = "LIVE_POLICY_OR_RELEASE_MISSING"
+            receipt = {"at": now.isoformat(), "status": code, "readiness": "BLOCKED",
+                       "subscription_before_drop": before_drop, "subscription": self.stream.v2_status()}
         self.last_receipt = receipt
         return receipt
 
@@ -193,7 +201,7 @@ class LiveGroupController:
         if not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077:
             raise ShadowIntegrityError("LIVE_POLICY_DIRECTORY_NOT_PRIVATE")
         target = path.with_name(path.name + ".status.json")
-        temp = target.with_name(target.name + ".tmp")
+        temp = target.with_name(target.name + "." + uuid.uuid4().hex + ".tmp")
         fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         try:
             with os.fdopen(fd, "w") as out:
@@ -202,12 +210,13 @@ class LiveGroupController:
                 out.flush()
                 os.fsync(out.fileno())
             os.replace(temp, target)
-            if receipt.get("mode") == "PROOF" or self.proof_used:
-                journal = path.with_name(path.name + ".proof.ndjson")
+            if receipt.get("mode") in {"PROOF", "LIVE"} or self.proof_used or self.policy_identity:
+                suffix = ".proof.ndjson" if self.proof_used else ".live.ndjson"
+                journal = path.with_name(path.name + suffix)
                 fd = os.open(journal, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
                 with os.fdopen(fd, "w") as out:
                     info = os.fstat(out.fileno())
-                    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_size > 1048576:
+                    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_size > (1048576 if self.proof_used else 64*1048576):
                         raise ShadowIntegrityError("LIVE_PROOF_RECEIPT_INVALID_OR_FULL")
                     out.write(json.dumps(receipt, sort_keys=True) + "\n")
                     out.flush()
@@ -224,6 +233,9 @@ class LiveGroupController:
                             result = self.step()
                             self._persist(result)
                             if self.proof_used and result.get("readiness") == "BLOCKED":
+                                self.stop_event.wait(3)
+                                self._persist({**result, "at": self.clock().isoformat(),
+                                               "subscription": self.stream.v2_status()})
                                 return
                         else:
                             self.stream.set_group(GROUP_NAME, [])
@@ -231,8 +243,7 @@ class LiveGroupController:
                 except Exception:
                     self.stream.set_group(GROUP_NAME, [])
                     logger.error("V2 subscription controller blocked; no exception payload exposed")
-                    if self.proof_used:
-                        return
+                    return  # Persistence failure must not repeatedly reinstall a lease.
                 self.stop_event.wait(INTERVAL)
         finally:
             self.stream.set_group(GROUP_NAME, [])

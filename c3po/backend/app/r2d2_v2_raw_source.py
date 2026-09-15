@@ -81,7 +81,7 @@ class SpoolShadowSource(FileShadowSource):
                         match = _SESSION.fullmatch(entry.name)
                         if match and self.first_session <= date.fromisoformat(match[1]) <= now.date():
                             sessions.append(entry.name)
-                            _require(len(sessions) <= 100, "RAW_SESSION_LIMIT")
+                            _require(len(sessions) <= 250, "RAW_SESSION_LIMIT")
                 for session in sorted(sessions):
                     directory = os.open(session, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root_fd)
                     try:

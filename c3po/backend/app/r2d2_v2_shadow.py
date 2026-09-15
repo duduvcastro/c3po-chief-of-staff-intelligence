@@ -402,6 +402,12 @@ class ShadowCollector:
                            cursor, next_cursor, raw_receipts=None):
         if cursor is not None and state.get("raw_source_cursor", {}) != cursor:
             raise ShadowIntegrityError("RAW_SOURCE_CURSOR_CONCURRENT_CHANGE")
+        transient = {"RAW_APPEND_IN_PROGRESS", "RAW_CHANGED_DURING_READ", "RAW_TRUNCATED_DURING_READ"}
+        if diagnostics and all(item.get("code") in transient for item in diagnostics):
+            response = public_summary(state)
+            response["observed_at"] = now.isoformat()
+            response["raw_poll_deferred"] = [item["code"] for item in diagnostics]
+            return state, [], response
         state, journals, response = self._cycle(state, batch, events, diagnostics, now, causal=causal)
         # A failed transition rolls back both receipts and cursor. No cursor
         # advances if events were not processed (for example before session 1).
@@ -495,8 +501,13 @@ class ShadowCollector:
                     self._gap(state, journals, now, key, "COLLECTOR_MISSED_SESSION_CLOSE", portfolio=portfolio)
                 self._clock(state, journals, "SESSION_CLOSE", key, detail["close"], now, portfolio=portfolio)
             state["last_session"] = key
-        if not events_processed and state["ledger"] is not None and state["ledger"]["session"]:
-            self._events(state, journals, events, event_diagnostics, now, state["ledger"]["session"], portfolio=portfolio)
+        if not events_processed and state["ledger"] is not None:
+            fallback_session = state["ledger"]["session"]
+            # Drain valid pre-open packets before the first session as well.
+            # They are nonregular and create no session/admission or clock.
+            if fallback_session or (events and not event_diagnostics):
+                self._events(state, journals, events, event_diagnostics, now,
+                    fallback_session or active_day.isoformat(), portfolio=portfolio, archive_only=not fallback_session)
         if portfolio is not None:
             state["ledger"] = portfolio.finish()
         if journals or touched:
@@ -591,7 +602,7 @@ class ShadowCollector:
             issue["session"] == session and issue["instrument"] in ("*", name)
             and name not in issue["restored_instruments"] for issue in state["active_data_issues"].values()) else None
 
-    def _events(self, state, journals, events, diagnostics, now, session, *, portfolio=None):
+    def _events(self, state, journals, events, diagnostics, now, session, *, portfolio=None, archive_only=False):
         if state["ledger"] is None:
             return
         if diagnostics:
@@ -652,7 +663,10 @@ class ShadowCollector:
                 if (round_day is None or received is None or not self.calendar.is_session(round_day)
                         or received <= self.calendar.details(round_day)["close"]):
                     raise ShadowIntegrityError("EARNINGS_ROUND_SESSION_INVALID")
-            if event is not None:
+            if archive_only:
+                event = None
+                result = [{"status": "ARCHIVED_BEFORE_FIRST_SESSION"}]
+            elif event is not None:
                 name = event["instrument_key"]
                 episodes = [state["ledger"]["research"][key] for key in state["instrument_episodes"].get(name, [])]
                 episodes = [record for record in episodes if record["status"] == "OPEN"

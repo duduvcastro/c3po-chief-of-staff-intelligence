@@ -55,6 +55,7 @@ class EodhdRealtimeStream:
         self._lock = RLock()
         self._groups: dict[str, tuple[int, float, tuple[str, ...]]] = {}
         self._v2_lease: dict[str, Any] | None = None
+        self._v2_withdrawals: deque[dict[str, Any]] = deque(maxlen=16)
         self._v2_generation = 0
         self._v2_reason = "OFF"
         self._feed_generation = {"trade": 0, "quote": 0}
@@ -101,7 +102,35 @@ class EodhdRealtimeStream:
                 self._groups.pop(name, None)
             self._check_v2_locked()
 
+    def _remember_v2_locked(self, reason: str, remaining: set[str]) -> None:
+        old = self._groups.get("r2d2-v2-live")
+        if not old:
+            return
+        others = {s for name, (_, _, values) in self._groups.items()
+                  if name != "r2d2-v2-live" for s in values}
+        physical = set(old[2]) - remaining - others
+        self._v2_withdrawals.append({"generation": self._v2_generation,
+            "reason": reason, "requested_at": datetime.now(timezone.utc).isoformat(),
+            "group_removed_count": len(set(old[2])-remaining),
+            "physical_unsubscribe_expected": len(physical), "_symbols": physical,
+            "feeds_before": {f: dict(v) for f, v in self._v2_evidence.items()},
+            "unsubscribe_sent": {}})
+
+    def _v2_unsubscribed(self, feed: str, removed: set[str]) -> None:
+        with self._lock:
+            for receipt in self._v2_withdrawals:
+                matches = receipt["_symbols"] & removed
+                if matches:
+                    receipt["unsubscribe_sent"][feed] = {
+                        "at": datetime.now(timezone.utc).isoformat(), "count": len(matches),
+                        "connection_generation": self._feed_generation[feed]}
+
     def _drop_v2_locked(self, reason: str) -> None:
+        if self._v2_lease is None and "r2d2-v2-live" not in self._groups:
+            if reason != "REMOVED":
+                self._v2_reason = reason
+            return  # Preserve an earlier capacity/expiry reason, not generic REMOVED.
+        self._remember_v2_locked(reason, set())
         self._groups.pop("r2d2-v2-live", None)
         self._v2_lease = None
         self._v2_evidence = {}
@@ -117,7 +146,7 @@ class EodhdRealtimeStream:
         elif len(union) > min(550, lease["capacity"], self.max_symbols):
             self._drop_v2_locked("CAPACITY_CHANGED")
 
-    def set_v2_group(self, symbols: list[str], *, capacity: int, ttl: float) -> dict:
+    def set_v2_group(self, symbols: list[str], *, capacity: int, ttl: float, stop_event: Event | None = None) -> dict:
         """Atomic reservation against ALL groups; no V1 priority is rewritten."""
         import math
         import re
@@ -128,6 +157,9 @@ class EodhdRealtimeStream:
             raise ValueError("V2_LEASE_INVALID")
         names = tuple(sorted(set(symbols)))
         with self._lock:
+            if stop_event is not None and stop_event.is_set():
+                self._drop_v2_locked("STOPPED")
+                raise ValueError("LIVE_CONTROLLER_STOPPED")
             self._check_v2_locked()
             others = {s for name, (_, _, values) in self._groups.items()
                       if name != "r2d2-v2-live" for s in values}
@@ -137,6 +169,8 @@ class EodhdRealtimeStream:
                 raise ValueError("V2_CAPACITY_EXCEEDED")
             old = self._groups.get("r2d2-v2-live")
             if not old or old[2] != names:
+                if old:
+                    self._remember_v2_locked("GROUP_CHANGED", set(names))
                 self._v2_generation += 1
                 self._v2_evidence = {}
             self._groups["r2d2-v2-live"] = (190, monotonic(), names)
@@ -155,6 +189,10 @@ class EodhdRealtimeStream:
                     "incremental_count": (self._v2_lease or {}).get("incremental", 0),
                     "capacity": (self._v2_lease or {}).get("capacity"),
                     "feeds": {feed: dict(value) for feed, value in self._v2_evidence.items()},
+                    "withdrawals": [{k: ({f: dict(v) for f, v in value.items()}
+                        if k in {"feeds_before", "unsubscribe_sent"} else value)
+                        for k, value in row.items() if not k.startswith("_")}
+                        for row in self._v2_withdrawals],
                     "provider_ack_verified": False, "readiness": "NOT_PROVEN"}
 
     def _v2_sent(self, feed: str, subscribed: set[str], generation: int) -> None:
@@ -290,6 +328,7 @@ class EodhdRealtimeStream:
                         added = sorted(desired - subscribed)
                         if removed:
                             await asyncio.wait_for(socket.send(json.dumps({"action": "unsubscribe", "symbols": ",".join(removed)})), timeout=2)
+                            self._v2_unsubscribed(feed, set(removed))
                         if added:
                             await asyncio.wait_for(socket.send(json.dumps({"action": "subscribe", "symbols": ",".join(added)})), timeout=2)
                         subscribed = desired
