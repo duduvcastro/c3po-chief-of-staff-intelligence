@@ -2233,6 +2233,10 @@ class Database:
             return api_cursor.rowcount + page_cursor.rowcount
 
     def market_data_provider_health(self) -> dict[str, dict[str, Any]]:
+        # Provider codes are stable, but ensure_data_source updates source_type
+        # on every ingestion (e.g. EODHD quotes and fundamentals share a code).
+        # Match the in-memory path: read the provider history regardless of
+        # whichever ingestion most recently classified the source.
         if not self.database_url:
             output: dict[str, dict[str, Any]] = {}
             for run in sorted(self._ingestion_runs.values(), key=lambda item: item["started_at"]):
@@ -2256,7 +2260,6 @@ class Database:
                     CASE WHEN run.status = 'failed' THEN run.error_summary END AS last_error
                 FROM data_sources source
                 JOIN ingestion_runs run ON run.source_id = source.id
-                WHERE source.source_type = 'market_data'
                 ORDER BY source.code, run.started_at DESC
                 """
             ).fetchall()
