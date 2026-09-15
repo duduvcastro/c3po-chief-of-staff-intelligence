@@ -40,6 +40,7 @@ MARKET_SPECS = (
     MarketSpec("Future Index", "Shanghai", "Shanghai Composite", "000001.SS", "CNY"),
     MarketSpec("Future Index", "US3Y", "US 3-Year Treasury Yield", "US3Y.GBOND", "%", "eodhd_bond", "US3Y.GBOND"),
     MarketSpec("Future Index", "US10Y", "US 10-Year Treasury Yield", "US10Y.GBOND", "%", "eodhd_bond", "US10Y.GBOND"),
+    MarketSpec("Future Index", "US30Y", "US 30-Year Treasury Yield", "US30Y.GBOND", "%", "eodhd_bond", "US30Y.GBOND"),
     MarketSpec("Index", "IBOV", "Ibovespa B3", "^BVSP", "BRL"),
     MarketSpec("Index", "NASDAQ", "Nasdaq Composite", "^IXIC", "USD"),
     MarketSpec("Index", "NYSE", "NYSE Composite", "^NYA", "USD"),
