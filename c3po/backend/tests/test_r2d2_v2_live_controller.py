@@ -260,7 +260,7 @@ def test_live_journal_and_stale_temporary_file(tmp_path, clock):
     receipt = c.step()
     c._persist(receipt)
     c._persist(receipt)
-    assert len((tmp_path / 'policy.json.live.ndjson').read_text().splitlines()) == 2
+    assert len((tmp_path / 'policy.json.live.2026-09-18.ndjson').read_text().splitlines()) == 2
     assert stream.v2_status()["desired_count"] == 1
 
 
@@ -281,3 +281,121 @@ def test_proof_can_start_after_one_poll_plus_small_io_delay(tmp_path, clock):
     now[0] += timedelta(seconds=5.1)
     assert c.step()["status"] == "SUBSCRIPTION_REQUESTED"
     assert c.proof_used
+
+
+
+def test_full_withdrawal_queue_is_compacted_only_in_live_journal(tmp_path,clock):
+    c,stream,saved,now,policy=setup_controller(tmp_path,clock);tmp_path.chmod(0o700)
+    for index in range(18):
+        stream.set_v2_group(['SYNTH',f'X{index}'],capacity=3,ttl=15)
+        for feed in ('quote','trade'):
+            stream._set_feed_state(feed,'connected')
+            stream._v2_sent(feed,{'SYNTH',f'X{index}'},stream._v2_generation)
+            stream._v2_received(feed,'SYNTH')
+    receipt=c.step()
+    assert len(receipt['subscription']['withdrawals'])==16
+    assert len(json.dumps(receipt))>10000
+    c._persist(receipt)
+    status=json.loads((tmp_path/'policy.json.status.json').read_text())
+    assert status==receipt
+    row=json.loads((tmp_path/'policy.json.live.2026-09-18.ndjson').read_text())
+    assert 'withdrawals' not in row['subscription'] and 'feeds_before' not in json.dumps(row)
+    assert row['retained_withdrawal_count']==16
+    assert row['withdrawals_sha256']==digest(receipt['subscription']['withdrawals'])
+    assert row['full_receipt_sha256']==digest(receipt)
+    assert len((tmp_path/'policy.json.live.2026-09-18.ndjson').read_bytes())<=live.LIVE_RECORD_BYTES
+    # A full legacy journal cannot kill a restarted controller in the new format.
+    old=tmp_path/'policy.json.live.ndjson'
+    with old.open('wb') as out:out.truncate(live.LIVE_JOURNAL_BYTES+1)
+    old.chmod(0o600)
+    rebuilt=live.LiveGroupController(c.settings,stream,inventory=c.inventory,
+                                    policy_reader=c.policy_reader,clock=c.clock)
+    rebuilt._persist(rebuilt.step())
+    assert old.stat().st_size==live.LIVE_JOURNAL_BYTES+1
+    assert stream.v2_status()['desired_count']==1
+
+
+def test_live_daily_rotation_preserves_old_day_and_restarts_on_current_day(tmp_path,clock):
+    c,stream,saved,now,policy=setup_controller(tmp_path,clock);tmp_path.chmod(0o700)
+    now[0]=now[0].replace(hour=23,minute=59,second=55)
+    policy['valid_until']=(now[0]+timedelta(days=2)).isoformat()
+    c._persist(c.step())
+    first=tmp_path/'policy.json.live.2026-09-18.ndjson'
+    first_data=first.read_bytes()
+    # Even a full prior day is retained, and cannot block the following day.
+    with first.open('ab') as out:out.truncate(live.LIVE_JOURNAL_BYTES)
+    now[0]+=timedelta(seconds=5)
+    c._persist(c.step())
+    next_day=tmp_path/'policy.json.live.2026-09-19.ndjson'
+    assert len(next_day.read_text().splitlines())==1
+    assert first.stat().st_size==live.LIVE_JOURNAL_BYTES
+    with first.open('rb') as stream_file:assert stream_file.read(len(first_data))==first_data
+    restarted=live.LiveGroupController(c.settings,stream,inventory=c.inventory,
+                                      policy_reader=c.policy_reader,clock=c.clock)
+    restarted._persist(restarted.step())
+    assert len(next_day.read_text().splitlines())==2
+
+
+def test_live_record_bound_supports_ninety_days_at_five_second_cadence(tmp_path,clock):
+    c,stream,saved,now,policy=setup_controller(tmp_path,clock)
+    base=c.step()
+    # Exercise the maximal actual feed fields and changing hashes/counters;
+    # deduplication is not needed for the volume bound to hold.
+    base['subscription']['feeds']={feed:{'connection_generation':999999999,
+        'sent_count':550,'received_count':10**18,'first_sent_at':now[0].isoformat(),
+        'first_received_at':now[0].isoformat(),'last_received_at':now[0].isoformat()}
+        for feed in ('quote','trade')}
+    for day in range(90):
+        row=deepcopy(base);row['at']=(now[0]+timedelta(days=day)).isoformat()
+        row['state_sha']=digest({'day':day});row['subscription']['withdrawals']=[{'feeds_before':{'test':'x'*13000}}]*16
+        encoded=(json.dumps(live.compact_live_receipt(row),sort_keys=True)+'\n').encode()
+        assert len(encoded)<=live.LIVE_RECORD_BYTES
+        assert (86400//live.INTERVAL+2)*len(encoded)<live.LIVE_JOURNAL_BYTES
+    # Even the enforced per-record maximum fits a full day's normal cadence.
+    assert (86400//live.INTERVAL+2)*live.LIVE_RECORD_BYTES<live.LIVE_JOURNAL_BYTES
+
+
+def test_proof_receipt_is_not_compacted_or_rotated(tmp_path,clock):
+    c,stream,saved,now,policy=setup_controller(tmp_path,clock);tmp_path.chmod(0o700)
+    c.proof_used=True
+    receipt={'mode':'PROOF','at':now[0].isoformat(),'subscription':{'withdrawals':[{'feeds_before':{'quote':{'sent_count':1}}}]}}
+    c._persist(receipt)
+    assert json.loads((tmp_path/'policy.json.proof.ndjson').read_text())==receipt
+    assert not list(tmp_path.glob('*.live.*.ndjson'))
+
+
+def test_journal_cap_includes_next_record_and_keeps_existing_receipts(tmp_path,clock,monkeypatch):
+    c,stream,saved,now,policy=setup_controller(tmp_path,clock);tmp_path.chmod(0o700)
+    receipt=c.step();c._persist(receipt)
+    path=tmp_path/'policy.json.live.2026-09-18.ndjson';before=path.read_bytes()
+    monkeypatch.setattr(live,'LIVE_JOURNAL_BYTES',len(before)+1)
+    with pytest.raises(ShadowIntegrityError,match='FULL'):c._persist(receipt)
+    assert path.read_bytes()==before
+
+
+def test_json_failure_is_distinct_and_sanitized(tmp_path,clock):
+    c,stream,saved,now,policy=setup_controller(tmp_path,clock)
+    c.step()
+    def malformed(*args):return json.loads('sensitive-content-never-in-receipt')
+    c.policy_reader=malformed
+    receipt=c.step()
+    assert receipt['status']=='LIVE_POLICY_OR_RELEASE_JSON_INVALID'
+    assert 'sensitive-content' not in json.dumps(receipt)
+    assert stream._desired_symbols()==('OLD',)
+
+
+def test_journal_failure_withdraws_only_v2_without_reinstall_loop(tmp_path,clock,monkeypatch):
+    from contextlib import nullcontext
+    c,stream,saved,now,policy=setup_controller(tmp_path,clock);tmp_path.chmod(0o700)
+    c._persist(c.step())
+    path=tmp_path/'policy.json.live.2026-09-18.ndjson'
+    monkeypatch.setattr(live,'LIVE_JOURNAL_BYTES',path.stat().st_size+1)
+    monkeypatch.setattr(live,'job',lambda:nullcontext(True))
+    step=c.step;calls=[]
+    def once():
+        calls.append(True)
+        return step()
+    monkeypatch.setattr(c,'step',once)
+    c._run()
+    assert len(calls)==1
+    assert stream._desired_symbols()==('OLD',)

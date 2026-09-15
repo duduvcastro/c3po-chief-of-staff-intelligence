@@ -30,6 +30,8 @@ from .r2d2_v2_store import ShadowIntegrityError, digest, utc
 ORDER_SHA = "1ad8b90cfab651823eb677b830a0078d10c17447575c8d813c3883a718579d8e"
 INTERVAL = 5.0
 LEASE_SECONDS = 15.0
+LIVE_JOURNAL_BYTES = 64 * 1048576
+LIVE_RECORD_BYTES = 3072
 logger = logging.getLogger(__name__)
 
 
@@ -95,6 +97,34 @@ def read_live_inventory(settings: Any, policy: dict, now: datetime) -> tuple[Any
     if row is not None and row[0] is None:
         raise ShadowIntegrityError("LIVE_STATE_TOO_LARGE")
     return release, ({"state": row[0], "state_sha": row[1]} if row else None)
+
+
+def compact_live_receipt(receipt: dict) -> dict:
+    """Periodic evidence without repeatedly embedding the withdrawal history.
+
+    The atomic status file keeps the full receipt. PROOF keeps its full journal.
+    LIVE keeps linkage hashes, current group/feed evidence and the receipt time;
+    history hashes are commitments, not a claim that the full history is here.
+    """
+    subscription = receipt.get("subscription") or {}
+    compact = {key: receipt[key] for key in
+               ("at", "policy_sha", "mode", "state_sha", "status", "readiness", "disk_written")
+               if key in receipt}
+    compact["schema"] = "R2D2_V2_LIVE_RECEIPT_COMPACT_V1"
+    compact["full_receipt_sha256"] = digest(receipt)
+    compact["subscription"] = {key: subscription[key] for key in
+        ("status", "generation", "desired_count", "symbols_sha256", "incremental_count",
+         "capacity", "provider_ack_verified", "readiness") if key in subscription}
+    compact["subscription"]["feeds"] = {feed: {key: values[key] for key in
+        ("connection_generation", "sent_count", "first_sent_at", "first_received_at",
+         "last_received_at", "received_count") if key in values}
+        for feed, values in subscription.get("feeds", {}).items() if feed in {"quote", "trade"}}
+    withdrawals = subscription.get("withdrawals", [])
+    compact["retained_withdrawal_count"] = len(withdrawals)
+    compact["withdrawals_sha256"] = digest(withdrawals)
+    if receipt.get("subscription_before_drop") is not None:
+        compact["subscription_before_drop_sha256"] = digest(receipt["subscription_before_drop"])
+    return compact
 
 
 class LiveGroupController:
@@ -190,6 +220,8 @@ class LiveGroupController:
                 code = "LIVE_PROOF_ALREADY_USED"
             elif isinstance(exc, FileNotFoundError):
                 code = "LIVE_POLICY_OR_RELEASE_MISSING"
+            elif isinstance(exc, json.JSONDecodeError):
+                code = "LIVE_POLICY_OR_RELEASE_JSON_INVALID"
             receipt = {"at": now.isoformat(), "status": code, "readiness": "BLOCKED",
                        "subscription_before_drop": before_drop, "subscription": self.stream.v2_status()}
         self.last_receipt = receipt
@@ -211,14 +243,23 @@ class LiveGroupController:
                 os.fsync(out.fileno())
             os.replace(temp, target)
             if receipt.get("mode") in {"PROOF", "LIVE"} or self.proof_used or self.policy_identity:
-                suffix = ".proof.ndjson" if self.proof_used else ".live.ndjson"
+                proof = self.proof_used or receipt.get("mode") == "PROOF"
+                # UTC day comes from the actual observation clock, not policy
+                # start or a resettable process uptime. Never delete old days.
+                day = utc(receipt["at"]).date().isoformat()
+                suffix = ".proof.ndjson" if proof else f".live.{day}.ndjson"
+                record = receipt if proof else compact_live_receipt(receipt)
+                encoded = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
+                if not proof and len(encoded) > LIVE_RECORD_BYTES:
+                    raise ShadowIntegrityError("LIVE_RECEIPT_TOO_LARGE")
+                limit = 1048576 if proof else LIVE_JOURNAL_BYTES
                 journal = path.with_name(path.name + suffix)
                 fd = os.open(journal, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
-                with os.fdopen(fd, "w") as out:
+                with os.fdopen(fd, "wb") as out:
                     info = os.fstat(out.fileno())
-                    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_size > (1048576 if self.proof_used else 64*1048576):
+                    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_size + len(encoded) > limit:
                         raise ShadowIntegrityError("LIVE_PROOF_RECEIPT_INVALID_OR_FULL")
-                    out.write(json.dumps(receipt, sort_keys=True) + "\n")
+                    out.write(encoded)
                     out.flush()
                     os.fsync(out.fileno())
         finally:

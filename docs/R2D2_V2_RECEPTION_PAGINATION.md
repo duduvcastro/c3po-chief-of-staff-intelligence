@@ -1,6 +1,6 @@
 # Reception-cut pagination — PR #408
 
-Status: implemented for re-audit, **NO-GO remains**. This is not an operational
+Status: implementation awaiting exact-head re-audit; **not operational GO**. This is not an operational
 release or permission to merge/subscribe. Design reference:
 `98da894d51fc6af7f011c6f0764604000e183b6651172dca072433b5251d9720`.
 It supersedes the earlier staging proposal; there is no staging or second cursor.
@@ -36,35 +36,43 @@ Oversized complete records are hashed in a streaming pass without retaining
 arbitrarily large frame bodies. Neither skipping nor decoding proves a complete
 tape, regular BAR coverage, or live capacity.
 
-## Three contradictions requiring disposition before GO
+## Qualified guarantees accepted by Fable
 
-1. **Universal snapshot equivalence is false for late arrivals.** Quote Q has
-   `at=received=t`; trade S has `at=t, received=t+1`; another quote is at t+2.
-   A full snapshot yields S,Q,Q under the current priority key. Budget-two
-   reception pages yield Q followed by S,Q. Tests execute both the source
-   ordering and collector and obtain different sequence/state hashes. A
-   compatible, ordered pre-open fixture *does* produce identical event and full
-   state hashes for page targets 1,3,7,16384. That conditional result is not a
-   proof of the universal requirement. The collector receipt clock is never W.
-2. **Fixed per-file shares do not guarantee 3 pages for 3 budgets.** Budget two,
-   five early quotes in one file and one later trade in the other require five
-   pages under the specified min-horizon algorithm. A balanced backlog of
-   49,152 valid frames converges in exactly three pages of 16,384. The universal
-   claim would require a changed allocation algorithm or a qualified bound.
-3. **An indivisible reception group can exceed the page target.** Splitting a
-   group with equal reception could hide its STOP in the next page. The reader
-   extends through W and records `target_exceeded`, so it never permanently
-   refuses that group by volume. This treats 16,384 as a target, not a hard
-   memory bound; a very large group can exceed the cycle's intended latency.
-   A hard 16,384 cap plus complete ties plus unconditional progress cannot all
-   hold for a group of 16,385 records. No production throughput GO is claimed.
+Disposition SHA256
+`849d6879ff0f11ba6bb8af4268a40d3ca93b2301b386e2808ef77d8161699488`
+qualifies the original design without requiring an allocation change:
 
-Executable counterexamples are in `tests/test_r2d2_v2_raw_source.py` with names
-`test_design_counterexample_*`. They assert the contradictions, so their PASS
-is **not** evidence that the contradicted requirement passes. Also covered:
-cross-feed STOP at W vs after W, equal-reception boundaries, decreasing receipt
-clocks, page/cycle caps, exact replay after a discarded or failed second page,
-non-tick/quarantine followed by valid tick, and cursor/P5 integrity.
+- **Reception-prefix closure** (fechamento por prefixo de recepção): for the
+  writer's nondecreasing reception stream, all retained files deliver their
+  contiguous prefix through the same W. The comparison is to a schedule of
+  snapshots at those cuts, not one uncut snapshot containing later arrivals.
+  `test_reception_prefix_closure_and_equivalent_cut_snapshot_schedule` builds
+  cut-size snapshots independently from original frame timestamps/lengths and
+  compares exact envelopes, cursors and full collector state SHA at targets
+  1/2/3/7, including a trade with an earlier event clock. Both runs use identical
+  actual observation clocks; neither substitutes W for the collector clock.
+- **Monotonic progress** (progresso monotônico): each nondeferred page consumes
+  at least one frame, offsets never decrease, and draining terminates. With
+  initial share=max(1,target/F), the qualified bound is the sum over files of
+  ceil(pending/share); a drained file can subsequently increase the share.
+  `test_monotonic_progress_and_qualified_convergence_bound` covers uneven and
+  multiple-file inventories. Balanced 49,152 valid frames still need exactly
+  three 16,384-record pages. Three pages is not the universal bound.
+- **Complete tied groups** (grupo empatado íntegro): 16,384 is a target. A group
+  at W stays together and `target_exceeded` records oversized pages. The test
+  `test_tied_reception_group_is_complete_and_target_exceeded_is_counted` checks
+  both page membership and the count of pages exceeding the target. A page
+  already in progress is not preempted at500ms; operational latency/retention
+  still need observation before activation.
+
+The earlier `test_design_counterexample_*` tests remain as regressions against
+reintroducing the rejected universal claims: late arrivals can change ordering
+versus an uncut snapshot; fixed shares can take more than three pages. Those
+results no longer constitute unresolved design objections after this disposition.
+Nonmonotonic reception remains a counted writer diagnostic/late-arrival case,
+not fabricated feed completeness. It is tested separately, including restart.
+Other regressions cover replay after discard/failed commit, transient append,
+P5 cursor integrity, non-tick/quarantine continuation and actual clock checks.
 
 ## Read-only real spool decoding
 

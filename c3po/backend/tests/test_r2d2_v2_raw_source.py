@@ -601,3 +601,80 @@ def test_partial_later_page_keeps_prior_commits_and_reports_backlog(source,monke
     state=collector.store.read(collector.release.epoch)['state']
     assert state['raw_source_cursor']['files'][PART]['sequence']==4
     assert state['data_issues']==[]
+
+
+@pytest.mark.parametrize('budget',[1,2,3,7])
+def test_reception_prefix_closure_and_equivalent_cut_snapshot_schedule(source,monkeypatch,budget):
+    # Independent prefix oracle: use original receipt timestamps/byte lengths,
+    # not the reader's selected events, to form the comparison snapshots.
+    frames={PART:[line(99,received=AT+timedelta(milliseconds=i)) for i in (0,2,4,7)],
+        PART.replace('quote','trade'):[line(90,feed='trade',received=AT+timedelta(milliseconds=i)) for i in (0,1,4,8)]}
+    for path,rows in frames.items():write(source,b''.join(rows),path)
+    batches=pages(source,monkeypatch,budget)
+    previous={};snapshot_cursor={};cut_before=None
+    collectors=[seed_collector(source),seed_collector(source)]
+    for page_index,batch in enumerate(batches):
+        cutoff=batch['page']['cutoff_received_at']
+        if cutoff is not None:
+            cut=datetime.fromisoformat(cutoff)
+            if cut_before is not None:assert cut>cut_before
+            cut_before=cut
+        snapshot=deepcopy(batch['snapshot'])
+        for path,rows in frames.items():
+            expected=sum(len(row) for row in rows if cutoff is None or
+                datetime.fromisoformat(json.loads(row)['received_at'])<=datetime.fromisoformat(cutoff))
+            assert batch['cursor']['files'][path]['offset']==expected
+            assert expected>=previous.get(path,0)
+            previous[path]=expected
+            snapshot[path]['size']=expected
+        assert all(cutoff is None or datetime.fromisoformat(event['source_at'])<=datetime.fromisoformat(cutoff)
+                   for event in batch['events'])
+        # A full snapshot with exactly these cut sizes must return byte-for-byte
+        # identical envelopes and cursor. Late trade clocks are left unchanged.
+        monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',16384)
+        equivalent=source.prepare_events(NOW,snapshot_cursor,snapshot=snapshot)
+        assert not equivalent['diagnostics']
+        assert equivalent['events']==batch['events']
+        assert equivalent['raw_receipts']==batch['raw_receipts']
+        assert equivalent['cursor']==batch['cursor']
+        for collector,offered in zip(collectors,(batch,equivalent)):
+            observed=NOW+timedelta(microseconds=page_index+1)
+            before=collector.store.read(collector.release.epoch)['state'].get('raw_source_cursor',{})
+            collector.store.atomic(collector.release.epoch,collector._initial(),
+                lambda state:collector._cycle_with_cursor(state,None,offered['events'],[],observed,
+                    causal=None,cursor=before,next_cursor=offered['cursor'],
+                    raw_receipts=offered['raw_receipts'],skipped_receipts=offered['skipped_receipts'],
+                    raw_page=offered['page'],continuation=page_index>0),observed)
+        snapshot_cursor=equivalent['cursor']
+    assert collectors[0].store.read(collectors[0].release.epoch)['state_sha']==collectors[1].store.read(collectors[1].release.epoch)['state_sha']
+
+
+@pytest.mark.parametrize('counts,budget',[( (5,1),2),((13,2,7),4),((1,1,1),1),((9,),3)])
+def test_monotonic_progress_and_qualified_convergence_bound(source,monkeypatch,counts,budget):
+    from math import ceil
+    paths=[]
+    for index,count in enumerate(counts):
+        path=PART.replace('00001',f'{index+1:05d}');paths.append(path)
+        write(source,b''.join(line(99,received=AT+timedelta(milliseconds=index*50+i)) for i in range(count)),path)
+    batches=pages(source,monkeypatch,budget)
+    share=max(1,budget//len(counts));bound=sum(ceil(count/share) for count in counts)
+    assert len(batches)<=bound
+    assert sum(page['page']['record_count'] for page in batches)==sum(counts)
+    last={path:0 for path in paths}
+    for page in batches:
+        assert page['page']['record_count']>=1
+        current={path:page['cursor']['files'][path]['offset'] for path in paths}
+        assert all(current[path]>=last[path] for path in paths)
+        assert any(current[path]>last[path] for path in paths)
+        last=current
+    assert not batches[-1]['has_more']
+
+
+def test_tied_reception_group_is_complete_and_target_exceeded_is_counted(source,monkeypatch):
+    write(source,b''.join(line(99) for _ in range(4))+line(99,received=AT+timedelta(seconds=1)))
+    write(source,line(90,feed='trade')+line(99,feed='trade',received=AT+timedelta(seconds=1)),
+          PART.replace('quote','trade'))
+    batches=pages(source,monkeypatch,2)
+    assert [b['page']['record_count'] for b in batches]==[5,2]
+    assert sum(b['page']['target_exceeded'] for b in batches)==1
+    assert {event['source_at'] for event in batches[0]['events']}=={AT.isoformat()}
