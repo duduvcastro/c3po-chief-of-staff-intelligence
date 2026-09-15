@@ -1881,7 +1881,7 @@ function formatBytes(value: number | null) {
 }
 
 function formatLiveMarketPrice(item: LiveMarketItem) {
-  const digits = item.group === "Currencies" ? 4 : ["US3Y", "US10Y"].includes(item.symbol) ? 3 : item.symbol === "BONK" ? 8 : ["SOL", "DOGE"].includes(item.symbol) ? 4 : 2;
+  const digits = item.group === "Currencies" ? 4 : ["US3Y", "US10Y", "US30Y"].includes(item.symbol) ? 3 : item.symbol === "BONK" ? 8 : ["SOL", "DOGE"].includes(item.symbol) ? 4 : 2;
   return new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits
@@ -5039,6 +5039,7 @@ const marketIndexMarks: Record<string, string> = {
   Shanghai: "/market-marks/shanghai.svg",
   US3Y: "/market-marks/us-treasury.svg",
   US10Y: "/market-marks/us-treasury.svg",
+  US30Y: "/market-marks/us-treasury.svg",
   IBOV: "/market-marks/b3.svg",
   NASDAQ: "/market-marks/nasdaq.svg",
   NYSE: "/market-marks/nyse.svg"
