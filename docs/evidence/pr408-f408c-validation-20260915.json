@@ -1,0 +1,33 @@
+{
+  "audit_sha256": "70ba8bcef63910cf447572e904849dbfeb5b1a64cbc4de692a9cf5590e99c8c7",
+  "backend": {
+    "passed": 2656,
+    "skipped": 6,
+    "warnings": 3
+  },
+  "code_revision": "ba3542770c78d367f1489538604535e0474ce286",
+  "declared": [
+    "c5 actual commit clocks",
+    "c7 retention and full cursor storage"
+  ],
+  "design_rev1a_sha256": "493e40efbc38e0afd55c7ee4f275694b88eb549cf5eebcdbbfac18a55d143118",
+  "files": {
+    "full-backend-c.txt": "c10fa913cf7c7be83b36fdfc1888d6ce8e5e583cf558dbfdeed88e1de2c4707b",
+    "pyright-c.txt": "6d88a1b220adb7a3d62092b6e38431f0b3fe8babe9864fab90e5849766260332",
+    "read-real-exact-head.py": "7af09254dbcbbd74c336f5b4852b9362b91f4527ecc203b68c9d5a2c7d2f86dc"
+  },
+  "fixed": [
+    "c1",
+    "c2",
+    "c3",
+    "c4",
+    "c6",
+    "c8 continuation integrity"
+  ],
+  "merge_authorized": false,
+  "production_mutated": false,
+  "provider_calls": false,
+  "pyright_errors": 0,
+  "schema": "PR408_F408C_LOCAL_VALIDATION_V1",
+  "technical_go": false
+}

@@ -91,6 +91,26 @@ def _initial(initial: dict) -> dict:
             "sequence": 0, "journal_head": ""}
 
 
+def verify_journal(row: dict, records: list[dict]) -> None:
+    """Verify the complete retained chain against one consistent state read."""
+    if digest(row["state"]) != row["state_sha"]:
+        raise ShadowIntegrityError("STATE_HASH_MISMATCH")
+    head, keys = "", set()
+    epoch = row["state"]["epoch"]
+    for sequence, record in enumerate(records, 1):
+        if (record.get("epoch") != epoch or record.get("sequence") != sequence
+                or record.get("previous_sha") != head
+                or record.get("journal_key") in keys
+                or record.get("payload", {}).get("journal_key") != record.get("journal_key")):
+            raise ShadowIntegrityError("JOURNAL_CHAIN_INVALID")
+        if digest({k: v for k, v in record.items() if k != "record_sha"}) != record.get("record_sha"):
+            raise ShadowIntegrityError("JOURNAL_HASH_MISMATCH")
+        keys.add(record["journal_key"])
+        head = record["record_sha"]
+    if head != row["journal_head"]:
+        raise ShadowIntegrityError("JOURNAL_HEAD_MISMATCH")
+
+
 class MemoryShadowStore:
     """Inject this explicitly for synthetic fixtures, never as a DB fallback."""
     def __init__(self):
@@ -126,6 +146,15 @@ class MemoryShadowStore:
     def journal(self, epoch: str) -> list:
         with self._lock:
             return deepcopy(self._journal.get(epoch, []))
+
+    def read_with_journal(self, epoch: str) -> tuple[dict | None, list[dict]]:
+        with self._lock:
+            row = deepcopy(self._rows.get(epoch))
+            records = deepcopy(self._journal.get(epoch, []))
+            if row is not None:
+                _namespace(epoch, row["state"])
+                verify_journal(row, records)
+            return row, records
 
 
 class PostgresShadowStore:
@@ -179,3 +208,26 @@ class PostgresShadowStore:
         if digest(row["state"]) != row["state_sha"]:
             raise ShadowIntegrityError("STATE_HASH_MISMATCH")
         return row
+
+    def read_with_journal(self, epoch: str) -> tuple[dict | None, list[dict]]:
+        """Read-only consistent snapshot; never lock or advance the collector."""
+        validate_epoch(epoch)
+        with self.connection_factory() as connection:
+            if connection is None:
+                raise ShadowIntegrityError("PERSISTENT_DATABASE_REQUIRED")
+            connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            raw = connection.execute("""SELECT state,state_sha,manifest_sha,version,journal_head
+                FROM r2d2_v2_shadow_epochs WHERE epoch=%s""", (epoch,)).fetchone()
+            if raw is None:
+                return None, []
+            row = dict(zip(("state", "state_sha", "manifest_sha", "version", "journal_head"), raw))
+            records = []
+            for values in connection.execute("""SELECT epoch,sequence,journal_key,recorded_at,payload,
+                previous_sha,record_sha FROM r2d2_v2_shadow_journal WHERE epoch=%s ORDER BY sequence""", (epoch,)).fetchall():
+                record = dict(zip(("epoch", "sequence", "journal_key", "recorded_at", "payload",
+                                   "previous_sha", "record_sha"), values))
+                record["recorded_at"] = utc(record["recorded_at"]).isoformat()
+                records.append(record)
+        _namespace(epoch, row["state"])
+        verify_journal(row, records)
+        return row, records

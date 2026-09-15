@@ -190,6 +190,8 @@ class Settings(BaseSettings):
     r2d2_fast_risk_atr_max_age_seconds: float = 30.0
     r2d2_entry_score_adapter_enabled: bool = False
     # Independent V2 process; no collector or release is enabled by this change.
+    r2d2_v2_live_policy_file: str = ""
+    r2d2_v2_live_policy_sha: str = ""
     r2d2_v2_shadow_enabled: bool = False
     r2d2_v2_shadow_source_dir: Path = Path("/app/data/r2d2-v2-source")
     r2d2_v2_shadow_release_file: Path = Path("/app/data/r2d2-v2-release.json")

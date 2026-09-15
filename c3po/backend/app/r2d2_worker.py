@@ -20,6 +20,7 @@ from .microstructure_telemetry import MicrostructureResourceTelemetry
 from .one_pager import OnePagerService
 from .observability import init_sentry
 from .r2d2 import R2D2PaperService
+from .r2d2_v2_live_controller import LiveGroupController
 
 
 logging.basicConfig(
@@ -177,6 +178,8 @@ def main() -> None:
             fast_risk_thread.start()
         else:
             logger.info("R2D2 fast risk watcher disabled by feature flag")
+    live_controller = LiveGroupController(settings, stream)
+    live_controller.start()
     try:
         while True:
             with job() as admitted:
@@ -232,6 +235,7 @@ def main() -> None:
                     logger.exception("Unhandled R2D2 worker error")
             time.sleep(20)
     finally:
+        live_controller.stop()
         risk_stop.set()
         if risk_thread:
             risk_thread.join(timeout=10)

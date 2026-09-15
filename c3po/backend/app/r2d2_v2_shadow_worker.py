@@ -20,6 +20,7 @@ from .r2d2_v2_calendar import ShadowCalendar
 from .r2d2_v2_causal_audit import PostgresCausalReceiptVerifier
 from .r2d2_v2_shadow import Release, ShadowCollector, export_cohort
 from .r2d2_v2_sources import FileShadowSource, capabilities
+from .r2d2_v2_raw_source import SpoolShadowSource
 from .r2d2_v2_store import PostgresShadowStore, ShadowIntegrityError, canonical
 
 logger = logging.getLogger(__name__)
@@ -64,9 +65,14 @@ def build_collector(settings, *, now: datetime) -> ShadowCollector | None:
     # that routine owns application-wide migrations/backfills outside V2.
     from .database import Database
     database = Database(settings)
+    source_args = {"causal_receipt_verifier": PostgresCausalReceiptVerifier(database.connection)}
+    source = (SpoolShadowSource(settings.r2d2_v2_shadow_source_dir,
+                  raw_root=settings.r2d2_microstructure_raw_dir,
+                  first_session=release.first_session, calendar=calendar, **source_args)
+              if release.mode == "CERTIFIED"
+              else FileShadowSource(settings.r2d2_v2_shadow_source_dir, **source_args))
     return ShadowCollector(PostgresShadowStore(database.connection),
-                           FileShadowSource(settings.r2d2_v2_shadow_source_dir,
-                               causal_receipt_verifier=PostgresCausalReceiptVerifier(database.connection)),
+                           source,
                            release, calendar=calendar)
 
 
@@ -98,10 +104,11 @@ def main(argv: list[str] | None = None) -> int:
         print('{"status":"OFF","collection":false}')
         return 0
     if args.export_cohort:
-        saved = collector.store.read(collector.release.epoch)
+        saved, journal = collector.store.read_with_journal(collector.release.epoch)
         if saved is None:
             raise ShadowIntegrityError("EPOCH_NOT_FOUND")
-        _private_export(args.output, export_cohort(saved["state"], args.export_cohort, now=now, calendar=collector.calendar))
+        _private_export(args.output, export_cohort(saved["state"], args.export_cohort, now=now,
+                        calendar=collector.calendar, archive=(saved, journal)))
         print('{"status":"EXPORTED","statistical_verdict":"NOT_COMPUTED"}')
         return 0
     logging.basicConfig(level=logging.INFO)

@@ -1,7 +1,7 @@
 """Strict, pure collector-to-inference boundary for signed E1 rev2 + E3 rev3.
 
 No estimator, calendar discovery, clock or I/O; only pure package constants. The caller
-retains the hashed collector export (including all five outcome categories).
+retains the hashed collector export (including the EOD outcome category).
 This module only validates finalized sufficient statistics and groups the fixed
 calendar into ten-session batches. Empty sessions stay in their original slots;
 empty batch denominators are passed through, never imputed, merged or removed.
@@ -21,12 +21,13 @@ from .r2d2_v2_earnings_package import (
     EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA, EXPORT_SCHEMA,
     INFERENCE_SCHEMA, implementation_contract_sha,
 )
+from .r2d2_v2_eod import AMENDMENT_SHA as EOD_AMENDMENT_SHA
 
 MANIFEST_SHA = "eabbe18057b7e5823535dd61e93c5190b33f8c7ac80b9118229b7908f974f4d0"
 AMENDMENT_SHA = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
 SESSION_FIELDS = ("upper_e", "lower_e", "upper_c", "lower_c", "pnl_sum_usd",
                   "pnl_count", "unobservable_e", "unobservable_c", "indeterminate_pnl")
-_CATEGORIES = ("upper_first", "lower_first", "ambiguous", "time_or_event_exit", "unobservable")
+_CATEGORIES = ("upper_first", "lower_first", "ambiguous", "time_or_event_exit", "eod_positive_exit", "unobservable")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _REVISION = re.compile(r"[0-9a-f]{40}\Z")
 
@@ -169,7 +170,11 @@ class InferenceInput:
 
 
 def _session(row: Mapping[str, Any], day: str, index: int) -> SessionStatistics:
-    _require(row.get("schema_version") == "R2D2_V2_SESSION_STATISTICS_v1", "SESSION_SCHEMA_MISMATCH")
+    version = row.get("schema_version")
+    _require(version in {"R2D2_V2_SESSION_STATISTICS_v1", "R2D2_V2_SESSION_STATISTICS_v2"}, "SESSION_SCHEMA_MISMATCH")
+    eod = version == "R2D2_V2_SESSION_STATISTICS_v2"
+    if eod:
+        _require(row.get("eod_amendment_sha") == EOD_AMENDMENT_SHA, "EOD_AMENDMENT_MISMATCH")
     _require(_day(row.get("session_date")) == day, "PROGRAMMED_SESSION_MISMATCH")
     _require(_count(row.get("programmed_session_index")) == index, "PROGRAMMED_SESSION_INDEX_MISMATCH")
     _require(row.get("finalized") is True, "SESSION_NOT_FINALIZED")
@@ -179,7 +184,9 @@ def _session(row: Mapping[str, Any], day: str, index: int) -> SessionStatistics:
     counts = {}
     for arm in ("ELIGIBLE", "CONTROL"):
         source = _mapping(arms.get(arm), "ARM_REQUIRED")
-        values = {key: _count(source.get(key)) for key in (*_CATEGORIES, "episodes", "pending")}
+        values = {key: _count(source.get(key, 0) if key == "eod_positive_exit" and not eod else source.get(key))
+                  for key in (*_CATEGORIES, "episodes", "pending")}
+        _require(eod or values["eod_positive_exit"] == 0, "EOD_REQUIRES_AMENDED_SESSION_SCHEMA")
         _require(sum(values[key] for key in _CATEGORIES) + values["pending"] == values["episodes"],
                  "ARM_COUNT_IDENTITY_FAILED")
         _require(values["pending"] == 0, "RESEARCH_PENDING")

@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 import json
 import re
+import time
 from typing import Any
 
 from .r2d2_v2_calendar import NEW_YORK, ShadowCalendar
@@ -24,7 +25,7 @@ from .r2d2_v2_earnings_package import (
     implementation_package_sha as current_package_sha,
 )
 from .r2d2_v2_portfolio import PortfolioBatch, apply_events, export_session_statistics, new_portfolio, register_candidate
-from .r2d2_v2_portfolio import earnings_public_sessions
+from .r2d2_v2_portfolio import earnings_public_sessions, eod_public_sessions
 from .r2d2_v2_sources import MANIFEST_SHA
 from .r2d2_v2_store import ShadowIntegrityError, canonical, digest, utc, validate_epoch
 
@@ -373,11 +374,51 @@ class ShadowCollector:
         if in_window and causal is None:
             causal = self.source.causal_list(self.release.epoch, day, now, self.calendar)
         batch = self.source.snapshot(now) if in_window and causal is not None and causal.get("status") == "AVAILABLE" else None
-        events = self.source.events(now) if self.release.mode == "CERTIFIED" else []
-        event_diagnostics = getattr(self.source, "last_event_diagnostics", []) if self.release.mode == "CERTIFIED" else []
+        drain_started = time.monotonic()
+        prepared = None
+        cursor = None
+        if self.release.mode == "CERTIFIED" and hasattr(self.source, "prepare_events"):
+            saved = self.store.read(self.release.epoch)
+            cursor = saved["state"].get("raw_source_cursor", {}) if saved else {}
+            prepared = self.source.prepare_events(now, cursor, read_clock=self.clock if live else None)
+            events, event_diagnostics = prepared["events"], prepared["diagnostics"]
+        else:
+            events = self.source.events(now) if self.release.mode == "CERTIFIED" else []
+            event_diagnostics = getattr(self.source, "last_event_diagnostics", []) if self.release.mode == "CERTIFIED" else []
         result = self.store.atomic(self.release.epoch, self._initial(),
-            lambda state: self._cycle(state, batch, events, event_diagnostics,
-                                      utc(self.clock()) if live else now, causal=causal), now)
+            lambda state: self._cycle_with_cursor(state, batch, events, event_diagnostics,
+                utc(self.clock()) if live else now, causal=causal, cursor=cursor,
+                next_cursor=prepared["cursor"] if prepared is not None else None,
+                raw_receipts=prepared.get("raw_receipts", {}) if prepared else {},
+                skipped_receipts=prepared.get("skipped_receipts", []) if prepared else [],
+                raw_page=prepared.get("page") if prepared else None), now)
+        if prepared is not None:
+            from .r2d2_v2_raw_source import MAX_PAGES_PER_CYCLE, MAX_DRAIN_SECONDS
+            pages = 1
+            while (prepared.get("has_more") and not prepared["diagnostics"]
+                   and pages < MAX_PAGES_PER_CYCLE
+                   and time.monotonic() - drain_started < MAX_DRAIN_SECONDS):
+                saved = self.store.read(self.release.epoch)
+                next_cursor = saved["state"].get("raw_source_cursor", {})
+                if next_cursor != prepared["cursor"] or next_cursor == cursor:
+                    break  # Unacknowledged input is never skipped or spun on.
+                cursor = next_cursor
+                now = utc(self.clock()) if live else now
+                if saved["state"].get("last_cycle_at") and now <= utc(saved["state"]["last_cycle_at"]):
+                    result["raw_drain_deferred"] = "COLLECTOR_CLOCK_NOT_ADVANCED"
+                    break  # Never invent a receipt timestamp to bypass priority.
+                page = self.source.prepare_events(now, cursor, snapshot=prepared["snapshot"], read_clock=self.clock if live else None)
+                prepared = page
+                result = self.store.atomic(self.release.epoch, self._initial(),
+                    lambda state: self._cycle_with_cursor(state, None, page["events"],
+                        page["diagnostics"], utc(self.clock()) if live else now,
+                        causal=None, cursor=cursor, next_cursor=page["cursor"],
+                        raw_receipts=page.get("raw_receipts", {}),
+                        skipped_receipts=page.get("skipped_receipts", []),
+                        raw_page=page.get("page"), continuation=True), now)
+                pages += 1
+            result["raw_pages"] = pages
+            result["raw_backlog_pending"] = bool(prepared.get("has_more", bool(prepared["diagnostics"])))
         if causal is not None and causal.get("status") == "AVAILABLE":
             # Only after atomic journal persistence discard the raw registry and
             # daily bytes. Restart re-verifies the file + external receipts;
@@ -388,7 +429,7 @@ class ShadowCollector:
             self._causal_cache = {day: {key: value for key, value in causal.items() if key in keep}}
         return result
 
-    def _cycle(self, state, batch, events, event_diagnostics, now, *, causal=None):
+    def _validate_state(self, state, now):
         if (state.get("schema") != SCHEMA or state.get("manifest_sha") != SIGNED_MANIFEST_SHA
                 or state.get("signed_manifest_sha") != SIGNED_MANIFEST_SHA
                 or state.get("amendment_sha") != AMENDMENT_SHA
@@ -404,6 +445,85 @@ class ShadowCollector:
             raise ShadowIntegrityError("CALENDAR_VERSION_CHANGED")
         if state["last_cycle_at"] and now < utc(state["last_cycle_at"]):
             raise ShadowIntegrityError("COLLECTOR_CLOCK_REVERSED")
+
+    def _cycle_with_cursor(self, state, batch, events, diagnostics, now, *, causal,
+                           cursor, next_cursor, raw_receipts=None, skipped_receipts=None,
+                           raw_page=None, continuation=False):
+        self._validate_state(state, now)
+        if cursor is not None and state.get("raw_source_cursor", {}) != cursor:
+            raise ShadowIntegrityError("RAW_SOURCE_CURSOR_CONCURRENT_CHANGE")
+        transient = {"RAW_APPEND_IN_PROGRESS", "RAW_CHANGED_DURING_READ", "RAW_TRUNCATED_DURING_READ",
+                     "RAW_RECEIPT_AHEAD_OF_POLL"}
+        deferred = bool(diagnostics) and all(item.get("code") in transient for item in diagnostics)
+        poll_journal = []
+        source_gaps = []
+        codes = [item["code"] for item in diagnostics] if deferred else []
+        count = 0
+        if deferred:
+            previous = state.get("raw_poll_deferrals", {})
+            count = previous.get("consecutive", 0) + 1
+            state["raw_poll_deferrals"] = {"consecutive": count,
+                "first_at": previous.get("first_at", now.isoformat()), "codes": codes}
+            poll_journal.append({"journal_key": "raw-poll-deferred:" + digest([now.isoformat(), count, codes]),
+                "type": "RAW_POLL_DEFERRED", "consecutive": count, "codes": codes, "at": now.isoformat()})
+            if count >= 3:
+                source_gaps.append({"instrument": None, "reason": "RAW_POLL_PERSISTENT_FAILURE"})
+            # Keep clocks, capture and stale evidence checks running. Only raw
+            # event application/cursor advancement is deferred.
+            events, diagnostics, next_cursor = [], [], cursor
+        elif state.pop("raw_poll_deferrals", None) is not None:
+            poll_journal.append({"journal_key": "raw-poll-recovered:" + now.isoformat(),
+                                 "type": "RAW_POLL_RECOVERED", "at": now.isoformat()})
+        if not deferred:
+            source_gaps.extend({"instrument": row["instrument_key"],
+                "reason": "RAW_QUARANTINE_" + row["code"]}
+                for row in (skipped_receipts or [])
+                if row.get("disposition") == "QUARANTINED" and row.get("instrument_key"))
+        state, journals, response = self._cycle(state, batch, events, diagnostics, now,
+            causal=causal, source_gaps=source_gaps, suppress_capture=continuation,
+            count_cycle=not continuation)
+        # A failed transition rolls back both receipts and cursor. No cursor
+        # advances if events were not processed (for example before session 1).
+        if (cursor is not None and not diagnostics and next_cursor != cursor
+                and all(state["event_receipts"].get(item["event_id"]) == item["envelope_sha256"]
+                        for item in events)):
+            state["raw_source_cursor"] = next_cursor
+            # Cursor + receipts are journaled in the same transaction. Keep
+            # per-tick dedup in that archive, not an ever-growing epoch JSONB
+            # map rewritten on every poll. Restart dedup uses the durable cursor.
+            for identity, receipt in (raw_receipts or {}).items():
+                if state["event_receipts"].get(identity) != receipt:
+                    raise ShadowIntegrityError("RAW_SOURCE_ACK_MISMATCH")
+                del state["event_receipts"][identity]
+            journals.append({"journal_key": "raw-cursor:" + digest(next_cursor),
+                "type": "SOURCE_CURSOR", "previous_sha256": digest(cursor),
+                "cursor_sha256": digest(next_cursor), "cursor": next_cursor,
+                "raw_receipts": raw_receipts or {},
+                "skipped_receipts": skipped_receipts or [],
+                "skipped_receipts_sha256": digest(skipped_receipts or []),
+                "page": raw_page,
+                "observed_at": now.isoformat()})
+            if state["last_cycle_at"] != now.isoformat():
+                state["last_cycle_at"] = now.isoformat()
+                if not continuation:
+                    state["cycle_count"] += 1
+            response = public_summary(state)
+            response["observed_at"] = now.isoformat()
+        if poll_journal and state["last_cycle_at"] != now.isoformat():
+            state["last_cycle_at"] = now.isoformat()
+            if not continuation:
+                state["cycle_count"] += 1
+            response = public_summary(state)
+            response["observed_at"] = now.isoformat()
+        journals = poll_journal + journals
+        if deferred:
+            response["raw_poll_deferred"] = codes
+            response["raw_poll_consecutive_deferrals"] = count
+        return state, journals, response
+
+    def _cycle(self, state, batch, events, event_diagnostics, now, *, causal=None, source_gaps=None,
+               suppress_capture=False, count_cycle=True):
+        self._validate_state(state, now)
         journals = []
         portfolio = _LazyPortfolio(state) if state["ledger"] is not None else None
         active_day = now.astimezone(NEW_YORK).date()
@@ -439,9 +559,9 @@ class ShadowCollector:
             if state["ledger"] is not None:
                 self._clock(state, journals, "SESSION_OPEN", key, detail["open"], now, portfolio=portfolio)
             if day == active_day:
-                self._events(state, journals, events, event_diagnostics, now, key, portfolio=portfolio)
+                self._events(state, journals, events, event_diagnostics, now, key, portfolio=portfolio, source_gaps=source_gaps)
                 events_processed = True
-            if day == active_day and self._capture_window(now) and not session["capture_closed"]:
+            if not suppress_capture and day == active_day and self._capture_window(now) and not session["capture_closed"]:
                 self._capture(state, journals, session, batch or {}, now, portfolio=portfolio, causal=causal)
                 touched = True
             if now >= detail["capture_close"] and not session["capture_closed"]:
@@ -455,13 +575,19 @@ class ShadowCollector:
                     self._gap(state, journals, now, key, "COLLECTOR_MISSED_SESSION_CLOSE", portfolio=portfolio)
                 self._clock(state, journals, "SESSION_CLOSE", key, detail["close"], now, portfolio=portfolio)
             state["last_session"] = key
-        if not events_processed and state["ledger"] is not None and state["ledger"]["session"]:
-            self._events(state, journals, events, event_diagnostics, now, state["ledger"]["session"], portfolio=portfolio)
+        if not events_processed and state["ledger"] is not None:
+            fallback_session = state["ledger"]["session"]
+            # Drain valid pre-open packets before the first session as well.
+            # They are nonregular and create no session/admission or clock.
+            if fallback_session or (events and not event_diagnostics):
+                self._events(state, journals, events, event_diagnostics, now,
+                    fallback_session or active_day.isoformat(), portfolio=portfolio, archive_only=not fallback_session, source_gaps=source_gaps)
         if portfolio is not None:
             state["ledger"] = portfolio.finish()
         if journals or touched:
             state["last_cycle_at"] = now.isoformat()
-            state["cycle_count"] += 1
+            if count_cycle:
+                state["cycle_count"] += 1
         response = public_summary(state)
         response["observed_at"] = now.isoformat()
         return state, journals, response
@@ -551,12 +677,21 @@ class ShadowCollector:
             issue["session"] == session and issue["instrument"] in ("*", name)
             and name not in issue["restored_instruments"] for issue in state["active_data_issues"].values()) else None
 
-    def _events(self, state, journals, events, diagnostics, now, session, *, portfolio=None):
+    def _events(self, state, journals, events, diagnostics, now, session, *, portfolio=None, archive_only=False, source_gaps=None):
         if state["ledger"] is None:
             return
         if diagnostics:
             self._gap(state, journals, now, session, "EVENT_SOURCE_UNVERIFIED", portfolio=portfolio)
             return
+        if not archive_only:
+            seen_gaps = set()
+            for gap in (source_gaps or []):
+                identity = (gap["instrument"], gap["reason"])
+                if identity in seen_gaps:
+                    continue
+                seen_gaps.add(identity)
+                self._gap(state, journals, now, session, gap["reason"],
+                          instrument=gap["instrument"], portfolio=portfolio)
         pending = []
         for item in events:
             identity, receipt = item["event_id"], item["envelope_sha256"]
@@ -577,7 +712,11 @@ class ShadowCollector:
             if item["sequence"] != expected:
                 self._gap(state, journals, now, session, "EVENT_SEQUENCE_GAP", portfolio=portfolio)
             state["event_sequences"][source] = max(item["sequence"], expected - 1)
-        pending.sort(key=lambda e: (utc(e["available_at"]), utc(e["at"]), priority.get(e["type"], 10), e["sequence"], e["event_id"]))
+        # All packets become known to this collector at `now` below. Order that
+        # shared receipt by source instant and event precedence; unequal
+        # producer receipt times must not let a quote beat a simultaneous stop.
+        pending.sort(key=lambda e: (utc(e["at"]), priority.get(e["type"], 10),
+                                   utc(e["available_at"]), e["source_id"], e["sequence"], e["event_id"]))
         for item in pending:
             raw = {k: v for k, v in item.items() if k not in {"source_id", "source_at", "sequence", "provenance",
                     "manifest_sha", "amendment_sha", "self_sha256", "envelope_sha256", "envelope_available_at"}}
@@ -586,6 +725,10 @@ class ShadowCollector:
             # Producer receipt and collector receipt are both archived. A file
             # read later never grants the collector knowledge at an earlier time.
             event = {**raw, "source_available_at": raw["available_at"], "available_at": now.isoformat(), "session": session}
+            if event["type"] == "QUOTE":
+                # Identity comes only from the validated envelope. Each packet
+                # reaches the ledger; never collapse these into a latest quote.
+                event["source_id"] = item["source_id"]
             identity_parts = str(event.get("instrument_key", "")).split(":")
             if len(identity_parts) == 2 and identity_parts[0] in {"NYSE", "NASDAQ", "US"}:
                 event["instrument_key"] = "US:" + identity_parts[1]
@@ -604,7 +747,10 @@ class ShadowCollector:
                 if (round_day is None or received is None or not self.calendar.is_session(round_day)
                         or received <= self.calendar.details(round_day)["close"]):
                     raise ShadowIntegrityError("EARNINGS_ROUND_SESSION_INVALID")
-            if event is not None:
+            if archive_only:
+                event = None
+                result = [{"status": "ARCHIVED_BEFORE_FIRST_SESSION"}]
+            elif event is not None:
                 name = event["instrument_key"]
                 episodes = [state["ledger"]["research"][key] for key in state["instrument_episodes"].get(name, [])]
                 episodes = [record for record in episodes if record["status"] == "OPEN"
@@ -830,6 +976,8 @@ def public_summary(state: dict) -> dict:
             "mode": state["mode"], "last_cycle_at": state["last_cycle_at"], "sessions": sessions,
             "earnings_observation_dates": [{"date": day, **summary}
                 for day, summary in sorted(observed.items())],
+            "eod_observation_dates": [{"date": day, **summary} for day, summary in
+                sorted(eod_public_sessions(state["ledger"]).items())] if state["ledger"] is not None else [],
             "cohort_clock_started": state["mode"] == "CERTIFIED" and bool(state["sessions"]),
             "data_gate_unknown": bool(active_issues), "data_gate_scope": "CURRENT_SESSION_OBSERVATION",
             "data_issue_count": len(state["data_issues"]),
@@ -837,7 +985,8 @@ def public_summary(state: dict) -> dict:
             "certification_computed": False, "production_orders": False}
 
 
-def export_cohort(state: dict, size: int, *, now: datetime, calendar: ShadowCalendar) -> dict:
+def export_cohort(state: dict, size: int, *, now: datetime, calendar: ShadowCalendar,
+                  archive: tuple[dict, list[dict]] | None = None) -> dict:
     """Sufficient statistics for the signed estimator, only after maturity.
 
 This does not compute a bootstrap or authorize a GO. Every programmed session,
@@ -892,4 +1041,10 @@ including zero days, remains in order. Diagnostic epochs cannot be promoted.
         "terminal_veto": veto_through(calendar.details(maturity_day)["close"]),
         "observation_cutoff_at": calendar.details(maturity_day)["close"].isoformat(),
         "statistical_verdict": "NOT_COMPUTED"}
+    from .r2d2_v2_counterfactual_archive import summarize
+    saved, journal = archive if archive is not None else ({"state": state, "state_sha": digest(state)}, None)
+    if saved["state_sha"] != digest(state):
+        raise ShadowIntegrityError("P5_ARCHIVE_STATE_MISMATCH")
+    result["p5_no_eod"] = summarize(saved, journal, sessions=schedule[:size],
+                                    cutoff=result["observation_cutoff_at"])
     return {**result, "sha256": digest(result)}

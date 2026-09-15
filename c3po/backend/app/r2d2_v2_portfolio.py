@@ -1,6 +1,7 @@
 """Pure, private V2 shadow ledger (signed spec revision 2, annex A and addendum E).
 
-No clock, calendar discovery, database, provider, orders, or V1 imports. The caller
+No clock, database, provider, orders, or V1 imports. The installed, pinned XNYS
+calendar supplies EMENDA 5 session closes locally. The caller
 supplies the official session and maturity, archives source evidence and persists
 returned state atomically. Inputs are causal, JSON-ready dictionaries. Irrecoverable ordering gaps remain
 quarantined; correcting historical evidence requires a separately reviewed replay
@@ -40,6 +41,8 @@ from zoneinfo import ZoneInfo
 
 from .r2d2_v2_earnings_policy import event_intersects, EarningsPolicyError
 from .r2d2_v2_earnings_events import validate_observation, window_covers
+from .r2d2_v2_eod import AMENDMENT_SHA as EOD_AMENDMENT_SHA
+from .r2d2_v2_eod import EodQuote, observe as observe_eod, finish as finish_eod, official_close
 
 SCHEMA_VERSION = "R2D2_V2_PORTFOLIO_v2"
 SELL_FACTOR = (1.0 - 0.0010) * (1.0 - 0.0004)
@@ -158,7 +161,8 @@ def _record(*, episode_key: str, instrument_key: str, session: str, opened_at: s
             "exit_cause": None, "exit_price": None, "fill_evidence": None,
             "category": None, "intent": None, "flags": [], "order_unknown": False,
             "accounting_unknown": False, "horizon_breach": False,
-            "previous_close_economic": None, "corporate_actions": [], "earnings_observations": {}}
+            "previous_close_economic": None, "corporate_actions": [], "earnings_observations": {},
+            "eod_windows": {}}
 
 
 def _receivable(record: Mapping[str, Any]) -> float:
@@ -343,6 +347,9 @@ def _close(state: dict[str, Any], record: dict[str, Any], *, cause: str, price: 
                   exit_available_at=available_at, exit_interval=interval,
                   exit_proceeds=proceeds, fill_evidence=evidence,
                   category="unobservable" if record["order_unknown"] or record["horizon_breach"] else category)
+    for window in record.get("eod_windows", {}).values():
+        if window.get("outcome") is None:
+            window.update(outcome="EOD_SUPERSEDED", exit_cause=cause)
     if record["kind"] == "PORTFOLIO":
         state["cash"] += proceeds
         if record["instrument_key"] not in state["closed_in_session"]:
@@ -481,19 +488,79 @@ def _apply_bar(state: dict[str, Any], record: dict[str, Any], event: Mapping[str
         _mark(state, record, prices["close"], end, event["session"])
 
 
-def _apply_quote(state: dict[str, Any], record: dict[str, Any], event: Mapping[str, Any]) -> None:
-    if record["status"] != "OPEN" or event.get("regular") is not True:
+def _observe_eod(state: dict[str, Any], record: dict[str, Any], event: Mapping[str, Any],
+                 *, quote_valid: bool) -> bool:
+    """Consume this captured quote once; the surrounding transaction is durable.
+
+    Earlier TIME and every pending EVENT retain their existing quote requirements.
+    Trades/bars at the same instant are ordered before QUOTE by the event port.
+    Only same-instant TIME yields to EOD; receipt time, not a backdated tick, is
+    the EOD intention/execution clock. Friction is applied once by _close.
+    """
+    available = _time(event["available_at"])
+    intent = record["intent"]
+    if intent and (intent["cause"] == "EVENT" or _time(intent["at"]) < available):
+        return False
+    session = event["session"]
+    close = official_close(session)
+    windows = record.setdefault("eod_windows", {})
+    old = windows.get(session, {})
+    unknown = record["accounting_unknown"] or record["order_unknown"] or record["horizon_breach"]
+    decision = observe_eod(old, EodQuote(
+        bid=event["bid"], ask=event["ask"], bid_at=_time(event["bid_at"]),
+        ask_at=_time(event["ask_at"]), observed_at=available,
+        source=event.get("source_id", ""), regular=quote_valid), session_close=close,
+        quantity=record["quantity"], entry_cost=record["entry_cost"],
+        entitlements=float("nan") if unknown else _receivable(record) + record["dividend_cash"])
+    if decision.reason in {"EOD_OUTSIDE_WINDOW", "EOD_ALREADY_FINAL"}:
+        return False
+    receipt = {"event_id": event["event_id"], "source": event.get("source_id"),
+               "source_at": min(_time(event["bid_at"]), _time(event["ask_at"])).isoformat(),
+               "observed_at": available.isoformat(), "reason": decision.reason,
+               "pnl": decision.pnl}
+    windows[session] = {**decision.state, "session_close": close.isoformat(),
+                        "last_observation": receipt}
+    if decision.reason != "EOD_POSITIVE":
+        return False
+    assert decision.midpoint is not None
+    if record["kind"] == "RESEARCH":
+        # Freeze the reconciled trajectory before the EOD effect. This is
+        # private input for the descriptive replay, not a second live episode
+        # or a request for another provider subscription/earnings inventory.
+        seed = deepcopy(record)
+        seed["eod_windows"] = {}
+        seed.pop("p5_no_eod", None)
+        record["p5_no_eod"] = {"seed": seed, "eod_at": available.isoformat(),
+                              "exit_quote": dict(event)}
+    record["intent"] = {"cause": "EOD_POSITIVE", "at": available.isoformat()}
+    _close(state, record, cause="EOD_POSITIVE", price=decision.midpoint,
+           at=event["at"], available_at=available.isoformat(),
+           category="eod_positive_exit", evidence="DEMONSTRATED_QUOTE_REFERENCE")
+    return True
+
+
+def _apply_quote(state: dict[str, Any], record: dict[str, Any], event: Mapping[str, Any],
+                 *, evaluate_eod: bool = True) -> None:
+    if record["status"] != "OPEN":
         return
-    bid, ask = _number(event["bid"], positive=True), _number(event["ask"], positive=True)
-    if ask < bid:
-        raise PortfolioInputError("Crossed quote")
     at, available = _iso(event["at"]), _iso(event["available_at"])
     bid_at, ask_at = _time(event["bid_at"]), _time(event["ask_at"])
-    if any(when > _time(at) or not 0 <= (_time(available) - when).total_seconds() <= 10 for when in (bid_at, ask_at)):
-        record["mark"] = None
-        _flag(record, "QUOTE_STALE_OR_FUTURE")
-        return
     if _time(at) < _time(record["opened_at"]):
+        return
+    # Finite, structurally valid but crossed/nonpositive/future/stale quotes are
+    # evidence of an invalid observation, not a reason to discard the batch's
+    # subsequent valid quote. Malformed envelopes still fail at the source port.
+    bid, ask = _number(event["bid"]), _number(event["ask"])
+    valid = (event.get("regular") is True and 0 < bid <= ask and
+             all(when <= _time(at) and 0 <= (_time(available) - when).total_seconds() <= 10
+                 for when in (bid_at, ask_at)))
+    if evaluate_eod and _observe_eod(state, record, event, quote_valid=valid):
+        return
+    if not valid:
+        if event.get("regular") is not True:
+            return
+        record["mark"] = None
+        _flag(record, "QUOTE_STALE_OR_FUTURE" if 0 < bid <= ask else "QUOTE_INVALID")
         return
     price = (bid + ask) / 2
     _mark(state, record, price, at, event["session"])
@@ -577,6 +644,13 @@ def _session_event(state: dict[str, Any], event: Mapping[str, Any]) -> None:
         for records in (state["research"], state["portfolio"]):
             for record in records.values():
                 if record["status"] == "OPEN":
+                    # Missing quotes are a per-episode/session count, never an
+                    # invented exit or a post-eligibility unobservable category.
+                    windows = record.setdefault("eod_windows", {})
+                    closed = official_close(session)
+                    finalized = finish_eod(windows.get(session, {}),
+                        observed_at=_time(event["available_at"]), session_close=closed)
+                    windows[session] = {**finalized.state, "session_close": closed.isoformat()}
                     if _time(record["maturity_at"]) <= _time(at):
                         _intent(record, "TIME", record["maturity_at"])
                     if record["intent"] and _time(record["intent"]["at"]) <= _time(at):
@@ -827,7 +901,7 @@ episodes. Research upper/lower counts never absorb ambiguous or censored cases.
     session = _session(session_date)
     records = [r for r in state["research"].values() if r["session"] == session]
     positions = [r for r in state["portfolio"].values() if r["session"] == session]
-    categories = ("upper_first", "lower_first", "ambiguous", "time_or_event_exit", "unobservable")
+    categories = ("upper_first", "lower_first", "ambiguous", "time_or_event_exit", "eod_positive_exit", "unobservable")
     arms = {}
     for arm in ("ELIGIBLE", "CONTROL"):
         selected = [r for r in records if r["arm"] == arm]
@@ -837,7 +911,8 @@ episodes. Research upper/lower counts never absorb ambiguous or censored cases.
     unidentified = sum(x is None for x in pnl)
     gate = (any(r["category"] == "unobservable" for r in records) or unidentified > 0
             or any(r["category"] is None for r in records))
-    return {"schema_version": "R2D2_V2_SESSION_STATISTICS_v1", "session_date": session,
+    return {"schema_version": "R2D2_V2_SESSION_STATISTICS_v2", "session_date": session,
+            "eod_amendment_sha": EOD_AMENDMENT_SHA,
             "arms": arms, "portfolio_pnl_usd_sum": None if unidentified else _sum_known(pnl),
             "portfolio_episode_count": len(positions), "portfolio_pnl_indeterminate_count": unidentified,
             "data_gate_unknown": gate, "terminal_veto": bool(state["terminal_reasons"]),
@@ -849,6 +924,34 @@ def earnings_observation_counts(state: Mapping[str, Any], session_date: str) -> 
     """Public counts by factual detection session and arm, never private IDs."""
     session = _session(session_date)
     return earnings_public_sessions(state).get(session, _empty_earnings_session())["counts"]
+
+
+def eod_public_sessions(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Counts by observation session, once per episode and book, no identifiers.
+
+    EOD_QUOTE_UNOBSERVABLE is window coverage, never an inference gate category.
+    Research/control and admitted portfolio denominators remain separate.
+    """
+    result: dict[str, Any] = {}
+    reasons = ("EOD_POSITIVE", "EOD_NOT_POSITIVE", "EOD_QUOTE_UNOBSERVABLE",
+               "EOD_ACCOUNTING_UNAVAILABLE", "EOD_SUPERSEDED")
+    for book in ("research", "portfolio"):
+        for record in state[book].values():
+            for day, window in record.get("eod_windows", {}).items():
+                summary = result.setdefault(day, {b: {arm: {
+                    "episodes": 0, "pending_windows": 0, "valid_quotes": 0, "invalid_quotes": 0,
+                    **dict.fromkeys(reasons, 0)} for arm in ("ELIGIBLE", "CONTROL")}
+                    for b in ("research", "portfolio")})
+                counts = summary[book][record["arm"]]
+                counts["episodes"] += 1
+                counts["valid_quotes"] += window.get("valid_quotes", 0)
+                counts["invalid_quotes"] += window.get("invalid_quotes", 0)
+                outcome = window.get("outcome")
+                if outcome in reasons:
+                    counts[outcome] += 1
+                else:
+                    counts["pending_windows"] += 1
+    return result
 
 
 def _empty_earnings_session() -> dict[str, Any]:
