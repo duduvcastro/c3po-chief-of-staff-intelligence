@@ -29,6 +29,8 @@ PACKAGE_FILES = (
     "r2d2_v2_shadow_worker.py", "r2d2_v2_eod.py", "r2d2_v2_calendar.py",
     "r2d2_v2_counterfactual.py", "r2d2_v2_counterfactual_archive.py", "r2d2_v2_store.py",
     "r2d2_v2_mirror.py", "config.py",
+    "r2d2_v2_raw_events.py", "r2d2_v2_raw_source.py",
+    "microstructure_capture.py", "market_data/eodhd_stream.py",
 )
 
 
@@ -51,6 +53,7 @@ def earnings_contract() -> dict[str, Any]:
         "eod_quote_window": "[official_close-30s,official_close)",
         "eod_rule": "FIRST_OBSERVED_VALID_STRICTLY_POSITIVE_NET_QUOTE",
         "eod_precedence": ["STOP", "TARGET", "EVENT", "EOD_POSITIVE", "TIME"],
+        "raw_quote_source": "EXISTING_SPOOL_READ_ONLY_ATOMIC_CURSOR_NO_BAR_COVERAGE_INFERENCE",
         "p5_no_eod": "DESCRIPTIVE_ARCHIVED_EVIDENCE_ONLY_EXPLICIT_ND_PAIRED_COVERAGE",
         "policy_rule": "EXCLUSION_RULE_V1",
         "component_keys": ["available_at", "coverage_verified", "events", "evidence",

@@ -22,6 +22,22 @@ def summarize(saved: dict, journal: list[dict] | None, *, sessions: list[str], c
     state = saved["state"]
     if journal is not None:
         verify_journal(saved, journal)
+    raw_receipts = {}
+    cursor = {}
+    for record in journal or []:
+        payload = record["payload"]
+        if payload.get("type") != "SOURCE_CURSOR":
+            continue
+        if (payload.get("previous_sha256") != digest(cursor)
+                or payload.get("cursor_sha256") != digest(payload.get("cursor"))):
+            raise ShadowIntegrityError("P5_RAW_CURSOR_CHAIN_MISMATCH")
+        cursor = payload["cursor"]
+        for identity, receipt in payload.get("raw_receipts", {}).items():
+            if identity in raw_receipts:
+                raise ShadowIntegrityError("P5_RAW_RECEIPT_DUPLICATED")
+            raw_receipts[identity] = (receipt, record["recorded_at"])
+    if journal is not None and cursor != state.get("raw_source_cursor", {}):
+        raise ShadowIntegrityError("P5_RAW_CURSOR_HEAD_MISMATCH")
     through = utc(cutoff)
     events: dict[str, list[dict]] = {}
     used_records = []
@@ -32,7 +48,9 @@ def summarize(saved: dict, journal: list[dict] | None, *, sessions: list[str], c
         if payload.get("type") != "SOURCE_EVENT" or payload.get("applied_event") is None:
             continue
         source, applied = payload["source"], payload["applied_event"]
-        if (state["event_receipts"].get(source["event_id"]) != source["envelope_sha256"]
+        retained = state["event_receipts"].get(source["event_id"]) == source["envelope_sha256"]
+        raw_retained = raw_receipts.get(source["event_id"]) == (source["envelope_sha256"], record["recorded_at"])
+        if (not (retained or raw_retained)
                 or applied["event_id"] != source["event_id"]
                 or utc(applied["available_at"]) > utc(record["recorded_at"])):
             raise ShadowIntegrityError("P5_SOURCE_RECEIPT_MISMATCH")

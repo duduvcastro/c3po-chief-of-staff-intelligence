@@ -373,11 +373,21 @@ class ShadowCollector:
         if in_window and causal is None:
             causal = self.source.causal_list(self.release.epoch, day, now, self.calendar)
         batch = self.source.snapshot(now) if in_window and causal is not None and causal.get("status") == "AVAILABLE" else None
-        events = self.source.events(now) if self.release.mode == "CERTIFIED" else []
-        event_diagnostics = getattr(self.source, "last_event_diagnostics", []) if self.release.mode == "CERTIFIED" else []
+        prepared = None
+        cursor = None
+        if self.release.mode == "CERTIFIED" and hasattr(self.source, "prepare_events"):
+            saved = self.store.read(self.release.epoch)
+            cursor = saved["state"].get("raw_source_cursor", {}) if saved else {}
+            prepared = self.source.prepare_events(now, cursor)
+            events, event_diagnostics = prepared["events"], prepared["diagnostics"]
+        else:
+            events = self.source.events(now) if self.release.mode == "CERTIFIED" else []
+            event_diagnostics = getattr(self.source, "last_event_diagnostics", []) if self.release.mode == "CERTIFIED" else []
         result = self.store.atomic(self.release.epoch, self._initial(),
-            lambda state: self._cycle(state, batch, events, event_diagnostics,
-                                      utc(self.clock()) if live else now, causal=causal), now)
+            lambda state: self._cycle_with_cursor(state, batch, events, event_diagnostics,
+                utc(self.clock()) if live else now, causal=causal, cursor=cursor,
+                next_cursor=prepared["cursor"] if prepared is not None else None,
+                raw_receipts=prepared.get("raw_receipts", {}) if prepared else {}), now)
         if causal is not None and causal.get("status") == "AVAILABLE":
             # Only after atomic journal persistence discard the raw registry and
             # daily bytes. Restart re-verifies the file + external receipts;
@@ -387,6 +397,36 @@ class ShadowCollector:
                     "n_cut", "counts", "coverage", "diagnostics", "envelope_sha256"}
             self._causal_cache = {day: {key: value for key, value in causal.items() if key in keep}}
         return result
+
+    def _cycle_with_cursor(self, state, batch, events, diagnostics, now, *, causal,
+                           cursor, next_cursor, raw_receipts=None):
+        if cursor is not None and state.get("raw_source_cursor", {}) != cursor:
+            raise ShadowIntegrityError("RAW_SOURCE_CURSOR_CONCURRENT_CHANGE")
+        state, journals, response = self._cycle(state, batch, events, diagnostics, now, causal=causal)
+        # A failed transition rolls back both receipts and cursor. No cursor
+        # advances if events were not processed (for example before session 1).
+        if (cursor is not None and not diagnostics and next_cursor != cursor
+                and all(state["event_receipts"].get(item["event_id"]) == item["envelope_sha256"]
+                        for item in events)):
+            state["raw_source_cursor"] = next_cursor
+            # Cursor + receipts are journaled in the same transaction. Keep
+            # per-tick dedup in that archive, not an ever-growing epoch JSONB
+            # map rewritten on every poll. Restart dedup uses the durable cursor.
+            for identity, receipt in (raw_receipts or {}).items():
+                if state["event_receipts"].get(identity) != receipt:
+                    raise ShadowIntegrityError("RAW_SOURCE_ACK_MISMATCH")
+                del state["event_receipts"][identity]
+            journals.append({"journal_key": "raw-cursor:" + digest(next_cursor),
+                "type": "SOURCE_CURSOR", "previous_sha256": digest(cursor),
+                "cursor_sha256": digest(next_cursor), "cursor": next_cursor,
+                "raw_receipts": raw_receipts or {},
+                "observed_at": now.isoformat()})
+            if state["last_cycle_at"] != now.isoformat():
+                state["last_cycle_at"] = now.isoformat()
+                state["cycle_count"] += 1
+            response = public_summary(state)
+            response["observed_at"] = now.isoformat()
+        return state, journals, response
 
     def _cycle(self, state, batch, events, event_diagnostics, now, *, causal=None):
         if (state.get("schema") != SCHEMA or state.get("manifest_sha") != SIGNED_MANIFEST_SHA
