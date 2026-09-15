@@ -238,7 +238,7 @@ class SpoolShadowSource(FileShadowSource):
                     if frame["data"] is None:
                         inspected = {"envelope": None, "receipt": {"path": name, "offset": offset,
                             "bytes": frame["bytes"], "raw_sha256": frame["sha256"],
-                            "code": "RAW_RECORD_FRAME_INVALID", "disposition": "QUARANTINED"}}
+                            "code": "RAW_RECORD_FRAME_INVALID", "identity_uncertain": True, "disposition": "QUARANTINED"}}
                     else:
                         inspected = inspect_record(frame["data"], relative_path=name, offset=offset,
                                                    sequence=sequence, now=now, calendar=self.calendar)

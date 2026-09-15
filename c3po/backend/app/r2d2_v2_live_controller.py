@@ -32,6 +32,7 @@ INTERVAL = 5.0
 LEASE_SECONDS = 15.0
 LIVE_JOURNAL_BYTES = 64 * 1048576
 LIVE_RECORD_BYTES = 3072
+LIVE_WITHDRAWAL_DELTA_BYTES = 32768
 logger = logging.getLogger(__name__)
 
 
@@ -139,6 +140,8 @@ class LiveGroupController:
         self.proof_used = False
         self.policy_identity: str | None = None
         self.last_receipt: dict = {"status": "OFF", "readiness": "BLOCKED"}
+        self._persisted_withdrawals_sha: str | None = None
+        self._persisted_withdrawal_hashes: set[str] = set()
 
     def _proof_claim(self) -> None:
         # Durable one-shot receipt, survives worker restart. Never remove this
@@ -252,6 +255,28 @@ class LiveGroupController:
                 encoded = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")
                 if not proof and len(encoded) > LIVE_RECORD_BYTES:
                     raise ShadowIntegrityError("LIVE_RECEIPT_TOO_LARGE")
+                withdrawal_sha = None
+                withdrawal_hashes: set[str] = set()
+                if not proof:
+                    withdrawals = receipt.get("subscription", {}).get("withdrawals", [])
+                    if not isinstance(withdrawals, list) or len(withdrawals) > 16:
+                        raise ShadowIntegrityError("LIVE_WITHDRAWAL_DELTA_INVALID")
+                    withdrawal_sha = digest(withdrawals)
+                    withdrawal_hashes = {digest(row) for row in withdrawals}
+                    if withdrawal_sha != self._persisted_withdrawals_sha:
+                        changed = [row for row in withdrawals
+                                   if digest(row) not in self._persisted_withdrawal_hashes]
+                        if changed or self._persisted_withdrawals_sha is not None:
+                            delta = {"schema": "R2D2_V2_LIVE_WITHDRAWAL_DELTA_V1",
+                                "at": receipt["at"], "policy_sha": receipt.get("policy_sha"),
+                                "previous_withdrawals_sha256": self._persisted_withdrawals_sha,
+                                "withdrawals_sha256": withdrawal_sha,
+                                "retained_withdrawal_count": len(withdrawals),
+                                "entries": changed, "entries_sha256": digest(changed)}
+                            delta_bytes = (json.dumps(delta, sort_keys=True) + "\n").encode("utf-8")
+                            if len(delta_bytes) > LIVE_WITHDRAWAL_DELTA_BYTES:
+                                raise ShadowIntegrityError("LIVE_WITHDRAWAL_DELTA_TOO_LARGE")
+                            encoded += delta_bytes
                 limit = 1048576 if proof else LIVE_JOURNAL_BYTES
                 journal = path.with_name(path.name + suffix)
                 fd = os.open(journal, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
@@ -262,6 +287,10 @@ class LiveGroupController:
                     out.write(encoded)
                     out.flush()
                     os.fsync(out.fileno())
+                if not proof:
+                    # Advance the bounded delta cache only after durable append.
+                    self._persisted_withdrawals_sha = withdrawal_sha
+                    self._persisted_withdrawal_hashes = withdrawal_hashes
         finally:
             temp.unlink(missing_ok=True)
 

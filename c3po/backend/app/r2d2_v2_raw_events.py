@@ -111,6 +111,27 @@ def decode_record(data: bytes, *, relative_path: str, offset: int,
     return envelope
 
 
+def _tick_shaped(payload: Any) -> bool:
+    """Detect a lost tick identity without normalizing/guessing an instrument."""
+    pending = [payload]
+    visited = 0
+    while pending:
+        value = pending.pop()
+        visited += 1
+        if visited > 4096:
+            return True  # An uninspectable shape is not verified provider status.
+        if isinstance(value, dict):
+            keys = {key.strip().casefold() for key in value if isinstance(key, str)}
+            if keys & {"s", "sym", "symbol", "ticker"}:
+                return True
+            if keys & {"t", "timestamp", "time"} and keys & {"p", "price", "bp", "ap", "bid", "ask"}:
+                return True
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            pending.extend(value)
+    return False
+
+
 def inspect_record(data: bytes, *, relative_path: str, offset: int,
                    sequence: int, now: datetime, calendar: Any) -> dict[str, Any]:
     """Classify one complete frame; quarantine is evidence, not tape coverage.
@@ -118,7 +139,8 @@ def inspect_record(data: bytes, *, relative_path: str, offset: int,
     sequence counts decoded events only. Every consumed frame, including one
     skipped here, is covered by its byte range and SHA in the same cursor
     transaction. There is no fabricated SOURCE_EVENT or sequence gap for a
-    provider status frame. No nominal payload is included in the receipt.
+    provider status frame. Private receipts retain only a validated identity,
+    never the nominal raw payload or a guessed/normalized identity.
     """
     received = None
     try:
@@ -137,8 +159,10 @@ def inspect_record(data: bytes, *, relative_path: str, offset: int,
         if re.fullmatch(r"[A-Z][A-Z0-9_]{0,99}", code) is None:
             code = "RAW_RECORD_MALFORMED"
         instrument = None
+        identity_uncertain = code != "RAW_NON_TICK"
         try:
             payload = _load_json(_load_json(data)["payload_raw"].encode("utf-8"))
+            identity_uncertain = identity_uncertain or _tick_shaped(payload)
             symbol = payload.get("s")
             if isinstance(symbol, str) and _SYMBOL.fullmatch(symbol):
                 instrument = "US:" + symbol
@@ -146,7 +170,8 @@ def inspect_record(data: bytes, *, relative_path: str, offset: int,
             pass
         return {"envelope": None, "received_at": received,
                 "receipt": {"path": relative_path, "offset": offset, "bytes": len(data),
-                            "instrument_key": instrument, "received_at": received.isoformat() if received else None,
+                            "instrument_key": instrument, "identity_uncertain": instrument is None and identity_uncertain,
+                            "received_at": received.isoformat() if received else None,
                             "raw_sha256": hashlib.sha256(data).hexdigest(), "code": code,
                             "disposition": "SKIPPED" if code == "RAW_NON_TICK" else "QUARANTINED"}}
     return {"envelope": envelope, "received_at": received, "receipt": None}

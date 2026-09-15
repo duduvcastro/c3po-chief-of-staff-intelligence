@@ -331,7 +331,7 @@ def test_bad_frame_is_receipted_and_following_tick_is_committed(source, bad):
     collector = seed_collector(source)
     collector.cycle(NOW)
     state, journal = collector.store.read_with_journal(collector.release.epoch)
-    known_bad_tick = b'null' in bad
+    known_bad_tick = b'status' not in bad
     assert bool(state['state']['data_issues']) is known_bad_tick
     cursor = state['state']['raw_source_cursor']['files'][PART]
     assert cursor['sequence'] == 2 and cursor['offset'] == len(line(99)+bad+line(101))
@@ -814,3 +814,30 @@ def test_audit_c5_close_between_commits_uses_actual_clock_not_receipt_cut(source
     assert all(state['ledger'][book]['synthetic-entry']['exit_cause']!='EOD_POSITIVE'
                for book in ('research','portfolio'))
     assert state['raw_source_cursor']['files'][PART]['sequence']==4
+
+
+@pytest.mark.parametrize('payload',[
+    {'s':s,'p':90,'t':int(AT.timestamp()*1000)} for s in
+    ('synth',' SYNTH','SYNTH ','SYNTH\u200b','US:SYNTH',None,['SYNTH'],{'s':'SYNTH'})
+]+[{'sym':'SYNTH','p':90,'t':1},{'S':'SYNTH','p':90,'t':1},
+   {'status':'ok','data':{'s':'SYNTH','p':90,'t':1}},
+   {'data':[{'ticker':'SYNTH','p':90,'t':1}]},{'p':90,'t':1}])
+def test_d1_unidentified_tick_blocks_open_books_without_guessing_identity(source,payload):
+    row=json.loads(line(90,feed='trade'));row['payload_raw']=json.dumps(payload)
+    write(source,canonical(row)+b'\n',PART.replace('quote','trade'));write(source,line(103))
+    collector=seed_collector(source);collector.cycle(NOW)
+    state,journal=collector.store.read_with_journal(collector.release.epoch);state=state['state']
+    assert any(i['instrument']=='*' and i['reason']=='RAW_UNIDENTIFIED_TICK' for i in state['data_issues'])
+    assert all(state['ledger'][b]['synthetic-entry']['order_unknown'] and
+               state['ledger'][b]['synthetic-entry']['exit_cause']!='EOD_POSITIVE' for b in ('research','portfolio'))
+    rows=[s for r in journal if r['payload']['type']=='SOURCE_CURSOR' for s in r['payload']['skipped_receipts']]
+    assert rows[0]['identity_uncertain'] is True and rows[0]['instrument_key'] is None
+    assert collector._admission_block(state,'2026-09-08','US:OTHER') is not None
+
+
+def test_d1_plain_provider_status_stays_non_tick_without_global_gap(source):
+    row=json.loads(line(90,feed='trade'));row['payload_raw']=json.dumps({'status':'connected','message':'ready'})
+    write(source,canonical(row)+b'\n',PART.replace('quote','trade'));write(source,line(103))
+    collector=seed_collector(source);collector.cycle(NOW)
+    state=collector.store.read(collector.release.epoch)['state']
+    assert state['data_issues']==[] and state['ledger']['portfolio']['synthetic-entry']['exit_cause']=='EOD_POSITIVE'
