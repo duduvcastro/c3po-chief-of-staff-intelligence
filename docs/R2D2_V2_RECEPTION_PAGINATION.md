@@ -148,3 +148,22 @@ Fable audit SHA256 `70ba8bcef63910cf447572e904849dbfeb5b1a64cbc4de692a9cf5590e99
 
 No head GO is claimed by this document. Declared c5/c7 limitations and remaining
 P3 items are submitted for the independent exact-head review.
+
+
+## Renewed exact-code decoding receipt
+
+`docs/evidence/pr408-raw-decode-exact-20260915.json` supersedes the historical
+read for code provenance. Seven modules from code commit
+`ba3542770c78d367f1489538604535e0474ce286` were executed in memory; their SHA256
+values match the current repository bytes. Host-reported execution ran from
+2026-09-15T12:39:15.637245+00:00 to 2026-09-15T12:44:28.946783+00:00.
+The receipt records executor, pinned SSH target hash, container identity hash,
+UID, file-identity comparison, code revision and all seven module hashes.
+Result:1,070,516 decoded events from268,435,460 bytes;1,070,515 regular and1
+nonregular, no quarantines. The part and decoded-envelope sequence hashes
+match the historical read. No database, provider or production mutation was
+performed. This proves decoding of this part only, not live feed continuity.
+Receipt SHA256:`d90b026ef3ccc883257ecab241c4b2572a5b999b1702db0d2ec7a2e89e76f7be`.
+The final evidence commit changes documentation/receipts only; executed code
+remains exactly that of the pinned code commit. Local validation receipts are
+in `docs/evidence/pr408-f408c-validation-20260915.json`.
