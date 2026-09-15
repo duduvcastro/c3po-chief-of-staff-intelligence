@@ -862,7 +862,7 @@ def test_live_markets_separates_spot_and_future_index_groups() -> None:
         "NASDAQ": "^IXIC",
         "NYSE": "^NYA",
     }
-    assert {"S&P 500 Fut.", "Nasdaq Fut.", "US3Y", "US10Y"} <= future_symbols
+    assert {"S&P 500 Fut.", "Nasdaq Fut.", "US3Y", "US10Y", "US30Y"} <= future_symbols
 
 
 def test_live_markets_refreshes_spot_indices_on_three_second_channel() -> None:
@@ -1567,6 +1567,7 @@ def test_global_intraday_resolves_master_luke_index_symbol() -> None:
 @pytest.mark.parametrize(("symbol", "provider_symbol"), [
     ("US3Y", "US3Y.GBOND"),
     ("US10Y", "US10Y.GBOND"),
+    ("US30Y", "US30Y.GBOND"),
 ])
 def test_global_hover_uses_eodhd_daily_history_for_treasury_yields(
     symbol: str,
