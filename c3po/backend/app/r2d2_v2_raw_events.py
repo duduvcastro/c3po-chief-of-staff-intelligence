@@ -131,11 +131,22 @@ def inspect_record(data: bytes, *, relative_path: str, offset: int,
         envelope = decode_record(data, relative_path=relative_path, offset=offset,
                                  sequence=sequence, now=now, calendar=calendar)
     except (SourceUnavailable, ValueError, TypeError, KeyError, OverflowError) as exc:
+        if isinstance(exc, SourceUnavailable) and str(exc) == "RAW_RECEIPT_IN_FUTURE":
+            raise SourceUnavailable("RAW_RECEIPT_AHEAD_OF_POLL") from None
         code = str(exc) if isinstance(exc, SourceUnavailable) else "RAW_RECORD_MALFORMED"
         if re.fullmatch(r"[A-Z][A-Z0-9_]{0,99}", code) is None:
             code = "RAW_RECORD_MALFORMED"
+        instrument = None
+        try:
+            payload = _load_json(_load_json(data)["payload_raw"].encode("utf-8"))
+            symbol = payload.get("s")
+            if isinstance(symbol, str) and _SYMBOL.fullmatch(symbol):
+                instrument = "US:" + symbol
+        except (SourceUnavailable, KeyError, TypeError, ValueError, AttributeError, OverflowError):
+            pass
         return {"envelope": None, "received_at": received,
                 "receipt": {"path": relative_path, "offset": offset, "bytes": len(data),
+                            "instrument_key": instrument, "received_at": received.isoformat() if received else None,
                             "raw_sha256": hashlib.sha256(data).hexdigest(), "code": code,
                             "disposition": "SKIPPED" if code == "RAW_NON_TICK" else "QUARANTINED"}}
     return {"envelope": envelope, "received_at": received, "receipt": None}

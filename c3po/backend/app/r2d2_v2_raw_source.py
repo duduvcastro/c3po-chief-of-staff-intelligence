@@ -52,7 +52,7 @@ def _received(data: bytes | None, now: datetime) -> datetime | None:
         return None
     try:
         received = _time(_load_json(data)["received_at"])
-        return received if received <= now else None
+        return received
     except (SourceUnavailable, ValueError, TypeError, KeyError, OverflowError):
         return None
 
@@ -96,7 +96,8 @@ class SpoolShadowSource(FileShadowSource):
         self.first_session = first_session
         self.calendar = calendar
 
-    def prepare_events(self, now: datetime, cursor: dict, *, snapshot: dict | None = None) -> dict:
+    def prepare_events(self, now: datetime, cursor: dict, *, snapshot: dict | None = None,
+                       read_clock: Any = None) -> dict:
         """Offer a contiguous prefix at a common reception horizon.
 
         The record budget is a page target. Equal-reception groups are atomic:
@@ -144,6 +145,10 @@ class SpoolShadowSource(FileShadowSource):
             finally:
                 os.close(root_fd)
             _require(bool(handles), "RAW_CAPTURE_NOT_OBSERVED")
+            if read_clock is not None:
+                observed = read_clock()
+                _require(observed.tzinfo is not None and observed >= now, "RAW_READ_CLOCK_REVERSED")
+                now = observed  # Actual clock AFTER the joint file-size snapshot.
             names = {name for name, _, _ in handles}
             _require(set(previous) <= names, "RAW_RETAINED_FILE_MISSING")
             if snapshot is None:
@@ -184,11 +189,12 @@ class SpoolShadowSource(FileShadowSource):
                 if name not in pending:
                     continue
                 saved = previous.get(name, {})
-                high = _time(saved["received_max"]) if saved.get("received_max") else minimum
+                high = minimum  # Horizon belongs to this page, never a past clock spike.
                 rows = []
                 end = saved.get("offset", 0)
                 for frame in _frames(fd, saved.get("offset", 0), snapshot[name]["size"]):
                     received = _received(frame["data"], now)
+                    _require(received is None or received <= now, "RAW_RECEIPT_AHEAD_OF_POLL")
                     if received is not None:
                         high = max(high, received)
                     rows.append({"offset": frame["offset"], "sha256": frame["sha256"]})
@@ -209,15 +215,21 @@ class SpoolShadowSource(FileShadowSource):
                 offset, sequence = saved.get("offset", 0), saved.get("sequence", 0)
                 high = _time(saved["received_max"]) if saved.get("received_max") else None
                 expected_tail = previous_tails[name]
+                delivered_in_file = 0
+                regressed = False
                 prefix = {row["offset"]: row["sha256"] for row in prefixes.get(name, [])}
                 for frame in _frames(fd, offset, snapshot[name]["size"]):
                     if frame["offset"] in prefix:
                         _require(frame["sha256"] == prefix[frame["offset"]], "RAW_CHANGED_DURING_READ")
                     received = _received(frame["data"], now)
+                    _require(received is None or received <= now, "RAW_RECEIPT_AHEAD_OF_POLL")
                     if cutoff is not None and received is not None and received > cutoff:
                         break
                     # Extend past the initial prefix through the cutoff, so a
                     # STOP with the same reception timestamp cannot be hidden.
+                    regressed = regressed or (high is not None and received is not None and received < high)
+                    if regressed and delivered_in_file >= per_file:
+                        break  # A broken reception clock cannot make an unlimited page.
                     if high is not None and received is not None and received < high:
                         notices.append({"code": "RAW_RECEIVED_AT_DECREASED", "path": name,
                                         "offset": offset, "raw_sha256": frame["sha256"]})
@@ -242,6 +254,7 @@ class SpoolShadowSource(FileShadowSource):
                         sequence += 1
                     offset += frame["bytes"]
                     delivered_count += 1
+                    delivered_in_file += 1
                     expected_tail = (expected_tail + frame["tail"])[-WITNESS_BYTES:]
                 after = os.fstat(fd)
                 _require(after.st_size >= snapshot[name]["size"], "RAW_TRUNCATED_DURING_READ")

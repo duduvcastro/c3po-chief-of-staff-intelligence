@@ -295,7 +295,10 @@ def test_partial_append_defers_then_recovers_without_a_global_gap(source):
     result = collector.cycle(NOW + timedelta(seconds=1))
     after = collector.store.read(collector.release.epoch)["state"]
     assert result["raw_poll_deferred"] == ["RAW_APPEND_IN_PROGRESS"]
-    assert after == before
+    assert after["ledger"] == before["ledger"]
+    assert after["raw_source_cursor"] == before["raw_source_cursor"]
+    assert after["data_issues"] == []
+    assert after["raw_poll_deferrals"]["consecutive"] == 1
     with path.open("ab") as output:
         output.write(final[-20:])
     collector.cycle(NOW + timedelta(seconds=2))
@@ -328,7 +331,8 @@ def test_bad_frame_is_receipted_and_following_tick_is_committed(source, bad):
     collector = seed_collector(source)
     collector.cycle(NOW)
     state, journal = collector.store.read_with_journal(collector.release.epoch)
-    assert state['state']['data_issues'] == []
+    known_bad_tick = b'null' in bad
+    assert bool(state['state']['data_issues']) is known_bad_tick
     cursor = state['state']['raw_source_cursor']['files'][PART]
     assert cursor['sequence'] == 2 and cursor['offset'] == len(line(99)+bad+line(101))
     receipt = [r['payload'] for r in journal if r['payload']['type']=='SOURCE_CURSOR'][0]
@@ -338,7 +342,7 @@ def test_bad_frame_is_receipted_and_following_tick_is_committed(source, bad):
     assert skipped[0]['disposition'] in {'QUARANTINED', 'SKIPPED'}
     if b'connected' in bad:
         assert skipped[0]['code']=='RAW_NON_TICK'
-    assert all(state['state']['ledger'][book]['synthetic-entry']['exit_cause']=='EOD_POSITIVE'
+    assert all((state['state']['ledger'][book]['synthetic-entry']['exit_cause']=='EOD_POSITIVE') is not known_bad_tick
                for book in ('research','portfolio'))
     collector.cycle(NOW)
     assert collector.store.journal(collector.release.epoch)==journal
@@ -347,7 +351,7 @@ def test_bad_frame_is_receipted_and_following_tick_is_committed(source, bad):
 def pages(source, monkeypatch, budget):
     monkeypatch.setattr(raw, 'MAX_CYCLE_EVENTS', budget)
     cursor = {}; result=[]; snapshot=None
-    for _ in range(100):
+    for _ in range(1000):
         page = source.prepare_events(NOW, cursor, snapshot=snapshot)
         assert not page['diagnostics']
         assert page['cursor'] != cursor
@@ -659,6 +663,7 @@ def test_monotonic_progress_and_qualified_convergence_bound(source,monkeypatch,c
     batches=pages(source,monkeypatch,budget)
     share=max(1,budget//len(counts));bound=sum(ceil(count/share) for count in counts)
     assert len(batches)<=bound
+    assert len(batches)<=ceil(sum(counts)/share)
     assert sum(page['page']['record_count'] for page in batches)==sum(counts)
     last={path:0 for path in paths}
     for page in batches:
@@ -678,3 +683,134 @@ def test_tied_reception_group_is_complete_and_target_exceeded_is_counted(source,
     assert [b['page']['record_count'] for b in batches]==[5,2]
     assert sum(b['page']['target_exceeded'] for b in batches)==1
     assert {event['source_at'] for event in batches[0]['events']}=={AT.isoformat()}
+
+
+
+def test_audit_c1_future_receipt_is_never_quarantined_and_stop_replays_next_poll(source):
+    tradepart=PART.replace('quote','trade')
+    trade=line(90,feed='trade',received=NOW+timedelta(milliseconds=10))
+    write(source,line(103));write(source,trade,tradepart)
+    batch=source.prepare_events(NOW,{})
+    assert batch['diagnostics']==[{'code':'RAW_RECEIPT_AHEAD_OF_POLL'}]
+    assert batch['cursor']=={} and batch['events']==[]
+    collector=seed_collector(source);result=collector.cycle(NOW)
+    assert result['raw_poll_deferred']==['RAW_RECEIPT_AHEAD_OF_POLL']
+    assert collector.store.read(collector.release.epoch)['state'].get('raw_source_cursor',{})=={}
+    collector.cycle(NOW+timedelta(seconds=1))
+    saved,journal=collector.store.read_with_journal(collector.release.epoch)
+    assert all(saved['state']['ledger'][book]['synthetic-entry']['exit_cause']=='STOP'
+               for book in ('research','portfolio'))
+    cursors=[r['payload'] for r in journal if r['payload']['type']=='SOURCE_CURSOR']
+    assert all(not row['skipped_receipts'] for row in cursors)
+    assert saved['state']['raw_source_cursor']['files'][tradepart]['offset']==len(trade)
+    assert saved['state']['data_issues']==[]
+
+
+def test_audit_c1_actual_clock_after_size_snapshot_includes_racing_writer(source):
+    after=NOW+timedelta(milliseconds=10)
+    write(source,line(90,feed='trade',received=after),PART.replace('quote','trade'))
+    batch=source.prepare_events(NOW,{},read_clock=lambda:after)
+    assert not batch['diagnostics'] and not batch['skipped_receipts']
+    assert len(batch['events'])==1 and batch['events'][0]['type']=='TRADE'
+
+
+def test_audit_c2_quarantined_tick_blocks_affected_instrument_before_positive_quote(source):
+    row=json.loads(line(90,feed='trade'));payload=json.loads(row['payload_raw'])
+    payload['p']='90';row['payload_raw']=json.dumps(payload)
+    bad=canonical(row)+b'\n';write(source,bad+line(99,feed='trade'),PART.replace('quote','trade'))
+    write(source,line(103));collector=seed_collector(source);collector.cycle(NOW)
+    saved,journal=collector.store.read_with_journal(collector.release.epoch);state=saved['state']
+    assert {r['instrument'] for r in state['data_issues']}=={INSTRUMENT}
+    assert {r['reason'] for r in state['data_issues']}=={'RAW_QUARANTINE_RAW_TRADE_PRICE_INVALID'}
+    assert collector._admission_block(state,'2026-09-08',INSTRUMENT) is not None
+    assert collector._admission_block(state,'2026-09-08','US:OTHER') is None
+    assert all(state['ledger'][book]['synthetic-entry']['order_unknown'] and
+               state['ledger'][book]['synthetic-entry']['exit_cause']!='EOD_POSITIVE'
+               for book in ('research','portfolio'))
+    assert state['raw_source_cursor']['files'][PART.replace('quote','trade')]['sequence']==1
+    assert len([r for r in journal if r['payload']['type']=='SOURCE_EVENT'])==2
+
+
+def test_audit_c3_persistent_torn_tail_keeps_close_and_stale_checks_and_counts_failure(source):
+    path=write(source,line(99));collector=seed_collector(source);collector.cycle(NOW)
+    before=collector.store.read(collector.release.epoch)['state']['raw_source_cursor']
+    with path.open('ab') as stream:stream.write(line(101)[:-20])
+    close=AT.replace(hour=20,minute=0,second=0)
+    for index in range(1,4):
+        result=collector.cycle(close+timedelta(minutes=index))
+        assert result['raw_poll_deferred']==['RAW_APPEND_IN_PROGRESS']
+        assert result['raw_poll_consecutive_deferrals']==index
+    state=collector.store.read(collector.release.epoch)['state']
+    assert state['raw_source_cursor']==before
+    assert 'SESSION_CLOSE:2026-09-08' in state['clock_receipts']
+    assert any(r['reason']=='RAW_POLL_PERSISTENT_FAILURE' for r in state['data_issues'])
+    assert state['last_cycle_at']==(close+timedelta(minutes=3)).isoformat()
+
+
+def test_audit_c6_reception_regression_has_own_page_bound_and_horizon_is_not_sticky(source,monkeypatch):
+    jump=AT+timedelta(seconds=4)
+    path=write(source,line(99,received=jump)+b''.join(line(99,at=AT+timedelta(milliseconds=i)) for i in range(1,201)))
+    batches=pages(source,monkeypatch,2)
+    assert len(batches)>1 and all(p['page']['record_count']<=2 for p in batches)
+    cursor=batches[-1]['cursor']
+    with path.open('ab') as stream:stream.write(b''.join(line(99,at=AT+timedelta(seconds=2,milliseconds=i)) for i in range(300)))
+    next_page=source.prepare_events(NOW+timedelta(seconds=5),cursor)
+    assert next_page['page']['record_count']<=2 and next_page['has_more']
+    assert next_page['page']['cutoff_received_at']!=jump.isoformat()
+
+
+def test_audit_c8_continuation_rechecks_state_calendar_and_rolls_back_page(source,monkeypatch):
+    from itertools import count
+    write(source,b''.join(line(99,at=AT+timedelta(milliseconds=i)) for i in range(4)))
+    monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',2);monkeypatch.setattr(raw,'MAX_DRAIN_SECONDS',10)
+    collector=seed_collector(source);ticks=count();collector.clock=lambda:NOW+timedelta(microseconds=next(ticks))
+    atomic=collector.store.atomic;calls=[]
+    def corrupt_second(epoch,initial,transition,now):
+        def wrapped(state):
+            calls.append(True)
+            if len(calls)==2:state['calendar_version']='tampered'
+            return transition(state)
+        return atomic(epoch,initial,wrapped,now)
+    monkeypatch.setattr(collector.store,'atomic',corrupt_second)
+    with pytest.raises(ShadowIntegrityError,match='CALENDAR_VERSION_CHANGED'):collector.cycle()
+    state=collector.store.read(collector.release.epoch)['state']
+    assert state['calendar_version']==collector.calendar.version
+    assert state['raw_source_cursor']['files'][PART]['sequence']==2
+
+
+def test_audit_c3_deferred_raw_page_does_not_skip_capture_attempt(source):
+    collector,state,session=setup_state();collector.source=source
+    at=AT.replace(hour=14,minute=0,second=10)
+    session['capture_closed']=False
+    state['coverage_until'][INSTRUMENT]=at.isoformat()
+    collector.store.atomic(collector.release.epoch,collector._initial(),lambda _: (state,[],{}),at-timedelta(seconds=1))
+    write(source,line(99,at=at-timedelta(seconds=1))[:-10])
+    result=collector.cycle(at)
+    state=collector.store.read(collector.release.epoch)['state']
+    assert result['raw_poll_deferred']==['RAW_APPEND_IN_PROGRESS']
+    assert state['sessions']['2026-09-08']['attempts']==1
+    assert state.get('raw_source_cursor',{})=={}
+
+
+def test_audit_c5_close_between_commits_uses_actual_clock_not_receipt_cut(source,monkeypatch):
+    close=AT.replace(hour=20,minute=0,second=0)
+    write(source,b''.join(line(price,at=close-timedelta(seconds=seconds))
+                         for price,seconds in [(99,20),(99,19),(103,15),(103,14)]))
+    monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',2);monkeypatch.setattr(raw,'MAX_DRAIN_SECONDS',10)
+    collector=seed_collector(source);current=[close-timedelta(seconds=11)];calls=[]
+    def clock():
+        current[0]+=timedelta(microseconds=1)
+        return current[0]
+    collector.clock=clock;prepare=source.prepare_events
+    def cross_close(*args,**kwargs):
+        result=prepare(*args,**kwargs);calls.append(True)
+        current[0]=close+timedelta(seconds=1) if len(calls)==2 else close-timedelta(seconds=9)
+        return result
+    monkeypatch.setattr(source,'prepare_events',cross_close)
+    result=collector.cycle();state=collector.store.read(collector.release.epoch)['state']
+    assert result['raw_pages']==2 and not result['raw_backlog_pending']
+    assert 'SESSION_CLOSE:2026-09-08' in state['clock_receipts']
+    assert datetime.fromisoformat(state['last_cycle_at'])>close
+    assert all(state['ledger'][book]['synthetic-entry']['exit_cause']!='EOD_POSITIVE'
+               for book in ('research','portfolio'))
+    assert state['raw_source_cursor']['files'][PART]['sequence']==4
