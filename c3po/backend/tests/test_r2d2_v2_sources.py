@@ -294,7 +294,7 @@ def test_observation_gaps_remain_explicit_events(source_dir, body):
     event_body("DIVIDEND_ENTITLEMENT", type="DIVIDEND"),
     event_body("TRADE", regular=None),
     event_body("BAR", coverage_complete=None),
-    event_body("QUOTE", bid_at="2026-09-08T14:00:01Z"),
+    event_body("QUOTE", bid_at="not-a-clock"),
     event_body("TRADE", at="2026-09-08T14:00:06Z"),
     event_body("BAR", trades=[{"at": "2026-09-08T14:00:00Z", "price": 100}]),
 ])
@@ -304,6 +304,18 @@ def test_invalid_event_blocks_complete_batch_instead_of_partial_tape(source_dir,
     source = sources.FileShadowSource(source_dir)
     assert source.events(NOW) == []
     assert source.last_event_diagnostics
+
+
+@pytest.mark.parametrize("bad", [dict(bid=102, ask=101), dict(bid=0), dict(bid=-1),
+    dict(bid_at="2026-09-08T14:00:01Z")])
+def test_invalid_quote_observation_preserved_without_losing_later_valid_quote(source_dir, bad):
+    write_event(source_dir, event_body("QUOTE", **bad), identity="bad-observation")
+    write_event(source_dir, event_body("QUOTE"), identity="valid-observation")
+    source = sources.FileShadowSource(source_dir)
+    events = source.events(NOW)
+    assert len(events) == 2
+    assert not source.last_event_diagnostics
+    assert any(all(item[k] == value for k, value in bad.items()) for item in events)
 
 
 def test_complete_intrabar_trades_are_not_inferred(source_dir):

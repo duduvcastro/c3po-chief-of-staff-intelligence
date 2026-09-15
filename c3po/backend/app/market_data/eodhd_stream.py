@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import logging
+import hashlib
 from threading import Event, RLock, Thread
 from time import monotonic
 from typing import Any
@@ -53,6 +54,12 @@ class EodhdRealtimeStream:
         self.max_symbols = max_symbols
         self._lock = RLock()
         self._groups: dict[str, tuple[int, float, tuple[str, ...]]] = {}
+        self._v2_lease: dict[str, Any] | None = None
+        self._v2_withdrawals: deque[dict[str, Any]] = deque(maxlen=16)
+        self._v2_generation = 0
+        self._v2_reason = "OFF"
+        self._feed_generation = {"trade": 0, "quote": 0}
+        self._v2_evidence: dict[str, dict[str, Any]] = {}
         self._quotes: dict[str, EodhdStreamQuote] = {}
         self._bars: dict[str, deque[EodhdStreamBar]] = {}
         self._feed_states = {"trade": "stopped", "quote": "stopped"}
@@ -84,10 +91,132 @@ class EodhdRealtimeStream:
             if symbol and symbol.strip()
         ))
         with self._lock:
+            if name == "r2d2-v2-live":
+                if cleaned:
+                    raise ValueError("V2_GROUP_REQUIRES_LEASE")
+                self._drop_v2_locked("REMOVED")
+                return
             if cleaned:
                 self._groups[name] = (priority, monotonic(), cleaned)
             else:
                 self._groups.pop(name, None)
+            self._check_v2_locked()
+
+    def _remember_v2_locked(self, reason: str, remaining: set[str]) -> None:
+        old = self._groups.get("r2d2-v2-live")
+        if not old:
+            return
+        others = {s for name, (_, _, values) in self._groups.items()
+                  if name != "r2d2-v2-live" for s in values}
+        physical = set(old[2]) - remaining - others
+        self._v2_withdrawals.append({"generation": self._v2_generation,
+            "reason": reason, "requested_at": datetime.now(timezone.utc).isoformat(),
+            "group_removed_count": len(set(old[2])-remaining),
+            "physical_unsubscribe_expected": len(physical), "_symbols": physical,
+            "feeds_before": {f: dict(v) for f, v in self._v2_evidence.items()},
+            "unsubscribe_sent": {}})
+
+    def _v2_unsubscribed(self, feed: str, removed: set[str]) -> None:
+        with self._lock:
+            for receipt in self._v2_withdrawals:
+                matches = receipt["_symbols"] & removed
+                if matches:
+                    receipt["unsubscribe_sent"][feed] = {
+                        "at": datetime.now(timezone.utc).isoformat(), "count": len(matches),
+                        "connection_generation": self._feed_generation[feed]}
+
+    def _drop_v2_locked(self, reason: str) -> None:
+        if self._v2_lease is None and "r2d2-v2-live" not in self._groups:
+            if reason != "REMOVED":
+                self._v2_reason = reason
+            return  # Preserve an earlier capacity/expiry reason, not generic REMOVED.
+        self._remember_v2_locked(reason, set())
+        self._groups.pop("r2d2-v2-live", None)
+        self._v2_lease = None
+        self._v2_evidence = {}
+        self._v2_reason = reason
+
+    def _check_v2_locked(self) -> None:
+        lease = self._v2_lease
+        if lease is None:
+            return
+        union = {s for _, _, names in self._groups.values() for s in names}
+        if monotonic() >= lease["deadline"]:
+            self._drop_v2_locked("LEASE_EXPIRED")
+        elif len(union) > min(550, lease["capacity"], self.max_symbols):
+            self._drop_v2_locked("CAPACITY_CHANGED")
+
+    def set_v2_group(self, symbols: list[str], *, capacity: int, ttl: float, stop_event: Event | None = None) -> dict:
+        """Atomic reservation against ALL groups; no V1 priority is rewritten."""
+        import math
+        import re
+        if (type(capacity) is not int or not 1 <= capacity <= 550
+                or not math.isfinite(ttl) or not 0 < ttl <= 30
+                or any(not isinstance(s, str) or not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,19}", s)
+                       for s in symbols)):
+            raise ValueError("V2_LEASE_INVALID")
+        names = tuple(sorted(set(symbols)))
+        with self._lock:
+            if stop_event is not None and stop_event.is_set():
+                self._drop_v2_locked("STOPPED")
+                raise ValueError("LIVE_CONTROLLER_STOPPED")
+            self._check_v2_locked()
+            others = {s for name, (_, _, values) in self._groups.items()
+                      if name != "r2d2-v2-live" for s in values}
+            effective = min(550, capacity, self.max_symbols)
+            if len(others | set(names)) > effective:
+                self._drop_v2_locked("CAPACITY_EXCEEDED")
+                raise ValueError("V2_CAPACITY_EXCEEDED")
+            old = self._groups.get("r2d2-v2-live")
+            if not old or old[2] != names:
+                if old:
+                    self._remember_v2_locked("GROUP_CHANGED", set(names))
+                self._v2_generation += 1
+                self._v2_evidence = {}
+            self._groups["r2d2-v2-live"] = (190, monotonic(), names)
+            self._v2_lease = {"deadline": monotonic() + ttl, "capacity": effective,
+                              "incremental": len(set(names) - others)}
+            self._v2_reason = "AWAITING_FEED_EVIDENCE" if names else "EMPTY_INVENTORY"
+            return self.v2_status()
+
+    def v2_status(self) -> dict:
+        with self._lock:
+            self._check_v2_locked()
+            names = self._groups.get("r2d2-v2-live", (0, 0., ()))[2]
+            return {"status": self._v2_reason, "generation": self._v2_generation,
+                    "desired_count": len(names),
+                    "symbols_sha256": hashlib.sha256(json.dumps(list(names), separators=(",", ":")).encode()).hexdigest(),
+                    "incremental_count": (self._v2_lease or {}).get("incremental", 0),
+                    "capacity": (self._v2_lease or {}).get("capacity"),
+                    "feeds": {feed: dict(value) for feed, value in self._v2_evidence.items()},
+                    "withdrawals": [{k: ({f: dict(v) for f, v in value.items()}
+                        if k in {"feeds_before", "unsubscribe_sent"} else value)
+                        for k, value in row.items() if not k.startswith("_")}
+                        for row in self._v2_withdrawals],
+                    "provider_ack_verified": False, "readiness": "NOT_PROVEN"}
+
+    def _v2_sent(self, feed: str, subscribed: set[str], generation: int) -> None:
+        with self._lock:
+            self._check_v2_locked()
+            names = set(self._groups.get("r2d2-v2-live", (0, 0., ()))[2])
+            if generation != self._v2_generation or not names or not names <= subscribed:
+                return
+            evidence = self._v2_evidence.setdefault(feed, {})
+            evidence.setdefault("first_sent_at", datetime.now(timezone.utc).isoformat())
+            evidence.update(connection_generation=self._feed_generation[feed], sent_count=len(names))
+
+    def _v2_received(self, feed: str, symbol: str) -> None:
+        with self._lock:
+            self._check_v2_locked()
+            if symbol not in self._groups.get("r2d2-v2-live", (0, 0., ()))[2]:
+                return
+            evidence = self._v2_evidence.get(feed)
+            if not evidence or evidence.get("connection_generation") != self._feed_generation[feed]:
+                return
+            at = datetime.now(timezone.utc).isoformat()
+            evidence.setdefault("first_received_at", at)
+            evidence["last_received_at"] = at
+            evidence["received_count"] = evidence.get("received_count", 0) + 1
 
     def quote(self, symbol: str) -> EodhdStreamQuote | None:
         with self._lock:
@@ -135,6 +264,7 @@ class EodhdRealtimeStream:
 
     def _desired_symbols(self) -> tuple[str, ...]:
         with self._lock:
+            self._check_v2_locked()
             groups = sorted(self._groups.values(), key=lambda item: (item[0], item[1]), reverse=True)
         selected: list[str] = []
         seen: set[str] = set()
@@ -150,6 +280,11 @@ class EodhdRealtimeStream:
 
     def _set_feed_state(self, feed: str, status: str, error: str = "") -> None:
         with self._lock:
+            if status != "connected":
+                self._v2_evidence.pop(feed, None)
+            elif self._feed_states[feed] != "connected":
+                self._feed_generation[feed] += 1
+                self._v2_evidence.pop(feed, None)
             self._feed_states[feed] = status
             self._feed_errors[feed] = error
 
@@ -186,14 +321,18 @@ class EodhdRealtimeStream:
                     self._set_feed_state(feed, "connected")
                     subscribed: set[str] = set()
                     while not self._stop.is_set():
-                        desired = set(self._desired_symbols())
+                        with self._lock:
+                            desired = set(self._desired_symbols())
+                            v2_generation = self._v2_generation
                         removed = sorted(subscribed - desired)
                         added = sorted(desired - subscribed)
                         if removed:
-                            await socket.send(json.dumps({"action": "unsubscribe", "symbols": ",".join(removed)}))
+                            await asyncio.wait_for(socket.send(json.dumps({"action": "unsubscribe", "symbols": ",".join(removed)})), timeout=2)
+                            self._v2_unsubscribed(feed, set(removed))
                         if added:
-                            await socket.send(json.dumps({"action": "subscribe", "symbols": ",".join(added)}))
+                            await asyncio.wait_for(socket.send(json.dumps({"action": "subscribe", "symbols": ",".join(added)})), timeout=2)
                         subscribed = desired
+                        self._v2_sent(feed, subscribed, v2_generation)
                         try:
                             payload = await asyncio.wait_for(socket.recv(), timeout=1)
                         except TimeoutError:
@@ -227,6 +366,7 @@ class EodhdRealtimeStream:
             return
         if not symbol or price <= 0 or timestamp_ms <= 0:
             return
+        self._v2_received("trade", symbol)
         quote = EodhdStreamQuote(
             symbol=symbol,
             price=price,
@@ -291,6 +431,7 @@ class EodhdRealtimeStream:
             price = (bid + ask) / 2
         else:
             price = bid if bid > 0 else ask
+        self._v2_received("quote", symbol)
         as_of = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
         with self._lock:
             current = self._quotes.get(symbol)

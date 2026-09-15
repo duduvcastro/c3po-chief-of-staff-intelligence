@@ -431,9 +431,12 @@ def _validate_event(event: Any, through: datetime) -> None:
                 _require(previous <= instant < end, "EVENT_BAR_TRADE_ORDER_INVALID")
                 previous = instant
     elif kind == "QUOTE":
-        _require(_number(event["bid"], positive=True) and _number(event["ask"], positive=True) and event["ask"] >= event["bid"], "EVENT_QUOTE_INVALID")
+        # Keep well-formed invalid observations for EMENDA 5's per-window
+        # counter. Economic validity is checked before any ledger mark/exit.
+        _require(all(type(event[key]) in (int, float) and math.isfinite(event[key])
+                     for key in ("bid", "ask")), "EVENT_QUOTE_INVALID")
         for key in ("bid_at", "ask_at"):
-            _require(_time(event[key]) <= at, "EVENT_QUOTE_FUTURE")
+            _time(event[key])
     elif kind == "SPLIT":
         _require(_number(event["factor"], positive=True), "EVENT_SPLIT_INVALID")
     elif kind in {"DIVIDEND_ENTITLEMENT", "DIVIDEND_PAYMENT"}:

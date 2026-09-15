@@ -284,6 +284,24 @@ def test_run_once_registers_claims_executes_and_records_factual_fill_clocks() ->
     assert summary["open_positions"] == 1 and summary["divergence_sell"]["count"] == 1 and "AAA" not in json.dumps(summary)
 
 
+def test_eod_exit_uses_existing_effect_guard_and_survives_replay_without_second_sell() -> None:
+    repo, memory, experiment = _setup()
+    quotes = FakeQuotes({"AAA": 50.1})
+    original = _row([_record("AAA")])
+    assert _run(repo, memory, experiment, original, quotes, T0 + timedelta(seconds=5))["buys"] == 1
+    exit_at = datetime(2026, 9, 14, 19, 59, 40, tzinfo=timezone.utc)
+    closed = _row([_record("AAA", status="CLOSED", exit_cause="EOD_POSITIVE",
+                          exit_price=51, exit_at=exit_at)], version=4)
+    quotes.mids["AAA"] = 51.1
+    result = _run(repo, memory, experiment, closed, quotes, exit_at + timedelta(seconds=2))
+    assert result["sells"] == 1 and result["buys"] == 0
+    row = _rows(memory, experiment)["ep-AAA"]
+    assert row["status"] == "CLOSED" and row["sell_trade_id"]
+    assert row["divergence"]["sell"]["ledger_price"] == 51
+    assert _run(repo, memory, experiment, closed, quotes, exit_at + timedelta(seconds=4))["sells"] == 0
+    assert len(repo.memory["trades"]) == 2
+
+
 def test_exit_pending_persists_without_a_quote_blocks_new_buys_and_never_invents_a_fill() -> None:
     repo, memory, experiment = _setup()
     quotes = FakeQuotes({"AAA": 50.0, "BBB": 20.0})
