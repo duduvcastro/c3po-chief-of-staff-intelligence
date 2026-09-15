@@ -167,3 +167,18 @@ Receipt SHA256:`d90b026ef3ccc883257ecab241c4b2572a5b999b1702db0d2ec7a2e89e76f7be
 The final evidence commit changes documentation/receipts only; executed code
 remains exactly that of the pinned code commit. Local validation receipts are
 in `docs/evidence/pr408-f408c-validation-20260915.json`.
+
+## Follow-up F408d-1: unidentified tick gate
+
+A skipped frame with symbol-like fields (including nested/renamed keys or tick
+price/time fields) is not treated as verified provider status when its identity
+cannot be validated. Invalid/unparseable/oversized quarantined frames also carry
+`identity_uncertain=true`. No normalization or guessed symbol is admitted.
+With OPEN exposure in either research or portfolio, such a receipt causes the
+session-wide `RAW_UNIDENTIFIED_TICK` DATA_GAP before economic events. The raw
+cursor and per-record receipt still commit together and subsequent records are
+read. Plain provider status without tick shape remains RAW_NON_TICK without this
+gap. With a valid identity, the existing instrument-scoped quarantine gate
+remains. Without OPEN exposure the unknown-identity receipt is recorded without
+manufacturing a global issue for a nonexistent position. Existing restoration
+and portfolio uncertainty rules are unchanged.

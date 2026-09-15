@@ -298,12 +298,16 @@ def test_full_withdrawal_queue_is_compacted_only_in_live_journal(tmp_path,clock)
     c._persist(receipt)
     status=json.loads((tmp_path/'policy.json.status.json').read_text())
     assert status==receipt
-    row=json.loads((tmp_path/'policy.json.live.2026-09-18.ndjson').read_text())
+    lines=(tmp_path/'policy.json.live.2026-09-18.ndjson').read_text().splitlines()
+    row=json.loads(lines[0])
+    delta=json.loads(lines[1])
+    assert delta['entries']==receipt['subscription']['withdrawals']
     assert 'withdrawals' not in row['subscription'] and 'feeds_before' not in json.dumps(row)
     assert row['retained_withdrawal_count']==16
     assert row['withdrawals_sha256']==digest(receipt['subscription']['withdrawals'])
     assert row['full_receipt_sha256']==digest(receipt)
-    assert len((tmp_path/'policy.json.live.2026-09-18.ndjson').read_bytes())<=live.LIVE_RECORD_BYTES
+    assert len((lines[0]+'\n').encode())<=live.LIVE_RECORD_BYTES
+    assert len((lines[1]+'\n').encode())<=live.LIVE_WITHDRAWAL_DELTA_BYTES
     # A full legacy journal cannot kill a restarted controller in the new format.
     old=tmp_path/'policy.json.live.ndjson'
     with old.open('wb') as out:out.truncate(live.LIVE_JOURNAL_BYTES+1)
@@ -399,3 +403,44 @@ def test_journal_failure_withdraws_only_v2_without_reinstall_loop(tmp_path,clock
     c._run()
     assert len(calls)==1
     assert stream._desired_symbols()==('OLD',)
+
+
+def test_d2_withdrawal_delta_survives_deque_eviction_and_send_updates(tmp_path,clock):
+    from copy import deepcopy
+    c,stream,saved,now,policy=setup_controller(tmp_path,clock);tmp_path.chmod(0o700)
+    receipt=c.step();retained=[]
+    path=tmp_path/'policy.json.live.2026-09-18.ndjson'
+    for generation in range(1,21):
+        retained.append({'generation':generation,'reason':'GROUP_CHANGED','at':now[0].isoformat(),
+                         'feeds_before':{'quote':{'generation':generation,'sent_count':2}},'unsubscribe_sent':{}})
+        retained=retained[-16:]
+        receipt['subscription']['withdrawals']=deepcopy(retained)
+        c._persist(receipt);c._persist(receipt)  # Unchanged poll adds no repeated delta.
+    rows=[json.loads(row) for row in path.read_text().splitlines()]
+    deltas=[row for row in rows if row['schema']=='R2D2_V2_LIVE_WITHDRAWAL_DELTA_V1']
+    assert len(deltas)==20 and all(len(row['entries'])==1 for row in deltas)
+    assert [row['entries'][0]['generation'] for row in deltas]==list(range(1,21))
+    assert all(row['entries'][0]['reason']=='GROUP_CHANGED' and row['entries'][0]['feeds_before'] for row in deltas)
+    receipt['subscription']['withdrawals'][-1]['unsubscribe_sent']={'quote':{'at':now[0].isoformat(),'count':1}}
+    c._persist(receipt)
+    latest=json.loads(path.read_text().splitlines()[-1])
+    assert len(latest['entries'])==1 and latest['entries'][0]['generation']==20
+    assert latest['entries'][0]['unsubscribe_sent']['quote']['count']==1
+    assert latest['entries_sha256']==digest(latest['entries'])
+    before=path.read_bytes()
+    restarted=live.LiveGroupController(c.settings,stream,inventory=c.inventory,policy_reader=c.policy_reader,clock=c.clock)
+    restarted._persist(receipt)
+    assert path.read_bytes().startswith(before)
+    assert len(json.loads(path.read_text().splitlines()[-1])['entries'])==16
+
+
+def test_d2_delta_capacity_failure_does_not_advance_cache_or_append_partial_batch(tmp_path,clock):
+    c,stream,saved,now,policy=setup_controller(tmp_path,clock);tmp_path.chmod(0o700)
+    receipt=c.step();c._persist(receipt)
+    path=tmp_path/'policy.json.live.2026-09-18.ndjson'
+    previous=c._persisted_withdrawals_sha
+    with path.open('ab') as out:out.truncate(live.LIVE_JOURNAL_BYTES-100)
+    receipt['subscription']['withdrawals']=[{'generation':1,'reason':'GROUP_CHANGED','feeds_before':{},'unsubscribe_sent':{}}]
+    size=path.stat().st_size
+    with pytest.raises(ShadowIntegrityError,match='FULL'):c._persist(receipt)
+    assert path.stat().st_size==size and c._persisted_withdrawals_sha==previous

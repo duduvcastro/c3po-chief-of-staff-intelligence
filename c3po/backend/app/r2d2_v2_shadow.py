@@ -475,6 +475,11 @@ class ShadowCollector:
             poll_journal.append({"journal_key": "raw-poll-recovered:" + now.isoformat(),
                                  "type": "RAW_POLL_RECOVERED", "at": now.isoformat()})
         if not deferred:
+            ledger = state.get("ledger") or {}
+            has_open = any(record.get("status") == "OPEN"
+                for book in ("portfolio", "research") for record in ledger.get(book, {}).values())
+            if has_open and any(row.get("identity_uncertain") for row in (skipped_receipts or [])):
+                source_gaps.append({"instrument": None, "reason": "RAW_UNIDENTIFIED_TICK"})
             source_gaps.extend({"instrument": row["instrument_key"],
                 "reason": "RAW_QUARANTINE_" + row["code"]}
                 for row in (skipped_receipts or [])

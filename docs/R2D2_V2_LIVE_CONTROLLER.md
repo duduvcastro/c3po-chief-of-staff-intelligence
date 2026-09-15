@@ -20,7 +20,7 @@ Common fields: `schema=R2D2_V2_LIVE_POLICY_V1`, `order_sha`, deployed `code_revi
 
 LIVE additionally binds `epoch` and `release_sha`; the existing `R2D2_V2_SHADOW_RELEASE_FILE/SHA` must expose the current verified CERTIFIED release to this worker. The private file must be mounted at the configured path and read-only in the container. State is read directly from the existing epoch, never from the API or a legacy V1 position list. Missing epoch is blocked. Release verification requires current consent/source/readiness/package pins; a policy cannot bypass it.
 
-PROOF uses the private `symbols` list, `list_sha` (canonical JSON SHA256 of that list), and `causal_list_receipt_sha` referring to the independently published authorized list. At least two symbols allow a real add/remove transition. It never queries the epoch database. Its 60 second declared window runs automatically in three phases: all but the final symbol, full list, all but the final symbol; finally the entire group is withdrawn. Start must be within ten seconds of the declared start. A private exclusive `.used` latch is created BEFORE subscription; restart cannot replay it. Do not remove that latch or reuse the policy. Proof receipts append to private `.proof.ndjson`, capped at1MiB. They record each phase, final pre-withdrawal snapshots and actual unsubscribe sends per connection generation. Completion/failure stops that controller thread. LIVE uses compact append-only `policy.json.live.YYYY-MM-DD.ndjson` files keyed by the UTC observation date, each capped at64MiB. A record is at most3072 bytes; at the normal5s cadence a full day plus two final records is at most53,090,304 bytes, below the daily cap. Each compact row keeps policy/state/full-receipt hashes, current group/feed evidence and withdrawal count/hash; it does not repeat `withdrawals` or `feeds_before`. The full latest receipt remains in the atomic `.status.json`. The compact hash is a commitment, not recovery of the full history. Prior daily files and the legacy `.live.ndjson` are retained, never deleted or appended to by the new LIVE writer. Restart on a later UTC day is independent of an old full journal. Oversized records, invalid files or abnormal traffic filling the current day fail closed; the cap includes the next append. PROOF retains the original full `.proof.ndjson` format and1MiB cap. Retain all daily files through the epoch and audit; this code performs no automatic purge. Temporary status filenames are unique. This is one bounded test, not a shadow loop.
+PROOF uses the private `symbols` list, `list_sha` (canonical JSON SHA256 of that list), and `causal_list_receipt_sha` referring to the independently published authorized list. At least two symbols allow a real add/remove transition. It never queries the epoch database. Its 60 second declared window runs automatically in three phases: all but the final symbol, full list, all but the final symbol; finally the entire group is withdrawn. Start must be within ten seconds of the declared start. A private exclusive `.used` latch is created BEFORE subscription; restart cannot replay it. Do not remove that latch or reuse the policy. Proof receipts append to private `.proof.ndjson`, capped at1MiB. They record each phase, final pre-withdrawal snapshots and actual unsubscribe sends per connection generation. Completion/failure stops that controller thread. LIVE uses compact append-only `policy.json.live.YYYY-MM-DD.ndjson` files keyed by the UTC observation date, each capped at64MiB. A periodic compact record is at most3072 bytes; at the normal5s cadence the periodic records for a full day plus two final records are at most53,090,304 bytes. Withdrawal delta rows consume additional space in the same daily cap (see F408d-2 below). Each compact row keeps policy/state/full-receipt hashes, current group/feed evidence and withdrawal count/hash; it does not repeat `withdrawals` or `feeds_before`. The full latest receipt remains in the atomic `.status.json`. The compact hash is a commitment, not recovery of the full history. Prior daily files and the legacy `.live.ndjson` are retained, never deleted or appended to by the new LIVE writer. Restart on a later UTC day is independent of an old full journal. Oversized records, invalid files or abnormal traffic filling the current day fail closed; the cap includes the next append. PROOF retains the original full `.proof.ndjson` format and1MiB cap. Retain all daily files through the epoch and audit; this code performs no automatic purge. Temporary status filenames are unique. This is one bounded test, not a shadow loop.
 
 Wednesday16Sep: at most10 symbols of the last published causal list, regular XNYS session, and `merged_on=2026-09-15` backed by the actual Tuesday merge/head GO. This is an additional test and does not replace Thursday. Thursday17Sep: declared window wholly between14:15–15:00Z, after R4/C8/head GO, exclusively the R4 list. No other day is accepted. These policy fields are not permission to fabricate missing merge/list/audit receipts.
 
@@ -45,3 +45,24 @@ append limits. JSON parsing failures are separately reported as
 P3 issues (stop journal receipt, generation-specific unsubscribe matching and
 expiry snapshot labeling) remain for follow-up; this change does not claim to
 have corrected them.
+
+## Follow-up F408d-2: durable withdrawal deltas
+
+The daily LIVE journal now has two row schemas. Periodic compact receipts retain
+the 3072-byte bound. When the retained withdrawal hash changes, an additional
+`R2D2_V2_LIVE_WITHDRAWAL_DELTA_V1` row preserves new or changed entries, including
+reason, generation, feeds_before and unsubscribe_sent. Changes to a later send
+receipt are persisted as a new version of that entry. Delta rows are bounded by
+32768 bytes and at most 16 entries. The combined append is checked against the
+same daily 64 MiB cap, and the bounded dedup cache advances only after fsync.
+Unchanged polls do not repeat the details. Restart emits the currently observed
+window again when nonempty, preserving old disk evidence without an unbounded
+history in memory. Old files remain retained across UTC rollover.
+
+The periodic-only daily bound does not include these event-dependent deltas;
+frequent changes consume additional capacity and can still fail closed at the
+cap. This records observed deque versions, not withdrawals evicted between two
+polls before the controller could observe them. PROOF receipts are unchanged.
+A 20-change regression test preserves the first four generations after they leave
+the 16-entry deque, plus later unsubscribe evidence and restart history. This
+follow-up requires its own head audit and carries no deployment/activation GO.
