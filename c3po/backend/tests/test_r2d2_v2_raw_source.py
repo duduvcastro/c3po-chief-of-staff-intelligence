@@ -250,3 +250,32 @@ def test_worker_binds_existing_spool_only_for_certified_without_starting_capture
     assert isinstance(collector.source, raw.SpoolShadowSource) is (mode == 'CERTIFIED')
     assert not settings.r2d2_microstructure_raw_dir.exists()
     assert not settings.r2d2_v2_shadow_source_dir.exists()
+
+
+@pytest.mark.parametrize("append", [False, True])
+def test_boundary_rewrite_during_short_read_never_reseals_changed_history(source, monkeypatch, append):
+    # A large witness makes even one valid new record a short read; the empty
+    # read exercises the normal idle poll. Rewrite after the first witness check.
+    monkeypatch.setattr(raw, "WITNESS_BYTES", 1024)
+    original = line(101)
+    path = write(source, original)
+    cursor = source.prepare_events(NOW, {})["cursor"]
+    suffix = line(103) if append else b""
+    with path.open("ab") as stream:
+        stream.write(suffix)
+    pread = raw.os.pread
+    changed = False
+
+    def racing_read(fd, size, offset):
+        nonlocal changed
+        data = pread(fd, size, offset)
+        if offset == len(original) and not changed:
+            changed = True
+            path.write_bytes(original.replace(b"101", b"102") + suffix)
+        return data
+
+    monkeypatch.setattr(raw.os, "pread", racing_read)
+    batch = source.prepare_events(NOW, cursor)
+    assert changed
+    assert batch["diagnostics"] == [{"code": "RAW_CHANGED_DURING_READ"}]
+    assert batch["events"] == [] and batch["cursor"] == cursor

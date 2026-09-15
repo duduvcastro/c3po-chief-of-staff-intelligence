@@ -108,10 +108,12 @@ class SpoolShadowSource(FileShadowSource):
             # Check the combined budget before emitting anything. Never split
             # a snapshot into quote-first and trade-later economic decisions.
             budget = 0
+            previous_tails: dict[str, bytes] = {}
             for name, fd, info in handles:
                 saved = previous.get(name)
                 offset = saved["offset"] if saved is not None else 0
                 _require(type(offset) is int and 0 <= offset <= info.st_size, "RAW_TRUNCATED_OR_CURSOR_INVALID")
+                previous_tails[name] = b""
                 if saved is not None:
                     _require(set(saved) == {"offset", "sequence", "device", "inode", "witness"}
                              and type(saved["sequence"]) is int and saved["sequence"] >= 0,
@@ -119,6 +121,7 @@ class SpoolShadowSource(FileShadowSource):
                     _require((info.st_dev, info.st_ino) == (saved["device"], saved["inode"]), "RAW_FILE_REPLACED")
                     tail = os.pread(fd, min(offset, WITNESS_BYTES), max(0, offset - WITNESS_BYTES))
                     _require(hashlib.sha256(tail).hexdigest() == saved["witness"], "RAW_APPEND_BOUNDARY_CHANGED")
+                    previous_tails[name] = tail
                 budget += info.st_size - offset
                 _require(budget <= MAX_CYCLE_BYTES, "RAW_READ_BUDGET_EXCEEDED")
             proposed = {}
@@ -148,8 +151,8 @@ class SpoolShadowSource(FileShadowSource):
                 # Retain exact boundary bytes from the read, or the prior
                 # witness for an unchanged offset. Re-read to detect a race.
                 tail = os.pread(fd, min(offset, WITNESS_BYTES), max(0, offset - WITNESS_BYTES))
-                if end >= WITNESS_BYTES:
-                    _require(tail == data[end-WITNESS_BYTES:end], "RAW_CHANGED_DURING_READ")
+                expected_tail = (previous_tails[name] + data[:end])[-WITNESS_BYTES:]
+                _require(tail == expected_tail, "RAW_CHANGED_DURING_READ")
                 proposed[name] = {"offset": offset, "sequence": sequence,
                                   "device": info.st_dev, "inode": info.st_ino,
                                   "witness": hashlib.sha256(tail).hexdigest()}
