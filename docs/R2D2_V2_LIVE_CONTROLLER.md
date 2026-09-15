@@ -1,0 +1,37 @@
+# V2 live subscription controller — EMENDA 5
+
+This change supplies the missing caller in the existing `r2d2-worker` process. It never starts another provider connection, enables the V1 experiment, or creates orders. Default OFF: both `R2D2_V2_LIVE_POLICY_FILE` and `R2D2_V2_LIVE_POLICY_SHA` are empty. Deploying this code alone does not subscribe V2 instruments. No populated runtime authorization is shipped.
+
+The controlling owner order is SHA256 `1ad8b90cfab651823eb677b830a0078d10c17447575c8d813c3883a718579d8e`. Fable design revision 1a is `8b296504e59d520353413d97c19d5b739edae37e843a05cc44cb1cbd245984ae`; a design opinion is not a technical head GO. Policies are operator-pinned attestations after verification of actual receipts, not cryptographic proof that someone consented.
+
+## Runtime guarantees and limits
+
+Every five seconds a separate controller thread rechecks the private policy/hash/build/package and reads the CERTIFIED release/state. Database access is READ ONLY with connect/statement/lock/TCP timeouts; no initialize, migrations, collector cycle or API settings mutation. A refresh taking ten seconds or a regressing clock is refused. An existing worker scan cannot delay the independent refresh. Maintenance admission is respected.
+
+The union includes OPEN portfolio and both research arms, deduplicated. A lease lasting at most15 seconds is installed under the stream lock. The effective bound is min(550, audited capacity, configured stream maximum), including ALL other groups. Other groups may change later: their setter rechecks the reservation and removes only V2 on overflow. Expiration is checked by the stream even if the controller stalls. On failures, expiry or shutdown, only `r2d2-v2-live` is withdrawn. The controller catches its failures without killing the V1 worker/capture.
+
+Receipts separate desired count, local send, per-feed connection generation and actual received messages. A send is NOT a provider ACK; `provider_ack_verified=false`, and readiness remains `NOT_PROVEN`. Reconnect/group changes invalidate earlier connection evidence. The first-send timestamp is local, not a provider acceptance timestamp. No receipt contains symbols. The status file is an atomic private sibling of the policy (`.status.json`). It is not a substitute for disk receipts, coverage or a Fable reading.
+
+Socket writes have a two-second timeout. Proof leases end five seconds before the authorized end to allow the existing socket loop to send withdrawal. Physical delivery/ACK cannot be guaranteed during network failure: prove it from actual receipts, otherwise the proof fails. Never claim exact subscription duration from the local timer alone.
+
+## Private policy fields
+
+Common fields: `schema=R2D2_V2_LIVE_POLICY_V1`, `order_sha`, deployed `code_revision`, current `package_sha`, real `c8_receipt_sha`, real `head_go_sha`, integer `capacity`, UTC `valid_from`/`valid_until`, and `mode`. Install the file0600 in a directory0700, hash the exact bytes, then set the file/hash in the worker under the approved deployment/activation procedure. Verify the package descriptor from installed bytes, not from an earlier head. Never put provider credentials in this policy.
+
+LIVE additionally binds `epoch` and `release_sha`; the existing `R2D2_V2_SHADOW_RELEASE_FILE/SHA` must expose the current verified CERTIFIED release to this worker. The private file must be mounted at the configured path and read-only in the container. State is read directly from the existing epoch, never from the API or a legacy V1 position list. Missing epoch is blocked. Release verification requires current consent/source/readiness/package pins; a policy cannot bypass it.
+
+PROOF uses the private `symbols` list, `list_sha` (canonical JSON SHA256 of that list), and `causal_list_receipt_sha` referring to the independently published authorized list. At least two symbols allow a real add/remove transition. It never queries the epoch database. Its 30–60 second declared window runs automatically in three phases: all but the final symbol, full list, all but the final symbol; finally the entire group is withdrawn. Start must be within five seconds of the declared start. A private exclusive `.used` latch is created BEFORE subscription; restart cannot replay it. Do not remove that latch or reuse the policy. Proof receipts append to private `.proof.ndjson`, capped at1MiB. They record each phase, and completion/failure stops that controller thread. This is one bounded test, not a shadow loop.
+
+Wednesday16Sep: at most10 symbols of the last published causal list, regular XNYS session, and `merged_on=2026-09-15` backed by the actual Tuesday merge/head GO. This is an additional test and does not replace Thursday. Thursday17Sep: declared window wholly between14:15–15:00Z, after R4/C8/head GO, exclusively the R4 list. No other day is accepted. These policy fields are not permission to fabricate missing merge/list/audit receipts.
+
+## Proof acceptance and remaining operational gates
+
+Before activation, publish time, private-list hash, count, policy hash, exact installed head, C8 and head GO. Preserve the baseline raw cursor and per-feed file inventory by read-only observation; no provider token or nominal data in the channel. Confirm Docker mounts and the effective configured maximum on the installed worker.
+
+After the bounded test, compare `.proof.ndjson` transitions, per-feed desired/sent/received evidence and source/session files. Require actual accepted/written trade AND quote events, no diagnostics from the actual reader for the bounded interval, no drops or budget violations, unchanged protected groups, and withdrawal evidence. Written counts and complete BAR continuity are NEVER inferred from `connected`, sent counts or the controller receipt. Fable independently reads and hashes the outputs. File-reader limits are8MiB/4096events per joint snapshot and4096 retained files; these are refusal bounds, not proven throughput/capacity. Local tests are synthetic, with no live provider use.
+
+Thursday receipts must be ready for Fable by15:00BRT and the owner's16:00 decision. If the controller is not merged, live-proven and independently checked by Thursday16:00, session1 moves to Monday21Sep under the authorized fallback; no opening without EMENDA5 working. The owner accepts initial earnings coverage N/D (`EMPTY_INVENTORY_NO_LIVE_COVERAGE`); empty Tuesday/Wednesday runs do not prove live coverage. Bind R5 config.epoch to the real CERTIFIED epoch Thursday17:00–19:05BRT; first real Friday22:05Z coverage is read Monday. Other gates and three-party release consents still apply.
+
+## Verification scope
+
+Counterexamples cover expiry without controller progress, simultaneous protected-group growth, configured capacity below550, deduplication, changing ledger inventories, state corruption, database errors/timeouts, policy revocation, stop during I/O, reconnect/generation evidence, private one-shot proof add/remove/expiry/restart, actual existing socket loop with a fake transport, OFF behavior and thread-start isolation. The package includes controller, planner and worker (23 pinned modules). Regression tests include V2, raw capture and V1. PostgreSQL integration requires its own test database; skipped tests must be reported, not treated as passes.

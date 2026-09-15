@@ -30,6 +30,7 @@ PACKAGE_FILES = (
     "r2d2_v2_counterfactual.py", "r2d2_v2_counterfactual_archive.py", "r2d2_v2_store.py",
     "r2d2_v2_mirror.py", "config.py",
     "r2d2_v2_raw_events.py", "r2d2_v2_raw_source.py",
+    "r2d2_v2_live_group.py", "r2d2_v2_live_controller.py", "r2d2_worker.py",
     "microstructure_capture.py", "market_data/eodhd_stream.py",
 )
 
@@ -43,6 +44,7 @@ def _digest(value: object) -> str:
 def earnings_contract() -> dict[str, Any]:
     """Versioned data-boundary descriptor; it is not a new statistical policy."""
     return {
+        "live_subscription_policy": "OFF_UNTIL_PRIVATE_HASH_PINNED_POLICY_C8_HEAD_GO; existing-worker-only; leased15s; refresh5s; both-feed-evidence-not-inferred; one-shot-proof",
         "schema": "R2D2_V2_EARNINGS_DATA_CONTRACT_V1",
         "base_signed_manifest_sha": BASE_SIGNED_MANIFEST_SHA,
         "amendment_one_sha": AMENDMENT_ONE_SHA,
