@@ -95,13 +95,15 @@ def test_continuity_failure_never_advances_cursor_or_returns_partial_events(sour
     assert batch["events"] == [] and batch["cursor"] == old and cursor == old
 
 
-def test_joint_feed_budget_refuses_whole_batch_and_never_hides_trade(source, monkeypatch):
+def test_volume_is_not_a_permanent_refusal_and_joint_feed_is_delivered(source, monkeypatch):
     quote, trade = line(), line(90, feed="trade")
     write(source, quote)
     write(source, trade, PART.replace("quote", "trade"))
-    monkeypatch.setattr(raw, "MAX_CYCLE_BYTES", len(quote))
+    monkeypatch.setattr(raw, "MAX_CYCLE_EVENTS", 1)
     batch = source.prepare_events(NOW, {})
-    assert batch == {"events": [], "diagnostics": [{"code": "RAW_READ_BUDGET_EXCEEDED"}], "cursor": {}}
+    assert batch["diagnostics"] == []
+    assert {event["type"] for event in batch["events"]} == {"QUOTE", "TRADE"}
+    assert batch["has_more"] is False
 
 
 def test_symlink_is_rejected_and_does_not_read_target(source, tmp_path):
@@ -270,7 +272,7 @@ def test_boundary_rewrite_during_short_read_never_reseals_changed_history(source
     def racing_read(fd, size, offset):
         nonlocal changed
         data = pread(fd, size, offset)
-        if offset == len(original) and not changed:
+        if (offset == len(original) or not append) and not changed:
             changed = True
             path.write_bytes(original.replace(b"101", b"102") + suffix)
         return data
@@ -315,3 +317,287 @@ def test_preopen_drains_existing_raw_without_opening_a_session(source):
     assert saved["raw_source_cursor"]["files"][PART]["offset"] == len(line(99, at=at))
     assert saved["sessions"] == {} and saved["ledger"]["session"] is None
     assert any(r["payload"]["type"] == "SOURCE_EVENT" for r in collector.store.journal(collector.release.epoch))
+
+
+@pytest.mark.parametrize("bad", [b'{not json}\n', canonical({"schema_version": 1, "provider": "EODHD", "feed": "quote",
+    "received_at": AT.isoformat(), "event_at": AT.isoformat(), "payload_raw": '{"status":"connected"}'})+b"\n",
+    line().replace(b'101', b'null'), b'x'*70000+b'\n'])
+def test_bad_frame_is_receipted_and_following_tick_is_committed(source, bad):
+    from hashlib import sha256
+    write(source, line(99) + bad + line(101))
+    collector = seed_collector(source)
+    collector.cycle(NOW)
+    state, journal = collector.store.read_with_journal(collector.release.epoch)
+    assert state['state']['data_issues'] == []
+    cursor = state['state']['raw_source_cursor']['files'][PART]
+    assert cursor['sequence'] == 2 and cursor['offset'] == len(line(99)+bad+line(101))
+    receipt = [r['payload'] for r in journal if r['payload']['type']=='SOURCE_CURSOR'][0]
+    skipped = receipt['skipped_receipts']
+    assert len(skipped)==1 and skipped[0]['offset']==len(line(99))
+    assert skipped[0]['raw_sha256']==sha256(bad).hexdigest()
+    assert skipped[0]['disposition'] in {'QUARANTINED', 'SKIPPED'}
+    if b'connected' in bad:
+        assert skipped[0]['code']=='RAW_NON_TICK'
+    assert all(state['state']['ledger'][book]['synthetic-entry']['exit_cause']=='EOD_POSITIVE'
+               for book in ('research','portfolio'))
+    collector.cycle(NOW)
+    assert collector.store.journal(collector.release.epoch)==journal
+
+
+def pages(source, monkeypatch, budget):
+    monkeypatch.setattr(raw, 'MAX_CYCLE_EVENTS', budget)
+    cursor = {}; result=[]; snapshot=None
+    for _ in range(100):
+        page = source.prepare_events(NOW, cursor, snapshot=snapshot)
+        assert not page['diagnostics']
+        assert page['cursor'] != cursor
+        result.append(page);cursor=page['cursor'];snapshot=page['snapshot']
+        if not page['has_more']: return result
+    pytest.fail('Pagination did not converge')
+
+
+def test_common_cut_includes_stop_at_w_and_defers_stop_after_w(source, monkeypatch):
+    write(source, line(103) + line(103, at=AT+timedelta(seconds=2)))
+    tradepart=PART.replace('quote','trade')
+    write(source, line(90, feed='trade')+line(90, feed='trade', received=AT+timedelta(seconds=1)),tradepart)
+    rows=pages(source,monkeypatch,2)
+    assert rows[0]['page']['cutoff_received_at']==AT.isoformat()
+    assert [e['type'] for e in rows[0]['events']]==['QUOTE','TRADE']
+    assert len(rows[1]['events'])==2
+    collector=seed_collector(source)
+    monkeypatch.setattr(raw,'MAX_DRAIN_SECONDS',10)
+    from itertools import count
+    clock_ticks=count()
+    collector.clock=lambda: NOW+timedelta(microseconds=next(clock_ticks))
+    result=collector.cycle()
+    assert result['raw_pages']==2 and not result['raw_backlog_pending']
+    events=[r['payload']['source'] for r in collector.store.journal(collector.release.epoch)
+            if r['payload']['type']=='SOURCE_EVENT']
+    assert [e['type'] for e in events[:2]]==['TRADE','QUOTE']
+    state=collector.store.read(collector.release.epoch)['state']
+    assert all(state['ledger'][b]['synthetic-entry']['exit_cause']=='STOP' for b in ('research','portfolio'))
+
+
+def test_tied_reception_group_is_not_split_even_past_page_target(source, monkeypatch):
+    write(source,b''.join(line(99) for _ in range(5)))
+    write(source,line(90,feed='trade'),PART.replace('quote','trade'))
+    result=pages(source,monkeypatch,2)
+    assert len(result)==1 and len(result[0]['events'])==6
+    assert result[0]['page']['target_exceeded'] is True
+
+
+def test_three_budgets_converge_in_three_pages_with_monotone_balanced_feeds(source,monkeypatch):
+    write(source,b''.join(line(99,at=AT+timedelta(milliseconds=i)) for i in range(6)))
+    write(source,b''.join(line(99,feed='trade',at=AT+timedelta(milliseconds=i)) for i in range(6)),
+          PART.replace('quote','trade'))
+    result=pages(source,monkeypatch,4)
+    assert len(result)==3 and [p['page']['record_count'] for p in result]==[4,4,4]
+
+
+def test_page_discard_and_restart_reread_identical_bytes_and_cursor_bounds(source,monkeypatch):
+    rows=[line(99,at=AT+timedelta(milliseconds=i)) for i in range(6)]
+    write(source,b''.join(rows));monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',2)
+    first=source.prepare_events(NOW,{})
+    assert first==source.prepare_events(NOW,{})
+    assert first['cursor']['files'][PART]['offset']==sum(map(len,rows[:2]))
+    cursor=first['cursor']
+    next_page=source.prepare_events(NOW,cursor,snapshot=first['snapshot'])
+    rebuilt=raw.SpoolShadowSource(source.root,raw_root=source.raw_root,
+                                  first_session=source.first_session,calendar=source.calendar)
+    assert rebuilt.prepare_events(NOW,cursor)==next_page
+    assert next_page['cursor']['files'][PART]['offset']==sum(map(len,rows[:4]))
+
+
+def test_reception_regression_is_counted_without_global_gap(source,monkeypatch):
+    write(source,line(99,received=AT+timedelta(seconds=2))+line(99)+line(101,received=AT+timedelta(seconds=3)))
+    monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',1);monkeypatch.setattr(raw,'MAX_DRAIN_SECONDS',10)
+    collector=seed_collector(source)
+    from itertools import count
+    ticks=count()
+    collector.clock=lambda: NOW+timedelta(microseconds=next(ticks))
+    collector.cycle()
+    saved,journal=collector.store.read_with_journal(collector.release.epoch)
+    assert saved['state']['data_issues']==[]
+    cursors=[r['payload'] for r in journal if r['payload']['type']=='SOURCE_CURSOR']
+    assert sum(r['page']['diagnostic_counts'].get('RAW_RECEIVED_AT_DECREASED',0) for r in cursors)==1
+    assert saved['state']['raw_source_cursor']['files'][PART]['received_max']==(AT+timedelta(seconds=3)).isoformat()
+
+
+def test_one_cycle_keeps_joint_snapshot_while_appends_wait_for_next_cycle(source,monkeypatch):
+    rows=[line(99,at=AT+timedelta(milliseconds=i)) for i in range(4)]
+    path=write(source,b''.join(rows));monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',2)
+    first=source.prepare_events(NOW,{})
+    with path.open('ab') as stream:stream.write(line(103))
+    second=source.prepare_events(NOW,first['cursor'],snapshot=first['snapshot'])
+    assert not second['has_more'] and len(second['events'])==2
+    following=source.prepare_events(NOW,second['cursor'])
+    assert len(following['events'])==1
+
+
+def test_frozen_clock_defers_next_page_without_fabricating_observation_time(source,monkeypatch):
+    write(source,line(103)+line(103,at=AT+timedelta(seconds=2)))
+    write(source,line(90,feed='trade',received=AT+timedelta(seconds=1)),PART.replace('quote','trade'))
+    monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',2);monkeypatch.setattr(raw,'MAX_DRAIN_SECONDS',10)
+    collector=seed_collector(source)
+    result=collector.cycle(NOW)
+    assert result['raw_backlog_pending'] and result['raw_pages']==1
+    assert result['raw_drain_deferred']=='COLLECTOR_CLOCK_NOT_ADVANCED'
+    assert collector.store.read(collector.release.epoch)['state']['last_cycle_at']==NOW.isoformat()
+    collector.cycle(NOW+timedelta(seconds=1))
+    state=collector.store.read(collector.release.epoch)['state']
+    assert state['raw_source_cursor']['files'][PART.replace('quote','trade')]['sequence']==1
+
+
+def test_equivalence_preopen_ordered_backlog_same_events_and_full_state_hash(source,monkeypatch):
+    from app.r2d2_v2_store import digest
+    at=AT.replace(hour=12,minute=0,second=0)
+    observed=at+timedelta(minutes=30)
+    write(source,b''.join(line(99,at=at+timedelta(milliseconds=i)) for i in range(12)))
+    outcomes=[]
+    for budget in (1,3,7,16384):
+        monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',budget)
+        collector,_,_=setup_state(position=False);collector.source=source
+        initial=collector._initial();cursor={};snapshot=None;first=True
+        while True:
+            batch=source.prepare_events(observed,cursor,snapshot=snapshot)
+            assert not batch['diagnostics']
+            collector.store.atomic(collector.release.epoch,initial,
+                lambda state:collector._cycle_with_cursor(state,None,batch['events'],[],observed,
+                    causal=None,cursor=cursor,next_cursor=batch['cursor'],raw_receipts=batch['raw_receipts'],
+                    skipped_receipts=batch['skipped_receipts'],raw_page=batch['page'],continuation=not first),observed)
+            first=False;cursor=batch['cursor'];snapshot=batch['snapshot']
+            if not batch['has_more']:break
+        saved,journal=collector.store.read_with_journal(collector.release.epoch)
+        events=[r['payload']['source'] for r in journal if r['payload']['type']=='SOURCE_EVENT']
+        outcomes.append((digest(events),saved['state_sha']))
+    assert len(set(outcomes))==1
+
+
+def test_design_counterexample_late_trade_prevents_unrestricted_snapshot_equivalence(source,monkeypatch):
+    # This PASS proves a contradiction in the requested universal equivalence;
+    # it is explicitly NOT a passing equivalence certification.
+    write(source,line(103)+line(103,at=AT+timedelta(seconds=2)))
+    write(source,line(90,feed='trade',received=AT+timedelta(seconds=1)),PART.replace('quote','trade'))
+    from app.r2d2_v2_store import digest
+    def ordered(batch):
+        return sorted(batch['events'],key=lambda e:(e['at'],3 if e['type']=='TRADE' else 4,
+                      e['available_at'],e['source_id'],e['sequence'],e['event_id']))
+    full=pages(source,monkeypatch,16384)
+    paged=pages(source,monkeypatch,2)
+    full_sequence=[e['type'] for p in full for e in ordered(p)]
+    page_sequence=[e['type'] for p in paged for e in ordered(p)]
+    assert full_sequence==['TRADE','QUOTE','QUOTE']
+    assert page_sequence==['QUOTE','TRADE','QUOTE']
+    assert digest(full_sequence)!=digest(page_sequence)
+    # Real collector outcome also differs, with actual observation clocks
+    # advancing between pages. No timestamp is backdated to the cutoff W.
+    from itertools import count
+    outcomes=[]
+    for budget in (16384,2):
+        monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',budget)
+        monkeypatch.setattr(raw,'MAX_DRAIN_SECONDS',10)
+        collector=seed_collector(source);ticks=count()
+        collector.clock=lambda:NOW+timedelta(microseconds=next(ticks))
+        collector.cycle()
+        saved=collector.store.read(collector.release.epoch)
+        outcomes.append(saved['state_sha'])
+    assert outcomes[0]!=outcomes[1]
+
+
+def test_design_counterexample_fixed_per_file_shares_can_need_more_than_three_pages(source,monkeypatch):
+    # Three times a budget of two: five early quotes + one late trade. The
+    # design's fixed per-file share admits one quote per early page, not two.
+    write(source,b''.join(line(99,at=AT+timedelta(milliseconds=i)) for i in range(5)))
+    write(source,line(99,feed='trade',at=AT+timedelta(seconds=4)),PART.replace('quote','trade'))
+    result=pages(source,monkeypatch,2)
+    assert sum(p['page']['record_count'] for p in result)==6
+    assert len(result)==5 and len(result)>3
+
+
+def test_failed_second_page_commit_is_reread_with_identical_receipts(source,monkeypatch):
+    from itertools import count
+    write(source,b''.join(line(99,at=AT+timedelta(milliseconds=i)) for i in range(6)))
+    monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',2);monkeypatch.setattr(raw,'MAX_DRAIN_SECONDS',10)
+    collector=seed_collector(source);ticks=count()
+    collector.clock=lambda:NOW+timedelta(microseconds=next(ticks))
+    atomic=collector.store.atomic;attempts=[];failed_page=[]
+    prepare=source.prepare_events
+    def observed_prepare(*args,**kwargs):
+        batch=prepare(*args,**kwargs)
+        failed_page.append(deepcopy(batch))
+        return batch
+    monkeypatch.setattr(source,'prepare_events',observed_prepare)
+    def fail_second(epoch,initial,transition,now):
+        attempts.append(True)
+        if len(attempts)==2:
+            def failure(state):
+                transition(state)
+                raise RuntimeError('second page commit failed')
+            return atomic(epoch,initial,failure,now)
+        return atomic(epoch,initial,transition,now)
+    monkeypatch.setattr(collector.store,'atomic',fail_second)
+    with pytest.raises(RuntimeError,match='second page commit failed'):collector.cycle()
+    saved=collector.store.read(collector.release.epoch)['state']
+    assert saved['raw_source_cursor']['files'][PART]['sequence']==2
+    reread=prepare(NOW,saved['raw_source_cursor'])
+    assert reread==failed_page[-1]
+    monkeypatch.setattr(collector.store,'atomic',atomic)
+    collector.cycle()
+    assert collector.store.read(collector.release.epoch)['state']['raw_source_cursor']['files'][PART]['sequence']==6
+    events=[r['payload']['source']['event_id'] for r in collector.store.journal(collector.release.epoch)
+            if r['payload']['type']=='SOURCE_EVENT']
+    assert len(events)==len(set(events))==6
+
+
+def test_page_cap_leaves_durable_backlog_for_next_cycle(source,monkeypatch):
+    from itertools import count
+    write(source,b''.join(line(99,at=AT+timedelta(milliseconds=i)) for i in range(6)))
+    monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',2);monkeypatch.setattr(raw,'MAX_PAGES_PER_CYCLE',2)
+    monkeypatch.setattr(raw,'MAX_DRAIN_SECONDS',10)
+    collector=seed_collector(source);ticks=count()
+    collector.clock=lambda:NOW+timedelta(microseconds=next(ticks))
+    result=collector.cycle()
+    assert result['raw_pages']==2 and result['raw_backlog_pending']
+    assert collector.store.read(collector.release.epoch)['state']['raw_source_cursor']['files'][PART]['sequence']==4
+    result=collector.cycle()
+    assert result['raw_pages']==1 and not result['raw_backlog_pending']
+
+
+def test_actual_16384_budget_balanced_three_page_backlog(source,monkeypatch):
+    budget=16384
+    write(source,b''.join(line(99,received=AT+timedelta(microseconds=i)) for i in range(3*budget//2)))
+    write(source,b''.join(line(99,feed='trade',received=AT+timedelta(microseconds=i)) for i in range(3*budget//2)),
+          PART.replace('quote','trade'))
+    result=pages(source,monkeypatch,budget)
+    assert len(result)==3 and [p['page']['record_count'] for p in result]==[budget]*3
+    assert [len(p['events']) for p in result]==[budget]*3
+    assert all(not p['skipped_receipts'] for p in result)
+
+
+
+def test_regressed_reception_after_restart_uses_cursor_maximum(source):
+    path=write(source,line(99,received=AT+timedelta(seconds=2)))
+    collector=seed_collector(source);collector.cycle(NOW)
+    with path.open('ab') as stream:stream.write(line(101))
+    collector.source=raw.SpoolShadowSource(source.root,raw_root=source.raw_root,
+        first_session=source.first_session,calendar=source.calendar)
+    collector.cycle(NOW+timedelta(seconds=1))
+    saved,journal=collector.store.read_with_journal(collector.release.epoch)
+    assert saved['state']['data_issues']==[]
+    cursor_rows=[r['payload'] for r in journal if r['payload']['type']=='SOURCE_CURSOR']
+    assert cursor_rows[-1]['page']['diagnostic_counts']=={'RAW_RECEIVED_AT_DECREASED':1}
+    assert saved['state']['raw_source_cursor']['files'][PART]['received_max']==(AT+timedelta(seconds=2)).isoformat()
+
+
+def test_partial_later_page_keeps_prior_commits_and_reports_backlog(source,monkeypatch):
+    from itertools import count
+    write(source,b''.join(line(99,at=AT+timedelta(milliseconds=i)) for i in range(6))+b'partial')
+    monkeypatch.setattr(raw,'MAX_CYCLE_EVENTS',2);monkeypatch.setattr(raw,'MAX_DRAIN_SECONDS',10)
+    collector=seed_collector(source);ticks=count()
+    collector.clock=lambda:NOW+timedelta(microseconds=next(ticks))
+    result=collector.cycle()
+    assert result['raw_poll_deferred']==['RAW_APPEND_IN_PROGRESS']
+    assert result['raw_backlog_pending'] is True
+    state=collector.store.read(collector.release.epoch)['state']
+    assert state['raw_source_cursor']['files'][PART]['sequence']==4
+    assert state['data_issues']==[]

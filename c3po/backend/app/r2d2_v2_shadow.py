@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 import json
 import re
+import time
 from typing import Any
 
 from .r2d2_v2_calendar import NEW_YORK, ShadowCalendar
@@ -373,6 +374,7 @@ class ShadowCollector:
         if in_window and causal is None:
             causal = self.source.causal_list(self.release.epoch, day, now, self.calendar)
         batch = self.source.snapshot(now) if in_window and causal is not None and causal.get("status") == "AVAILABLE" else None
+        drain_started = time.monotonic()
         prepared = None
         cursor = None
         if self.release.mode == "CERTIFIED" and hasattr(self.source, "prepare_events"):
@@ -387,7 +389,36 @@ class ShadowCollector:
             lambda state: self._cycle_with_cursor(state, batch, events, event_diagnostics,
                 utc(self.clock()) if live else now, causal=causal, cursor=cursor,
                 next_cursor=prepared["cursor"] if prepared is not None else None,
-                raw_receipts=prepared.get("raw_receipts", {}) if prepared else {}), now)
+                raw_receipts=prepared.get("raw_receipts", {}) if prepared else {},
+                skipped_receipts=prepared.get("skipped_receipts", []) if prepared else [],
+                raw_page=prepared.get("page") if prepared else None), now)
+        if prepared is not None:
+            from .r2d2_v2_raw_source import MAX_PAGES_PER_CYCLE, MAX_DRAIN_SECONDS
+            pages = 1
+            while (prepared.get("has_more") and not prepared["diagnostics"]
+                   and pages < MAX_PAGES_PER_CYCLE
+                   and time.monotonic() - drain_started < MAX_DRAIN_SECONDS):
+                saved = self.store.read(self.release.epoch)
+                next_cursor = saved["state"].get("raw_source_cursor", {})
+                if next_cursor != prepared["cursor"] or next_cursor == cursor:
+                    break  # Unacknowledged input is never skipped or spun on.
+                cursor = next_cursor
+                now = utc(self.clock()) if live else now
+                if saved["state"].get("last_cycle_at") and now <= utc(saved["state"]["last_cycle_at"]):
+                    result["raw_drain_deferred"] = "COLLECTOR_CLOCK_NOT_ADVANCED"
+                    break  # Never invent a receipt timestamp to bypass priority.
+                page = self.source.prepare_events(now, cursor, snapshot=prepared["snapshot"])
+                prepared = page
+                result = self.store.atomic(self.release.epoch, self._initial(),
+                    lambda state: self._cycle_with_cursor(state, None, page["events"],
+                        page["diagnostics"], utc(self.clock()) if live else now,
+                        causal=None, cursor=cursor, next_cursor=page["cursor"],
+                        raw_receipts=page.get("raw_receipts", {}),
+                        skipped_receipts=page.get("skipped_receipts", []),
+                        raw_page=page.get("page"), continuation=True), now)
+                pages += 1
+            result["raw_pages"] = pages
+            result["raw_backlog_pending"] = bool(prepared.get("has_more", bool(prepared["diagnostics"])))
         if causal is not None and causal.get("status") == "AVAILABLE":
             # Only after atomic journal persistence discard the raw registry and
             # daily bytes. Restart re-verifies the file + external receipts;
@@ -399,7 +430,8 @@ class ShadowCollector:
         return result
 
     def _cycle_with_cursor(self, state, batch, events, diagnostics, now, *, causal,
-                           cursor, next_cursor, raw_receipts=None):
+                           cursor, next_cursor, raw_receipts=None, skipped_receipts=None,
+                           raw_page=None, continuation=False):
         if cursor is not None and state.get("raw_source_cursor", {}) != cursor:
             raise ShadowIntegrityError("RAW_SOURCE_CURSOR_CONCURRENT_CHANGE")
         transient = {"RAW_APPEND_IN_PROGRESS", "RAW_CHANGED_DURING_READ", "RAW_TRUNCATED_DURING_READ"}
@@ -408,7 +440,22 @@ class ShadowCollector:
             response["observed_at"] = now.isoformat()
             response["raw_poll_deferred"] = [item["code"] for item in diagnostics]
             return state, [], response
-        state, journals, response = self._cycle(state, batch, events, diagnostics, now, causal=causal)
+        if continuation:
+            if state.get("last_cycle_at") and now < utc(state["last_cycle_at"]):
+                raise ShadowIntegrityError("COLLECTOR_CLOCK_REVERSED")
+            # One capture attempt per actual poll. Further pages only consume
+            # the frozen raw snapshot, with the actual observation clock.
+            journals = []
+            portfolio = _LazyPortfolio(state) if state["ledger"] is not None else None
+            session = state["ledger"]["session"] if state["ledger"] else None
+            self._events(state, journals, events, diagnostics, now,
+                         session or now.astimezone(NEW_YORK).date().isoformat(),
+                         portfolio=portfolio, archive_only=not session)
+            if portfolio is not None:
+                state["ledger"] = portfolio.finish()
+            response = public_summary(state)
+        else:
+            state, journals, response = self._cycle(state, batch, events, diagnostics, now, causal=causal)
         # A failed transition rolls back both receipts and cursor. No cursor
         # advances if events were not processed (for example before session 1).
         if (cursor is not None and not diagnostics and next_cursor != cursor
@@ -426,10 +473,14 @@ class ShadowCollector:
                 "type": "SOURCE_CURSOR", "previous_sha256": digest(cursor),
                 "cursor_sha256": digest(next_cursor), "cursor": next_cursor,
                 "raw_receipts": raw_receipts or {},
+                "skipped_receipts": skipped_receipts or [],
+                "skipped_receipts_sha256": digest(skipped_receipts or []),
+                "page": raw_page,
                 "observed_at": now.isoformat()})
             if state["last_cycle_at"] != now.isoformat():
                 state["last_cycle_at"] = now.isoformat()
-                state["cycle_count"] += 1
+                if not continuation:
+                    state["cycle_count"] += 1
             response = public_summary(state)
             response["observed_at"] = now.isoformat()
         return state, journals, response
