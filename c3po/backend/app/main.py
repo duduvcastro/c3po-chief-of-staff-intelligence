@@ -19,6 +19,7 @@ from .api_performance import (
     run_performance_flush_loop,
 )
 from .chewie_fundamentals import ChewieFundamentalsService
+from .company_logos import CompanyLogoService
 from .access_control import (
     ALL_CAPABILITIES,
     ALL_VIEW_PERMISSIONS,
@@ -184,6 +185,7 @@ one_pagers = OnePagerService(
 us_screener = USScreeningService(settings, database, realtime_markets, one_pagers)
 one_pagers.set_us_screener(us_screener)
 chewie_fundamentals = ChewieFundamentalsService(settings, database, market_data.http)
+company_logos = CompanyLogoService()
 r2d2 = R2D2PaperService(settings, database, realtime_markets, b3_screener, one_pagers)
 leah_cloud = LeahCloudService(settings, database)
 leah_sync_guard = LeahSyncGuard(
@@ -1658,6 +1660,22 @@ def _chewie_market(market: str) -> str:
     if normalized not in {"B3", "NASDAQ", "NYSE"}:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown market")
     return normalized
+
+
+@app.get("/api/v1/chewie-fundamentals/B3/{symbol}/logo")
+def chewie_b3_company_logo(symbol: str) -> Response:
+    try:
+        result = company_logos.get(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid B3 symbol") from exc
+    if result is None:
+        return Response(status_code=404, headers={"Cache-Control": "no-store"})
+    data, media = result
+    return Response(content=data, media_type=media, headers={
+        "Cache-Control": "private, max-age=86400",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 @app.get("/api/v1/chewie-fundamentals/{market}", response_model=ChewieFundamentalsResponse)

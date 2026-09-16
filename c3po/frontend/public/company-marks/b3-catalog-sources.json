@@ -1,0 +1,620 @@
+[
+  {
+    "symbol": "PETR4",
+    "path": "/company-marks/PETR4.svg",
+    "url": "https://icons.brapi.dev/icons/PETR4.svg",
+    "sha256": "659e50f6c54d8fca57fc325649222226f27a849276999bde20a0e17fd1e64dcc"
+  },
+  {
+    "symbol": "PETR3",
+    "path": "/company-marks/PETR3.svg",
+    "url": "https://icons.brapi.dev/icons/PETR3.svg",
+    "sha256": "659e50f6c54d8fca57fc325649222226f27a849276999bde20a0e17fd1e64dcc"
+  },
+  {
+    "symbol": "VALE3",
+    "path": "/company-marks/VALE3.svg",
+    "url": "https://icons.brapi.dev/icons/VALE3.svg",
+    "sha256": "0f985f13984439e6d205933ede149ddbb7baef01f6cf74d23879a9b806274b2f"
+  },
+  {
+    "symbol": "ABEV3",
+    "path": "/company-marks/ABEV3.svg",
+    "url": "https://icons.brapi.dev/icons/ABEV3.svg",
+    "sha256": "40bd304825b0063008d7309b41045fd72f571f2b746e57d3eaba149ceabfafee"
+  },
+  {
+    "symbol": "WEGE3",
+    "path": "/company-marks/WEGE3.svg",
+    "url": "https://icons.brapi.dev/icons/WEGE3.svg",
+    "sha256": "97dd140dfa0aa9081bb24df86dec1c2d6511f3fe869bf926c649c092b587a4b3"
+  },
+  {
+    "symbol": "ITSA4",
+    "path": "/company-marks/itausa.png",
+    "url": "Previously verified asset; SOURCES.md",
+    "sha256": "57390fd1aa672ebf3a21ee0b5ec613416ab96b580b0226e6e3cf42ad3396e400"
+  },
+  {
+    "symbol": "BBAS3",
+    "path": "/company-marks/BBAS3.svg",
+    "url": "https://icons.brapi.dev/icons/BBAS3.svg",
+    "sha256": "dbdf5d92cff51ba4469539c710331be87c1a793705efe2dc5e3dbe479dcc13c7"
+  },
+  {
+    "symbol": "AXIA3",
+    "path": "/company-marks/axia.svg",
+    "url": "Previously verified asset; SOURCES.md",
+    "sha256": "2d1b35dac687c85cbaf2ce5081e4568cebd2aafc055c659caf5efced73b0efb6"
+  },
+  {
+    "symbol": "AXIA7",
+    "path": "/company-marks/axia.svg",
+    "url": "Previously verified asset; SOURCES.md",
+    "sha256": "2d1b35dac687c85cbaf2ce5081e4568cebd2aafc055c659caf5efced73b0efb6"
+  },
+  {
+    "symbol": "VIVT3",
+    "path": "/company-marks/VIVT3.svg",
+    "url": "https://icons.brapi.dev/icons/VIVT3.svg",
+    "sha256": "864e2082c44ba135a10b4094cb4b356d2d4287d1964f05e596faed6a93beccdd"
+  },
+  {
+    "symbol": "SBSP3",
+    "path": "/company-marks/SBSP3.svg",
+    "url": "https://icons.brapi.dev/icons/SBSP3.svg",
+    "sha256": "55a9f0b3d1b5e52a224bef8108b906c90c03d6b785bb01d9de41adf62ec45187"
+  },
+  {
+    "symbol": "B3SA3",
+    "path": "/company-marks/B3SA3.svg",
+    "url": "https://icons.brapi.dev/icons/B3SA3.svg",
+    "sha256": "91715965cab721e73c2864dd84716e477c310b2706884d4412fddf9c01f223fe"
+  },
+  {
+    "symbol": "BBSE3",
+    "path": "/company-marks/BBSE3.svg",
+    "url": "https://icons.brapi.dev/icons/BBSE3.svg",
+    "sha256": "dbdf5d92cff51ba4469539c710331be87c1a793705efe2dc5e3dbe479dcc13c7"
+  },
+  {
+    "symbol": "EMBJ3",
+    "path": "/company-marks/embraer.svg",
+    "url": "Previously verified asset; SOURCES.md",
+    "sha256": "026cd6e7b822c7084b3fd1c5a66a046633b2ee7ec7d91daff14d1d978f1fcc64"
+  },
+  {
+    "symbol": "SUZB3",
+    "path": "/company-marks/SUZB3.svg",
+    "url": "https://icons.brapi.dev/icons/SUZB3.svg",
+    "sha256": "03aae7c6c259374a1a8e04476064332cf58de2a4ae85277ba9e8691c5a65eb54"
+  },
+  {
+    "symbol": "CXSE3",
+    "path": "/company-marks/CXSE3.svg",
+    "url": "https://icons.brapi.dev/icons/CXSE3.svg",
+    "sha256": "b94c12ef01c86cf0deae5985445e6122ae776082c32c2134fe0446774cd21b6e"
+  },
+  {
+    "symbol": "PRIO3",
+    "path": "/company-marks/PRIO3.svg",
+    "url": "https://icons.brapi.dev/icons/PRIO3.svg",
+    "sha256": "979cbbf4670224f9e7a6bb089bc69dab8ab016b80ff59fe546205136b49af628"
+  },
+  {
+    "symbol": "CPFE3",
+    "path": "/company-marks/CPFE3.svg",
+    "url": "https://icons.brapi.dev/icons/CPFE3.svg",
+    "sha256": "df99b39d57724b25a152a7b4f449b7643bccb4bb2da83b77509ed1c77755d98e"
+  },
+  {
+    "symbol": "ENEV3",
+    "path": "/company-marks/ENEV3.svg",
+    "url": "https://icons.brapi.dev/icons/ENEV3.svg",
+    "sha256": "0d80e3fc471a600a7c14f0c98a8a72f89e49959df8b644f358302744ecd53924"
+  },
+  {
+    "symbol": "EQTL3",
+    "path": "/company-marks/EQTL3.svg",
+    "url": "https://icons.brapi.dev/icons/EQTL3.svg",
+    "sha256": "e7dd7021a64d3dfb46980dbbd639c0f0af51bf2319ea55aef333767bc355e40b"
+  },
+  {
+    "symbol": "GGBR4",
+    "path": "/company-marks/GGBR4.svg",
+    "url": "https://icons.brapi.dev/icons/GGBR4.svg",
+    "sha256": "fe2681c6f8ac59d35ed7aeee9354f4672ecdf036d8d6a1062cd91f81526a9e23"
+  },
+  {
+    "symbol": "CPLE3",
+    "path": "/company-marks/CPLE3.svg",
+    "url": "https://icons.brapi.dev/icons/CPLE3.svg",
+    "sha256": "be5bfdace2c95a1dcec3cb2246a2e5d5f348bcd1a1b790d8e01f73114890acc0"
+  },
+  {
+    "symbol": "TIMS3",
+    "path": "/company-marks/TIMS3.svg",
+    "url": "https://icons.brapi.dev/icons/TIMS3.svg",
+    "sha256": "c8dcd78b02170ffcca8f7932719f962242af9be92c5ea6de61302785063c6aa7"
+  },
+  {
+    "symbol": "SAUD3",
+    "path": "/company-marks/saud.png",
+    "url": "https://cdn-sites-assets.mziq.com/wp-content/uploads/sites/1504/2026/04/Novo_Projeto-removebg-preview.png",
+    "sha256": "04e5bf6b48eb170212084b008a431bb93a27957f61dee60bf44530cd2f12f806"
+  },
+  {
+    "symbol": "EGIE3",
+    "path": "/company-marks/EGIE3.svg",
+    "url": "https://icons.brapi.dev/icons/EGIE3.svg",
+    "sha256": "1987bcfc253fc56ab4f701f845736fb403f82e74663a843ccd6279bf33b5fa4e"
+  },
+  {
+    "symbol": "VBBR3",
+    "path": "/company-marks/VBBR3.svg",
+    "url": "https://icons.brapi.dev/icons/VBBR3.svg",
+    "sha256": "10f341ad42ba33896b5846b45498ad477ccf84e253d55e9d3915f26596b792e6"
+  },
+  {
+    "symbol": "UGPA3",
+    "path": "/company-marks/UGPA3.svg",
+    "url": "https://icons.brapi.dev/icons/UGPA3.svg",
+    "sha256": "e4d6d3676eeca99fca54d3819dd6ac2e22659128a512444b44647dbf7be24bca"
+  },
+  {
+    "symbol": "CMIG4",
+    "path": "/company-marks/CMIG4.svg",
+    "url": "https://icons.brapi.dev/icons/CMIG4.svg",
+    "sha256": "767f78c769dcfbc99527807e1bfa4c2f0d32f1aecbaa5febb0078a1d5fb8382b"
+  },
+  {
+    "symbol": "CMIN3",
+    "path": "/company-marks/CMIN3.svg",
+    "url": "https://icons.brapi.dev/icons/CMIN3.svg",
+    "sha256": "fe958796180994745e351daec89730431f41e4e2324a226205add2c8e2428681"
+  },
+  {
+    "symbol": "RADL3",
+    "path": "/company-marks/RADL3.svg",
+    "url": "https://icons.brapi.dev/icons/RADL3.svg",
+    "sha256": "cb8356a125b75eeaf9f9d672042f5490574670ee6fb57c4beecbffe272aa241e"
+  },
+  {
+    "symbol": "MOTV3",
+    "path": "/company-marks/motiva.svg",
+    "url": "https://aemassets.grupoccr.com.br/content/dam/sites-modulares/pt/media/images/logos/motiva_logo_only.svg",
+    "sha256": "e034370d0d97ea30bb819777030719af2c2fa1e7f6d28cf82f48cd222d1aa3ee"
+  },
+  {
+    "symbol": "PSSA3",
+    "path": "/company-marks/PSSA3.svg",
+    "url": "https://icons.brapi.dev/icons/PSSA3.svg",
+    "sha256": "3add1cd68d1f6ae07b3e6752343d71630d589c76b4804a9498b798ffeadbf2b2"
+  },
+  {
+    "symbol": "MBRF3",
+    "path": "/company-marks/mbrf.svg",
+    "url": "https://www.mbrf.com/wp-content/uploads/2026/05/logo-mbrf-2.svg",
+    "sha256": "ec3121388e81c2c56be0a5149e9061de00f1d1bdb624b4bd9a83c263eefe5790"
+  },
+  {
+    "symbol": "KLBN4",
+    "path": "/company-marks/KLBN4.svg",
+    "url": "https://icons.brapi.dev/icons/KLBN4.svg",
+    "sha256": "6d488223c1b3ed99c34390523d5e53ba08485251636fc5905367ff9ce7f457a9"
+  },
+  {
+    "symbol": "CSMG3",
+    "path": "/company-marks/CSMG3.svg",
+    "url": "https://icons.brapi.dev/icons/CSMG3.svg",
+    "sha256": "3eada3166c004f9e9cb9568d50a2e46b0524b53850cd21265217367110f0cf0e"
+  },
+  {
+    "symbol": "ISAE4",
+    "path": "/company-marks/ISAE4.svg",
+    "url": "https://icons.brapi.dev/icons/ISAE4.svg",
+    "sha256": "a56fd3967ec79f74938da5ba37d36fe1d0e5f45614e3d5489b8b7adacb11c824"
+  },
+  {
+    "symbol": "TOTS3",
+    "path": "/company-marks/TOTS3.svg",
+    "url": "https://icons.brapi.dev/icons/TOTS3.svg",
+    "sha256": "ab3b688d0b1ac07fd3ffd28a05878c0a91a71b62bb869d85f6b36260ce073933"
+  },
+  {
+    "symbol": "PASS3",
+    "path": "/company-marks/compass.png",
+    "url": "https://cdn-sites-assets.mziq.com/wp-content/uploads/sites/1292/2023/10/logo.png",
+    "sha256": "c35e65ffefeeff15eb03f12364d592da4f075f3ced8783da1a1eeeb7b247c810"
+  },
+  {
+    "symbol": "HYPE3",
+    "path": "/company-marks/HYPE3.svg",
+    "url": "https://icons.brapi.dev/icons/HYPE3.svg",
+    "sha256": "d8df16156297fa361e39e5b6c5b68f64945c2ecfee1fe9d94fb6b17e58cc9863"
+  },
+  {
+    "symbol": "GOAU4",
+    "path": "/company-marks/GOAU4.svg",
+    "url": "https://icons.brapi.dev/icons/GOAU4.svg",
+    "sha256": "fe2681c6f8ac59d35ed7aeee9354f4672ecdf036d8d6a1062cd91f81526a9e23"
+  },
+  {
+    "symbol": "ASAI3",
+    "path": "/company-marks/ASAI3.svg",
+    "url": "https://icons.brapi.dev/icons/ASAI3.svg",
+    "sha256": "b58c12e816ab0624932ca9c45b581cfd2693b3249b11a481b9affaf0115f3692"
+  },
+  {
+    "symbol": "FLRY3",
+    "path": "/company-marks/FLRY3.svg",
+    "url": "https://icons.brapi.dev/icons/FLRY3.svg",
+    "sha256": "0a9a08a614bf3ebad20927e6ab543c83c0324482b40379b4ce1a8ab6f8d3f65b"
+  },
+  {
+    "symbol": "LREN3",
+    "path": "/company-marks/LREN3.svg",
+    "url": "https://icons.brapi.dev/icons/LREN3.svg",
+    "sha256": "f8bfb4d2d6c96eed2ca2b6f4ddebeaf887b510f871600a2dac483daa2772ca79"
+  },
+  {
+    "symbol": "GMAT3",
+    "path": "/company-marks/GMAT3.svg",
+    "url": "https://icons.brapi.dev/icons/GMAT3.svg",
+    "sha256": "dde85965df9c51830073e12ec60ce73acfb836dcd9433f5b7d2a82e8b67a6ba5"
+  },
+  {
+    "symbol": "CYRE3",
+    "path": "/company-marks/CYRE3.svg",
+    "url": "https://icons.brapi.dev/icons/CYRE3.svg",
+    "sha256": "b03b832a854c3a13432f3e8ded29ba33966d8b0f25373a0cb3075bcffe15482a"
+  },
+  {
+    "symbol": "CYRE4",
+    "path": "/company-marks/CYRE4.svg",
+    "url": "https://icons.brapi.dev/icons/CYRE3.svg",
+    "sha256": "b03b832a854c3a13432f3e8ded29ba33966d8b0f25373a0cb3075bcffe15482a"
+  },
+  {
+    "symbol": "SAPR4",
+    "path": "/company-marks/SAPR4.svg",
+    "url": "https://icons.brapi.dev/icons/SAPR4.svg",
+    "sha256": "4eb54122f15df365d4d411964a4f4a0fc2a853b7f062c2dc85c9a26a4f3735da"
+  },
+  {
+    "symbol": "GGPS3",
+    "path": "/company-marks/GGPS3.svg",
+    "url": "https://icons.brapi.dev/icons/GGPS3.svg",
+    "sha256": "1b13f03f8722e6e60f5581e3d9c7237cfb9da1471c1abd0e5a2ed394a35d7b5b"
+  },
+  {
+    "symbol": "CURY3",
+    "path": "/company-marks/CURY3.svg",
+    "url": "https://icons.brapi.dev/icons/CURY3.svg",
+    "sha256": "8a3fadfe414bd3c88eada7868907af374e7b1df6c0608a3d03efcbc00f819ea7"
+  },
+  {
+    "symbol": "MULT3",
+    "path": "/company-marks/MULT3.svg",
+    "url": "https://icons.brapi.dev/icons/MULT3.svg",
+    "sha256": "f3bf7687fc0a570cb06deb14525f3849e09f75e492f80168ebc6180de3939435"
+  },
+  {
+    "symbol": "BRAV3",
+    "path": "/company-marks/BRAV3.svg",
+    "url": "https://icons.brapi.dev/icons/BRAV3.svg",
+    "sha256": "442e0e2d60d2bebfc5390c31418b270e4a96122d285bc798c712181996834a43"
+  },
+  {
+    "symbol": "BRAP4",
+    "path": "/company-marks/BRAP4.svg",
+    "url": "https://icons.brapi.dev/icons/BRAP4.svg",
+    "sha256": "346381da67fd499aa10bb1bfdb7bf8738598161ecfa99807a35fefb7798fe7f8"
+  },
+  {
+    "symbol": "JHSF3",
+    "path": "/company-marks/JHSF3.svg",
+    "url": "https://icons.brapi.dev/icons/JHSF3.svg",
+    "sha256": "27cdce1f9b10d0a2858ea776271169930c7d2a72f007886245162c24a1f7f930"
+  },
+  {
+    "symbol": "ALPA4",
+    "path": "/company-marks/ALPA4.svg",
+    "url": "https://icons.brapi.dev/icons/ALPA4.svg",
+    "sha256": "a16f50dad8c701ca6fd6a617e1e14129394b5f09bb958ece309d7540d5cf3600"
+  },
+  {
+    "symbol": "CBAV3",
+    "path": "/company-marks/CBAV3.svg",
+    "url": "https://icons.brapi.dev/icons/CBAV3.svg",
+    "sha256": "889fc9a036aed19590523d62a2b71f14adb2bbb96a5e100a9610579234be3e36"
+  },
+  {
+    "symbol": "BRSR6",
+    "path": "/company-marks/BRSR6.svg",
+    "url": "https://icons.brapi.dev/icons/BRSR6.svg",
+    "sha256": "d02e1a49d31a66981d9d84ed2b605d3306bd52be888a39e2c36563d7cb0b8b7f"
+  },
+  {
+    "symbol": "SMTO3",
+    "path": "/company-marks/SMTO3.svg",
+    "url": "https://icons.brapi.dev/icons/SMTO3.svg",
+    "sha256": "08ff5f6fefe426ed7995af585c9794ca23758cd28eb2a5659c003268a23a1846"
+  },
+  {
+    "symbol": "ABCB4",
+    "path": "/company-marks/ABCB4.svg",
+    "url": "https://icons.brapi.dev/icons/ABCB4.svg",
+    "sha256": "2276ab8ea13239797ca5761c76ebf4435ab46383506f9cf09b36b531a6133bc5"
+  },
+  {
+    "symbol": "FRAS3",
+    "path": "/company-marks/FRAS3.svg",
+    "url": "https://icons.brapi.dev/icons/FRAS3.svg",
+    "sha256": "412d27199fd296df53130a9d560391f131291d6e87229f06aa69b0445366cd7b"
+  },
+  {
+    "symbol": "UNIP6",
+    "path": "/company-marks/UNIP6.svg",
+    "url": "https://icons.brapi.dev/icons/UNIP6.svg",
+    "sha256": "8dcdf5a902a99f6339960293f542268f7e1995aeddb435c23e0bff0da2b21827"
+  },
+  {
+    "symbol": "LIGT3",
+    "path": "/company-marks/LIGT3.svg",
+    "url": "https://icons.brapi.dev/icons/LIGT3.svg",
+    "sha256": "a69629420e51d94827c143e4107395a48f6c62c99e3e180b2b9cac4039bd0611"
+  },
+  {
+    "symbol": "MDIA3",
+    "path": "/company-marks/MDIA3.svg",
+    "url": "https://icons.brapi.dev/icons/MDIA3.svg",
+    "sha256": "d6ab653e380e931d7bddeadb6915bca5aec4949f6f491bcab110fee58f2c27f6"
+  },
+  {
+    "symbol": "TTEN3",
+    "path": "/company-marks/TTEN3.svg",
+    "url": "https://icons.brapi.dev/icons/TTEN3.svg",
+    "sha256": "be48cccade47cfc08ba0c811e41afd316154fcf45edf8e5bdc0c58496ae03ae3"
+  },
+  {
+    "symbol": "POMO4",
+    "path": "/company-marks/POMO4.svg",
+    "url": "https://icons.brapi.dev/icons/POMO4.svg",
+    "sha256": "f8d074c9070ef578dab020e0d19fc91e1ace5baa81eb47cdbad7d37c0feb9b51"
+  },
+  {
+    "symbol": "POMO3",
+    "path": "/company-marks/POMO3.svg",
+    "url": "https://icons.brapi.dev/icons/POMO3.svg",
+    "sha256": "f8d074c9070ef578dab020e0d19fc91e1ace5baa81eb47cdbad7d37c0feb9b51"
+  },
+  {
+    "symbol": "DIRR3",
+    "path": "/company-marks/DIRR3.svg",
+    "url": "https://icons.brapi.dev/icons/DIRR3.svg",
+    "sha256": "9a9c60a1894f8cb6070001aaeb22d3b2e80cfe39ece6b76eae3ccfaeafc1b5b0"
+  },
+  {
+    "symbol": "VIVA3",
+    "path": "/company-marks/VIVA3.svg",
+    "url": "https://icons.brapi.dev/icons/VIVA3.svg",
+    "sha256": "5095d0d6933f9c0b7ad5b7b7161460bdf0eb6e134bddb90bb6f8c86c1df50ffe"
+  },
+  {
+    "symbol": "INTB3",
+    "path": "/company-marks/INTB3.svg",
+    "url": "https://icons.brapi.dev/icons/INTB3.svg",
+    "sha256": "05d10dd6f0e802eb26c23b413e234dc0ec1cee9b436e9e4989a27bae3d0ee14e"
+  },
+  {
+    "symbol": "COGN3",
+    "path": "/company-marks/COGN3.svg",
+    "url": "https://icons.brapi.dev/icons/COGN3.svg",
+    "sha256": "663e233c6df230f2315e27147ee19b0c3dab51ceee969494c03761d3baa829d7"
+  },
+  {
+    "symbol": "LEVE3",
+    "path": "/company-marks/LEVE3.svg",
+    "url": "https://icons.brapi.dev/icons/LEVE3.svg",
+    "sha256": "857e322f27b6aa33cfeda22379eaefde88a51e6215d0a2c2895f4af53c9b2ad2"
+  },
+  {
+    "symbol": "VULC3",
+    "path": "/company-marks/VULC3.svg",
+    "url": "https://icons.brapi.dev/icons/VULC3.svg",
+    "sha256": "b76e281150240a202e700e9b9b638aba5225d52b34a6cccd40ddafe4ba882286"
+  },
+  {
+    "symbol": "MGLU3",
+    "path": "/company-marks/MGLU3.svg",
+    "url": "https://icons.brapi.dev/icons/MGLU3.svg",
+    "sha256": "947328fe1d6fb13686a43ea78d4054a8918d702fb82b2bfde4e4b8550de78f1c"
+  },
+  {
+    "symbol": "BEEF3",
+    "path": "/company-marks/BEEF3.svg",
+    "url": "https://icons.brapi.dev/icons/BEEF3.svg",
+    "sha256": "c1be1b8975e5eeeb345cc315ef3edd68ab23c1b979f8fb0a52b884656764c51a"
+  },
+  {
+    "symbol": "VAMO3",
+    "path": "/company-marks/VAMO3.svg",
+    "url": "https://icons.brapi.dev/icons/VAMO3.svg",
+    "sha256": "270eb4845ab9c703f68cfebfeb2ecd4791e86a34a6cf2982874051957ad2dae8"
+  },
+  {
+    "symbol": "TEND3",
+    "path": "/company-marks/TEND3.svg",
+    "url": "https://icons.brapi.dev/icons/TEND3.svg",
+    "sha256": "ff7158bbece79732118cd8eba271df851f54f2f7750980989fb4adb6cb12d473"
+  },
+  {
+    "symbol": "MILS3",
+    "path": "/company-marks/MILS3.svg",
+    "url": "https://icons.brapi.dev/icons/MILS3.svg",
+    "sha256": "8fa9d874906e009e6d1c934e2228e06276b183dc7db8b964cbae0e810ea3de3a"
+  },
+  {
+    "symbol": "EZTC3",
+    "path": "/company-marks/EZTC3.svg",
+    "url": "https://icons.brapi.dev/icons/EZTC3.svg",
+    "sha256": "bf19b035e620e07e7763659f0298782745ba3ff4b0c165c90656abed01dedac0"
+  },
+  {
+    "symbol": "RIAA3",
+    "path": "/company-marks/riachuelo.png",
+    "url": "https://cdn-sites-assets.mziq.com/wp-content/themes/mziq_Riachuelo_Guararapes/img/favicon-new/favicon96.png",
+    "sha256": "29804a396f85ba6051570d6c7be3af916b1d91d68b21c9db9fe30e9b0ec792cc"
+  },
+  {
+    "symbol": "AZZA3",
+    "path": "/company-marks/AZZA3.svg",
+    "url": "https://icons.brapi.dev/icons/AZZA3.svg",
+    "sha256": "4b6119cc328c71a2fa4faeaeeb9de4e4403ee73f27aac5bb75e512f11dbe1088"
+  },
+  {
+    "symbol": "GRND3",
+    "path": "/company-marks/GRND3.svg",
+    "url": "https://icons.brapi.dev/icons/GRND3.svg",
+    "sha256": "d970503810d7b3f1f87e5e92b70c09dd5457e97d7339a22f2026e593fae0ab1f"
+  },
+  {
+    "symbol": "RECV3",
+    "path": "/company-marks/RECV3.svg",
+    "url": "https://icons.brapi.dev/icons/RECV3.svg",
+    "sha256": "7ab91f3e4267669b6b00d92328c2941d30191b4bdb4296217322c605d4e52fed"
+  },
+  {
+    "symbol": "PINE4",
+    "path": "/company-marks/PINE4.svg",
+    "url": "https://icons.brapi.dev/icons/PINE4.svg",
+    "sha256": "2340fc0d14d2ab8ee859c21ea0dc750c900f4a35d3064db59b4beb69864be5f5"
+  },
+  {
+    "symbol": "CEAB3",
+    "path": "/company-marks/CEAB3.svg",
+    "url": "https://icons.brapi.dev/icons/CEAB3.svg",
+    "sha256": "067ab0f09679ac96c6b0e947ba9a5b2aaf322922a89e5d781721e10dea9d9207"
+  },
+  {
+    "symbol": "PGMN3",
+    "path": "/company-marks/PGMN3.svg",
+    "url": "https://icons.brapi.dev/icons/PGMN3.svg",
+    "sha256": "2a4562cf56308924aa30dbbe488241f901c77416faac7a458cbb72818a721295"
+  },
+  {
+    "symbol": "MDNE3",
+    "path": "/company-marks/MDNE3.svg",
+    "url": "https://icons.brapi.dev/icons/MDNE3.svg",
+    "sha256": "2e496b3c5b1ad007c21c31c8e1ba03dbdcb143ee39465bac9418d0b72d5786ee"
+  },
+  {
+    "symbol": "YDUQ3",
+    "path": "/company-marks/YDUQ3.svg",
+    "url": "https://icons.brapi.dev/icons/YDUQ3.svg",
+    "sha256": "c3e0c7b7cf85eee56612c905ecf84756c57fc42a2773eb4bce2bb3ae7268ac60"
+  },
+  {
+    "symbol": "FESA4",
+    "path": "/company-marks/FESA4.svg",
+    "url": "https://icons.brapi.dev/icons/FESA4.svg",
+    "sha256": "5b6f8b33b8f4c0de62664817331125f17347a943068bfcb0d122e176dce1d6bf"
+  },
+  {
+    "symbol": "TGMA3",
+    "path": "/company-marks/TGMA3.svg",
+    "url": "https://icons.brapi.dev/icons/TGMA3.svg",
+    "sha256": "0e9ed66901324249f50d0167030ebf14411aecc882a504ccae80c983384d6ca3"
+  },
+  {
+    "symbol": "DESK3",
+    "path": "/company-marks/DESK3.svg",
+    "url": "https://icons.brapi.dev/icons/DESK3.svg",
+    "sha256": "7b031ee982083bbaf502fbe1c1d3cd74a2d70439280a4d07721686b2403c6e93"
+  },
+  {
+    "symbol": "BMOB3",
+    "path": "/company-marks/BMOB3.svg",
+    "url": "https://icons.brapi.dev/icons/BMOB3.svg",
+    "sha256": "19d95c5ec5c714052547b03c3296f51e87a5916c41e57a388f5896c1a4c246bb"
+  },
+  {
+    "symbol": "VTRU3",
+    "path": "/company-marks/VTRU3.svg",
+    "url": "https://icons.brapi.dev/icons/VTRU3.svg",
+    "sha256": "7d76d602dcc27c2ade8e84b1a9bed61611d519e475c966127ace4b00b43adb5a"
+  },
+  {
+    "symbol": "LAVV3",
+    "path": "/company-marks/LAVV3.svg",
+    "url": "https://icons.brapi.dev/icons/LAVV3.svg",
+    "sha256": "0c2c1f7a184886b62cda8d44400e0b9383cde90708703c7b9db5b6d671b58a3b"
+  },
+  {
+    "symbol": "LOGG3",
+    "path": "/company-marks/LOGG3.svg",
+    "url": "https://icons.brapi.dev/icons/LOGG3.svg",
+    "sha256": "ed738e2b12dfd5c71988a9bf5fa024215fc08fc8afecc996f052792e4e23f72b"
+  },
+  {
+    "symbol": "TFCO4",
+    "path": "/company-marks/TFCO4.svg",
+    "url": "https://icons.brapi.dev/icons/TFCO4.svg",
+    "sha256": "905ccff79cbacc987e7b06bd43a6e2b577a55592224ff18c2aebffb721b79c3d"
+  },
+  {
+    "symbol": "PNVL3",
+    "path": "/company-marks/PNVL3.svg",
+    "url": "https://icons.brapi.dev/icons/PNVL3.svg",
+    "sha256": "593e165f079f3d04103d5fdfd256a60a6ca62e0a81ba40bd1ed3735902b6ddd9"
+  },
+  {
+    "symbol": "SEER3",
+    "path": "/company-marks/SEER3.svg",
+    "url": "https://icons.brapi.dev/icons/SEER3.svg",
+    "sha256": "6e970420b6a1a9569fa8eb4b2bca22f56cdd23fea1f61e13ba617753fb4ee3b1"
+  },
+  {
+    "symbol": "MYPK3",
+    "path": "/company-marks/MYPK3.svg",
+    "url": "https://icons.brapi.dev/icons/MYPK3.svg",
+    "sha256": "b4ce05cbfa3d1bd8eb48f19c4199057b4910e8956cc20b4765055ff69004ed68"
+  },
+  {
+    "symbol": "PLPL3",
+    "path": "/company-marks/PLPL3.svg",
+    "url": "https://icons.brapi.dev/icons/PLPL3.svg",
+    "sha256": "977df566ed40a100adc272404e9be7ff0d3f51a4058db97c4d1adbb59f44797a"
+  },
+  {
+    "symbol": "KEPL3",
+    "path": "/company-marks/KEPL3.svg",
+    "url": "https://icons.brapi.dev/icons/KEPL3.svg",
+    "sha256": "7cd9c0cc55c04805d43d26707d16395ba00f7da1c3f35a5aec9463a7a415699d"
+  },
+  {
+    "symbol": "ANIM3",
+    "path": "/company-marks/ANIM3.svg",
+    "url": "https://icons.brapi.dev/icons/ANIM3.svg",
+    "sha256": "d04b591b79fdaa7854c30d557eee995a2d0b6a098935f9b2abeb88cec5760323"
+  },
+  {
+    "symbol": "PRNR3",
+    "path": "/company-marks/PRNR3.svg",
+    "url": "https://icons.brapi.dev/icons/PRNR3.svg",
+    "sha256": "a9ea7a78a86abc28c874fb482dbdbc2c925d3124e9604faa7197d24204b8e5d8"
+  },
+  {
+    "symbol": "CVCB3",
+    "path": "/company-marks/CVCB3.svg",
+    "url": "https://icons.brapi.dev/icons/CVCB3.svg",
+    "sha256": "b9908e1d25ab66972b98c588b2b395223a215bb24274318d9d2b58097f7cf665"
+  },
+  {
+    "symbol": "AUAU3",
+    "path": "/company-marks/petzcobasi.svg",
+    "url": "https://cdn-sites-assets.mziq.com/wp-content/themes/mziq_petz_ri_redesign/img/Logo-horizontal-grupo-petz-cobasi.svg",
+    "sha256": "b85c6b91d5335fc632539ba3ef04a6c1467b3578648971786f50ccfcb7843828"
+  }
+]
