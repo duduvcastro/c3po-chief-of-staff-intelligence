@@ -1,26 +1,35 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { chewieLogoSources } from "../lib/chewie-company-logo.ts";
-
-test("reported B3 issuers use verified, distinct marks even with old cached BRAPI placeholders", () => {
-  const generic = "https://icons.brapi.dev/icons/BRAPI.svg";
-  assert.deepEqual(chewieLogoSources("B3", "ITSA4", generic), ["/company-marks/itausa.png"]);
-  assert.deepEqual(chewieLogoSources("B3", "AXIA3", generic), ["/company-marks/axia.svg"]);
-  assert.deepEqual(chewieLogoSources("B3", "AXIA7", generic), ["/company-marks/axia.svg"]);
-  assert.deepEqual(chewieLogoSources("B3", "EMBJ3", generic), ["/company-marks/embraer.svg"]);
-  assert.deepEqual(chewieLogoSources(" b3 ", " itsa4.sa "), ["/company-marks/itausa.png"]);
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chewieLogoSources } from '../lib/chewie-company-logo.ts';
+const root = new URL('../public/', import.meta.url);
+const catalog = JSON.parse(readFileSync(new URL('company-marks/b3-catalog.json', root)));
+const sources = JSON.parse(readFileSync(new URL('company-marks/b3-catalog-sources.json', root)));
+test('all 103 current constituents have local assets matching recorded hashes', () => {
+  assert.equal(Object.keys(catalog).length,103);
+  for(const item of sources) {
+    assert.equal(catalog[item.symbol],item.path);
+    const bytes=readFileSync(new URL('.'+item.path,root));
+    assert.equal(createHash('sha256').update(bytes).digest('hex'),item.sha256);
+    assert.equal(chewieLogoSources('B3',item.symbol,'https://icons.brapi.dev/icons/BRAPI.svg')[0],item.path);
+  }
 });
-test("unmapped placeholders and unavailable logos fall back to ticker", () => {
-  for (const value of [null, "", "https://icons.brapi.dev/icons/BRAPI.svg", "//icons.brapi.dev/icons/brapi.svg?v=1", "https://icons.brapi.dev/icons/%42RAPI.svg"])
-    assert.deepEqual(chewieLogoSources("B3", "OTHER3", value), []);
+test('reported issuers use distinct company identities',()=>{
+  assert.equal(chewieLogoSources('B3','ITSA4')[0],'/company-marks/itausa.png');
+  assert.equal(chewieLogoSources('B3','AXIA7')[0],'/company-marks/axia.svg');
+  assert.equal(chewieLogoSources('B3','EMBJ3')[0],'/company-marks/embraer.svg');
+  assert.deepEqual(chewieLogoSources(' b3 ',' itsa4.sa '),chewieLogoSources('B3','ITSA4'));
 });
-test("valid provider logos are preserved and relative EODHD paths normalized", () => {
-  const url = "https://icons.brapi.dev/icons/ABEV3.svg";
-  assert.deepEqual(chewieLogoSources("B3", "ABEV3", url), [url]);
-  assert.deepEqual(chewieLogoSources("NASDAQ", "ABC", "/img/logos/US/abc.png"), ["https://eodhd.com/img/logos/US/abc.png"]);
+test('new B3 companies resolve through two-source backend, independent of snapshot placeholders',()=>{
+  for(const value of [null,'','https://icons.brapi.dev/icons/BRAPI.svg'])
+    assert.deepEqual(chewieLogoSources('B3','NEWA3',value),['/api/v1/chewie-fundamentals/B3/NEWA3/logo']);
 });
-test("B3 mappings never leak into US symbols and unsafe URLs are not images", () => {
-  assert.deepEqual(chewieLogoSources("NASDAQ", "ITSA4"), []);
-  for (const value of ["javascript:alert(1)", "data:image/svg+xml,x", "http://example.com/logo.png", "https://user:pass@example.com/logo.png"])
-    assert.deepEqual(chewieLogoSources("NYSE", "ABC", value), []);
+test('existing assets have an automatic recovery source',()=>{
+  assert.equal(chewieLogoSources('B3','ABEV3')[1],'/api/v1/chewie-fundamentals/B3/ABEV3/logo');
+});
+test('market identity and unsafe URL handling remain isolated',()=>{
+  assert.deepEqual(chewieLogoSources('NASDAQ','ITSA4'),[]);
+  assert.deepEqual(chewieLogoSources('NASDAQ','ABC','/img/logos/US/abc.png'),['https://eodhd.com/img/logos/US/abc.png']);
+  for(const value of ['javascript:alert(1)','data:image/svg+xml,x','http://example.com/logo.png','https://user:pass@example.com/logo.png']) assert.deepEqual(chewieLogoSources('NYSE','ABC',value),[]);
 });

@@ -2328,10 +2328,18 @@ function normalizeCompanyLogoUrl(value?: string | null) {
 
 function ChewieCompanyLogo({ logoUrl, symbol, market }: { logoUrl?: string | null; symbol: string; market: string }) {
   const sources = chewieLogoSources(market, symbol, logoUrl);
-  const [failed, setFailed] = useState(false);
-  return sources[0] && !failed
-    ? <img src={sources[0]} alt="" onError={() => setFailed(true)} />
-    : <span title={symbol}>{symbol}</span>;
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const exhausted = sourceIndex >= sources.length;
+  useEffect(() => {
+    if (!exhausted) return;
+    // Negative server cache expires after five minutes; recover without a page reload.
+    const retry = window.setTimeout(() => setSourceIndex(0), 310_000);
+    return () => window.clearTimeout(retry);
+  }, [exhausted]);
+  const source = sources[sourceIndex];
+  return source
+    ? <img key={source} src={source.startsWith("/api/") ? `${API_URL}${source}` : source} alt="" onError={() => setSourceIndex((current) => current + 1)} />
+    : <span role="img" aria-label={`Logo de ${symbol} temporariamente indisponível`} title="Logo temporariamente indisponível; nova tentativa automática" />;
 }
 
 function CompanyLogo({ logoUrl, symbol, market }: { logoUrl?: string | null; symbol: string; market?: string }) {

@@ -1,19 +1,16 @@
 // Explicit issuer marks; never infer identity from ticker prefixes or another exchange.
-const B3_MARKS: Record<string, string> = {
-  ITSA3: "/company-marks/itausa.png",
-  ITSA4: "/company-marks/itausa.png",
-  AXIA3: "/company-marks/axia.svg",
-  AXIA7: "/company-marks/axia.svg",
-  EMBJ3: "/company-marks/embraer.svg"
-};
+import catalog from "../public/company-marks/b3-catalog.json" with { type: "json" };
+const B3_MARKS: Record<string, string> = catalog;
 
 export function chewieLogoSources(market: string, symbol: string, logoUrl?: string | null): string[] {
   const exchange = market.trim().toUpperCase();
   const ticker = symbol.trim().toUpperCase().replace(exchange === "B3" ? /\.SA$/ : /\.US$/, "");
   const verified = exchange === "B3" ? B3_MARKS[ticker] : undefined;
-  // Once an issuer has a verified mark, a broken asset must fall back to its ticker,
-  // not to a potentially stale provider logo (including pre-rename brands).
-  if (verified) return [verified];
+  // Current constituents use local marks; new constituents resolve on demand.
+  if (exchange === "B3" && /^[A-Z][A-Z0-9]{3}[0-9]{1,2}$/.test(ticker)) {
+    const fallback = `/api/v1/chewie-fundamentals/B3/${encodeURIComponent(ticker)}/logo`;
+    return verified ? [verified, fallback] : [fallback];
+  }
   const raw = logoUrl?.trim();
   if (!raw) return [];
   try {
