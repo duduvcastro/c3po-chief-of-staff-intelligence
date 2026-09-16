@@ -190,6 +190,9 @@ jobs:
       - name: Test browser telemetry privacy and limits
         run: node --experimental-strip-types --test tests/sentry-privacy.test.mjs
 
+      - name: Test company logo identities
+        run: pnpm test:logos
+
       - name: Build frontend
         env:
           # Synthetic ingestion identifier: exercises enabled SDK/CSP compilation.

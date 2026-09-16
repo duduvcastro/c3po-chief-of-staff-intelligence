@@ -63,6 +63,7 @@ import {
 } from "lucide-react";
 import { type ComponentType, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, createContext, forwardRef, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { chewieLogoSources } from "../lib/chewie-company-logo";
 
 type Tone = "neutral" | "positive" | "warning" | "critical";
 type Direction = "up" | "down" | "flat";
@@ -2323,6 +2324,14 @@ function normalizeCompanyLogoUrl(value?: string | null) {
   if (clean.startsWith("//")) return `https:${clean}`;
   if (clean.startsWith("/")) return `https://eodhd.com${clean}`;
   return clean;
+}
+
+function ChewieCompanyLogo({ logoUrl, symbol, market }: { logoUrl?: string | null; symbol: string; market: string }) {
+  const sources = chewieLogoSources(market, symbol, logoUrl);
+  const [failed, setFailed] = useState(false);
+  return sources[0] && !failed
+    ? <img src={sources[0]} alt="" onError={() => setFailed(true)} />
+    : <span title={symbol}>{symbol}</span>;
 }
 
 function CompanyLogo({ logoUrl, symbol, market }: { logoUrl?: string | null; symbol: string; market?: string }) {
@@ -6310,7 +6319,7 @@ function ChewieFundamentalsView() {
               <div className="chewie-search-hit" key={item.symbol}>
                 <div className="chewie-company">
                   <div className="chewie-logo">
-                    {item.logo_url ? <img src={item.logo_url} alt="" /> : <span>{item.symbol.slice(0, 2)}</span>}
+                    <ChewieCompanyLogo key={`${activeMarket}:${item.symbol}:${item.logo_url ?? ""}`} logoUrl={item.logo_url} symbol={item.symbol} market={activeMarket} />
                   </div>
                   <div>
                     <strong>{item.symbol}{!item.from_universe && <em className="chewie-outside-badge">fora do universo</em>}</strong>
@@ -6360,7 +6369,7 @@ function ChewieFundamentalsView() {
                     <td>
                       <div className="chewie-company">
                         <div className="chewie-logo">
-                          {item.logo_url ? <img src={item.logo_url} alt="" /> : <span>{item.symbol.slice(0, 2)}</span>}
+                          <ChewieCompanyLogo key={`${activeMarket}:${item.symbol}:${item.logo_url ?? ""}`} logoUrl={item.logo_url} symbol={item.symbol} market={activeMarket} />
                         </div>
                         <div>
                           <strong>{item.symbol}</strong>
