@@ -1506,10 +1506,10 @@ class RealtimeMarketsService:
             for item in getattr(response, group)
         ))
         self.stream.set_group(f"market:{market}", symbols, priority=50)
-        updated = {
+        updated = self._sort_leader_groups({
             group: [self._apply_stream_row(item) for item in getattr(response, group)]
             for group in groups
-        }
+        })
         live_count = sum(item.status == "live" for group in groups for item in updated[group])
         source = "EODHD T-15 market scan"
         if live_count:
@@ -1660,7 +1660,23 @@ class RealtimeMarketsService:
                     "cash_volume": price * volume,
                     "as_of": quote_row.as_of,
                 }))
-        return enriched
+        return self._sort_leader_groups(enriched)
+
+    @staticmethod
+    def _sort_leader_groups(
+        groups: dict[str, list[RealtimeMarketLeader]],
+    ) -> dict[str, list[RealtimeMarketLeader]]:
+        # Quotes can change after the market scan selected these constituents.
+        metrics = {
+            "gainers": ("change_percent", True),
+            "losers": ("change_percent", False),
+            "volume_leaders": ("volume", True),
+            "cash_leaders": ("cash_volume", True),
+        }
+        return {
+            group: sorted(rows, key=lambda row: getattr(row, metrics[group][0]), reverse=metrics[group][1])
+            for group, rows in groups.items()
+        }
 
     def _b3_portfolio_rows(self, now: datetime, symbols: list[str]) -> list[RealtimeMarketLeader]:
         rows = {row.symbol: row for row in self._b3_rows(now)}

@@ -3270,3 +3270,44 @@ def test_b3_screen_without_a_generation_serves_the_cached_empty_view_and_does_no
 
     assert second is first and database.snapshot_reads == reads  # served from the cache: no re-hydration, no rebuild
     assert service.http.calls == []
+
+
+@pytest.mark.parametrize('market', ['NASDAQ', 'NYSE', 'B3'])
+def test_rankings_reorder_after_quote_updates_without_mutating_scan(market, monkeypatch):
+    from types import SimpleNamespace
+    from app.schemas import RealtimeMarketIndex, RealtimeMarketResponse
+    now = datetime.now(timezone.utc)
+    rows = [RealtimeMarketLeader(symbol=s, name=s, price=p, change_percent=p-100,
+        volume=100_000, cash_volume=p*100_000, currency='USD', exchange=market,
+        as_of=now-timedelta(seconds=30)) for s,p in [('AAA',105),('BBB',95)]]
+    groups = dict(gainers=rows, losers=list(reversed(rows)), volume_leaders=rows, cash_leaders=rows)
+    original = {k:[r.model_dump() for r in v] for k,v in groups.items()}
+    stream = StubRealtimeStream({s:EodhdStreamQuote(symbol=s,price=p,as_of=now,market_state='open')
+        for s,p in [('AAA',94),('BBB',106)]})
+    settings = Settings(auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings,Database(settings),StubHttp({}),stream=stream)  # type: ignore[arg-type]
+    if market == 'B3':
+        quotes = [SimpleNamespace(symbol=s,price=p,change_percent=p-100,volume=v,as_of=now)
+            for s,p,v in [('AAA',94,100_000),('BBB',106,200_000)]]
+        monkeypatch.setattr(BrapiClient, 'quotes', lambda self,symbols: quotes)
+        updated = service._enrich_b3_leader_groups(groups)
+        assert [r.symbol for r in updated['volume_leaders']] == ['BBB','AAA']
+    else:
+        response = RealtimeMarketResponse(market=market,
+            index=RealtimeMarketIndex(symbol='INDEX',name='Index',value=100,currency='USD',
+                market_state='REGULAR',status='delayed',as_of=now),universe_size=2,
+            **groups,source='scan',delay_minutes=15,refresh_seconds=3,generated_at=now)
+        service._us_previous_close.update(AAA=100,BBB=100)
+        service._responses[market] = (now+timedelta(minutes=5),response)
+        result = service.snapshot(market)
+        updated = {k:getattr(result,k) for k in groups}
+        stream.quotes = {s:EodhdStreamQuote(symbol=s,price=p,as_of=now+timedelta(seconds=1),market_state='open')
+            for s,p in [('AAA',106),('BBB',94)]}
+        again = service.snapshot(market)
+        assert [r.symbol for r in again.gainers] == ['AAA','BBB']
+        assert [r.symbol for r in again.losers] == ['BBB','AAA']
+        assert stream.groups[f'market:{market}']['symbols'] == ['AAA','BBB']
+    assert [r.symbol for r in updated['gainers']] == ['BBB','AAA']
+    assert [r.symbol for r in updated['losers']] == ['AAA','BBB']
+    assert [r.symbol for r in updated['cash_leaders']] == ['BBB','AAA']
+    assert {k:[r.model_dump() for r in v] for k,v in groups.items()} == original
