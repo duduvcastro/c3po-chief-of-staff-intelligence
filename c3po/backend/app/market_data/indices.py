@@ -5,6 +5,7 @@ from functools import lru_cache
 import math
 from threading import Lock
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 import exchange_calendars as xcals
 
@@ -44,6 +45,17 @@ def quote_status(spec: IndexSpec, as_of: datetime, now: datetime) -> tuple[Liter
         session = calendar.minute_to_session(minute, direction='previous')
         if as_of < calendar.session_open(session).to_pydatetime():
             return 'stale', 'STALE'
+        if spec.calendar == 'BVMF':
+            # BVMF fixes 18:00 Sao Paulo even during US daylight saving time.
+            # B3 cash closes at 16:00 New York (17:00/18:00 Sao Paulo).
+            # Keep B3 holidays/special sessions; never inherit US early closes.
+            regular_close = datetime.combine(
+                session.date(), datetime.min.time().replace(hour=16),
+                tzinfo=ZoneInfo('America/New_York'),
+            )
+            close = min(calendar.session_close(session).to_pydatetime(), regular_close)
+            if now >= close:
+                return 'closed', 'CLOSED'
         if not calendar.is_open_on_minute(minute):
             return 'closed', 'CLOSED'
         age = (now - as_of).total_seconds()

@@ -64,6 +64,33 @@ def test_both_products_share_single_fmp_request_and_same_quote():
 def test_real_exchange_calendar_and_age(symbol,as_of,status):
     assert quote_status(INDICES[symbol],as_of,NOW)[0] == status
 
+@pytest.mark.parametrize('now,as_of,expected', [
+    ('2026-09-17T20:30:00+00:00', '2026-09-17T19:59:00+00:00', ('closed', 'CLOSED')),
+    ('2026-09-17T21:30:00+00:00', '2026-09-17T19:59:00+00:00', ('closed', 'CLOSED')),
+    ('2026-09-17T20:00:00+00:00', '2026-09-17T19:59:00+00:00', ('closed', 'CLOSED')),
+    ('2026-09-17T19:59:00+00:00', '2026-09-17T19:59:00+00:00', ('live', 'REGULAR')),
+    ('2026-01-15T20:30:00+00:00', '2026-01-15T20:29:00+00:00', ('live', 'REGULAR')),
+    ('2026-01-15T21:30:00+00:00', '2026-01-15T20:59:00+00:00', ('closed', 'CLOSED')),
+    # US holidays and early closes must not shorten the B3 session.
+    ('2026-11-26T20:30:00+00:00', '2026-11-26T20:29:00+00:00', ('live', 'REGULAR')),
+    ('2026-11-27T20:30:00+00:00', '2026-11-27T20:29:00+00:00', ('live', 'REGULAR')),
+    ('2026-09-07T18:00:00+00:00', '2026-09-04T19:59:00+00:00', ('closed', 'CLOSED')),
+    ('2026-09-17T20:30:00+00:00', '2026-09-16T19:59:00+00:00', ('stale', 'STALE')),
+])
+def test_b3_cash_close_tracks_us_dst_but_preserves_b3_sessions(now, as_of, expected):
+    assert quote_status(INDICES['^BVSP'], datetime.fromisoformat(as_of), datetime.fromisoformat(now)) == expected
+
+
+@pytest.mark.parametrize('hour', [20, 21])
+def test_b3_intraday_after_summer_close_is_closed(hour):
+    settings, http, indices = service()
+    http.rows = [{'date': '2026-09-17 16:55:00', 'open': 100, 'high': 102,
+                  'low': 99, 'close': 101, 'volume': 0}]
+    master = RealtimeMarketsService(settings, Database(settings), http, indices=indices)
+    spec = next(s for s in MARKET_SPECS if s.symbol == 'IBOV')
+    result = master._live_instrument_intraday(spec, NOW.replace(hour=hour))
+    assert result.status == 'closed'
+
 @pytest.mark.parametrize('mutation', [{'timestamp':None},{'timestamp':NOW.timestamp()+3600},{'price':float('nan')},{'price':0}])
 def test_invalid_row_never_becomes_fresh_quote(mutation):
     settings,http,indices=service()
