@@ -22,6 +22,9 @@ from app.r2d2_v2_risk_source import ComponentEvidence, InsiderActivity, ORIGIN_R
 SCHEMA = "DIRECT_INSIDER_RC4BIS_V1"
 PATH = "/api/v1/stock/insider-transactions"
 CAP = 100
+FALLBACK_CONTRACT_TEXT = "RC4BIS_REV3:Finnhub_attempt_verified;EODHD_on_HTTP_transport_invalid_future_empty_or_truncated;no_union;full_EODHD_coverage;integrity_failure_never_fallback"
+FALLBACK_CONTRACT_SHA256 = hashlib.sha256(FALLBACK_CONTRACT_TEXT.encode("ascii")).hexdigest()
+FABLE_FALLBACK_DISPOSITION_SHA256 = "b7a80c08cc600bc1314b49966816575e650e86f8daf6fe801705c31c8ae627be"
 
 
 def encode_receipt(receipt: SourceReceipt) -> dict[str, Any]:
@@ -142,7 +145,7 @@ def _finnhub_replay(receipts: list[SourceReceipt], symbol: str, cutoff: datetime
 
 
 def _eodhd_replay(receipts: list[SourceReceipt], symbol: str, cutoff: datetime,
-                  identity: SourceReceipt | None) -> list[dict[str, Any]]:
+                  identity: SourceReceipt | None, *, require_metadata: bool = False) -> list[dict[str, Any]]:
     recognized = False
     if identity is not None:
         provider_symbol = symbol if "." in symbol else symbol+".US"
@@ -157,6 +160,8 @@ def _eodhd_replay(receipts: list[SourceReceipt], symbol: str, cutoff: datetime,
     events: list[dict[str, Any]] = []
     offset = 0
     ended = False
+    declared_total: int | None = None
+    seen_filings: set[str] = set()
     for receipt in receipts:
         if ended or receipt.request != SourceRequest("eodhd", f"/api/sec-filings/{symbol}/form4", {"page[offset]":offset,"page[limit]":100}):
             raise ValueError("EODHD_REQUEST_BINDING_INVALID")
@@ -164,11 +169,26 @@ def _eodhd_replay(receipts: list[SourceReceipt], symbol: str, cutoff: datetime,
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list) or not isinstance(payload.get("links"), dict) or "next" not in payload["links"]:
             raise ValueError("EODHD_ENVELOPE_INVALID")
         filings = payload["data"]
+        metadata = payload.get("meta")
+        if require_metadata or metadata is not None:
+            if (not isinstance(metadata, dict) or type(metadata.get("total")) is not int or metadata["total"] < 0
+                    or metadata.get("page") != {"offset":offset,"limit":100}):
+                raise ValueError("EODHD_PAGINATION_METADATA_INVALID")
+            if declared_total is not None and metadata["total"] != declared_total:
+                raise ValueError("EODHD_TOTAL_CHANGED_DURING_TRAVERSAL")
+            declared_total = metadata["total"]
         if len(filings)>100:
             raise ValueError("EODHD_PAGE_SIZE_INVALID")
         for filing in filings:
             if not isinstance(filing, dict):
                 raise ValueError("EODHD_FILING_INVALID")
+            if declared_total is not None:
+                accession = filing.get("accession_number")
+                if not isinstance(accession,str) or not accession:
+                    raise ValueError("EODHD_FILING_IDENTITY_MISSING")
+                if accession in seen_filings:
+                    raise ValueError("EODHD_DUPLICATE_FILING")
+                seen_filings.add(accession)
             if "symbol" in filing:
                 if canonical_symbol(filing["symbol"]) != symbol:
                     raise ValueError("EODHD_FILING_IDENTITY_MISMATCH")
@@ -182,6 +202,8 @@ def _eodhd_replay(receipts: list[SourceReceipt], symbol: str, cutoff: datetime,
             for row in rows:
                 if not isinstance(row, dict):
                     raise ValueError("EODHD_TRANSACTION_INVALID")
+                if "symbol" in row and canonical_symbol(row["symbol"]) != symbol:
+                    raise ValueError("EODHD_TRANSACTION_IDENTITY_MISMATCH")
                 event = _event(EodhdClient._normalize_form4_row(row, filing_day.isoformat()), symbol=symbol,provider="eodhd",cutoff=cutoff)
                 if event is not None:
                     events.append(event)
@@ -198,6 +220,8 @@ def _eodhd_replay(receipts: list[SourceReceipt], symbol: str, cutoff: datetime,
         offset+=len(filings)
     if not ended:
         raise ValueError("EODHD_PAGINATION_INCOMPLETE")
+    if declared_total is not None and (offset != declared_total or len(seen_filings) != declared_total):
+        raise ValueError("EODHD_TOTAL_CARDINALITY_MISMATCH")
     if not recognized:
         raise ValueError("EODHD_IDENTITY_UNKNOWN")
     return _dedup(events)
@@ -206,6 +230,8 @@ def _eodhd_replay(receipts: list[SourceReceipt], symbol: str, cutoff: datetime,
 def assess_direct_insider(snapshot: dict[str, Any], *, received_at: datetime,
                           computed_at: datetime) -> tuple[InsiderActivity | None, ComponentEvidence, list[str]]:
     """Recompute coverage from original bytes and exact window tree, not flags."""
+    if "fallback_contract_sha256" in snapshot:
+        return _assess_failure_fallback(snapshot, received_at=received_at, computed_at=computed_at)
     symbol=canonical_symbol(snapshot.get("symbol"))
     cutoff=datetime.fromisoformat(snapshot["query_cutoff_at"])
     if snapshot.get("schema")!=SCHEMA or snapshot.get("market")!="US" or cutoff.tzinfo is None:
@@ -249,11 +275,13 @@ def assess_direct_insider(snapshot: dict[str, Any], *, received_at: datetime,
 
 
 class DirectInsiderAcquirer:
-    def __init__(self,acquirer:RiskAcquirer,*,max_requests:int=128)->None:
+    def __init__(self,acquirer:RiskAcquirer,*,max_requests:int=128,fallback_on_failure:bool=False)->None:
         if type(max_requests)is not int or not 1<=max_requests<=512:
             raise ValueError("DIRECT_INSIDER_BUDGET_INVALID")
         self.acquirer=acquirer
         self.max_requests=max_requests
+        if type(fallback_on_failure) is not bool:raise ValueError("FALLBACK_POLICY_INVALID")
+        self.fallback_on_failure=fallback_on_failure
 
     def acquire(self,symbol:str,*,cutoff:datetime,eodhd_identity:SourceReceipt|None=None)->dict[str,Any]:
         symbol=canonical_symbol(symbol)
@@ -279,9 +307,165 @@ class DirectInsiderAcquirer:
                 fallback=list(self.acquirer.form4_fallback_diagnostic(symbol).receipts)
         except (ValueError,TypeError,KeyError) as exc:
             diagnostic=str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "DIRECT_INSIDER_EVIDENCE_INVALID"
-        return {"schema":SCHEMA,"symbol":symbol,"market":"US","query_cutoff_at":cutoff.isoformat(),
+        snapshot = {"schema":SCHEMA,"symbol":symbol,"market":"US","query_cutoff_at":cutoff.isoformat(),
                 "request_limits":{"finnhub":self.max_requests,"eodhd":self.acquirer.max_pages,"total":self.max_requests+self.acquirer.max_pages},
                 "finnhub_receipts":[encode_receipt(row) for row in receipts],
                 "eodhd_receipts":[encode_receipt(row) for row in fallback],
                 "eodhd_identity_receipt":encode_receipt(eodhd_identity) if eodhd_identity else None,
                 "acquisition_diagnostic":diagnostic}
+        if self.fallback_on_failure:
+            snapshot["fallback_contract_sha256"] = FALLBACK_CONTRACT_SHA256
+            snapshot["fable_disposition_sha256"] = FABLE_FALLBACK_DISPOSITION_SHA256
+            try:
+                _, reason = _inspect_finnhub_failure(receipts, symbol, cutoff, self.max_requests)
+                selected = "finnhub" if reason == "FINNHUB_NONEMPTY" else "eodhd"
+                snapshot["provider_selection"] = {"selected": selected, "reason": reason}
+                if selected == "eodhd" and not fallback:
+                    fallback = list(self.acquirer.form4_fallback_diagnostic(symbol).receipts)
+                    snapshot["eodhd_receipts"] = [encode_receipt(row) for row in fallback]
+            except (ValueError, TypeError, KeyError) as exc:
+                snapshot["provider_selection"] = {"selected": None, "reason": "FINNHUB_INTEGRITY_OR_TREE_INVALID"}
+                snapshot["acquisition_diagnostic"] = str(exc) if isinstance(exc, ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "FINNHUB_INTEGRITY_OR_TREE_INVALID"
+        return snapshot
+
+
+class _ProviderFailure(ValueError):
+    pass
+
+
+def _inspect_finnhub_failure(receipts: list[SourceReceipt], symbol: str, cutoff: datetime,
+                              budget: int) -> tuple[list[dict[str, Any]], str]:
+    """Separate reproducible provider failures from damaged evidence/request tree."""
+    if not receipts or len(receipts) > budget:
+        raise ValueError("FINNHUB_ATTEMPT_OR_BUDGET_INVALID")
+    index = 0
+    events: list[dict[str, Any]] = []
+    has_rows = False
+
+    def visit(start: date, end: date) -> None:
+        nonlocal index, has_rows
+        if index == len(receipts):
+            if index == budget:
+                raise _ProviderFailure("FINNHUB_REQUEST_BUDGET_EXHAUSTED")
+            raise ValueError("FINNHUB_WINDOW_EVIDENCE_MISSING")
+        receipt = receipts[index]
+        index += 1
+        expected = SourceRequest("finnhub", PATH, {"symbol": symbol,"from": start.isoformat(),"to": end.isoformat()})
+        if (receipt.request != expected or receipt.started_at.tzinfo is None or receipt.received_at.tzinfo is None
+                or not cutoff <= receipt.started_at <= receipt.received_at
+                or hashlib.sha256(receipt.body).hexdigest() != receipt.payload_sha256):
+            raise ValueError("FINNHUB_INTEGRITY_OR_REQUEST_INVALID")
+        if receipt.status is not None and (type(receipt.status) is not int or not 100 <= receipt.status <= 599):
+            raise ValueError("FINNHUB_STATUS_EVIDENCE_INVALID")
+        if receipt.status is None:
+            if receipt.diagnostic != "TRANSPORT_FAILED" or receipt.body:
+                raise ValueError("FINNHUB_TRANSPORT_EVIDENCE_INVALID")
+            raise _ProviderFailure("FINNHUB_TRANSPORT_FAILED")
+        if receipt.status != 200:
+            if receipt.diagnostic not in (None,"HTTP_FAILED"):
+                raise ValueError("FINNHUB_HTTP_EVIDENCE_INVALID")
+            raise _ProviderFailure("FINNHUB_HTTP_"+str(receipt.status))
+        if receipt.diagnostic not in (None,"JSON_INVALID","BODY_REJECTED"):
+            raise ValueError("FINNHUB_DIAGNOSTIC_EVIDENCE_INVALID")
+        if receipt.diagnostic is not None:
+            if receipt.diagnostic == "JSON_INVALID":
+                try:
+                    import json as _json
+                    _json.loads(receipt.body)
+                except (ValueError,UnicodeError):
+                    raise _ProviderFailure("FINNHUB_JSON_INVALID") from None
+                # Acquirer also rejects duplicate keys and nonfinite constants.
+                from app.r2d2_v2_risk_acquisition import _reject_constant, _unique_object
+                try:
+                    _json.loads(receipt.body,parse_constant=_reject_constant,object_pairs_hook=_unique_object)
+                except ValueError:
+                    raise _ProviderFailure("FINNHUB_JSON_INVALID") from None
+                raise ValueError("FINNHUB_JSON_DIAGNOSTIC_UNPROVEN")
+            if receipt.body:
+                raise ValueError("FINNHUB_BODY_REJECTION_UNPROVEN")
+            raise _ProviderFailure("FINNHUB_BODY_REJECTED")
+        try:
+            rows = _finnhub_rows(receipt,symbol=symbol,start=start,end=end,cutoff=cutoff)
+            saturated = _requires_split(receipt,rows)
+        except (ValueError,TypeError,KeyError) as exc:
+            # Integrity and request binding were already verified from bytes.
+            code = str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "FINNHUB_RESPONSE_INVALID"
+            raise _ProviderFailure(code) from None
+        if saturated:
+            if start == end:
+                raise _ProviderFailure("FINNHUB_SINGLE_DAY_SATURATED")
+            midpoint=start+timedelta(days=(end-start).days//2)
+            visit(start,midpoint)
+            visit(midpoint+timedelta(days=1),end)
+            return
+        has_rows=has_rows or bool(rows)
+        for row in rows:
+            try:
+                if "symbol" in row and canonical_symbol(row["symbol"])!=symbol:
+                    raise ValueError("FINNHUB_ROW_IDENTITY_MISMATCH")
+                event=_event(FinnhubClient._normalize_transaction(row),symbol=symbol,provider="finnhub",cutoff=cutoff)
+            except (ValueError,TypeError,KeyError) as exc:
+                raise _ProviderFailure(str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "FINNHUB_RESPONSE_INVALID") from None
+            if event is not None:events.append(event)
+    reason = "FINNHUB_NONEMPTY"
+    try:
+        visit((cutoff-timedelta(days=180)).date(),cutoff.date())
+        reason = "FINNHUB_NONEMPTY" if has_rows else "FINNHUB_EMPTY"
+    except _ProviderFailure as exc:
+        reason=str(exc)
+        events=[]  # Never union a partial primary population with fallback.
+    if index != len(receipts):
+        raise ValueError("FINNHUB_RECEIPTS_AFTER_TERMINATION")
+    return _dedup(events),reason
+
+
+def _assess_failure_fallback(snapshot: dict[str,Any], *, received_at: datetime,
+                             computed_at: datetime) -> tuple[InsiderActivity|None,ComponentEvidence,list[str]]:
+    if (snapshot.get("fallback_contract_sha256") != FALLBACK_CONTRACT_SHA256
+            or snapshot.get("fable_disposition_sha256") != FABLE_FALLBACK_DISPOSITION_SHA256):
+        raise ValueError("FALLBACK_CONTRACT_UNRECOGNIZED")
+    symbol=canonical_symbol(snapshot.get("symbol"))
+    cutoff=datetime.fromisoformat(snapshot["query_cutoff_at"])
+    if snapshot.get("schema")!=SCHEMA or snapshot.get("market")!="US" or cutoff.tzinfo is None:
+        raise ValueError("DIRECT_INSIDER_SNAPSHOT_INVALID")
+    events:list[dict[str,Any]]=[]
+    diagnostics:list[str]=[]
+    provider="unresolved"
+    completed=None
+    complete=False
+    reason="UNRESOLVED"
+    try:
+        limits=snapshot["request_limits"]
+        f_limit,e_limit=limits["finnhub"],limits["eodhd"]
+        if (type(f_limit)is not int or not 1<=f_limit<=512 or type(e_limit)is not int or not 1<=e_limit<=100
+                or limits.get("total")!=f_limit+e_limit):
+            raise ValueError("DIRECT_INSIDER_RECEIPT_BUDGET_INVALID")
+        primary=[decode_receipt(row) for row in snapshot["finnhub_receipts"]]
+        fallback=[decode_receipt(row) for row in snapshot.get("eodhd_receipts",[])]
+        if len(fallback)>e_limit:raise ValueError("EODHD_BUDGET_EXCEEDED")
+        events,reason=_inspect_finnhub_failure(primary,symbol,cutoff,f_limit)
+        provider="finnhub" if reason=="FINNHUB_NONEMPTY" else "eodhd"
+        if snapshot.get("provider_selection")!={"selected":provider,"reason":reason}:
+            raise ValueError("FALLBACK_SELECTION_NOT_PROVEN")
+        if provider=="eodhd":
+            identity=decode_receipt(snapshot["eodhd_identity_receipt"]) if snapshot.get("eodhd_identity_receipt") else None
+            try:
+                events=_eodhd_replay(fallback,symbol,cutoff,identity,require_metadata=True)
+            except (ValueError,TypeError,KeyError) as exc:
+                detail=str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "EVIDENCE_INVALID"
+                raise ValueError("EODHD_FALLBACK_"+detail) from None
+        elif fallback:raise ValueError("INSIDER_PROVIDERS_MUST_NOT_UNION")
+        clocks=[receipt.received_at for receipt in primary+fallback]
+        if provider=="eodhd" and snapshot.get("eodhd_identity_receipt"):
+            clocks.append(decode_receipt(snapshot["eodhd_identity_receipt"]).received_at)
+        completed=max(clocks)
+        if not cutoff<=completed<=received_at<=computed_at:raise ValueError("DIRECT_INSIDER_CLOCK_ORDER_INVALID")
+        complete=True
+    except (ValueError,TypeError,KeyError,IndexError) as exc:
+        diagnostics.append(str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "DIRECT_INSIDER_EVIDENCE_INVALID")
+    value=insider_event_candidates(events,symbol=symbol,decision_at=cutoff) if complete else None
+    source_at=max((event["published_at"] for event in events),default=completed)
+    digest=hashlib.sha256(json.dumps(snapshot,sort_keys=True,separators=(",",":"),ensure_ascii=True,allow_nan=False).encode()).hexdigest()
+    evidence=ComponentEvidence(True,complete,"DIRECT_INSIDER_RC4BIS_REV3/"+provider,ORIGIN_REVISION,digest,source_at,received_at,
+        "Owner-authorized EODHD substitute after verified primary failure/truncation/empty; selected="+provider+"; primary_reason="+reason+"; no union; full EODHD traversal required")
+    return value,evidence,diagnostics

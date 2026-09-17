@@ -111,3 +111,37 @@ Additional synthetic tests use manually expected buy/sell counts for duplicate
 identities, lookback filtering, saturated-parent exclusion, EODHD precedence,
 no-provider-union, verified empty versus missing fallback, and isolation of the
 injected clock/window. These tests are not the real 20-name capture.
+
+## Owner-authorized failure fallback, RC-4bis revision 3
+
+The original V1 snapshot shape remains supported. Failure fallback is opt-in,
+requiring both normative-contract hash
+`b569610f24639c5ba54841f2003dceb864331f9d2138fc0f9c31de4949601c63` and Fable disposition
+`b7a80c08cc600bc1314b49966816575e650e86f8daf6fe801705c31c8ae627be`, plus the recorded
+provider selection. Without that binding, a Finnhub failure continues to yield
+UNKNOWN rather than enabling fallback. Gates and old report files are unchanged.
+
+The independent oracle distinguishes a recorded provider failure from damaged
+provenance. HTTP/transport failure, bad response shape, out-of-window/future
+records, a saturated single day, or an exhausted registered request budget may
+select EODHD under the new contract. A missing attempt, wrong request, altered
+hash/clock, unproven error diagnostic, missing non-budget tree receipts or extra
+receipts after failure cannot do so. All supplied receipt integrity is checked
+before choosing a provider. Partial Finnhub events are discarded completely when
+EODHD is selected. A nonempty complete Finnhub population is never unioned with
+EODHD.
+
+EODHD must independently pass status/hash/identity/clock checks, exact page
+binding, stable integer `meta.total`, matching `meta.page.offset`/`limit`, unique
+nonempty `accession_number` identifiers, valid dates, and final received filing
+count equal to `meta.total`. `next=null` by itself is insufficient. A gap such as
+559 received filings against total 560 remains UNKNOWN; a short page whose next
+offset skips a filing remains UNKNOWN. Future transactions in EODHD remain
+UNKNOWN even when Finnhub failed. Fallback repairs provider availability only,
+not invalid fallback data or damaged evidence.
+
+Synthetic adversarial tests cover failure fallback, day saturation, partial
+primary exclusion, old-contract refusal, tampered provenance, incorrect totals,
+page offsets, duplicate/missing accessions, future fallback data, and unproven
+JSON-failure assertions. The real-sample arithmetic and coverage gates are not
+changed by these tests.

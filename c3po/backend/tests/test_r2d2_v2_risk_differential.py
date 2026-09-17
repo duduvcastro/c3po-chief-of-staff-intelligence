@@ -183,12 +183,13 @@ def direct_snapshot(finnhub_rows, *, eodhd_rows=None, tree=False):
         receipts = [finnhub(start, end, finnhub_rows)]
     fallback = []
     if eodhd_rows is not None:
-        data = [] if not eodhd_rows else [{'symbol': 'SYNTH', 'filed_at': '2026-09-01', 'non_derivative': eodhd_rows}]
+        data = [] if not eodhd_rows else [{'symbol': 'SYNTH', 'accession_number': 'fixture-000', 'filed_at': '2026-09-01', 'non_derivative': eodhd_rows}]
         fallback = [recorded('eodhd', '/api/sec-filings/SYNTH/form4', {'page[offset]': 0, 'page[limit]': 100},
-                             {'data': data, 'links': {'next': None}})]
+                             {'data': data, 'links': {'next': None}, 'meta': {'total': len(data), 'page': {'offset': 0, 'limit': 100}}})]
     identity = recorded('eodhd', '/api/v1.1/fundamentals/SYNTH.US', {}, {'General': {'Code': 'SYNTH'}})
     return {'schema': 'DIRECT_INSIDER_RC4BIS_V1', 'symbol': 'SYNTH', 'market': 'US',
-            'query_cutoff_at': cutoff.isoformat(), 'finnhub_receipts': receipts,
+            'query_cutoff_at': cutoff.isoformat(), 'request_limits': {'finnhub': 128, 'eodhd': 100, 'total': 228},
+            'finnhub_receipts': receipts,
             'eodhd_receipts': fallback, 'eodhd_identity_receipt': identity}
 
 
@@ -207,7 +208,6 @@ def test_direct_finnhub_manual_counts_duplicate_identity_and_window():
         {'name': 'Same Person', 'transactionCode': 'P', 'transactionDate': '2026-09-01'},
         {'name': 'Seller', 'transactionCode': 'S', 'transactionDate': '2026-09-02'},
         {'name': 'Award', 'transactionCode': 'A', 'transactionDate': '2026-09-02'},
-        {'name': 'Too old', 'transactionCode': 'P', 'transactionDate': '2026-01-01'},
     ]
     result = direct_oracle(direct_snapshot(rows))
     assert result['insider_activity'] == {'buy_count': 1, 'sell_count': 1, 'total_count': 2}
@@ -252,3 +252,140 @@ def test_direct_clock_injection_does_not_mutate_original_module_globals():
     direct_oracle(direct_snapshot([], eodhd_rows=[]))
     assert ir.datetime is original_datetime
     assert ir.FINNHUB_INSIDER_LOOKBACK_DAYS == original_days == 90
+
+
+def replace_recorded_payload(receipt, payload):
+    import base64
+    body = json.dumps(payload).encode()
+    receipt.update(body_b64=base64.b64encode(body).decode(), payload_sha256=hashlib.sha256(body).hexdigest())
+
+
+def opted_failure_snapshot(kind='http'):
+    import base64
+    from app.r2d2_v2_risk_direct_oracle import FALLBACK_CONTRACT_SHA256, FABLE_DISPOSITION_SHA256
+    snapshot = direct_snapshot([], eodhd_rows=[{'reporting_owner_name': 'EODHD Seller', 'transaction_code': 'S',
+                                              'transaction_date': '2026-09-01'}])
+    snapshot.update(fallback_contract_sha256=FALLBACK_CONTRACT_SHA256,
+                    fable_disposition_sha256=FABLE_DISPOSITION_SHA256,
+                    provider_selection={'selected': 'eodhd', 'reason': 'FINNHUB_HTTP_403'})
+    primary = snapshot['finnhub_receipts'][0]
+    if kind == 'http':
+        primary.update(status=403, diagnostic='HTTP_FAILED')
+        replace_recorded_payload(primary, {})
+    elif kind == 'transport':
+        primary.update(status=None, diagnostic='TRANSPORT_FAILED', body_b64='', payload_sha256=hashlib.sha256(b'').hexdigest())
+        snapshot['provider_selection']['reason'] = 'FINNHUB_TRANSPORT_FAILED'
+    elif kind == 'future':
+        replace_recorded_payload(primary, {'symbol': 'SYNTH', 'data': [
+            {'name': 'Future', 'transactionCode': 'P', 'transactionDate': '2027-01-25'}]})
+        snapshot['provider_selection']['reason'] = 'FINNHUB_REQUEST_WINDOW_NOT_OBSERVED'
+    elif kind == 'budget':
+        replace_recorded_payload(primary, {'symbol': 'SYNTH', 'data': [], 'hasMore': True})
+        snapshot['request_limits'].update(finnhub=1, total=101)
+        snapshot['provider_selection']['reason'] = 'FINNHUB_REQUEST_BUDGET_EXHAUSTED'
+    elif kind == 'invalid':
+        replace_recorded_payload(primary, {'symbol': 'SYNTH', 'data': [{'transactionDate': '2026-09-01'}]})
+        snapshot['provider_selection']['reason'] = 'DIRECT_INSIDER_NORMALIZATION_LOSS'
+    return snapshot
+
+
+@pytest.mark.parametrize('kind', ['http', 'transport', 'future', 'budget', 'invalid'])
+def test_opted_failure_fallback_uses_only_verified_eodhd(kind):
+    result = direct_oracle(opted_failure_snapshot(kind))
+    assert result['insider_activity'] == {'buy_count': 0, 'sell_count': 1, 'total_count': 1}
+    assert result['direct_insider']['provider'] == 'eodhd'
+    assert result['direct_insider']['complete'] is True
+    assert result['direct_insider']['fallback_cause']
+
+
+def test_legacy_contract_still_does_not_fallback_after_failure():
+    snapshot = opted_failure_snapshot()
+    del snapshot['fallback_contract_sha256']
+    del snapshot['fable_disposition_sha256']
+    snapshot.pop('provider_selection')
+    assert direct_oracle(snapshot)['direct_insider']['complete'] is False
+
+
+@pytest.mark.parametrize('tamper', ['primary_hash', 'primary_clock', 'unknown_pin', 'missing_disposition',
+                                   'identity_clock', 'fallback_total', 'fallback_offset', 'fallback_future',
+                                   'duplicate_filing', 'missing_accession', 'fallback_hash'])
+def test_fallback_never_repairs_bad_provenance_or_bad_eodhd(tamper):
+    import base64
+    snapshot = opted_failure_snapshot()
+    primary, fallback = snapshot['finnhub_receipts'][0], snapshot['eodhd_receipts'][0]
+    payload = json.loads(base64.b64decode(fallback['body_b64']))
+    if tamper == 'primary_hash': primary['payload_sha256'] = '0' * 64
+    elif tamper == 'primary_clock': primary['received_at'] = (NOW-timedelta(seconds=1)).isoformat()
+    elif tamper == 'unknown_pin': snapshot['fallback_contract_sha256'] = '0' * 64
+    elif tamper == 'missing_disposition': del snapshot['fable_disposition_sha256']
+    elif tamper == 'identity_clock': snapshot['eodhd_identity_receipt']['received_at'] = (NOW+timedelta(days=1)).isoformat()
+    elif tamper == 'fallback_total': payload['meta']['total'] += 1
+    elif tamper == 'fallback_offset': payload['meta']['page']['offset'] = 1
+    elif tamper == 'fallback_future': payload['data'][0]['non_derivative'][0]['transaction_date'] = '2027-01-25'
+    elif tamper == 'duplicate_filing':
+        payload['data'] *= 2
+        payload['meta']['total'] = 2
+    elif tamper == 'missing_accession': del payload['data'][0]['accession_number']
+    replace_recorded_payload(fallback, payload)
+    if tamper == 'fallback_hash': fallback['payload_sha256'] = '0' * 64
+    result = direct_oracle(snapshot)
+    assert result['insider_activity'] is None
+    assert result['direct_insider']['complete'] is False
+
+
+def test_opted_single_day_saturation_falls_back_with_original_eodhd_counts():
+    import copy
+    snapshot = opted_failure_snapshot()
+    template = snapshot['finnhub_receipts'][0]
+    start, end = (NOW-timedelta(days=180)).date(), NOW.date()
+    receipts = []
+    while True:
+        receipt = copy.deepcopy(template)
+        receipt.update(status=200, diagnostic=None)
+        receipt['parameters'].update({'from': start.isoformat(), 'to': end.isoformat()})
+        replace_recorded_payload(receipt, {'symbol': 'SYNTH', 'data': [
+            {'name': 'Primary saturated buyer', 'transactionCode': 'P', 'transactionDate': start.isoformat()}] * 100})
+        receipts.append(receipt)
+        if start == end:
+            break
+        end = start+timedelta(days=(end-start).days//2)
+    snapshot['finnhub_receipts'] = receipts
+    snapshot['provider_selection']['reason'] = 'FINNHUB_SINGLE_DAY_SATURATED'
+    result = direct_oracle(snapshot)
+    assert result['insider_activity'] == {'buy_count': 0, 'sell_count': 1, 'total_count': 1}
+    assert result['direct_insider']['provider'] == 'eodhd'
+
+
+def test_primary_partial_valid_leaf_never_union_with_failure_fallback():
+    import copy
+    full = direct_snapshot([
+        {'name': 'Primary buyer', 'transactionCode': 'P', 'transactionDate': '2026-04-01'},
+        {'name': 'Future primary', 'transactionCode': 'P', 'transactionDate': '2027-01-25'},
+    ], tree=True)
+    snapshot = opted_failure_snapshot()
+    snapshot['finnhub_receipts'] = copy.deepcopy(full['finnhub_receipts'])
+    snapshot['provider_selection']['reason'] = 'FINNHUB_REQUEST_WINDOW_NOT_OBSERVED'
+    result = direct_oracle(snapshot)
+    assert result['insider_activity'] == {'buy_count': 0, 'sell_count': 1, 'total_count': 1}
+
+
+def test_primary_extra_receipts_after_http_failure_is_bad_provenance():
+    import copy
+    snapshot = opted_failure_snapshot()
+    snapshot['finnhub_receipts'].append(copy.deepcopy(snapshot['finnhub_receipts'][0]))
+    assert direct_oracle(snapshot)['direct_insider']['complete'] is False
+
+
+def test_unproven_json_failure_does_not_authorize_fallback():
+    snapshot = opted_failure_snapshot()
+    primary = snapshot['finnhub_receipts'][0]
+    primary.update(status=200, diagnostic='JSON_INVALID')
+    replace_recorded_payload(primary, {'symbol': 'SYNTH', 'data': []})
+    snapshot['provider_selection']['reason'] = 'FINNHUB_JSON_INVALID'
+    assert direct_oracle(snapshot)['direct_insider']['complete'] is False
+
+
+def test_opted_provider_reason_must_match_independently_observed_failure():
+    snapshot = opted_failure_snapshot('http')
+    snapshot['provider_selection']['reason'] = 'FINNHUB_SINGLE_DAY_SATURATED'
+    assert direct_oracle(snapshot)['direct_insider']['complete'] is False

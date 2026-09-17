@@ -133,7 +133,8 @@ def independent_oracle(arguments: dict[str, Any], *, control_price: float = 1.0)
     fundamentals = apply_official_fundamentals(fundamentals, official['outputs'])
     snapshot = arguments['insider_snapshot'].payload()
     cutoff = datetime.fromisoformat(snapshot['query_cutoff_at'])
-    direct = independent_direct_events(snapshot) if snapshot.get('schema') == 'DIRECT_INSIDER_RC4BIS_V1' else None
+    direct = independent_direct_events(snapshot, received_at=arguments['insider_snapshot'].received_at,
+                                       computed_at=arguments['computed_at']) if snapshot.get('schema') == 'DIRECT_INSIDER_RC4BIS_V1' else None
     events = copy.deepcopy(direct['events'] if direct is not None else snapshot['events'])
     for event in events:
         for key in ('published_at', 'collected_at', 'reviewed_at'):
