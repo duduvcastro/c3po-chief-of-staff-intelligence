@@ -8,9 +8,26 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import math
+import json
+import re
 from typing import Any
 
 from app.r2d2_v2_risk_source import InsiderActivity, InstitutionalPositions
+
+
+def canonical_symbol(value: Any) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]{0,14}", value):
+        raise ValueError("SYMBOL_INVALID")
+    return value.upper()
+
+
+def strict_day(value: Any) -> date | None:
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def canonical_growth_ratio(value: Any) -> tuple[float, dict[str, Any]]:
@@ -34,8 +51,10 @@ def insider_event_candidates(rows: list[dict[str, Any]], *, symbol: str,
     """
     if decision_at.tzinfo is None or decision_at.utcoffset() is None:
         raise ValueError("INSIDER_DECISION_CLOCK_INVALID")
+    symbol = canonical_symbol(symbol)
     since = decision_at - timedelta(days=180)
     buys = sells = 0
+    seen: set[tuple[str, str]] = set()
     for row in rows:
         if (row.get("symbol") != symbol or row.get("market") != "US"
                 or row.get("source_code") != "sec"
@@ -49,7 +68,19 @@ def insider_event_candidates(rows: list[dict[str, Any]], *, symbol: str,
             raise ValueError("INSIDER_FUTURE_EVENT")
         if published < since:
             continue
+        external_id = row.get("external_id")
+        if not isinstance(external_id, str) or not external_id:
+            raise ValueError("INSIDER_EVENT_ID_MISSING")
+        identity = (row["source_code"], external_id)
+        if identity in seen:
+            raise ValueError("INSIDER_DUPLICATE_EVENT")
+        seen.add(identity)
         metadata = row.get("raw_metadata") or {}
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except ValueError:
+                raise ValueError("INSIDER_METADATA_INVALID") from None
         if not isinstance(metadata, dict):
             raise ValueError("INSIDER_METADATA_INVALID")
         # Exact precedence of Database._insider_transaction_direction at the
@@ -94,7 +125,10 @@ def institutional_candidate(payload: Any, *, symbol: str, year: int,
     if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
         raise ValueError("INSTITUTIONAL_ROW_MISSING")
     row = payload[0]
-    if row.get("symbol") != symbol or row.get("year") != year or row.get("quarter") != quarter:
+    # Declared identity coercion: case-insensitive ticker, integral numeric
+    # year/quarter (including provider strings). Never truncate fractions.
+    if (canonical_symbol(row.get("symbol")) != canonical_symbol(symbol)
+            or exact_count(row.get("year")) != year or exact_count(row.get("quarter")) != quarter):
         raise ValueError("INSTITUTIONAL_IDENTITY_MISMATCH")
     return InstitutionalPositions(*(exact_count(row.get(key)) for key in
                                     ("newPositions", "increasedPositions", "reducedPositions", "closedPositions")))
@@ -109,10 +143,9 @@ def grade_candidates(payload: Any, *, symbol: str, since: date,
     for row in payload:
         if not isinstance(row, dict) or row.get("symbol") != symbol:
             raise ValueError("GRADES_IDENTITY_MISMATCH")
-        try:
-            event_day = date.fromisoformat(row["date"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("GRADES_DATE_INVALID") from None
+        event_day = strict_day(row.get("date"))
+        if event_day is None:
+            continue  # The original skips malformed dates, not the whole issuer.
         if event_day > through:
             raise ValueError("GRADES_FUTURE_RECORD")
         if event_day < since:
@@ -134,24 +167,25 @@ def quarterly_ttm(section: Any, *, field: str, through: date,
                   currency: str) -> tuple[float, tuple[date, ...]]:
     if not isinstance(section, dict) or not isinstance(section.get("quarterly"), dict):
         raise ValueError("QUARTERLY_STATEMENTS_MISSING")
-    rows = list(section["quarterly"].values())
+    # EODHD._dated_rows selects the first eight KEYS descending, then OnePager
+    # takes the first four rows. The embedded date must not change that order.
+    periods = section["quarterly"]
     parsed: list[tuple[date, dict[str, Any]]] = []
-    for row in rows:
+    for key in sorted(periods, reverse=True)[:8]:
+        row = periods[key]
         if not isinstance(row, dict):
-            raise ValueError("STATEMENT_INVALID")
-        try:
-            period = date.fromisoformat(row["date"])
-        except (KeyError, TypeError, ValueError):
-            raise ValueError("STATEMENT_DATE_INVALID") from None
+            continue
+        period = strict_day(row.get("date") or key)
+        if period is None:
+            raise ValueError("STATEMENT_DATE_INVALID")
         if period > through:
             raise ValueError("STATEMENT_FUTURE_PERIOD")
         parsed.append((period, row))
-    parsed.sort(key=lambda item: item[0], reverse=True)
     if len(parsed) < 4:
         raise ValueError("TTM_FOUR_QUARTERS_REQUIRED")
     selected = parsed[:4]
     dates = tuple(item[0] for item in selected)
-    if len({item[0] for item in parsed}) != len(parsed):
+    if len(set(dates)) != len(dates):
         raise ValueError("STATEMENT_DUPLICATE_PERIOD")
     # RC-4: four complete quarterly rows, selected descending as in origin.
     # Do not invent a fiscal-quarter day-length threshold or a new TTL.

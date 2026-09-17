@@ -34,10 +34,22 @@ def test_insider_matches_database_direction_window_and_filters():
     ]
     database = object.__new__(Database)
     database.database_url = ""
-    database._ir_events = {str(i): row for i, row in enumerate(rows)}
+    database._ir_events = {}
+    rows = [{**row, "external_id": str(i)} for i, row in enumerate(rows)]
+    database.save_ir_events(rows)
+    # Seed through the real upsert path: repeated event stays one DB row.
+    database.save_ir_events([rows[0]])
     original = database.insider_transaction_activity(["TEST"], "US", now-timedelta(days=180))["TEST"]
-    result = insider_event_candidates(rows, symbol="TEST", decision_at=now)
+    result = insider_event_candidates(list(database._ir_events.values()), symbol="test", decision_at=now)
     assert asdict(result) == original == {"total_count": 4, "buy_count": 2, "sell_count": 2}
+    with pytest.raises(ValueError, match="DUPLICATE"):
+        insider_event_candidates([rows[0], rows[0]], symbol="TEST", decision_at=now)
+
+
+@pytest.mark.parametrize("symbol", [None, "", " test", 42, "../x"])
+def test_invalid_insider_symbol_never_becomes_verified_zero(symbol):
+    with pytest.raises(ValueError, match="SYMBOL_INVALID"):
+        insider_event_candidates([], symbol=symbol, decision_at=datetime(2026,9,17,tzinfo=timezone.utc))
 
 
 def test_insider_future_event_refused_instead_of_counted():
@@ -64,6 +76,8 @@ def test_zero_is_a_value_but_missing_field_is_not():
     row = dict(symbol="TEST", year=2026, quarter=2, newPositions=0,
                increasedPositions="0", reducedPositions=0, closedPositions=0)
     assert institutional_candidate([row], symbol="TEST", year=2026, quarter=2).new_positions == 0
+    assert institutional_candidate([{**row, "year": "2026", "quarter": "2", "symbol": "test"}],
+                                   symbol="TEST", year=2026, quarter=2).new_positions == 0
     del row["closedPositions"]
     with pytest.raises(ValueError):
         institutional_candidate([row], symbol="TEST", year=2026, quarter=2)
@@ -85,6 +99,14 @@ def test_grades_future_refused_and_rc4_deduplication_applied():
     assert grade_candidates([row, {**row, "newGrade": "Strong Buy"}], **args) == ("upgrade",)
     with pytest.raises(ValueError, match="FUTURE"):
         grade_candidates([{**row, "date": "2026-09-18"}], **args)
+    assert grade_candidates([{**row, "date": "20260917"}, {**row, "date": "2026-W38-4"}, row], **args) == ("upgrade",)
+
+
+def test_ttm_selection_uses_keys_not_embedded_dates_and_ignores_old_duplicate():
+    section = statements()
+    section["quarterly"]["2026-06-30"]["date"] = "2024-01-01"
+    section["quarterly"]["2025-01-01"] = {"date": "2026-03-31", "ebitda": 999, "currency_symbol": "USD"}
+    assert ttm(section)[0] == -40
 
 
 def statements():

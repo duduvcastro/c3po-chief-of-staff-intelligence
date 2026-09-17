@@ -117,3 +117,21 @@ def test_size_budget_refused():
     result = source.grades("TEST")
     assert result.diagnostic == "BODY_REJECTED"
     assert result.receipts[0].body == b''
+
+
+@pytest.mark.parametrize("symbol,expected", [("test", "TEST.US"), ("TEST.US", "TEST.US"), ("BRK.B", "BRK.B")])
+def test_fundamentals_suffix_matches_origin(symbol, expected):
+    source, seen = acquirer([HttpReply(200, b'{}')])
+    source.fundamentals(symbol)
+    assert seen[0].path == '/api/v1.1/fundamentals/' + expected
+
+
+def test_b3_guard_precedes_any_transport():
+    source, seen = acquirer([])
+    for call in [lambda: source.fundamentals("PETR4", market="B3"),
+                 lambda: source.grades("PETR4", market="B3"),
+                 lambda: source.institutional("PETR4", year=2026, quarter=2, market="B3"),
+                 lambda: source.fundamentals("PETR4.SA")]:
+        with pytest.raises(ValueError, match="MARKET_UNSUPPORTED"):
+            call()
+    assert seen == []

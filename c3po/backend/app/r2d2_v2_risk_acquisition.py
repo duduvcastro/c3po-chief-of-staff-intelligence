@@ -91,9 +91,14 @@ class RiskAcquirer:
         self.max_body_bytes = max_body_bytes
 
     @staticmethod
-    def _symbol(symbol: str) -> str:
-        if not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,14}", symbol):
+    def _symbol(symbol: str, market: str = "US") -> str:
+        if market != "US":
+            raise ValueError("MARKET_UNSUPPORTED_COMPLETED_NULL")
+        if not isinstance(symbol, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]{0,14}", symbol):
             raise ValueError("SYMBOL_INVALID")
+        symbol = symbol.upper()
+        if symbol.endswith(".SA"):
+            raise ValueError("MARKET_UNSUPPORTED_COMPLETED_NULL")
         return symbol
 
     def _read(self, request: SourceRequest) -> SourceReceipt:
@@ -127,24 +132,25 @@ class RiskAcquirer:
         return SourceReceipt(request, started, received, status, body,
                              hashlib.sha256(body).hexdigest(), diagnostic)
 
-    def fundamentals(self, symbol: str) -> Acquisition:
-        symbol = self._symbol(symbol)
-        request = SourceRequest("eodhd", f"/api/v1.1/fundamentals/{symbol}.US", {})
+    def fundamentals(self, symbol: str, *, market: str = "US") -> Acquisition:
+        symbol = self._symbol(symbol, market)
+        provider_symbol = symbol if "." in symbol else f"{symbol}.US"
+        request = SourceRequest("eodhd", f"/api/v1.1/fundamentals/{provider_symbol}", {})
         receipt = self._read(request)
         return Acquisition((receipt,), receipt.diagnostic is None, receipt.diagnostic)
 
-    def grades(self, symbol: str) -> Acquisition:
+    def grades(self, symbol: str, *, market: str = "US") -> Acquisition:
         receipt = self._read(SourceRequest("fmp", "/stable/grades",
-                                           {"symbol": self._symbol(symbol)}))
+                                           {"symbol": self._symbol(symbol, market)}))
         # The endpoint's population/window completeness needs separate proof.
         return Acquisition((receipt,), receipt.diagnostic is None, receipt.diagnostic)
 
-    def institutional(self, symbol: str, *, year: int, quarter: int) -> Acquisition:
+    def institutional(self, symbol: str, *, year: int, quarter: int, market: str = "US") -> Acquisition:
         if type(year) is not int or not 2000 <= year <= 2100 or type(quarter) is not int or quarter not in (1, 2, 3, 4):
             raise ValueError("QUARTER_INVALID")
         receipt = self._read(SourceRequest(
             "fmp", "/stable/institutional-ownership/symbol-positions-summary",
-            {"symbol": self._symbol(symbol), "year": year, "quarter": quarter}))
+            {"symbol": self._symbol(symbol, market), "year": year, "quarter": quarter}))
         return Acquisition((receipt,), receipt.diagnostic is None, receipt.diagnostic)
 
     def form4_fallback_diagnostic(self, symbol: str) -> Acquisition:

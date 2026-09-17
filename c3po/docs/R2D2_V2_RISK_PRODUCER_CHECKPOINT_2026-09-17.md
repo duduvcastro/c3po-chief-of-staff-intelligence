@@ -4,6 +4,33 @@ Owner priority: implement now, seeking the earliest valid operating session.
 Base: `1bb009c3d029ba8a74143bb22381a68bc1e86634`.
 No changes to the approved D18 package, production, policies or databases.
 
+## B1R2 audit disposition (17 Sep)
+
+- B1R2-1: symbol argument validated then uppercased, matching the origin;
+  invalid symbols raise instead of silently yielding zero.
+- B1R2-2: repeated `(source_code, external_id)` raises; the differential test
+  seeds via `save_ir_events`, including an upsert, before reading the population.
+  JSON-string metadata is decoded as in the SQL path. Distinct Finnhub/EODHD
+  external IDs for the same filing remain distinct, as in the origin: no new
+  cross-provider deduplication is claimed.
+- B1R2-3: quarterly selection now follows descending provider KEYS, first eight,
+  then the first four valid object rows, with `date or key`. Duplicate-period
+  coverage guard applies only to the selected four, not the global history.
+  Explicit remaining coverage guard: malformed/future statement dates and
+  duplicate selected periods are refused, although the permissive original
+  arithmetic can sum them. This is not a claim of identical eligibility.
+- B1R2-4: analyst dates require literal YYYY-MM-DD, malformed dates are skipped
+  and do not reject the issuer. Future records remain a causal refusal.
+- B1R2-5: institutional identity explicitly accepts uppercased ticker and integral
+  numeric year/quarter strings; fractions are refused, never truncated.
+- B1R2-6: fundamentals appends `.US` only without a dot; B3 market/SA suffix are
+  refused before transport. Producer must turn unsupported market into NULL.
+- Insider coverage still requires a factual 180-day ingestion receipt; the
+  existing 90-day Finnhub ingestion does not prove it. No ingestion was changed.
+
+144 targeted tests pass in this revision. B1 closure remains for Fable's review;
+the entire producer and historical gate are still incomplete.
+
 ## Implemented and locally verified
 
 - Injectable bounded acquisition of EODHD fundamentals and paginated Form 4,
