@@ -5,12 +5,67 @@ they may enter adapt_canonical_risk. A parsed empty list is NOT verified zero.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 import math
 from typing import Any
 
-from app.r2d2_v2_risk_source import InstitutionalPositions
+from app.r2d2_v2_risk_source import InsiderActivity, InstitutionalPositions
+
+
+def canonical_growth_ratio(value: Any) -> tuple[float, dict[str, Any]]:
+    """RC-2: preserve the explicit historical heuristic, including its boundary."""
+    number = finite_number(value)
+    converted = abs(number) > 2
+    return (number / 100 if converted else number), {
+        "normalization": "ORIGIN_RATIO_ABS_GT_2_DIVIDE_100",
+        "origin_revision": "6083d7420746434426a11134b8edf0ba4b60b6b0",
+        "input_value": number, "divided_by_100": converted,
+    }
+
+
+def insider_event_candidates(rows: list[dict[str, Any]], *, symbol: str,
+                             decision_at: datetime) -> InsiderActivity:
+    """Canonical population is persisted ir_events, not raw provider filings.
+
+    The executor supplies a consistent DB snapshot and independently checks the
+    sync_sec coverage receipt. These counts alone do not attest 180d coverage.
+    No ingestion, fallback provider call or insertion occurs here.
+    """
+    if decision_at.tzinfo is None or decision_at.utcoffset() is None:
+        raise ValueError("INSIDER_DECISION_CLOCK_INVALID")
+    since = decision_at - timedelta(days=180)
+    buys = sells = 0
+    for row in rows:
+        if (row.get("symbol") != symbol or row.get("market") != "US"
+                or row.get("source_code") != "sec"
+                or row.get("event_type") != "Insider Transaction"):
+            continue
+        published = row.get("published_at")
+        if (not isinstance(published, datetime) or published.tzinfo is None
+                or published.utcoffset() is None):
+            raise ValueError("INSIDER_PUBLICATION_CLOCK_INVALID")
+        if published > decision_at:
+            raise ValueError("INSIDER_FUTURE_EVENT")
+        if published < since:
+            continue
+        metadata = row.get("raw_metadata") or {}
+        if not isinstance(metadata, dict):
+            raise ValueError("INSIDER_METADATA_INVALID")
+        # Exact precedence of Database._insider_transaction_direction at the
+        # pinned origin. Do not count grants/unknown events in total_count.
+        if metadata.get("source") == "cvm_vlmo":
+            movement = str(metadata.get("movement") or "")
+            direction = 1 if movement.startswith("Compra") else -1 if movement.startswith("Venda") else 0
+        elif metadata.get("is_purchase"):
+            direction = 1
+        elif metadata.get("is_sale"):
+            direction = -1
+        else:
+            direction = 0
+        buys += int(direction > 0)
+        sells += int(direction < 0)
+    return InsiderActivity(buys + sells, buys, sells)
 
 
 def finite_number(value: Any) -> float:
@@ -36,8 +91,8 @@ def exact_count(value: Any) -> int:
 
 def institutional_candidate(payload: Any, *, symbol: str, year: int,
                             quarter: int) -> InstitutionalPositions:
-    if not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict):
-        raise ValueError("INSTITUTIONAL_ROW_MISSING_OR_AMBIGUOUS")
+    if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
+        raise ValueError("INSTITUTIONAL_ROW_MISSING")
     row = payload[0]
     if row.get("symbol") != symbol or row.get("year") != year or row.get("quarter") != quarter:
         raise ValueError("INSTITUTIONAL_IDENTITY_MISMATCH")
@@ -62,14 +117,16 @@ def grade_candidates(payload: Any, *, symbol: str, since: date,
             raise ValueError("GRADES_FUTURE_RECORD")
         if event_day < since:
             continue
-        keys = ("date", "gradingCompany", "previousGrade", "newGrade", "action")
+        keys = ("date", "gradingCompany", "action")
         if any(not isinstance(row.get(key), str) or not row[key].strip() for key in keys):
             raise ValueError("GRADES_FIELDS_MISSING")
-        identity = tuple(row[key] for key in keys)
+        # RC-4 explicitly chooses this deduplication identity. Grade labels do
+        # not participate in the directional score. Keep raw receipts intact.
+        identity = (row["date"], row["gradingCompany"], row["action"].lower())
         if identity in seen:
-            raise ValueError("GRADES_DUPLICATE_RECORD")
+            continue
         seen.add(identity)
-        actions.append(row["action"].strip().lower())
+        actions.append(row["action"].lower())
     return tuple(actions)
 
 
@@ -96,10 +153,8 @@ def quarterly_ttm(section: Any, *, field: str, through: date,
     dates = tuple(item[0] for item in selected)
     if len({item[0] for item in parsed}) != len(parsed):
         raise ValueError("STATEMENT_DUPLICATE_PERIOD")
-    # Reject gaps/annual substitutes. Fiscal 52/53-week quarters are allowed;
-    # unusual fiscal transitions require an explicit reviewed normalization.
-    if any(not 65 <= (dates[i] - dates[i + 1]).days <= 115 for i in range(3)):
-        raise ValueError("TTM_NONCONTIGUOUS_QUARTERS")
+    # RC-4: four complete quarterly rows, selected descending as in origin.
+    # Do not invent a fiscal-quarter day-length threshold or a new TTL.
     if any(row.get("currency_symbol") != currency for _, row in selected):
         raise ValueError("STATEMENT_CURRENCY_MISMATCH")
     value = sum(finite_number(row.get(field)) for _, row in selected)

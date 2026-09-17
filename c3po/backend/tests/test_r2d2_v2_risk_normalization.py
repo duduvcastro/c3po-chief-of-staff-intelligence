@@ -1,10 +1,51 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from app.r2d2_v2_risk_normalization import (
     exact_count, finite_number, grade_candidates, institutional_candidate, quarterly_ttm,
+    canonical_growth_ratio, insider_event_candidates,
 )
+
+
+@pytest.mark.parametrize("value", [-250, -2.001, -2, 0, 2, 2.001, 250, "-12.5"])
+def test_ratio_matches_original_and_records_conversion(value):
+    from app.one_pager import OnePagerService
+    normalized, receipt = canonical_growth_ratio(value)
+    assert normalized == OnePagerService._ratio(value)
+    assert receipt["divided_by_100"] == (abs(float(value)) > 2)
+
+
+def test_insider_matches_database_direction_window_and_filters():
+    from app.database import Database
+    from dataclasses import asdict
+    now = datetime(2026, 9, 17, 18, tzinfo=timezone.utc)
+    base = dict(symbol="TEST", market="US", source_code="sec", event_type="Insider Transaction",
+                published_at=now-timedelta(days=1))
+    rows = [
+        {**base, "raw_metadata": {"source": "finnhub", "is_purchase": True}},
+        {**base, "raw_metadata": {"source": "eodhd", "is_sale": True}},
+        {**base, "raw_metadata": {"is_purchase": True, "is_sale": True}},
+        {**base, "raw_metadata": {"transaction_code": "A"}},
+        {**base, "source_code": "finnhub", "raw_metadata": {"is_purchase": True}},
+        {**base, "symbol": "OTHER", "raw_metadata": {"is_sale": True}},
+        {**base, "published_at": now-timedelta(days=180), "raw_metadata": {"is_sale": True}},
+        {**base, "published_at": now-timedelta(days=180, seconds=1), "raw_metadata": {"is_sale": True}},
+    ]
+    database = object.__new__(Database)
+    database.database_url = ""
+    database._ir_events = {str(i): row for i, row in enumerate(rows)}
+    original = database.insider_transaction_activity(["TEST"], "US", now-timedelta(days=180))["TEST"]
+    result = insider_event_candidates(rows, symbol="TEST", decision_at=now)
+    assert asdict(result) == original == {"total_count": 4, "buy_count": 2, "sell_count": 2}
+
+
+def test_insider_future_event_refused_instead_of_counted():
+    now = datetime(2026, 9, 17, tzinfo=timezone.utc)
+    row = dict(symbol="TEST", market="US", source_code="sec", event_type="Insider Transaction",
+               published_at=now+timedelta(seconds=1), raw_metadata={"is_purchase": True})
+    with pytest.raises(ValueError, match="FUTURE"):
+        insider_event_candidates([row], symbol="TEST", decision_at=now)
 
 
 @pytest.mark.parametrize("value", [None, True, "", "NaN", "Infinity", [], {}, "1,2"])
@@ -36,13 +77,12 @@ def test_wrong_institutional_identity_refused(field, value):
         institutional_candidate([row], symbol="TEST", year=2026, quarter=2)
 
 
-def test_grades_future_and_duplicate_not_silently_dropped():
+def test_grades_future_refused_and_rc4_deduplication_applied():
     row = dict(symbol="TEST", date="2026-09-17", gradingCompany="Example",
                previousGrade="Hold", newGrade="Buy", action="Upgrade")
     args = dict(symbol="TEST", since=date(2026, 6, 19), through=date(2026, 9, 17))
     assert grade_candidates([row], **args) == ("upgrade",)
-    with pytest.raises(ValueError, match="DUPLICATE"):
-        grade_candidates([row, row], **args)
+    assert grade_candidates([row, {**row, "newGrade": "Strong Buy"}], **args) == ("upgrade",)
     with pytest.raises(ValueError, match="FUTURE"):
         grade_candidates([{**row, "date": "2026-09-18"}], **args)
 
@@ -71,11 +111,10 @@ def test_currency_mismatch_cannot_be_added():
         ttm(section)
 
 
-def test_gap_and_missing_metric_not_treated_as_complete_ttm():
+def test_no_new_quarter_length_policy_and_missing_metric_refused():
     section = statements()
     section["quarterly"]["2026-03-31"]["date"] = "2026-01-01"
-    with pytest.raises(ValueError, match="NONCONTIGUOUS"):
-        ttm(section)
+    assert ttm(section)[0] == -40
     section = statements()
     del section["quarterly"]["2026-03-31"]["ebitda"]
     with pytest.raises(ValueError, match="NUMBER"):

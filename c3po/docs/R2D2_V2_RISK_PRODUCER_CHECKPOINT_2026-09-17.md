@@ -1,4 +1,4 @@
-# Risk producer — initial checkpoint, not a deployable release
+# Risk producer — evolving checkpoint, not a deployable release
 
 Owner priority: implement now, seeking the earliest valid operating session.
 Base: `1bb009c3d029ba8a74143bb22381a68bc1e86634`.
@@ -13,22 +13,26 @@ No changes to the approved D18 package, production, policies or databases.
   budget is incomplete, not an empty success. Pagination exhaustion alone does
   not prove covered population. No acquisition result asserts READY.
 - Candidate normalization rejects missing/nonfinite numeric fields, fractional
-  counts, wrong institutional symbol/quarter, future/duplicate analyst records,
-  incomplete quarterly sequences and mixed statement currencies.
-- 123 tests pass (acquisition, normalization, existing risk kernel/adapter).
+  counts, wrong institutional symbol/quarter, future analyst records,
+  incomplete quarterly statements and mixed statement currencies. RC-4 analyst
+  deduplication uses (date, gradingCompany, action); no fiscal-day TTL is added.
+- RC-2 ratio heuristic and canonical database-event insider counting implemented
+  with differential tests. Raw Form4 helper renamed diagnostic-only. Eight
+  origin files pinned by exact git bytes, including investor_relations ingestion.
+- 134 tests pass (acquisition, normalization, existing risk kernel/adapter).
   Backend Pyright: zero errors/warnings. No real provider calls in this check.
 
 ## Still required; this checkpoint must not be connected to production
 
-1. Pin and extract the complete upstream normalization from `6083d742`, including
+1. Finish extracting the complete upstream normalization from pinned `6083d742`, including
    database insider deduplication/direction and published_at semantics. Merely
    counting Form 4 rows is NOT established equivalent. The original database
    total counts only accepted directional events, not every filing/transaction.
-2. Resolve original `_ratio` (`abs(value)>2` divides by 100), financial fallback
+2. `_ratio` (`abs(value)>2` divides by 100) is now implemented. Finish financial fallback
    chains, debt versus net debt, and zero-valued EBITDA fallbacks explicitly.
    Candidate helpers do not yet implement the four fundamental risk inputs.
-   Strict four-quarter checks are rejection guards awaiting source audit, not
-   proof of equivalence to the permissive original statement selection.
+   Four-quarter completeness is the owner's accepted RC-4 coverage guard, not
+   permission to change the original arithmetic or claim untested equivalence.
 3. Implement issuer/window coverage evidence, source clocks and audited
    freshness; wire all seven components to the existing pure adapter. An HTTP
    200 with `[]` is not enough to establish that the issuer is covered.

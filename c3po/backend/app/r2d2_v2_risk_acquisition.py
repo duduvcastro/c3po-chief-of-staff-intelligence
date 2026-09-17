@@ -147,7 +147,7 @@ class RiskAcquirer:
             {"symbol": self._symbol(symbol), "year": year, "quarter": quarter}))
         return Acquisition((receipt,), receipt.diagnostic is None, receipt.diagnostic)
 
-    def insider(self, symbol: str) -> Acquisition:
+    def form4_fallback_diagnostic(self, symbol: str) -> Acquisition:
         symbol = self._symbol(symbol)
         offset = 0
         receipts: list[SourceReceipt] = []

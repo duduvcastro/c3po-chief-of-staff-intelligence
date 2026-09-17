@@ -1,0 +1,96 @@
+{
+  "canonical_bundle": "GENERATE_PATH_A",
+  "files": [
+    {
+      "functions": {
+        "_analyze": {
+          "line": 397,
+          "sha256": "90186413a08e0efedaf62839675162e818283be22884bab5932bae8102c28881"
+        },
+        "_ratio": {
+          "line": 1550,
+          "sha256": "e30299bd9b0dccb226805b3cde516d420ce058a92932526a70c12d497e35ebdd"
+        },
+        "generate": {
+          "line": 156,
+          "sha256": "b06cc665f470b81b074196db6657268e87aa57537909640c9399e5a64d6772fd"
+        }
+      },
+      "path": "c3po/backend/app/one_pager.py",
+      "sha256": "e49265da0cfc4cd10ab8e94d826ff8be38ee1d278137769a62d3c9a86f006e0d"
+    },
+    {
+      "functions": {},
+      "path": "c3po/backend/app/market_data/eodhd.py",
+      "sha256": "f66f35a561e2ae71d978c39a73c83fb67de6297d1333a5054acacdef633faa4f"
+    },
+    {
+      "functions": {
+        "institutional_positions": {
+          "line": 239,
+          "sha256": "ab320b2b489737399a12b5ed10b5820eebc4478a9731823fbc242a2a05a87909"
+        },
+        "latest_reportable_13f_quarter": {
+          "line": 267,
+          "sha256": "39ae7f27c4a4dc69dd0280b23a24e7f6cd76d423ba249b3e9a16976d86af5f3f"
+        },
+        "recent_grades": {
+          "line": 191,
+          "sha256": "25535027195e262e2b3344f6713e801769153df9fa669c3453812b554233d932"
+        }
+      },
+      "path": "c3po/backend/app/market_data/fmp.py",
+      "sha256": "ea975e146251492add3dbb2f9fc20cb983d63c7cf5512df76a7f8dea6ec6a9ed"
+    },
+    {
+      "functions": {},
+      "path": "c3po/backend/app/market_data/finnhub.py",
+      "sha256": "8f2a8980327790dc5948bbd0fa29a7eb5a16e3f4193de721dd9bf7dc452d3486"
+    },
+    {
+      "functions": {
+        "_insider_transaction_direction": {
+          "line": 2998,
+          "sha256": "3e4f5e6462e75f755caaf522e12a250a89f1ad4ad41c721d3949c96362061e8d"
+        },
+        "insider_transaction_activity": {
+          "line": 3012,
+          "sha256": "7cf82fa1958d388c121958e07e30a4bc8a89af167051940f77ceb744e2b39a11"
+        }
+      },
+      "path": "c3po/backend/app/database.py",
+      "sha256": "30f406c141e06dba326aeab74669a38ff67a907d76d0a7b8752271c9f5221173"
+    },
+    {
+      "functions": {},
+      "path": "c3po/backend/app/official_fundamentals.py",
+      "sha256": "b6edf7903931ce781735bc1c80d3c9ee865d6b4a8cd1f414589f8e6c23e27ff5"
+    },
+    {
+      "functions": {},
+      "path": "c3po/backend/app/foreign_listings.py",
+      "sha256": "26242b5b4efbff7f06aff98f1a8b2f9884942e33b903d0c94a457dfad5f20d14"
+    },
+    {
+      "functions": {
+        "_eodhd_insider_events": {
+          "line": 597,
+          "sha256": "87b23878756af0cf60d50289e0f9c536323e61f7c0eb62bcc4dbade75211c04b"
+        },
+        "_finnhub_insider_events": {
+          "line": 540,
+          "sha256": "028dbcddd2d9b287dcfac8873099f1986a65de62f8be992929feccf15f4095b4"
+        },
+        "sync_sec": {
+          "line": 420,
+          "sha256": "49465fdb09c112da49b4c1be7b89a6a349aa78a64c539c9ab9c4ef31af570bc1"
+        }
+      },
+      "path": "c3po/backend/app/investor_relations.py",
+      "sha256": "59bf802f60d0c2fe638468352a4202f3cdd2eefafb5bf562848380fc25a0523d"
+    }
+  ],
+  "insider_source": "ir_events populated by sync_sec: Finnhub, EODHD fallback only",
+  "revision": "6083d7420746434426a11134b8edf0ba4b60b6b0",
+  "schema": "R2D2_RISK_SOURCE_PINS_DRAFT_V1"
+}

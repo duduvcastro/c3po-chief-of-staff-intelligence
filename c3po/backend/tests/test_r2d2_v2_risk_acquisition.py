@@ -45,7 +45,7 @@ def test_partial_insider_pagination_never_becomes_verified_zero():
              "/api/sec-filings/TEST.US/form4?page%5Boffset%5D=1&page%5Blimit%5D=100"),
         RuntimeError("https://provider/?api_token=DO_NOT_DISCLOSE"),
     ])
-    result = source.insider("TEST")
+    result = source.form4_fallback_diagnostic("TEST")
     assert not result.traversal_complete
     assert not result.coverage_verified
     assert result.diagnostic == "TRANSPORT_FAILED"
@@ -56,7 +56,7 @@ def test_partial_insider_pagination_never_becomes_verified_zero():
 
 def test_explicit_exhaustion_does_not_prove_population_coverage():
     source, _ = acquirer([page([], None)])
-    result = source.insider("TEST")
+    result = source.form4_fallback_diagnostic("TEST")
     assert result.traversal_complete
     assert not result.coverage_verified
 
@@ -70,14 +70,14 @@ def test_explicit_exhaustion_does_not_prove_population_coverage():
 ])
 def test_rejects_cross_symbol_redirect_and_skipped_or_repeated_offset(next_path):
     source, seen = acquirer([page([{}], next_path)])
-    result = source.insider("TEST")
+    result = source.form4_fallback_diagnostic("TEST")
     assert result.diagnostic == "FORM4_NEXT_INVALID"
     assert len(seen) == 1
 
 
 def test_budget_exhaustion_is_incomplete_not_empty_success():
     source, _ = acquirer([page([{}], "/api/sec-filings/TEST/form4?page[offset]=1&page[limit]=100")], max_pages=1)
-    assert source.insider("TEST").diagnostic == "PAGE_BUDGET_EXHAUSTED"
+    assert source.form4_fallback_diagnostic("TEST").diagnostic == "PAGE_BUDGET_EXHAUSTED"
 
 
 @pytest.mark.parametrize("raw", [b'{"x":NaN}', b'{"x":1,"x":2}', b'not-json', b'\xff'])
@@ -102,7 +102,7 @@ def test_institutional_request_keeps_exact_quarter():
 
 def test_page_without_next_is_not_exhaustion():
     source, _ = acquirer([HttpReply(200, b'{"data":[]}')])
-    assert source.insider("TEST").diagnostic == "FORM4_NEXT_MISSING"
+    assert source.form4_fallback_diagnostic("TEST").diagnostic == "FORM4_NEXT_MISSING"
 
 
 def test_clock_reversal_refused():

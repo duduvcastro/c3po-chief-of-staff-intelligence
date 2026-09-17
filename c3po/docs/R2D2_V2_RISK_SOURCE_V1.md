@@ -81,6 +81,30 @@ contagens inconsistentes e relógios estruturalmente inválidos lançam
 `ValueError` antes de qualquer resposta `READY`; não geram score substituto.
 O adaptador não arredonda nem transforma strings numéricas.
 
+Por ordem direta do dono em 17/09 (aceite registrado na #348, comentário
+5718373969), a origem canônica é o caminho A de `generate`: EODHD, conversão
+cambial e overlay oficial do banco, com indicação explícita do overlay usado.
+Os arquivos e funções da revisão histórica estão pinados em
+`r2d2-risk-source/SOURCE_PINS.json`, incluindo a ingestão de eventos.
+
+RC-2 mantém a heurística histórica `_ratio`: `abs(valor)>2` divide por 100;
+o recibo de normalização registra valor de entrada e aplicação da conversão.
+Essa transformação é upstream e explícita; o adaptador continua recebendo a
+razão pronta, sem inferir unidades silenciosamente.
+
+RC-4: insider vem de `ir_events` produzido por `sync_sec` (Finnhub, EODHD
+apenas como fallback da ingestão), com janela de 180 dias sobre `published_at`
+e total = compras + vendas direcionais. Contagens não são prova de cobertura:
+é obrigatório recibo da ingestão cobrindo os 180 dias; 90 dias implica
+`INSIDER_WINDOW_PARTIAL` e resultado nulo. Form 4 consultado diretamente não
+substitui essa fonte. Institucional usa o trimestre canônico e a primeira linha;
+lista vazia permanece cobertura desconhecida. Grades exigem símbolo reconhecido,
+janela canônica de 90 dias e deduplicação por data, empresa avaliadora e ação.
+Dívida/EBITDA e FCF exigem quatro linhas trimestrais completas; fallback não
+comprova cobertura. Não se introduz TTL ou limite novo de dias por trimestre.
+RC-5: beta não positivo e B3 ficam `COMPLETED_NULL` na produção, com diagnóstico;
+isso não autoriza passar beta inválido diretamente ao kernel.
+
 O produtor upstream deverá reproduzir/documentar a preparação dos escalares
 que precede o bloco original: `earningsGrowthAnnual` normalizado como razão,
 beta positivo, escolha de dívida/EBITDA e FCF, incluindo ordenação e composição
