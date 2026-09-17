@@ -389,3 +389,32 @@ def test_opted_provider_reason_must_match_independently_observed_failure():
     snapshot = opted_failure_snapshot('http')
     snapshot['provider_selection']['reason'] = 'FINNHUB_SINGLE_DAY_SATURATED'
     assert direct_oracle(snapshot)['direct_insider']['complete'] is False
+
+
+def test_oracle_recursive_json_is_classified_and_can_use_pinned_fallback():
+    import base64
+    snapshot=opted_failure_snapshot()
+    body=b'['*10000+b'0'+b']'*10000
+    snapshot['finnhub_receipts'][0].update(status=200,diagnostic='JSON_INVALID',
+        body_b64=base64.b64encode(body).decode(),payload_sha256=hashlib.sha256(body).hexdigest())
+    snapshot['provider_selection']['reason']='FINNHUB_JSON_INVALID'
+    assert direct_oracle(snapshot)['direct_insider']['complete'] is True
+
+
+def test_oracle_optin_non_utc_cutoff_cannot_enable_fallback():
+    from datetime import timezone
+    snapshot=opted_failure_snapshot()
+    snapshot['query_cutoff_at']=NOW.astimezone(timezone(timedelta(hours=3))).isoformat()
+    assert direct_oracle(snapshot)['direct_insider']['complete'] is False
+
+
+def test_oracle_legacy_metadata_ignored_even_when_present_invalid():
+    import base64
+    snapshot=direct_snapshot([],eodhd_rows=[{'reporting_owner_name':'Seller','transaction_code':'S',
+                                           'transaction_date':'2026-09-01'}])
+    receipt=snapshot['eodhd_receipts'][0]
+    payload=json.loads(base64.b64decode(receipt['body_b64']))
+    payload['meta']={'total':999}
+    del payload['data'][0]['accession_number']
+    replace_recorded_payload(receipt,payload)
+    assert direct_oracle(snapshot)['insider_activity']=={'buy_count':0,'sell_count':1,'total_count':1}

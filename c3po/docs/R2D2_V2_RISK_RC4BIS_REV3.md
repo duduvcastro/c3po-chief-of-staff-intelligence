@@ -77,3 +77,18 @@ one from=to receipt is nonempty; one nonsaturated multi-day leaf has five
 transactions on its to date. Public aggregate SHA256:
 `c818bcfe84a0321d606e668421addd036517b965fa2ddddcab8890e2d8a129b6`.
 This is observed evidence for the sample, not a provider-wide SLA.
+
+## Adversarial review E-1 through E-3
+
+Deep JSON that the acquisition parser marks JSON_INVALID remains a classified
+provider failure during replay; parser recursion does not crash the batch.
+The rev3 opt-in requires a UTC query cutoff before making a request and again
+on replay. A non-UTC cutoff is a runner/scope error, never a reason to switch
+providers. Provider rows outside the requested dates remain a separate invalid
+response condition.
+
+The extra EODHD metadata/accession cardinality requirements apply only to rev3
+opt-in snapshots. Legacy snapshots retain the prior empty-only selection and
+metadata behavior, even when a meta member exists. They do not acquire a new
+fallback authorization by replaying under newer code. This compatibility rule
+is not a claim that old evidence satisfies the stricter rev3 coverage gate.

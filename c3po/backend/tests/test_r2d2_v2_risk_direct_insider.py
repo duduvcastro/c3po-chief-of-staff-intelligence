@@ -259,3 +259,50 @@ def test_rev3_no_primary_attempt_cannot_authorize_fallback():
     snapshot=rev3(transport).acquire('TEST',cutoff=NOW)
     snapshot['finnhub_receipts']=[]
     assert not assess(snapshot)[1].coverage_verified
+
+
+def test_e1_deep_provider_json_acquisition_and_replay_are_classified():
+    deep = b'[' * 10000 + b'0' + b']' * 10000
+    calls = []
+    def transport(request):
+        calls.append(request.provider)
+        return HttpReply(200, deep) if request.provider == 'finnhub' else reply(eod_complete())
+    snapshot = rev3(transport).acquire('TEST', cutoff=NOW)
+    assert snapshot['finnhub_receipts'][0]['diagnostic'] == 'JSON_INVALID'
+    assert snapshot['provider_selection'] == {'selected': 'eodhd', 'reason': 'FINNHUB_JSON_INVALID'}
+    value, evidence, diagnostics = assess(snapshot)
+    assert value is not None and evidence.coverage_verified and not diagnostics
+    assert calls == ['finnhub', 'eodhd']
+
+
+def test_e2_non_utc_cutoff_refuses_before_any_provider_call():
+    import pytest
+    calls = []
+    def transport(request):
+        calls.append(request)
+        return reply(eod_complete())
+    invalid_cutoff = datetime(2026, 9, 17, 1, tzinfo=timezone(timedelta(hours=5)))
+    with pytest.raises(ValueError, match='CUTOFF_MUST_BE_UTC'):
+        rev3(transport).acquire('TEST', cutoff=invalid_cutoff)
+    assert calls == []
+    snapshot = rev3(lambda request: reply({}, 403) if request.provider == 'finnhub' else reply(eod_complete())).acquire('TEST', cutoff=NOW)
+    snapshot['query_cutoff_at'] = invalid_cutoff.isoformat()
+    with pytest.raises(ValueError, match='CUTOFF_MUST_BE_UTC'):
+        assess(snapshot)
+
+
+def test_e3_legacy_metadata_presence_does_not_change_old_empty_fallback():
+    import copy
+    for metadata in (None, {'total': 560, 'page': {'offset': 0, 'limit': 100}}):
+        payload = copy.deepcopy(eod_complete())
+        if metadata is None:
+            payload.pop('meta')
+        else:
+            payload['meta'] = metadata
+        def transport(request):
+            return reply({'symbol': 'TEST', 'data': []}) if request.provider == 'finnhub' else reply(payload)
+        old = build(transport).acquire('TEST', cutoff=NOW)
+        assert 'fallback_contract_sha256' not in old
+        assert assess(old)[1].coverage_verified
+        new = rev3(transport).acquire('TEST', cutoff=NOW)
+        assert not assess(new)[1].coverage_verified

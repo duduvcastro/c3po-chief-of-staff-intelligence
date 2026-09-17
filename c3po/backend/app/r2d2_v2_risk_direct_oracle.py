@@ -83,7 +83,7 @@ def _read(receipt: dict[str, Any], *, cutoff: datetime) -> Any:
         raise OracleProviderFailure('FINNHUB_BODY_REJECTED')
     try:
         payload = _strict_json(body)
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, RecursionError):
         raise OracleProviderFailure('FINNHUB_JSON_INVALID') from None
     if diagnostic == 'JSON_INVALID':
         raise OracleProvenanceError('ORACLE_JSON_FAILURE_UNPROVEN')
@@ -158,7 +158,7 @@ def _finnhub_transactions(snapshot: dict[str, Any], cutoff: datetime) -> tuple[l
     return transactions, bool(rows)
 
 
-def _eodhd_transactions(snapshot: dict[str, Any], cutoff: datetime) -> list[dict[str, Any]]:
+def _eodhd_transactions(snapshot: dict[str, Any], cutoff: datetime, *, require_metadata: bool = False) -> list[dict[str, Any]]:
     symbol = snapshot['symbol']
     receipts = snapshot.get('eodhd_receipts', [])
     identity = snapshot.get('eodhd_identity_receipt')
@@ -185,26 +185,28 @@ def _eodhd_transactions(snapshot: dict[str, Any], cutoff: datetime) -> list[dict
                 or len(payload['data']) > 100):
             raise ValueError('ORACLE_EODHD_ENVELOPE_UNKNOWN')
         filings = payload['data']
-        meta = payload.get('meta')
-        if not isinstance(meta, dict) or not isinstance(meta.get('page'), dict):
-            raise ValueError('ORACLE_EODHD_TOTAL_METADATA_UNKNOWN')
-        page = meta['page']
-        if (type(page.get('offset')) is not int or page['offset'] != offset
-                or type(page.get('limit')) is not int or page['limit'] != 100):
-            raise ValueError('ORACLE_EODHD_PAGE_METADATA_INCONSISTENT')
-        count = meta.get('total')
-        if type(count) is not int or count < 0 or (declared_total is not None and count != declared_total):
-            raise ValueError('ORACLE_EODHD_TOTAL_METADATA_INCONSISTENT')
-        declared_total = count
+        if require_metadata:
+            meta = payload.get('meta')
+            if not isinstance(meta, dict) or not isinstance(meta.get('page'), dict):
+                raise ValueError('ORACLE_EODHD_TOTAL_METADATA_UNKNOWN')
+            page = meta['page']
+            if (type(page.get('offset')) is not int or page['offset'] != offset
+                    or type(page.get('limit')) is not int or page['limit'] != 100):
+                raise ValueError('ORACLE_EODHD_PAGE_METADATA_INCONSISTENT')
+            count = meta.get('total')
+            if type(count) is not int or count < 0 or (declared_total is not None and count != declared_total):
+                raise ValueError('ORACLE_EODHD_TOTAL_METADATA_INCONSISTENT')
+            declared_total = count
         for filing in filings:
             if not isinstance(filing, dict):
                 raise ValueError('ORACLE_EODHD_FILING_UNKNOWN')
-            identifier = filing.get('accession_number')
-            if not isinstance(identifier, str) or not identifier.strip():
-                raise ValueError('ORACLE_EODHD_FILING_ID_UNKNOWN')
-            if identifier in filing_ids:
-                raise ValueError('ORACLE_EODHD_DUPLICATE_FILING')
-            filing_ids.add(identifier)
+            if require_metadata:
+                identifier = filing.get('accession_number')
+                if not isinstance(identifier, str) or not identifier.strip():
+                    raise ValueError('ORACLE_EODHD_FILING_ID_UNKNOWN')
+                if identifier in filing_ids:
+                    raise ValueError('ORACLE_EODHD_DUPLICATE_FILING')
+                filing_ids.add(identifier)
             if 'symbol' in filing:
                 if filing['symbol'] != symbol:
                     raise ValueError('ORACLE_EODHD_IDENTITY_UNKNOWN')
@@ -251,6 +253,8 @@ def independent_direct_events(snapshot: dict[str, Any], *, received_at: datetime
     opted_in = (re.fullmatch(r'[0-9a-f]{64}', FALLBACK_CONTRACT_SHA256) is not None
                 and snapshot.get('fallback_contract_sha256') == FALLBACK_CONTRACT_SHA256)
     try:
+        if opted_in and cutoff.utcoffset() != timedelta(0):
+            raise OracleProvenanceError('ORACLE_CUTOFF_MUST_BE_UTC')
         if opted_in and (received_at is None or computed_at is None):
             raise OracleProvenanceError('ORACLE_FALLBACK_AVAILABILITY_UNKNOWN')
         if opted_in and snapshot.get('fable_disposition_sha256') != FABLE_DISPOSITION_SHA256:
@@ -294,7 +298,7 @@ def independent_direct_events(snapshot: dict[str, Any], *, received_at: datetime
             provider = 'finnhub'
             original = InvestorRelationsService._finnhub_insider_events
         else:
-            transactions = _eodhd_transactions(snapshot, cutoff)
+            transactions = _eodhd_transactions(snapshot, cutoff, require_metadata=opted_in)
             provider = 'eodhd'
             original = InvestorRelationsService._eodhd_insider_events
         if opted_in:
@@ -305,7 +309,7 @@ def independent_direct_events(snapshot: dict[str, Any], *, received_at: datetime
                     or (failure is None and selection['reason'] != ('FINNHUB_NONEMPTY' if has_rows else 'FINNHUB_EMPTY'))
                     or (failure is not None and selection['reason'] != failure)):
                 raise OracleProvenanceError('ORACLE_PROVIDER_SELECTION_INVALID')
-    except (ValueError, KeyError, TypeError, IndexError):
+    except (ValueError, KeyError, TypeError, IndexError, RecursionError):
         return {'events': [], 'complete': False, 'provider': None, 'diagnostic': 'ORACLE_DIRECT_COVERAGE_UNKNOWN'}
 
     class Clock(datetime):
@@ -327,6 +331,8 @@ def independent_direct_events(snapshot: dict[str, Any], *, received_at: datetime
     service = SimpleNamespace(settings=SimpleNamespace(finnhub_api_token='OFFLINE', eodhd_api_token='OFFLINE'),
                               finnhub=RecordedTransactions(), eodhd=RecordedTransactions())
     events = replay(service, snapshot['symbol'], '', None, snapshot['symbol'])
+    if any(event['published_at'] > cutoff for event in events):
+        return {'events': [], 'complete': False, 'provider': None, 'diagnostic': 'ORACLE_DIRECT_FUTURE_RECORD'}
     # The source IR helper floors the lookback to a date; the origin DB query
     # then applies its factual datetime cutoff. Preserve that second boundary.
     events = [event for event in events if cutoff-timedelta(days=180) <= event['published_at'] <= cutoff]

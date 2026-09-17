@@ -170,7 +170,7 @@ def _eodhd_replay(receipts: list[SourceReceipt], symbol: str, cutoff: datetime,
             raise ValueError("EODHD_ENVELOPE_INVALID")
         filings = payload["data"]
         metadata = payload.get("meta")
-        if require_metadata or metadata is not None:
+        if require_metadata:
             if (not isinstance(metadata, dict) or type(metadata.get("total")) is not int or metadata["total"] < 0
                     or metadata.get("page") != {"offset":offset,"limit":100}):
                 raise ValueError("EODHD_PAGINATION_METADATA_INVALID")
@@ -264,7 +264,7 @@ def assess_direct_insider(snapshot: dict[str, Any], *, received_at: datetime,
         if not cutoff <= acquisition_completed <= received_at <= computed_at:
             raise ValueError("DIRECT_INSIDER_CLOCK_ORDER_INVALID")
         complete=True
-    except (ValueError,TypeError,KeyError,IndexError) as exc:
+    except (ValueError,TypeError,KeyError,IndexError,RecursionError) as exc:
         diagnostics.append(str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "DIRECT_INSIDER_EVIDENCE_INVALID")
     value=insider_event_candidates(events,symbol=symbol,decision_at=cutoff) if complete else None
     source_at=max((event["published_at"] for event in events),default=acquisition_completed)
@@ -287,6 +287,8 @@ class DirectInsiderAcquirer:
         symbol=canonical_symbol(symbol)
         if cutoff.tzinfo is None:
             raise ValueError("DIRECT_INSIDER_CUTOFF_INVALID")
+        if self.fallback_on_failure and cutoff.utcoffset() != timedelta(0):
+            raise ValueError("DIRECT_INSIDER_CUTOFF_MUST_BE_UTC")
         receipts:list[SourceReceipt]=[]
         diagnostic=None
         def visit(start:date,end:date)->None:
@@ -305,7 +307,7 @@ class DirectInsiderAcquirer:
             events,has_rows=_finnhub_replay(receipts,symbol,cutoff)
             if not has_rows:
                 fallback=list(self.acquirer.form4_fallback_diagnostic(symbol).receipts)
-        except (ValueError,TypeError,KeyError) as exc:
+        except (ValueError,TypeError,KeyError,RecursionError) as exc:
             diagnostic=str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "DIRECT_INSIDER_EVIDENCE_INVALID"
         snapshot = {"schema":SCHEMA,"symbol":symbol,"market":"US","query_cutoff_at":cutoff.isoformat(),
                 "request_limits":{"finnhub":self.max_requests,"eodhd":self.acquirer.max_pages,"total":self.max_requests+self.acquirer.max_pages},
@@ -323,7 +325,7 @@ class DirectInsiderAcquirer:
                 if selected == "eodhd" and not fallback:
                     fallback = list(self.acquirer.form4_fallback_diagnostic(symbol).receipts)
                     snapshot["eodhd_receipts"] = [encode_receipt(row) for row in fallback]
-            except (ValueError, TypeError, KeyError) as exc:
+            except (ValueError, TypeError, KeyError, RecursionError) as exc:
                 snapshot["provider_selection"] = {"selected": None, "reason": "FINNHUB_INTEGRITY_OR_TREE_INVALID"}
                 snapshot["acquisition_diagnostic"] = str(exc) if isinstance(exc, ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "FINNHUB_INTEGRITY_OR_TREE_INVALID"
         return snapshot
@@ -372,13 +374,13 @@ def _inspect_finnhub_failure(receipts: list[SourceReceipt], symbol: str, cutoff:
                 try:
                     import json as _json
                     _json.loads(receipt.body)
-                except (ValueError,UnicodeError):
+                except (ValueError,UnicodeError,RecursionError):
                     raise _ProviderFailure("FINNHUB_JSON_INVALID") from None
                 # Acquirer also rejects duplicate keys and nonfinite constants.
                 from app.r2d2_v2_risk_acquisition import _reject_constant, _unique_object
                 try:
                     _json.loads(receipt.body,parse_constant=_reject_constant,object_pairs_hook=_unique_object)
-                except ValueError:
+                except (ValueError,RecursionError):
                     raise _ProviderFailure("FINNHUB_JSON_INVALID") from None
                 raise ValueError("FINNHUB_JSON_DIAGNOSTIC_UNPROVEN")
             if receipt.body:
@@ -387,7 +389,7 @@ def _inspect_finnhub_failure(receipts: list[SourceReceipt], symbol: str, cutoff:
         try:
             rows = _finnhub_rows(receipt,symbol=symbol,start=start,end=end,cutoff=cutoff)
             saturated = _requires_split(receipt,rows)
-        except (ValueError,TypeError,KeyError) as exc:
+        except (ValueError,TypeError,KeyError,RecursionError) as exc:
             # Integrity and request binding were already verified from bytes.
             code = str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "FINNHUB_RESPONSE_INVALID"
             raise _ProviderFailure(code) from None
@@ -404,7 +406,7 @@ def _inspect_finnhub_failure(receipts: list[SourceReceipt], symbol: str, cutoff:
                 if "symbol" in row and canonical_symbol(row["symbol"])!=symbol:
                     raise ValueError("FINNHUB_ROW_IDENTITY_MISMATCH")
                 event=_event(FinnhubClient._normalize_transaction(row),symbol=symbol,provider="finnhub",cutoff=cutoff)
-            except (ValueError,TypeError,KeyError) as exc:
+            except (ValueError,TypeError,KeyError,RecursionError) as exc:
                 raise _ProviderFailure(str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "FINNHUB_RESPONSE_INVALID") from None
             if event is not None:events.append(event)
     reason = "FINNHUB_NONEMPTY"
@@ -428,6 +430,8 @@ def _assess_failure_fallback(snapshot: dict[str,Any], *, received_at: datetime,
     cutoff=datetime.fromisoformat(snapshot["query_cutoff_at"])
     if snapshot.get("schema")!=SCHEMA or snapshot.get("market")!="US" or cutoff.tzinfo is None:
         raise ValueError("DIRECT_INSIDER_SNAPSHOT_INVALID")
+    if cutoff.utcoffset() != timedelta(0):
+        raise ValueError("DIRECT_INSIDER_CUTOFF_MUST_BE_UTC")
     events:list[dict[str,Any]]=[]
     diagnostics:list[str]=[]
     provider="unresolved"
@@ -451,7 +455,7 @@ def _assess_failure_fallback(snapshot: dict[str,Any], *, received_at: datetime,
             identity=decode_receipt(snapshot["eodhd_identity_receipt"]) if snapshot.get("eodhd_identity_receipt") else None
             try:
                 events=_eodhd_replay(fallback,symbol,cutoff,identity,require_metadata=True)
-            except (ValueError,TypeError,KeyError) as exc:
+            except (ValueError,TypeError,KeyError,RecursionError) as exc:
                 detail=str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "EVIDENCE_INVALID"
                 raise ValueError("EODHD_FALLBACK_"+detail) from None
         elif fallback:raise ValueError("INSIDER_PROVIDERS_MUST_NOT_UNION")
@@ -461,7 +465,7 @@ def _assess_failure_fallback(snapshot: dict[str,Any], *, received_at: datetime,
         completed=max(clocks)
         if not cutoff<=completed<=received_at<=computed_at:raise ValueError("DIRECT_INSIDER_CLOCK_ORDER_INVALID")
         complete=True
-    except (ValueError,TypeError,KeyError,IndexError) as exc:
+    except (ValueError,TypeError,KeyError,IndexError,RecursionError) as exc:
         diagnostics.append(str(exc) if isinstance(exc,ValueError) and re.fullmatch(r"[A-Z0-9_]+",str(exc)) else "DIRECT_INSIDER_EVIDENCE_INVALID")
     value=insider_event_candidates(events,symbol=symbol,decision_at=cutoff) if complete else None
     source_at=max((event["published_at"] for event in events),default=completed)
