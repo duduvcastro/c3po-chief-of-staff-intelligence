@@ -252,3 +252,62 @@ def test_only_old_fmp_grades_do_not_invent_current_window_source_clock():
     assert result['status']=='COMPLETED_NULL'
     assert result['calculation']['evidence']['recent_grade_actions']['source_at'] is None
     assert 'GRADES_WINDOW_SOURCE_AT_UNKNOWN' in result['diagnostics']
+
+
+def test_institutional_provider_date_identity_declared_in_receipt():
+    kwargs=arguments();source=kwargs['institutional'];row=source.payload()[0]
+    row.pop('year');row.pop('quarter')
+    kwargs['institutional']=receipt('fmp',source.request.path,source.request.parameters,[row])
+    result=build_risk_bundle(**kwargs)
+    assert result['status']=='READY'
+    assert result['path_a']['institutional_identity_normalization']=='STRICT_QUARTER_END_DATE'
+
+
+def test_zero_ttm_ebitda_fallback_does_not_claim_ttm_coverage():
+    kwargs=arguments();raw=raw_fundamentals()
+    for row in raw['Financials']['Income_Statement']['quarterly'].values():row['ebitda']=0
+    raw['Highlights']['EBITDA']=500
+    kwargs['fundamentals']=receipt('eodhd','/api/v1.1/fundamentals/SYNTH.US',{},raw)
+    result=build_risk_bundle(**kwargs)
+    assert result['calculation']['inputs']['debt_to_ebitda']==.4
+    assert result['status']=='COMPLETED_NULL'
+    assert 'EBITDA_ZERO_TTM_FALLBACK_UNCOVERED' in result['diagnostics']
+
+
+def test_direct_insider_new_receipt_is_not_fake_sync_sec():
+    from app.r2d2_v2_risk_direct_insider import DirectInsiderAcquirer
+    from app.r2d2_v2_risk_acquisition import RiskAcquirer,HttpReply
+    kwargs=arguments();completed=NOW+timedelta(seconds=1)
+    def transport(_):
+        return HttpReply(200,body({'symbol':'SYNTH','data':[{'name':'Example','transactionDate':'2026-09-01','transactionCode':'P'}]}))
+    snapshot=DirectInsiderAcquirer(RiskAcquirer(transport,lambda:completed)).acquire('SYNTH',cutoff=NOW)
+    kwargs.update(insider_snapshot=PrivateSnapshot(body(snapshot),completed,'direct-acquisition'),computed_at=completed,available_at=completed,decision_at=completed)
+    result=build_risk_bundle(**kwargs)
+    assert result['status']=='READY'
+    assert result['calculation']['evidence']['insider_activity']['source_id']=='DIRECT_INSIDER_RC4BIS/finnhub'
+    assert result['calculation']['inputs']['insider_activity']['buy_count']==1
+    assert 'INSIDER_WINDOW_PARTIAL' not in result['diagnostics']
+
+
+def test_overlay_growth_keeps_candidate_but_refuses_wrong_source_clock():
+    kwargs=arguments()
+    overlay={'as_of':DAYS[0],'quarterlyIncome':[{'date':DAYS[0],'netIncome':200,'ebitda':25,'currency_symbol':'USD'},
+                                            {'date':'2025-06-30','netIncome':100,'ebitda':25,'currency_symbol':'USD'}]}
+    snap={'symbol':'SYNTH','market':'US','outputs':overlay,'source_at':'2026-07-15T12:00:00+00:00','available_at':'2026-07-15T12:00:01+00:00'}
+    kwargs['official_snapshot']=PrivateSnapshot(body(snap),NOW,'transaction')
+    result=build_risk_bundle(**kwargs)
+    assert result['calculation']['inputs']['earnings_growth']==1
+    assert result['status']=='COMPLETED_NULL'
+    assert 'GROWTH_OVERLAY_PROVENANCE_UNRESOLVED' in result['diagnostics']
+
+
+def test_nonpositive_beta_explains_policy_null():
+    kwargs=arguments();raw=raw_fundamentals();raw['Technicals']['Beta']=0
+    kwargs['fundamentals']=receipt('eodhd','/api/v1.1/fundamentals/SYNTH.US',{},raw)
+    assert 'BETA_NONPOSITIVE_COMPLETED_NULL_RC5' in build_risk_bundle(**kwargs)['diagnostics']
+
+
+def test_b3_policy_clock_chain_preserved_with_delayed_publication():
+    result=build_risk_bundle(symbol='PETR4',market='B3',computed_at=NOW,available_at=NOW+timedelta(seconds=1),decision_at=NOW+timedelta(seconds=2))
+    assert result['status']=='COMPLETED_NULL'
+    assert not any(code.startswith('COMPONENT_NOT_CAUSAL') for code in result['diagnostics'])

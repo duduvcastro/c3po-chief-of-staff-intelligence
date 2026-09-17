@@ -75,3 +75,39 @@ A separate `arithmetic_gate_rev2` checks exact equality on all twenty normalized
 inputs, including None, regardless of coverage. This diagnostic kernel score
 is never substituted into risk.json when the adapter returns COMPLETED_NULL.
 PASS arithmetic is not coverage authorization, a release seal or operational GO.
+
+## Independent direct-insider oracle after RC-4bis
+
+The harness now accepts `DIRECT_INSIDER_RC4BIS_V1` private snapshots. The separate
+`r2d2_v2_risk_direct_oracle` module imports no candidate acquisition, coverage or
+event-builder helper. It independently reconstructs Finnhub's window tree using
+an iterative stack; saturated parent pages contribute no transactions. It checks
+complete child coverage and excludes any unexpected receipts. Leaf rows pass
+through the **original** `FinnhubClient._normalize_transaction`.
+
+Only a fully verified empty Finnhub response selects EODHD. EODHD pages undergo
+independent receipt, identity, pagination and termination checks, and transactions
+pass through the original `EodhdClient._normalize_form4_row`. Simultaneous usable
+Finnhub and EODHD data is refused rather than summed. Missing/incomplete coverage
+returns a distinct UNKNOWN diagnostic; verified zero remains distinguishable.
+
+Actual `InvestorRelationsService._finnhub_insider_events` or
+`_eodhd_insider_events` runs against a recorded transaction stub. A **local copy**
+of that function's globals binds its clock to the factual query cutoff and its
+lookback to the explicitly approved 180 days. The application module's clock and
+90-day default are never patched, including during concurrent tests. The origin
+IR method supplies its actual external-ID/name/code/date semantics. The original
+in-memory `save_ir_events` then performs real source/external-ID upserts before
+the original insider-count query. No production DB ingestion occurs.
+
+Source evidence expands from six to **eight original modules**: Finnhub client
+and investor-relations source bytes at `6083d742` are pinned too. Runtime ASTs of
+Finnhub normalization, both IR event methods, `clean_text`, `safe_date`, and the
+EODHD Form 4 normalizer must equal their original counterparts. The source/oracle
+pins remain separate. The arithmetic gate revision added by the root coordinator
+is unchanged by this integration.
+
+Additional synthetic tests use manually expected buy/sell counts for duplicate
+identities, lookback filtering, saturated-parent exclusion, EODHD precedence,
+no-provider-union, verified empty versus missing fallback, and isolation of the
+injected clock/window. These tests are not the real 20-name capture.

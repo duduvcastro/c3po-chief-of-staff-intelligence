@@ -23,11 +23,14 @@ from app.market_data.fmp import FmpClient
 from app.official_fundamentals import apply_official_fundamentals
 from app.one_pager import OnePagerService
 from app.r2d2_v2_risk_acquisition import SourceReceipt
+from app.r2d2_v2_risk_direct_oracle import independent_direct_events
 from app.r2d2_v2_risk_bundle import build_risk_bundle
 from app.r2d2_v2_risk_source import (ORACLE_ONE_PAGER_SHA256, ORACLE_REVISION, ORIGIN_REVISION,
     CanonicalRiskInputs, InsiderActivity, InstitutionalPositions, canonical_risk_score)
 
 ORIGIN_PINS = {
+    "app/market_data/finnhub.py": "8f2a8980327790dc5948bbd0fa29a7eb5a16e3f4193de721dd9bf7dc452d3486",
+    "app/investor_relations.py": "59bf802f60d0c2fe638468352a4202f3cdd2eefafb5bf562848380fc25a0523d",
     "app/one_pager.py": "e49265da0cfc4cd10ab8e94d826ff8be38ee1d278137769a62d3c9a86f006e0d",
     "app/database.py": "30f406c141e06dba326aeab74669a38ff67a907d76d0a7b8752271c9f5221173",
     "app/market_data/eodhd.py": "f66f35a561e2ae71d978c39a73c83fb67de6297d1333a5054acacdef633faa4f",
@@ -72,8 +75,10 @@ def verify_oracle_sources(origin_sources: Mapping[str, bytes]) -> dict[str, Any]
     for path in ('app/market_data/fmp.py', 'app/foreign_listings.py', 'app/official_fundamentals.py'):
         if runtime[path] != origin_sources[path]:
             raise ValueError("ORIGIN_AUXILIARY_CHANGED")
-    methods = {'app/database.py': ('save_ir_events', 'insider_transaction_activity', '_insider_transaction_direction'),
-               'app/market_data/eodhd.py': ('_normalize_fundamentals', '_latest_statement', '_statement_rows', '_valid_date', '_dated_rows', 'normalize_logo_url')}
+    methods = {'app/market_data/finnhub.py': ('_normalize_transaction',),
+               'app/investor_relations.py': ('_finnhub_insider_events', '_eodhd_insider_events', 'clean_text', 'safe_date'),
+               'app/database.py': ('save_ir_events', 'insider_transaction_activity', '_insider_transaction_direction'),
+               'app/market_data/eodhd.py': ('_normalize_fundamentals', '_latest_statement', '_statement_rows', '_valid_date', '_dated_rows', 'normalize_logo_url', '_normalize_form4_row')}
     for path, names in methods.items():
         for name in names:
             trees = [[node for node in ast.walk(ast.parse(raw)) if isinstance(node, ast.FunctionDef) and node.name == name]
@@ -128,7 +133,8 @@ def independent_oracle(arguments: dict[str, Any], *, control_price: float = 1.0)
     fundamentals = apply_official_fundamentals(fundamentals, official['outputs'])
     snapshot = arguments['insider_snapshot'].payload()
     cutoff = datetime.fromisoformat(snapshot['query_cutoff_at'])
-    events = copy.deepcopy(snapshot['events'])
+    direct = independent_direct_events(snapshot) if snapshot.get('schema') == 'DIRECT_INSIDER_RC4BIS_V1' else None
+    events = copy.deepcopy(direct['events'] if direct is not None else snapshot['events'])
     for event in events:
         for key in ('published_at', 'collected_at', 'reviewed_at'):
             if isinstance(event.get(key), str):
@@ -138,6 +144,8 @@ def independent_oracle(arguments: dict[str, Any], *, control_price: float = 1.0)
         raise ValueError("ORACLE_DATABASE_NOT_ISOLATED")
     saved = database.save_ir_events(events)
     activity = database.insider_transaction_activity([symbol], 'US', cutoff-timedelta(days=180)).get(symbol)
+    if direct is not None and not direct['complete']:
+        activity = None
     grades_receipt, institutional_receipt = arguments['grades'], arguments['institutional']
     http = RecordedFmpHttp((grades_receipt, institutional_receipt))
     fmp = FmpClient('https://recorded.invalid', 'OFFLINE-NO-CREDENTIAL', cast(JsonHttpClient, http))
@@ -152,7 +160,7 @@ def independent_oracle(arguments: dict[str, Any], *, control_price: float = 1.0)
         institutional_positions=institutional, recent_grades=grades)
     return json.loads(json.dumps({'risk_score': analysis['risk_score'], 'insider_activity': activity,
             'institutional_positions': institutional, 'recent_grades': grades,
-            'saved_event_count': saved, 'auxiliary_control_price': None if policy else control_price,
+            'saved_event_count': saved, 'direct_insider': {key: value for key, value in direct.items() if key != 'events'} if direct else None, 'auxiliary_control_price': None if policy else control_price,
             'factual_fx_quote_used': policy is not None}, default=str))
 
 

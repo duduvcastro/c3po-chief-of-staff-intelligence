@@ -16,6 +16,7 @@ from app.market_data.eodhd import EodhdClient
 from app.market_data.fmp import FmpClient
 from app.official_fundamentals import apply_official_fundamentals
 from app.r2d2_v2_risk_acquisition import SourceReceipt
+from app.r2d2_v2_risk_direct_insider import SCHEMA as DIRECT_INSIDER_SCHEMA, assess_direct_insider
 from app.r2d2_v2_risk_normalization import (
     canonical_growth_ratio, canonical_symbol, finite_number, grade_candidates,
     insider_event_candidates, institutional_candidate, strict_day,
@@ -153,7 +154,7 @@ def build_risk_bundle(*, symbol: str, market: str, fundamentals: SourceReceipt |
     if market == "B3":
         policy_hash = hashlib.sha256(b"RC5:B3:COMPLETED_NULL").hexdigest()
         unsupported_evidence = {name: ComponentEvidence(True, False, "OWNER_RC5_UNSUPPORTED_MARKET", ORIGIN_REVISION,
-            policy_hash, computed_at, available_at, "Policy assessment only; no provider acquisition or input coverage") for name in COMPONENTS}
+            policy_hash, computed_at, computed_at, "Policy assessment only; no provider acquisition or input coverage") for name in COMPONENTS}
         unsupported = adapt_canonical_risk(CanonicalRiskInputs(None, None, None, None, None, None, None), unsupported_evidence,
             computed_at=computed_at, available_at=available_at, decision_at=decision_at)
         unsupported["diagnostics"].append("B3_COMPLETED_NULL_RC5")
@@ -224,10 +225,14 @@ def build_risk_bundle(*, symbol: str, market: str, fundamentals: SourceReceipt |
         "beta": values["beta"] is not None and _number(raw.get("Technicals", {}).get("Beta")) is not None,
         "earnings_growth": values["earnings_growth"] is not None and _number(raw.get("Highlights", {}).get("QuarterlyEarningsGrowthYOY")) is not None,
         "free_cashflow": _ttm_covered(cash, "freeCashFlow", decision_at) and overlay_causal,
-        "debt_to_ebitda": (_ttm_covered(income, "ebitda", decision_at) and debt_present and overlay_causal
+        "debt_to_ebitda": (_ttm_covered(income, "ebitda", decision_at) and debt_present and overlay_causal and _sum(income, "ebitda") not in (None, 0)
                            and balance_date is not None and balance_date <= decision_at
                            and latest_balance.get("currency_symbol") == (income[0].get("currency_symbol") if income else None)),
     }
+    growth_overlay_changed = (overlay_applied and normalized.get("earningsGrowthAnnual")
+                              != EodhdClient._normalize_fundamentals(raw).get("earningsGrowthAnnual"))
+    if growth_overlay_changed:
+        coverage["earnings_growth"] = False  # source contract for overlay growth requires disposition
     clocks = {"beta": general_clock, "earnings_growth": general_clock,
               "free_cashflow": cash_clock,
               "debt_to_ebitda": max(income_clock, balance_date) if income_clock and balance_date else None}
@@ -238,40 +243,47 @@ def build_risk_bundle(*, symbol: str, market: str, fundamentals: SourceReceipt |
     snapshot = insider_snapshot.payload()
     if not isinstance(snapshot, dict) or snapshot.get("symbol") != symbol or snapshot.get("market") != market:
         raise ValueError("INSIDER_SNAPSHOT_IDENTITY_INVALID")
-    events = snapshot.get("events")
-    if not isinstance(events, list):
-        raise ValueError("INSIDER_EVENTS_INVALID")
-    copied = [dict(row) for row in events]
-    for row in copied:
-        if isinstance(row.get("published_at"), str):
-            row["published_at"] = datetime.fromisoformat(row["published_at"])
-    cutoff = None
-    try:
-        candidate_cutoff = datetime.fromisoformat(snapshot["query_cutoff_at"])
-        if candidate_cutoff.tzinfo is not None and candidate_cutoff.utcoffset() is not None:
-            cutoff = candidate_cutoff
-    except (ValueError, TypeError, KeyError):
-        pass
-    insider_value = insider_event_candidates(copied, symbol=symbol, decision_at=cutoff or decision_at) if market == "US" else None
-    sync = snapshot.get("sync") or {}
-    sync_covered = False
-    sync_clock = None
-    try:
-        start, end, sync_clock = (datetime.fromisoformat(sync[key]) for key in ("window_start", "window_end", "completed_at"))
-        sync_covered = (all(clock.tzinfo is not None and clock.utcoffset() is not None for clock in (start, end, sync_clock))
-                        and sync.get("source") == "sync_sec" and sync.get("symbol") == symbol and sync.get("complete") is True
-                        and cutoff is not None and start <= cutoff - timedelta(days=180) and end >= cutoff
-                        and cutoff <= end <= sync_clock <= insider_snapshot.received_at <= computed_at)
-    except (ValueError, TypeError, KeyError):
+    direct_diagnostics: list[str] = []
+    if snapshot.get("schema") == DIRECT_INSIDER_SCHEMA:
+        insider_value, evidence["insider_activity"], direct_diagnostics = assess_direct_insider(
+            snapshot, received_at=insider_snapshot.received_at, computed_at=computed_at)
+        cutoff = datetime.fromisoformat(snapshot["query_cutoff_at"])
+        sync_covered = evidence["insider_activity"].coverage_verified
+    else:
+        events = snapshot.get("events")
+        if not isinstance(events, list):
+            raise ValueError("INSIDER_EVENTS_INVALID")
+        copied = [dict(row) for row in events]
+        for row in copied:
+            if isinstance(row.get("published_at"), str):
+                row["published_at"] = datetime.fromisoformat(row["published_at"])
+        cutoff = None
+        try:
+            candidate_cutoff = datetime.fromisoformat(snapshot["query_cutoff_at"])
+            if candidate_cutoff.tzinfo is not None and candidate_cutoff.utcoffset() is not None:
+                cutoff = candidate_cutoff
+        except (ValueError, TypeError, KeyError):
+            pass
+        insider_value = insider_event_candidates(copied, symbol=symbol, decision_at=cutoff or decision_at) if market == "US" else None
+        sync = snapshot.get("sync") or {}
+        sync_covered = False
         sync_clock = None
-    eligible_clocks = [row["published_at"] for row in copied
-                       if row.get("symbol") == symbol and row.get("market") == "US" and row.get("source_code") == "sec"
-                       and row.get("event_type") == "Insider Transaction"
-                       and isinstance(row.get("published_at"), datetime)
-                       and cutoff is not None and cutoff - timedelta(days=180) <= row["published_at"] <= cutoff]
-    evidence["insider_activity"] = ComponentEvidence(True, sync_covered and market == "US", "ir_events/sync_sec", ORIGIN_REVISION,
-        insider_snapshot.payload_sha256, max(eligible_clocks) if eligible_clocks else sync_clock,
-        insider_snapshot.received_at, "180d on published_at; persisted Finnhub events; EODHD only ingestion fallback; no direct Form4 substitution")
+        try:
+            start, end, sync_clock = (datetime.fromisoformat(sync[key]) for key in ("window_start", "window_end", "completed_at"))
+            sync_covered = (all(clock.tzinfo is not None and clock.utcoffset() is not None for clock in (start, end, sync_clock))
+                            and sync.get("source") == "sync_sec" and sync.get("symbol") == symbol and sync.get("complete") is True
+                            and cutoff is not None and start <= cutoff - timedelta(days=180) and end >= cutoff
+                            and cutoff <= end <= sync_clock <= insider_snapshot.received_at <= computed_at)
+        except (ValueError, TypeError, KeyError):
+            sync_clock = None
+        eligible_clocks = [row["published_at"] for row in copied
+                           if row.get("symbol") == symbol and row.get("market") == "US" and row.get("source_code") == "sec"
+                           and row.get("event_type") == "Insider Transaction"
+                           and isinstance(row.get("published_at"), datetime)
+                           and cutoff is not None and cutoff - timedelta(days=180) <= row["published_at"] <= cutoff]
+        evidence["insider_activity"] = ComponentEvidence(True, sync_covered and market == "US", "ir_events/sync_sec", ORIGIN_REVISION,
+            insider_snapshot.payload_sha256, max(eligible_clocks) if eligible_clocks else sync_clock,
+            insider_snapshot.received_at, "180d on published_at; persisted Finnhub events; EODHD only ingestion fallback; no direct Form4 substitution")
     year, quarter = FmpClient.latest_reportable_13f_quarter(institutional.started_at.date())
     institutions = _receipt_payload(institutional, "fmp", "/stable/institutional-ownership/symbol-positions-summary")
     if dict(institutional.request.parameters) != {"symbol": symbol, "year": year, "quarter": quarter}:
@@ -301,11 +313,20 @@ def build_risk_bundle(*, symbol: str, market: str, fundamentals: SourceReceipt |
                         "growth_normalization": growth_receipt, "financial_currency": financial_currency,
                         "insider_query_cutoff_at": cutoff.isoformat() if cutoff else None,
                         "institutional_query_at": institutional.started_at.isoformat(),
+                        "institutional_identity_normalization": ("STRICT_QUARTER_END_DATE" if institutions and "year" not in institutions[0] and "quarter" not in institutions[0] else "EXPLICIT_YEAR_QUARTER" if institutions else "UNAVAILABLE"),
                         "grades_query_at": grades.started_at.isoformat(),
                         "overlay_source_at": overlay_source.isoformat() if overlay_source else None,
                         "overlay_available_at": overlay_available.isoformat() if overlay_available else None,
                         "overlay_clocks_verified": overlay_causal,
                         "receipt_attestations_independently_verified": False}
+    result["diagnostics"].extend(direct_diagnostics)
+    if _sum(income, "ebitda") == 0:
+        result["diagnostics"].append("EBITDA_ZERO_TTM_FALLBACK_UNCOVERED")
+    if growth_overlay_changed:
+        result["diagnostics"].append("GROWTH_OVERLAY_PROVENANCE_UNRESOLVED")
+    raw_beta = _number(raw.get("Technicals", {}).get("Beta"))
+    if raw_beta is not None and raw_beta <= 0:
+        result["diagnostics"].append("BETA_NONPOSITIVE_COMPLETED_NULL_RC5")
     if not overlay_causal:
         result["diagnostics"].append("OFFICIAL_OVERLAY_PROVENANCE_NOT_CAUSAL")
     if not grade_rows:
@@ -313,7 +334,7 @@ def build_risk_bundle(*, symbol: str, market: str, fundamentals: SourceReceipt |
     elif not grade_clocks:
         result["diagnostics"].append("GRADES_WINDOW_SOURCE_AT_UNKNOWN")
     if not sync_covered:
-        result["diagnostics"].append("INSIDER_WINDOW_PARTIAL")
+        result["diagnostics"].append("DIRECT_INSIDER_COVERAGE_UNKNOWN" if snapshot.get("schema") == DIRECT_INSIDER_SCHEMA else "INSIDER_WINDOW_PARTIAL")
     if cutoff is None:
         result["diagnostics"].append("INSIDER_QUERY_CUTOFF_MISSING")
     result.pop("self_sha256", None)

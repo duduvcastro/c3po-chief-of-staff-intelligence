@@ -64,3 +64,51 @@ the financial components uncovered. This does not replace RC4 financial source_a
 (the contributing row date); it is an additional causal check on the overlay.
 B3 accepts no source arguments and returns an RC5 policy-only COMPLETED_NULL
 assessment, without any provider acquisition or fabricated provider receipt.
+
+FMP period identity correction: observed symbol-positions-summary responses
+provide symbol/date/counts without year/quarter. When BOTH explicit fields are
+absent, an exact strict YYYY-MM-DD calendar-quarter end must match the requested
+year/quarter. The receipt declares STRICT_QUARTER_END_DATE. Partial explicit
+identity, null explicit values, wrong period, or non-quarter-end dates are
+rejected. Explicit year/quarter retain strict integral validation. Counts are
+unchanged, mandatory and never defaulted by this identity inference.
+
+RC4-bis owner authorization 5718952304 adds an explicitly different private
+schema DIRECT_INSIDER_RC4BIS_V1; it never pretends to be a historical sync_sec
+receipt. The adapter replays the original raw bytes, source clocks and complete
+request-window tree to derive coverage. Finnhub starts with [cutoff-180d,cutoff]
+using inclusive date parameters, then scoring applies the exact timestamp
+cutoff to transactionDate 00:00Z. Responses reaching100 rows or advertising
+continuation/remaining totals are split into contiguous disjoint date windows;
+every leaf must be below the cap with no continuation. A saturated single day,
+a request budget exhaustion, invalid envelope/identity, or observed transaction
+outside its requested subwindow produces UNKNOWN. Returned records cannot
+silently prove a provider honored an ignored date filter.
+
+Only a fully validated empty Finnhub population selects the EODHD fallback.
+Non-directional Finnhub rows and rows excluded by the exact scoring boundary
+are still nonempty source populations and do not trigger fallback. Providers
+are never unioned. EODHD requires full bounded pagination and same-provider
+symbol identity (a retained EODHD fundamentals identity receipt is accepted).
+All payloads/requests/clocks are archived privately. Normalization uses the
+original Finnhub/EODHD functions plus original date/name/code external-id
+upsert semantics. Verified zero uses the actual acquisition completion as the
+negative population observation source clock, explicitly not a filing date.
+No call writes to ir_events or changes the running ingestion.
+
+B2-2: four EBITDA rows summing exactly zero cause the original Highlights
+fallback, but do not verify TTM coverage; result is NULL with a fallback
+reason. B2-7: when the official overlay changes earnings growth, the original
+candidate is retained for arithmetic comparison but coverage remains UNKNOWN
+until its growth source-date policy is disposed; raw General.UpdatedAt is not
+silently substituted. B2-5: nonpositive beta has an explicit RC5 null reason.
+
+Bounds are explicit and separate: default128 Finnhub requests plus at most the
+RiskAcquirer EODHD page budget (maximum100); snapshot request_limits records
+both and their sum, and replay checks receipt counts. No retry can enlarge
+these bounds. A failed/invalid Finnhub acquisition remains UNKNOWN and does not
+trigger fallback; this is the conservative interpretation of the RC4-bis
+comment where the artifact also mentions failure. Malformed source records
+classify the affected symbol as a refusal/UNKNOWN; they are never skipped to
+manufacture a READY score. B3 policy assessment evidence becomes available at
+computation, while the published risk may have a later available_at.
