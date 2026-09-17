@@ -19,12 +19,14 @@ class Result:
 
 class Connection:
     autocommit=False
-    def __init__(self, rows=(), mode='on'):
+    def __init__(self, rows=(), mode='on', role=('synthetic_reader',False)):
         self.rows,self.mode,self.calls=list(rows),mode,[]
+        self.role=role
     def execute(self, sql, params=None):
         self.calls.append((sql,params))
         if sql=='SHOW transaction_read_only': return Result([(self.mode,)])
         if sql=='SHOW transaction_isolation': return Result([('repeatable read',)])
+        if sql=='SELECT current_user, rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user': return Result([self.role])
         if sql=='SELECT transaction_timestamp()': return Result([(NOW,)])
         return Result(self.rows)
 
@@ -138,3 +140,30 @@ def test_final_seal_detects_tampering(tmp_path):
     with pytest.raises(ValueError,match='SPOOL_INTEGRITY'):
         capture(tmp_path,entries=[{'symbol':'TEST','market':'US'},{'symbol':'OTHER','market':'US'}],database_reader=tamper)
     assert not (tmp_path/'batch'/'MANIFEST.json').exists()
+
+
+@pytest.mark.parametrize('role', [('postgres',True), ('reader',None), ('reader',0), ('',False),
+                                 (' reader',False), ('bad\nrole',False), ('x'*64,False), None])
+def test_superuser_or_invalid_identity_refused_before_event_query(role):
+    connection=Connection(role=role)
+    with pytest.raises(ValueError,match='DATABASE_READ_ONLY_COMPARISON_FAILED'):
+        reader(connection)('TEST',NOW)
+    assert not any('FROM ir_events' in sql for sql,_ in connection.calls)
+
+
+def test_private_receipt_identifies_non_superuser_role():
+    connection=Connection(role=('synthetic_reader',False))
+    receipt=reader(connection)('TEST',NOW)
+    assert receipt['database_role']=='synthetic_reader' and receipt['is_superuser'] is False
+    role_sql,params=next(call for call in connection.calls if 'pg_catalog.pg_roles' in call[0])
+    assert params is None and 'current_user' in role_sql
+
+
+def test_superuser_receipt_injected_cannot_trigger_provider(tmp_path):
+    original=reader(Connection())
+    calls=[]
+    def bad(symbol,cutoff):
+        receipt=original(symbol,cutoff);receipt['is_superuser']=True;return receipt
+    with pytest.raises(ValueError,match='RUNNER_DATABASE_RECEIPT_INVALID'):
+        capture(tmp_path,database_reader=bad,transport=lambda request:calls.append(request))
+    assert not calls and not (tmp_path/'batch'/'MANIFEST.json').exists()

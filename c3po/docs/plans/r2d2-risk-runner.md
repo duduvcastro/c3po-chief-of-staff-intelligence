@@ -13,3 +13,5 @@ Defaults: 2200 total HTTP attempts, 128 Finnhub requests and 100 EODHD pages per
 New directory is 0700 with no symlink traversal. Files are 0600, exclusive, published from fsynced temporary bytes without overwrite. Final verification checks modes, hashes and concurrent metadata changes before MANIFEST.json is published last. Failure/interruption may retain private partial files but no completed manifest. Returned entries contain names, relative snapshot/comparison paths and hashes, received_at and coverage flags. Keep these private; publish only counts and manifest hash. `coverage_unknown` is distinct from verified zero. Capture completion is not READY or production GO.
 
 Tests use synthetic fixtures only, not a real contemporary sample.
+
+The same read-only transaction queries `current_user` and `rolsuper` from `pg_catalog.pg_roles` without interpolated parameters. The private receipt records `database_role` and `is_superuser:false`; missing/invalid identity or any non-false superuser result stops before the event query. The batch also rejects injected receipts without this attestation. No credential or role is created/altered by this check.

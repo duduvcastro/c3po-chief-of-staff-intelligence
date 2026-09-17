@@ -52,6 +52,12 @@ def _sha(body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
+def _valid_database_role(value: Any) -> bool:
+    return (isinstance(value, str) and bool(value) and value == value.strip()
+            and len(value.encode('utf-8')) <= 63
+            and all(character.isprintable() for character in value))
+
+
 class ReadOnlyInsiderDatabaseReader:
     """Production-capable SQL reader; source counts do not establish coverage."""
 
@@ -89,6 +95,13 @@ class ReadOnlyInsiderDatabaseReader:
                 if isolation is None or isolation[0] != 'repeatable read':
                     raise ValueError('DATABASE_ISOLATION_NOT_CONFIRMED')
                 connection.execute("SET LOCAL statement_timeout = '15s'")
+                role_row = connection.execute(
+                    'SELECT current_user, rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user'
+                ).fetchone()
+                if (not isinstance(role_row, (tuple, list)) or len(role_row) != 2
+                        or not _valid_database_role(role_row[0]) or role_row[1] is not False):
+                    raise ValueError('DATABASE_NON_SUPERUSER_ROLE_REQUIRED')
+                database_role = role_row[0]
                 transaction_at = connection.execute('SELECT transaction_timestamp()').fetchone()[0]
                 _aware(transaction_at)
                 rows = connection.execute(self.SQL, (symbol, cutoff-timedelta(days=180), cutoff, self.max_rows+1)).fetchall()
@@ -124,6 +137,7 @@ class ReadOnlyInsiderDatabaseReader:
                           'query_cutoff_at': cutoff.isoformat(), 'window_start': (cutoff-timedelta(days=180)).isoformat(),
                           'read_started_at': started.isoformat(), 'received_at': completed.isoformat(),
                           'transaction_at': transaction_at.isoformat(), 'transaction_read_only': True,
+                          'database_role': database_role, 'is_superuser': False,
                           'isolation_level': 'REPEATABLE READ', 'query_sha256': _sha(self.SQL.encode()),
                           'row_count': len(rows), 'counts': counts, 'events_sha256': _sha(_json(events)),
                           'events': events, 'coverage_verified': False}
@@ -322,7 +336,9 @@ def capture_direct_insider_batch(
             comparison = database_reader(symbol, cutoff)
             if (comparison.get('symbol') != symbol or comparison.get('market') != 'US'
                     or comparison.get('query_cutoff_at') != cutoff.isoformat()
-                    or comparison.get('transaction_read_only') is not True):
+                    or comparison.get('transaction_read_only') is not True
+                    or not _valid_database_role(comparison.get('database_role'))
+                    or comparison.get('is_superuser') is not False):
                 raise ValueError('RUNNER_DATABASE_RECEIPT_INVALID')
             db_started = _aware(datetime.fromisoformat(comparison['read_started_at']))
             db_completed = _aware(datetime.fromisoformat(comparison['received_at']))

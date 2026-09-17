@@ -14,7 +14,7 @@ Only these existing container environment keys supply credentials:
 | Finnhub direct insider transport | `C3PO_FINNHUB_API_TOKEN` | `FINNHUB_API_TOKEN` |
 | EODHD fallback transport | `C3PO_EODHD_API_TOKEN` | `EODHD_API_TOKEN` |
 
-No credential value is an argument or receipt field. This runner does not fetch new FMP fundamentals: the pinned predecessor supplies fundamentals, grades, institutional, official and optional FX receipts. The transport uses fixed provider hosts/routes with TLS, response-size and elapsed-time limits. The database adapter obtains `Database.connection`, verifies a READ ONLY / REPEATABLE READ transaction, and does not initialize or synchronize the database.
+No credential value is an argument or receipt field. This runner does not fetch new FMP fundamentals: the pinned predecessor supplies fundamentals, grades, institutional, official and optional FX receipts. The transport uses fixed provider hosts/routes with TLS, response-size and elapsed-time limits. The database adapter obtains `Database.connection`, verifies a READ ONLY / REPEATABLE READ transaction, records the actual database role in the private receipt, refuses a superuser role before reading events, and does not initialize or synchronize the database.
 
 `SOURCE_PINS.json` uses schema `RISK_HOST_SOURCE_PINS_V1` and a `files` map of relative path to SHA-256 covering **every** `app/**/*.py` file in the actual runtime source root. Missing, extra, modified and symlinked sources are refused. Generate these pins from the selected checkout/image; do not reuse pins from a different head.
 
