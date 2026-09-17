@@ -604,6 +604,8 @@ class LiveMarketIndexResponse(BaseModel):
 
 
 class RealtimeMarketIndex(BaseModel):
+    source: str = "Financial Modeling Prep"
+    delay_minutes: int = 0
     symbol: str
     name: str
     value: float
