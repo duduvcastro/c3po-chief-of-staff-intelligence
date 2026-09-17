@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from app.r2d2_v2_risk_source import (
-    COMPONENTS, ORIGIN_ONE_PAGER_SHA256, CanonicalRiskInputs, ComponentEvidence,
+    COMPONENTS, ORIGIN_ONE_PAGER_SHA256, ORACLE_ONE_PAGER_SHA256, CanonicalRiskInputs, ComponentEvidence,
     InsiderActivity, InstitutionalPositions, adapt_canonical_risk,
     canonical_risk_score, grades_momentum_signal, insider_net_signal,
     institutional_conviction_signal,
@@ -87,7 +87,7 @@ def test_differential_against_actual_one_pager(beta, debt, growth, fcf, signals)
 
 def test_current_oracle_hash_pinned_and_module_has_no_app_or_io_imports():
     app = Path(__file__).parents[1] / "app"
-    assert hashlib.sha256((app / "one_pager.py").read_bytes()).hexdigest() == ORIGIN_ONE_PAGER_SHA256
+    assert hashlib.sha256((app / "one_pager.py").read_bytes()).hexdigest() == ORACLE_ONE_PAGER_SHA256
     tree = ast.parse((app / "r2d2_v2_risk_source.py").read_text())
     allowed = {"__future__", "hashlib", "json", "math", "re", "dataclasses", "datetime", "typing"}
     for node in ast.walk(tree):
@@ -95,6 +95,14 @@ def test_current_oracle_hash_pinned_and_module_has_no_app_or_io_imports():
             assert all(alias.name in allowed for alias in node.names)
         if isinstance(node, ast.ImportFrom):
             assert node.module in allowed and node.level == 0
+
+
+def test_receipt_distinguishes_historical_origin_from_current_test_oracle():
+    calculation = adapt()["calculation"]
+    assert calculation["origin_one_pager_sha256"] == ORIGIN_ONE_PAGER_SHA256
+    assert calculation["oracle_one_pager_sha256"] == ORACLE_ONE_PAGER_SHA256
+    assert calculation["origin_one_pager_sha256"] != calculation["oracle_one_pager_sha256"]
+    assert calculation["origin_revision"] != calculation["oracle_revision"]
 
 
 @pytest.mark.parametrize("count", [0, 1, 3, 4, 5, 49, 50, 51])

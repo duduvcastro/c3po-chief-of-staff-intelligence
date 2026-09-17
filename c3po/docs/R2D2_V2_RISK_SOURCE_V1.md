@@ -25,6 +25,13 @@ Família `CANONICAL_ONLY_V1`, versão `1.0.0`. A origem é
 `OnePagerService._analyze:531–546` e os auxiliares `:996–1048`, na revisão
 `6083d7420746434426a11134b8edf0ba4b60b6b0`; SHA256 do `one_pager.py`:
 `e49265da0cfc4cd10ab8e94d826ff8be38ee1d278137769a62d3c9a86f006e0d`.
+
+O oráculo executável dos testes é separado: revisão
+`1bb009c3d029ba8a74143bb22381a68bc1e86634`, SHA256 do arquivo
+`76e8cc35fcd03be591280ff1bfbf76e0eb48495019fbe0484ead4231118a2ca4`.
+Desde a versão 1.0.1, o recibo distingue `origin_revision`/
+`origin_one_pager_sha256` de `oracle_revision`/`oracle_one_pager_sha256`.
+A mudança corrige a proveniência; não modifica a aritmética do risco.
 O pacote que ligar o produtor deverá também pinar os bytes deste módulo; o hash
 da origem, sozinho, não autentica uma implementação futura.
 
