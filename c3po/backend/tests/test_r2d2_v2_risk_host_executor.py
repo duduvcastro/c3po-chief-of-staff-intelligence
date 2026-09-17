@@ -12,13 +12,13 @@ from test_r2d2_v2_risk_executor import fixture, encode, NOW
 from test_r2d2_v2_risk_runner import provider, reader, Connection
 
 
-def package(tmp_path, mutate=None, b3=False):
+def package(tmp_path, mutate=None, b3=False, admission_doc=None):
     replay, root, save = fixture(tmp_path)
     def put(name, value):
         raw=encode(value);path=root/name;path.write_bytes(raw);path.chmod(0o600)
         return {'path':name,'sha256':hashlib.sha256(raw).hexdigest()}
     scope={'namespace':replay['namespace'],'session_date':replay['session_date'],'cutoff_at':NOW.isoformat(),'phases':list(host.PHASES)}
-    replay['admission']=put('admission.json',{'symbols':{'SYNTH':{}},'namespace':scope['namespace'],'session_date':scope['session_date']})
+    replay['admission']=put('admission.json',admission_doc if admission_doc is not None else {'symbols':{'SYNTH':{}},'namespace':scope['namespace'],'session_date':scope['session_date']})
     if b3: replay['symbols'][0]={'symbol':'SYNTH','market':'B3'}
     save()
     runtime=Path(host.__file__).absolute().parents[1]
@@ -214,3 +214,44 @@ def test_successful_phase_retry_never_appends_failed_or_changes_bytes(tmp_path):
     assert not captured.value.result['failed_receipt_written']
     after={str(p.relative_to(destination)):p.read_bytes() for p in destination.rglob('*') if p.is_file()}
     assert before==after and not (destination/'acquire.FAILED.json').exists()
+
+
+def certified_admission():
+    """Successor receipt shape, not a fabricated top-level symbols inventory."""
+    return {'schema':'CODEX_CERTIFIED_PHASE_RECEIPT_V1','phase':'admission','status':'PASSED',
+            'namespace':'R2D2-V2-SHADOW-2026-09-18','session':'2026-09-18','counts':{'symbols':1},
+            'native_result':{'causal_readback':{'epoch':'R2D2-V2-SHADOW-2026-09-18',
+                'session':'2026-09-18','status':'AVAILABLE','diagnostics':[],
+                'selected_count':1,'symbols_file_sha256':hashlib.sha256(b'SYNTH\n').hexdigest()}}}
+
+
+def test_certified_admission_original_bytes_across_all_host_phases(tmp_path):
+    admission=certified_admission();args=package(tmp_path,admission_doc=admission);clock=Clock();previous=None
+    assert 'symbols' not in admission
+    for phase in host.PHASES:
+        result=host.run_host_phase(phase=phase,**args,clock=clock,previous_receipt_sha256=previous,
+                                   transport=provider,database_reader=reader(Connection()))
+        previous=result['receipt_sha256']
+    destination=args['spool_root']/args['manifest_sha256']
+    manifest=json.loads((destination/'assessment/manifest.json').read_bytes())
+    ref=manifest['admission'];raw=(destination/'assessment'/ref['path']).read_bytes()
+    assert raw==encode(admission) and hashlib.sha256(raw).hexdigest()==ref['sha256']
+    assert result['outputs']['admission_sha256']==ref['sha256']
+
+
+@pytest.mark.parametrize('field,value',[
+    ('phase','risk'),('status','UNCERTAIN_STOP'),('namespace','R2D2-V2-DIAG-R4-2026-09-18'),
+    ('session','2026-09-21'),('counts',{'symbols':True}),('counts',{'symbols':2}),
+    ('native_result',None),('causal.epoch','R2D2-V2-SHADOW-2026-09-21'),
+    ('causal.session','2026-09-21'),('causal.status','UNAVAILABLE'),
+    ('causal.diagnostics',['SOURCE_MISSING']),('causal.selected_count',True),
+    ('causal.selected_count',2),('causal.symbols_file_sha256',hashlib.sha256(b'OTHER\n').hexdigest())])
+def test_certified_admission_refuses_changed_scope_or_list_before_spool(tmp_path,field,value):
+    doc=certified_admission()
+    if field.startswith('causal.'):doc['native_result']['causal_readback'][field.split('.')[1]]=value
+    else:doc[field]=value
+    doc['symbols']={'SYNTH':{}}
+    args=package(tmp_path,admission_doc=doc)
+    with pytest.raises(host.HostPhaseFailure,match='ADMISSION_BINDING_MISMATCH'):
+        host.run_host_phase(phase='preflight',**args,clock=Clock())
+    assert not list(args['spool_root'].iterdir())

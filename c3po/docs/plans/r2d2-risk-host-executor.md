@@ -74,3 +74,35 @@ Final capture/output manifests follow durable files and hash verification. Names
 The offline CLI E2E executes all three real phases, real filesystem/spool, real runner, fake HTTP and fake read-only database connection. It checks a non-null synthetic result, receipt chaining, factual clocks, private permissions and absence of names/secrets in stdout. Refusals cover GO/hash/source pins/admission/window/budgets, uncertain replay, durable filtered failure receipts, distinct refusal/uncertainty exits, interruption, aggregate clone budget, non-UTC cutoff, and B3 without credentials. Runner tests separately cover paging, pacing, global limits and database transaction mode.
 
 Not covered by those tests: live provider completeness, production credential entitlement and availability/ACL of the dedicated restricted DSN, the installed container/source pins, mounted path ownership, current real admission/list, a new authorized host acquisition, completed certification, or an operating session. The separate contemporary 20-symbol evidence remains a read-only differential sample; its 13 READY / 7 NULL outcome must not be presented as complete coverage. No merge, deploy, policy, epoch or worker mutation belongs to this executor.
+
+## Successor admission handoff (R8-10)
+
+The host plan and replay manifest must pin the original bytes of the successor's
+`receipts/admission.result.json`. A `CODEX_CERTIFIED_PHASE_RECEIPT_V1` receipt is
+accepted only for phase `admission`, status `PASSED`, exact namespace/session,
+and an `AVAILABLE` causal readback with no diagnostics. Its selected count,
+receipt count and ordered `symbols.txt` SHA256 must agree with the host plan's
+private list. There is no synthetic replacement receipt with a top-level symbols
+array. Legacy artifact admissions keep their prior contract. Recognized successor
+receipts always use the stricter branch, even if a `symbols` field is also present.
+This verifies the pinned predecessor's format and identity; the owner's order and
+Fable GO must still bind its actual bytes and the independently accepted chain.
+
+After `preflight -> acquire -> execute` all return COMPLETE with linked receipts,
+the handoff input is `<spool>/<plan-sha>/assessment/manifest.json`, with the hash
+in `execute.RECEIPT.json.outputs.assessment_manifest`. Never stage
+`acquired/acquired.json`: it has no factual assessment yet. The successor's
+`stage-risk-inputs` validates this same admission hash and ordered list, then its
+`risk` phase consumes the accepted stage. All clocks and source bytes survive the
+handoff unchanged. This documentation does not authorize any host invocation.
+
+The existing implementation performs three pure score calculations: the factual
+assessment (which records durable availability), the host's replay verification,
+and the successor's replay verification. Only acquisition calls the provider and
+read-only database. The proposed R8-10 disposition retains this explicit
+redundancy for independent replay at the publication boundary, subject to Fable's
+review; it does not introduce another acquisition, change assessment times, or
+publish the host's intermediate risk artifact as a certified component. Only the
+successor's own risk receipt can extend its chain. Offline tests compare risk and
+assessment bytes across the two replay outputs. Runtime and capacity for a full
+real list are not established by the synthetic tests.

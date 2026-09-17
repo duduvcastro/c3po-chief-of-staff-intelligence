@@ -155,7 +155,25 @@ def _validate(plan: dict[str,Any], *, digest: str, go: dict[str,Any], inputs: _I
     admission=_json(inputs.read(plan["admission"]))
     if not isinstance(admission,dict):raise ValueError("ADMISSION_INVALID")
     admitted=admission.get("symbols")
-    if isinstance(admitted,dict):admitted_names=set(admitted)
+    if admission.get("schema")=="CODEX_CERTIFIED_PHASE_RECEIPT_V1":
+        # The successor pins the causal list by bytes, not a top-level names array.
+        # Consume its original receipt: never manufacture a replacement admission.
+        native=admission.get("native_result")
+        causal=native.get("causal_readback") if isinstance(native,dict) else None
+        names=[entry["symbol"] for entry in entries]
+        counts=admission.get("counts")
+        if (admission.get("phase")!="admission" or admission.get("status")!="PASSED"
+                or admission.get("namespace")!=namespace or admission.get("session")!=day
+                or not isinstance(causal,dict) or causal.get("epoch")!=namespace
+                or causal.get("session")!=day or causal.get("status")!="AVAILABLE"
+                or causal.get("diagnostics")!=[]
+                or type(causal.get("selected_count")) is not int or causal["selected_count"]!=len(names)
+                or causal.get("symbols_file_sha256")!=_sha(("\n".join(names)+"\n").encode("ascii"))
+                or not isinstance(counts,dict) or type(counts.get("symbols")) is not int
+                or counts["symbols"]!=len(names)):
+            raise ValueError("ADMISSION_BINDING_MISMATCH")
+        admitted_names=set(names)
+    elif isinstance(admitted,dict):admitted_names=set(admitted)
     elif isinstance(admitted,list) and all(isinstance(item,str) for item in admitted):admitted_names=set(admitted)
     else:raise ValueError("ADMISSION_INVENTORY_MISSING")
     if admitted_names!={entry["symbol"] for entry in entries}:raise ValueError("ADMISSION_INVENTORY_MISMATCH")
