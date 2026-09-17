@@ -84,6 +84,9 @@ def test_no_vacuous_success(sources, count, null):
         assert result['aggregate']['status'] == 'INCONCLUSIVE'
         if null:
             assert result['aggregate']['counts']['COMPLETED_NULL'] == 20
+            assert result['aggregate']['arithmetic_gate_rev2']['status'] == 'PASS'
+            assert result['aggregate']['arithmetic_gate_rev2']['exact'] == 20
+            assert result['aggregate']['arithmetic_gate_rev2']['coverage_authorization'] is False
             assert all(v['legacy_oracle']['risk_score'] is not None for v in result['comparisons'].values())
 
 
@@ -136,3 +139,17 @@ def test_unclassified_exception_never_echoes_sensitive_message(sources, monkeypa
     assert report['aggregate']['status'] == 'NO_GO'
     assert report['aggregate']['counts']['UNCLASSIFIED_EXCEPTION'] == 10
     assert 'secret' not in json.dumps(report)
+
+
+def test_null_mismatch_fails_arithmetic_gate_without_claiming_readiness(sources, monkeypatch):
+    import app.r2d2_v2_risk_differential as harness
+    original = harness.independent_oracle
+    def wrong(args):
+        value = original(args)
+        value['risk_score'] += 1
+        return value
+    monkeypatch.setattr(harness, 'independent_oracle', wrong)
+    report = compare_contemporary_sample(**case(20, null=True), origin_sources=sources)
+    assert report['aggregate']['arithmetic_gate_rev2']['status'] == 'NO_GO'
+    assert report['aggregate']['arithmetic_gate_rev2']['mismatches'] == 20
+    assert report['aggregate']['counts']['READY'] == 0

@@ -79,3 +79,37 @@ of this writer, not OS-enforced immutability against another process running as
 the same Unix user. A same-user mutation after verification remains possible;
 consumers must verify manifest hashes when loading, and the executor must retain
 exclusive run ownership.
+
+### Fable T-1–T-4 and explicit TLS
+
+The sanitized transport exception is now raised **outside** the exception
+handler, after clearing this call frame's token, URL, parameters, HTTP request,
+response and body temporaries. Its `__context__` and `__cause__` are null, including
+urllib non-redirect 3xx failures. This is deliberately not described as erasing
+credentials from the whole process: the external settings/resolver legitimately
+owns its credential, and injected test objects may retain their own state.
+Production error reporting must continue to exclude frame locals.
+
+Spool diagnostics must be null or match `[A-Z][A-Z0-9_]{0,127}`; free text is
+rejected before a file is written. Receipt clocks use the same `_aware` check as
+the acquirer, including a non-null UTC offset. Failed construction closes its
+opened descriptor and attempts to remove only the newly created empty run
+directory; existing directories are never recursively deleted. TLS now receives
+an explicit `ssl.create_default_context()` with certificate and hostname checks.
+
+### RC-4bis Finnhub authorization extension
+
+The owner authorized the direct Finnhub path in comment 5718952304. The transport
+now admits a **third** fixed HTTPS host, `https://finnhub.io`, and only
+`/api/v1/stock/insider-transactions` with exact `symbol`, `from`, `to` keys. Dates
+must be strict calendar `YYYY-MM-DD`, ordered, and span at most 180 elapsed days
+(181 inclusive calendar dates); `to` cannot be after today's UTC date. Symbols
+retain the same uppercase 15-character constraint. Its `token` query credential
+is resolved internally. No other Finnhub endpoint is enabled.
+
+Finnhub additionally has a hard rolling **60 requests/minute** ceiling, even if
+the caller's global budget permits 300. A smaller caller budget also applies.
+There is no retry/sleep. The separate acquisition adapter must establish complete
+coverage through the provider's 100-record ceiling and its bounded window
+splitting; HTTP success here does not assert coverage. EODHD and FMP requests
+retain their previous shapes and credential keys.

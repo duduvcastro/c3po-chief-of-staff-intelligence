@@ -67,3 +67,11 @@ values. Publish only `aggregate`, the private report hash and source-pin hashes.
 `historical_proof`, `capture_provenance_independently_verified`, and
 `production_authorized` remain false: a same-input arithmetic PASS neither proves
 historical coverage nor authorizes a deployment or operational session.
+
+## Gate rev 2 (Fable disposition 5718883179)
+
+The original ten-READY gate remains in `aggregate.status` for audit continuity.
+A separate `arithmetic_gate_rev2` checks exact equality on all twenty normalized
+inputs, including None, regardless of coverage. This diagnostic kernel score
+is never substituted into risk.json when the adapter returns COMPLETED_NULL.
+PASS arithmetic is not coverage authorization, a release seal or operational GO.

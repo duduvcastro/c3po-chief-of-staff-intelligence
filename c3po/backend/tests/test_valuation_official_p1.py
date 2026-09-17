@@ -25,7 +25,7 @@ import pytest
 from app import valuation_official as official
 from app.config import Settings
 from app.database import Database
-from app.r2d2_v2_risk_source import ORIGIN_ONE_PAGER_SHA256
+from app.r2d2_v2_risk_source import ORACLE_ONE_PAGER_SHA256
 from app.valuation_accuracy import calls_by_source, load_prediction_calls
 from app.valuation_official_engine import OFFICIAL_SOURCES, SOURCE_BLEND, SOURCE_INTERNAL
 
@@ -98,7 +98,7 @@ def test_the_constants_the_lock_and_the_pinned_one_pager() -> None:
     assert official.OFFICIAL_TP_REPLACEMENT_AUTHORIZED is False
     assert "\nOFFICIAL_TP_REPLACEMENT_AUTHORIZED = False" in (APP / "valuation_official.py").read_text(encoding="utf-8")
     # the pinned producer framework is not edited by Passo 1 (the mirror of its entry hurdle lives in the engine module)
-    assert hashlib.sha256((APP / "one_pager.py").read_bytes()).hexdigest() == ORIGIN_ONE_PAGER_SHA256
+    assert hashlib.sha256((APP / "one_pager.py").read_bytes()).hexdigest() == ORACLE_ONE_PAGER_SHA256
 
 
 def test_one_cycle_is_recorded_in_both_official_sources_from_the_same_rows() -> None:

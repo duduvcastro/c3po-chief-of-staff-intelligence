@@ -10,15 +10,17 @@ import json
 import os
 import re
 import stat
+import ssl
 import time
 import uuid
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError
 from urllib.parse import urlencode
-from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request, build_opener
 
-from app.r2d2_v2_risk_acquisition import HttpReply, SourceReceipt, SourceRequest
+from app.r2d2_v2_risk_acquisition import HttpReply, SourceReceipt, SourceRequest, _aware
 
 
 class RiskTransportError(RuntimeError):
@@ -39,13 +41,14 @@ class BoundedRiskTransport:
     between threads. The injected opener exists for offline tests only.
     """
 
-    BASES = {"eodhd": "https://eodhd.com", "fmp": "https://financialmodelingprep.com"}
+    BASES = {"eodhd": "https://eodhd.com", "fmp": "https://financialmodelingprep.com", "finnhub": "https://finnhub.io"}
 
     def __init__(self, credential: Callable[[str], str], *, timeout: float = 15,
                  max_body_bytes: int = 16 * 1024 * 1024, max_requests: int = 2200,
                  requests_per_minute: int = 200,
                  monotonic: Callable[[], float] = time.monotonic,
-                 opener: Any = None) -> None:
+                 opener: Any = None,
+                 today: Callable[[], date] = lambda: datetime.now(timezone.utc).date()) -> None:
         if (not 0 < timeout <= 30 or type(max_body_bytes) is not int
                 or not 1 <= max_body_bytes <= 16 * 1024 * 1024
                 or type(max_requests) is not int or not 1 <= max_requests <= 10000
@@ -57,7 +60,9 @@ class BoundedRiskTransport:
         self.max_requests = max_requests
         self.requests_per_minute = requests_per_minute
         self.monotonic = monotonic
-        self.opener = opener if opener is not None else build_opener(ProxyHandler({}), _NoRedirect())
+        self.today = today
+        self._finnhub_times: list[float] = []
+        self.opener = opener if opener is not None else build_opener(ProxyHandler({}), HTTPSHandler(context=ssl.create_default_context()), _NoRedirect())
         self._times: list[float] = []
         self._count = 0
 
@@ -73,6 +78,20 @@ class BoundedRiskTransport:
                 valid = (set(p) == {"page[offset]", "page[limit]"}
                          and type(p["page[offset]"]) is int and 0 <= int(p["page[offset]"]) <= 10000
                          and type(p["page[limit]"]) is int and p["page[limit]"] == 100)
+        elif request.provider == "finnhub":
+            valid = (request.path == "/api/v1/stock/insider-transactions"
+                     and set(p) == {"symbol", "from", "to"}
+                     and isinstance(p.get("symbol"), str)
+                     and re.fullmatch(symbol, str(p["symbol"])) is not None)
+            if valid:
+                try:
+                    start, end = p["from"], p["to"]
+                    valid = (isinstance(start, str) and isinstance(end, str)
+                             and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", start) is not None
+                             and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", end) is not None
+                             and 0 <= (date.fromisoformat(str(end)) - date.fromisoformat(str(start))).days <= 180)
+                except ValueError:
+                    valid = False
         elif request.provider == "fmp":
             if request.path == "/stable/grades":
                 valid = set(p) == {"symbol"}
@@ -86,18 +105,25 @@ class BoundedRiskTransport:
 
     def __call__(self, request: SourceRequest) -> HttpReply:
         self.validate(request)
+        if request.provider == "finnhub" and date.fromisoformat(str(request.parameters["to"])) > self.today():
+            raise RiskTransportError("REQUEST_DATE_IN_FUTURE")
         now = self.monotonic()
         self._times = [t for t in self._times if now - t < 60]
+        self._finnhub_times = [t for t in self._finnhub_times if now - t < 60]
+        if request.provider == "finnhub" and len(self._finnhub_times) >= 60:
+            raise RiskTransportError("FINNHUB_RATE_BUDGET_EXHAUSTED")
         if self._count >= self.max_requests or len(self._times) >= self.requests_per_minute:
             raise RiskTransportError("REQUEST_BUDGET_EXHAUSTED")
         self._count += 1
         self._times.append(now)
+        if request.provider == "finnhub":
+            self._finnhub_times.append(now)
         try:
             token = self.credential(request.provider)
             if not isinstance(token, str) or not token or any(c.isspace() for c in token):
                 raise RiskTransportError("CREDENTIAL_UNAVAILABLE")
             parameters = dict(request.parameters)
-            parameters["api_token" if request.provider == "eodhd" else "apikey"] = token
+            parameters[{"eodhd": "api_token", "fmp": "apikey", "finnhub": "token"}[request.provider]] = token
             url = self.BASES[request.provider] + request.path + "?" + urlencode(parameters)
             http_request = Request(url, headers={"Accept": "application/json", "Accept-Encoding": "identity"})
             with self.opener.open(http_request, timeout=self.timeout) as response:
@@ -112,7 +138,7 @@ class BoundedRiskTransport:
                 length = response.headers.get("Content-Length")
                 if length is not None and (not str(length).isdigit() or int(length) > self.max_body_bytes):
                     raise RiskTransportError("BODY_BUDGET_EXHAUSTED")
-                chunks: list[bytes] = []
+                chunks: list[bytes] | None = []
                 size = 0
                 while True:
                     if self.monotonic() - now > self.timeout:
@@ -130,19 +156,28 @@ class BoundedRiskTransport:
                     raise RiskTransportError("RESPONSE_REJECTED")
                 return HttpReply(status, body)
         except HTTPError as error:
-            # urllib raises before yielding the response for 4xx/5xx. Preserve
-            # only the numeric status; neither its URL nor body is evidence.
+            # Preserve only numeric error status. Never raise the sanitized
+            # exception while an HTTPError (with credential URL) is active.
             status = error.code
+            closed = True
             try:
                 error.close()
             except Exception:
-                raise RiskTransportError("HTTP_TRANSPORT_FAILED") from None
-            if type(status) is not int or not 400 <= status <= 599:
-                raise RiskTransportError("HTTP_TRANSPORT_FAILED") from None
-            return HttpReply(status, b"")
+                closed = False
+            if closed and type(status) is int and 400 <= status <= 599:
+                return HttpReply(status, b"")
         except Exception:
-            # Suppress exception chaining too: urllib errors include credential URLs.
-            raise RiskTransportError("HTTP_TRANSPORT_FAILED") from None
+            pass
+        finally:
+            # Clear this call frame's direct credential-bearing temporaries.
+            # The external credential resolver/settings still legitimately owns
+            # its credential; this is not a process-memory erasure guarantee.
+            token = url = parameters = http_request = response = None
+            body = chunk = chunks = None
+        error_out = RiskTransportError("HTTP_TRANSPORT_FAILED")
+        error_out.__context__ = None
+        raise error_out from None
+
 
 
 def _json_bytes(value: Any) -> bytes:
@@ -162,15 +197,29 @@ class PrivateRiskSpool:
         path = path.absolute()
         self._fd = -1
         parent_fd = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        created = False
         try:
             for part in path.parts[1:-1]:
                 next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
                 os.close(parent_fd)
                 parent_fd = next_fd
             os.mkdir(path.name, 0o700, dir_fd=parent_fd)
+            created = True
             self._fd = os.open(path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
             if stat.S_IMODE(os.fstat(self._fd).st_mode) != 0o700:
                 raise ValueError("SPOOL_PERMISSIONS_INVALID")
+        except BaseException:
+            if self._fd >= 0:
+                os.close(self._fd)
+                self._fd = -1
+            if created:
+                # Remove only our newly created empty directory. An externally
+                # populated/replaced directory is never recursively removed.
+                try:
+                    os.rmdir(path.name, dir_fd=parent_fd)
+                except OSError:
+                    pass
+            raise
         finally:
             os.close(parent_fd)
         self._entries: dict[str, str] = {}
@@ -216,9 +265,14 @@ class PrivateRiskSpool:
             BoundedRiskTransport.validate(receipt.request)
             if hashlib.sha256(receipt.body).hexdigest() != receipt.payload_sha256:
                 raise ValueError("RECEIPT_HASH_INVALID")
-            if (receipt.started_at.tzinfo is None or receipt.received_at.tzinfo is None
+            if (not isinstance(receipt.started_at, datetime) or not isinstance(receipt.received_at, datetime)
+                    or not _aware(receipt.started_at) or not _aware(receipt.received_at)
                     or receipt.received_at < receipt.started_at):
                 raise ValueError("RECEIPT_CLOCK_INVALID")
+            if receipt.diagnostic is not None and (
+                    not isinstance(receipt.diagnostic, str)
+                    or re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", receipt.diagnostic) is None):
+                raise ValueError("RECEIPT_DIAGNOSTIC_INVALID")
             name = f"{self._count:06d}"
             self._put(name + ".body", receipt.body)
             document = {

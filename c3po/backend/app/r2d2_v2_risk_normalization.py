@@ -125,11 +125,23 @@ def institutional_candidate(payload: Any, *, symbol: str, year: int,
     if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
         raise ValueError("INSTITUTIONAL_ROW_MISSING")
     row = payload[0]
-    # Declared identity coercion: case-insensitive ticker, integral numeric
-    # year/quarter (including provider strings). Never truncate fractions.
-    if (canonical_symbol(row.get("symbol")) != canonical_symbol(symbol)
-            or exact_count(row.get("year")) != year or exact_count(row.get("quarter")) != quarter):
+    # Provider responses can identify the period solely by quarter-end date.
+    # Infer only from an exact calendar-quarter end, never a missing/default
+    # year or a rounded date. Explicit identity takes precedence and must agree.
+    if canonical_symbol(row.get("symbol")) != canonical_symbol(symbol):
         raise ValueError("INSTITUTIONAL_IDENTITY_MISMATCH")
+    has_year, has_quarter = "year" in row, "quarter" in row
+    if has_year != has_quarter:
+        raise ValueError("INSTITUTIONAL_IDENTITY_PARTIAL")
+    if has_year:
+        if exact_count(row["year"]) != year or exact_count(row["quarter"]) != quarter:
+            raise ValueError("INSTITUTIONAL_IDENTITY_MISMATCH")
+    else:
+        if type(year) is not int or type(quarter) is not int or quarter not in (1, 2, 3, 4):
+            raise ValueError("INSTITUTIONAL_REQUEST_QUARTER_INVALID")
+        quarter_end = date(year + int(quarter == 4), 1 if quarter == 4 else quarter * 3 + 1, 1) - timedelta(days=1)
+        if strict_day(row.get("date")) != quarter_end:
+            raise ValueError("INSTITUTIONAL_DATE_IDENTITY_MISMATCH")
     return InstitutionalPositions(*(exact_count(row.get(key)) for key in
                                     ("newPositions", "increasedPositions", "reducedPositions", "closedPositions")))
 

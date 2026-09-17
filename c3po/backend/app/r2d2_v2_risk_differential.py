@@ -24,7 +24,8 @@ from app.official_fundamentals import apply_official_fundamentals
 from app.one_pager import OnePagerService
 from app.r2d2_v2_risk_acquisition import SourceReceipt
 from app.r2d2_v2_risk_bundle import build_risk_bundle
-from app.r2d2_v2_risk_source import ORACLE_ONE_PAGER_SHA256, ORACLE_REVISION, ORIGIN_REVISION
+from app.r2d2_v2_risk_source import (ORACLE_ONE_PAGER_SHA256, ORACLE_REVISION, ORIGIN_REVISION,
+    CanonicalRiskInputs, InsiderActivity, InstitutionalPositions, canonical_risk_score)
 
 ORIGIN_PINS = {
     "app/one_pager.py": "e49265da0cfc4cd10ab8e94d826ff8be38ee1d278137769a62d3c9a86f006e0d",
@@ -186,6 +187,8 @@ def compare_contemporary_sample(*, sample_bytes: bytes, sample_sha256: str,
     counts = {'READY': 0, 'READY_EXACT': 0, 'READY_MISMATCH': 0,
               'COMPLETED_NULL': 0, 'CLASSIFIED_REFUSAL': 0, 'UNCLASSIFIED_EXCEPTION': 0}
     comparisons = {}
+    arithmetic_exact = 0
+    arithmetic_mismatch = 0
     for symbol in names:
         arguments = bundles[symbol]
         if arguments.get('symbol') != symbol or arguments.get('market') != 'US':
@@ -197,6 +200,16 @@ def compare_contemporary_sample(*, sample_bytes: bytes, sample_sha256: str,
             candidate = build_risk_bundle(**arguments)
             stage = 'oracle'
             oracle = independent_oracle(arguments)
+            raw_inputs = dict(candidate['calculation']['inputs'])
+            for key, cls in (('insider_activity', InsiderActivity), ('institutional_positions', InstitutionalPositions)):
+                if raw_inputs[key] is not None:
+                    raw_inputs[key] = cls(**raw_inputs[key])
+            if raw_inputs['recent_grade_actions'] is not None:
+                raw_inputs['recent_grade_actions'] = tuple(raw_inputs['recent_grade_actions'])
+            diagnostic_score = canonical_risk_score(CanonicalRiskInputs(**raw_inputs))
+            arithmetic_matches = diagnostic_score == oracle['risk_score']
+            arithmetic_exact += int(arithmetic_matches)
+            arithmetic_mismatch += int(not arithmetic_matches)
             status = candidate['status']
             if status == 'READY':
                 counts['READY'] += 1
@@ -207,7 +220,9 @@ def compare_contemporary_sample(*, sample_bytes: bytes, sample_sha256: str,
             else:
                 counts['CLASSIFIED_REFUSAL'] += 1
             comparisons[symbol] = {'status': status, 'candidate': candidate,
-                                   'legacy_oracle': oracle, 'same_raw_bundle': True}
+                                   'legacy_oracle': oracle, 'same_raw_bundle': True,
+                                   'diagnostic_arithmetic_score': diagnostic_score,
+                                   'arithmetic_exact': arithmetic_matches}
         except ValueError as error:
             # Only fixed uppercase diagnostic codes are classified. Never echo
             # a raw exception or provider field that could disclose credentials.
@@ -228,6 +243,11 @@ def compare_contemporary_sample(*, sample_bytes: bytes, sample_sha256: str,
                  'counts': counts, 'origin_revision': ORIGIN_REVISION, 'oracle_revision': ORACLE_REVISION,
                  'historical_proof': False, 'capture_provenance_independently_verified': False,
                  'production_authorized': False}
+    aggregate['arithmetic_gate_rev2'] = {
+        'disposition_comment': 5718883179, 'required': 20, 'exact': arithmetic_exact,
+        'mismatches': arithmetic_mismatch,
+        'status': 'PASS' if len(names) == 20 and arithmetic_exact == 20 and not counts['UNCLASSIFIED_EXCEPTION'] else 'NO_GO',
+        'coverage_authorization': False}
     private = {'aggregate': aggregate, 'source_pins': source_pins, 'comparisons': comparisons}
     private['sha256'] = _sha(json.dumps(private, sort_keys=True, separators=(',', ':'), default=str, allow_nan=False).encode())
     return private

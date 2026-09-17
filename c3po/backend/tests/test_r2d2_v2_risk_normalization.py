@@ -141,3 +141,28 @@ def test_no_new_quarter_length_policy_and_missing_metric_refused():
     del section["quarterly"]["2026-03-31"]["ebitda"]
     with pytest.raises(ValueError, match="NUMBER"):
         ttm(section)
+
+
+def test_real_institutional_shape_period_from_exact_quarter_end():
+    row=dict(symbol='TEST',date='2026-06-30',newPositions=17,increasedPositions=21,reducedPositions=8,closedPositions=4)
+    result=institutional_candidate([row],symbol='TEST',year=2026,quarter=2)
+    assert (result.new_positions,result.increased_positions,result.reduced_positions,result.closed_positions)==(17,21,8,4)
+
+
+@pytest.mark.parametrize('period',['2026-06-29','2026-07-01','2026-03-31','2025-06-30','2026-6-30','2026-06-30T00:00:00Z',None])
+def test_date_only_identity_requires_requested_exact_quarter_end(period):
+    row=dict(symbol='TEST',date=period,newPositions=0,increasedPositions=0,reducedPositions=0,closedPositions=0)
+    with pytest.raises(ValueError,match='DATE_IDENTITY'):
+        institutional_candidate([row],symbol='TEST',year=2026,quarter=2)
+
+
+@pytest.mark.parametrize('extra',[{'year':2026},{'quarter':2},{'year':None,'quarter':None}])
+def test_partial_or_null_explicit_identity_never_falls_back_to_date(extra):
+    row=dict(symbol='TEST',date='2026-06-30',newPositions=0,increasedPositions=0,reducedPositions=0,closedPositions=0,**extra)
+    with pytest.raises(ValueError):institutional_candidate([row],symbol='TEST',year=2026,quarter=2)
+
+
+@pytest.mark.parametrize('quarter,period',[(1,'2024-03-31'),(2,'2024-06-30'),(3,'2024-09-30'),(4,'2024-12-31')])
+def test_date_only_identity_all_quarter_ends(quarter,period):
+    row=dict(symbol='TEST',date=period,newPositions=0,increasedPositions=0,reducedPositions=0,closedPositions=0)
+    assert institutional_candidate([row],symbol='TEST',year=2024,quarter=quarter).new_positions==0

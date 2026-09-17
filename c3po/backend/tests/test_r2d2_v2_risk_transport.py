@@ -295,3 +295,138 @@ def test_spool_concurrent_rewrite_detected_by_same_fd_metadata(tmp_path: Path, m
         assert not (path / 'MANIFEST.json').exists()
     finally:
         spool.close()
+
+
+def test_http_3xx_error_context_and_direct_credential_locals_cleared():
+    from urllib.error import HTTPError
+    class NotRedirect:
+        def open(self, *args, **kwargs):
+            raise HTTPError('https://provider/?apikey=private-token', 304, 'private-token', {}, io.BytesIO(b'private-token'))
+    with pytest.raises(RiskTransportError) as captured:
+        BoundedRiskTransport(lambda _: 'private-token', opener=NotRedirect())(request())
+    error = captured.value
+    assert error.__context__ is None
+    assert error.__cause__ is None
+    trace = error.__traceback__
+    found = False
+    while trace is not None:
+        if trace.tb_frame.f_code.co_name == '__call__':
+            found = True
+            for key in ('token', 'url', 'parameters', 'http_request', 'response', 'body', 'chunk', 'chunks'):
+                assert trace.tb_frame.f_locals.get(key) is None
+            assert 'error' not in trace.tb_frame.f_locals
+        trace = trace.tb_next
+    assert found
+
+
+@pytest.mark.parametrize('diagnostic', ['apikey=private-token', 'Free text message', 'CODE\nINJECTION', '', 'A' * 129])
+def test_free_text_diagnostic_rejected_before_writing(tmp_path: Path, diagnostic):
+    spool = PrivateRiskSpool(tmp_path / 'run')
+    try:
+        with pytest.raises(ValueError, match='RECEIPT_DIAGNOSTIC_INVALID'):
+            spool.append(receipt(diagnostic=diagnostic))
+        assert list((tmp_path / 'run').iterdir()) == []
+    finally:
+        spool.close()
+
+
+def test_tzinfo_with_no_utcoffset_rejected_before_writing(tmp_path: Path):
+    from datetime import tzinfo
+    from dataclasses import replace
+    class NotAware(tzinfo):
+        def utcoffset(self, value):
+            return None
+    source = receipt()
+    naive = datetime(2026, 9, 17, tzinfo=NotAware())
+    source = replace(source, started_at=naive, received_at=naive)
+    spool = PrivateRiskSpool(tmp_path / 'run')
+    try:
+        with pytest.raises(ValueError, match='RECEIPT_CLOCK_INVALID'):
+            spool.append(source)
+        assert list((tmp_path / 'run').iterdir()) == []
+    finally:
+        spool.close()
+
+
+def test_spool_constructor_failure_closes_fd_and_removes_new_directory(tmp_path: Path, monkeypatch):
+    original_stat, original_close = os.fstat, os.close
+    checked, closed = [], []
+    def invalid_permissions(fd):
+        metadata = original_stat(fd)
+        checked.append(fd)
+        values = list(metadata)
+        values[0] = stat.S_IFDIR | 0o755
+        return os.stat_result(values)
+    def close(fd):
+        closed.append(fd)
+        return original_close(fd)
+    monkeypatch.setattr(os, 'fstat', invalid_permissions)
+    monkeypatch.setattr(os, 'close', close)
+    with pytest.raises(ValueError, match='SPOOL_PERMISSIONS_INVALID'):
+        PrivateRiskSpool(tmp_path / 'run')
+    assert all(fd in closed for fd in checked)
+    assert not (tmp_path / 'run').exists()
+
+
+def test_default_transport_has_explicit_verifying_tls_context():
+    import ssl
+    from urllib.request import HTTPSHandler
+    transport = BoundedRiskTransport(lambda _: 'key')
+    handler = next(item for item in transport.opener.handlers if isinstance(item, HTTPSHandler))
+    assert handler._context.check_hostname is True
+    assert handler._context.verify_mode == ssl.CERT_REQUIRED
+
+
+def finnhub_request(**changes):
+    parameters = {'symbol': 'TEST', 'from': '2026-03-21', 'to': '2026-09-17'}
+    parameters.update(changes)
+    return SourceRequest('finnhub', '/api/v1/stock/insider-transactions', parameters)
+
+
+def test_finnhub_exact_endpoint_dates_and_internal_token():
+    from datetime import date
+    opener = Opener()
+    transport = BoundedRiskTransport(lambda provider: 'private-token', opener=opener,
+                                     today=lambda: date(2026, 9, 17))
+    transport(finnhub_request())
+    url = urlsplit(opener.calls[0][0])
+    assert url.scheme == 'https' and url.netloc == 'finnhub.io'
+    assert url.path == '/api/v1/stock/insider-transactions'
+    assert parse_qs(url.query) == {'symbol': ['TEST'], 'from': ['2026-03-21'], 'to': ['2026-09-17'], 'token': ['private-token']}
+
+
+@pytest.mark.parametrize('changes', [
+    {'from': '2026-03-20'}, {'from': '2026-09-18'}, {'from': '2026-2-01'},
+    {'from': '2026-02-30'}, {'to': '2026-09-17Z'}, {'symbol': 'test'}, {'token': 'injected'},
+    {'from': 20260321}, {'to': None},
+])
+def test_invalid_finnhub_window_rejected_before_credential(changes):
+    def forbidden(_):
+        pytest.fail('credentials accessed')
+    with pytest.raises(RiskTransportError, match='REQUEST_REJECTED'):
+        BoundedRiskTransport(forbidden)(finnhub_request(**changes))
+
+
+def test_finnhub_future_date_rejected_before_credential():
+    from datetime import date
+    def forbidden(_):
+        pytest.fail('credentials accessed')
+    with pytest.raises(RiskTransportError, match='REQUEST_DATE_IN_FUTURE'):
+        BoundedRiskTransport(forbidden, today=lambda: date(2026, 9, 16))(finnhub_request())
+
+
+def test_finnhub_hard_60_per_minute_even_with_larger_global_budget():
+    from datetime import date
+    clock = [0.0]
+    opener = Opener()
+    transport = BoundedRiskTransport(lambda _: 'private-token', opener=opener,
+                                     requests_per_minute=300, max_requests=1000,
+                                     monotonic=lambda: clock[0], today=lambda: date(2026, 9, 17))
+    for _ in range(60):
+        transport(finnhub_request())
+    with pytest.raises(RiskTransportError, match='FINNHUB_RATE_BUDGET_EXHAUSTED'):
+        transport(finnhub_request())
+    transport(request())  # FMP has its own entitlement, global budget still applies.
+    clock[0] = 61
+    transport(finnhub_request())
+    assert len(opener.calls) == 62
