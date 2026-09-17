@@ -92,7 +92,7 @@ def test_uncertain_acquire_never_replayed(tmp_path):
     with pytest.raises(ValueError):host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=fail)
     destination=args['spool_root']/args['manifest_sha256']
     assert (destination/'acquire.STARTED.json').exists() and not (destination/'acquire.RECEIPT.json').exists()
-    with pytest.raises(FileExistsError):host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=reader(Connection()))
+    with pytest.raises(host.HostPhaseFailure,match='PHASE_ALREADY_EXISTS'):host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=reader(Connection()))
 
 
 def test_wrong_previous_receipt_blocks_acquire(tmp_path):
@@ -124,3 +124,93 @@ def test_acquisition_byte_budget_leaves_uncertain_marker(tmp_path):
     assert (destination/'acquire.STARTED.json').exists()
     assert not (destination/'acquire.RECEIPT.json').exists()
     assert not (destination/'capture/MANIFEST.json').exists()
+
+
+@pytest.mark.parametrize('failure,code',[(ValueError('SECRETABC123'),'UNCLASSIFIED_FAILURE'),(KeyboardInterrupt(),'INTERRUPTED'),(SystemExit('SECRETABC123'),'PROCESS_EXIT_INTERRUPTED')])
+def test_failed_receipt_sanitized_durable_chain_and_cli_exit(tmp_path,monkeypatch,capsys,failure,code):
+    args=package(tmp_path);clock=Clock()
+    previous=host.run_host_phase(phase='preflight',**args,clock=clock)['receipt_sha256']
+    real=host.run_host_phase
+    def fail(*_):raise failure
+    def run(**kwargs):return real(**kwargs,clock=clock,transport=provider,database_reader=fail)
+    monkeypatch.setattr(host,'run_host_phase',run)
+    argv=['executor','acquire']
+    for key,value in args.items():argv.extend(['--'+key.replace('_path','').replace('_','-'),str(value)])
+    argv.extend(['--previous-receipt-sha256',previous]);monkeypatch.setattr(sys,'argv',argv)
+    assert host.main()==3
+    public=capsys.readouterr().out
+    assert 'SECRETABC123' not in public
+    result=json.loads(public);assert result['code']==code and result['failed_receipt_written']
+    destination=args['spool_root']/args['manifest_sha256']
+    path=destination/'acquire.FAILED.json';raw=path.read_bytes();failed=json.loads(raw)
+    assert b'SECRETABC123' not in raw and failed['code']==code
+    assert hashlib.sha256(raw).hexdigest()==result['failed_receipt_sha256']
+    assert failed['started_marker_sha256']==hashlib.sha256((destination/'acquire.STARTED.json').read_bytes()).hexdigest()
+    assert failed['previous_receipt_sha256']==previous and failed['manifest_sha256']==args['manifest_sha256']
+    assert stat.S_IMODE(path.stat().st_mode)==0o600
+    assert not (destination/'acquire.RECEIPT.json').exists()
+    assert host.main()==3
+    assert path.read_bytes()==raw
+
+
+def test_cli_refusal_exit_two_writes_no_unauthorized_path(tmp_path,monkeypatch,capsys):
+    args=package(tmp_path);args['go_sha256']='0'*64
+    real=host.run_host_phase
+    monkeypatch.setattr(host,'run_host_phase',lambda **kwargs:real(**kwargs,clock=Clock()))
+    argv=['executor','preflight']
+    for key,value in args.items():argv.extend(['--'+key.replace('_path','').replace('_','-'),str(value)])
+    monkeypatch.setattr(sys,'argv',argv)
+    assert host.main()==2
+    result=json.loads(capsys.readouterr().out)
+    assert result['status']=='REFUSED' and result['code']=='NONZERO_HASH_REQUIRED'
+    assert not result['failed_receipt_written'] and not list(args['spool_root'].iterdir())
+
+
+@pytest.mark.parametrize('field',['clock','cutoff','window'])
+def test_utc_required_before_preflight_spool(tmp_path,field):
+    from datetime import timezone
+    offset=NOW.astimezone(timezone(timedelta(hours=-3))).isoformat()
+    def mutate(plan,_):
+        if field=='cutoff':plan['cutoff_at']=offset
+        if field=='window':plan['phase_windows']['preflight']['not_before']=offset
+    args=package(tmp_path,mutate)
+    clock=(lambda:NOW.astimezone(timezone(timedelta(hours=-3)))) if field=='clock' else Clock()
+    with pytest.raises(host.HostPhaseFailure,match='UTC_REQUIRED') as captured:
+        host.run_host_phase(phase='preflight',**args,clock=clock)
+    assert captured.value.exit_code==2 and not list(args['spool_root'].iterdir())
+
+
+def test_buffer_ceiling_refuses_before_accumulation(monkeypatch):
+    monkeypatch.setattr(host,'MAX_BUFFERED_INPUT_BYTES',4)
+    files={};host._buffer(files,'one',b'1234')
+    with pytest.raises(ValueError,match='BUFFERED_INPUT_BUDGET_EXHAUSTED'):host._buffer(files,'two',b'5')
+    assert files=={'one':b'1234'}
+
+
+def test_failed_receipt_io_failure_never_claims_written(tmp_path,monkeypatch):
+    args=package(tmp_path);clock=Clock()
+    previous=host.run_host_phase(phase='preflight',**args,clock=clock)['receipt_sha256']
+    original=host._write
+    def write(path,raw):
+        if path.name.endswith('.FAILED.json'):raise OSError('SECRETABC123')
+        return original(path,raw)
+    monkeypatch.setattr(host,'_write',write)
+    def fail(*_):raise KeyboardInterrupt()
+    with pytest.raises(host.HostPhaseFailure) as captured:
+        host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=fail)
+    result=captured.value.result
+    assert captured.value.exit_code==3 and not result['failed_receipt_written']
+    assert 'failed_receipt_sha256' not in result and 'SECRETABC123' not in json.dumps(result)
+
+
+def test_successful_phase_retry_never_appends_failed_or_changes_bytes(tmp_path):
+    args=package(tmp_path);clock=Clock()
+    previous=host.run_host_phase(phase='preflight',**args,clock=clock)['receipt_sha256']
+    host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=reader(Connection()))
+    destination=args['spool_root']/args['manifest_sha256']
+    before={str(p.relative_to(destination)):p.read_bytes() for p in destination.rglob('*') if p.is_file()}
+    with pytest.raises(host.HostPhaseFailure,match='PHASE_ALREADY_EXISTS') as captured:
+        host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=reader(Connection()))
+    assert not captured.value.result['failed_receipt_written']
+    after={str(p.relative_to(destination)):p.read_bytes() for p in destination.rglob('*') if p.is_file()}
+    assert before==after and not (destination/'acquire.FAILED.json').exists()

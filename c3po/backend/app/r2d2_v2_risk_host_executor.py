@@ -25,6 +25,41 @@ SCHEMA = "R2D2_V2_RISK_HOST_PLAN_V1"
 PHASES = ("preflight", "acquire", "execute")
 
 
+# Fixed vocabulary: exception messages outside this set are never published.
+FAILURE_CODES = frozenset("""ACQUIRED_MODE_INVALID ACQUIRED_REFERENCE_INVALID ACQUISITION_BUDGET_INVALID ADMISSION_BINDING_MISMATCH ADMISSION_INVALID ADMISSION_INVENTORY_MISMATCH ADMISSION_INVENTORY_MISSING ASSESSMENT_CLOCK_BINDING_INVALID ASSESSMENT_CLOCK_ORDER_INVALID ASSESSMENT_INCOMPLETE BATCH_INVENTORY_MISMATCH BUFFERED_INPUT_BUDGET_EXHAUSTED CLOCK_INVALID CONFLICTING_REFERENCE CUTOFF_IN_FUTURE DATABASE_CLOCK_ORDER_INVALID DATABASE_ISOLATION_NOT_CONFIRMED DATABASE_METADATA_INVALID DATABASE_READ_ONLY_COMPARISON_FAILED DATABASE_READ_ONLY_NOT_CONFIRMED DATABASE_RESTRICTED_ROLE_REQUIRED DATABASE_ROW_BINDING_INVALID DATABASE_ROW_BUDGET_EXHAUSTED DATABASE_ROW_BUDGET_INVALID DATABASE_ROW_INVALID DATABASE_SELECT_ONLY_AUTHORITY_REQUIRED DATABASE_SYMBOL_INVALID DATABASE_TRANSACTION_REQUIRED DECISION_IN_FUTURE DEPENDENCIES_PARTIAL DUPLICATE_JSON_KEY EXECUTION_CLOCK_INVALID EXECUTION_ROOT_BINDING_MISMATCH GO_BINDING_MISMATCH HOST_MANIFEST_BINDING_INVALID HTTP_RECEIPT_BINDING_INVALID HTTP_RECEIPT_NOT_COMPLETE HTTP_REFERENCE_INVALID INPUT_CHANGED_DURING_READ INPUT_DIRECTORY_PERMISSIONS INPUT_FILE_INVALID INPUT_HASH_INVALID INVENTORY_BUDGET_INVALID INVENTORY_DUPLICATE INVENTORY_INVALID LIST_BINDING_MISMATCH MANIFEST_BINDING_INVALID NONZERO_HASH_REQUIRED NON_FINITE_JSON OUTPUT_DIRECTORY_PERMISSIONS OWNER_ORDER_SCOPE_MISMATCH PATH_INVALID PHASE_INVALID PHASE_OUTSIDE_WINDOW PHASE_PENDING PHASE_WINDOW_EXPIRED PREVIOUS_PHASE_BINDING_INVALID PROVIDER_NOT_ALLOWED REFERENCE_INVALID REFERENCE_PATH_INVALID REPLAY_PREDECESSOR_BINDING_MISMATCH RISK_DEDICATED_DATABASE_CONNECTION_REQUIRED RUNNER_BODY_OR_TIME_BUDGET_EXHAUSTED RUNNER_CAPTURE_BUDGET_EXHAUSTED RUNNER_CAPTURE_WINDOW_EXHAUSTED RUNNER_CLOCK_INVALID RUNNER_CUTOFF_IN_FUTURE RUNNER_DATABASE_CLOCK_INVALID RUNNER_DATABASE_COUNTS_INVALID RUNNER_DATABASE_RECEIPT_INVALID RUNNER_IDENTITY_INVALID RUNNER_JSON_TYPE_INVALID RUNNER_PROVIDER_NOT_ALLOWED RUNNER_REQUEST_BUDGET_EXHAUSTED RUNNER_SCOPE_OR_BUDGET_INVALID RUNNER_SPOOL_INTEGRITY RUNNER_SPOOL_PERMISSIONS RUNNER_SYMBOL_LIST_INVALID RUNNER_UTC_REQUIRED RUNTIME_SOURCE_ROOT_MISMATCH SNAPSHOT_CLOCK_OR_SOURCE_INVALID SNAPSHOT_REFERENCE_INVALID SOURCE_CHANGED SOURCE_NOT_REGULAR SOURCE_PATH_INVALID SOURCE_PIN_CLOSURE_INCOMPLETE SOURCE_PIN_MISMATCH SPOOL_PARENT_PERMISSIONS SPOOL_PERMISSIONS SYMBOL_BUDGET_INVALID SYMBOL_LIST_INVALID UTC_REQUIRED""".split())
+MAX_BUFFERED_INPUT_BYTES = 512 * 1024 * 1024
+
+
+class HostPhaseFailure(ValueError):
+    def __init__(self, result: dict[str,Any]):
+        super().__init__(result["code"])
+        self.result=result
+        self.exit_code=3 if result["status"]=="UNCERTAIN" else 2
+
+
+def _failure_code(error: BaseException) -> str:
+    if isinstance(error, KeyboardInterrupt):return "INTERRUPTED"
+    if isinstance(error, SystemExit):return "PROCESS_EXIT_INTERRUPTED"
+    if isinstance(error, FileExistsError):return "PHASE_ALREADY_EXISTS"
+    if isinstance(error, OSError):return "FILESYSTEM_FAILURE"
+    candidate=error.args[0] if error.args else None
+    if isinstance(candidate,str) and candidate in FAILURE_CODES and re.fullmatch(r"[A-Z0-9_]{1,64}",candidate):return candidate
+    return "UNCLASSIFIED_FAILURE"
+
+
+def _utc(value: datetime) -> datetime:
+    offset=value.utcoffset()
+    if value.tzinfo is None or offset is None or offset.total_seconds()!=0:
+        raise ValueError("UTC_REQUIRED")
+    return value
+
+
+def _buffer(files: dict[str,bytes], name: str, raw: bytes) -> None:
+    total=sum(len(body) for key,body in files.items() if key!=name)+len(raw)
+    if total>MAX_BUFFERED_INPUT_BYTES:raise ValueError("BUFFERED_INPUT_BUDGET_EXHAUSTED")
+    files[name]=raw
+
+
 def _sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
@@ -85,6 +120,10 @@ def _source_pins(root: Path, pins: dict[str,Any]) -> None:
 
 def _validate(plan: dict[str,Any], *, digest: str, go: dict[str,Any], inputs: _Inputs,
               phase: str, now: datetime, source_root: Path) -> tuple[dict[str,Any],list[dict[str,str]]]:
+    _utc(now)
+    _utc(_clock(plan["cutoff_at"]))
+    for window in plan["phase_windows"].values():
+        _utc(_clock(window["not_before"]));_utc(_clock(window["not_after"]))
     day=plan["session_date"];date.fromisoformat(day)
     namespace=plan["namespace"]
     if plan.get("schema")!=SCHEMA or namespace not in {"R2D2-V2-DIAG-R4-"+day,"R2D2-V2-SHADOW-"+day}:
@@ -147,7 +186,7 @@ def _validate(plan: dict[str,Any], *, digest: str, go: dict[str,Any], inputs: _I
 def _clone(value: Any, source: _Inputs, files: dict[str,bytes]) -> Any:
     if isinstance(value,dict):
         if set(value)=={"path","sha256"}:
-            raw=source.read(value);name="blob-"+_sha(raw)+".json";files[name]=raw
+            raw=source.read(value);name="blob-"+_sha(raw)+".json";_buffer(files,name,raw)
             return {"path":name,"sha256":_sha(raw)}
         return {key:_clone(item,source,files) for key,item in value.items()}
     if isinstance(value,list):return [_clone(item,source,files) for item in value]
@@ -173,9 +212,9 @@ def _prepare_acquired(replay: dict[str,Any], source: _Inputs, batch: dict[str,An
             if entry.get("fx"):entry["fx"]=_clone(entry["fx"],source,files)
             acquired=fetched[entry["symbol"]]
             body=runner_inputs.read(acquired["direct_snapshot"])
-            name="insider-"+_sha(body)+".json";files[name]=body
+            name="insider-"+_sha(body)+".json";_buffer(files,name,body)
             entry["sources"]["insider"]={"body":{"path":name,"sha256":_sha(body)},"received_at":acquired["received_at"],"source_id":"DIRECT_INSIDER_RC4BIS_HOST"}
-        files["acquired.json"]=_bytes(doc)
+        _buffer(files,"acquired.json",_bytes(doc))
         _publish_new(output,files)
         return {"path":"acquired.json","sha256":_sha(files["acquired.json"])}
     finally:os.close(runner_inputs.fd)
@@ -217,13 +256,15 @@ def _assess_manifest(acquired: Path, acquired_sha: str, output: Path,
     finally:os.close(source.fd)
 
 
-def run_host_phase(*, phase: str, manifest_path: Path, manifest_sha256: str, go_path: Path,
+def _run_host_phase(*, phase: str, manifest_path: Path, manifest_sha256: str, go_path: Path,
                    go_sha256: str, source_root: Path, spool_root: Path,
                    previous_receipt_sha256: str | None = None,
                    clock: Callable[[],datetime] = lambda:datetime.now(timezone.utc),
-                   transport: Any = None, database_reader: Any = None) -> dict[str,Any]:
+                   transport: Any = None, database_reader: Any = None,
+                   _failure_state: dict[str,Any]) -> dict[str,Any]:
     now=clock()
-    if now.tzinfo is None:raise ValueError("CLOCK_INVALID")
+    _utc(now)
+    _failure_state["safe_clock"]=now.isoformat()
     digest=_digest(manifest_sha256);go_digest=_digest(go_sha256)
     inputs=_Inputs(manifest_path.parent)
     try:
@@ -242,16 +283,21 @@ def run_host_phase(*, phase: str, manifest_path: Path, manifest_sha256: str, go_
             if (previous.get("phase")!=prior or previous.get("status")!="COMPLETE" or previous.get("manifest_sha256")!=digest
                     or previous.get("go_sha256")!=go_digest or _clock(previous["completed_at"])>now):
                 raise ValueError("PREVIOUS_PHASE_BINDING_INVALID")
-        _write(destination/(phase+".STARTED.json"),_bytes({"phase":phase,"manifest_sha256":digest,"go_sha256":go_digest,"started_at":now.isoformat()}))
+        _failure_state.update(destination=destination,phase=phase,manifest_sha256=digest,go_sha256=go_digest,
+            previous_receipt_sha256=previous_receipt_sha256,marker_write_attempted=True)
+        started_ref=_write(destination/(phase+".STARTED.json"),_bytes({"phase":phase,"manifest_sha256":digest,"go_sha256":go_digest,"started_at":now.isoformat()}))
+        _failure_state["started"]=True
+        _failure_state["started_marker_sha256"]=started_ref["sha256"]
         outputs:dict[str,Any]={}
         last_clock=now
         def guarded_clock()->datetime:
             nonlocal last_clock
-            value=clock()
+            value=_utc(clock())
             if (not last_clock<=value or (value-now).total_seconds()>plan["limits"]["max_elapsed_seconds"]
                     or not _clock(plan["phase_windows"][phase]["not_before"])<=value<=_clock(plan["phase_windows"][phase]["not_after"])):
                 raise ValueError("PHASE_WINDOW_EXPIRED")
             last_clock=value
+            _failure_state["safe_clock"]=value.isoformat()
             return value
         if phase=="acquire":
             from app.r2d2_v2_risk_runner import capture_direct_insider_batch, runtime_dependencies
@@ -295,6 +341,42 @@ def run_host_phase(*, phase: str, manifest_path: Path, manifest_sha256: str, go_
     finally:os.close(inputs.fd)
 
 
+def run_host_phase(*, phase: str, manifest_path: Path, manifest_sha256: str, go_path: Path,
+                   go_sha256: str, source_root: Path, spool_root: Path,
+                   previous_receipt_sha256: str | None = None,
+                   clock: Callable[[],datetime] = lambda:datetime.now(timezone.utc),
+                   transport: Any = None, database_reader: Any = None) -> dict[str,Any]:
+    state:dict[str,Any]={}
+    try:
+        return _run_host_phase(phase=phase,manifest_path=manifest_path,manifest_sha256=manifest_sha256,
+            go_path=go_path,go_sha256=go_sha256,source_root=source_root,spool_root=spool_root,
+            previous_receipt_sha256=previous_receipt_sha256,clock=clock,transport=transport,
+            database_reader=database_reader,_failure_state=state)
+    except (Exception,KeyboardInterrupt,SystemExit) as error:
+        uncertain=bool(state.get("marker_write_attempted"))
+        result:dict[str,Any]={"phase":phase if phase in PHASES else "INVALID_PHASE",
+            "status":"UNCERTAIN" if uncertain else "REFUSED", "code":_failure_code(error),
+            "failed_receipt_written":False,"marker_write_attempted":uncertain,
+            "started_marker_confirmed":bool(state.get("started"))}
+        # Destination is set only after plan/GO/pins/window and predecessor validation.
+        # Never invent a destination or write evidence on authority-validation failure.
+        if "destination" in state and not (isinstance(error,FileExistsError) and not state.get("started")):
+            failed={"schema":"R2D2_V2_RISK_HOST_FAILED_V1",**result,
+                "manifest_sha256":state["manifest_sha256"],"go_sha256":state["go_sha256"],
+                "previous_receipt_sha256":state.get("previous_receipt_sha256"),
+                "started_marker_sha256":state.get("started_marker_sha256"),
+                "last_validated_clock_at":state.get("safe_clock"),
+                "clock_semantics":"LAST_VALIDATED_OBSERVATION_NOT_FAILURE_TIME"}
+            failed.pop("failed_receipt_written",None)
+            try:
+                ref=_write(state["destination"]/(phase+".FAILED.json"),_bytes(failed))
+                result["failed_receipt_written"]=True
+                result["failed_receipt_sha256"]=ref["sha256"]
+            except (Exception,KeyboardInterrupt,SystemExit):
+                result["failed_receipt_write_code"]="FAILED_RECEIPT_NOT_WRITTEN"
+        raise HostPhaseFailure(result) from None
+
+
 def main() -> int:
     parser=argparse.ArgumentParser(description="Pinned risk artifact phases; no trading activation")
     parser.add_argument("phase",choices=PHASES)
@@ -305,9 +387,12 @@ def main() -> int:
         result=run_host_phase(phase=args.phase,manifest_path=Path(args.manifest),manifest_sha256=args.manifest_sha256,
             go_path=Path(args.go),go_sha256=args.go_sha256,source_root=Path(args.source_root),spool_root=Path(args.spool_root),
             previous_receipt_sha256=args.previous_receipt_sha256)
-    except Exception:
-        print(json.dumps({"status":"REFUSED_OR_UNCERTAIN","phase":args.phase,"detail":"Inspect private phase marker; do not replay"}))
-        return 1
+    except HostPhaseFailure as failure:
+        print(json.dumps(failure.result,sort_keys=True))
+        return failure.exit_code
+    except (Exception,KeyboardInterrupt,SystemExit) as error:
+        print(json.dumps({"status":"REFUSED","phase":args.phase,"code":_failure_code(error),"failed_receipt_written":False}))
+        return 2
     print(json.dumps(result,sort_keys=True))
     return 0
 

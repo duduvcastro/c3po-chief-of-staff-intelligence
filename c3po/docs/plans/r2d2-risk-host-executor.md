@@ -10,11 +10,11 @@ Only these existing container environment keys supply credentials:
 
 | Purpose | Settings key | Existing alias |
 | --- | --- | --- |
-| Read-only database connection | `C3PO_DATABASE_URL` | None |
+| Dedicated restricted database connection | `C3PO_R2D2_RISK_DATABASE_URL` | None; never falls back to `C3PO_DATABASE_URL` |
 | Finnhub direct insider transport | `C3PO_FINNHUB_API_TOKEN` | `FINNHUB_API_TOKEN` |
 | EODHD fallback transport | `C3PO_EODHD_API_TOKEN` | `EODHD_API_TOKEN` |
 
-No credential value is an argument or receipt field. This runner does not fetch new FMP fundamentals: the pinned predecessor supplies fundamentals, grades, institutional, official and optional FX receipts. The transport uses fixed provider hosts/routes with TLS, response-size and elapsed-time limits. The database adapter obtains `Database.connection`, verifies a READ ONLY / REPEATABLE READ transaction, records the actual database role in the private receipt, refuses a superuser role before reading events, and does not initialize or synchronize the database.
+No credential value is an argument or receipt field. This runner does not fetch new FMP fundamentals: the pinned predecessor supplies fundamentals, grades, institutional, official and optional FX receipts. The transport uses fixed provider hosts/routes with TLS, response-size and elapsed-time limits. The database adapter opens psycopg with the dedicated restricted DSN, verifies a READ ONLY / REPEATABLE READ transaction and effective privileges before reading `public.ir_events`. Its private receipt records the actual role and authority evidence. It refuses superuser/role administration/database creation/replication/RLS bypass, memberships, database CREATE/TEMP, ownership or schema CREATE, missing SELECT, table/column write privileges and RLS that could hide events. It never initializes or synchronizes the database, creates a role or changes privileges. Existing API-owner credentials are not a fallback. Provisioning and verifying this separate credential is a future operational prerequisite, outside this code change and outside D18 prepare.
 
 `SOURCE_PINS.json` uses schema `RISK_HOST_SOURCE_PINS_V1` and a `files` map of relative path to SHA-256 covering **every** `app/**/*.py` file in the actual runtime source root. Missing, extra, modified and symlinked sources are refused. Generate these pins from the selected checkout/image; do not reuse pins from a different head.
 
@@ -28,7 +28,7 @@ The plan schema is `R2D2_V2_RISK_HOST_PLAN_V1`. It binds:
 - Hash/path references to `source_pins`, `owner_order`, `list`, `admission`, and `replay_manifest`; paths are relative to the private plan directory.
 - `limits`: `max_symbols`, `max_total_requests`, `max_body_bytes`, `max_total_bytes`, `max_elapsed_seconds`. Runtime ceilings are 550 symbols, 10000 HTTP attempts, 16 MiB per response, 1 GiB total and 86400 seconds per phase; the capture additionally caps elapsed time at 3600 seconds. These are ceilings, not recommended operating budgets.
 
-The ordered list contains `{symbol, market}` entries. Its namespace/date, exact symbol set in admission and ordered entries in the replay predecessor must agree. Existing sources must validate before provider access. The cutoff is fixed for the entire batch; acquisition/receipt clocks remain factual and are never backdated to it.
+The ordered list contains `{symbol, market}` entries. Its namespace/date, exact symbol set in admission and ordered entries in the replay predecessor must agree. Existing sources must validate before provider access. The cutoff must have UTC offset zero, verified before preflight creates a phase directory and before the runner reads the database. It is fixed for the entire batch; acquisition/receipt clocks remain factual and are never backdated to it.
 
 The owner order uses `R2D2_V2_RISK_HOST_ORDER_V1`, scope containing namespace/date/cutoff and the three phases, with actions exactly `READ_PROVIDERS`, `READ_DATABASE`, `WRITE_PRIVATE_RISK_ARTIFACTS`. The detached GO uses `R2D2_V2_RISK_HOST_GO_V1`, verdict `GO`, scope `RISK_ARTIFACT_ONLY`; its binding includes the plan/order/source-pins/list/admission hashes, scope and phase windows. Both files are rechecked by bytes. Synthetic orders/GO in tests are not operational authority. Completed certification is not required to produce its risk input; this authority cannot activate a session.
 
@@ -51,7 +51,11 @@ Invoke the same command with `acquire`, then `execute`, adding `--previous-recei
 
 ## Receipts and failure handling
 
-Every phase creates `<phase>.STARTED.json` exclusively, then `<phase>.RECEIPT.json` only on success. Receipt chain binds plan/GO and preceding receipt hash. If a marker exists without completion, **do not replay**: reconcile private evidence and obtain disposition. No automatic retry is implemented.
+Every phase creates `<phase>.STARTED.json` exclusively, then `<phase>.RECEIPT.json` only on success. Receipt chain binds plan/GO and preceding receipt hash. A caught failure after the marker attempt creates an exclusive, durable `<phase>.FAILED.json` when storage permits, carrying a fixed allowlisted code, plan/GO/predecessor binding and the last validated clock (explicitly not the failure time). Unknown exception text, paths and credentials are never reflected. The CLI prints a filtered code matching `[A-Z0-9_]{1,64}` and the failure receipt hash when written.
+
+Exit status is **0** for completed, **2** for refusal before a marker attempt, and **3** for uncertain work after it. Interruptions inside a phase are sanitized and follow the same rules. A repeated phase cannot overwrite any old marker, successful receipt or failure receipt. If storage prevents the failure receipt, stdout explicitly reports that it was not written; it does not claim durability. SIGKILL, power loss and storage loss cannot be handled by Python and may leave only STARTED.
+
+If a marker exists without completion, **do not replay**. Reconcile STARTED, FAILED (if present), predecessor hashes and private partial artifacts by read-only inspection, then obtain a disposition. Never convert FAILED into COMPLETE or remove a marker to retry. No automatic retry or operational reconciliation execution is implemented.
 
 Expected private outputs beneath `<spool_root>/<plan_sha256>`:
 
@@ -61,10 +65,12 @@ Expected private outputs beneath `<spool_root>/<plan_sha256>`:
 | acquire | `capture/` per-symbol provider, database and comparison files; `capture/MANIFEST.json`; `acquired/acquired.json`; phase markers/receipt |
 | execute | `assessment/` copied inputs, actual assessment results/clocks and `manifest.json`; `risk-output/risk.json`, assessments, execution receipt and final manifest; phase markers/receipt |
 
-Final capture/output manifests follow durable files and hash verification. Names, source bodies and per-symbol comparisons stay private. CLI stdout carries only phase/status, counts and hashes; publish those aggregate receipts to the coordination channel. An empty/unknown provider result is not coverage, database counts are not evidence of provider completeness, and a failed global budget cannot be bypassed by fallback.
+Cloned input bodies have an aggregate 512 MiB ceiling per clone set; exceeding it refuses with `BUFFERED_INPUT_BUDGET_EXHAUSTED`. This is bounded buffered I/O, not streaming: capture/acquired/assessment may retain separate copies, and space for those copies is an operational prerequisite. Per-file limits still apply.
+
+Final capture/output manifests follow durable files and hash verification. Names, source bodies and per-symbol comparisons stay private. CLI stdout carries only phase/status, fixed refusal code, counts and hashes; publish those aggregate receipts to the coordination channel. An empty/unknown provider result is not coverage, database counts are not evidence of provider completeness, and a failed global budget cannot be bypassed by fallback.
 
 ## Evidence and limits
 
-The offline CLI E2E executes all three real phases, real filesystem/spool, real runner, fake HTTP and fake read-only database connection. It checks a non-null synthetic result, receipt chaining, factual clocks, private permissions and absence of names/secrets in stdout. Refusals cover GO/hash/source pins/admission/window/budgets, uncertain replay, and B3 without credentials. Runner tests separately cover paging, pacing, global limits and database transaction mode.
+The offline CLI E2E executes all three real phases, real filesystem/spool, real runner, fake HTTP and fake read-only database connection. It checks a non-null synthetic result, receipt chaining, factual clocks, private permissions and absence of names/secrets in stdout. Refusals cover GO/hash/source pins/admission/window/budgets, uncertain replay, durable filtered failure receipts, distinct refusal/uncertainty exits, interruption, aggregate clone budget, non-UTC cutoff, and B3 without credentials. Runner tests separately cover paging, pacing, global limits and database transaction mode.
 
-Not covered by those tests: live provider completeness, production credential entitlement, the installed container/source pins, mounted path ownership, current real admission/list, a new authorized host acquisition, completed certification, or an operating session. The separate contemporary 20-symbol evidence remains a read-only differential sample; its 13 READY / 7 NULL outcome must not be presented as complete coverage. No merge, deploy, policy, epoch or worker mutation belongs to this executor.
+Not covered by those tests: live provider completeness, production credential entitlement and availability/ACL of the dedicated restricted DSN, the installed container/source pins, mounted path ownership, current real admission/list, a new authorized host acquisition, completed certification, or an operating session. The separate contemporary 20-symbol evidence remains a read-only differential sample; its 13 READY / 7 NULL outcome must not be presented as complete coverage. No merge, deploy, policy, epoch or worker mutation belongs to this executor.

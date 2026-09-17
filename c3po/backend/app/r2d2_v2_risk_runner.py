@@ -12,7 +12,7 @@ import re
 import stat
 import uuid
 import time
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -39,6 +39,13 @@ def _aware(value: Any) -> datetime:
     return value
 
 
+def _utc(value: Any) -> datetime:
+    result = _aware(value)
+    if result.utcoffset() != timedelta(0):
+        raise ValueError('RUNNER_UTC_REQUIRED')
+    return result
+
+
 def _json(value: Any) -> bytes:
     def temporal(item: Any) -> str:
         if isinstance(item, (datetime, date)):
@@ -61,8 +68,24 @@ def _valid_database_role(value: Any) -> bool:
 class ReadOnlyInsiderDatabaseReader:
     """Production-capable SQL reader; source counts do not establish coverage."""
 
+    ROLE_SQL = """SELECT current_user, session_user,
+        NOT (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls),
+        NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members WHERE member=r.oid),
+        NOT has_database_privilege(current_user,current_database(),'CREATE'),
+        NOT has_database_privilege(current_user,current_database(),'TEMP')
+        FROM pg_catalog.pg_roles r WHERE rolname=current_user"""
+    ACL_SQL = """SELECT c.relname,
+        has_table_privilege(current_user,c.oid,'SELECT'),
+        NOT has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES'),
+        NOT has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE,REFERENCES'),
+        NOT pg_has_role(current_user,c.relowner,'MEMBER'),
+        NOT has_schema_privilege(current_user,n.oid,'CREATE'),
+        NOT c.relrowsecurity
+        FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='public' AND c.relkind='r' AND c.relname='ir_events'"""
+
     SQL = """SELECT source_code, external_id, symbol, market, event_type, published_at, raw_metadata
-             FROM ir_events
+             FROM public.ir_events
              WHERE market = 'US' AND source_code = 'sec'
                AND event_type = 'Insider Transaction' AND symbol = %s
                AND published_at >= %s AND published_at <= %s
@@ -95,12 +118,15 @@ class ReadOnlyInsiderDatabaseReader:
                 if isolation is None or isolation[0] != 'repeatable read':
                     raise ValueError('DATABASE_ISOLATION_NOT_CONFIRMED')
                 connection.execute("SET LOCAL statement_timeout = '15s'")
-                role_row = connection.execute(
-                    'SELECT current_user, rolsuper FROM pg_catalog.pg_roles WHERE rolname = current_user'
-                ).fetchone()
-                if (not isinstance(role_row, (tuple, list)) or len(role_row) != 2
-                        or not _valid_database_role(role_row[0]) or role_row[1] is not False):
-                    raise ValueError('DATABASE_NON_SUPERUSER_ROLE_REQUIRED')
+                role_row = connection.execute(self.ROLE_SQL).fetchone()
+                if (not isinstance(role_row, (tuple, list)) or len(role_row) != 6
+                        or not _valid_database_role(role_row[0]) or role_row[1] != role_row[0]
+                        or not all(value is True for value in role_row[2:])):
+                    raise ValueError('DATABASE_RESTRICTED_ROLE_REQUIRED')
+                acl_rows = connection.execute(self.ACL_SQL).fetchall()
+                if (len(acl_rows) != 1 or len(acl_rows[0]) != 7 or acl_rows[0][0] != 'ir_events'
+                        or not all(value is True for value in acl_rows[0][1:])):
+                    raise ValueError('DATABASE_SELECT_ONLY_AUTHORITY_REQUIRED')
                 database_role = role_row[0]
                 transaction_at = connection.execute('SELECT transaction_timestamp()').fetchone()[0]
                 _aware(transaction_at)
@@ -137,7 +163,10 @@ class ReadOnlyInsiderDatabaseReader:
                           'query_cutoff_at': cutoff.isoformat(), 'window_start': (cutoff-timedelta(days=180)).isoformat(),
                           'read_started_at': started.isoformat(), 'received_at': completed.isoformat(),
                           'transaction_at': transaction_at.isoformat(), 'transaction_read_only': True,
-                          'database_role': database_role, 'is_superuser': False,
+                          'database_role': database_role, 'session_role': database_role, 'is_superuser': False,
+                          'restricted_role_verified': True, 'select_only_verified': True,
+                          'role_authority_checks': list(role_row[2:]), 'table_authority_checks': list(acl_rows[0][1:]),
+                          'role_query_sha256': _sha(self.ROLE_SQL.encode()), 'acl_query_sha256': _sha(self.ACL_SQL.encode()),
                           'isolation_level': 'REPEATABLE READ', 'query_sha256': _sha(self.SQL.encode()),
                           'row_count': len(rows), 'counts': counts, 'events_sha256': _sha(_json(events)),
                           'events': events, 'coverage_verified': False}
@@ -164,12 +193,17 @@ def runtime_dependencies(*, settings: Settings | None = None,
     """
     configured = settings if settings is not None else get_settings()
     if connection_factory is None:
-        if not configured.database_url:
-            raise ValueError('DATABASE_CONNECTION_REQUIRED')
-        database = Database(configured)
-        connection_factory = database.connection
+        if not configured.r2d2_risk_database_url:
+            raise ValueError('RISK_DEDICATED_DATABASE_CONNECTION_REQUIRED')
+        @contextmanager
+        def dedicated_connection():
+            import psycopg
+            with psycopg.connect(configured.r2d2_risk_database_url, connect_timeout=15,
+                                 options='-c default_transaction_read_only=on') as connection:
+                yield connection
+        connection_factory = dedicated_connection
     def credential(provider: str) -> str:
-        attributes = {'finnhub': 'finnhub_api_token', 'eodhd': 'eodhd_api_token', 'fmp': 'fmp_api_token'}
+        attributes = {'finnhub': 'finnhub_api_token', 'eodhd': 'eodhd_api_token'}
         if provider not in attributes:
             raise ValueError('PROVIDER_NOT_ALLOWED')
         return str(getattr(configured, attributes[provider]))
@@ -190,6 +224,8 @@ class PacedRiskTransport:
         self.times: list[float] = []
 
     def __call__(self, request: SourceRequest) -> HttpReply:
+        if request.provider not in ('finnhub', 'eodhd'):
+            raise ValueError('RUNNER_PROVIDER_NOT_ALLOWED')
         now = self.monotonic()
         self.times = [stamp for stamp in self.times if now-stamp < 61]
         if len(self.times) >= self.limit:
@@ -294,9 +330,9 @@ def capture_direct_insider_batch(
         identity = entry.get('identity')
         if identity is not None and not isinstance(identity, SourceReceipt):
             raise ValueError('RUNNER_IDENTITY_INVALID')
-    started = _aware(clock())
+    started = _utc(clock())
     deadline = started + timedelta(seconds=max_duration_seconds)
-    fixed_cutoff = _aware(query_cutoff_at) if query_cutoff_at is not None else started
+    fixed_cutoff = _utc(query_cutoff_at) if query_cutoff_at is not None else started
     if fixed_cutoff > started:
         raise ValueError("RUNNER_CUTOFF_IN_FUTURE")
     total_bytes = 0
@@ -304,6 +340,9 @@ def capture_direct_insider_batch(
     budget_exhausted = False
     def guarded_transport(request: SourceRequest) -> HttpReply:
         nonlocal request_count, budget_exhausted, total_bytes
+        if request.provider not in ('finnhub', 'eodhd'):
+            budget_exhausted = True
+            raise ValueError('RUNNER_PROVIDER_NOT_ALLOWED')
         if budget_exhausted or request_count >= max_total_requests or _aware(clock()) > deadline:
             budget_exhausted = True
             raise ValueError('RUNNER_REQUEST_BUDGET_EXHAUSTED')
@@ -338,7 +377,10 @@ def capture_direct_insider_batch(
                     or comparison.get('query_cutoff_at') != cutoff.isoformat()
                     or comparison.get('transaction_read_only') is not True
                     or not _valid_database_role(comparison.get('database_role'))
-                    or comparison.get('is_superuser') is not False):
+                    or comparison.get('is_superuser') is not False
+                    or comparison.get('session_role') != comparison.get('database_role')
+                    or comparison.get('restricted_role_verified') is not True
+                    or comparison.get('select_only_verified') is not True):
                 raise ValueError('RUNNER_DATABASE_RECEIPT_INVALID')
             db_started = _aware(datetime.fromisoformat(comparison['read_started_at']))
             db_completed = _aware(datetime.fromisoformat(comparison['received_at']))
