@@ -145,7 +145,7 @@ def build_risk_bundle(*, symbol: str, market: str, fundamentals: SourceReceipt |
     insider snapshot: symbol, market, query_cutoff_at (factual DB query), events, sync {source='sync_sec',
     window_start, window_end, completed_at, complete, symbol}; clocks ISO UTC.
     official snapshot: symbol, market, outputs (null proves absence in snapshot).
-    Empty grades require recognized-symbol evidence from General.Code.
+    Empty FMP grades have unknown coverage; EODHD identity cannot prove FMP coverage.
     """
     symbol = canonical_symbol(symbol)
     if market not in {"US", "B3"}:
@@ -288,9 +288,9 @@ def build_risk_bundle(*, symbol: str, market: str, fundamentals: SourceReceipt |
                     and grades.started_at.date()-timedelta(days=90) <= clock.date() <= grades.started_at.date()]
     # RC4 did not define source_at for a verified empty grades population;
     # leave it unknown rather than manufacture a source timestamp from HTTP.
-    evidence["recent_grade_actions"] = ComponentEvidence(True, market == "US", "FMP_GRADES", ORIGIN_REVISION,
+    evidence["recent_grade_actions"] = ComponentEvidence(True, bool(grade_rows) and market == "US", "FMP_GRADES", ORIGIN_REVISION,
         grades.payload_sha256, max(grade_clocks) if grade_clocks else None, grades.received_at,
-        "RC4 HTTP200 recognized General.Code; 90d; dedup date/gradingCompany/action; empty source_at unknown")
+        "HTTP200 and nonempty FMP rows with matching identity; 90d; dedup date/gradingCompany/action; empty coverage/source_at unknown")
     inputs = CanonicalRiskInputs(values["beta"], values["debt_to_ebitda"], values["earnings_growth"], values["free_cashflow"],
                                   insider_value, institution_value, actions)
     result = adapt_canonical_risk(inputs, evidence, computed_at=computed_at, available_at=available_at, decision_at=decision_at)
@@ -308,6 +308,10 @@ def build_risk_bundle(*, symbol: str, market: str, fundamentals: SourceReceipt |
                         "receipt_attestations_independently_verified": False}
     if not overlay_causal:
         result["diagnostics"].append("OFFICIAL_OVERLAY_PROVENANCE_NOT_CAUSAL")
+    if not grade_rows:
+        result["diagnostics"].append("GRADES_EMPTY_COVERAGE_UNKNOWN")
+    elif not grade_clocks:
+        result["diagnostics"].append("GRADES_WINDOW_SOURCE_AT_UNKNOWN")
     if not sync_covered:
         result["diagnostics"].append("INSIDER_WINDOW_PARTIAL")
     if cutoff is None:

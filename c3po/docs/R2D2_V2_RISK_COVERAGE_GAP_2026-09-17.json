@@ -1,0 +1,110 @@
+{
+  "schema": "R2D2_RISK_COVERAGE_GAP_V1",
+  "observed_at": "2026-09-17T17:52:49.528674+00:00",
+  "scope": "Read-only source/schema audit; no production queries or ingestion performed by this audit",
+  "pins": {
+    "c3po/backend/app/investor_relations.py": {
+      "working_sha256": "59bf802f60d0c2fe638468352a4202f3cdd2eefafb5bf562848380fc25a0523d",
+      "origin_revision": "6083d7420746434426a11134b8edf0ba4b60b6b0",
+      "origin_sha256": "59bf802f60d0c2fe638468352a4202f3cdd2eefafb5bf562848380fc25a0523d"
+    },
+    "c3po/backend/app/market_data/finnhub.py": {
+      "working_sha256": "8f2a8980327790dc5948bbd0fa29a7eb5a16e3f4193de721dd9bf7dc452d3486",
+      "origin_revision": "6083d7420746434426a11134b8edf0ba4b60b6b0",
+      "origin_sha256": "8f2a8980327790dc5948bbd0fa29a7eb5a16e3f4193de721dd9bf7dc452d3486"
+    },
+    "c3po/backend/app/market_data/eodhd.py": {
+      "working_sha256": "94c2aab73e660b9d6b7d3775f5342766485776205b59c4d4742c10a72a72c8ed",
+      "origin_revision": "6083d7420746434426a11134b8edf0ba4b60b6b0",
+      "origin_sha256": "f66f35a561e2ae71d978c39a73c83fb67de6297d1333a5054acacdef633faa4f"
+    },
+    "c3po/backend/app/database.py": {
+      "working_sha256": "759ad61429526d45737cc77e48dcf13d226e395fe529051212d9b87dce2d05bf",
+      "origin_revision": "6083d7420746434426a11134b8edf0ba4b60b6b0",
+      "origin_sha256": "30f406c141e06dba326aeab74669a38ff67a907d76d0a7b8752271c9f5221173"
+    },
+    "c3po/backend/app/one_pager.py": {
+      "working_sha256": "76e8cc35fcd03be591280ff1bfbf76e0eb48495019fbe0484ead4231118a2ca4",
+      "origin_revision": "6083d7420746434426a11134b8edf0ba4b60b6b0",
+      "origin_sha256": "e49265da0cfc4cd10ab8e94d826ff8be38ee1d278137769a62d3c9a86f006e0d"
+    },
+    "c3po/db/001_initial.sql": {
+      "working_sha256": "c4d46984e1f5e1b7da50792b0f14a92afbf26d2d7a1721ac9452631d903ca781",
+      "origin_revision": "6083d7420746434426a11134b8edf0ba4b60b6b0",
+      "origin_sha256": "c4d46984e1f5e1b7da50792b0f14a92afbf26d2d7a1721ac9452631d903ca781"
+    },
+    "c3po/db/002_investor_relations.sql": {
+      "working_sha256": "8d372a1b4fb7e8a2a0e01ac48dcf4758ecd95917eb1c75d12b5c79048bfbd9e1",
+      "origin_revision": "6083d7420746434426a11134b8edf0ba4b60b6b0",
+      "origin_sha256": "8d372a1b4fb7e8a2a0e01ac48dcf4758ecd95917eb1c75d12b5c79048bfbd9e1"
+    }
+  },
+  "findings": [
+    {
+      "id": "INSIDER_90_VS_180",
+      "references": [
+        "app/investor_relations.py:45",
+        "app/investor_relations.py:552",
+        "app/investor_relations.py:614",
+        "app/one_pager.py:218"
+      ],
+      "fact": "Both ingestion providers request90days; canonical scoring reads180days. Existing ingestion does not emit per-symbol180day coverage."
+    },
+    {
+      "id": "SUCCESS_NOT_COVERAGE",
+      "references": [
+        "app/investor_relations.py:420",
+        "app/investor_relations.py:462",
+        "app/investor_relations.py:555",
+        "app/investor_relations.py:617",
+        "app/database.py:1893",
+        "app/database.py:1919"
+      ],
+      "fact": "sync_sec keeps aggregate counts and operation=submissions; insider failures become empty lists before aggregate success. Run success does not distinguish zero, failed, capped or omitted issuers."
+    },
+    {
+      "id": "EVENTS_NOT_NEGATIVE_EVIDENCE",
+      "references": [
+        "db/002_investor_relations.sql:32",
+        "app/database.py:3080"
+      ],
+      "fact": "ir_events stores positive event dates and metadata with unique(source_code,external_id), no ingestion run linkage or population/window completion. Old events plus historical runs cannot independently prove complete180day coverage or verifiedzero."
+    },
+    {
+      "id": "PROVIDER_COMPLETION_NOT_RECORDED",
+      "references": [
+        "app/market_data/finnhub.py:28",
+        "app/market_data/eodhd.py:129"
+      ],
+      "fact": "Finnhub uses from without bounded to/coverage receipt and returns empty on malformed data. EODHD default five pages can stop on failure/cap without completion proof."
+    },
+    {
+      "id": "EMPTY_GRADES_UNKNOWN",
+      "references": [
+        "app/market_data/fmp.py:191",
+        "app/r2d2_v2_risk_bundle.py"
+      ],
+      "fact": "Empty FMP grades is UNKNOWN; recognizing symbol in EODHD does not prove FMP coverage. Nonempty old rows without eligible dated rows retain unknown window source_at."
+    }
+  ],
+  "consequence": "Current tracked ingestion cannot itself substantiate the required ten READY assessments under RC4. An external genuine pre-existing per-symbol180day receipt must be independently verified if offered; this audit cannot assert facts about unexamined private artifacts. No synthetic receipt, relaxed gate or fabricated zero is permitted.",
+  "smallest_proposed_change_code_only": {
+    "mode": "Explicit audited180day sync_sec evidence mode; retain default90day behavior and Finnhub then EODHD fallback selection.",
+    "receipt": [
+      "requested_window",
+      "factual_query_cutoff",
+      "symbol",
+      "provider_selection",
+      "raw_response_hashes",
+      "HTTP_status",
+      "pagination_exhaustion_or_cap",
+      "accepted_and_rejected_counts",
+      "source_and_available_clocks",
+      "post_commit_ir_events_readback_hash",
+      "ingestion_run_id"
+    ],
+    "storage": "Existing ingestion metadata JSONB or private hashed sidecar with audited linkage; no schema migration required by this proposal.",
+    "complete_only_if": "Known symbol/window/population, successful complete traversal, no unresolved truncation or parsing loss, persisted events readback matches selected source; otherwise PARTIAL or UNKNOWN.",
+    "authorization": "No execution, provider calls or database writes included; requires reviewed implementation and owner-authorized ingestion."
+  }
+}

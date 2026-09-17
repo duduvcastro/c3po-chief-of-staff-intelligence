@@ -35,9 +35,9 @@ Debt/EBITDA and FCF need four complete, distinct dated quarterly rows with
 compatible currency; source date is the latest contributing quarter/balance.
 No new freshness TTL or assumed calendar length per quarter is introduced.
 Institutional requires a nonempty HTTP-200 response for the canonical quarter
-and an explicit row date. Empty is UNKNOWN. Grades HTTP-200 plus recognized
-fundamentals identity is evaluated over 90 days and deduplicated by date/firm/
-action. Its source date is the newest eligible grade. For empty grades the
+and an explicit row date. Empty is UNKNOWN. Grades HTTP-200 requires nonempty FMP rows with matching symbol identity;
+EODHD identity never proves FMP population coverage. The FMP population is
+evaluated over 90 days and deduplicated by date/firm/action. Its source date is the newest eligible grade. For empty grades coverage is UNKNOWN and the
 contract has no defined source_at: this implementation returns null, never
 substitutes an HTTP receipt timestamp. B3 and nonpositive beta remain null.
 

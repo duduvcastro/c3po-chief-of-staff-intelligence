@@ -234,3 +234,21 @@ def test_official_overlay_unknown_or_future_provenance_never_ready(clock_case):
     result=build_risk_bundle(**kwargs)
     assert result['status']=='COMPLETED_NULL'
     assert 'OFFICIAL_OVERLAY_PROVENANCE_NOT_CAUSAL' in result['diagnostics']
+
+
+def test_empty_fmp_grades_not_covered_by_eodhd_identity():
+    kwargs=arguments();source=kwargs['grades'];kwargs['grades']=receipt('fmp',source.request.path,source.request.parameters,[])
+    result=build_risk_bundle(**kwargs)
+    assert result['status']=='COMPLETED_NULL'
+    assert result['calculation']['evidence']['recent_grade_actions']['coverage_verified'] is False
+    assert 'GRADES_EMPTY_COVERAGE_UNKNOWN' in result['diagnostics']
+    assert 'COVERAGE_UNKNOWN_RECENT_GRADE_ACTIONS' in result['diagnostics']
+
+
+def test_only_old_fmp_grades_do_not_invent_current_window_source_clock():
+    kwargs=arguments();source=kwargs['grades'];row=source.payload()[0];row['date']='2025-01-01'
+    kwargs['grades']=receipt('fmp',source.request.path,source.request.parameters,[row])
+    result=build_risk_bundle(**kwargs)
+    assert result['status']=='COMPLETED_NULL'
+    assert result['calculation']['evidence']['recent_grade_actions']['source_at'] is None
+    assert 'GRADES_WINDOW_SOURCE_AT_UNKNOWN' in result['diagnostics']
