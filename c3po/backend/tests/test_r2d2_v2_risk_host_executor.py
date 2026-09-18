@@ -18,7 +18,7 @@ def package(tmp_path, mutate=None, b3=False, admission_doc=None):
         raw=encode(value);path=root/name;path.write_bytes(raw);path.chmod(0o600)
         return {'path':name,'sha256':hashlib.sha256(raw).hexdigest()}
     scope={'namespace':replay['namespace'],'session_date':replay['session_date'],'cutoff_at':NOW.isoformat(),'phases':list(host.PHASES)}
-    replay['admission']=put('admission.json',admission_doc if admission_doc is not None else {'symbols':{'SYNTH':{}},'namespace':scope['namespace'],'session_date':scope['session_date']})
+    replay['admission']=put('admission.json',admission_doc if admission_doc is not None else certified_admission())
     if b3: replay['symbols'][0]={'symbol':'SYNTH','market':'B3'}
     save()
     runtime=Path(host.__file__).absolute().parents[1]
@@ -92,7 +92,7 @@ def test_uncertain_acquire_never_replayed(tmp_path):
     with pytest.raises(ValueError):host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=fail)
     destination=args['spool_root']/args['manifest_sha256']
     assert (destination/'acquire.STARTED.json').exists() and not (destination/'acquire.RECEIPT.json').exists()
-    with pytest.raises(host.HostPhaseFailure,match='PHASE_ALREADY_EXISTS'):host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=reader(Connection()))
+    with pytest.raises(host.HostPhaseFailure,match='PHASE_ALREADY_STARTED'):host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=reader(Connection()))
 
 
 def test_wrong_previous_receipt_blocks_acquire(tmp_path):
@@ -196,10 +196,10 @@ def test_failed_receipt_io_failure_never_claims_written(tmp_path,monkeypatch):
         return original(path,raw)
     monkeypatch.setattr(host,'_write',write)
     def fail(*_):raise KeyboardInterrupt()
-    with pytest.raises(host.HostPhaseFailure) as captured:
+    with pytest.raises(host.HostPhaseInterrupted) as captured:
         host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=fail)
     result=captured.value.result
-    assert captured.value.exit_code==3 and not result['failed_receipt_written']
+    assert result['status']=='UNCERTAIN' and not result['failed_receipt_written']
     assert 'failed_receipt_sha256' not in result and 'SECRETABC123' not in json.dumps(result)
 
 
@@ -209,7 +209,7 @@ def test_successful_phase_retry_never_appends_failed_or_changes_bytes(tmp_path):
     host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=reader(Connection()))
     destination=args['spool_root']/args['manifest_sha256']
     before={str(p.relative_to(destination)):p.read_bytes() for p in destination.rglob('*') if p.is_file()}
-    with pytest.raises(host.HostPhaseFailure,match='PHASE_ALREADY_EXISTS') as captured:
+    with pytest.raises(host.HostPhaseFailure,match='PHASE_ALREADY_COMPLETE') as captured:
         host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,transport=provider,database_reader=reader(Connection()))
     assert not captured.value.result['failed_receipt_written']
     after={str(p.relative_to(destination)):p.read_bytes() for p in destination.rglob('*') if p.is_file()}
@@ -255,3 +255,54 @@ def test_certified_admission_refuses_changed_scope_or_list_before_spool(tmp_path
     with pytest.raises(host.HostPhaseFailure,match='ADMISSION_BINDING_MISMATCH'):
         host.run_host_phase(phase='preflight',**args,clock=Clock())
     assert not list(args['spool_root'].iterdir())
+
+
+@pytest.mark.parametrize('legacy',[{'symbols':['SYNTH']},{'symbols':{'SYNTH':{}}}])
+def test_shadow_rejects_legacy_admission(tmp_path,legacy):
+    args=package(tmp_path,admission_doc=legacy)
+    with pytest.raises(host.HostPhaseFailure,match='ADMISSION_BINDING_MISMATCH'):
+        host.run_host_phase(phase='preflight',**args,clock=Clock())
+    assert not list(args['spool_root'].iterdir())
+
+
+def test_completed_preflight_is_refused_without_mutation(tmp_path):
+    args=package(tmp_path);clock=Clock()
+    host.run_host_phase(phase='preflight',**args,clock=clock)
+    with pytest.raises(host.HostPhaseFailure,match='PHASE_ALREADY_COMPLETE') as captured:
+        host.run_host_phase(phase='preflight',**args,clock=clock)
+    assert captured.value.exit_code==2 and not captured.value.result['marker_write_attempted']
+
+
+@pytest.mark.parametrize('error',[KeyboardInterrupt(),SystemExit(7)])
+def test_library_cancellation_not_swallowed_as_exception(tmp_path,error):
+    args=package(tmp_path);clock=Clock()
+    previous=host.run_host_phase(phase='preflight',**args,clock=clock)['receipt_sha256']
+    def fail(*_):raise error
+    with pytest.raises(type(error)):
+        try:
+            host.run_host_phase(phase='acquire',**args,clock=clock,previous_receipt_sha256=previous,
+                                transport=provider,database_reader=fail)
+        except Exception:pytest.fail('Cancellation was converted to an ordinary exception')
+    assert (args['spool_root']/args['manifest_sha256']/'acquire.FAILED.json').exists()
+
+
+def test_failed_write_fsync_never_leaves_partial_named_receipt(tmp_path,monkeypatch):
+    tmp_path.chmod(0o700)
+    def fail(_):raise OSError('private error')
+    monkeypatch.setattr(host.os,'fsync',fail)
+    with pytest.raises(OSError):host._write(tmp_path/'acquire.FAILED.json',b'complete bytes')
+    assert list(tmp_path.iterdir())==[]
+
+
+def test_cli_parse_errors_are_sanitized_json(monkeypatch,capsys):
+    monkeypatch.setattr(sys,'argv',['executor','SECRET_ARGUMENT'])
+    assert host.main()==2
+    output=capsys.readouterr()
+    assert not output.err and 'SECRET_ARGUMENT' not in output.out
+    assert json.loads(output.out)['code']=='ARGUMENTS_INVALID'
+
+
+@pytest.mark.parametrize('code',['PACING_BUDGET_EXHAUSTED','SYMBOL_INVALID','RESPONSE_DEADLINE_EXCEEDED'])
+def test_finite_failure_vocabulary(code):
+    assert host._failure_code(RuntimeError(code))==code
+    assert host._failure_code(RuntimeError(code+' SECRET'))=='UNCLASSIFIED_FAILURE'

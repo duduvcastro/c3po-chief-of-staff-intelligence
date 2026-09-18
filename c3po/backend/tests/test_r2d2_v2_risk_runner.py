@@ -35,7 +35,7 @@ class Connection:
             return Result([row])
         if sql==ReadOnlyInsiderDatabaseReader.ACL_SQL:
             return Result([self.acl if self.acl is not None else ('ir_events',True,True,True,True,True,True)])
-        if sql=='SELECT transaction_timestamp()': return Result([(NOW,)])
+        if sql=='SELECT pg_catalog.transaction_timestamp()': return Result([(NOW,)])
         return Result(self.rows)
 
 
@@ -248,3 +248,19 @@ def test_dedicated_database_setting_env_and_private_repr(monkeypatch):
     assert settings.r2d2_risk_database_url=='synthetic-dedicated-dsn'
     assert settings.database_url=='synthetic-main'
     assert 'synthetic-dedicated-dsn' not in repr(settings)
+
+
+def test_exact_events_query_follows_role_and_acl_checks():
+    conn=Connection();reader(conn)('TEST',NOW)
+    sql=[call[0] for call in conn.calls]
+    expected='''SELECT source_code, external_id, symbol, market, event_type, published_at, raw_metadata
+FROM public.ir_events
+WHERE market = 'US' AND source_code = 'sec'
+ AND event_type = 'Insider Transaction' AND symbol = %s
+ AND published_at >= %s AND published_at <= %s
+ORDER BY source_code, external_id
+LIMIT %s'''
+    normalize=lambda value:' '.join(value.split())
+    events=[i for i,value in enumerate(sql) if normalize(value)==normalize(expected)]
+    assert len(events)==1
+    assert sql.index(ReadOnlyInsiderDatabaseReader.ROLE_SQL)<sql.index(ReadOnlyInsiderDatabaseReader.ACL_SQL)<events[0]

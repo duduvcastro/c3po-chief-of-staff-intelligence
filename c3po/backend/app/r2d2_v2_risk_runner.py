@@ -71,15 +71,15 @@ class ReadOnlyInsiderDatabaseReader:
     ROLE_SQL = """SELECT current_user, session_user,
         NOT (rolsuper OR rolcreaterole OR rolcreatedb OR rolreplication OR rolbypassrls),
         NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members WHERE member=r.oid),
-        NOT has_database_privilege(current_user,current_database(),'CREATE'),
-        NOT has_database_privilege(current_user,current_database(),'TEMP')
+        NOT pg_catalog.has_database_privilege(current_user,pg_catalog.current_database(),'CREATE'),
+        NOT pg_catalog.has_database_privilege(current_user,pg_catalog.current_database(),'TEMP')
         FROM pg_catalog.pg_roles r WHERE rolname=current_user"""
     ACL_SQL = """SELECT c.relname,
-        has_table_privilege(current_user,c.oid,'SELECT'),
-        NOT has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES'),
-        NOT has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE,REFERENCES'),
-        NOT pg_has_role(current_user,c.relowner,'MEMBER'),
-        NOT has_schema_privilege(current_user,n.oid,'CREATE'),
+        pg_catalog.has_table_privilege(current_user,c.oid,'SELECT'),
+        NOT pg_catalog.has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES'),
+        NOT pg_catalog.has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE,REFERENCES'),
+        NOT pg_catalog.pg_has_role(current_user,c.relowner,'MEMBER'),
+        NOT pg_catalog.has_schema_privilege(current_user,n.oid,'CREATE'),
         NOT c.relrowsecurity
         FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname='public' AND c.relkind='r' AND c.relname='ir_events'"""
@@ -128,7 +128,7 @@ class ReadOnlyInsiderDatabaseReader:
                         or not all(value is True for value in acl_rows[0][1:])):
                     raise ValueError('DATABASE_SELECT_ONLY_AUTHORITY_REQUIRED')
                 database_role = role_row[0]
-                transaction_at = connection.execute('SELECT transaction_timestamp()').fetchone()[0]
+                transaction_at = connection.execute('SELECT pg_catalog.transaction_timestamp()').fetchone()[0]
                 _aware(transaction_at)
                 rows = connection.execute(self.SQL, (symbol, cutoff-timedelta(days=180), cutoff, self.max_rows+1)).fetchall()
                 if len(rows) > self.max_rows:
