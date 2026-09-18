@@ -83,7 +83,7 @@ accepted only for phase `admission`, status `PASSED`, exact namespace/session,
 and an `AVAILABLE` causal readback with no diagnostics. Its selected count,
 receipt count and ordered `symbols.txt` SHA256 must agree with the host plan's
 private list. There is no synthetic replacement receipt with a top-level symbols
-array. Legacy artifact admissions keep their prior contract. Recognized successor
+array. Legacy artifact admissions are accepted only in DIAG. SHADOW requires the certified receipt schema. Recognized successor
 receipts always use the stricter branch, even if a `symbols` field is also present.
 This verifies the pinned predecessor's format and identity; the owner's order and
 Fable GO must still bind its actual bytes and the independently accepted chain.
@@ -106,3 +106,42 @@ publish the host's intermediate risk artifact as a certified component. Only the
 successor's own risk receipt can extend its chain. Offline tests compare risk and
 assessment bytes across the two replay outputs. Runtime and capacity for a full
 real list are not established by the synthetic tests.
+
+## R10 hardening and successor adoption
+
+The list builder is `app.r2d2_v2_risk_stage.causal_inventory`: provide the original
+`control/symbols.txt` bytes and the market map. It preserves causal ADV20 order,
+requires canonical ASCII symbols and the trailing newline, and never sorts names.
+
+`stage_risk_input_bundle` is now repository-owned. The successor must call this
+entry point instead of its rev10 local staging copy. It checks five accepted phase
+receipts, their start/acceptance hashes, the exact causal list, the approved host
+plan and GO hashes, and the hash of `execute.RECEIPT.json`. The input manifest
+must equal `outputs.assessment_manifest.sha256`, and admission must match the
+accepted predecessor bytes. It persists the executor's `risk_sha256` in the
+staging binding. `execute_staged_risk` takes that binding hash, rechecks the staged
+files and rejects any replay whose risk hash differs from the host result. A
+rejected replay may leave private output but is not a successful risk phase.
+The external successor remains UNBOUND: its launcher must pin these entry points
+and receipt hashes in a new audited package before use; rev10 is not modified by
+this PR. This PR does not grant execution authority or migrate that package.
+
+The three pure computations remain intentional: assessment, host replay, and
+successor replay. Only acquire uses the provider/database; the integrated test
+snapshots request counts immediately after acquire and checks them through the
+full five-phase-chain staging wrapper and final replay. Synthetic evidence is
+not a proof of contemporary coverage or a production baseline.
+
+Host admission validation itself does not check the successor's order, source,
+artifact or registry hashes. Those original bytes remain pinned by its external
+GO; the staging wrapper additionally checks the five phase order/pins/start and
+acceptance bindings. Do not treat a schema-only receipt as certification.
+
+A completed phase returns `PHASE_ALREADY_COMPLETE` / exit 2. A started phase
+without completion returns `PHASE_ALREADY_STARTED` / exit 3. Both checks precede
+any new marker, including preflight. Receipts publish via fsynced temporary inode
+and exclusive hard link, never by exposing an empty final file. Cancellation in
+the library remains a KeyboardInterrupt/SystemExit subclass carrying sanitized
+receipt metadata; only the CLI translates it to JSON and an exit status.
+CLI parse errors are also sanitized JSON, without reflecting argv. Provider
+failure codes use a finite vocabulary; unknown text never reaches the receipt.

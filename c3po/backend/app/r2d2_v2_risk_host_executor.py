@@ -15,7 +15,8 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
-from typing import Any, Callable
+import uuid
+from typing import Any, Callable, NoReturn
 
 from app.r2d2_v2_risk_bundle import build_risk_bundle
 from app.r2d2_v2_risk_executor import _Inputs, _bytes, _clock, _json, _open_dir, _publish_new, execute_private_risk
@@ -27,7 +28,23 @@ PHASES = ("preflight", "acquire", "execute")
 
 # Fixed vocabulary: exception messages outside this set are never published.
 FAILURE_CODES = frozenset("""ACQUIRED_MODE_INVALID ACQUIRED_REFERENCE_INVALID ACQUISITION_BUDGET_INVALID ADMISSION_BINDING_MISMATCH ADMISSION_INVALID ADMISSION_INVENTORY_MISMATCH ADMISSION_INVENTORY_MISSING ASSESSMENT_CLOCK_BINDING_INVALID ASSESSMENT_CLOCK_ORDER_INVALID ASSESSMENT_INCOMPLETE BATCH_INVENTORY_MISMATCH BUFFERED_INPUT_BUDGET_EXHAUSTED CLOCK_INVALID CONFLICTING_REFERENCE CUTOFF_IN_FUTURE DATABASE_CLOCK_ORDER_INVALID DATABASE_ISOLATION_NOT_CONFIRMED DATABASE_METADATA_INVALID DATABASE_READ_ONLY_COMPARISON_FAILED DATABASE_READ_ONLY_NOT_CONFIRMED DATABASE_RESTRICTED_ROLE_REQUIRED DATABASE_ROW_BINDING_INVALID DATABASE_ROW_BUDGET_EXHAUSTED DATABASE_ROW_BUDGET_INVALID DATABASE_ROW_INVALID DATABASE_SELECT_ONLY_AUTHORITY_REQUIRED DATABASE_SYMBOL_INVALID DATABASE_TRANSACTION_REQUIRED DECISION_IN_FUTURE DEPENDENCIES_PARTIAL DUPLICATE_JSON_KEY EXECUTION_CLOCK_INVALID EXECUTION_ROOT_BINDING_MISMATCH GO_BINDING_MISMATCH HOST_MANIFEST_BINDING_INVALID HTTP_RECEIPT_BINDING_INVALID HTTP_RECEIPT_NOT_COMPLETE HTTP_REFERENCE_INVALID INPUT_CHANGED_DURING_READ INPUT_DIRECTORY_PERMISSIONS INPUT_FILE_INVALID INPUT_HASH_INVALID INVENTORY_BUDGET_INVALID INVENTORY_DUPLICATE INVENTORY_INVALID LIST_BINDING_MISMATCH MANIFEST_BINDING_INVALID NONZERO_HASH_REQUIRED NON_FINITE_JSON OUTPUT_DIRECTORY_PERMISSIONS OWNER_ORDER_SCOPE_MISMATCH PATH_INVALID PHASE_INVALID PHASE_OUTSIDE_WINDOW PHASE_PENDING PHASE_WINDOW_EXPIRED PREVIOUS_PHASE_BINDING_INVALID PROVIDER_NOT_ALLOWED REFERENCE_INVALID REFERENCE_PATH_INVALID REPLAY_PREDECESSOR_BINDING_MISMATCH RISK_DEDICATED_DATABASE_CONNECTION_REQUIRED RUNNER_BODY_OR_TIME_BUDGET_EXHAUSTED RUNNER_CAPTURE_BUDGET_EXHAUSTED RUNNER_CAPTURE_WINDOW_EXHAUSTED RUNNER_CLOCK_INVALID RUNNER_CUTOFF_IN_FUTURE RUNNER_DATABASE_CLOCK_INVALID RUNNER_DATABASE_COUNTS_INVALID RUNNER_DATABASE_RECEIPT_INVALID RUNNER_IDENTITY_INVALID RUNNER_JSON_TYPE_INVALID RUNNER_PROVIDER_NOT_ALLOWED RUNNER_REQUEST_BUDGET_EXHAUSTED RUNNER_SCOPE_OR_BUDGET_INVALID RUNNER_SPOOL_INTEGRITY RUNNER_SPOOL_PERMISSIONS RUNNER_SYMBOL_LIST_INVALID RUNNER_UTC_REQUIRED RUNTIME_SOURCE_ROOT_MISMATCH SNAPSHOT_CLOCK_OR_SOURCE_INVALID SNAPSHOT_REFERENCE_INVALID SOURCE_CHANGED SOURCE_NOT_REGULAR SOURCE_PATH_INVALID SOURCE_PIN_CLOSURE_INCOMPLETE SOURCE_PIN_MISMATCH SPOOL_PARENT_PERMISSIONS SPOOL_PERMISSIONS SYMBOL_BUDGET_INVALID SYMBOL_LIST_INVALID UTC_REQUIRED""".split())
+FAILURE_CODES |= frozenset("""SYMBOL_INVALID PHASE_ALREADY_COMPLETE PHASE_ALREADY_STARTED
+PACING_BUDGET_EXHAUSTED REDIRECT_REJECTED REQUEST_REJECTED REQUEST_DATE_IN_FUTURE
+FINNHUB_RATE_BUDGET_EXHAUSTED REQUEST_BUDGET_EXHAUSTED CREDENTIAL_UNAVAILABLE
+ENCODING_REJECTED BODY_BUDGET_EXHAUSTED RESPONSE_DEADLINE_EXCEEDED RESPONSE_REJECTED
+ARGUMENTS_INVALID""".split())
 MAX_BUFFERED_INPUT_BYTES = 512 * 1024 * 1024
+
+
+class HostPhaseInterrupted(KeyboardInterrupt):
+    def __init__(self, result: dict[str,Any]):
+        self.result = result
+
+
+class HostPhaseExited(SystemExit):
+    def __init__(self, result: dict[str,Any]):
+        super().__init__(3 if result["status"] == "UNCERTAIN" else 2)
+        self.result = result
 
 
 class HostPhaseFailure(ValueError):
@@ -77,14 +94,22 @@ def _read_doc(path: Path, sha: str) -> dict[str,Any]:
 
 
 def _write(path: Path, raw: bytes) -> dict[str,str]:
+    """Publish a complete, synced inode exclusively; never expose a partial receipt."""
     parent=_open_dir(path.parent)
+    temporary=".receipt-"+uuid.uuid4().hex
+    created=False
     try:
         if stat.S_IMODE(os.fstat(parent).st_mode)!=0o700:raise ValueError("SPOOL_PERMISSIONS")
-        fd=os.open(path.name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=parent)
+        fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=parent)
+        created=True
         with os.fdopen(fd,"wb") as stream:
             stream.write(raw);stream.flush();os.fsync(stream.fileno())
+        os.link(temporary,path.name,src_dir_fd=parent,dst_dir_fd=parent,follow_symlinks=False)
+        os.unlink(temporary,dir_fd=parent);created=False
         os.fsync(parent)
-    finally:os.close(parent)
+    finally:
+        if created:os.unlink(temporary,dir_fd=parent)
+        os.close(parent)
     return {"path":path.name,"sha256":_sha(raw)}
 
 
@@ -154,6 +179,8 @@ def _validate(plan: dict[str,Any], *, digest: str, go: dict[str,Any], inputs: _I
     if len({entry["symbol"] for entry in entries})!=len(entries):raise ValueError("INVENTORY_DUPLICATE")
     admission=_json(inputs.read(plan["admission"]))
     if not isinstance(admission,dict):raise ValueError("ADMISSION_INVALID")
+    if namespace.startswith("R2D2-V2-SHADOW-") and admission.get("schema")!="CODEX_CERTIFIED_PHASE_RECEIPT_V1":
+        raise ValueError("ADMISSION_BINDING_MISMATCH")
     admitted=admission.get("symbols")
     if admission.get("schema")=="CODEX_CERTIFIED_PHASE_RECEIPT_V1":
         # The successor pins the causal list by bytes, not a top-level names array.
@@ -292,6 +319,11 @@ def _run_host_phase(*, phase: str, manifest_path: Path, manifest_sha256: str, go
             raise ValueError("EXECUTION_ROOT_BINDING_MISMATCH")
         replay,entries=_validate(plan,digest=digest,go=go,inputs=inputs,phase=phase,now=now,source_root=source_root)
         destination=spool_root/digest
+        # Inspect prior evidence before attempting a new marker, including preflight.
+        if os.path.lexists(destination/(phase+".RECEIPT.json")):
+            raise ValueError("PHASE_ALREADY_COMPLETE")
+        if os.path.lexists(destination/(phase+".STARTED.json")) or os.path.lexists(destination/(phase+".FAILED.json")):
+            raise ValueError("PHASE_ALREADY_STARTED")
         if phase=="preflight":_private_dir(destination)
         directory=_Inputs(destination);os.close(directory.fd)
         previous=None
@@ -371,10 +403,10 @@ def run_host_phase(*, phase: str, manifest_path: Path, manifest_sha256: str, go_
             previous_receipt_sha256=previous_receipt_sha256,clock=clock,transport=transport,
             database_reader=database_reader,_failure_state=state)
     except (Exception,KeyboardInterrupt,SystemExit) as error:
-        uncertain=bool(state.get("marker_write_attempted"))
+        uncertain=bool(state.get("marker_write_attempted")) or _failure_code(error)=="PHASE_ALREADY_STARTED"
         result:dict[str,Any]={"phase":phase if phase in PHASES else "INVALID_PHASE",
             "status":"UNCERTAIN" if uncertain else "REFUSED", "code":_failure_code(error),
-            "failed_receipt_written":False,"marker_write_attempted":uncertain,
+            "failed_receipt_written":False,"marker_write_attempted":bool(state.get("marker_write_attempted")),
             "started_marker_confirmed":bool(state.get("started"))}
         # Destination is set only after plan/GO/pins/window and predecessor validation.
         # Never invent a destination or write evidence on authority-validation failure.
@@ -392,19 +424,30 @@ def run_host_phase(*, phase: str, manifest_path: Path, manifest_sha256: str, go_
                 result["failed_receipt_sha256"]=ref["sha256"]
             except (Exception,KeyboardInterrupt,SystemExit):
                 result["failed_receipt_write_code"]="FAILED_RECEIPT_NOT_WRITTEN"
+        if isinstance(error,KeyboardInterrupt):raise HostPhaseInterrupted(result) from None
+        if isinstance(error,SystemExit):raise HostPhaseExited(result) from None
         raise HostPhaseFailure(result) from None
 
 
 def main() -> int:
-    parser=argparse.ArgumentParser(description="Pinned risk artifact phases; no trading activation")
+    class SafeParser(argparse.ArgumentParser):
+        def error(self, message: str) -> NoReturn:
+            raise ValueError("ARGUMENTS_INVALID")
+    parser=SafeParser(description="Pinned risk artifact phases; no trading activation")
     parser.add_argument("phase",choices=PHASES)
     for name in ("manifest","manifest-sha256","go","go-sha256","source-root","spool-root"):parser.add_argument("--"+name,required=True)
     parser.add_argument("--previous-receipt-sha256")
-    args=parser.parse_args()
+    try:args=parser.parse_args()
+    except ValueError:
+        print(json.dumps({"status":"REFUSED","code":"ARGUMENTS_INVALID","failed_receipt_written":False}))
+        return 2
     try:
         result=run_host_phase(phase=args.phase,manifest_path=Path(args.manifest),manifest_sha256=args.manifest_sha256,
             go_path=Path(args.go),go_sha256=args.go_sha256,source_root=Path(args.source_root),spool_root=Path(args.spool_root),
             previous_receipt_sha256=args.previous_receipt_sha256)
+    except (HostPhaseInterrupted,HostPhaseExited) as failure:
+        print(json.dumps(failure.result,sort_keys=True))
+        return 3 if failure.result["status"]=="UNCERTAIN" else 2
     except HostPhaseFailure as failure:
         print(json.dumps(failure.result,sort_keys=True))
         return failure.exit_code
