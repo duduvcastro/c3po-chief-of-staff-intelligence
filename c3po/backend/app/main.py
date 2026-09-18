@@ -20,6 +20,7 @@ from .api_performance import (
 )
 from .chewie_fundamentals import ChewieFundamentalsService
 from .company_logos import CompanyLogoService
+from .portfolio_service import PortfolioService
 from .access_control import (
     ALL_CAPABILITIES,
     ALL_VIEW_PERMISSIONS,
@@ -112,6 +113,7 @@ from .schemas import (
     RealtimeMarketResponse,
     RealtimePortfolioIntradayResponse,
     RealtimePortfolioRequest,
+    PortfolioEventRequest,
     RealtimePortfolioResponse,
     RealtimePortfolioSymbolSearchResponse,
     R2D2DashboardResponse,
@@ -186,6 +188,7 @@ us_screener = USScreeningService(settings, database, realtime_markets, one_pager
 one_pagers.set_us_screener(us_screener)
 chewie_fundamentals = ChewieFundamentalsService(settings, database, market_data.http)
 company_logos = CompanyLogoService()
+portfolio_account = PortfolioService(settings, database, realtime_markets)
 r2d2 = R2D2PaperService(settings, database, realtime_markets, b3_screener, one_pagers)
 leah_cloud = LeahCloudService(settings, database)
 leah_sync_guard = LeahSyncGuard(
@@ -1516,6 +1519,48 @@ def realtime_market_snapshot(market: str) -> RealtimeMarketResponse:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/realtime/portfolio/account")
+def portfolio_account_snapshot(response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    return portfolio_account.snapshot()
+
+
+@app.post("/api/v1/realtime/portfolio/events", status_code=201)
+def record_portfolio_event(payload: PortfolioEventRequest) -> dict:
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+    from decimal import Decimal
+    today = datetime.now(timezone.utc).astimezone(ZoneInfo("America/Sao_Paulo")).date()
+    if payload.effective_date > today or payload.effective_date.year < 2000:
+        raise HTTPException(status_code=422, detail="Data deve estar entre 2000 e hoje")
+    symbol = payload.symbol.strip().upper()
+    entry = next((e for e in database.list_realtime_portfolio() if e["symbol"] == symbol), None)
+    if entry is None:
+        raise HTTPException(status_code=422, detail="Adicione primeiro o ativo ao My Portfolio")
+    if any(e["symbol"] == symbol and e["market"] != entry["market"] for e in database.list_portfolio_events()):
+        raise HTTPException(status_code=422, detail="Ativo com mercado divergente do histórico")
+    event = payload.model_dump(mode="json")
+    event.update(symbol=symbol, market=entry["market"], request_id=payload.request_id.lower())
+    for key in ("quantity", "total", "fees"):
+        event[key] = format(Decimal(event[key]).normalize(), "f")
+    try:
+        database.write_portfolio_event(event)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"saved": True, "request_id": event["request_id"]}
+
+
+@app.post("/api/v1/realtime/portfolio/events/{request_id}/void")
+def cancel_portfolio_event(request_id: str) -> dict:
+    from uuid import UUID
+    try:
+        normalized = str(UUID(request_id))
+        database.void_portfolio_event(normalized)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"cancelled": True}
 
 
 @app.get("/api/v1/realtime/portfolio/items", response_model=RealtimePortfolioResponse)
