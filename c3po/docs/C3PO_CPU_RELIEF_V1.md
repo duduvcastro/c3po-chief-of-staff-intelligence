@@ -61,3 +61,47 @@ usuário).
 Uma sessão completa com as mesmas seis queries do laudo e os gráficos do Lightsail. Critério
 para liberar a Obra B: CPU p95 em pregão < 60%, burst não chega ao piso e fecha ≥ 20%,
 duração p95 dos ciclos < 30 s, sem regressão funcional ou aumento de erros.
+
+## PR A — Command Center agregado
+
+- `GET /api/v1/command-center` é estendido **aditivamente**: sem `include`, o contrato é o
+  mesmo de sempre; com `?include=a,b,...` (nomes fixos: `alerts`, `navigation_indicators`,
+  `system_health`, `reports`, `market_data_providers`, `r2d2`, `markets_live`,
+  `markets_index`; nome desconhecido → 422) o payload ganha `sections` + `section_status`.
+- As seções rodam **em paralelo** (pool dedicado), chamando os serviços diretamente —
+  **nenhuma chamada HTTP interna ao próprio backend**. Uma fonte indisponível fica `null`
+  com `section_status[nome] = {status: "error", error}`; o card nunca vira 502 por isso.
+- Permissão por seção = a MESMA regra canônica da rota espelhada
+  (`access_control.required_permissions`): R2D2 exige `r2d2`, mercados exigem `markets`,
+  etc. O agregado jamais entrega o que a rota direta recusaria; sem permissão → `skipped`.
+- **Um único prazo por request** (`command_center_section_timeout_seconds`, 8 s, deadline
+  absoluto): as seções vivas são submetidas ANTES do grupo cacheável e os dois grupos correm
+  em paralelo sob o mesmo prazo; toda espera — inclusive entrar num cálculo cacheável já em
+  voo de outro request (`wait_timeout` do single-flight) — gasta só o orçamento restante.
+  Fonte pendurada vira `{status: error, error: timeout}` e nunca segura a resposta; trabalho
+  ainda enfileirado ao vencer o prazo é cancelado (reauditoria Codex `d960c0d`, P2).
+- **Admissão por seção**: no máximo UM produtor em voo por seção (semáforo por nome); uma fonte
+  travada ocupa um slot e um worker, nunca o pool — seções saudáveis continuam respondendo.
+- **Seções vivas fora do cache do agregado** (`r2d2`, `markets_live`, `markets_index`): resolvidas
+  a cada chamada pelos seus próprios caches — o agregado nunca fica mais velho que a rota direta
+  (teto de 5 s do R2D2 preservado).
+- **Renovação da sessão na abertura**: o `GET /auth/session` do boot renova a janela de inatividade
+  para TODO perfil; o agregado não renova mais nada; o mount do frontend não dispara heartbeat.
+- Erros são **redigidos**: cliente e log recebem só o nome da classe da exceção.
+- Chave de cache canônica (seções ordenadas) e **limitada** (`command_center_cache_max_entries`,
+  256; expirados expurgados primeiro, depois os de vencimento mais próximo).
+- Cache server-side de **10 s** (`command_center_cache_seconds`), single-flight, **segregado
+  por usuário e conjunto de permissões** (chave = e-mail + permissões + seções pedidas).
+  A seção `r2d2` reutiliza o cache da PR B.
+- Frontend: a abertura do Command Center passa a fazer **uma** requisição agregada, distribui
+  o conteúdo (relatórios, provedores, saúde, contador de alertas, indicadores) e **semeia** a
+  Millennium Falcon (R2D2, índices, saúde), que só volta a consultar a API no seu próximo
+  ciclo de polling (`initialLoad: false`). Conteúdo e estados atuais preservados.
+- **Contrato de abertura**: no máximo **quatro** chamadas — `auth/session`, o agregado,
+  `r2d2/live-positions` e o POST de telemetria de page-load. O heartbeat só dispara por
+  atividade real posterior (o primeiro fica para o intervalo regular); `navigation-seen`
+  só por navegação. Limite honesto: sem harness JS no repo, a contagem é pinada por
+  contrato estático — uma medição comportamental exige o rastreador de page-load em
+  produção (`request_count` por abertura), que é exatamente a métrica pós-deploy.
+- Dependência declarada: esta PR é **empilhada** sobre a PR B (reutiliza `read_cache` e
+  `usePanelPolling`); merge B → A; cada uma reversível por si.
