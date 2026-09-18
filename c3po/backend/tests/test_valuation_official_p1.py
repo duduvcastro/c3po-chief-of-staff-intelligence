@@ -137,8 +137,8 @@ def test_one_cycle_is_recorded_in_both_official_sources_from_the_same_rows() -> 
     plain = {key: value for key, value in _row("AAPL", tp=250.0, buy_in=200.0, price=220.0, internal_tp=245.0, internal_buy_in=196.0).items() if key != "internal_buy_in_models"}
     record = official.prediction_from_row(plain, market="NASDAQ", scope="universe", cycle_id="c", source_version="7", prediction_instant=NOW, source=SOURCE_INTERNAL)
     assert record is not None and record["decomposition"]["buy_in_models"] == {"Bridgewater": 200.0 * 1.02, "Market Structure": 200.0 * 0.98}
-    with pytest.raises(ValueError, match="unknown official source"):
-        official.prediction_from_row(plain, market="NASDAQ", scope="universe", cycle_id="c", source_version="7", prediction_instant=NOW, source="v3_2_shadow")
+    with pytest.raises(ValueError, match="unknown recordable source"):  # v3_2_shadow became RECORDABLE (valuation_pit_rerun); an unknown source is still refused
+        official.prediction_from_row(plain, market="NASDAQ", scope="universe", cycle_id="c", source_version="7", prediction_instant=NOW, source="made_up_v9")
     # the recording counts both sources: three rows → six records
     assert official.record_snapshot(database, {"id": "c-six", "analysis_type": "valuation_universe", "entity_key": "NASDAQ_UNIVERSE", "methodology_version_id": "mv-1",
                                                "inputs": {"methodology_version": 7}, "published_at": NOW,
