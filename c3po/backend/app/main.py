@@ -38,6 +38,7 @@ from .leah_sync_guard import LeahSyncGuard, LeahSyncRejected
 from .investor_relations import InvestorRelationsService
 from .ir_valuation import InvestorRelationsValuationProcessor
 from .market_data import LiveMarketsService, MarketDataService, RealtimeMarketsService
+from .market_data.indices import IndexQuotesService
 from .market_data.b3_screener import B3ScreenerService
 from .market_data.eodhd_stream import EodhdRealtimeStream
 from .market_data.http import MarketDataRequestError
@@ -156,8 +157,9 @@ legacy = LegacySummaryReader(settings.legacy_root)
 auth_service = AuthService(settings, database)
 market_data = MarketDataService(settings, database)
 eodhd_stream = EodhdRealtimeStream(settings.eodhd_api_token, max_symbols=settings.r2d2_ws_max_symbols)
-live_markets = LiveMarketsService(settings, market_data.http, stream=eodhd_stream)
-realtime_markets = RealtimeMarketsService(settings, database, market_data.http, stream=eodhd_stream)
+index_quotes = IndexQuotesService(settings, market_data.http)
+live_markets = LiveMarketsService(settings, market_data.http, stream=eodhd_stream, indices=index_quotes)
+realtime_markets = RealtimeMarketsService(settings, database, market_data.http, stream=eodhd_stream, indices=index_quotes)
 b3_screener = B3ScreenerService(settings, database, market_data.http)
 investor_relations = InvestorRelationsService(settings, database)
 ir_valuation_processor = InvestorRelationsValuationProcessor(database, b3_screener)

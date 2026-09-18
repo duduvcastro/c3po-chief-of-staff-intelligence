@@ -32,6 +32,7 @@ from .http import JsonHttpClient
 from .eodhd_stream import EodhdRealtimeStream
 from .models import canonical_us_security_name, canonical_us_security_type, from_unix, number
 from .live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
+from .indices import INDICES, IndexQuotesService, quote_status
 
 
 REFRESH_SECONDS = 60
@@ -84,11 +85,13 @@ class RealtimeMarketsService:
         database: Database,
         http: JsonHttpClient,
         stream: EodhdRealtimeStream | None = None,
+        indices: IndexQuotesService | None = None,
     ) -> None:
         self.settings = settings
         self.database = database
         self.http = http
         self.stream = stream
+        self.indices = indices or IndexQuotesService(settings, http)
         self._lock = RLock()
         self._responses: dict[str, tuple[datetime, RealtimeMarketResponse]] = {}
         self._us_quotes: tuple[datetime, list[dict[str, Any]]] | None = None
@@ -726,6 +729,8 @@ class RealtimeMarketsService:
         *,
         requested_session_date: date | None = None,
     ) -> InstrumentIntradayResponse:
+        if spec.provider == "fmp_index":
+            return self._fmp_index_intraday(spec, now, requested_session_date=requested_session_date)
         if spec.provider == "brapi" and self.settings.brapi_token:
             return self._b3_instrument_intraday(
                 symbol=spec.symbol,
@@ -785,6 +790,47 @@ class RealtimeMarketsService:
             now=now,
             requested_session_date=requested_session_date,
         )
+
+    def _fmp_index_intraday(
+        self, spec: Any, now: datetime, *, requested_session_date: date | None = None,
+    ) -> InstrumentIntradayResponse:
+        if not self.settings.fmp_api_token:
+            raise RuntimeError("FMP index history unavailable")
+        index = INDICES[spec.provider_symbol]
+        market_timezone = ZoneInfo(str(xcals.get_calendar(index.calendar).tz))
+        end = requested_session_date or now.astimezone(market_timezone).date()
+        try:
+            payload = self.http.get_json(
+                f"{self.settings.fmp_base_url.rstrip('/')}/stable/historical-chart/5min",
+                params={"symbol": spec.provider_symbol, "from": (end-timedelta(days=7)).isoformat(),
+                        "to": end.isoformat(), "apikey": self.settings.fmp_api_token},
+            )
+        except Exception:
+            raise RuntimeError("FMP index history unavailable") from None
+        rows = []
+        for raw in payload if isinstance(payload, list) else []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                stamp = datetime.fromisoformat(str(raw.get("date")))
+                # FMP index chart dates are exchange-local (six-market probe,
+                # 2026-09-17); quote timestamps, separately, are UTC Unix seconds.
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=market_timezone)
+                stamp = stamp.astimezone(timezone.utc)
+                if stamp > now:
+                    continue
+                rows.append({**raw, "timestamp": stamp.timestamp()})
+            except (ValueError, TypeError, OverflowError):
+                continue
+        response = self._normalize_instrument_intraday(
+            rows, symbol=spec.symbol, name=spec.name, market=spec.group, currency=spec.currency,
+            source="Financial Modeling Prep Intraday 5m", delay_minutes=0,
+            market_timezone=market_timezone, now=now, requested_session_date=requested_session_date,
+        )
+        status, _ = quote_status(index, response.points[-1].as_of, now)
+        return response.model_copy(update={"status": "delayed" if status == "live" else status,
+            "delay_minutes": max(0, int((now-response.points[-1].as_of).total_seconds()//60))})
 
     def _b3_instrument_intraday(
         self,
@@ -1543,35 +1589,12 @@ class RealtimeMarketsService:
         })
 
     def _index_quote(self, spec: RealtimeMarketSpec) -> RealtimeMarketIndex:
-        payload = self.http.get_json(
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(spec.index_symbol, safe='')}",
-            params={"range": "1d", "interval": "5m"},
-            headers={"User-Agent": "Mozilla/5.0 C3PO-Realtime/1.0"},
-        )
-        result = payload["chart"]["result"][0]
-        meta = result["meta"]
-        collected_at = datetime.now(timezone.utc)
-        value = number(meta.get("regularMarketPrice"))
-        if value is None:
-            raise ValueError(f"{spec.index_name}: no index value")
-        previous_close = number(meta.get("previousClose")) or number(meta.get("chartPreviousClose"))
-        change_percent = (value / previous_close - 1) * 100 if previous_close else None
-        market_state = str(meta.get("marketState") or "UNKNOWN").upper()
-        if market_state == "REGULAR":
-            status = "delayed"
-        elif market_state in {"CLOSED", "PRE", "POST", "PREPRE", "POSTPOST"}:
-            status = "closed"
-        else:
-            status = "stale"
+        item = self.indices.quote(spec.index_symbol)
         return RealtimeMarketIndex(
-            symbol=spec.index_symbol,
-            name=spec.index_name,
-            value=value,
-            change_percent=change_percent,
-            currency=str(meta.get("currency") or spec.index_currency),
-            market_state=market_state,
-            status=status,
-            as_of=from_unix(meta.get("regularMarketTime"), collected_at),
+            symbol=spec.index_symbol, name=spec.index_name, value=item.price,
+            change_percent=item.change_percent, currency=item.currency or spec.index_currency,
+            market_state=item.market_state, status=item.status, as_of=item.as_of,
+            source=item.provider, delay_minutes=item.delay_minutes,
         )
 
     def _b3_rows(self, now: datetime) -> list[RealtimeMarketLeader]:

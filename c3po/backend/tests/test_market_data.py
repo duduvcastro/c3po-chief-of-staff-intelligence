@@ -861,36 +861,23 @@ def test_live_markets_separates_spot_and_future_index_groups() -> None:
         "IBOV": "^BVSP",
         "NASDAQ": "^IXIC",
         "NYSE": "^NYA",
+        "Nikkei": "^N225", "Shanghai": "000001.SS", "DAX": "^GDAXI",
     }
     assert {"S&P 500 Fut.", "Nasdaq Fut.", "US3Y", "US10Y", "US30Y"} <= future_symbols
 
 
 def test_live_markets_refreshes_spot_indices_on_three_second_channel() -> None:
-    http = StubHttp({
-        "chart": {
-            "result": [{
-                "meta": {
-                    "currency": "USD",
-                    "exchangeName": "INDEX",
-                    "regularMarketPrice": 100.0,
-                    "previousClose": 99.0,
-                    "regularMarketTime": 1785859200,
-                    "marketState": "REGULAR",
-                }
-            }],
-            "error": None,
-        }
-    })
-    service = LiveMarketsService(Settings(auth_cookie_secure=False), http)  # type: ignore[arg-type]
+    http = StubHttp([{"symbol": symbol, "price": 100.0, "previousClose": 99.0, "timestamp": 1785859200} for symbol in ("^BVSP", "^IXIC", "^NYA", "^N225", "000001.SS", "^GDAXI")])
+    service = LiveMarketsService(Settings(fmp_api_token="configured", auth_cookie_secure=False), http)  # type: ignore[arg-type]
 
     first = service.index_snapshot()
     second = service.index_snapshot()
 
     assert first.refresh_seconds == 3
-    assert [item.symbol for item in first.items] == ["IBOV", "NASDAQ", "NYSE"]
+    assert [item.symbol for item in first.items] == ["IBOV", "NASDAQ", "NYSE", "Nikkei", "Shanghai", "DAX"]
     assert first.items[0].price == 100.0
     assert second.generated_at == first.generated_at
-    assert len(http.calls) == 3
+    assert len(http.calls) == 1
 
 
 def test_spcx_is_registered_as_spacex_common_stock() -> None:
@@ -931,18 +918,11 @@ def test_live_markets_prefers_eodhd_for_us_portfolio_quotes() -> None:
     assert http.calls[0]["url"].endswith("/api/real-time/AMZN.US")
 
 
-def test_nikkei_dax_shanghai_stayed_on_yahoo() -> None:
-    """EODHD's .INDX symbols were tried for these three (2026-08-19) to fix
-    Yahoo's multi-hour-stale prints, then reverted the same day: EODHD's
-    .INDX responses don't include a currency field, so Nikkei/DAX displayed
-    as USD instead of JPY/EUR (see _normalize's "USD" fallback in eodhd.py).
-    Regression test so this doesn't get silently re-migrated without also
-    fixing the currency gap first."""
-    by_symbol = {spec.symbol: spec for spec in LIVE_MARKET_SPECS if spec.group == "Future Index"}
+def test_six_cash_indices_use_fmp() -> None:
+    indices = [spec for spec in LIVE_MARKET_SPECS if spec.provider == "fmp_index"]
+    assert {spec.symbol for spec in indices} == {"IBOV", "NASDAQ", "NYSE", "Nikkei", "DAX", "Shanghai"}
+    assert {spec.symbol: spec.currency for spec in indices}["Nikkei"] == "JPY"
 
-    assert by_symbol["Nikkei"].provider == "yahoo"
-    assert by_symbol["DAX"].provider == "yahoo"
-    assert by_symbol["Shanghai"].provider == "yahoo"
 
 
 class SequenceHttp:
@@ -1074,15 +1054,9 @@ def test_realtime_b3_ranks_each_board_from_full_quote_list() -> None:
     ]
     http = RoutingStubHttp({
         "/api/quote/list": {"stocks": rows},
-        "/v8/finance/chart/": {"chart": {"result": [{"meta": {
-            "regularMarketPrice": 140000,
-            "previousClose": 139000,
-            "regularMarketTime": 1785859200,
-            "marketState": "REGULAR",
-            "currency": "BRL",
-        }}]}},
+        "/stable/batch-quote": [{"symbol": symbol, "price": 140000, "previousClose": 139000, "timestamp": 1785859200} for symbol in ("^BVSP", "^IXIC", "^NYA")],
     })
-    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    settings = Settings(fmp_api_token="configured", brapi_token="configured", auth_cookie_secure=False)
     service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
 
     response = service.snapshot("b3")
@@ -1110,15 +1084,9 @@ def test_realtime_b3_leaders_carry_the_provider_quote_session_not_collection_tim
             "regularMarketVolume": 54_000_000,
             "regularMarketTime": timestamp,
         }]},
-        "/v8/finance/chart/": {"chart": {"result": [{"meta": {
-            "regularMarketPrice": 141422,
-            "previousClose": 140993,
-            "regularMarketTime": timestamp,
-            "marketState": "CLOSED",
-            "currency": "BRL",
-        }}]}},
+        "/stable/batch-quote": [{"symbol": symbol, "price": 141422, "previousClose": 140993, "timestamp": timestamp} for symbol in ("^BVSP", "^IXIC", "^NYA")],
     })
-    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    settings = Settings(fmp_api_token="configured", brapi_token="configured", auth_cookie_secure=False)
     service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
 
     response = service.snapshot("B3")
@@ -1137,15 +1105,9 @@ def test_realtime_b3_leaders_use_index_session_when_detail_timestamp_is_unavaila
         "/api/quote/list": {"stocks": [
             {"stock": "BHIA3", "name": "Grupo Casas Bahia", "close": 0.40, "change": 17.65, "volume": 54_000_000},
         ]},
-        "/v8/finance/chart/": {"chart": {"result": [{"meta": {
-            "regularMarketPrice": 141422,
-            "previousClose": 140993,
-            "regularMarketTime": timestamp,
-            "marketState": "CLOSED",
-            "currency": "BRL",
-        }}]}},
+        "/stable/batch-quote": [{"symbol": symbol, "price": 141422, "previousClose": 140993, "timestamp": timestamp} for symbol in ("^BVSP", "^IXIC", "^NYA")],
     })
-    settings = Settings(brapi_token="configured", auth_cookie_secure=False)
+    settings = Settings(fmp_api_token="configured", brapi_token="configured", auth_cookie_secure=False)
     service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
 
     response = service.snapshot("B3")
@@ -1167,15 +1129,9 @@ def test_realtime_us_separates_nasdaq_and_nyse_common_stocks() -> None:
     http = RoutingStubHttp({
         "/api/exchange-symbol-list/US": catalog,
         "/api/real-time/AAPL.US": quotes,
-        "/v8/finance/chart/": {"chart": {"result": [{"meta": {
-            "regularMarketPrice": 22000,
-            "previousClose": 21800,
-            "regularMarketTime": timestamp,
-            "marketState": "REGULAR",
-            "currency": "USD",
-        }}]}},
+        "/stable/batch-quote": [{"symbol": symbol, "price": 22000, "previousClose": 21800, "timestamp": timestamp} for symbol in ("^BVSP", "^IXIC", "^NYA")],
     })
-    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
+    settings = Settings(fmp_api_token="configured", eodhd_api_token="configured", auth_cookie_secure=False)
     service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
 
     nasdaq = service.snapshot("nasdaq")
@@ -1254,13 +1210,7 @@ def test_realtime_us_overlays_visible_rows_with_websocket_trade() -> None:
     http = RoutingStubHttp({
         "/api/exchange-symbol-list/US": catalog,
         "/api/real-time/AAPL.US": quotes,
-        "/v8/finance/chart/": {"chart": {"result": [{"meta": {
-            "regularMarketPrice": 22000,
-            "previousClose": 21800,
-            "regularMarketTime": timestamp,
-            "marketState": "REGULAR",
-            "currency": "USD",
-        }}]}},
+        "/stable/batch-quote": [{"symbol": symbol, "price": 22000, "previousClose": 21800, "timestamp": timestamp} for symbol in ("^BVSP", "^IXIC", "^NYA")],
     })
     stream = StubRealtimeStream({"MSFT": EodhdStreamQuote(
         symbol="MSFT",
@@ -1268,7 +1218,7 @@ def test_realtime_us_overlays_visible_rows_with_websocket_trade() -> None:
         as_of=datetime.fromtimestamp(timestamp + 60, tz=timezone.utc),
         market_state="open",
     )})
-    settings = Settings(eodhd_api_token="configured", auth_cookie_secure=False)
+    settings = Settings(fmp_api_token="configured", eodhd_api_token="configured", auth_cookie_secure=False)
     service = RealtimeMarketsService(settings, Database(settings), http, stream=stream)  # type: ignore[arg-type]
 
     response = service.snapshot("nasdaq")
