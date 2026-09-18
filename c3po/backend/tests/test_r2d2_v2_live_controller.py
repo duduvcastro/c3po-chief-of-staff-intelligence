@@ -447,6 +447,13 @@ def test_d2_delta_capacity_failure_does_not_advance_cache_or_append_partial_batc
 
 
 @pytest.mark.parametrize("start_text,capacity,count,error", [
+    ("2026-09-21T14:15:00+00:00", 550, 550, None),
+    ("2026-09-21T14:20:00+00:00", 550, 550, None),
+    ("2026-09-21T14:59:00+00:00", 550, 550, None),
+    ("2026-09-21T14:14:59+00:00", 550, 2, "LIVE_MONDAY_PROOF_INVALID"),
+    ("2026-09-21T14:59:01+00:00", 550, 2, "LIVE_MONDAY_PROOF_INVALID"),
+    ("2026-09-21T14:20:00+00:00", 2, 3, "LIVE_MONDAY_PROOF_INVALID"),
+    ("2026-09-22T14:20:00+00:00", 550, 2, "LIVE_PROOF_DAY_INVALID"),
     ("2026-09-18T18:30:00+00:00", 550, 550, None),
     ("2026-09-18T19:44:00+00:00", 550, 550, None),
     ("2026-09-18T18:29:59+00:00", 550, 2, "LIVE_FRIDAY_PROOF_INVALID"),
