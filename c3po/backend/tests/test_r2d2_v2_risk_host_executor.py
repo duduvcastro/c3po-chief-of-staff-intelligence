@@ -306,3 +306,22 @@ def test_cli_parse_errors_are_sanitized_json(monkeypatch,capsys):
 def test_finite_failure_vocabulary(code):
     assert host._failure_code(RuntimeError(code))==code
     assert host._failure_code(RuntimeError(code+' SECRET'))=='UNCLASSIFIED_FAILURE'
+
+
+def test_real_buffer_cap_accepts_above_old_512_mib_and_refuses_above_2_gib():
+    # Reuse immutable chunks: exercise actual byte accounting without a 2 GiB CI allocation.
+    chunk = bytes(16 * 1024 * 1024)
+    files = {}
+    assert host.MAX_BUFFERED_INPUT_BYTES == 2 * 1024 * 1024 * 1024
+    for index in range(33):
+        host._buffer(files, str(index), chunk)
+    assert sum(map(len, files.values())) == 528 * 1024 * 1024
+    for index in range(33, 128):
+        host._buffer(files, str(index), chunk)
+    assert sum(map(len, files.values())) == host.MAX_BUFFERED_INPUT_BYTES
+    with pytest.raises(ValueError, match='BUFFERED_INPUT_BUDGET_EXHAUSTED'):
+        host._buffer(files, 'over-limit', b'x')
+    assert len(files) == 128 and 'over-limit' not in files
+    # Replacing an existing name does not double-count the old bytes.
+    host._buffer(files, '0', chunk)
+    assert sum(map(len, files.values())) == host.MAX_BUFFERED_INPUT_BYTES
