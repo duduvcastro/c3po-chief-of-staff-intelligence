@@ -128,7 +128,7 @@ class _Inputs:
         _json(body)
         return PrivateSnapshot(body, received, source)
 
-    def receipt(self, spec: dict[str, Any], computed: datetime) -> SourceReceipt:
+    def receipt(self, spec: dict[str, Any], computed: datetime, *, allow_incomplete: bool = False) -> SourceReceipt:
         if set(spec) != {"receipt", "body"}:
             raise ValueError("HTTP_REFERENCE_INVALID")
         doc = _json(self.read(spec["receipt"]))
@@ -138,10 +138,18 @@ class _Inputs:
         started, received = _clock(doc["started_at"]), _clock(doc["received_at"])
         if not started <= received <= computed or doc["payload_sha256"] != _sha(body):
             raise ValueError("HTTP_RECEIPT_BINDING_INVALID")
-        if doc.get("diagnostic") is not None or type(doc["status"]) is not int or doc["status"] != 200:
+        incomplete = doc.get("diagnostic") is not None or type(doc["status"]) is not int or doc["status"] != 200
+        if not incomplete:
+            try:
+                _json(body)
+            except (ValueError, UnicodeDecodeError):
+                if not allow_incomplete:
+                    raise
+                incomplete = True
+        if incomplete and not allow_incomplete:
             raise ValueError("HTTP_RECEIPT_NOT_COMPLETE")
-        _json(body)
-        return SourceReceipt(request, started, received, doc["status"], body, _sha(body), None)
+        return SourceReceipt(request, started, received, doc["status"], body, _sha(body),
+                             "SOURCE_INCOMPLETE" if incomplete else None)
 
 
 def _publish_new(path: Path, files: dict[str, bytes]) -> None:
@@ -235,9 +243,9 @@ def execute_private_risk(*, manifest_path: Path, manifest_sha256: str,
                 fx = entry.get("fx")
                 result = build_risk_bundle(
                     symbol=symbol, market=entry["market"],
-                    fundamentals=inputs.receipt(sources["fundamentals"], computed),
-                    grades=inputs.receipt(sources["grades"], computed),
-                    institutional=inputs.receipt(sources["institutional"], computed),
+                    fundamentals=inputs.receipt(sources["fundamentals"], computed, allow_incomplete=True),
+                    grades=inputs.receipt(sources["grades"], computed, allow_incomplete=True),
+                    institutional=inputs.receipt(sources["institutional"], computed, allow_incomplete=True),
                     insider_snapshot=inputs.snapshot(sources["insider"], computed),
                     official_snapshot=inputs.snapshot(sources["official"], computed),
                     computed_at=computed, available_at=available, decision_at=decision,

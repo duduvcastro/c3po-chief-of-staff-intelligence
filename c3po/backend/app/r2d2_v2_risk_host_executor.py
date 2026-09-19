@@ -222,7 +222,7 @@ def _validate(plan: dict[str,Any], *, digest: str, go: dict[str,Any], inputs: _I
     # Read and validate every existing source before any provider call.
     for entry in replay["symbols"]:
         if entry["market"]=="B3":continue
-        for key in ("fundamentals","grades","institutional"):inputs.receipt(entry["sources"][key],now)
+        for key in ("fundamentals","grades","institutional"):inputs.receipt(entry["sources"][key],now,allow_incomplete=True)
         inputs.snapshot(entry["sources"]["official"],now)
         if entry.get("fx"):inputs.snapshot(entry["fx"]["receipt"],now)
     return replay,entries
@@ -269,7 +269,7 @@ def _arguments(entry: dict[str,Any], source: _Inputs, at: datetime) -> dict[str,
     arguments={"symbol":entry["symbol"],"market":entry["market"],"computed_at":at,"available_at":at,"decision_at":at}
     if entry["market"]=="B3":return arguments
     sources=entry["sources"]
-    arguments.update({key:source.receipt(sources[key],at) for key in ("fundamentals","grades","institutional")})
+    arguments.update({key:source.receipt(sources[key],at,allow_incomplete=True) for key in ("fundamentals","grades","institutional")})
     arguments.update(insider_snapshot=source.snapshot(sources["insider"],at),official_snapshot=source.snapshot(sources["official"],at))
     if entry.get("fx"):
         arguments.update(fx_rate=entry["fx"]["rate"],quote_price=entry["fx"]["quote_price"],fx_receipt=source.snapshot(entry["fx"]["receipt"],at))
@@ -354,8 +354,8 @@ def _run_host_phase(*, phase: str, manifest_path: Path, manifest_sha256: str, go
             batch_entries=[]
             for entry in replay["symbols"]:
                 if entry["market"]=="B3":continue
-                identity=inputs.receipt(entry["sources"]["fundamentals"],now)
-                batch_entries.append({"symbol":entry["symbol"],"market":entry["market"],"identity":identity})
+                identity=inputs.receipt(entry["sources"]["fundamentals"],now,allow_incomplete=True)
+                batch_entries.append({"symbol":entry["symbol"],"market":entry["market"],"identity":identity if identity.diagnostic is None else None})
             if batch_entries:
                 if transport is None or database_reader is None:
                     if transport is not None or database_reader is not None:raise ValueError("DEPENDENCIES_PARTIAL")
