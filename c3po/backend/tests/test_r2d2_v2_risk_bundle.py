@@ -147,9 +147,11 @@ def test_missing_query_cutoff_never_invented():
     assert 'INSIDER_QUERY_CUTOFF_MISSING' in result['diagnostics']
 
 
-def test_http_failure_not_accepted_even_diagnostic_missing():
+def test_http_failure_completed_null_even_diagnostic_missing():
     kwargs=arguments(); kwargs['fundamentals']=replace(kwargs['fundamentals'],status=500)
-    with pytest.raises(ValueError,match='BINDING'): build_risk_bundle(**kwargs)
+    result=build_risk_bundle(**kwargs)
+    assert result['status']=='COMPLETED_NULL' and result['risk']['value'] is None
+    assert 'SOURCE_INCOMPLETE' in result['diagnostics']
 
 
 def test_b3_remains_completed_null():

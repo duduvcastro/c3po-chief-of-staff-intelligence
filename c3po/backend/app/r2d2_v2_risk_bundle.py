@@ -135,6 +135,38 @@ def _receipt_payload(receipt: SourceReceipt, provider: str, path: str) -> Any:
     return receipt.payload()
 
 
+def _incomplete_assessment(receipts: tuple[SourceReceipt, ...], *, symbol: str,
+                           computed_at: datetime, available_at: datetime,
+                           decision_at: datetime) -> dict[str, Any]:
+    """Complete the null assessment; do not claim a complete provider response."""
+    provider_symbol = symbol if "." in symbol else symbol + ".US"
+    expected = (("eodhd", "/api/v1.1/fundamentals/" + provider_symbol),
+                ("fmp", "/stable/grades"), ("fmp", "/stable/institutional-ownership/symbol-positions-summary"))
+    for receipt, (provider, path) in zip(receipts, expected):
+        if (receipt.request.provider != provider or receipt.request.path != path
+                or (provider == "fmp" and receipt.request.parameters.get("symbol") != symbol)
+                or receipt.started_at.tzinfo is None or receipt.received_at.tzinfo is None
+                or not receipt.started_at <= receipt.received_at <= computed_at
+                or hashlib.sha256(receipt.body).hexdigest() != receipt.payload_sha256):
+            raise ValueError("SOURCE_RECEIPT_BINDING_INVALID")
+    observed = max(receipt.received_at for receipt in receipts)
+    digest = hashlib.sha256(json.dumps([
+        {"payload_sha256":r.payload_sha256,"status":r.status,"diagnostic":r.diagnostic}
+        for r in receipts], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    evidence = {name: ComponentEvidence(True, False, "SOURCE_INCOMPLETE_ASSESSMENT", ORIGIN_REVISION,
+        digest, observed, observed,
+        "Null assessment completed from failed source receipts; provider completeness and coverage not established")
+        for name in COMPONENTS}
+    result = adapt_canonical_risk(CanonicalRiskInputs(None, None, None, None, None, None, None), evidence,
+        computed_at=computed_at, available_at=available_at, decision_at=decision_at)
+    result["diagnostics"].append("SOURCE_INCOMPLETE")
+    result["source_responses_complete"] = False
+    result.pop("self_sha256", None)
+    result["self_sha256"] = hashlib.sha256(json.dumps(result, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=True, allow_nan=False).encode()).hexdigest()
+    return result
+
+
 def build_risk_bundle(*, symbol: str, market: str, fundamentals: SourceReceipt | None = None,
                       grades: SourceReceipt | None = None, institutional: SourceReceipt | None = None,
                       insider_snapshot: PrivateSnapshot | None = None, official_snapshot: PrivateSnapshot | None = None,
@@ -167,12 +199,16 @@ def build_risk_bundle(*, symbol: str, market: str, fundamentals: SourceReceipt |
            (computed_at, available_at, decision_at, insider_snapshot.received_at, official_snapshot.received_at)):
         raise ValueError("BUNDLE_CLOCK_INVALID")
     path_symbol = symbol if "." in symbol else symbol + (".SA" if market == "B3" else ".US")
-    raw = _receipt_payload(fundamentals, "eodhd", "/api/v1.1/fundamentals/" + path_symbol)
     official = official_snapshot.payload()
     if not isinstance(official, dict) or official.get("symbol") != symbol or official.get("market") != market or "outputs" not in official:
         raise ValueError("OFFICIAL_SNAPSHOT_IDENTITY_INVALID")
     if official["outputs"] is not None and not isinstance(official["outputs"], dict):
         raise ValueError("OFFICIAL_SNAPSHOT_INVALID")
+    receipts = (fundamentals, grades, institutional)
+    if any(receipt.diagnostic is not None or receipt.status != 200 for receipt in receipts):
+        return _incomplete_assessment(receipts, symbol=symbol, computed_at=computed_at,
+                                      available_at=available_at, decision_at=decision_at)
+    raw = _receipt_payload(fundamentals, "eodhd", "/api/v1.1/fundamentals/" + path_symbol)
     normalized = prepare_path_a(raw, symbol=symbol, overlay=official["outputs"],
                                 fx_rate=fx_rate, quote_price=quote_price)
     overlay_applied = bool(normalized.get("officialFundamentals"))
