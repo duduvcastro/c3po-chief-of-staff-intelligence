@@ -98,3 +98,24 @@ def test_inventory_preserves_non_alphabetical_causal_bytes():
     assert [r['symbol'] for r in inventory['symbols']]==['ZZZ','AAA']
     with pytest.raises(ValueError,match='SYMBOL_INVALID'):
         stage.causal_inventory('ÁAA\n'.encode(),namespace='test',session='2026-09-18',markets={})
+
+
+def test_staging_budget_covers_measured_e8_and_remains_fail_closed(tmp_path, monkeypatch):
+    import base64
+    assert stage.MAX_TOTAL == 2 * 1024 * 1024 * 1024
+    assert stage.MAX_TOTAL >= 958924104 * 1.5
+    bundle, kwargs, *_, host_result = pipeline(tmp_path)
+    total = sum(len(base64.b64decode(body)) for body in bundle['files'].values())
+    manifest = kwargs['execute_receipt_path'].parent / 'assessment' / host_result['outputs']['assessment_manifest']['path']
+    digest = host_result['outputs']['assessment_manifest']['sha256']
+    validate = dict(namespace=kwargs['namespace'], session=kwargs['session'], symbols=['SYNTH'],
+                    admission_sha256=host_result['outputs']['admission_sha256'])
+    monkeypatch.setattr(stage, 'MAX_TOTAL', total)
+    assert stage.build_bundle(manifest, digest) == bundle
+    assert stage.validate_bundle(bundle, **validate)
+    monkeypatch.setattr(stage, 'MAX_TOTAL', total - 1)
+    with pytest.raises(ValueError, match='STAGE_TOTAL_LIMIT'):
+        stage.build_bundle(manifest, digest)
+    with pytest.raises(ValueError, match='STAGE_TOTAL_LIMIT'):
+        stage.validate_bundle(bundle, **validate)
+    assert not (kwargs['root'] / 'control/risk-stage.started.json').exists()
