@@ -9,7 +9,7 @@ import stat
 import tempfile
 
 MAX_FILE=16*1024*1024
-MAX_TOTAL=512*1024*1024
+MAX_TOTAL=2*1024*1024*1024
 MAX_FILES=12000
 HEX=re.compile(r'(?!0{64}\Z)[0-9a-f]{64}\Z')
 
