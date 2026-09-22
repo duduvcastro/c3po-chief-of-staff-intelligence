@@ -133,6 +133,58 @@ def test_daily_contract_conflicting_bars_are_evidence_not_a_choice() -> None:
     assert receipt_a["bar_conflicts"] == {"AAA": [first.isoformat()]} == receipt_b["bar_conflicts"] and receipt_a["counts"]["bar_conflicts"] == 1
 
 
+def test_daily_contract_fills_only_missing_bars_from_hashed_symbol_fallback() -> None:
+    sessions = prod.xnys_sessions_ending(PREVIOUS, 20)
+    missing = sessions[-1]
+    bulk = {s: _response([] if s == missing else [_bar_row("AAA", s)], _after_close(s)) for s in sessions}
+    splits = {s: _response([], _after_close(s)) for s in sessions}
+    fallback = _response(
+        [{k: v for k, v in _bar_row("AAA", s).items() if k != "code"} for s in sessions],
+        _after_close(PREVIOUS, 180),
+        "/api/eod/AAA.US",
+    )
+    contract, receipt = prod.build_daily_contract(
+        _registry(["AAA"]), bulk, splits, sessions=sessions,
+        fallback_by_symbol={"AAA": fallback}, previous_close=prod.session_close(PREVIOUS),
+    )
+    daily = contract["instruments"][0]["daily"]
+    assert daily["coverage_verified"] is True and len(daily["bars"]) == 20
+    assert contract["source_id"] == "eodhd-eod-bulk-last-day-US+eod-symbol-fallback"
+    assert receipt["fallback_payload_sha256"] == {"AAA": fallback.sha256}
+    assert receipt["counts"]["fallback_symbols"] == 1
+    assert receipt["counts"]["fallback_bars_filled"] == 1
+    assert receipt["counts"]["fallback_symbols_unresolved"] == 0
+
+
+def test_daily_contract_fallback_never_hides_bulk_conflict() -> None:
+    sessions = prod.xnys_sessions_ending(PREVIOUS, 20)
+    conflicted = sessions[-1]
+    bulk = {s: _response([_bar_row("AAA", s)], _after_close(s)) for s in sessions}
+    bulk[conflicted] = _response(
+        [_bar_row("AAA", conflicted, close=10.5), _bar_row("AAA", conflicted, close=10.7)],
+        _after_close(conflicted),
+    )
+    splits = {s: _response([], _after_close(s)) for s in sessions}
+    fallback = _response(
+        [{k: v for k, v in _bar_row("AAA", s).items() if k != "code"} for s in sessions],
+        _after_close(PREVIOUS, 180),
+        "/api/eod/AAA.US",
+    )
+    contract, receipt = prod.build_daily_contract(
+        _registry(["AAA"]), bulk, splits, sessions=sessions,
+        fallback_by_symbol={"AAA": fallback}, previous_close=prod.session_close(PREVIOUS),
+    )
+    assert contract["instruments"][0]["daily"]["coverage_verified"] is False
+    assert receipt["bar_conflicts"] == {"AAA": [conflicted.isoformat()]}
+    assert receipt["counts"]["fallback_bars_filled"] == 0
+
+
+def test_daily_fallback_has_a_hard_request_budget() -> None:
+    sessions = prod.xnys_sessions_ending(PREVIOUS, 20)
+    with pytest.raises(prod.ProducerError, match="DAILY_FALLBACK_BUDGET_EXCEEDED"):
+        prod._fetch_daily_fallbacks(lambda *_: None, [f"S{n}" for n in range(prod.DAILY_FALLBACK_MAX_SYMBOLS + 1)], sessions)
+
+
 def test_daily_contract_unreadable_split_rows_make_split_coverage_unknown() -> None:
     sessions = prod.xnys_sessions_ending(PREVIOUS, 20)
     target = sessions[10]
@@ -311,6 +363,36 @@ def test_orchestration_writes_port_documents_and_bound_receipts(tmp_path: Path) 
         prod.produce_causal_inputs(fetch, session_date=D, output_dir=tmp_path, now=prod.session_close(PREVIOUS) - timedelta(hours=1))
     with pytest.raises(prod.ProducerError, match="SYMBOL_INVALID"):
         prod.produce_instrument_components(fetch, ["bad symbol"], session_date=D, output_dir=tmp_path)
+
+
+def test_orchestration_recovers_a_regressed_bulk_snapshot_with_exact_symbol_range(tmp_path: Path) -> None:
+    sessions = prod.xnys_sessions_ending(PREVIOUS, 20)
+    now = _after_close(PREVIOUS, 240)
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    def fetch(path: str, params: Mapping[str, str]) -> prod.Response:
+        calls.append((path, dict(params)))
+        if path == "/api/exchange-symbol-list/US":
+            return _response([{"Code": "AAA", "Exchange": "NYSE", "Type": "Common Stock"}], now, path)
+        if path == "/api/eod-bulk-last-day/US":
+            if params.get("type") == "splits":
+                return _response([], now, path)
+            session = date.fromisoformat(params["date"])
+            return _response([] if session == sessions[-1] else [_bar_row("AAA", session)], now, path)
+        if path == "/api/eod/AAA.US":
+            assert params == {"period": "d", "from": sessions[0].isoformat(), "to": sessions[-1].isoformat()}
+            return _response(
+                [{k: v for k, v in _bar_row("AAA", session).items() if k != "code"} for session in sessions],
+                now, path,
+            )
+        raise AssertionError(path)
+
+    result = prod.produce_causal_inputs(fetch, session_date=D, output_dir=tmp_path, now=now)
+    receipt = json.loads((tmp_path / "daily_contract.receipt.json").read_bytes())
+    assert result["complete_bars"] == 1
+    assert receipt["counts"]["fallback_symbols"] == 1
+    assert receipt["counts"]["fallback_bars_filled"] == 1
+    assert sum(path == "/api/eod/AAA.US" for path, _ in calls) == 1
 
 
 def test_cli_is_off_by_default(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
