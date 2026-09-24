@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import re
 import logging
-from threading import RLock
+from threading import RLock, Lock, Event, Thread
 from typing import Any, Literal
 import unicodedata
 from urllib.parse import quote
@@ -105,6 +105,9 @@ class RealtimeMarketsService:
         self._otc_origin_cache: dict[str, tuple[datetime, OtcOriginReference | None]] = {}
         self._intraday_series: dict[str, tuple[datetime, RealtimePortfolioIntradayResponse]] = {}
         self._index_history_failures: dict[tuple, datetime] = {}
+        self._index_history_lock = Lock()
+        self._index_history_pending: Event | None = None
+        self._index_history_result: dict[tuple, tuple[datetime, InstrumentIntradayResponse]] = {}
         self._instrument_intraday_series: dict[str, tuple[datetime, InstrumentIntradayResponse]] = {}
 
     def snapshot(self, market: str) -> RealtimeMarketResponse:
@@ -669,6 +672,13 @@ class RealtimeMarketsService:
         if cached and now < cached[0]:
             return cached[1]
 
+        # Index history must never fetch while holding the shared realtime lock.
+        index_spec = next((spec for spec in LIVE_MARKET_SPECS
+            if spec.provider == 'fmp_index' and raw_symbol.casefold() in {
+                spec.symbol.casefold(), spec.provider_symbol.casefold()}), None)
+        if index_spec is not None:
+            return self._fmp_index_intraday(index_spec, now, requested_session_date=requested_session_date)
+
         with self._lock:
             now = datetime.now(timezone.utc)
             cached = self._instrument_intraday_series.get(cache_key)
@@ -797,7 +807,49 @@ class RealtimeMarketsService:
             requested_session_date=requested_session_date,
         )
 
-    def _fmp_index_intraday(
+    def _fmp_index_intraday(self, spec: Any, now: datetime, *, requested_session_date: date | None = None) -> InstrumentIntradayResponse:
+        index = INDICES[spec.provider_symbol]
+        end = requested_session_date or now.astimezone(ZoneInfo(str(xcals.get_calendar(index.calendar).tz))).date()
+        key = (spec.provider_symbol, end)
+        with self._index_history_lock:
+            cached = self._index_history_result.get(key)
+            if cached and now < cached[0]:
+                return cached[1]
+            if now < self._index_history_failures.get(key, datetime.min.replace(tzinfo=timezone.utc)):
+                raise RuntimeError('FMP index history unavailable')
+            owner = self._index_history_pending is None
+            if owner:
+                self._index_history_pending = Event()
+            pending = self._index_history_pending
+        if owner:
+            assert pending is not None
+            def refresh():
+                try:
+                    result = self._fetch_fmp_index_intraday(spec, now, requested_session_date=requested_session_date)
+                    with self._index_history_lock:
+                        written = datetime.now(timezone.utc)
+                        self._index_history_result = {k:v for k,v in self._index_history_result.items() if v[0] > written}
+                        self._index_history_result[key] = (written+timedelta(seconds=30), result)
+                except Exception as exc:
+                    with self._index_history_lock:
+                        failed = datetime.now(timezone.utc)
+                        self._index_history_failures = {k:v for k,v in self._index_history_failures.items() if v > failed}
+                        self._index_history_failures[key] = failed+timedelta(seconds=30)
+                    logging.getLogger(__name__).warning('Index history fetch failed (%s)', type(exc).__name__)
+                finally:
+                    with self._index_history_lock:
+                        self._index_history_pending = None
+                        pending.set()
+            Thread(target=refresh, daemon=True, name='index-history-refresh').start()
+            if cached is None:
+                pending.wait(timeout=3.0)
+        with self._index_history_lock:
+            ready = self._index_history_result.get(key)
+        if ready:
+            return ready[1].model_copy(update={'status':'stale'}) if ready[0] <= datetime.now(timezone.utc) else ready[1]
+        raise RuntimeError('FMP index history unavailable')
+
+    def _fetch_fmp_index_intraday(
         self, spec: Any, now: datetime, *, requested_session_date: date | None = None,
     ) -> InstrumentIntradayResponse:
         if not self.settings.fmp_api_token:
@@ -805,19 +857,11 @@ class RealtimeMarketsService:
         index = INDICES[spec.provider_symbol]
         market_timezone = ZoneInfo(str(xcals.get_calendar(index.calendar).tz))
         end = requested_session_date or now.astimezone(market_timezone).date()
-        failure_key = (spec.provider_symbol, end)
-        if now < self._index_history_failures.get(failure_key, datetime.min.replace(tzinfo=timezone.utc)):
-            raise RuntimeError('FMP index history unavailable')
-        try:
-            payload = self.http.get_json(
-                f"{self.settings.fmp_base_url.rstrip('/')}/stable/historical-chart/5min",
-                params={"symbol": spec.provider_symbol, "from": (end-timedelta(days=7)).isoformat(),
-                        "to": end.isoformat(), "apikey": self.settings.fmp_api_token},
-            )
-        except Exception as exc:
-            self._index_history_failures[failure_key] = now + timedelta(seconds=30)
-            logging.getLogger(__name__).warning("Index history fetch failed (%s)", type(exc).__name__)
-            raise RuntimeError("FMP index history unavailable") from None
+        payload = self.indices.http.get_json(
+            f"{self.settings.fmp_base_url.rstrip('/')}/stable/historical-chart/5min",
+            params={"symbol": spec.provider_symbol, "from": (end-timedelta(days=7)).isoformat(),
+                    "to": end.isoformat(), "apikey": self.settings.fmp_api_token},
+        )
         rows = []
         for raw in payload if isinstance(payload, list) else []:
             if not isinstance(raw, dict):
@@ -835,9 +879,7 @@ class RealtimeMarketsService:
             except (ValueError, TypeError, OverflowError):
                 continue
         if not rows:
-            self._index_history_failures[failure_key] = now + timedelta(seconds=30)
             raise RuntimeError("FMP index history unavailable")
-        self._index_history_failures.pop(failure_key, None)
         response = self._normalize_instrument_intraday(
             rows, symbol=spec.symbol, name=spec.name, market=spec.group, currency=spec.currency,
             source="Financial Modeling Prep Intraday 5m", delay_minutes=0,

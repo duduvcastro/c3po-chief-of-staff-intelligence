@@ -4,7 +4,8 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 import math
 import logging
-from threading import Event, Lock
+from time import monotonic
+from threading import Event, Lock, Thread
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -80,6 +81,7 @@ class IndexQuotesService:
                      if isinstance(http, JsonHttpClient) else http)
         self._lock = Lock()
         self._refreshing: Event | None = None
+        self._refresh_deadline = 0.0
         self._expires = datetime.min.replace(tzinfo=timezone.utc)
         self._items: dict[str, LiveMarketItem] = {}
         self._failed: set[str] = set(INDICES)
@@ -92,31 +94,34 @@ class IndexQuotesService:
             owner = self._refreshing is None and now >= self._expires
             if owner:
                 self._refreshing = Event()
+                self._refresh_deadline = monotonic() + 3.0
             pending = self._refreshing
             cold = symbol not in self._items
+            deadline = self._refresh_deadline
         if owner:
-            assert pending is not None  # Owner created the event while holding the lock.
-            try:
-                fresh = self._fetch(now)
-                with self._lock:
-                    self._failed = set(INDICES)
-                    for key, item in fresh.items():
-                        previous = self._items.get(key)
-                        if previous is None or item.as_of >= previous.as_of:
-                            self._items[key] = item
-                            self._failed.discard(key)
-                    self._expires = datetime.now(timezone.utc) + timedelta(seconds=10)
-            finally:
-                with self._lock:
-                    self._refreshing = None
-                    pending.set()
-        elif cold and pending is not None:
-            # Cold callers may wait briefly for the one in-flight batch.
-            # Cached readers never wait for provider I/O.
-            pending.wait(timeout=3.0)
+            assert pending is not None
+            def refresh():
+                try:
+                    fresh = self._fetch(now)
+                    with self._lock:
+                        self._failed = set(INDICES)
+                        for key, item in fresh.items():
+                            previous = self._items.get(key)
+                            if previous is None or item.as_of >= previous.as_of:
+                                self._items[key] = item
+                                self._failed.discard(key)
+                        self._expires = datetime.now(timezone.utc) + timedelta(seconds=10)
+                finally:
+                    with self._lock:
+                        self._refreshing = None
+                        pending.set()
+            Thread(target=refresh, daemon=True, name='index-quotes-refresh').start()
+        if cold and pending is not None:
+            # Shared batch deadline prevents six sequential cold waits.
+            pending.wait(timeout=max(0.0, deadline-monotonic()))
         with self._lock:
             item = self._items.get(symbol)
-            stale = symbol in self._failed or self._refreshing is not None
+            stale = symbol in self._failed
         if item is None:
             raise RuntimeError('FMP index quote unavailable')
         now = datetime.now(timezone.utc)

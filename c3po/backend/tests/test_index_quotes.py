@@ -105,6 +105,9 @@ def test_failure_retains_real_timestamp_marks_stale_and_throttles_without_yahoo(
     with patch('app.market_data.indices.datetime',Clock):
         original=indices.quote('^IXIC')
         http.failed=True;indices._expires=NOW-timedelta(seconds=1)
+        indices.quote('^IXIC')
+        pending = indices._refreshing
+        if pending: assert pending.wait(2)
         stale=indices.quote('^IXIC');indices.quote('^NYA')
     assert stale.status=='stale' and stale.as_of==original.as_of
     assert len(http.calls)==2
@@ -116,6 +119,9 @@ def test_older_quote_cannot_overwrite_newer():
         original=indices.quote('^IXIC')
         for row in http.rows:row.update(timestamp=NOW.timestamp()-600,price=50)
         indices._expires=NOW-timedelta(seconds=1)
+        indices.quote('^IXIC')
+        pending = indices._refreshing
+        if pending: assert pending.wait(2)
         result=indices.quote('^IXIC')
     assert result.price==original.price and result.as_of==original.as_of and result.status=='stale'
 
@@ -191,11 +197,13 @@ def test_cached_readers_do_not_wait_for_single_inflight_refresh():
                 assert entered.wait(2)
                 reader = pool.submit(indices.quote, '^IXIC')
                 stale = reader.result(timeout=1)
-                assert stale.status == 'stale'
+                assert stale.status == 'live'  # Refresh alone must not flicker the freshness label.
                 assert stale.as_of == original.as_of and stale.price == original.price
-                assert not refresh.done()
+                assert refresh.result(timeout=1).as_of == original.as_of
             finally:
+                pending = indices._refreshing
                 release.set()
+                if pending: assert pending.wait(2)
             assert refresh.result(timeout=2).status == 'live'
         assert len(http.calls) == 2
 
@@ -295,5 +303,60 @@ def test_history_failure_is_cached_without_logging_credentials(caplog):
     assert 'secret-key' not in caplog.text
     assert 'RuntimeError' in caplog.text
     with pytest.raises(RuntimeError):
-        master._fmp_index_intraday(spec, NOW+timedelta(seconds=31))
+        master._fmp_index_intraday(spec, master._index_history_failures[(spec.provider_symbol, NOW.date())]+timedelta(seconds=1))
     assert len(http.calls) == 2
+
+
+def test_cold_batch_has_one_total_deadline_even_with_slow_drip():
+    from threading import Event
+    from time import monotonic
+    _, http, indices = service()
+    entered, release = Event(), Event()
+    def drip(*args, **kwargs):
+        entered.set()
+        assert release.wait(10)
+        return []
+    http.get_json = drip
+    start = monotonic()
+    try:
+        for symbol in INDICES:
+            with pytest.raises(RuntimeError): indices.quote(symbol)
+        assert entered.is_set()
+        assert monotonic()-start < 4.0  # Six symbols share one 3s deadline.
+    finally:
+        pending = indices._refreshing
+        release.set()
+        if pending: assert pending.wait(2)
+
+
+def test_history_fetch_outside_shared_lock_bounded_and_failure_clock_after_fetch():
+    from threading import Event
+    from time import monotonic
+    settings, http, indices = service()
+    master = RealtimeMarketsService(settings, Database(settings), http, indices=indices)
+    entered, release = Event(), Event()
+    calls = []
+    def drip(*args, **kwargs):
+        calls.append(1);entered.set()
+        assert release.wait(10)
+        raise RuntimeError('secret-key')
+    http.get_json = drip
+    start = monotonic()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            request = pool.submit(master.instrument_intraday, 'NASDAQ')
+            assert entered.wait(2)
+            assert master._lock.acquire(timeout=0.2)
+            master._lock.release()
+            with pytest.raises(RuntimeError): request.result(timeout=4)
+        assert monotonic()-start < 4
+        with pytest.raises(RuntimeError): master.instrument_intraday('NASDAQ')
+        assert len(calls) == 1
+    finally:
+        pending = master._index_history_pending
+        failure_time = datetime.now(timezone.utc)
+        release.set()
+        if pending: assert pending.wait(2)
+    assert all(expiry >= failure_time+timedelta(seconds=29) for expiry in master._index_history_failures.values())
+    with pytest.raises(RuntimeError): master.instrument_intraday('NASDAQ')
+    assert len(calls) == 1
