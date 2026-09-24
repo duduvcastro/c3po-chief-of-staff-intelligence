@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 import math
 import logging
+import httpx
 from time import monotonic
 from threading import Event, Lock, Thread
 from typing import Literal
@@ -13,7 +14,7 @@ import exchange_calendars as xcals
 
 from ..config import Settings
 from ..schemas import LiveMarketItem
-from .http import JsonHttpClient
+from .http import JsonHttpClient, DeadlineJsonHttpClient
 from .models import number
 
 
@@ -75,10 +76,13 @@ def quote_status(spec: IndexSpec, as_of: datetime, now: datetime) -> tuple[Liter
 class IndexQuotesService:
     def __init__(self, settings: Settings, http: JsonHttpClient) -> None:
         self.settings = settings
-        # Index snapshots must not inherit the general client's retry budget.
-        # Preserve an injected transport while overriding its per-request timeout.
-        self.http = (JsonHttpClient(timeout=3.0, max_retries=0, client=http.client)
-                     if isinstance(http, JsonHttpClient) else http)
+        if isinstance(http, JsonHttpClient):
+            transport = getattr(http.client, '_transport', None) if http.client else None
+            if transport is not None and not isinstance(transport, httpx.AsyncBaseTransport):
+                raise ValueError('Index deadline client requires an asynchronous transport')
+            self.http = DeadlineJsonHttpClient(timeout=3.0, transport=transport)
+        else:
+            self.http = http  # Explicit test double, no production transport.
         self._lock = Lock()
         self._refreshing: Event | None = None
         self._refresh_deadline = 0.0

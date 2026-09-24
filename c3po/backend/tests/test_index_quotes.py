@@ -353,10 +353,71 @@ def test_history_fetch_outside_shared_lock_bounded_and_failure_clock_after_fetch
         with pytest.raises(RuntimeError): master.instrument_intraday('NASDAQ')
         assert len(calls) == 1
     finally:
-        pending = master._index_history_pending
+        pending = next(iter(master._index_history_pending.values()), (None, 0))[0]
         failure_time = datetime.now(timezone.utc)
         release.set()
         if pending: assert pending.wait(2)
     assert all(expiry >= failure_time+timedelta(seconds=29) for expiry in master._index_history_failures.values())
     with pytest.raises(RuntimeError): master.instrument_intraday('NASDAQ')
     assert len(calls) == 1
+
+
+def test_history_same_key_waits_and_different_key_progresses():
+    from threading import Event
+    from time import sleep
+    from types import SimpleNamespace
+    settings, http, indices = service()
+    master = RealtimeMarketsService(settings, Database(settings), http, indices=indices)
+    entered, release = Event(), Event()
+    calls = []
+    def fetch(spec, now, **kwargs):
+        calls.append(spec.provider_symbol)
+        if spec.symbol == 'NASDAQ':
+            entered.set()
+            assert release.wait(5)
+        return SimpleNamespace(symbol=spec.symbol)
+    with patch.object(master, '_fetch_fmp_index_intraday', fetch), ThreadPoolExecutor(max_workers=3) as pool:
+        first = pool.submit(master.instrument_intraday, 'NASDAQ')
+        assert entered.wait(1)
+        second = pool.submit(master.instrument_intraday, 'NASDAQ')
+        other = pool.submit(master.instrument_intraday, 'IBOV')
+        try:
+            assert other.result(timeout=1).symbol == 'IBOV'
+            sleep(0.05)
+            assert not second.done()
+        finally:
+            release.set()
+        assert first.result(timeout=1).symbol == second.result(timeout=1).symbol == 'NASDAQ'
+    assert calls.count('^IXIC') == 1
+    assert not master._index_history_pending
+
+
+def test_deadline_http_aborts_slow_drip_and_allows_next_request():
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread, Event
+    from time import monotonic
+    from app.market_data.http import DeadlineJsonHttpClient, MarketDataRequestError
+    stopped = Event()
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header('Content-Length', '100000')
+            self.end_headers()
+            try:
+                while not stopped.wait(0.03):
+                    self.wfile.write(b' ')
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True);thread.start()
+    client = DeadlineJsonHttpClient(timeout=0.2)
+    try:
+        for _ in range(2):
+            start = monotonic()
+            with pytest.raises(MarketDataRequestError, match='TimeoutError'):
+                client.get_json(f'http://127.0.0.1:{server.server_port}/')
+            assert monotonic()-start < 1.0
+    finally:
+        stopped.set();server.shutdown();server.server_close();thread.join(timeout=2)
