@@ -25,6 +25,13 @@ Família `CANONICAL_ONLY_V1`, versão `1.0.0`. A origem é
 `OnePagerService._analyze:531–546` e os auxiliares `:996–1048`, na revisão
 `6083d7420746434426a11134b8edf0ba4b60b6b0`; SHA256 do `one_pager.py`:
 `e49265da0cfc4cd10ab8e94d826ff8be38ee1d278137769a62d3c9a86f006e0d`.
+
+O oráculo executável dos testes é separado: revisão
+`1bb009c3d029ba8a74143bb22381a68bc1e86634`, SHA256 do arquivo
+`76e8cc35fcd03be591280ff1bfbf76e0eb48495019fbe0484ead4231118a2ca4`.
+Desde a versão 1.0.1, o recibo distingue `origin_revision`/
+`origin_one_pager_sha256` de `oracle_revision`/`oracle_one_pager_sha256`.
+A mudança corrige a proveniência; não modifica a aritmética do risco.
 O pacote que ligar o produtor deverá também pinar os bytes deste módulo; o hash
 da origem, sozinho, não autentica uma implementação futura.
 
@@ -73,6 +80,30 @@ inteiros não negativos. Insider buy+sell não pode exceder total. Tipos,
 contagens inconsistentes e relógios estruturalmente inválidos lançam
 `ValueError` antes de qualquer resposta `READY`; não geram score substituto.
 O adaptador não arredonda nem transforma strings numéricas.
+
+Por ordem direta do dono em 17/09 (aceite registrado na #348, comentário
+5718373969), a origem canônica é o caminho A de `generate`: EODHD, conversão
+cambial e overlay oficial do banco, com indicação explícita do overlay usado.
+Os arquivos e funções da revisão histórica estão pinados em
+`r2d2-risk-source/SOURCE_PINS.json`, incluindo a ingestão de eventos.
+
+RC-2 mantém a heurística histórica `_ratio`: `abs(valor)>2` divide por 100;
+o recibo de normalização registra valor de entrada e aplicação da conversão.
+Essa transformação é upstream e explícita; o adaptador continua recebendo a
+razão pronta, sem inferir unidades silenciosamente.
+
+RC-4: insider vem de `ir_events` produzido por `sync_sec` (Finnhub, EODHD
+apenas como fallback da ingestão), com janela de 180 dias sobre `published_at`
+e total = compras + vendas direcionais. Contagens não são prova de cobertura:
+é obrigatório recibo da ingestão cobrindo os 180 dias; 90 dias implica
+`INSIDER_WINDOW_PARTIAL` e resultado nulo. Form 4 consultado diretamente não
+substitui essa fonte. Institucional usa o trimestre canônico e a primeira linha;
+lista vazia permanece cobertura desconhecida. Grades exigem símbolo reconhecido,
+janela canônica de 90 dias e deduplicação por data, empresa avaliadora e ação.
+Dívida/EBITDA e FCF exigem quatro linhas trimestrais completas; fallback não
+comprova cobertura. Não se introduz TTL ou limite novo de dias por trimestre.
+RC-5: beta não positivo e B3 ficam `COMPLETED_NULL` na produção, com diagnóstico;
+isso não autoriza passar beta inválido diretamente ao kernel.
 
 O produtor upstream deverá reproduzir/documentar a preparação dos escalares
 que precede o bloco original: `earningsGrowthAnnual` normalizado como razão,

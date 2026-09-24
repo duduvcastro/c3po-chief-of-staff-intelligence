@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     app_name: str = "C3PO | Chief of Staff Intelligence"
     environment: str = "development"
     database_url: str = ""
+    r2d2_risk_database_url: str = Field(default="", repr=False)
     legacy_root: Path = DEFAULT_LEGACY_ROOT
     migrations_dir: Path = DEFAULT_MIGRATIONS_DIR
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8081,http://127.0.0.1:8081"
