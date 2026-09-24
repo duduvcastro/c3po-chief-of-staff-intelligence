@@ -653,6 +653,8 @@ class PortfolioEventRequest(BaseModel):
     total: str = Field(pattern=r"^\d{1,18}(\.\d{1,10})?$")
     fees: str = Field(default="0", pattern=r"^\d{1,18}(\.\d{1,10})?$")
 
+    split_denominator: str = Field(default="1", pattern=r"^[1-9]\d{0,17}$")
+
 
 class RealtimePortfolioRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=18, pattern=r"^[A-Za-z0-9.\-]+$")

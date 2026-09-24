@@ -78,3 +78,28 @@ def test_member_can_read_but_cannot_write_or_void(account_api,monkeypatch):
     assert client.post(f"/api/v1/realtime/portfolio/events/{payload['request_id']}/void").status_code==403
     monkeypatch.setattr(main.auth_service,'authenticate',lambda _:dict(role='owner',permissions=['realtime']))
     assert client.post('/api/v1/realtime/portfolio/events',json=payload).status_code==201
+
+
+def test_missing_cancel_and_unsupported_history_date(account_api):
+    _, _, client = account_api
+    assert client.post(f'/api/v1/realtime/portfolio/events/{uuid4()}/void').status_code == 404
+    payload=row(effective_date='2006-09-24');payload.pop('market')
+    assert client.post('/api/v1/realtime/portfolio/events',json=payload).status_code == 422
+
+
+def test_market_consistency_is_enforced_inside_database_write():
+    db=Database(Settings());db.write_portfolio_event(row())
+    with pytest.raises(ValueError,match='mercado divergente'):
+        db.write_portfolio_event(row(market='NYSE'))
+
+
+def test_reverse_split_uses_exact_ratio_without_truncated_factor(account_api):
+    _, db, client=account_api
+    buy=row(quantity='300',total='900');buy.pop('market')
+    assert client.post('/api/v1/realtime/portfolio/events',json=buy).status_code==201
+    split=row(kind='split',quantity='1',split_denominator='3',total='0',effective_date='2025-01-03');split.pop('market')
+    assert client.post('/api/v1/realtime/portfolio/events',json=split).status_code==201
+    position=replay(db.list_portfolio_events())['AMZN']
+    assert position.quantity==100 and position.basis==900
+    assert client.post('/api/v1/realtime/portfolio/events',json=split).status_code==201
+    assert replay(db.list_portfolio_events())['AMZN'].quantity==100

@@ -15,3 +15,6 @@ CREATE TABLE IF NOT EXISTS realtime_portfolio_events (
 CREATE INDEX IF NOT EXISTS realtime_portfolio_events_date
 ON realtime_portfolio_events(effective_date, sequence) WHERE voided_at IS NULL;
 -- No FK cascade: removing a symbol from the watchlist must not erase its financial history.
+
+-- Runs at API/worker startup with the other schema migrations; deploy window required.
+ALTER TABLE realtime_portfolio_events ADD COLUMN IF NOT EXISTS split_denominator NUMERIC(18,0) NOT NULL DEFAULT 1 CHECK (split_denominator > 0);

@@ -1,7 +1,12 @@
 """Personal portfolio valuations, isolated from trading and diagnostic workers."""
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from threading import RLock
+from threading import RLock, Event
+from bisect import bisect_right
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
+import json
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -18,13 +23,47 @@ from .portfolio_accounting import amount, current_values, period_result, Positio
 class PortfolioService:
     def __init__(self, settings: Settings, database: Database, realtime: RealtimeMarketsService):
         self.database, self.realtime = database, realtime
-        self.provider = EodhdClient(settings.eodhd_base_url, settings.eodhd_api_token or '', JsonHttpClient(timeout=8, max_retries=0))
+        self.provider = EodhdClient(settings.eodhd_base_url, settings.eodhd_api_token or '', JsonHttpClient(timeout=3, max_retries=0))
         self._history: dict[tuple, tuple[datetime, list[dict]]] = {}
         self._lock = RLock()
+        self._snapshot_cache = None
+        self._snapshot_pending: Event | None = None
+        self._fx_cache = None
 
     def snapshot(self) -> dict[str, Any]:
         events = self.database.list_portfolio_events()
+        watchlist = self.database.list_realtime_portfolio()
+        key = json.dumps([events, watchlist], sort_keys=True, default=str)
         now = datetime.now(timezone.utc)
+        with self._lock:
+            cached = self._snapshot_cache
+            if cached and cached[0] == key and now < cached[1]:
+                return deepcopy(cached[2])
+            if self._snapshot_pending is None:
+                self._snapshot_pending = Event()
+                owner = True
+            else:
+                owner = False
+            pending = self._snapshot_pending
+        if not owner:
+            if not pending.wait(timeout=5):
+                raise RuntimeError('Portfolio valuation in progress; try again shortly')
+            with self._lock:
+                cached = self._snapshot_cache
+                if cached and cached[0] == key:
+                    return deepcopy(cached[2])
+            raise RuntimeError('Portfolio changed during valuation; try again shortly')
+        try:
+            result = self._snapshot(events, watchlist, now)
+            with self._lock:
+                self._snapshot_cache = (key, datetime.now(timezone.utc)+timedelta(seconds=60), result)
+            return deepcopy(result)
+        finally:
+            with self._lock:
+                self._snapshot_pending = None
+                pending.set()
+
+    def _snapshot(self, events, watchlist, now):
         today = now.astimezone(ZoneInfo('America/Sao_Paulo')).date()
         if not events:
             return {'events': [], 'summary': None, 'periods': [], 'fx': None, 'generated_at': now.isoformat()}
@@ -37,7 +76,19 @@ class PortfolioService:
         fx = None
         if 'B3' in markets.values():
             try:
-                q = self.provider.quotes(['USDBRL.FOREX'])[0]
+                with self._lock:
+                    cached_fx = self._fx_cache
+                if cached_fx and now < cached_fx[0]:
+                    q = cached_fx[1]
+                else:
+                    try:
+                        q = self.provider.quotes(['USDBRL.FOREX'])[0]
+                    except Exception:
+                        q = None
+                    with self._lock:
+                        self._fx_cache = (now+timedelta(seconds=60), q)
+                if q is None:
+                    raise ValueError('FX unavailable')
                 ny = now.astimezone(ZoneInfo("America/New_York"))
                 fx_closed = ny.weekday()==5 or (ny.weekday()==4 and ny.hour>=17) or (ny.weekday()==6 and ny.hour<17)
                 max_age = timedelta(hours=72) if fx_closed else timedelta(minutes=30)
@@ -47,7 +98,7 @@ class PortfolioService:
             except Exception:
                 pass  # Provider error text may contain credentials.
         summary = current_values(events, quotes, rate)
-        summary["unconfigured"] = sorted({e["symbol"] for e in self.database.list_realtime_portfolio()} - set(summary["positions"]))
+        summary["unconfigured"] = sorted({e["symbol"] for e in watchlist} - set(summary["positions"]))
         first = date.fromisoformat(str(min(events, key=lambda e:str(e['effective_date']))['effective_date']))
         history_start = first - timedelta(days=10)
 
@@ -57,21 +108,55 @@ class PortfolioService:
                 cached = self._history.get(key)
                 if cached and now < cached[0]:
                     return cached[1]
-                try:
-                    provider_symbol = symbol if market=='FX' else f"{symbol}.{'SA' if market=='B3' else 'US'}"
-                    rows = self.provider.daily_bars(provider_symbol, exchange='SA' if market=='B3' else 'US', start=history_start, end=today-timedelta(days=1))
-                except Exception:
-                    rows = []
+            try:
+                provider_symbol = symbol if market=='FX' else f"{symbol}.{'SA' if market=='B3' else 'US'}"
+                rows = self.provider.daily_bars(provider_symbol, exchange='SA' if market=='B3' else 'US', start=history_start, end=today-timedelta(days=1))
+            except Exception:
+                rows = []
+            with self._lock:
                 if len(self._history) > 1000:
                     self._history.clear()
                 self._history[key] = (now+timedelta(minutes=30 if rows else 2), rows)
-                return rows
+            return rows
 
+        needed = list(markets.items())
+        if 'B3' in markets.values():
+            needed.append(('USDBRL.FOREX', 'FX'))
+        def load(item):
+            symbol, market = item
+            rows = sorted((r for r in bars(symbol, market) if r.get('date') and r.get('close')), key=lambda r:str(r['date']))
+            return (symbol, market), ([str(r['date']) for r in rows], rows)
+        with ThreadPoolExecutor(max_workers=min(16, max(1, len(needed)))) as pool:
+            indexed = dict(pool.map(load, needed))
+
+        inconsistent = set()
+        for event in events:
+            if event['kind'] != 'split':
+                continue
+            factor = amount(event['quantity']) / amount(event.get('split_denominator', '1'))
+            dates, raw_rows = indexed[(event['symbol'], event['market'])]
+            split_day = str(event['effective_date'])
+            before = bisect_right(dates, (date.fromisoformat(split_day)-timedelta(days=1)).isoformat())-1
+            after = before+1
+            if before < 0 or after >= len(dates):
+                continue
+            if (date.fromisoformat(split_day)-date.fromisoformat(dates[before])).days > 7 or (date.fromisoformat(dates[after])-date.fromisoformat(split_day)).days > 7:
+                continue
+            old, new = amount(raw_rows[before]['close']), amount(raw_rows[after]['close'])
+            # Conservative fail-closed check, not automatic price adjustment.
+            # Large split + a >2x discontinuity in position value is ambiguous.
+            if old <= 0 or (factor >= 2 or factor <= Decimal('0.5')) and not Decimal('0.5') <= factor*new/old <= 2:
+                inconsistent.add(event['symbol'])
+
+        @lru_cache(maxsize=None)
         def historic(symbol: str, market: str, day: date) -> Decimal:
-            rows = [r for r in bars(symbol, market) if r.get('date') and str(r['date']) <= day.isoformat() and r.get('close')]
-            if not rows:
+            if symbol in inconsistent:
+                raise ValueError('Historical close inconsistent with split')
+            dates, rows = indexed[(symbol, market)]
+            at = bisect_right(dates, day.isoformat()) - 1
+            if at < 0:
                 raise ValueError('Missing history')
-            row = max(rows, key=lambda r:str(r['date']))
+            row = rows[at]
             observed = date.fromisoformat(str(row['date']))
             if symbol == 'USDBRL.FOREX':
                 if (day-observed).days > 4:
@@ -86,6 +171,7 @@ class PortfolioService:
                 raise ValueError('Invalid historical price')
             return value
 
+        @lru_cache(maxsize=None)
         def rate_at(market: str, day: date) -> Decimal:
             if market != 'B3':
                 return Decimal(1)
@@ -95,7 +181,12 @@ class PortfolioService:
                 return rate
             return historic('USDBRL.FOREX', 'FX', day)
 
+        values = {}
+
         def value_at(positions: dict[str, Position], day: date) -> Decimal:
+            cache_key = (day, tuple(sorted((symbol, p.quantity) for symbol, p in positions.items())))
+            if cache_key in values:
+                return values[cache_key]
             value = Decimal(0)
             for symbol, position in positions.items():
                 if not position.quantity:
@@ -110,6 +201,7 @@ class PortfolioService:
                 else:
                     price = historic(symbol, markets[symbol], day)
                 value += position.quantity * price / rate_at(markets[symbol], day)
+            values[cache_key] = value
             return value
 
         periods = []

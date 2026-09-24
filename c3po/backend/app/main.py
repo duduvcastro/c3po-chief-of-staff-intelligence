@@ -1524,7 +1524,11 @@ def realtime_market_snapshot(market: str) -> RealtimeMarketResponse:
 @app.get("/api/v1/realtime/portfolio/account")
 def portfolio_account_snapshot(response: Response) -> dict:
     response.headers["Cache-Control"] = "no-store"
-    return portfolio_account.snapshot()
+    # Owner decision5818058429: realtime/read members may view the shared ledger.
+    try:
+        return portfolio_account.snapshot()
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="Valoração em andamento; tente novamente") from None
 
 
 @app.post("/api/v1/realtime/portfolio/events", status_code=201)
@@ -1533,8 +1537,8 @@ def record_portfolio_event(payload: PortfolioEventRequest) -> dict:
     from zoneinfo import ZoneInfo
     from decimal import Decimal
     today = datetime.now(timezone.utc).astimezone(ZoneInfo("America/Sao_Paulo")).date()
-    if payload.effective_date > today or payload.effective_date.year < 2000:
-        raise HTTPException(status_code=422, detail="Data deve estar entre 2000 e hoje")
+    if payload.effective_date > today or payload.effective_date < datetime(2006, 9, 25).date():
+        raise HTTPException(status_code=422, detail="Data deve estar entre 25/09/2006 e hoje")
     symbol = payload.symbol.strip().upper()
     entry = next((e for e in database.list_realtime_portfolio() if e["symbol"] == symbol), None)
     if entry is None:
@@ -1558,6 +1562,8 @@ def cancel_portfolio_event(request_id: str) -> dict:
     try:
         normalized = str(UUID(request_id))
         database.void_portfolio_event(normalized)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"cancelled": True}

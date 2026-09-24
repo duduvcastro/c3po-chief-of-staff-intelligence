@@ -33,6 +33,9 @@ def replay(events: list[dict], through: date | None = None) -> dict[str, Positio
         position = positions.setdefault(event['symbol'], Position())
         quantity, total, fees = (amount(event[key]) for key in ('quantity', 'total', 'fees'))
         kind = event['kind']
+        denominator = amount(event.get('split_denominator', '1'))
+        if denominator <= 0 or (kind != 'split' and denominator != 1):
+            raise ValueError('Denominador permitido apenas em desdobramento')
         if kind == 'position':
             if fees != 0:
                 raise ValueError('Inclua as taxas no custo total da posição')
@@ -60,7 +63,7 @@ def replay(events: list[dict], through: date | None = None) -> dict[str, Positio
         elif kind == 'split':
             if quantity <= 0 or position.quantity <= 0 or total != 0 or fees != 0:
                 raise ValueError('Desdobramento exige fator positivo e posição existente, sem valor ou taxas')
-            position.quantity *= quantity
+            position.quantity = position.quantity * quantity / denominator
         else:
             raise ValueError('Movimentação inválida')
     return positions

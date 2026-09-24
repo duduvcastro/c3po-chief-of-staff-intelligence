@@ -2342,17 +2342,20 @@ class Database:
 
     @staticmethod
     def _read_portfolio_events(connection: Any) -> list[dict[str, Any]]:
-        rows = connection.execute("SELECT sequence, request_id, symbol, market, kind, effective_date, quantity, total, fees FROM realtime_portfolio_events WHERE voided_at IS NULL ORDER BY effective_date, sequence").fetchall()
-        keys = ("sequence", "request_id", "symbol", "market", "kind", "effective_date", "quantity", "total", "fees")
+        rows = connection.execute("SELECT sequence, request_id, symbol, market, kind, effective_date, quantity, total, fees, split_denominator FROM realtime_portfolio_events WHERE voided_at IS NULL ORDER BY effective_date, sequence").fetchall()
+        keys = ("sequence", "request_id", "symbol", "market", "kind", "effective_date", "quantity", "total", "fees", "split_denominator")
         return [{k: (v if k == "sequence" else str(v)) for k, v in zip(keys, row)} for row in rows]
 
     def write_portfolio_event(self, event: dict[str, Any]) -> None:
         from .portfolio_accounting import replay
-        fields = ("request_id", "symbol", "market", "kind", "effective_date", "quantity", "total", "fees")
+        event = dict(event, split_denominator=event.get("split_denominator", "1"))
+        fields = ("request_id", "symbol", "market", "kind", "effective_date", "quantity", "total", "fees", "split_denominator")
         def validate(existing: list[dict[str, Any]]) -> bool:
+            if any(e["symbol"] == event["symbol"] and e["market"] != event["market"] for e in existing):
+                raise ValueError("Ativo com mercado divergente do histórico")
             matching = next((e for e in existing if e["request_id"] == event["request_id"]), None)
             if matching:
-                if any((Decimal(str(matching[k])) != Decimal(str(event[k]))) if k in ("quantity", "total", "fees") else (str(matching[k]) != str(event[k])) for k in fields):
+                if any((Decimal(str(matching[k])) != Decimal(str(event[k]))) if k in ("quantity", "total", "fees", "split_denominator") else (str(matching[k]) != str(event[k])) for k in fields):
                     raise ValueError("Identificador já usado por outra movimentação")
                 return False
             candidate = dict(event, sequence=max((e["sequence"] for e in existing), default=0)+1)
@@ -2371,13 +2374,15 @@ class Database:
                 prior = connection.execute("SELECT 1 FROM realtime_portfolio_events WHERE request_id = %s", (event["request_id"],)).fetchone()
                 if prior:
                     raise ValueError("Movimentação já cancelada; use novo identificador")
-                connection.execute("INSERT INTO realtime_portfolio_events (request_id,symbol,market,kind,effective_date,quantity,total,fees) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)", tuple(event[k] for k in fields))
+                connection.execute("INSERT INTO realtime_portfolio_events (request_id,symbol,market,kind,effective_date,quantity,total,fees,split_denominator) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", tuple(event[k] for k in fields))
             connection.commit()
 
     def void_portfolio_event(self, request_id: str) -> None:
         from .portfolio_accounting import replay
         if not self.database_url:
             with self._portfolio_events_lock:
+                if not any(e["request_id"] == request_id for e in self._portfolio_events):
+                    raise LookupError("Movimentação inexistente")
                 replay([e for e in self.list_portfolio_events() if e["request_id"] != request_id])
                 for event in self._portfolio_events:
                     if event["request_id"] == request_id:
@@ -2385,6 +2390,8 @@ class Database:
             return
         with self.connection() as connection:
             connection.execute("SELECT pg_advisory_xact_lock(hashtext('personal_portfolio_ledger'))")
+            if not connection.execute("SELECT 1 FROM realtime_portfolio_events WHERE request_id = %s", (request_id,)).fetchone():
+                raise LookupError("Movimentação inexistente")
             replay([e for e in self._read_portfolio_events(connection) if e["request_id"] != request_id])
             connection.execute("UPDATE realtime_portfolio_events SET voided_at = now() WHERE request_id = %s AND voided_at IS NULL", (request_id,))
             connection.commit()
