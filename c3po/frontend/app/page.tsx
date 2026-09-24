@@ -884,7 +884,7 @@ interface RealtimeMarketLeader {
 
 interface RealtimeMarketResponse {
   market: RealtimeMarketKey;
-  index: RealtimeMarketIndex;
+  index: RealtimeMarketIndex | null;
   universe_size: number;
   gainers: RealtimeMarketLeader[];
   losers: RealtimeMarketLeader[];
@@ -5168,7 +5168,7 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
           </button>
         </div>
 
-        {snapshot && activeMarket !== "PORTFOLIO" && (
+        {snapshot?.index && activeMarket !== "PORTFOLIO" && (
           <div className="realtime-index-band">
             <div className="realtime-index-mark"><LineChart size={22} /></div>
             <div className="realtime-index-name">
@@ -5196,6 +5196,8 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
             <div className="realtime-universe"><span>Universo analisado</span><strong>{snapshot.universe_size.toLocaleString("pt-BR")}</strong><small>ações válidas</small></div>
           </div>
         )}
+        {snapshot && activeMarket !== "PORTFOLIO" && <p className="muted">Ações: {snapshot.source} · atraso informado: {snapshot.delay_minutes} min</p>}
+        {snapshot && !snapshot.index && activeMarket !== "PORTFOLIO" && <div className="screen-error">Índice de referência indisponível. Cotações das ações mantidas.</div>}
         {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span></div>}
       </section>
 

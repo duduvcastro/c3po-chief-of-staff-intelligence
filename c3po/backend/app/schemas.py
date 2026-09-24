@@ -633,7 +633,7 @@ class RealtimeMarketLeader(BaseModel):
 
 class RealtimeMarketResponse(BaseModel):
     market: Literal["B3", "NASDAQ", "NYSE"]
-    index: RealtimeMarketIndex
+    index: RealtimeMarketIndex | None = None
     universe_size: int
     gainers: list[RealtimeMarketLeader]
     losers: list[RealtimeMarketLeader]

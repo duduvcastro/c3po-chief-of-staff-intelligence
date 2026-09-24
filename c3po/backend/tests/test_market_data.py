@@ -1098,7 +1098,7 @@ def test_realtime_b3_leaders_carry_the_provider_quote_session_not_collection_tim
     assert "/api/v2/stocks/quote" in http.calls[2]["url"]
 
 
-def test_realtime_b3_leaders_use_index_session_when_detail_timestamp_is_unavailable() -> None:
+def test_realtime_b3_leaders_do_not_borrow_index_time_when_detail_timestamp_is_unavailable() -> None:
     quote_time = datetime(2026, 8, 28, 21, 31, 30, tzinfo=timezone.utc)
     timestamp = int(quote_time.timestamp())
     http = RoutingStubHttp({
@@ -1112,7 +1112,8 @@ def test_realtime_b3_leaders_use_index_session_when_detail_timestamp_is_unavaila
 
     response = service.snapshot("B3")
 
-    assert response.gainers[0].as_of == quote_time
+    assert response.gainers[0].as_of == response.generated_at
+    assert response.gainers[0].as_of != quote_time
 
 
 def test_realtime_us_separates_nasdaq_and_nyse_common_stocks() -> None:

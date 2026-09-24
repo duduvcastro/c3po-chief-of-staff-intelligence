@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 import math
-from threading import Lock
+import logging
+from threading import Event, Lock
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -45,6 +46,7 @@ def quote_status(spec: IndexSpec, as_of: datetime, now: datetime) -> tuple[Liter
         session = calendar.minute_to_session(minute, direction='previous')
         if as_of < calendar.session_open(session).to_pydatetime():
             return 'stale', 'STALE'
+        close = calendar.session_close(session).to_pydatetime()
         if spec.calendar == 'BVMF':
             # BVMF fixes 18:00 Sao Paulo even during US daylight saving time.
             # B3 cash closes at 16:00 New York (17:00/18:00 Sao Paulo).
@@ -54,10 +56,14 @@ def quote_status(spec: IndexSpec, as_of: datetime, now: datetime) -> tuple[Liter
                 tzinfo=ZoneInfo('America/New_York'),
             )
             close = min(calendar.session_close(session).to_pydatetime(), regular_close)
-            if now >= close:
-                return 'closed', 'CLOSED'
-        if not calendar.is_open_on_minute(minute):
-            return 'closed', 'CLOSED'
+        if now >= close:
+            # A quote frozen before the close is not a closing observation.
+            return ('closed', 'CLOSED') if as_of >= close - timedelta(minutes=5) else ('stale', 'STALE')
+        if calendar.is_open_on_minute(minute, ignore_breaks=True) and not calendar.is_open_on_minute(minute):
+            age = (now - as_of).total_seconds()
+            return ('delayed' if age <= 25 * 60 else 'stale'), 'BREAK'
+        if not calendar.is_open_on_minute(minute, ignore_breaks=True):
+            return 'stale', 'STALE'
         age = (now - as_of).total_seconds()
         return ('live' if age <= 90 else 'delayed' if age <= 25 * 60 else 'stale'), 'REGULAR'
     except Exception:
@@ -68,8 +74,12 @@ def quote_status(spec: IndexSpec, as_of: datetime, now: datetime) -> tuple[Liter
 class IndexQuotesService:
     def __init__(self, settings: Settings, http: JsonHttpClient) -> None:
         self.settings = settings
-        self.http = http
+        # Index snapshots must not inherit the general client's retry budget.
+        # Preserve an injected transport while overriding its per-request timeout.
+        self.http = (JsonHttpClient(timeout=3.0, max_retries=0, client=http.client)
+                     if isinstance(http, JsonHttpClient) else http)
         self._lock = Lock()
+        self._refreshing: Event | None = None
         self._expires = datetime.min.replace(tzinfo=timezone.utc)
         self._items: dict[str, LiveMarketItem] = {}
         self._failed: set[str] = set(INDICES)
@@ -77,50 +87,69 @@ class IndexQuotesService:
     def quote(self, symbol: str) -> LiveMarketItem:
         if symbol not in INDICES:
             raise ValueError('Unsupported cash index')
+        now = datetime.now(timezone.utc)
         with self._lock:
-            now = datetime.now(timezone.utc)
-            if now >= self._expires:
-                self._refresh(now)
+            owner = self._refreshing is None and now >= self._expires
+            if owner:
+                self._refreshing = Event()
+            pending = self._refreshing
+            cold = symbol not in self._items
+        if owner:
+            try:
+                fresh = self._fetch(now)
+                with self._lock:
+                    self._failed = set(INDICES)
+                    for key, item in fresh.items():
+                        previous = self._items.get(key)
+                        if previous is None or item.as_of >= previous.as_of:
+                            self._items[key] = item
+                            self._failed.discard(key)
+                    self._expires = datetime.now(timezone.utc) + timedelta(seconds=10)
+            finally:
+                with self._lock:
+                    self._refreshing = None
+                    pending.set()
+        elif cold and pending is not None:
+            # Cold callers may wait briefly for the one in-flight batch.
+            # Cached readers never wait for provider I/O.
+            pending.wait(timeout=3.0)
+        with self._lock:
             item = self._items.get(symbol)
-            if item is None:
-                raise RuntimeError('FMP index quote unavailable')
-            now = datetime.now(timezone.utc)
-            status, market_state = quote_status(INDICES[symbol], item.as_of, now)
-            if symbol in self._failed:
-                status = 'stale'
-            return item.model_copy(update={
-                'status': status, 'market_state': market_state,
-                'delay_minutes': max(0, int((now - item.as_of).total_seconds() // 60)),
-            })
+            stale = symbol in self._failed or self._refreshing is not None
+        if item is None:
+            raise RuntimeError('FMP index quote unavailable')
+        now = datetime.now(timezone.utc)
+        status, market_state = quote_status(INDICES[symbol], item.as_of, now)
+        if stale:
+            status = 'stale'
+        return item.model_copy(update={
+            'status': status, 'market_state': market_state,
+            'delay_minutes': max(0, int((now - item.as_of).total_seconds() // 60)),
+        })
 
-    def _refresh(self, now: datetime) -> None:
-        self._expires = now + timedelta(seconds=10)
-        self._failed = set(INDICES)
+    def _fetch(self, now: datetime) -> dict[str, LiveMarketItem]:
+        items = {}
         if not self.settings.fmp_api_token:
-            return
+            return items
         try:
             payload = self.http.get_json(
                 f'{self.settings.fmp_base_url.rstrip("/")}/stable/batch-quote',
                 params={'symbols': ','.join(INDICES), 'apikey': self.settings.fmp_api_token},
             )
             if not isinstance(payload, list):
-                return
+                return items
             for row in payload:
                 if not isinstance(row, dict) or row.get('symbol') not in INDICES:
                     continue
                 symbol = row['symbol']
                 try:
-                    item = self._normalize(symbol, row, now)
+                    items[symbol] = self._normalize(symbol, row, now)
                 except (ValueError, TypeError, OverflowError, OSError):
                     continue
-                previous = self._items.get(symbol)
-                if previous and item.as_of < previous.as_of:
-                    continue
-                self._items[symbol] = item
-                self._failed.discard(symbol)
-        except Exception:
-            # Transport errors may contain a URL with the key; never expose it.
-            return
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Index quote fetch failed (%s)", type(exc).__name__)
+            return {}
+        return items
 
     @staticmethod
     def _normalize(symbol: str, row: dict, now: datetime) -> LiveMarketItem:

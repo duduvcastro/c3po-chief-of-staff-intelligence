@@ -135,3 +135,165 @@ def test_index_charts_use_fmp_exchange_local_dates(symbol,local,expected):
     assert result.source=='Financial Modeling Prep Intraday 5m'
     assert result.points[-1].as_of.isoformat()==expected
     assert http.calls[0][0].endswith('/stable/historical-chart/5min')
+
+
+@pytest.mark.parametrize("symbol", ['^BVSP', '^IXIC'])
+def test_preclose_quote_does_not_become_official_close(symbol):
+    now = datetime(2026, 9, 17, 21, 0, tzinfo=timezone.utc)
+    as_of = datetime(2026, 9, 17, 19, 45, tzinfo=timezone.utc)
+    assert quote_status(INDICES[symbol], as_of, now) == ('stale', 'STALE')
+
+@pytest.mark.parametrize("symbol,hour,minute", [('^N225',3,0), ('000001.SS',4,0)])
+def test_lunch_break_is_not_session_close(symbol,hour,minute):
+    now = datetime(2026, 9, 17, hour, minute, tzinfo=timezone.utc)
+    assert quote_status(INDICES[symbol], now-timedelta(minutes=10), now) == ('delayed', 'BREAK')
+
+
+def test_index_transport_has_separate_timeout_and_no_retry_budget():
+    import httpx
+    from app.market_data.http import JsonHttpClient
+
+    requests = []
+    def fail(request):
+        requests.append(request)
+        raise httpx.ReadTimeout('provider unavailable', request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(fail)) as transport:
+        shared = JsonHttpClient(timeout=15, max_retries=2, client=transport)
+        indices = IndexQuotesService(Settings(fmp_api_token='test'), shared)
+        with pytest.raises(RuntimeError, match='FMP index quote unavailable'):
+            indices.quote('^IXIC')
+        assert len(requests) == 1
+        assert set(requests[0].extensions['timeout'].values()) == {3.0}
+        assert shared.timeout == 15 and shared.max_retries == 2
+        with pytest.raises(RuntimeError, match='FMP index quote unavailable'):
+            indices.quote('^NYA')
+        assert len(requests) == 1
+
+
+def test_cached_readers_do_not_wait_for_single_inflight_refresh():
+    from threading import Event
+    _, http, indices = service()
+    entered, release = Event(), Event()
+    original_fetch = http.get_json
+    def slow_fetch(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return original_fetch(*args, **kwargs)
+
+    with patch('app.market_data.indices.datetime', Clock):
+        original = indices.quote('^IXIC')
+        indices._expires = NOW - timedelta(seconds=1)
+        http.get_json = slow_fetch
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            refresh = pool.submit(indices.quote, '^IXIC')
+            try:
+                assert entered.wait(2)
+                reader = pool.submit(indices.quote, '^IXIC')
+                stale = reader.result(timeout=1)
+                assert stale.status == 'stale'
+                assert stale.as_of == original.as_of and stale.price == original.price
+                assert not refresh.done()
+            finally:
+                release.set()
+            assert refresh.result(timeout=2).status == 'live'
+        assert len(http.calls) == 2
+
+
+def test_realtime_lock_is_available_during_index_fetch():
+    from threading import Event
+    settings, http, indices = service()
+    master = RealtimeMarketsService(settings, Database(settings), http, indices=indices)
+    entered, release = Event(), Event()
+    marker = object()
+    def slow_index(spec):
+        entered.set()
+        assert release.wait(5)
+        return marker
+    def lock_available():
+        acquired = master._lock.acquire(timeout=0.5)
+        if acquired:
+            master._lock.release()
+        return acquired
+    with patch.object(master, '_index_quote', slow_index), \
+         patch.object(master, '_build', return_value=marker) as build, \
+         patch.object(master, '_apply_stream', side_effect=lambda market, result, now: result):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            request = pool.submit(master.snapshot, 'NASDAQ')
+            try:
+                assert entered.wait(2)
+                assert pool.submit(lock_available).result(timeout=1)
+                assert not request.done()
+            finally:
+                release.set()
+            assert request.result(timeout=2) is marker
+        assert build.call_args.kwargs['index'] is marker
+
+
+def test_b3_ranking_preserves_its_observation_when_index_has_other_timestamp():
+    from app.schemas import RealtimeMarketLeader
+    settings, http, indices = service()
+    master = RealtimeMarketsService(settings, Database(settings), http, indices=indices)
+    with patch('app.market_data.indices.datetime', Clock):
+        index = master._index_quote(REALTIME_SPECS['B3'])
+    observed = NOW - timedelta(minutes=17)
+    row = RealtimeMarketLeader(symbol='PETR4', name='Petrobras', price=30,
+        change_percent=1, volume=10000000, cash_volume=300000000, currency='BRL',
+        exchange='B3', as_of=observed)
+    with patch.object(master, '_b3_rows', return_value=[row]), \
+         patch.object(master, '_enrich_b3_leader_groups', side_effect=lambda groups: groups):
+        result = master._build('B3', NOW, index=index)
+    assert result.index.as_of != observed
+    for rows in (result.gainers, result.losers, result.volume_leaders, result.cash_leaders):
+        assert all(item.as_of == observed for item in rows)
+    assert result.gainers and result.volume_leaders
+
+
+@pytest.mark.parametrize('field,value', [
+    ('regularMarketTime', (NOW-timedelta(minutes=17)).timestamp()),
+    ('timestamp', (NOW-timedelta(minutes=17)).timestamp()*1000),
+    ('updatedAt', (NOW-timedelta(minutes=17)).isoformat()),
+])
+def test_brapi_scan_preserves_provider_observation(field, value):
+    settings = Settings(brapi_token='test', auth_cookie_secure=False)
+    class Scan:
+        def get_json(self, *args, **kwargs):
+            return {'stocks': [{'stock':'PETR4', 'close':30, 'change':1,
+                'volume':10000000, field:value}]}
+    master = RealtimeMarketsService(settings, Database(settings), Scan())
+    row = master._b3_rows(NOW)[0]
+    assert row.as_of == NOW-timedelta(minutes=17)
+
+
+def test_first_index_failure_does_not_prevent_security_rankings():
+    from app.schemas import RealtimeMarketLeader
+    settings, http, indices = service()
+    http.failed = True
+    master = RealtimeMarketsService(settings, Database(settings), http, indices=indices)
+    row = RealtimeMarketLeader(symbol='PETR4', name='Petrobras', price=30,
+        change_percent=1, volume=10000000, cash_volume=300000000, currency='BRL',
+        exchange='B3', as_of=NOW)
+    with patch.object(master, '_b3_rows', return_value=[row]), \
+         patch.object(master, '_enrich_b3_leader_groups', side_effect=lambda groups: groups):
+        result = master.snapshot('B3')
+    assert result.index is None
+    assert result.gainers[0].symbol == 'PETR4'
+    assert result.universe_size == 1
+    assert result.errors == ['Index quote unavailable']
+    assert 'secret-key' not in result.model_dump_json()
+
+
+def test_history_failure_is_cached_without_logging_credentials(caplog):
+    settings, http, indices = service()
+    http.failed = True
+    master = RealtimeMarketsService(settings, Database(settings), http, indices=indices)
+    spec = next(s for s in MARKET_SPECS if s.symbol == 'NASDAQ')
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match='FMP index history unavailable'):
+            master._fmp_index_intraday(spec, NOW)
+    assert len(http.calls) == 1
+    assert 'secret-key' not in caplog.text
+    assert 'RuntimeError' in caplog.text
+    with pytest.raises(RuntimeError):
+        master._fmp_index_intraday(spec, NOW+timedelta(seconds=31))
+    assert len(http.calls) == 2

@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import re
+import logging
 from threading import RLock
 from typing import Any, Literal
 import unicodedata
@@ -103,6 +104,7 @@ class RealtimeMarketsService:
         self._us_reference_cache: dict[tuple[str, date], tuple[datetime, float | None, date | None]] = {}
         self._otc_origin_cache: dict[str, tuple[datetime, OtcOriginReference | None]] = {}
         self._intraday_series: dict[str, tuple[datetime, RealtimePortfolioIntradayResponse]] = {}
+        self._index_history_failures: dict[tuple, datetime] = {}
         self._instrument_intraday_series: dict[str, tuple[datetime, InstrumentIntradayResponse]] = {}
 
     def snapshot(self, market: str) -> RealtimeMarketResponse:
@@ -113,23 +115,26 @@ class RealtimeMarketsService:
         cached = self._responses.get(normalized)
         if cached and now < cached[0]:
             return self._apply_stream(normalized, cached[1], now)
+        # The optional provider snapshot must not monopolize the shared
+        # realtime lock while its bounded HTTP request is in flight.
+        try:
+            index = self._index_quote(MARKET_SPECS[normalized])
+        except RuntimeError:
+            index = None
         with self._lock:
             now = datetime.now(timezone.utc)
             cached = self._responses.get(normalized)
             if cached and now < cached[0]:
                 return self._apply_stream(normalized, cached[1], now)
-            response = self._build(normalized, now)
+            response = self._build(normalized, now, index=index)
             self._responses[normalized] = (now + timedelta(seconds=CACHE_SECONDS), response)
             return self._apply_stream(normalized, response, now)
 
-    def _build(self, market: str, now: datetime) -> RealtimeMarketResponse:
+    def _build(self, market: str, now: datetime, *, index: RealtimeMarketIndex | None) -> RealtimeMarketResponse:
         spec = MARKET_SPECS[market]
-        index = self._index_quote(spec)
         if market == "B3":
-            rows = [
-                row.model_copy(update={"as_of": index.as_of})
-                for row in self._b3_rows(now)
-            ]
+            # A cash index timestamp says nothing about individual Brapi quotes.
+            rows = self._b3_rows(now)
             source = "Brapi Pro market-wide quote list + observed quote timestamps"
             delay_minutes = 5
         else:
@@ -151,6 +156,7 @@ class RealtimeMarketsService:
         return RealtimeMarketResponse(
             market=market,
             index=index,
+            errors=[] if index is not None else ["Index quote unavailable"],
             universe_size=len(rows),
             gainers=leader_groups["gainers"],
             losers=leader_groups["losers"],
@@ -799,13 +805,18 @@ class RealtimeMarketsService:
         index = INDICES[spec.provider_symbol]
         market_timezone = ZoneInfo(str(xcals.get_calendar(index.calendar).tz))
         end = requested_session_date or now.astimezone(market_timezone).date()
+        failure_key = (spec.provider_symbol, end)
+        if now < self._index_history_failures.get(failure_key, datetime.min.replace(tzinfo=timezone.utc)):
+            raise RuntimeError('FMP index history unavailable')
         try:
             payload = self.http.get_json(
                 f"{self.settings.fmp_base_url.rstrip('/')}/stable/historical-chart/5min",
                 params={"symbol": spec.provider_symbol, "from": (end-timedelta(days=7)).isoformat(),
                         "to": end.isoformat(), "apikey": self.settings.fmp_api_token},
             )
-        except Exception:
+        except Exception as exc:
+            self._index_history_failures[failure_key] = now + timedelta(seconds=30)
+            logging.getLogger(__name__).warning("Index history fetch failed (%s)", type(exc).__name__)
             raise RuntimeError("FMP index history unavailable") from None
         rows = []
         for raw in payload if isinstance(payload, list) else []:
@@ -823,6 +834,10 @@ class RealtimeMarketsService:
                 rows.append({**raw, "timestamp": stamp.timestamp()})
             except (ValueError, TypeError, OverflowError):
                 continue
+        if not rows:
+            self._index_history_failures[failure_key] = now + timedelta(seconds=30)
+            raise RuntimeError("FMP index history unavailable")
+        self._index_history_failures.pop(failure_key, None)
         response = self._normalize_instrument_intraday(
             rows, symbol=spec.symbol, name=spec.name, market=spec.group, currency=spec.currency,
             source="Financial Modeling Prep Intraday 5m", delay_minutes=0,
@@ -1626,6 +1641,13 @@ class RealtimeMarketsService:
                 continue
             if price is None or price <= 0 or change is None or volume is None or volume < 0:
                 continue
+            stamp = next((raw.get(key) for key in
+                          ("regularMarketTime", "updatedAt", "timestamp")
+                          if raw.get(key) is not None), None)
+            try:
+                observed_at = from_unix(stamp, now)
+            except (ValueError, OverflowError, OSError):
+                observed_at = now
             rows.append(RealtimeMarketLeader(
                 symbol=symbol,
                 name=str(raw.get("name") or raw.get("longName") or symbol),
@@ -1635,7 +1657,7 @@ class RealtimeMarketsService:
                 cash_volume=price * volume,
                 currency="BRL",
                 exchange="B3",
-                as_of=now,
+                as_of=observed_at,
                 logo_url=raw.get("logo") or raw.get("logoUrl"),
                 status="delayed",
                 delay_minutes=5,
