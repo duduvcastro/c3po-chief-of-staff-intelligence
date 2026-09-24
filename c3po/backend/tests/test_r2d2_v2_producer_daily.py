@@ -417,10 +417,10 @@ def test_fallback_contract_reaches_real_causal_build(fills_missing: bool) -> Non
     from app.r2d2_v2_sources import canonical
 
     sessions = prod.xnys_sessions_ending(PREVIOUS, 20)
-    bulk = {s: _response([] if s == sessions[-1] else [_bar_row("AAA", s)], _after_close(s)) for s in sessions}
+    bulk = {s: _response([] if s == sessions[-1] else [_bar_row("AAA", s, volume=2000000)], _after_close(s)) for s in sessions}
     splits = {s: _response([], _after_close(s)) for s in sessions}
     fallback = _response(
-        [{k: v for k, v in _bar_row("AAA", PREVIOUS).items() if k != "code"}] if fills_missing else [],
+        [{k: v for k, v in _bar_row("AAA", PREVIOUS, volume=2000000).items() if k != "code"}] if fills_missing else [],
         _after_close(PREVIOUS, 180), "/api/eod/AAA.US",
     )
     registry, _ = prod.build_registry(_response([
@@ -435,3 +435,7 @@ def test_fallback_contract_reaches_real_causal_build(fills_missing: bool) -> Non
     assert receipt["counts"]["fallback_bars_filled"] == int(fills_missing)
     assert contract["instruments"][0]["daily"]["coverage_verified"] is fills_missing
     assert receipt["fallback_payload_sha256"] == {"AAA": fallback.sha256}
+
+    assert commitment["list"] == (["AAA"] if fills_missing else [])
+    if not fills_missing:
+        assert commitment["exclusions"] == [{"symbol": "AAA", "reason": "DAILY_CONTRACT_INVALID"}]
