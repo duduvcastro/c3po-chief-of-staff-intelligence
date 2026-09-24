@@ -95,6 +95,7 @@ class IndexQuotesService:
             pending = self._refreshing
             cold = symbol not in self._items
         if owner:
+            assert pending is not None  # Owner created the event while holding the lock.
             try:
                 fresh = self._fetch(now)
                 with self._lock:
