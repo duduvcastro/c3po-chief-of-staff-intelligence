@@ -114,8 +114,10 @@ class PortfolioService:
             except Exception:
                 rows = []
             with self._lock:
-                if len(self._history) > 1000:
-                    self._history.clear()
+                written_at = datetime.now(timezone.utc)
+                self._history = {k: v for k, v in self._history.items() if v[0] > written_at}
+                # Only retain the latest requested range for each symbol/market.
+                self._history = {k: v for k, v in self._history.items() if k[:2] != key[:2]}
                 self._history[key] = (now+timedelta(minutes=30 if rows else 2), rows)
             return rows
 
@@ -162,7 +164,7 @@ class PortfolioService:
                 if (day-observed).days > 4:
                     raise ValueError('Missing FX close')
             else:
-                cal = xcals.get_calendar('BVMF' if market=='B3' else 'XNYS')
+                cal = xcals.get_calendar('BVMF' if market=='B3' else 'XNYS', start='2006-01-01')
                 required = cal.date_to_session(day.isoformat(), direction='previous').date()
                 if observed != required:
                     raise ValueError('Missing session close')

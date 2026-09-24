@@ -166,3 +166,32 @@ def test_nvda_public_reference_not_provider_capture_uses_raw_close_and_rejects_a
     assert bad['periods'][0]['reason']
     # June7→June10 true return is +0.746%, not a fictitious +900%.
     assert Decimal('0.007') < Decimal('1217.9')/Decimal('1208.88')-1 < Decimal('0.008')
+
+
+def test_history_cache_evicts_expired_and_replaced_ranges():
+    from datetime import timedelta
+    service, provider = setup()
+    for i in range(100):
+        service._history[(str(i), 'B3', '2006-01-01', '2026-09-16')] = (NOW-timedelta(seconds=1), [{}])
+    service._history[('TEST3','B3','2006-01-01','2026-09-16')] = (NOW+timedelta(days=1), [{}])
+    with patch('app.portfolio_service.datetime', Clock):
+        service.snapshot()
+    assert len(service._history) == 2
+    assert all(k[2] != '2006-01-01' for k in service._history)
+
+
+def test_historical_calendar_start_is_fixed_before_accepted_events():
+    import app.portfolio_service as module
+    service, provider = setup()
+    actual = module.xcals.get_calendar
+    calls = []
+    def checked(name, **kwargs):
+        calls.append(kwargs)
+        assert kwargs['start'] == '2006-01-01'
+        cal = actual(name, **kwargs)
+        assert cal.is_session('2006-09-25')
+        return cal
+    with patch('app.portfolio_service.datetime', Clock), patch.object(module.xcals, 'get_calendar', checked):
+        result = service.snapshot()
+    assert calls
+    assert result['periods'][0]['profit_usd'] == '0'
