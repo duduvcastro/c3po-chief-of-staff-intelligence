@@ -450,7 +450,7 @@ def build_daily_contract(registry: Mapping[str, Any], bulk_by_session: Mapping[d
             "adjustment": "RAW_UNADJUSTED", "coverage_verified": covered,
             "split_coverage_verified": symbol not in invalid_splits and not unattributable,
             "source_at": stamp, "available_at": stamp}})
-    source_id = "eodhd-eod-bulk-last-day-US" if not fallback else "eodhd-eod-bulk-last-day-US+eod-symbol-fallback"
+    source_id = "eodhd-eod-bulk-last-day-US" if not fallback else "eodhd-eod-bulk-last-day-US.eod-symbol-fallback"
     document = {"schema": DAILY_SCHEMA, "source_id": source_id, "source_at": stamp, "available_at": stamp, "instruments": instruments}
     assert set(document) == DAILY_FIELDS
     receipt = _receipt("daily_contract", sessions=[s.isoformat() for s in window],

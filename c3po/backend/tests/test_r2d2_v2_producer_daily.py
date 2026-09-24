@@ -149,7 +149,7 @@ def test_daily_contract_fills_only_missing_bars_from_hashed_symbol_fallback() ->
     )
     daily = contract["instruments"][0]["daily"]
     assert daily["coverage_verified"] is True and len(daily["bars"]) == 20
-    assert contract["source_id"] == "eodhd-eod-bulk-last-day-US+eod-symbol-fallback"
+    assert contract["source_id"] == "eodhd-eod-bulk-last-day-US.eod-symbol-fallback"
     assert receipt["fallback_payload_sha256"] == {"AAA": fallback.sha256}
     assert receipt["counts"]["fallback_symbols"] == 1
     assert receipt["counts"]["fallback_bars_filled"] == 1
@@ -408,3 +408,30 @@ def test_fetcher_requires_token_and_never_exposes_it() -> None:
     with pytest.raises(prod.ProducerError) as info:
         fetcher("/api/eod/AAA.US", {"period": "d"})
     assert "secret-token" not in str(info.value) and str(info.value).startswith("PROVIDER_REQUEST_FAILED:/api/eod/AAA.US")
+
+
+@pytest.mark.parametrize("fills_missing", [True, False])
+def test_fallback_contract_reaches_real_causal_build(fills_missing: bool) -> None:
+    from app.r2d2_v2_calendar import ShadowCalendar
+    from app.r2d2_v2_causal_list import build_commitment
+    from app.r2d2_v2_sources import canonical
+
+    sessions = prod.xnys_sessions_ending(PREVIOUS, 20)
+    bulk = {s: _response([] if s == sessions[-1] else [_bar_row("AAA", s)], _after_close(s)) for s in sessions}
+    splits = {s: _response([], _after_close(s)) for s in sessions}
+    fallback = _response(
+        [{k: v for k, v in _bar_row("AAA", PREVIOUS).items() if k != "code"}] if fills_missing else [],
+        _after_close(PREVIOUS, 180), "/api/eod/AAA.US",
+    )
+    registry, _ = prod.build_registry(_response([
+        {"Code": "AAA", "Exchange": "NYSE", "Type": "Common Stock", "Currency": "USD", "Country": "USA"}
+    ], _after_close(PREVIOUS)), previous_close=prod.session_close(PREVIOUS))
+    contract, receipt = prod.build_daily_contract(registry, bulk, splits, sessions=sessions,
+        fallback_by_symbol={"AAA": fallback}, previous_close=prod.session_close(PREVIOUS))
+    commitment = build_commitment(epoch="R2D2-V2-DIAG", day=D,
+        built_at=_after_close(PREVIOUS, 240), registry_bytes=canonical(registry),
+        daily_bytes=canonical(contract), calendar=ShadowCalendar())
+    assert commitment["daily_contract_sha256"] == hashlib.sha256(canonical(contract)).hexdigest()
+    assert receipt["counts"]["fallback_bars_filled"] == int(fills_missing)
+    assert contract["instruments"][0]["daily"]["coverage_verified"] is fills_missing
+    assert receipt["fallback_payload_sha256"] == {"AAA": fallback.sha256}
