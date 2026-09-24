@@ -74,6 +74,14 @@ def read_policy(settings: Any, now: datetime) -> dict:
             lo, hi = utc("2026-09-17T14:15:00Z"), utc("2026-09-17T15:00:00Z")
             if not lo <= start < end <= hi or len(names) > policy["capacity"]:
                 raise ShadowIntegrityError("LIVE_THURSDAY_PROOF_INVALID")
+        elif day == "2026-09-18":
+            lo, hi = utc("2026-09-18T18:30:00Z"), utc("2026-09-18T19:45:00Z")
+            if not lo <= start < end <= hi or len(names) > policy["capacity"]:
+                raise ShadowIntegrityError("LIVE_FRIDAY_PROOF_INVALID")
+        elif day == "2026-09-21":
+            lo, hi = utc("2026-09-21T14:15:00Z"), utc("2026-09-21T15:00:00Z")
+            if not lo <= start < end <= hi or len(names) > policy["capacity"]:
+                raise ShadowIntegrityError("LIVE_MONDAY_PROOF_INVALID")
         else:
             raise ShadowIntegrityError("LIVE_PROOF_DAY_INVALID")
     elif policy.get("mode") != "LIVE" or (end-start).total_seconds() > 90 * 86400:

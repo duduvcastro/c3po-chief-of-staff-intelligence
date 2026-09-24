@@ -444,3 +444,46 @@ def test_d2_delta_capacity_failure_does_not_advance_cache_or_append_partial_batc
     size=path.stat().st_size
     with pytest.raises(ShadowIntegrityError,match='FULL'):c._persist(receipt)
     assert path.stat().st_size==size and c._persisted_withdrawals_sha==previous
+
+
+@pytest.mark.parametrize("start_text,capacity,count,error", [
+    ("2026-09-21T14:15:00+00:00", 550, 550, None),
+    ("2026-09-21T14:20:00+00:00", 550, 550, None),
+    ("2026-09-21T14:59:00+00:00", 550, 550, None),
+    ("2026-09-21T14:14:59+00:00", 550, 2, "LIVE_MONDAY_PROOF_INVALID"),
+    ("2026-09-21T14:59:01+00:00", 550, 2, "LIVE_MONDAY_PROOF_INVALID"),
+    ("2026-09-21T14:20:00+00:00", 2, 3, "LIVE_MONDAY_PROOF_INVALID"),
+    ("2026-09-22T14:20:00+00:00", 550, 2, "LIVE_PROOF_DAY_INVALID"),
+    ("2026-09-18T18:30:00+00:00", 550, 550, None),
+    ("2026-09-18T19:44:00+00:00", 550, 550, None),
+    ("2026-09-18T18:29:59+00:00", 550, 2, "LIVE_FRIDAY_PROOF_INVALID"),
+    ("2026-09-18T19:44:01+00:00", 550, 2, "LIVE_FRIDAY_PROOF_INVALID"),
+    ("2026-09-18T18:30:00+00:00", 2, 3, "LIVE_FRIDAY_PROOF_INVALID"),
+    ("2026-09-19T18:30:00+00:00", 550, 2, "LIVE_PROOF_DAY_INVALID"),
+    ("2026-09-16T14:30:00+00:00", 10, 2, None),
+    ("2026-09-16T14:30:00+00:00", 550, 11, "LIVE_WEDNESDAY_PROOF_INVALID"),
+    ("2026-09-17T14:15:00+00:00", 550, 550, None),
+    ("2026-09-17T14:59:01+00:00", 550, 2, "LIVE_THURSDAY_PROOF_INVALID"),
+])
+def test_proof_authorized_dates_and_boundaries(tmp_path, monkeypatch, start_text, capacity, count, error):
+    assert live.ORDER_SHA == "1ad8b90cfab651823eb677b830a0078d10c17447575c8d813c3883a718579d8e"
+    now = datetime.fromisoformat(start_text)
+    monkeypatch.setattr(live, "current_package_sha", lambda: "b" * 64)
+    names = [f"S{i}" for i in range(count)]
+    policy = {"schema": "R2D2_V2_LIVE_POLICY_V1", "order_sha": live.ORDER_SHA,
+              "mode": "PROOF", "capacity": capacity, "package_sha": "b" * 64,
+              "code_revision": "c" * 40, "c8_receipt_sha": "d" * 64,
+              "head_go_sha": "e" * 64, "causal_list_receipt_sha": "f" * 64,
+              "symbols": names, "list_sha": digest(names), "merged_on": "2026-09-15",
+              "valid_from": now.isoformat(), "valid_until": (now + timedelta(seconds=60)).isoformat()}
+    path = tmp_path / "policy.json"
+    data = json.dumps(policy).encode()
+    path.write_bytes(data)
+    path.chmod(0o600)
+    settings = SimpleNamespace(r2d2_v2_live_policy_file=str(path),
+        r2d2_v2_live_policy_sha=hashlib.sha256(data).hexdigest(), build_sha="c" * 40)
+    if error:
+        with pytest.raises(ShadowIntegrityError, match=error):
+            live.read_policy(settings, now)
+    else:
+        assert live.read_policy(settings, now)["symbols"] == names

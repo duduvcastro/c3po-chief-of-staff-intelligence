@@ -15,9 +15,13 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, cast
 
 PRODUCER = "CANONICAL_ONLY_V1"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 ORIGIN_REVISION = "6083d7420746434426a11134b8edf0ba4b60b6b0"
-ORIGIN_ONE_PAGER_SHA256 = "76e8cc35fcd03be591280ff1bfbf76e0eb48495019fbe0484ead4231118a2ca4"  # re-pinned with Passo 0 (producer/consumer roles) + the full official stamp (F393-6); the differential test proves the risk branch unchanged
+ORIGIN_ONE_PAGER_SHA256 = "e49265da0cfc4cd10ab8e94d826ff8be38ee1d278137769a62d3c9a86f006e0d"
+# The test oracle includes later producer/consumer changes. Its file hash is
+# distinct from the historical origin; never combine it with ORIGIN_REVISION.
+ORACLE_REVISION = "1bb009c3d029ba8a74143bb22381a68bc1e86634"
+ORACLE_ONE_PAGER_SHA256 = "76e8cc35fcd03be591280ff1bfbf76e0eb48495019fbe0484ead4231118a2ca4"
 COMPONENTS = ("beta", "debt_to_ebitda", "earnings_growth", "free_cashflow",
               "insider_activity", "institutional_positions", "recent_grade_actions")
 
@@ -240,6 +244,8 @@ can advance. An available response with unknown coverage stays completed-null.
     calculation = _json_value({
         "producer": PRODUCER, "version": VERSION, "origin_revision": ORIGIN_REVISION,
         "origin_one_pager_sha256": ORIGIN_ONE_PAGER_SHA256,
+        "oracle_revision": ORACLE_REVISION,
+        "oracle_one_pager_sha256": ORACLE_ONE_PAGER_SHA256,
         "inputs": asdict(inputs), "evidence": {name: asdict(evidence[name]) for name in COMPONENTS},
         "computed_at": computed_at, "available_at": available_at,
     })
