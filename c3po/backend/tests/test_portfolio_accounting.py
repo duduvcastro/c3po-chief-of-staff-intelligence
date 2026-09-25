@@ -87,3 +87,12 @@ def test_missing_history_does_not_return_zero_profit():
     def fail(*args): raise ValueError('missing')
     result=period_result([event(day='2026-08-31')],date(2026,9,1),date(2026,9,30),fail,None)
     assert result['profit_usd'] is None
+
+
+def test_amzn_position_subtracts_entire_acquisition_cost():
+    result = current_values([event('AMZN', kind='position', quantity='2250', total='243175.500')], {'AMZN': {'price': Decimal('249.74'), 'currency': 'USD'}}, None)
+    position = result['positions']['AMZN']
+    assert Decimal(position['value']) == Decimal('561915.00')
+    assert Decimal(position['total_cost']) == Decimal('243175.50')
+    assert Decimal(position['profit']) == Decimal('318739.50')
+    assert Decimal(result['profit_usd']) == Decimal('318739.50')
