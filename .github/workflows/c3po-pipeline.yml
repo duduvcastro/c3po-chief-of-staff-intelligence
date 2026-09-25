@@ -193,6 +193,9 @@ jobs:
       - name: Test company logo identities
         run: pnpm test:logos
 
+      - name: Test portfolio acquisition cost
+        run: pnpm test:portfolio
+
       - name: Build frontend
         env:
           # Synthetic ingestion identifier: exercises enabled SDK/CSP compilation.
