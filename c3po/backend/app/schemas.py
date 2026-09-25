@@ -646,6 +646,18 @@ class RealtimeMarketResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class PortfolioEventRequest(BaseModel):
+    request_id: str = Field(pattern=r"^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
+    symbol: str = Field(min_length=1, max_length=18, pattern=r"^[A-Za-z0-9.\-]+$")
+    kind: Literal["position", "buy", "sell", "dividend", "split"]
+    effective_date: date
+    quantity: str = Field(pattern=r"^\d{1,18}(\.\d{1,10})?$")
+    total: str = Field(pattern=r"^\d{1,18}(\.\d{1,10})?$")
+    fees: str = Field(default="0", pattern=r"^\d{1,18}(\.\d{1,10})?$")
+
+    split_denominator: str = Field(default="1", pattern=r"^[1-9]\d{0,17}$")
+
+
 class RealtimePortfolioRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=18, pattern=r"^[A-Za-z0-9.\-]+$")
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { PortfolioSummary, PortfolioHoldingEditor, PortfolioHistory, usePortfolioAccount } from "./portfolio-account";
+
 import {
   Activity,
   AlertTriangle,
@@ -4295,7 +4297,13 @@ function R2D2RisingView() {
                 </circle>
               ))}
             </svg>
-            <div className="r2d2-donut-center"><span>MARKED</span><strong>{money(markedNav)}</strong><small>{openPositions} positions + cash</small></div>
+            <div className="r2d2-donut-center">
+              <span>NAV</span>
+              <strong title={moneyExact(accountingTotalNav)}>{money(accountingTotalNav)}</strong>
+              <small>Including posted interest</small>
+              <small>Marked allocation: {money(allocationTotal)}</small>
+              <small>{openPositions} positions + cash</small>
+            </div>
             {hoveredAllocation ? (
               <div
                 className="r2d2-donut-tooltip"
@@ -5249,6 +5257,7 @@ function MyRealtimePortfolio({
   canManage: boolean;
   canDelete: boolean;
 }) {
+  const account = usePortfolioAccount(API_URL);
   const [symbol, setSymbol] = useState("");
   const [mutating, setMutating] = useState("");
   const [error, setError] = useState("");
@@ -5463,6 +5472,8 @@ function MyRealtimePortfolio({
       {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span></div>}
       {!!snapshot?.errors.length && <div className="live-market-warning"><AlertTriangle size={14} /><span>{snapshot.errors.join(" · ")}</span></div>}
 
+      <PortfolioSummary account={account} />
+
       {loading && !snapshot ? <div className="realtime-portfolio-skeleton" /> : snapshot?.items.length ? (
         <div className="realtime-portfolio-table">
           <div className="realtime-portfolio-head">
@@ -5521,12 +5532,14 @@ function MyRealtimePortfolio({
               {canDelete ? <button className="realtime-portfolio-delete" onClick={() => removeSymbol(item.symbol)} disabled={mutating === item.symbol} title={`Remover ${item.symbol}`} aria-label={`Remover ${item.symbol}`}>
                 <Trash2 size={15} />
               </button> : <span className="realtime-portfolio-lock"><LockKeyhole size={14} /></span>}
+              <PortfolioHoldingEditor symbol={item.symbol} currency={item.currency} account={account} canManage={canManage} />
             </div>
           ))}
         </div>
       ) : (
         <div className="realtime-portfolio-empty"><BriefcaseBusiness size={24} /><strong>Sua carteira em tempo real começa aqui</strong><span>Digite uma ação ou ETF da B3 ou dos mercados dos Estados Unidos, incluindo OTC.</span></div>
       )}
+      <PortfolioHistory account={account} symbols={snapshot?.items.map(item => item.symbol) ?? []} canManage={canManage} />
     </section>
   );
 }
