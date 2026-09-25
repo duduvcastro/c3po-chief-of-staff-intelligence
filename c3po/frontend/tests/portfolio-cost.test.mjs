@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { positionTotalCost, quantityInput, unitCostInput } from '../lib/portfolio-cost.ts';
+import { positionTotalCost, quantityInput, unitCostInput, brazilianInput, brazilianCostInput, brazilianDisplay } from '../lib/portfolio-cost.ts';
 test('AMZN uses 2250 times the per-share cost, not one share as the total basis', () => {
   assert.equal(positionTotalCost('2250', '108.078', 'unit'), '243175.500');
   assert.equal(positionTotalCost('2250', '108,078', 'unit'), '243175.500');
@@ -28,4 +28,24 @@ test('per-share input has exactly three decimals and preserves the AMZN total', 
   assert.equal(unitCostInput('108,1'), '108.100');
   assert.equal(unitCostInput('108.9999'), '109.000');
   assert.equal(positionTotalCost('2250', unitCostInput('108.078'), 'unit'), '243175.500');
+});
+
+test('Brazilian editor round-trips grouped quantity and two-decimal total', () => {
+  assert.equal(brazilianDisplay('2250.0000000000'), '2.250');
+  assert.equal(brazilianDisplay('243175.5000000000', 2), '243.175,50');
+  assert.equal(brazilianDisplay('108.078', 3), '108,078');
+  assert.equal(brazilianInput('2.250'), '2250');
+  assert.equal(brazilianInput('243.175,50'), '243175.50');
+  assert.equal(positionTotalCost(brazilianInput('2.250'), brazilianInput('108,078'), 'unit'), '243175.500');
+  assert.equal(brazilianDisplay('999.999', 2), '1.000,00');
+  assert.equal(brazilianInput('1.000.000,00'), '1000000.00');
+  for (const invalid of ['24.31,50', '243175.50', '1,2,3']) assert.throws(() => brazilianInput(invalid));
+});
+
+test('ambiguous old decimal syntax cannot silently become a thousandfold cost', () => {
+  for (const value of ['108.078', '1.500']) assert.throws(() => brazilianCostInput(value), /ambíguo/);
+  assert.equal(brazilianCostInput('108,078'), '108.078');
+  assert.equal(brazilianCostInput('1.500,00'), '1500.00');
+  assert.equal(brazilianCostInput('243.175,50'), '243175.50');
+  assert.equal(brazilianInput('2.250'), '2250');
 });
