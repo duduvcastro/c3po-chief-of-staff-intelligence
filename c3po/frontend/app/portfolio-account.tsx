@@ -100,7 +100,7 @@ export function PortfolioHoldingEditor({ symbol, currency, account, canManage }:
     </form>}
     {canManage && <small>Custo de aquisição total a salvar: <strong>{money(calculatedCost, currency)}</strong>. Inclua as taxas no custo informado. Use ponto para milhares e vírgula para decimais: 2.250 ações; custo total 243.175,50.</small>}
     {message && <small role="status">{message}</small>}
-    {position && <div className="portfolio-holding-values"><span>Valor: <strong>{money(position.value, currency)}</strong></span><span>Custo de aquisição: <strong>{money(position.total_cost, currency)}</strong></span><span>Lucro / prejuízo em aberto: <strong>{money(position.profit, currency)} · {percent(position.profit_percent)}</strong></span></div>}
+    {position && <div className="portfolio-holding-values"><span>Valor: <strong>{money(position.value, currency)}</strong></span><span>Custo de aquisição: <strong>{money(position.total_cost, currency)}</strong></span><span>Lucro / prejuízo em aberto: <strong className={position.profit != null && Number(position.profit) > 0 ? 'positive-text' : position.profit != null && Number(position.profit) < 0 ? 'negative-text' : undefined}>{money(position.profit, currency)} · {percent(position.profit_percent)}</strong></span></div>}
     {canManage && <small>Para reconstruir períodos anteriores, cadastre as compras e vendas no histórico abaixo. Salvar posição registra um saldo, não uma compra.</small>}
   </div>;
 }
