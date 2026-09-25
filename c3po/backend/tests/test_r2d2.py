@@ -378,6 +378,41 @@ def test_r2d2_realized_track_keeps_prior_week_in_nav_but_not_daily_pnl() -> None
     assert track[-1]["accounting_nav_usd"] == pytest.approx(946_634.111455)
 
 
+def test_r2d2_total_nav_track_includes_cumulative_tbill_interest() -> None:
+    accounting_track = r2d2_module._realized_daily_track(
+        [{"session_date": date(2026, 8, 17), "is_final": True}],
+        [
+            {"session_date": date(2026, 8, 17), "realized_pnl_usd": -100},
+            {"session_date": date(2026, 8, 19), "realized_pnl_usd": 50},
+        ],
+        1_000_000,
+    )
+
+    track = r2d2_module._total_nav_track(
+        accounting_track,
+        [
+            {"session_date": date(2026, 8, 17), "interest_income_usd": 10},
+            {"session_date": date(2026, 8, 18), "interest_income_usd": 20},
+            {"session_date": date(2026, 8, 19), "interest_income_usd": 30},
+        ],
+        1_000_000,
+    )
+
+    assert [row["session_date"] for row in track] == [
+        date(2026, 8, 17),
+        date(2026, 8, 18),
+        date(2026, 8, 19),
+    ]
+    assert [row["accounting_nav_usd"] for row in track] == [
+        999_910,
+        999_930,
+        1_000_010,
+    ]
+    assert [row["daily_pnl_usd"] for row in track] == [-90, 20, 80]
+    assert track[0]["is_final"] is True
+    assert track[1]["is_final"] is False
+
+
 def test_r2d2_scans_full_us_catalog_and_promotes_stocks_and_etfs() -> None:
     service = _service()
     now = datetime(2026, 8, 17, 14, 0, tzinfo=timezone.utc)

@@ -448,6 +448,59 @@ def _realized_daily_track(
     return track
 
 
+def _total_nav_track(
+    accounting_track: list[dict[str, Any]],
+    cash_yield_entries: list[dict[str, Any]],
+    starting_capital: float,
+) -> list[dict[str, Any]]:
+    """Add accrued cash yield to every historical accounting NAV point.
+
+    The realized ledger remains the source for trading P&L. This projection
+    turns that ledger into total NAV by accumulating each session's posted
+    T-Bill income, including sessions with interest but no trade or snapshot.
+    """
+    accounting_by_date = {
+        _date_value(item["session_date"]): item
+        for item in accounting_track
+    }
+    interest_by_date: dict[date, float] = {}
+    for item in cash_yield_entries:
+        session_date = _date_value(item["session_date"])
+        interest_by_date[session_date] = (
+            interest_by_date.get(session_date, 0.0)
+            + _float(item.get("interest_income_usd"))
+        )
+
+    session_dates = sorted(set(accounting_by_date) | set(interest_by_date))
+    realized_nav = round(starting_capital, 2)
+    cumulative_interest = 0.0
+    total_nav = round(starting_capital, 2)
+    track: list[dict[str, Any]] = []
+    for session_date in session_dates:
+        accounting_row = accounting_by_date.get(session_date)
+        if accounting_row is not None:
+            realized_nav = _float(accounting_row["accounting_nav_usd"])
+            realized_pnl = _float(accounting_row.get("daily_pnl_usd"))
+        else:
+            realized_pnl = 0.0
+        interest_income = interest_by_date.get(session_date, 0.0)
+        cumulative_interest += interest_income
+        prior_total_nav = total_nav
+        total_nav = round(realized_nav + cumulative_interest, 2)
+        total_daily_pnl = round(realized_pnl + interest_income, 2)
+        track.append({
+            "session_date": session_date,
+            "accounting_nav_usd": total_nav,
+            "cumulative_pnl_usd": round(total_nav - starting_capital, 2),
+            "daily_pnl_usd": total_daily_pnl,
+            "daily_return_percent": (
+                total_daily_pnl / prior_total_nav * 100 if prior_total_nav else 0.0
+            ),
+            "is_final": bool((accounting_row or {}).get("is_final")),
+        })
+    return track
+
+
 def _decimal_value(value: Any) -> Decimal:
     try:
         parsed = Decimal(str(value))
@@ -2399,6 +2452,12 @@ class R2D2PaperService:
             starting_capital,
             through_date=local_date,
         )
+        cash_yield_entries = self.repo.cash_yield_entries(experiment["id"])
+        total_nav_track = _total_nav_track(
+            accounting_track,
+            cash_yield_entries,
+            starting_capital,
+        )
         strategy_track = _realized_daily_track(
             snapshots,
             self.repo.strategy_realized_pnl_by_session(experiment["id"]),
@@ -2415,7 +2474,6 @@ class R2D2PaperService:
         daily_pnl_date = current["session_date"].isoformat() if current else None
         cumulative_pnl = sum(_float(row["daily_pnl_usd"]) for row in accounting_track)
         accounting_nav = starting_capital + cumulative_pnl
-        cash_yield_entries = self.repo.cash_yield_entries(experiment["id"])
         interest_income_epoch = sum(
             _float(row["interest_income_usd"]) for row in cash_yield_entries
         )
@@ -2548,7 +2606,7 @@ class R2D2PaperService:
                 session_date=row["session_date"].isoformat(), nav_usd=_float(row["accounting_nav_usd"]),
                 daily_pnl_usd=_float(row["daily_pnl_usd"]), daily_return_percent=_float(row["daily_return_percent"]),
                 is_final=bool(row["is_final"]),
-            ) for row in accounting_track],
+            ) for row in total_nav_track],
             learning_curve=[R2D2LearningCurvePoint(
                 session_date=row["session_date"].isoformat(),
                 positive_percent=round(row["positive"] / (row["positive"] + row["negative"]) * 100, 1),

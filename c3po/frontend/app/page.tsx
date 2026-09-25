@@ -4293,7 +4293,13 @@ function R2D2RisingView() {
                 </circle>
               ))}
             </svg>
-            <div className="r2d2-donut-center"><span>MARKED</span><strong>{money(markedNav)}</strong><small>{openPositions} positions + cash</small></div>
+            <div className="r2d2-donut-center">
+              <span>NAV</span>
+              <strong title={moneyExact(accountingTotalNav)}>{money(accountingTotalNav)}</strong>
+              <small>Including posted interest</small>
+              <small>Marked allocation: {money(allocationTotal)}</small>
+              <small>{openPositions} positions + cash</small>
+            </div>
             {hoveredAllocation ? (
               <div
                 className="r2d2-donut-tooltip"
