@@ -52,6 +52,7 @@ default: the CLI refuses to run unless `C3PO_R2D2_V2_PRODUCERS_ENABLED=true`.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import functools
 import hashlib
 import json
@@ -83,6 +84,8 @@ LIQUIDITY_SESSIONS = 20
 ATR_SESSIONS = 61
 SPLIT_HISTORY_FROM = date(1990, 1, 1)  # the split history a component carries (provider `from`); the calendar starts at its first session on/after it (1990-01-02)
 DAILY_ELIGIBLE_TYPES = ("COMMON_STOCK", "COMMON_STOCK_ADR")  # the only classes the signed list builder selects
+DAILY_FALLBACK_MAX_SYMBOLS = 1_000
+DAILY_FALLBACK_WORKERS = 8
 SYMBOL_RE_ALLOWED = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
 
 
@@ -344,6 +347,7 @@ def _distinct(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
 
 def build_daily_contract(registry: Mapping[str, Any], bulk_by_session: Mapping[date, Response],
                          splits_by_session: Mapping[date, Response], *, sessions: Sequence[date],
+                         fallback_by_symbol: Mapping[str, Response] | None = None,
                          previous_close: datetime) -> tuple[dict[str, Any], dict[str, Any]]:
     """Assemble the 20-session raw bars and window splits for every registry symbol (port document, receipt)."""
     window = _official_window(sessions, LIQUIDITY_SESSIONS, "LIQUIDITY_WINDOW_INVALID")
@@ -404,6 +408,37 @@ def build_daily_contract(registry: Mapping[str, Any], bulk_by_session: Mapping[d
                 continue
             stamp = _iso(split_response.received_at)
             splits[code].append({"factor": factor, "effective_at": _iso(session_open(session)), "source_at": stamp, "available_at": stamp})
+
+    # The bulk endpoint is a mutable publication and can temporarily lose rows after
+    # having exposed them. Complete only genuinely missing/unreadable bars from the
+    # provider's per-symbol EOD endpoint. A bulk conflict is never overwritten.
+    fallback = dict(fallback_by_symbol or {})
+    if not set(fallback) <= set(bars):
+        raise ProducerError("FALLBACK_SYMBOL_SCOPE_INVALID")
+    fallback_filled = 0
+    fallback_unresolved: dict[str, list[str]] = {}
+    for symbol in sorted(fallback):
+        response = fallback[symbol]
+        if response.received_at <= session_close(window[-1]):
+            raise ProducerError("FALLBACK_RECEIVED_BEFORE_SESSION_CLOSE")
+        latest_receipt = max(latest_receipt, response.received_at)
+        rows = response.json()
+        if not isinstance(rows, list):
+            raise ProducerError("FALLBACK_PAYLOAD_INVALID")
+        grouped: dict[str, list[Mapping[str, Any]]] = {}
+        for row in rows:
+            if isinstance(row, dict) and isinstance(row.get("date"), str):
+                grouped.setdefault(row["date"], []).append(row)
+        for session in window:
+            if session in bars[symbol] or session.isoformat() in conflicts.get(symbol, ()):
+                continue
+            distinct = _distinct(grouped.get(session.isoformat(), []))
+            bar = _bar(distinct[0], session, response.received_at) if len(distinct) == 1 else None
+            if bar is None:
+                fallback_unresolved.setdefault(symbol, []).append(session.isoformat())
+            else:
+                bars[symbol][session] = bar
+                fallback_filled += 1
     stamp = _iso(latest_receipt)
     instruments = []
     complete = 0
@@ -415,16 +450,38 @@ def build_daily_contract(registry: Mapping[str, Any], bulk_by_session: Mapping[d
             "adjustment": "RAW_UNADJUSTED", "coverage_verified": covered,
             "split_coverage_verified": symbol not in invalid_splits and not unattributable,
             "source_at": stamp, "available_at": stamp}})
-    document = {"schema": DAILY_SCHEMA, "source_id": "eodhd-eod-bulk-last-day-US", "source_at": stamp, "available_at": stamp, "instruments": instruments}
+    source_id = "eodhd-eod-bulk-last-day-US" if not fallback else "eodhd-eod-bulk-last-day-US.eod-symbol-fallback"
+    document = {"schema": DAILY_SCHEMA, "source_id": source_id, "source_at": stamp, "available_at": stamp, "instruments": instruments}
     assert set(document) == DAILY_FIELDS
     receipt = _receipt("daily_contract", sessions=[s.isoformat() for s in window],
                        bulk_payload_sha256={s.isoformat(): bulk_by_session[s].sha256 for s in window},
+                       fallback_payload_sha256={symbol: fallback[symbol].sha256 for symbol in sorted(fallback)},
                        splits_payload_sha256={s.isoformat(): splits_by_session[s].sha256 for s in window},
                        split_effective_convention="official session open of the provider's split date",
                        counts={"symbols": len(symbols), "complete_bars": complete, "bar_conflicts": len(conflicts),
+                               "fallback_symbols": len(fallback), "fallback_bars_filled": fallback_filled,
+                               "fallback_symbols_unresolved": len(fallback_unresolved),
                                "symbols_with_unreadable_splits": len(invalid_splits), "unattributable_split_rows": sum(unattributable.values())},
-                       bar_conflicts=conflicts, unreadable_split_rows=invalid_splits, unattributable_split_rows=unattributable)
+                       bar_conflicts=conflicts, fallback_unresolved=fallback_unresolved,
+                       unreadable_split_rows=invalid_splits, unattributable_split_rows=unattributable)
     return document, receipt
+
+
+def _fetch_daily_fallbacks(fetch: Fetcher, symbols: Sequence[str], sessions: Sequence[date]) -> dict[str, Response]:
+    """Fetch one exact session range per incomplete symbol, with a hard request cap."""
+    ordered = tuple(sorted(set(symbols)))
+    if len(ordered) > DAILY_FALLBACK_MAX_SYMBOLS:
+        raise ProducerError("DAILY_FALLBACK_BUDGET_EXCEEDED")
+    if not ordered:
+        return {}
+
+    def one(symbol: str) -> tuple[str, Response]:
+        return symbol, fetch(f"/api/eod/{symbol}.US", {
+            "period": "d", "from": sessions[0].isoformat(), "to": sessions[-1].isoformat(),
+        })
+
+    with ThreadPoolExecutor(max_workers=min(DAILY_FALLBACK_WORKERS, len(ordered))) as executor:
+        return dict(executor.map(one, ordered))
 
 
 # ---------------------------------------------------------------- per-instrument 61-bar component (snapshot input)
@@ -507,6 +564,12 @@ def produce_causal_inputs(fetch: Fetcher, *, session_date: date, output_dir: Pat
     bulk = {session: fetch("/api/eod-bulk-last-day/US", {"date": session.isoformat()}) for session in sessions}
     splits = {session: fetch("/api/eod-bulk-last-day/US", {"date": session.isoformat(), "type": "splits"}) for session in sessions}
     daily, daily_receipt = build_daily_contract(registry, bulk, splits, sessions=sessions, previous_close=close)
+    incomplete = [item["symbol"] for item in daily["instruments"] if not item["daily"]["coverage_verified"]]
+    if incomplete:
+        fallback = _fetch_daily_fallbacks(fetch, incomplete, sessions)
+        daily, daily_receipt = build_daily_contract(
+            registry, bulk, splits, sessions=sessions, fallback_by_symbol=fallback, previous_close=close,
+        )
     hashes: dict[str, str] = {}
     for name, document, receipt in (("registry", registry, registry_receipt), ("daily_contract", daily, daily_receipt)):
         hashes[name] = write_private(output_dir / f"{name}.json", canonical(document))

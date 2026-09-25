@@ -625,6 +625,11 @@ def test_dashboard_nav_session_delta_uses_live_marked_nav_not_realized_accountin
     dashboard = paper.dashboard()
 
     assert dashboard.accounting_total_nav_usd == 1_000_140
+    assert [point.nav_usd for point in dashboard.track_record] == [
+        1_000_000,
+        1_000_040,
+        1_000_140,
+    ]
     assert dashboard.nav_usd == 1_010_000
     assert dashboard.nav_session_delta.current_total_nav_usd == 1_010_140
     assert dashboard.nav_session_delta.previous_total_nav_usd == 1_000_040
