@@ -22,3 +22,15 @@ export function positionTotalCost(quantity: string, cost: string, mode: CostMode
   const result = scale ? `${raw.slice(0, -scale)}.${raw.slice(-scale)}` : raw;
   return decimalInput(result);
 }
+
+/** Remove storage padding without changing the quantity of an existing holding. */
+export function quantityInput(value: string): string {
+  return value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value;
+}
+export function unitCostInput(value: string): string {
+  const [whole, fraction = ''] = decimalInput(value).split('.');
+  const scaled = BigInt(whole + fraction.padEnd(3, '0').slice(0, 3))
+    + BigInt(Number((fraction[3] ?? '0') >= '5'));
+  const digits = scaled.toString().padStart(4, '0');
+  return `${digits.slice(0, -3)}.${digits.slice(-3)}`;
+}

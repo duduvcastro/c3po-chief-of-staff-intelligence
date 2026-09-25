@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { decimalInput, positionTotalCost, type CostMode } from "../lib/portfolio-cost";
+import { decimalInput, positionTotalCost, quantityInput, unitCostInput, type CostMode } from "../lib/portfolio-cost";
 
 type Position = { quantity: string; total_cost: string; value: string | null; profit: string | null; profit_percent: string | null; realized: string; dividends: string };
 type Event = { request_id: string; symbol: string; kind: string; effective_date: string; quantity: string; total: string; fees: string; market: string; split_denominator?: string };
@@ -74,29 +74,29 @@ export function PortfolioHoldingEditor({ symbol, currency, account, canManage }:
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const requestId = useRef<string | null>(null);
-  useEffect(() => { if (!dirty) { setQuantity(position?.quantity ?? ''); setTotal(position?.total_cost ?? ''); setCostMode(position ? 'total' : 'unit'); } }, [position?.quantity, position?.total_cost, dirty]);
+  useEffect(() => { if (!dirty) { setQuantity(quantityInput(position?.quantity ?? '')); setTotal(position?.total_cost ?? ''); setCostMode(position ? 'total' : 'unit'); } }, [position?.quantity, position?.total_cost, dirty]);
   const edit = () => { setDirty(true); requestId.current = null; setMessage(''); };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); if (!canManage || busy) return; setBusy(true); setMessage('');
     try {
       requestId.current ??= crypto.randomUUID();
-      await account.save({ symbol, kind: 'position', quantity: decimalInput(quantity), total: positionTotalCost(quantity, total, costMode), fees: '0', effective_date: day, request_id: requestId.current });
+      await account.save({ symbol, kind: 'position', quantity: decimalInput(quantity), total: positionTotalCost(quantity, costMode === 'unit' ? unitCostInput(total) : total, costMode), fees: '0', effective_date: day, request_id: requestId.current });
       setDirty(false); requestId.current = null; setMessage('Posição salva.');
     } catch (e) { setMessage(e instanceof Error ? e.message : 'Falha ao salvar.'); } finally { setBusy(false); }
   };
   let calculatedCost: string | null = null;
-  try { calculatedCost = positionTotalCost(quantity, total, costMode); } catch { /* Incomplete input. */ }
+  try { calculatedCost = positionTotalCost(quantity, costMode === 'unit' ? unitCostInput(total) : total, costMode); } catch { /* Incomplete input. */ }
   return <div className="portfolio-holding">
     {canManage && <form onSubmit={submit}>
-      <label>Quantidade<input aria-label={`Quantidade de ${symbol}`} inputMode="decimal" value={quantity} onChange={e => { setQuantity(e.target.value); edit(); }} required disabled={busy} /></label>
+      <label>Quantidade<input aria-label={`Quantidade de ${symbol}`} inputMode="numeric" pattern="[0-9]+" value={quantity} onBlur={() => setQuantity(quantityInput(quantity))} onChange={e => { setQuantity(e.target.value); edit(); }} required disabled={busy} /></label>
       <label>Informar custo como<select aria-label={`Tipo de custo de ${symbol}`} value={costMode} disabled={busy} onChange={e => { setCostMode(e.target.value as CostMode); setTotal(''); edit(); }}><option value="unit">Custo médio por ação</option><option value="total">Custo total da posição</option></select></label>
-      <label>{costMode === 'unit' ? 'Custo médio por ação' : 'Custo total da posição'} ({currency})<input aria-label={`${costMode === 'unit' ? 'Custo médio por ação' : 'Custo total'} de ${symbol}`} inputMode="decimal" value={total} onChange={e => { setTotal(e.target.value); edit(); }} required disabled={busy} /></label>
+      <label>{costMode === 'unit' ? 'Custo médio por ação' : 'Custo total da posição'} ({currency})<input aria-label={`${costMode === 'unit' ? 'Custo médio por ação' : 'Custo total'} de ${symbol}`} inputMode="decimal" value={total} onBlur={() => { if (costMode === 'unit' && total.trim()) { try { setTotal(unitCostInput(total)); } catch { /* Validate on submit. */ } } }} onChange={e => { setTotal(e.target.value); edit(); }} required disabled={busy} /></label>
       <label>Posição nesta data<input type="date" min="2006-09-25" max={today()} value={day} onChange={e => { setDay(e.target.value); edit(); }} required disabled={busy} /></label>
       <button type="submit" disabled={busy || !dirty}>{busy ? 'Salvando…' : 'Salvar posição'}</button>
     </form>}
     {canManage && <small>Custo de aquisição total a salvar: <strong>{money(calculatedCost, currency)}</strong>. Inclua as taxas no custo informado. Use vírgula ou ponto para decimais, sem separador de milhar.</small>}
     {message && <small role="status">{message}</small>}
-    {position && <div className="portfolio-holding-values"><span>Valor: <strong>{money(position.value, currency)}</strong></span><span>Custo de aquisição: <strong>{money(position.total_cost, currency)}</strong></span><span>Lucro / prejuízo em aberto: <strong>{money(position.profit, currency)} · {percent(position.profit_percent)}</strong></span><span>Realizado em vendas: {money(position.realized, currency)}</span></div>}
+    {position && <div className="portfolio-holding-values"><span>Valor: <strong>{money(position.value, currency)}</strong></span><span>Custo de aquisição: <strong>{money(position.total_cost, currency)}</strong></span><span>Lucro / prejuízo em aberto: <strong>{money(position.profit, currency)} · {percent(position.profit_percent)}</strong></span></div>}
     {canManage && <small>Para reconstruir períodos anteriores, cadastre as compras e vendas no histórico abaixo. Salvar posição registra um saldo, não uma compra.</small>}
   </div>;
 }
