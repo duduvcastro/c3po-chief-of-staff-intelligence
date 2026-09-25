@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test:observability": "node --experimental-strip-types --test tests/sentry-privacy.test.mjs",
-    "test:logos": "node --experimental-strip-types --test tests/chewie-company-logo.test.mjs"
+    "test:logos": "node --experimental-strip-types --test tests/chewie-company-logo.test.mjs",
+    "test:portfolio": "node --experimental-strip-types --test tests/portfolio-cost.test.mjs"
   },
   "dependencies": {
     "@sentry/react": "10.73.0",

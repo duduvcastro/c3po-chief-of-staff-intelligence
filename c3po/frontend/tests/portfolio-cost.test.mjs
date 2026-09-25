@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { positionTotalCost } from '../lib/portfolio-cost.ts';
+import { positionTotalCost, quantityInput, unitCostInput } from '../lib/portfolio-cost.ts';
 test('AMZN uses 2250 times the per-share cost, not one share as the total basis', () => {
   assert.equal(positionTotalCost('2250', '108.078', 'unit'), '243175.500');
   assert.equal(positionTotalCost('2250', '108,078', 'unit'), '243175.500');
@@ -17,4 +17,15 @@ test('fractional quantities and decimal multiplication remain exact', () => {
 test('invalid and overflowing amounts cannot become ledger totals', () => {
   for (const input of ['', '-1', 'NaN', '1e3', '1,2,3', '1.000,20']) assert.throws(() => positionTotalCost('2250', input, 'unit'));
   assert.throws(() => positionTotalCost('999999999999999999', '10', 'unit'));
+});
+
+test('quantity storage padding is removed without truncating existing fractional holdings', () => {
+  assert.equal(quantityInput('2250.0000000000'), '2250');
+  assert.equal(quantityInput('0.5000000000'), '0.5');
+});
+test('per-share input has exactly three decimals and preserves the AMZN total', () => {
+  assert.equal(unitCostInput('108.0780000000'), '108.078');
+  assert.equal(unitCostInput('108,1'), '108.100');
+  assert.equal(unitCostInput('108.9999'), '109.000');
+  assert.equal(positionTotalCost('2250', unitCostInput('108.078'), 'unit'), '243175.500');
 });
