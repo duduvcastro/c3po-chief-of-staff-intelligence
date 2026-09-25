@@ -2761,3 +2761,23 @@ button { cursor: pointer; }
 .governance-refresh-bar button { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; }
 .governance-refresh-bar button:disabled { opacity: .55; cursor: wait; }
 .governance-refresh-bar small { color: #b42318; }
+
+/* Personal holdings keep their native currency; only the aggregate is USD. */
+.portfolio-account-summary, .portfolio-account-history { padding: 20px; border-bottom: 1px solid #e8eaec; color: #20252b; }
+.portfolio-account-summary p, .portfolio-account-history p { color: #65707e; font-size: 12px; line-height: 1.6; }
+.portfolio-account-summary small { display: block; color: #65707e; font-size: 11px; line-height: 1.6; }
+.portfolio-account-cards { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 16px 0; }
+.portfolio-account-cards > div { padding: 16px; background: #fafaf7; border: 1px solid #e1e3e5; border-radius: 8px; display: grid; gap: 6px; }
+.portfolio-account-cards strong { font-size: 22px; }
+.portfolio-holding { grid-column: 1 / -1; padding: 0 0 14px; }
+.portfolio-holding form, .portfolio-account-history form { display:flex; flex-wrap:wrap; align-items:flex-end; gap:10px; margin:12px 0; }
+.portfolio-holding label, .portfolio-account-history label { display:grid; gap:5px; font-size:11px; color:#626d79; }
+.portfolio-holding input, .portfolio-account-history input, .portfolio-account-history select { width:150px; max-width:100%; border:1px solid #d9dde2; border-radius:5px; padding:9px; background:white; color:#20252b; }
+.portfolio-holding button, .portfolio-account-history button { padding:9px 12px; border:1px solid #bba361; border-radius:5px; background:#f4e4b2; color:#292519; cursor:pointer; }
+.portfolio-holding button:disabled, .portfolio-account-history button:disabled { opacity:.5; cursor:default; }
+.portfolio-holding small { display:block; color:#6d7784; font-size:10px; margin-top:8px; }
+.portfolio-holding-values { display:flex; flex-wrap:wrap; gap:16px; font-size:12px; }
+.portfolio-periods > div, .portfolio-ledger > div { display:flex; flex-wrap:wrap; align-items:center; gap:18px; padding:10px 0; border-bottom:1px solid #e8eaec; font-size:12px; }
+.portfolio-periods small { flex-basis:100%; }
+.portfolio-account-summary summary, .portfolio-account-history summary { cursor:pointer; font-weight:700; padding:10px 0; }
+@media(max-width:760px) { .portfolio-account-cards { grid-template-columns:1fr; } .portfolio-holding { grid-column:1 / -1; grid-row:4; } }
