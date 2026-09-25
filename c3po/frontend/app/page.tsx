@@ -857,6 +857,8 @@ type RealtimeTabKey = RealtimeMarketKey | "PORTFOLIO";
 type RealtimePortfolioMarket = RealtimeMarketKey | "OTC";
 
 interface RealtimeMarketIndex {
+  source: string;
+  delay_minutes: number;
   symbol: string;
   name: string;
   value: number;
@@ -884,7 +886,7 @@ interface RealtimeMarketLeader {
 
 interface RealtimeMarketResponse {
   market: RealtimeMarketKey;
-  index: RealtimeMarketIndex;
+  index: RealtimeMarketIndex | null;
   universe_size: number;
   gainers: RealtimeMarketLeader[];
   losers: RealtimeMarketLeader[];
@@ -4640,18 +4642,10 @@ function MillenniumFalconView({ systemHealth }: { systemHealth: SystemHealthData
     if (marketRequestInFlight.current) return;
     marketRequestInFlight.current = true;
     try {
-      const [indexResponse, marketResponse] = await Promise.all([
-        fetch(`${API_URL}/api/v1/markets/live/index`, { cache: "no-store", credentials: "include" }),
-        fetch(`${API_URL}/api/v1/markets/live`, { cache: "no-store", credentials: "include" })
-      ]);
-      if (!indexResponse.ok || !marketResponse.ok) throw new Error(`Markets API ${indexResponse.ok ? marketResponse.status : indexResponse.status}`);
+      const indexResponse = await fetch(`${API_URL}/api/v1/markets/live/index`, { cache: "no-store", credentials: "include" });
+      if (!indexResponse.ok) throw new Error(`Markets API ${indexResponse.status}`);
       const indexPayload: LiveMarketIndexResponse = await indexResponse.json();
-      const marketPayload: LiveMarketsResponse = await marketResponse.json();
-      const promotedSymbols = ["Nikkei", "Shanghai", "DAX"];
-      const promoted = promotedSymbols
-        .map((symbol) => (marketPayload.groups["Future Index"] ?? []).find((item) => item.symbol === symbol))
-        .filter((item): item is LiveMarketItem => Boolean(item));
-      if (mountedRef.current) setIndices([...indexPayload.items, ...promoted]);
+      if (mountedRef.current) setIndices(indexPayload.items);
     } catch (requestError) {
       if (mountedRef.current) setError(requestError instanceof Error ? requestError.message : "Indices unavailable");
     } finally {
@@ -4955,16 +4949,7 @@ function MarketsView() {
   }, [loadIndices, loadMarkets]);
 
   const groupOrder = ["Index", "Future Index", "Currencies", "Crypto"];
-  const promotedIndexSymbols = ["Nikkei", "Shanghai", "DAX"];
-  const futureItems = snapshot?.groups["Future Index"] ?? [];
-  const promotedIndexItems = promotedIndexSymbols
-    .map((symbol) => futureItems.find((item) => item.symbol === symbol))
-    .filter((item): item is LiveMarketItem => Boolean(item));
-  const displayGroups: Record<string, LiveMarketItem[]> = snapshot ? {
-    ...snapshot.groups,
-    Index: [...(snapshot.groups.Index ?? []), ...promotedIndexItems],
-    "Future Index": futureItems.filter((item) => !promotedIndexSymbols.includes(item.symbol))
-  } : {};
+  const displayGroups: Record<string, LiveMarketItem[]> = snapshot?.groups ?? {};
   const visibleMarketItems = groupOrder.flatMap((group) => displayGroups[group] ?? []);
   const itemCount = visibleMarketItems.length;
   const staleCount = visibleMarketItems.filter((item) => item.status === "stale").length;
@@ -5051,7 +5036,7 @@ function LiveMarketRow({ item }: { item: LiveMarketItem }) {
         <span>{item.low !== null ? formatLiveMarketPrice({ ...item, price: item.low }) : "N/D"}</span>
         <span>{item.high !== null ? formatLiveMarketPrice({ ...item, price: item.high }) : "N/D"}</span>
       </div>
-      <div className="live-market-quote"><span className={`market-state market-state-${item.status}`}>{item.status}</span><strong>{formatDate(item.as_of)}</strong><small>{item.provider} · ~{item.delay_minutes}m</small></div>
+      <div className="live-market-quote"><span className={`market-state market-state-${item.status}`}>{item.status}</span><strong>{formatDate(item.as_of)}</strong><small>{item.provider} · {item.provider === "Financial Modeling Prep" ? (item.status === "closed" ? "fechamento" : `cotação há ${item.delay_minutes} min`) : `~${item.delay_minutes}m`}</small></div>
     </article>
   );
 }
@@ -5191,7 +5176,7 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
           </button>
         </div>
 
-        {snapshot && activeMarket !== "PORTFOLIO" && (
+        {snapshot?.index && activeMarket !== "PORTFOLIO" && (
           <div className="realtime-index-band">
             <div className="realtime-index-mark"><LineChart size={22} /></div>
             <div className="realtime-index-name">
@@ -5215,10 +5200,12 @@ function RealTimeView({ canManage, canDelete }: { canManage: boolean; canDelete:
             <div className={`realtime-index-change ${(snapshot.index.change_percent ?? 0) >= 0 ? "positive-text" : "negative-text"}`}>
               <span>Variação</span><strong>{formatPercent(snapshot.index.change_percent, 2)}</strong><small>Sessão atual</small>
             </div>
-            <div className="realtime-index-meta"><span className={`market-state market-state-${snapshot.index.status}`}>{snapshot.index.status}</span><strong>{formatDate(snapshot.index.as_of)}</strong><small>{snapshot.source} · ranking ~{snapshot.delay_minutes} min</small></div>
+            <div className="realtime-index-meta"><span className={`market-state market-state-${snapshot.index.status}`}>{snapshot.index.status}</span><strong>{formatDate(snapshot.index.as_of)}</strong><small>{snapshot.index.source} · {snapshot.index.status === "closed" ? "fechamento" : `cotação há ${snapshot.index.delay_minutes} min`}</small></div>
             <div className="realtime-universe"><span>Universo analisado</span><strong>{snapshot.universe_size.toLocaleString("pt-BR")}</strong><small>ações válidas</small></div>
           </div>
         )}
+        {snapshot && activeMarket !== "PORTFOLIO" && <p className="muted">Ações: {snapshot.source} · atraso informado: {snapshot.delay_minutes} min</p>}
+        {snapshot && !snapshot.index && activeMarket !== "PORTFOLIO" && <div className="screen-error">Índice de referência indisponível. Cotações das ações mantidas.</div>}
         {error && <div className="screen-error"><AlertTriangle size={17} /><span>{error}</span></div>}
       </section>
 

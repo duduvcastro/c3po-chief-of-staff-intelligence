@@ -2,7 +2,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import re
-from threading import RLock
+import logging
+from threading import RLock, Lock, Event, Thread
+from time import monotonic
 from typing import Any, Literal
 import unicodedata
 from urllib.parse import quote
@@ -32,6 +34,7 @@ from .http import JsonHttpClient
 from .eodhd_stream import EodhdRealtimeStream
 from .models import canonical_us_security_name, canonical_us_security_type, from_unix, number
 from .live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
+from .indices import INDICES, IndexQuotesService, quote_status
 
 
 REFRESH_SECONDS = 60
@@ -84,11 +87,13 @@ class RealtimeMarketsService:
         database: Database,
         http: JsonHttpClient,
         stream: EodhdRealtimeStream | None = None,
+        indices: IndexQuotesService | None = None,
     ) -> None:
         self.settings = settings
         self.database = database
         self.http = http
         self.stream = stream
+        self.indices = indices or IndexQuotesService(settings, http)
         self._lock = RLock()
         self._responses: dict[str, tuple[datetime, RealtimeMarketResponse]] = {}
         self._us_quotes: tuple[datetime, list[dict[str, Any]]] | None = None
@@ -100,6 +105,10 @@ class RealtimeMarketsService:
         self._us_reference_cache: dict[tuple[str, date], tuple[datetime, float | None, date | None]] = {}
         self._otc_origin_cache: dict[str, tuple[datetime, OtcOriginReference | None]] = {}
         self._intraday_series: dict[str, tuple[datetime, RealtimePortfolioIntradayResponse]] = {}
+        self._index_history_failures: dict[tuple, datetime] = {}
+        self._index_history_lock = Lock()
+        self._index_history_pending: dict[tuple, tuple[Event, float]] = {}
+        self._index_history_result: dict[tuple, tuple[datetime, InstrumentIntradayResponse]] = {}
         self._instrument_intraday_series: dict[str, tuple[datetime, InstrumentIntradayResponse]] = {}
 
     def snapshot(self, market: str) -> RealtimeMarketResponse:
@@ -110,23 +119,26 @@ class RealtimeMarketsService:
         cached = self._responses.get(normalized)
         if cached and now < cached[0]:
             return self._apply_stream(normalized, cached[1], now)
+        # The optional provider snapshot must not monopolize the shared
+        # realtime lock while its bounded HTTP request is in flight.
+        try:
+            index = self._index_quote(MARKET_SPECS[normalized])
+        except RuntimeError:
+            index = None
         with self._lock:
             now = datetime.now(timezone.utc)
             cached = self._responses.get(normalized)
             if cached and now < cached[0]:
                 return self._apply_stream(normalized, cached[1], now)
-            response = self._build(normalized, now)
+            response = self._build(normalized, now, index=index)
             self._responses[normalized] = (now + timedelta(seconds=CACHE_SECONDS), response)
             return self._apply_stream(normalized, response, now)
 
-    def _build(self, market: str, now: datetime) -> RealtimeMarketResponse:
+    def _build(self, market: str, now: datetime, *, index: RealtimeMarketIndex | None) -> RealtimeMarketResponse:
         spec = MARKET_SPECS[market]
-        index = self._index_quote(spec)
         if market == "B3":
-            rows = [
-                row.model_copy(update={"as_of": index.as_of})
-                for row in self._b3_rows(now)
-            ]
+            # A cash index timestamp says nothing about individual Brapi quotes.
+            rows = self._b3_rows(now)
             source = "Brapi Pro market-wide quote list + observed quote timestamps"
             delay_minutes = 5
         else:
@@ -148,6 +160,7 @@ class RealtimeMarketsService:
         return RealtimeMarketResponse(
             market=market,
             index=index,
+            errors=[] if index is not None else ["Index quote unavailable"],
             universe_size=len(rows),
             gainers=leader_groups["gainers"],
             losers=leader_groups["losers"],
@@ -660,6 +673,13 @@ class RealtimeMarketsService:
         if cached and now < cached[0]:
             return cached[1]
 
+        # Index history must never fetch while holding the shared realtime lock.
+        index_spec = next((spec for spec in LIVE_MARKET_SPECS
+            if spec.provider == 'fmp_index' and raw_symbol.casefold() in {
+                spec.symbol.casefold(), spec.provider_symbol.casefold()}), None)
+        if index_spec is not None:
+            return self._fmp_index_intraday(index_spec, now, requested_session_date=requested_session_date)
+
         with self._lock:
             now = datetime.now(timezone.utc)
             cached = self._instrument_intraday_series.get(cache_key)
@@ -726,6 +746,8 @@ class RealtimeMarketsService:
         *,
         requested_session_date: date | None = None,
     ) -> InstrumentIntradayResponse:
+        if spec.provider == "fmp_index":
+            return self._fmp_index_intraday(spec, now, requested_session_date=requested_session_date)
         if spec.provider == "brapi" and self.settings.brapi_token:
             return self._b3_instrument_intraday(
                 symbol=spec.symbol,
@@ -785,6 +807,91 @@ class RealtimeMarketsService:
             now=now,
             requested_session_date=requested_session_date,
         )
+
+    def _fmp_index_intraday(self, spec: Any, now: datetime, *, requested_session_date: date | None = None) -> InstrumentIntradayResponse:
+        index = INDICES[spec.provider_symbol]
+        end = requested_session_date or now.astimezone(ZoneInfo(str(xcals.get_calendar(index.calendar).tz))).date()
+        key = (spec.provider_symbol, end)
+        with self._index_history_lock:
+            cached = self._index_history_result.get(key)
+            if cached and now < cached[0]:
+                return cached[1]
+            if now < self._index_history_failures.get(key, datetime.min.replace(tzinfo=timezone.utc)):
+                raise RuntimeError('FMP index history unavailable')
+            owner = key not in self._index_history_pending
+            if owner:
+                # Limit distinct cold dates too: no unbounded thread fan-out.
+                if len(self._index_history_pending) >= len(INDICES):
+                    raise RuntimeError('FMP index history capacity busy')
+                self._index_history_pending[key] = (Event(), monotonic()+3.0)
+            pending, deadline = self._index_history_pending[key]
+        if owner:
+            assert pending is not None
+            def refresh():
+                try:
+                    result = self._fetch_fmp_index_intraday(spec, now, requested_session_date=requested_session_date)
+                    with self._index_history_lock:
+                        written = datetime.now(timezone.utc)
+                        self._index_history_result = {k:v for k,v in self._index_history_result.items() if v[0] > written}
+                        self._index_history_result[key] = (written+timedelta(seconds=30), result)
+                except Exception as exc:
+                    with self._index_history_lock:
+                        failed = datetime.now(timezone.utc)
+                        self._index_history_failures = {k:v for k,v in self._index_history_failures.items() if v > failed}
+                        self._index_history_failures[key] = failed+timedelta(seconds=30)
+                    logging.getLogger(__name__).warning('Index history fetch failed (%s)', type(exc).__name__)
+                finally:
+                    with self._index_history_lock:
+                        self._index_history_pending.pop(key, None)
+                        pending.set()
+            Thread(target=refresh, daemon=True, name='index-history-refresh').start()
+        if cached is None:
+            pending.wait(timeout=max(0.0, deadline-monotonic()))
+        with self._index_history_lock:
+            ready = self._index_history_result.get(key)
+        if ready:
+            return ready[1].model_copy(update={'status':'stale'}) if ready[0] <= datetime.now(timezone.utc) else ready[1]
+        raise RuntimeError('FMP index history unavailable')
+
+    def _fetch_fmp_index_intraday(
+        self, spec: Any, now: datetime, *, requested_session_date: date | None = None,
+    ) -> InstrumentIntradayResponse:
+        if not self.settings.fmp_api_token:
+            raise RuntimeError("FMP index history unavailable")
+        index = INDICES[spec.provider_symbol]
+        market_timezone = ZoneInfo(str(xcals.get_calendar(index.calendar).tz))
+        end = requested_session_date or now.astimezone(market_timezone).date()
+        payload = self.indices.http.get_json(
+            f"{self.settings.fmp_base_url.rstrip('/')}/stable/historical-chart/5min",
+            params={"symbol": spec.provider_symbol, "from": (end-timedelta(days=7)).isoformat(),
+                    "to": end.isoformat(), "apikey": self.settings.fmp_api_token},
+        )
+        rows = []
+        for raw in payload if isinstance(payload, list) else []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                stamp = datetime.fromisoformat(str(raw.get("date")))
+                # FMP index chart dates are exchange-local (six-market probe,
+                # 2026-09-17); quote timestamps, separately, are UTC Unix seconds.
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=market_timezone)
+                stamp = stamp.astimezone(timezone.utc)
+                if stamp > now:
+                    continue
+                rows.append({**raw, "timestamp": stamp.timestamp()})
+            except (ValueError, TypeError, OverflowError):
+                continue
+        if not rows:
+            raise RuntimeError("FMP index history unavailable")
+        response = self._normalize_instrument_intraday(
+            rows, symbol=spec.symbol, name=spec.name, market=spec.group, currency=spec.currency,
+            source="Financial Modeling Prep Intraday 5m", delay_minutes=0,
+            market_timezone=market_timezone, now=now, requested_session_date=requested_session_date,
+        )
+        status, _ = quote_status(index, response.points[-1].as_of, now)
+        return response.model_copy(update={"status": "delayed" if status == "live" else status,
+            "delay_minutes": max(0, int((now-response.points[-1].as_of).total_seconds()//60))})
 
     def _b3_instrument_intraday(
         self,
@@ -1543,35 +1650,12 @@ class RealtimeMarketsService:
         })
 
     def _index_quote(self, spec: RealtimeMarketSpec) -> RealtimeMarketIndex:
-        payload = self.http.get_json(
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(spec.index_symbol, safe='')}",
-            params={"range": "1d", "interval": "5m"},
-            headers={"User-Agent": "Mozilla/5.0 C3PO-Realtime/1.0"},
-        )
-        result = payload["chart"]["result"][0]
-        meta = result["meta"]
-        collected_at = datetime.now(timezone.utc)
-        value = number(meta.get("regularMarketPrice"))
-        if value is None:
-            raise ValueError(f"{spec.index_name}: no index value")
-        previous_close = number(meta.get("previousClose")) or number(meta.get("chartPreviousClose"))
-        change_percent = (value / previous_close - 1) * 100 if previous_close else None
-        market_state = str(meta.get("marketState") or "UNKNOWN").upper()
-        if market_state == "REGULAR":
-            status = "delayed"
-        elif market_state in {"CLOSED", "PRE", "POST", "PREPRE", "POSTPOST"}:
-            status = "closed"
-        else:
-            status = "stale"
+        item = self.indices.quote(spec.index_symbol)
         return RealtimeMarketIndex(
-            symbol=spec.index_symbol,
-            name=spec.index_name,
-            value=value,
-            change_percent=change_percent,
-            currency=str(meta.get("currency") or spec.index_currency),
-            market_state=market_state,
-            status=status,
-            as_of=from_unix(meta.get("regularMarketTime"), collected_at),
+            symbol=spec.index_symbol, name=spec.index_name, value=item.price,
+            change_percent=item.change_percent, currency=item.currency or spec.index_currency,
+            market_state=item.market_state, status=item.status, as_of=item.as_of,
+            source=item.provider, delay_minutes=item.delay_minutes,
         )
 
     def _b3_rows(self, now: datetime) -> list[RealtimeMarketLeader]:
@@ -1603,6 +1687,13 @@ class RealtimeMarketsService:
                 continue
             if price is None or price <= 0 or change is None or volume is None or volume < 0:
                 continue
+            stamp = next((raw.get(key) for key in
+                          ("regularMarketTime", "updatedAt", "timestamp")
+                          if raw.get(key) is not None), None)
+            try:
+                observed_at = from_unix(stamp, now)
+            except (ValueError, OverflowError, OSError):
+                observed_at = now
             rows.append(RealtimeMarketLeader(
                 symbol=symbol,
                 name=str(raw.get("name") or raw.get("longName") or symbol),
@@ -1612,7 +1703,7 @@ class RealtimeMarketsService:
                 cash_volume=price * volume,
                 currency="BRL",
                 exchange="B3",
-                as_of=now,
+                as_of=observed_at,
                 logo_url=raw.get("logo") or raw.get("logoUrl"),
                 status="delayed",
                 delay_minutes=5,

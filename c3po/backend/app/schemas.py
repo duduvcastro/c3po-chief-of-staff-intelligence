@@ -604,6 +604,8 @@ class LiveMarketIndexResponse(BaseModel):
 
 
 class RealtimeMarketIndex(BaseModel):
+    source: str = "Financial Modeling Prep"
+    delay_minutes: int = 0
     symbol: str
     name: str
     value: float
@@ -631,7 +633,7 @@ class RealtimeMarketLeader(BaseModel):
 
 class RealtimeMarketResponse(BaseModel):
     market: Literal["B3", "NASDAQ", "NYSE"]
-    index: RealtimeMarketIndex
+    index: RealtimeMarketIndex | None = None
     universe_size: int
     gainers: list[RealtimeMarketLeader]
     losers: list[RealtimeMarketLeader]
