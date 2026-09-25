@@ -56,3 +56,10 @@ export function brazilianDisplay(value: string, places?: number): string {
   }
   return integral.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (decimals ? `,${decimals}` : '');
 }
+
+export function brazilianCostInput(value: string): string {
+  if (/^\d{1,3}\.\d{3}$/.test(value.trim())) {
+    throw new Error('Valor ambíguo: use vírgula para decimais (108,078) ou informe o milhar com vírgula decimal (1.500,00).');
+  }
+  return brazilianInput(value);
+}

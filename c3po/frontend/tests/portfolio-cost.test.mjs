@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { positionTotalCost, quantityInput, unitCostInput, brazilianInput, brazilianDisplay } from '../lib/portfolio-cost.ts';
+import { positionTotalCost, quantityInput, unitCostInput, brazilianInput, brazilianCostInput, brazilianDisplay } from '../lib/portfolio-cost.ts';
 test('AMZN uses 2250 times the per-share cost, not one share as the total basis', () => {
   assert.equal(positionTotalCost('2250', '108.078', 'unit'), '243175.500');
   assert.equal(positionTotalCost('2250', '108,078', 'unit'), '243175.500');
@@ -40,4 +40,12 @@ test('Brazilian editor round-trips grouped quantity and two-decimal total', () =
   assert.equal(brazilianDisplay('999.999', 2), '1.000,00');
   assert.equal(brazilianInput('1.000.000,00'), '1000000.00');
   for (const invalid of ['24.31,50', '243175.50', '1,2,3']) assert.throws(() => brazilianInput(invalid));
+});
+
+test('ambiguous old decimal syntax cannot silently become a thousandfold cost', () => {
+  for (const value of ['108.078', '1.500']) assert.throws(() => brazilianCostInput(value), /ambíguo/);
+  assert.equal(brazilianCostInput('108,078'), '108.078');
+  assert.equal(brazilianCostInput('1.500,00'), '1500.00');
+  assert.equal(brazilianCostInput('243.175,50'), '243175.50');
+  assert.equal(brazilianInput('2.250'), '2250');
 });

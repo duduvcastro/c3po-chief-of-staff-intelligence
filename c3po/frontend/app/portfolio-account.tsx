@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { positionTotalCost, brazilianInput, brazilianDisplay, unitCostInput, type CostMode } from "../lib/portfolio-cost";
+import { positionTotalCost, brazilianInput, brazilianCostInput, brazilianDisplay, unitCostInput, type CostMode } from "../lib/portfolio-cost";
 
 type Position = { quantity: string; total_cost: string; value: string | null; profit: string | null; profit_percent: string | null; realized: string; dividends: string };
 type Event = { request_id: string; symbol: string; kind: string; effective_date: string; quantity: string; total: string; fees: string; market: string; split_denominator?: string };
@@ -79,7 +79,7 @@ export function PortfolioHoldingEditor({ symbol, currency, account, canManage }:
   const edit = () => { setDirty(true); requestId.current = null; setMessage(''); };
   const effectiveCost = () => !costEdited && position && costMode === 'total'
     ? position.total_cost
-    : costMode === 'unit' ? unitCostInput(brazilianInput(total)) : brazilianInput(brazilianDisplay(brazilianInput(total), 2));
+    : costMode === 'unit' ? unitCostInput(brazilianCostInput(total)) : brazilianInput(brazilianDisplay(brazilianCostInput(total), 2));
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); if (!canManage || busy) return; setBusy(true); setMessage('');
     try {
@@ -94,7 +94,7 @@ export function PortfolioHoldingEditor({ symbol, currency, account, canManage }:
     {canManage && <form onSubmit={submit}>
       <label>Quantidade<input aria-label={`Quantidade de ${symbol}`} inputMode="numeric" pattern="[0-9]{1,3}(\.[0-9]{3})*|[0-9]+" value={quantity} onBlur={() => { try { setQuantity(brazilianDisplay(brazilianInput(quantity))); } catch { /* Validate on submit. */ } }} onChange={e => { setQuantity(e.target.value); edit(); }} required disabled={busy} /></label>
       <label>Informar custo como<select aria-label={`Tipo de custo de ${symbol}`} value={costMode} disabled={busy} onChange={e => { setCostMode(e.target.value as CostMode); setTotal(''); setCostEdited(true); edit(); }}><option value="unit">Custo médio por ação</option><option value="total">Custo total da posição</option></select></label>
-      <label>{costMode === 'unit' ? 'Custo médio por ação' : 'Custo total da posição'} ({currency})<input aria-label={`${costMode === 'unit' ? 'Custo médio por ação' : 'Custo total'} de ${symbol}`} inputMode="decimal" value={total} onBlur={() => { if (total.trim()) { try { setTotal(brazilianDisplay(brazilianInput(total), costMode === 'unit' ? 3 : 2)); } catch { /* Validate on submit. */ } } }} onChange={e => { setTotal(e.target.value); setCostEdited(true); edit(); }} required disabled={busy} /></label>
+      <label>{costMode === 'unit' ? 'Custo médio por ação' : 'Custo total da posição'} ({currency})<input aria-label={`${costMode === 'unit' ? 'Custo médio por ação' : 'Custo total'} de ${symbol}`} inputMode="decimal" value={total} onBlur={() => { if (total.trim()) { try { setTotal(brazilianDisplay(brazilianCostInput(total), costMode === 'unit' ? 3 : 2)); } catch (error) { setMessage(error instanceof Error ? error.message : 'Confira o custo informado.'); } } }} onChange={e => { setTotal(e.target.value); setCostEdited(true); edit(); }} required disabled={busy} /></label>
       <label>Posição nesta data<input type="date" min="2006-09-25" max={today()} value={day} onChange={e => { setDay(e.target.value); edit(); }} required disabled={busy} /></label>
       <button type="submit" disabled={busy || !dirty}>{busy ? 'Salvando…' : 'Salvar posição'}</button>
     </form>}
