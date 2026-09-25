@@ -34,3 +34,25 @@ export function unitCostInput(value: string): string {
   const digits = scaled.toString().padStart(4, '0');
   return `${digits.slice(0, -3)}.${digits.slice(-3)}`;
 }
+
+/** Brazilian editor syntax: dots group thousands, comma separates decimals. */
+export function brazilianInput(value: string): string {
+  const compact = value.trim();
+  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,10})?$/.test(compact)) {
+    throw new Error('Use ponto para milhares e vírgula para decimais. Exemplo: 243.175,50.');
+  }
+  return decimalInput(compact.replace(/\./g, '').replace(',', '.'));
+}
+export function brazilianDisplay(value: string, places?: number): string {
+  if (!value) return '';
+  const [whole, fraction = ''] = decimalInput(value).split('.');
+  let integral = whole, decimals = fraction.replace(/0+$/, '');
+  if (places !== undefined) {
+    const scaled = BigInt(whole + fraction.padEnd(places, '0').slice(0, places))
+      + BigInt(Number((fraction[places] ?? '0') >= '5'));
+    const digits = scaled.toString().padStart(places + 1, '0');
+    integral = places ? digits.slice(0, -places) : digits;
+    decimals = places ? digits.slice(-places) : '';
+  }
+  return integral.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + (decimals ? `,${decimals}` : '');
+}
