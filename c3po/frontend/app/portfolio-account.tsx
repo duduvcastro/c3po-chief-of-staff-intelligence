@@ -1,5 +1,6 @@
 "use client";
 
+import { PortfolioPeriodCharts } from "./portfolio-period-charts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { positionTotalCost, brazilianInput, brazilianCostInput, brazilianDisplay, unitCostInput, type CostMode } from "../lib/portfolio-cost";
 
@@ -58,6 +59,7 @@ export function PortfolioSummary({ account }: { account: Controller }) {
       {!summary.complete && <p role="status">Total indisponível: confira cotação ou câmbio de {summary.missing.join(', ')}.</p>}
       {data?.fx && <small>Conversão apenas no consolidado: US$ 1 = {money(data.fx.brl_per_usd, 'BRL')} · {data.fx.source} · {new Date(data.fx.as_of).toLocaleString('pt-BR')}</small>}
       <div className="portfolio-account-cards">{data?.periods.slice(0, 3).map(p => <div key={p.label}><small>{p.label}</small><strong>{money(p.profit_usd)}</strong><span>{percent(p.return_percent)}</span>{p.reason && <small>{p.reason}</small>}</div>)}</div>
+      <PortfolioPeriodCharts periods={data?.periods ?? []} />
       <details><summary>Meses e anos encerrados</summary><div className="portfolio-periods">{data?.periods.slice(3).map(p => <div key={p.label}><strong>{p.label}</strong><span>{money(p.profit_usd)}</span><span>{percent(p.return_percent)}</span>{p.reason && <small>{p.reason}</small>}</div>)}</div></details>
       <small>{data?.methodology}</small><small>Calculado em {data && new Date(data.generated_at).toLocaleString('pt-BR')}. Resultados dependem do histórico cadastrado.</small>
     </>}

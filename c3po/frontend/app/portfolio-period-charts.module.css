@@ -1,0 +1,10 @@
+.charts { display: grid; gap: 20px; min-width: 0; margin: 24px 0; }
+.caption { margin: 0; font-size: 13px; color: var(--muted, #64748b); }
+.chart { min-width: 0; border: 1px solid #94a3b844; border-radius: 12px; padding: 16px 12px 8px; }
+.chart h3 { margin: 0 0 8px 8px; font-size: 17px; }
+.scroll { max-width: 100%; overflow-x: auto; }
+.scroll:focus-visible { outline: 2px solid #087f5b; outline-offset: 3px; }
+.scroll svg { display: block; }
+.value { fill: currentColor; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.period { fill: currentColor; font-size: 13px; font-weight: 600; }
+.partial, .zero { fill: currentColor; opacity: .7; font-size: 11px; }
