@@ -7,6 +7,10 @@ adjusted_close here: provider adjustments can also include cash dividends.
 from datetime import date
 from decimal import Decimal
 
+# Owner confirmed only historical AMZN quantities are restated (2026-09-26).
+# Fable review: issue #348, comment 5842083445. No other symbol is inferred.
+OWNER_CONFIRMED_RESTATED = frozenset({"AMZN"})
+
 AMZN_SPLIT_DAY = date(2022, 6, 6)
 AMZN_FACTOR = Decimal(20)
 

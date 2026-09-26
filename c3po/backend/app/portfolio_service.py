@@ -18,13 +18,15 @@ from .market_data.eodhd import EodhdClient
 from .market_data.http import JsonHttpClient
 from .market_data.realtime import RealtimeMarketsService
 from .portfolio_accounting import amount, current_values, period_result, Position
-from .portfolio_split_basis import historical_price
+from .portfolio_split_basis import historical_price, OWNER_CONFIRMED_RESTATED
 
 
 class PortfolioService:
     def __init__(self, settings: Settings, database: Database, realtime: RealtimeMarketsService):
         self.database, self.realtime = database, realtime
-        self.split_adjusted_symbols = frozenset(s.strip().upper() for s in settings.portfolio_split_adjusted_symbols.split(",") if s.strip())
+        declared = settings.portfolio_split_adjusted_symbols
+        self.split_adjusted_symbols = (OWNER_CONFIRMED_RESTATED if declared is None else
+            frozenset(s.strip().upper() for s in declared.split(",") if s.strip()))
         self.provider = EodhdClient(settings.eodhd_base_url, settings.eodhd_api_token or '', JsonHttpClient(timeout=3, max_retries=0))
         self._history: dict[tuple, tuple[datetime, list[dict]]] = {}
         self._lock = RLock()

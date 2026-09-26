@@ -21,7 +21,7 @@ def snapshot(adjusted, original=False):
     class Quote:
         symbol='AMZN'
         def model_dump(self):return dict(symbol='AMZN',price=100,currency='USD',status='live')
-    svc=PortfolioService(Settings(portfolio_split_adjusted_symbols='AMZN' if adjusted else ''),db,
+    svc=PortfolioService(Settings(portfolio_split_adjusted_symbols=None if adjusted is None else 'AMZN' if adjusted else ''),db,
         SimpleNamespace(portfolio_snapshot=lambda:SimpleNamespace(items=[Quote()])))
     svc.provider=SimpleNamespace(daily_bars=lambda *a,**kw:[
         dict(date='2022-05-31',close=2200,adjusted_close=999),
@@ -34,7 +34,7 @@ def snapshot(adjusted, original=False):
 
 
 def test_restated_and_original_ledgers_produce_same_june_profit_without_changing_cost():
-    for adjusted, original in [(True,False),(False,True)]:
+    for adjusted, original in [(True,False),(False,True),(None,False)]:
         out=snapshot(adjusted,original)
         june=next(p for p in out['periods'] if p['label']=='06/2022')
         assert Decimal(june['profit_usd'])==Decimal('-200')
@@ -59,3 +59,10 @@ def test_exact_trading_boundary(day,expected):
 
 def test_other_symbols_unchanged():
     assert historical_price('OTHER',date(2020,1,1),Decimal(2000),[],{'AMZN'})==2000
+
+
+def test_owner_confirmed_default_is_only_amzn_and_empty_override_disables_it():
+    for setting, expected in [(None, frozenset({"AMZN"})), ("", frozenset())]:
+        svc=PortfolioService(Settings(portfolio_split_adjusted_symbols=setting),
+            Database(Settings()),SimpleNamespace())
+        assert svc.split_adjusted_symbols == expected
