@@ -6,7 +6,7 @@ const valueOf = (p: PortfolioPeriod) => p.profit_usd == null || !p.profit_usd.tr
 export function portfolioChartPeriods(periods: PortfolioPeriod[]) {
   const months = periods.filter(p => /^\d{2}\/\d{4}$/.test(p.label) || p.label === 'Mês em andamento')
     .slice().sort((a, b) => a.start.localeCompare(b.start));
-  const monthly: ChartPeriod[] = months.map(p => ({ label: `${p.start.slice(5, 7)}/${p.start.slice(0, 4)}`, value: valueOf(p), partial: p.label === 'Mês em andamento', reason: p.reason }));
+  const monthly: ChartPeriod[] = months.map(p => ({ label: `${p.start.slice(5, 7)}/${p.start.slice(2, 4)}`, value: valueOf(p), partial: p.label === 'Mês em andamento', reason: p.reason }));
   const groups = new Map<string, PortfolioPeriod[]>();
   for (const p of months) {
     const key = `${p.start.slice(0, 4)}-${Math.floor((Number(p.start.slice(5, 7)) - 1) / 3) + 1}`;
@@ -22,6 +22,16 @@ export function portfolioChartPeriods(periods: PortfolioPeriod[]) {
   });
   const yearly: ChartPeriod[] = periods.filter(p => /^\d{4}$/.test(p.label) || p.label === 'Ano em andamento')
     .slice().sort((a, b) => a.start.localeCompare(b.start))
-    .map(p => ({ label: p.start.slice(0, 4), value: valueOf(p), partial: p.label === 'Ano em andamento', reason: p.reason }));
+    .map(p => ({ label: p.start.slice(2, 4), value: valueOf(p), partial: p.label === 'Ano em andamento', reason: p.reason }));
   return { monthly, quarterly, yearly };
+}
+
+export function monthlyResultCounts(rows: ChartPeriod[]) {
+  return rows.reduce((counts, row) => {
+    if (row.value === null || !Number.isFinite(row.value)) counts.unavailable++;
+    else if (row.value > 0) counts.positive++;
+    else if (row.value < 0) counts.negative++;
+    else counts.zero++;
+    return counts;
+  }, { positive: 0, negative: 0, zero: 0, unavailable: 0 });
 }

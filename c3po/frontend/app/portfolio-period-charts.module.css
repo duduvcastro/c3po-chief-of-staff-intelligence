@@ -10,3 +10,8 @@
 .value { fill: currentColor; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .period { fill: currentColor; font-size: 13px; font-weight: 600; }
 .partial, .zero { fill: currentColor; opacity: .7; font-size: 11px; }
+
+.counts { display: flex; flex-wrap: wrap; gap: 12px 24px; font-size: 14px; }
+.counts small { flex-basis: 100%; }
+.positive { color: #087f5b; }
+.negative { color: #b42318; }

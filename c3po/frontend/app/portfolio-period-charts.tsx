@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { portfolioChartPeriods, type PortfolioPeriod, type ChartPeriod } from '../lib/portfolio-periods';
+import { portfolioChartPeriods, monthlyResultCounts, type PortfolioPeriod, type ChartPeriod } from '../lib/portfolio-periods';
 import styles from './portfolio-period-charts.module.css';
 
 const usd = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD' }).format(value);
@@ -58,8 +58,16 @@ function PeriodChart({ title, rows }: { title: string; rows: ChartPeriod[] }) {
 
 export function PortfolioPeriodCharts({ periods }: { periods: PortfolioPeriod[] }) {
   const series = portfolioChartPeriods(periods);
+  const counts = monthlyResultCounts(series.monthly);
   return <div className={styles.charts}>
     <p className={styles.caption}>Todo o histórico desde o primeiro investimento · Resultados em USD · Verde: lucro · Vermelho: prejuízo. Períodos em andamento incluem os dados disponíveis até hoje; N/D indica histórico insuficiente.</p>
+    <div className={styles.counts} aria-label="Contagem dos resultados mensais">
+      <span className={styles.positive}>Meses no verde: <strong>{counts.positive}</strong></span>
+      <span className={styles.negative}>Meses no vermelho: <strong>{counts.negative}</strong></span>
+      <span>Meses zerados: <strong>{counts.zero}</strong></span>
+      <span>Meses sem dados: <strong>{counts.unavailable}</strong></span>
+      {series.monthly.some(row => row.partial) && <small>Inclui o mês em andamento, cujo resultado pode mudar.</small>}
+    </div>
     <PeriodChart title="Resultado mês a mês" rows={series.monthly} />
     <PeriodChart title="Resultado por trimestre" rows={series.quarterly} />
     <PeriodChart title="Resultado ano a ano" rows={series.yearly} />
