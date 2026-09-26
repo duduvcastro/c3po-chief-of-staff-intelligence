@@ -19,6 +19,9 @@ DEFAULT_LEGACY_ROOT, DEFAULT_MIGRATIONS_DIR, DEFAULT_ONE_PAGER_OUTPUT_DIR = _def
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="C3PO_", extra="ignore", populate_by_name=True)
 
+    # Explicit owner-confirmed quantity basis; never infer from acquisition cost.
+    portfolio_split_adjusted_symbols: str = ""
+
     app_name: str = "C3PO | Chief of Staff Intelligence"
     environment: str = "development"
     database_url: str = ""
