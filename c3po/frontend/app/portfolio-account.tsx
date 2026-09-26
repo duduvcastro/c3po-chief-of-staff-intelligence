@@ -13,6 +13,10 @@ const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Pa
 const money = (v: string | number | null | undefined, currency = 'USD') => v == null ? 'N/D' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(Number(v));
 const percent = (v: string | null | undefined) => v == null ? 'N/D' : `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
 const numeric = (value: string) => { const clean = value.trim().replace(/\s/g, ''); return clean.includes(',') ? clean.replace(/\./g, '').replace(',', '.') : clean; };
+const resultColor = (value: string | null | undefined) => {
+  const number = value == null || !value.trim() ? NaN : Number(value);
+  return !Number.isFinite(number) || number === 0 ? undefined : number > 0 ? 'positive-text' : 'negative-text';
+};
 const kinds: Record<string, string> = { position: 'Posição informada', buy: 'Compra', sell: 'Venda', dividend: 'Provento', split: 'Desdobramento / grupamento' };
 
 export function usePortfolioAccount(apiUrl: string) {
@@ -58,7 +62,7 @@ export function PortfolioSummary({ account }: { account: Controller }) {
       {!!summary.unconfigured?.length && <p>Subtotal das posições informadas. Ainda sem quantidade e custo: {summary.unconfigured.join(', ')}. Cadastre zero para ativos apenas acompanhados.</p>}
       {!summary.complete && <p role="status">Total indisponível: confira cotação ou câmbio de {summary.missing.join(', ')}.</p>}
       {data?.fx && <small>Conversão apenas no consolidado: US$ 1 = {money(data.fx.brl_per_usd, 'BRL')} · {data.fx.source} · {new Date(data.fx.as_of).toLocaleString('pt-BR')}</small>}
-      <div className="portfolio-account-cards">{data?.periods.slice(0, 3).map(p => <div key={p.label}><small>{p.label}</small><strong>{money(p.profit_usd)}</strong><span>{percent(p.return_percent)}</span>{p.reason && <small>{p.reason}</small>}</div>)}</div>
+      <div className="portfolio-account-cards">{data?.periods.slice(0, 3).map(p => <div key={p.label}><small>{p.label}</small><strong className={resultColor(p.profit_usd)}>{money(p.profit_usd)}</strong><span className={resultColor(p.return_percent)}>{percent(p.return_percent)}</span>{p.reason && <small>{p.reason}</small>}</div>)}</div>
       <PortfolioPeriodCharts periods={data?.periods ?? []} />
       <details><summary>Meses e anos encerrados</summary><div className="portfolio-periods">{data?.periods.slice(3).map(p => <div key={p.label}><strong>{p.label}</strong><span>{money(p.profit_usd)}</span><span>{percent(p.return_percent)}</span>{p.reason && <small>{p.reason}</small>}</div>)}</div></details>
       <small>{data?.methodology}</small><small>Calculado em {data && new Date(data.generated_at).toLocaleString('pt-BR')}. Resultados dependem do histórico cadastrado.</small>
@@ -102,7 +106,7 @@ export function PortfolioHoldingEditor({ symbol, currency, account, canManage }:
     </form>}
     {canManage && <small>Custo de aquisição total a salvar: <strong>{money(calculatedCost, currency)}</strong>. Inclua as taxas no custo informado. Use ponto para milhares e vírgula para decimais: 2.250 ações; custo total 243.175,50.</small>}
     {message && <small role="status">{message}</small>}
-    {position && <div className="portfolio-holding-values"><span>Valor: <strong>{money(position.value, currency)}</strong></span><span>Custo de aquisição: <strong>{money(position.total_cost, currency)}</strong></span><span>Lucro / prejuízo em aberto: <strong>{money(position.profit, currency)} · {percent(position.profit_percent)}</strong></span></div>}
+    {position && <div className="portfolio-holding-values"><span>Valor: <strong>{money(position.value, currency)}</strong></span><span>Custo de aquisição: <strong>{money(position.total_cost, currency)}</strong></span><span>Lucro / prejuízo em aberto: <strong className={position.profit != null && Number(position.profit) > 0 ? 'positive-text' : position.profit != null && Number(position.profit) < 0 ? 'negative-text' : undefined}>{money(position.profit, currency)} · {percent(position.profit_percent)}</strong></span></div>}
     {canManage && <small>Para reconstruir períodos anteriores, cadastre as compras e vendas no histórico abaixo. Salvar posição registra um saldo, não uma compra.</small>}
   </div>;
 }
