@@ -1,17 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import { portfolioChartPeriods, type PortfolioPeriod, type ChartPeriod } from '../lib/portfolio-periods';
 import styles from './portfolio-period-charts.module.css';
 
 const usd = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD' }).format(value);
 
-function PeriodChart({ title, rows }: { title: string; rows: ChartPeriod[] }) {
+function PeriodChart({ title, rows: allRows, limit }: { title: string; rows: ChartPeriod[]; limit?: number }) {
+  const [showAll, setShowAll] = useState(false);
+  const rows = showAll || !limit ? allRows : allRows.slice(-limit);
   const max = Math.max(1, ...rows.map(row => Math.abs(row.value ?? 0)));
   const width = Math.max(640, rows.length * 148 + 40);
   const slot = (width - 40) / Math.max(1, rows.length);
   const zero = 150;
   return <section className={styles.chart} aria-label={title}>
-    <h3>{title}</h3>
+    <div className={styles.header}><h3>{title}</h3>{limit && allRows.length > limit && <button type="button" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>{showAll ? "Ver recentes" : "Ver tudo"}</button>}</div>
     {!rows.length ? <p>Ainda não há registros para este gráfico.</p> : <div className={styles.scroll} tabIndex={0} role="region" aria-label={`${title}: role horizontalmente para ver todo o histórico`}>
       <svg width={width} height={320} role="img" aria-label={`${title}, resultados em dólares. Valores positivos em verde e negativos em vermelho.`}>
         <title>{title} · USD</title>
@@ -40,8 +43,8 @@ export function PortfolioPeriodCharts({ periods }: { periods: PortfolioPeriod[] 
   const series = portfolioChartPeriods(periods);
   return <div className={styles.charts}>
     <p className={styles.caption}>Resultados em USD · Verde: lucro · Vermelho: prejuízo. Períodos em andamento incluem os dados disponíveis até hoje; N/D indica histórico insuficiente.</p>
-    <PeriodChart title="Resultado mês a mês" rows={series.monthly} />
-    <PeriodChart title="Resultado por trimestre" rows={series.quarterly} />
+    <PeriodChart title="Resultado mês a mês" rows={series.monthly} limit={24} />
+    <PeriodChart title="Resultado por trimestre" rows={series.quarterly} limit={12} />
     <PeriodChart title="Resultado ano a ano" rows={series.yearly} />
   </div>;
 }
