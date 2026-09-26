@@ -18,11 +18,15 @@ from .market_data.eodhd import EodhdClient
 from .market_data.http import JsonHttpClient
 from .market_data.realtime import RealtimeMarketsService
 from .portfolio_accounting import amount, current_values, period_result, Position
+from .portfolio_split_basis import historical_price, OWNER_CONFIRMED_RESTATED
 
 
 class PortfolioService:
     def __init__(self, settings: Settings, database: Database, realtime: RealtimeMarketsService):
         self.database, self.realtime = database, realtime
+        declared = settings.portfolio_split_adjusted_symbols
+        self.split_adjusted_symbols = (OWNER_CONFIRMED_RESTATED if declared is None else
+            frozenset(s.strip().upper() for s in declared.split(",") if s.strip()))
         self.provider = EodhdClient(settings.eodhd_base_url, settings.eodhd_api_token or '', JsonHttpClient(timeout=3, max_retries=0))
         self._history: dict[tuple, tuple[datetime, list[dict]]] = {}
         self._lock = RLock()
@@ -171,7 +175,7 @@ class PortfolioService:
             value = amount(row['close'])
             if value <= 0:
                 raise ValueError('Invalid historical price')
-            return value
+            return historical_price(symbol, observed, value, events, self.split_adjusted_symbols)
 
         @lru_cache(maxsize=None)
         def rate_at(market: str, day: date) -> Decimal:
