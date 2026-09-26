@@ -15,7 +15,7 @@ const percent = (v: string | null | undefined) => v == null ? 'N/D' : `${Number(
 const numeric = (value: string) => { const clean = value.trim().replace(/\s/g, ''); return clean.includes(',') ? clean.replace(/\./g, '').replace(',', '.') : clean; };
 const resultColor = (value: string | null | undefined) => {
   const number = value == null || !value.trim() ? NaN : Number(value);
-  return !Number.isFinite(number) || number === 0 ? undefined : number > 0 ? 'change-up' : 'change-down';
+  return !Number.isFinite(number) || number === 0 ? undefined : number > 0 ? 'positive-text' : 'negative-text';
 };
 const kinds: Record<string, string> = { position: 'Posição informada', buy: 'Compra', sell: 'Venda', dividend: 'Provento', split: 'Desdobramento / grupamento' };
 
