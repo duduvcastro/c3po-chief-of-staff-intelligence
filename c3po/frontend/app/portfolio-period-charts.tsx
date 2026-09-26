@@ -17,7 +17,7 @@ function PeriodChart({ title, rows: allRows, limit }: { title: string; rows: Cha
     <div className={styles.header}><h3>{title}</h3>{limit && allRows.length > limit && <button type="button" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>{showAll ? "Ver recentes" : "Ver tudo"}</button>}</div>
     {!rows.length ? <p>Ainda não há registros para este gráfico.</p> : <div className={styles.scroll} tabIndex={0} role="region" aria-label={`${title}: role horizontalmente para ver todo o histórico`}>
       <svg width={width} height={320} role="img" aria-label={`${title}, resultados em dólares. Valores positivos em verde e negativos em vermelho.`}>
-        <title>{title} · USD</title>
+        <title>{`${title} · USD`}</title>
         <line x1={20} x2={width - 20} y1={zero} y2={zero} stroke="currentColor" opacity={0.5} />
         <text x={4} y={zero - 6} className={styles.zero}>0</text>
         {rows.map((row, i) => {
@@ -27,7 +27,7 @@ function PeriodChart({ title, rows: allRows, limit }: { title: string; rows: Cha
           const y = negative ? zero : zero - height;
           const label = row.value === null ? 'N/D' : usd(row.value);
           return <g key={row.label}>
-            <title>{row.label}{row.partial ? ' (em andamento)' : ''}: {label}{row.reason ? ` — ${row.reason}` : ''}</title>
+            <title>{`${row.label}${row.partial ? " (em andamento)" : ""}: ${label}${row.reason ? ` — ${row.reason}` : ""}`}</title>
             {row.value !== null && row.value !== 0 && <rect x={x - 26} y={y} width={52} height={height} rx={3} fill={negative ? '#b42318' : '#087f5b'} />}
             <text x={x} y={negative ? zero + height + 19 : zero - height - 10} textAnchor="middle" className={styles.value}>{label}</text>
             <text x={x} y={292} textAnchor="middle" className={styles.period}>{row.label}</text>
