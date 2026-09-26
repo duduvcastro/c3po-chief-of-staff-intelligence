@@ -1,36 +1,30 @@
 {
-  "artifact_name": "c3po-production-container-vulnerabilities-33587089986",
+  "artifact_name": "c3po-production-container-vulnerabilities-35975801001",
   "dry_run": false,
   "evidence_scope": "production_runtime",
-  "finding_total": 2,
+  "finding_total": 1,
   "findings": [
     {
-      "fixed_version": "2.8.4-r0",
+      "fixed_version": "2.8.5-r0",
       "image": "web",
-      "installed_version": "2.8.2-r0",
+      "installed_version": "2.8.4-r0",
       "package": "libexpat",
       "severity": "high",
       "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-66046"
-    },
-    {
-      "fixed_version": "2.8.4-r0",
-      "image": "web",
-      "installed_version": "2.8.2-r0",
-      "package": "libexpat",
-      "severity": "high",
-      "target": "c3po/web:production (alpine 3.24.1)",
-      "vulnerability_id": "CVE-2026-76641"
+      "vulnerability_id": "CVE-2026-93990"
     }
   ],
   "fix_available": {
     "critical": 0,
-    "high": 2
+    "high": 1,
+    "low": 0,
+    "medium": 0,
+    "unknown": 0
   },
-  "generated_at": "2026-09-02T03:28:47.063426+00:00",
-  "remediation_key": "614ce1e7b4892afaa29a0e98735dc8f7772936198517505365c7abd17a34312a",
-  "report_sha256": "1d07350e1caeaede55611698158eabffefe731f8753ea95c2f1b06251c40c58c",
-  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/33587089986",
+  "generated_at": "2026-09-24T08:33:22.294982+00:00",
+  "remediation_key": "1c5d0967660904e422d7f6e5c8315588572f71ccf0cde13712462f0bd4ae24e2",
+  "report_sha256": "5c26f660271f1e50c77f5bf17246c2ccc1c82db60818846275102d4a35f3e7a6",
+  "run_url": "https://github.com/duduvcastro/c3po-chief-of-staff-intelligence/actions/runs/35975801001",
   "schema": "C3PO_CONTAINER_REMEDIATION_TRIGGER-v1",
-  "source_revision": "7bc70899db6088afcd303b4c490f08d88a2758ce"
+  "source_revision": "0987a087047e83392653a325c1546c8c0dfc2191"
 }
