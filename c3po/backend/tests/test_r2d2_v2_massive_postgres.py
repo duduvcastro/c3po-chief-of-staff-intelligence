@@ -1,0 +1,184 @@
+"""Real PostgreSQL proof; opt-in disposable loopback database only, no fallback."""
+import os
+from contextlib import contextmanager
+from pathlib import Path
+from uuid import uuid4
+import pytest
+import test_r2d2_v2_massive_collector as cases
+from test_r2d2_v2_raw_source import source
+from app.r2d2_v2_store import PostgresShadowStore
+
+@pytest.fixture
+def pg_factory():
+ dsn=os.environ.get('C3PO_BAR_TEST_DATABASE_URL')
+ if not dsn:pytest.skip('Disposable local PostgreSQL is not configured; no persistent-store proof')
+ import psycopg
+ from psycopg.conninfo import conninfo_to_dict
+ from psycopg import sql
+ info=conninfo_to_dict(dsn)
+ if info.get('host') not in ('127.0.0.1','::1') or info.get('dbname')!='c3po_bar_test':
+  pytest.fail('Only explicit loopback c3po_bar_test disposable database is allowed')
+ schema='bar_proof_'+uuid4().hex
+ with psycopg.connect(dsn) as conn:
+  conn.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
+  conn.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
+  conn.execute((Path(__file__).parents[2]/'db/045_r2d2_v2_shadow.sql').read_text())
+ @contextmanager
+ def connect():
+  with psycopg.connect(dsn) as conn:
+   conn.execute(sql.SQL('SET search_path TO {}').format(sql.Identifier(schema)))
+   yield conn
+ try:yield connect
+ finally:
+  with psycopg.connect(dsn) as conn:
+   conn.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+
+class InspectablePostgresStore(PostgresShadowStore):
+ # Test convenience only; mutations use the unchanged production store.
+ def journal(self,epoch):return self.read_with_journal(epoch)[1]
+
+@pytest.mark.parametrize('interruption',['missing_minute','producer_restart'])
+def test_persistent_550_ten_minute_cycle(tmp_path,record_property,source,interruption,pg_factory,monkeypatch):
+ original=cases.setup_state
+ def setup():
+  collector,state,session=original()
+  collector.store=InspectablePostgresStore(pg_factory)
+  return collector,state,session
+ monkeypatch.setattr(cases,'setup_state',setup)
+ cases.test_550_symbol_frames_real_cycle_over_90s_gap_and_late_bar(
+  tmp_path,record_property,source,interruption,10)
+
+
+def test_backend_loss_before_commit_rolls_back_cursor_and_receipts(tmp_path,pg_factory,monkeypatch):
+ from datetime import timedelta
+ original=cases.setup_state
+ def setup():
+  collector,state,session=original();collector.store=InspectablePostgresStore(pg_factory)
+  return collector,state,session
+ monkeypatch.setattr(cases,'setup_state',setup)
+ collector=cases.setup(tmp_path);epoch=collector.release.epoch
+ before=collector.store.read_with_journal(epoch)
+ @contextmanager
+ def fail_before_commit():
+  with pg_factory() as conn:
+   class Connection:
+    def execute(self,*a,**kw):return conn.execute(*a,**kw)
+    def commit(self):
+     pid=conn.info.backend_pid
+     with pg_factory() as control:
+      assert control.execute('SELECT pg_terminate_backend(%s)',(pid,)).fetchone()[0]
+     conn.commit()
+   yield Connection()
+ collector.store=InspectablePostgresStore(fail_before_commit)
+ import psycopg
+ with pytest.raises(psycopg.Error):collector.cycle(cases.START+timedelta(seconds=66))
+ collector.store=InspectablePostgresStore(pg_factory)
+ assert collector.store.read_with_journal(epoch)==before
+ collector.cycle(cases.START+timedelta(seconds=67))
+ row,records=collector.store.read_with_journal(epoch)
+ assert row['state']['raw_source_cursor']=={'massive_sequence':1}
+ assert len([r for r in records if r['payload']['type']=='SOURCE_EVENT'])==1
+ collector.store=InspectablePostgresStore(pg_factory)
+ collector.cycle(cases.START+timedelta(seconds=68))
+ assert len([r for r in collector.store.journal(epoch) if r['payload']['type']=='SOURCE_EVENT'])==1
+
+
+
+def test_550_mid_cycle_backend_loss_then_new_connection_replay(tmp_path,record_property,source,pg_factory,monkeypatch):
+ import psycopg
+ original=cases.setup_state
+ injections=[]
+ def setup():
+  collector,state,session=original()
+  collector.store=InspectablePostgresStore(pg_factory)
+  cycle=collector.cycle
+  calls=0
+  def restarted_cycle(now):
+   nonlocal calls
+   calls+=1
+   if calls!=5:return cycle(now)
+   epoch=collector.release.epoch
+   before=collector.store.read_with_journal(epoch)
+   assert before[0]['state']['raw_source_cursor']['massive']['massive_sequence']==2200
+   assert len(before[0]['state']['ledger']['research'])==550
+   attempted=[]
+   @contextmanager
+   def interrupted():
+    with pg_factory() as conn:
+     class Connection:
+      def execute(self,sql,params=None):
+       if 'INSERT INTO r2d2_v2_shadow_journal' in sql:attempted.append(params)
+       return conn.execute(sql,params)
+      def commit(self):
+       with pg_factory() as control:
+        assert control.execute('SELECT pg_terminate_backend(%s)',(conn.info.backend_pid,)).fetchone()[0]
+       conn.commit()
+     yield Connection()
+   collector.store=InspectablePostgresStore(interrupted)
+   with pytest.raises(psycopg.Error):cycle(now)
+   collector.store=InspectablePostgresStore(pg_factory)
+   assert collector.store.read_with_journal(epoch)==before
+   assert len(attempted)>=550
+   replayed=[]
+   @contextmanager
+   def reconnected():
+    with pg_factory() as conn:
+     class Connection:
+      def execute(self,sql,params=None):
+       if 'INSERT INTO r2d2_v2_shadow_journal' in sql:replayed.append(params)
+       return conn.execute(sql,params)
+      def commit(self):conn.commit()
+     yield Connection()
+   collector.store=InspectablePostgresStore(reconnected)
+   response=cycle(now)
+   assert replayed==attempted # Sequence, clock, payload and hash chain identical.
+   collector.store=InspectablePostgresStore(pg_factory)
+   after=collector.store.read_with_journal(epoch)
+   assert after[0]['state']['raw_source_cursor']['massive']['massive_sequence']==2750
+   assert len(after[0]['state']['ledger']['research'])==550
+   injections.append(len(replayed))
+   return response
+  collector.cycle=restarted_cycle
+  return collector,state,session
+ monkeypatch.setattr(cases,'setup_state',setup)
+ cases.test_550_symbol_frames_real_cycle_over_90s_gap_and_late_bar(tmp_path,record_property,source,'missing_minute',10)
+ assert len(injections)==1
+ record_property('rolled_back_and_exactly_replayed_journal_rows',injections[0])
+
+
+
+def test_550_off_session_disconnect_reconnect_preserves_durable_gap(tmp_path,record_property,source,pg_factory,monkeypatch):
+ import json
+ from datetime import timedelta
+ from app.r2d2_v2_massive_journal import MassiveJournal
+ from app.r2d2_v2_massive_stream import MassiveStreamState
+ from app.r2d2_v2_massive_recovery import restore_stream
+ original=cases.setup_state;captured=[]
+ def setup():
+  collector,state,session=original();collector.store=InspectablePostgresStore(pg_factory)
+  captured.append(collector);return collector,state,session
+ monkeypatch.setattr(cases,'setup_state',setup)
+ cases.test_550_symbol_frames_real_cycle_over_90s_gap_and_late_bar(tmp_path,record_property,source,'missing_minute',10)
+ collector=captured[0];epoch=collector.release.epoch
+ names=['SYNTH']+['S'+str(i) for i in range(549)]
+ journal=MassiveJournal(tmp_path/'massive')
+ before=journal.page()['through']
+ persisted_before=collector.store.read_with_journal(epoch)
+ source_events_before=[r for r in persisted_before[1] if r['payload']['type']=='SOURCE_EVENT']
+ off=cases.START.replace(hour=21)
+ stream=MassiveStreamState(names,collector.calendar,journal)
+ restore_stream(stream,journal,session=cases.START.date().isoformat(),now=off)
+ stream.connected(off);stream.gap(off+timedelta(seconds=1),'DISCONNECTED')
+ assert stream.connected_at is None and journal.page()['through']==before
+ stream.connected(off+timedelta(seconds=2))
+ missing=cases.START+timedelta(minutes=10)
+ raw=json.dumps([dict(ev='AM',sym=n,s=int(missing.timestamp()*1000),e=int((missing+timedelta(minutes=1)).timestamp()*1000),o=100,h=101,l=99,c=100,v=10) for n in names]).encode()
+ stream.frame(raw,off+timedelta(seconds=3))
+ assert journal.page()['through']==before
+ collector.cycle(off+timedelta(seconds=4))
+ after,records=collector.store.read_with_journal(epoch)
+ assert [r for r in records if r['payload']['type']=='SOURCE_EVENT']==source_events_before
+ assert after['state']['raw_source_cursor']['massive']==persisted_before[0]['state']['raw_source_cursor']['massive']
+ assert all(r['category']=='unobservable' for r in after['state']['ledger']['research'].values())
+ record_property('off_session_new_source_events',0)
+ record_property('durable_unobservable_episodes',550)

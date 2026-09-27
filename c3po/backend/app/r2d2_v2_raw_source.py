@@ -97,7 +97,7 @@ class SpoolShadowSource(FileShadowSource):
         self.calendar = calendar
 
     def prepare_events(self, now: datetime, cursor: dict, *, snapshot: dict | None = None,
-                       read_clock: Any = None) -> dict:
+                       read_clock: Any = None, receipt_cutoff: datetime | None = None) -> dict:
         """Offer a contiguous prefix at a common reception horizon.
 
         The record budget is a page target. Equal-reception groups are atomic:
@@ -205,6 +205,12 @@ class SpoolShadowSource(FileShadowSource):
                 if end < snapshot[name]["size"]:
                     horizons.append(high)
             cutoff = min(horizons) if horizons else None  # None is +infinity.
+            # Composite sources may impose a stricter shared reception horizon.
+            # This limits only proposed input, never changes provider clocks.
+            if receipt_cutoff is not None:
+                _require(isinstance(receipt_cutoff, datetime) and receipt_cutoff.utcoffset() is not None
+                         and receipt_cutoff <= now, "RAW_COMPOSITE_CUTOFF_INVALID")
+                cutoff = min(cutoff, receipt_cutoff) if cutoff is not None else receipt_cutoff
             proposed = {}
             raw_events = []
             skipped_receipts = []
