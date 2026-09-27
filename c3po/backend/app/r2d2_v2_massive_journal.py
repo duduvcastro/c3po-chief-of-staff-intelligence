@@ -6,6 +6,7 @@ position; this module never acknowledges on behalf of the collector.
 import hashlib
 import os
 import sqlite3
+import stat
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,12 +21,16 @@ class MassiveJournal:
         self.max_index_bytes = max_index_bytes
         self.read_only = False
         self.spool = MassiveSpool(root)
-        self.path = Path(root) / 'sequence.sqlite3'
-        if self.path.is_symlink():
-            raise ValueError('JOURNAL_SYMLINK')
+        self.path = self.spool.root / 'sequence.sqlite3'
+        self._bind_index(create=True)
         with self._connect() as db:
-            db.execute('CREATE TABLE IF NOT EXISTS receipts (sequence INTEGER PRIMARY KEY, digest TEXT UNIQUE NOT NULL)')
-        self.path.chmod(0o600)
+            if self._index_created:
+                db.execute('CREATE TABLE receipts (sequence INTEGER PRIMARY KEY, digest TEXT UNIQUE NOT NULL)')
+                db.execute('CREATE TABLE retention_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), pruned_through INTEGER NOT NULL CHECK(pruned_through>=0))')
+                db.execute('INSERT INTO retention_state VALUES (1,0)')
+            else:
+                # Missing state requires explicit reconciliation, not a reset.
+                self._bounds(db)
 
     @classmethod
     def open_reader(cls, root):
@@ -36,17 +41,82 @@ class MassiveJournal:
             raise ValueError('JOURNAL_READER_ROOT')
         obj.spool = SimpleNamespace(root=root)
         obj.path = root / 'sequence.sqlite3'
-        if obj.path.is_symlink() or not obj.path.is_file():
-            raise ValueError('JOURNAL_READER_MISSING')
+        obj._bind_index(create=False)
         with obj._connect() as db:
             db.execute('SELECT sequence,digest FROM receipts LIMIT 0')
         return obj
 
+    @staticmethod
+    def _file_identity(info):
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or info.st_mode & 0o077 or info.st_uid != os.geteuid()):
+            raise ValueError('JOURNAL_INDEX_UNSAFE')
+        return info.st_dev, info.st_ino
+
+    def _bind_index(self, *, create):
+        self._index_created = False
+        root_fd = fd = None
+        try:
+            root_fd = _open_directory(self.path.parent)
+            root_info = os.fstat(root_fd)
+            if root_info.st_mode & 0o077 or root_info.st_uid != os.geteuid():
+                raise ValueError('JOURNAL_ROOT_UNSAFE')
+            self._root_identity = root_info.st_dev, root_info.st_ino
+            if create:
+                try:
+                    fd = os.open(self.path.name, os.O_RDWR | os.O_CREAT | os.O_EXCL
+                                 | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600, dir_fd=root_fd)
+                    self._index_created = True
+                    os.fsync(fd)
+                    os.fsync(root_fd)
+                except FileExistsError:
+                    pass
+            if fd is None:
+                fd = os.open(self.path.name, os.O_RDONLY | os.O_NOFOLLOW
+                             | os.O_NONBLOCK, dir_fd=root_fd)
+            self._index_identity = self._file_identity(os.fstat(fd))
+        except (OSError, SourceUnavailable) as exc:
+            raise ValueError('JOURNAL_INDEX_UNSAFE') from exc
+        finally:
+            if fd is not None: os.close(fd)
+            if root_fd is not None: os.close(root_fd)
+
+    def _check_index(self):
+        # SQLite opens its database and rollback journal by pathname. These
+        # checks reject unsafe persistent aliases and replacement at observable
+        # boundaries; they are not a custom VFS or protection against arbitrary
+        # concurrent mutation by another process running as the same user.
+        root_fd = None
+        try:
+            root_fd = _open_directory(self.path.parent)
+            info = os.fstat(root_fd)
+            if ((info.st_dev, info.st_ino) != self._root_identity
+                    or info.st_mode & 0o077 or info.st_uid != os.geteuid()):
+                raise ValueError('JOURNAL_ROOT_CHANGED')
+            info = os.stat(self.path.name, dir_fd=root_fd, follow_symlinks=False)
+            if self._file_identity(info) != self._index_identity:
+                raise ValueError('JOURNAL_INDEX_CHANGED')
+            for suffix in ('-journal', '-wal', '-shm'):
+                try:
+                    sidecar = os.stat(self.path.name + suffix, dir_fd=root_fd,
+                                      follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                self._file_identity(sidecar)
+        except (OSError, SourceUnavailable) as exc:
+            raise ValueError('JOURNAL_INDEX_UNSAFE') from exc
+        finally:
+            if root_fd is not None: os.close(root_fd)
+
     @contextmanager
     def _connect(self):
-        db = (sqlite3.connect(self.path.as_uri() + '?mode=ro', uri=True, timeout=2)
-              if self.read_only else sqlite3.connect(self.path, timeout=2))
+        self._check_index()
+        # Both modes require the securely created index to exist. Never let
+        # SQLite silently create a replacement if the bound file disappears.
+        mode = 'ro' if self.read_only else 'rw'
+        db = sqlite3.connect(self.path.as_uri() + '?mode=' + mode, uri=True, timeout=2)
         try:
+            self._check_index()
             db.execute('PRAGMA synchronous=FULL')
             if not self.read_only:
                 page_size = db.execute('PRAGMA page_size').fetchone()[0]
@@ -59,6 +129,7 @@ class MassiveJournal:
                     raise ValueError('JOURNAL_INDEX_BUDGET_EXHAUSTED')
             with db:
                 yield db
+                self._check_index()
         finally:
             db.close()
 
@@ -88,13 +159,33 @@ class MassiveJournal:
             if child_fd is not None: os.close(child_fd)
             if root_fd is not None: os.close(root_fd)
 
+    @staticmethod
+    def _bounds(db):
+        state = db.execute('SELECT singleton,pruned_through FROM retention_state').fetchall()
+        if len(state) != 1 or state[0][0] != 1 or type(state[0][1]) is not int or state[0][1] < 0:
+            raise ValueError('JOURNAL_RETENTION_STATE')
+        floor = state[0][1]
+        low, high = db.execute('SELECT MIN(sequence),MAX(sequence) FROM receipts').fetchone()
+        if low is None:
+            if floor != 0: raise ValueError('JOURNAL_RETENTION_STATE')
+            high = 0
+        elif low != floor + 1:
+            raise ValueError('JOURNAL_SEQUENCE_GAP')
+        return floor, high
+
+    def retention_floor(self):
+        with self._connect() as db:
+            return self._bounds(db)[0]
+
     def page(self, after=0, *, through=None, limit=1024, byte_limit=4*1024*1024):
         if type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 4096:
             raise ValueError('JOURNAL_PAGE_LIMIT')
         if type(byte_limit) is not int or not 1 <= byte_limit <= 16*1024*1024:
             raise ValueError('JOURNAL_BYTE_LIMIT')
         with self._connect() as db:
-            high = db.execute('SELECT COALESCE(MAX(sequence),0) FROM receipts').fetchone()[0]
+            floor, high = self._bounds(db)
+            if after < floor:
+                raise ValueError('JOURNAL_CURSOR_PRUNED')
             through = high if through is None else through
             if type(through) is not int or not after <= through <= high:
                 raise ValueError('JOURNAL_HORIZON')

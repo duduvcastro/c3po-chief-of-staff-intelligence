@@ -50,7 +50,7 @@ def run_producer(root,symbols,calendar,token,*,utcnow,monotonic,stop,connector=N
         journal=MassiveJournal(root)
         state=MassiveStreamState(symbols,calendar,journal)
         now=utcnow();session=now.astimezone(ZoneInfo('America/New_York')).date().isoformat()
-        recovered=restore_stream(state,journal,session=session,now=now)
+        recovered=restore_stream(state,journal,session=session,now=now,allow_prior_sessions=True)
         if recovered['records']:
             # Recovery proves retained evidence, never uninterrupted reception.
             state.gap(now,'MASSIVE_PRODUCER_RESTART')

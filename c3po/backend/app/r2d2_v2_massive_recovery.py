@@ -3,25 +3,41 @@
 Recovery never restores connection continuity or emits provider events. The
 caller must establish a new connection and account for the interruption.
 """
-from datetime import datetime, timedelta
+import hashlib
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+from .r2d2_v2_minute_bars import MAX_RESPONSE_BYTES
 from .r2d2_v2_sources import _require, _load_json, _time, canonical
 
 
-def restore_stream(state, journal, *, session, now=None, max_records=500000):
+def restore_stream(state, journal, *, session, now=None, max_records=500000, allow_prior_sessions=False):
     _require(type(max_records) is int and 0<max_records<=500000,'RECOVERY_LIMIT')
     _require(now is None or isinstance(now,datetime) and now.utcoffset() is not None,'RECOVERY_CLOCK')
+    _require(type(allow_prior_sessions) is bool,'RECOVERY_SESSION_POLICY')
+    if allow_prior_sessions:
+        _require(now is not None and now.astimezone(ZoneInfo('America/New_York')).date().isoformat()==session,
+                 'RECOVERY_SESSION_CLOCK')
+    previous_session=None
     # The restart clock bounds resident identities, not the evidence scan.
     # Evicted history remains verified on disk and can never be filled later.
     cutoff=None if now is None else int((now.replace(second=0,microsecond=0)-timedelta(minutes=3)).timestamp()*1000)
-    seen={};sealed=set();after=0;through=None;count=0
+    seen={};sealed=set();after=journal.retention_floor();through=None;count=0
     while True:
         page=journal.page(after,through=through,limit=1024)
         through=page['through']
+        # Bounded by the journal page byte budget and discarded each page.
+        verified_frames={}
         for record in page['records']:
             count+=1
             _require(count<=max_records,'RECOVERY_LIMIT')
             receipt=record['receipt'];event=receipt['event']
-            _require(event['session']==session,'RECOVERY_SESSION_MISMATCH')
+            event_session=event['session']
+            _require(type(event_session) is str and date.fromisoformat(event_session).isoformat()==event_session,
+                     'RECOVERY_SESSION_FORMAT')
+            _require(event_session==session or allow_prior_sessions and event_session<session,
+                     'RECOVERY_SESSION_MISMATCH')
+            _require(previous_session is None or event_session>=previous_session,'RECOVERY_SESSION_REVERSED')
+            previous_session=event_session
             instrument=event['instrument_key']
             _require(instrument.startswith('US:') and instrument[3:] in state.symbols,'RECOVERY_UNIVERSE_MISMATCH')
             symbol=instrument[3:]
@@ -29,13 +45,23 @@ def restore_stream(state, journal, *, session, now=None, max_records=500000):
             key=(symbol,int(minute.timestamp()*1000))
             if now is not None:
                 _require(_time(event['available_at'])<=now and minute<=now,'RECOVERY_FUTURE_EVIDENCE')
-            retain=cutoff is None or key[1]>=cutoff
+            retain=event_session==session and (cutoff is None or key[1]>=cutoff)
             if event['type']=='DATA_GAP':
                 if retain:sealed.add(key)
             else:
                 _require(event['type']=='BAR','RECOVERY_EVENT_TYPE')
-                raw=(journal.spool.root/'raw'/(receipt['raw_sha256']+'.json')).read_bytes()
-                rows=_load_json(b'{"rows":'+raw+b'}')['rows']
+                raw_hash=receipt['raw_sha256']
+                if raw_hash not in verified_frames:
+                    size=receipt['raw_bytes']
+                    _require(type(size) is int and 0<size<=MAX_RESPONSE_BYTES,'RECOVERY_RAW_SIZE')
+                    # The page verified the file earlier, but a pathname reopen
+                    # here could read replaced bytes or block on a FIFO. Read
+                    # through the anchored bounded helper and bind again.
+                    raw=journal._read_evidence('raw',raw_hash+'.json',size,'RECOVERY_RAW_UNSAFE')
+                    _require(len(raw)==size and hashlib.sha256(raw).hexdigest()==raw_hash,
+                             'RECOVERY_RAW_HASH')
+                    verified_frames[raw_hash]=_load_json(b'{"rows":'+raw+b'}')['rows']
+                rows=verified_frames[raw_hash]
                 index=receipt['frame_index']
                 _require(type(index) is int and 0<=index<len(rows),'RECOVERY_FRAME_INDEX')
                 row=rows[index]

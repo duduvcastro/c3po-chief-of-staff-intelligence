@@ -182,3 +182,54 @@ def test_550_off_session_disconnect_reconnect_preserves_durable_gap(tmp_path,rec
  assert all(r['category']=='unobservable' for r in after['state']['ledger']['research'].values())
  record_property('off_session_new_source_events',0)
  record_property('durable_unobservable_episodes',550)
+
+
+def test_retention_ack_reads_real_committed_state_and_rejects_wrong_release(tmp_path,pg_factory,monkeypatch):
+ from datetime import timedelta
+ from app.r2d2_v2_massive_retention import read_committed_ack
+ from app.r2d2_v2_sources import SourceUnavailable
+ original=cases.setup_state
+ def setup():
+  collector,state,session=original();collector.store=InspectablePostgresStore(pg_factory)
+  return collector,state,session
+ monkeypatch.setattr(cases,'setup_state',setup)
+ collector=cases.setup(tmp_path);epoch=collector.release.epoch
+ collector.cycle(cases.START+timedelta(seconds=66))
+ before=collector.store.read_with_journal(epoch)
+ release_sha=before[0]['state']['release_sha']
+ ack=read_committed_ack(collector.store,epoch=epoch,release_sha=release_sha)
+ assert ack['committed_sequence']==1
+ assert ack['state_sha256']==before[0]['state_sha']
+ assert ack['journal_head']==before[0]['journal_head']
+ assert collector.store.read_with_journal(epoch)==before
+ wrong=('0' if release_sha[0]!='0' else '1')+release_sha[1:]
+ with pytest.raises(SourceUnavailable,match='RELEASE_MISMATCH'):
+  read_committed_ack(collector.store,epoch=epoch,release_sha=wrong)
+
+
+def test_retention_binds_local_evidence_not_just_equal_numeric_ack(tmp_path,pg_factory,monkeypatch):
+ from datetime import timedelta
+ from app.r2d2_v2_massive_retention import plan_committed_retention
+ from app.r2d2_v2_massive_journal import MassiveJournal
+ from app.r2d2_v2_sources import SourceUnavailable
+ original=cases.setup_state
+ def setup():
+  collector,state,session=original();collector.store=InspectablePostgresStore(pg_factory)
+  return collector,state,session
+ monkeypatch.setattr(cases,'setup_state',setup)
+ collector=cases.setup(tmp_path/'source');epoch=collector.release.epoch
+ now=cases.START+timedelta(seconds=66);collector.cycle(now)
+ before=collector.store.read_with_journal(epoch)
+ kwargs=dict(epoch=epoch,release_sha=before[0]['state']['release_sha'],now=now,retain_from_session='2026-09-09')
+ journal=collector.source.journal
+ plan=plan_committed_retention(journal,collector.store,**kwargs)
+ assert plan['verified_committed_receipts']==1 and plan['prune_through']==0
+ assert plan['status']=='ONE_CONSUMER_BOUND_REVIEW_ONLY_NO_DELETION'
+ assert collector.store.read_with_journal(epoch)==before
+ receipt=journal.page()['records'][0]['receipt']
+ raw=journal._read_evidence('raw',receipt['raw_sha256']+'.json',receipt['raw_bytes'],'FIXTURE_RAW')
+ unrelated=MassiveJournal(tmp_path/'unrelated')
+ assert unrelated(raw,{**receipt,'fixture_identity':'different'})==1
+ with pytest.raises(SourceUnavailable,match='LOCAL_ACK_MISMATCH'):
+  plan_committed_retention(unrelated,collector.store,**kwargs)
+ assert unrelated.page()['through']==1 and journal.page()['through']==1

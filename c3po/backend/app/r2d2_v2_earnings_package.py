@@ -36,6 +36,7 @@ PACKAGE_FILES = (
     'r2d2_v2_massive_journal.py',
     'r2d2_v2_massive_producer.py',
     'r2d2_v2_massive_recovery.py',
+    'r2d2_v2_massive_retention.py',
     'r2d2_v2_massive_scheduler.py',
     'r2d2_v2_massive_source.py',
     'r2d2_v2_massive_spool.py',

@@ -121,3 +121,46 @@ def test_parent_replaced_by_symlink_before_read_refuses(tmp_path,monkeypatch):
   return original(directory,*args)
  monkeypatch.setattr(j,'_read_evidence',read)
  with pytest.raises(ValueError,match='RECEIPT_LIMIT'):j.page()
+
+
+@pytest.mark.parametrize('kind', ['symlink', 'fifo', 'hardlink', 'public'])
+def test_unsafe_existing_sqlite_refuses_before_connect(tmp_path, monkeypatch, kind):
+ import os
+ import app.r2d2_v2_massive_journal as module
+ path=tmp_path/'sequence.sqlite3'
+ outside=tmp_path/'outside';outside.write_bytes(b'preserve');outside.chmod(0o600)
+ if kind=='symlink':path.symlink_to(outside)
+ elif kind=='fifo':os.mkfifo(path,0o600)
+ elif kind=='hardlink':os.link(outside,path)
+ else:path.write_bytes(b'');path.chmod(0o644)
+ def forbidden(*args,**kwargs):pytest.fail('unsafe index reached SQLite')
+ monkeypatch.setattr(module.sqlite3,'connect',forbidden)
+ with pytest.raises(ValueError,match='INDEX_UNSAFE'):MassiveJournal(tmp_path)
+ assert outside.read_bytes()==b'preserve'
+
+
+@pytest.mark.parametrize('suffix', ['-journal', '-wal', '-shm'])
+def test_unsafe_sqlite_sidecar_refuses_before_connect(tmp_path, monkeypatch, suffix):
+ import app.r2d2_v2_massive_journal as module
+ journal=MassiveJournal(tmp_path)
+ outside=tmp_path/'outside';outside.write_bytes(b'preserve')
+ (tmp_path/('sequence.sqlite3'+suffix)).symlink_to(outside)
+ def forbidden(*args,**kwargs):pytest.fail('unsafe sidecar reached SQLite')
+ monkeypatch.setattr(module.sqlite3,'connect',forbidden)
+ with pytest.raises(ValueError,match='INDEX_UNSAFE'):journal.page()
+ assert outside.read_bytes()==b'preserve'
+
+
+def test_reader_refuses_replaced_index(tmp_path):
+ journal=MassiveJournal(tmp_path);journal(*evidence())
+ reader=MassiveJournal.open_reader(tmp_path)
+ path=tmp_path/'sequence.sqlite3';saved=tmp_path/'saved.sqlite3'
+ path.rename(saved);path.write_bytes(saved.read_bytes());path.chmod(0o600)
+ with pytest.raises(ValueError,match='INDEX_CHANGED'):reader.page()
+
+
+def test_replaced_parent_refuses_bound_reader(tmp_path):
+ root=tmp_path/'root';journal=MassiveJournal(root)
+ reader=MassiveJournal.open_reader(root)
+ root.rename(tmp_path/'old');MassiveJournal(root)
+ with pytest.raises(ValueError,match='ROOT_CHANGED'):reader.page()

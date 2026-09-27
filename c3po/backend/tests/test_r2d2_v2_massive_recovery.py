@@ -77,3 +77,89 @@ def test_restart_future_receipt_does_not_publish_partial_state(tmp_path,calendar
  with pytest.raises(SourceUnavailable,match='FUTURE_EVIDENCE'):
   restore_stream(restored,j,session=MINUTE.date().isoformat(),now=MINUTE+timedelta(seconds=80))
  assert not restored.seen and not restored.sealed and restored.reject_before_ms is None
+
+
+@pytest.mark.parametrize('replacement',['symlink','fifo','changed'])
+def test_raw_replacement_after_page_verification_refuses_recovery(tmp_path,calendar,monkeypatch,replacement):
+ import os
+ journal=MassiveJournal(tmp_path);state=MassiveStreamState(['AAPL'],calendar,journal)
+ state.connected(MINUTE-timedelta(seconds=1))
+ state.frame(json.dumps([bar()]).encode(),MINUTE+timedelta(seconds=65))
+ original=journal.page
+ def page(*args,**kwargs):
+  result=original(*args,**kwargs)
+  digest=result['records'][0]['receipt']['raw_sha256']
+  path=tmp_path/'raw'/(digest+'.json');data=path.read_bytes();path.unlink()
+  if replacement=='fifo':os.mkfifo(path,0o600)
+  elif replacement=='symlink':
+   outside=tmp_path/'outside';outside.write_bytes(data);outside.chmod(0o600);path.symlink_to(outside)
+  else:path.write_bytes(b' '*len(data));path.chmod(0o600)
+  return result
+ monkeypatch.setattr(journal,'page',page)
+ restored=MassiveStreamState(['AAPL'],calendar,journal)
+ with pytest.raises((SourceUnavailable,ValueError),match='RECOVERY_RAW'):
+  restore_stream(restored,journal,session=MINUTE.date().isoformat())
+ assert not restored.seen and not restored.sealed and restored.reject_before_ms is None
+
+
+def test_recovery_verifies_shared_frame_once_per_page(tmp_path,calendar,monkeypatch):
+ names=['S'+str(i) for i in range(550)]
+ journal=MassiveJournal(tmp_path);state=MassiveStreamState(names,calendar,journal)
+ state.connected(MINUTE-timedelta(seconds=1))
+ state.frame(json.dumps([bar(n) for n in names]).encode(),MINUTE+timedelta(seconds=65))
+ original=journal._read_evidence;reads=[]
+ def read(directory,*args):
+  if directory=='raw':reads.append(args)
+  return original(directory,*args)
+ monkeypatch.setattr(journal,'_read_evidence',read)
+ restored=MassiveStreamState(names,calendar,journal)
+ result=restore_stream(restored,journal,session=MINUTE.date().isoformat())
+ assert result['observed_minutes']==550
+ assert len(reads)==2  # one page validation, one independent recovery validation
+
+
+def test_explicit_next_session_recovery_verifies_history_without_restoring_old_minutes(tmp_path,calendar):
+ j=MassiveJournal(tmp_path);state=MassiveStreamState(['AAPL'],calendar,j)
+ state.connected(MINUTE-timedelta(seconds=1))
+ state.frame(json.dumps([bar()]).encode(),MINUTE+timedelta(seconds=65))
+ state.expire_minute(MINUTE+timedelta(minutes=1),MINUTE+timedelta(minutes=2,seconds=31))
+ now=MINUTE+timedelta(days=1)
+ restored=MassiveStreamState(['AAPL'],calendar,j)
+ before=j.page()['through']
+ result=restore_stream(restored,j,session=now.date().isoformat(),now=now,allow_prior_sessions=True)
+ assert result=={'records':2,'observed_minutes':0,'sealed_minutes':0}
+ assert not restored.seen and not restored.sealed and restored.connected_at is None
+ assert restored.reject_before_ms==int((now-timedelta(minutes=3)).timestamp()*1000)
+ assert j.page()['through']==before
+ restored.connected(now)
+ restored.frame(json.dumps([bar()]).encode(),now)
+ assert j.page()['through']==before
+
+
+def test_next_session_recovery_still_refuses_corrupt_old_raw(tmp_path,calendar):
+ j=MassiveJournal(tmp_path);state=MassiveStreamState(['AAPL'],calendar,j)
+ state.connected(MINUTE-timedelta(seconds=1))
+ state.frame(json.dumps([bar()]).encode(),MINUTE+timedelta(seconds=65))
+ record=j.page()['records'][0];path=tmp_path/'raw'/(record['receipt']['raw_sha256']+'.json')
+ path.write_bytes(b'x'*path.stat().st_size)
+ now=MINUTE+timedelta(days=1);restored=MassiveStreamState(['AAPL'],calendar,j)
+ with pytest.raises(ValueError,match='RAW_HASH'):
+  restore_stream(restored,j,session=now.date().isoformat(),now=now,allow_prior_sessions=True)
+ assert not restored.seen and not restored.sealed and restored.reject_before_ms is None
+
+
+@pytest.mark.parametrize('now',[None,MINUTE])
+def test_prior_session_policy_requires_bound_current_clock(tmp_path,calendar,now):
+ j=MassiveJournal(tmp_path);state=MassiveStreamState(['AAPL'],calendar,j)
+ with pytest.raises(SourceUnavailable,match='SESSION_CLOCK'):
+  restore_stream(state,j,session=(MINUTE+timedelta(days=1)).date().isoformat(),now=now,allow_prior_sessions=True)
+ assert state.reject_before_ms is None
+
+
+def test_prior_session_policy_does_not_accept_future_session(tmp_path,calendar):
+ j=MassiveJournal(tmp_path);state=MassiveStreamState(['AAPL'],calendar,j)
+ state.expire_minute(MINUTE,MINUTE+timedelta(seconds=91))
+ now=MINUTE-timedelta(days=1);restored=MassiveStreamState(['AAPL'],calendar,j)
+ with pytest.raises(SourceUnavailable,match='SESSION_MISMATCH'):
+  restore_stream(restored,j,session=now.date().isoformat(),now=now,allow_prior_sessions=True)
+ assert not restored.seen and not restored.sealed
