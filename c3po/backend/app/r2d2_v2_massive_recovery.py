@@ -3,6 +3,7 @@
 Recovery never restores connection continuity or emits provider events. The
 caller must establish a new connection and account for the interruption.
 """
+from .r2d2_v2_massive_maintenance import journal_access
 import hashlib
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -11,6 +12,12 @@ from .r2d2_v2_sources import _require, _load_json, _time, canonical
 
 
 def restore_stream(state, journal, *, session, now=None, max_records=500000, allow_prior_sessions=False):
+    with journal_access(journal.spool.root):
+        return _restore_stream_locked(state, journal, session=session, now=now,
+                                      max_records=max_records, allow_prior_sessions=allow_prior_sessions)
+
+
+def _restore_stream_locked(state, journal, *, session, now=None, max_records=500000, allow_prior_sessions=False):
     _require(type(max_records) is int and 0<max_records<=500000,'RECOVERY_LIMIT')
     _require(now is None or isinstance(now,datetime) and now.utcoffset() is not None,'RECOVERY_CLOCK')
     _require(type(allow_prior_sessions) is bool,'RECOVERY_SESSION_POLICY')

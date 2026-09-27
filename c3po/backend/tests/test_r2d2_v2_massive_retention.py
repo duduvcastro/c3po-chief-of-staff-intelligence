@@ -132,3 +132,43 @@ def test_ack_requires_persistent_verified_store():
  from app.r2d2_v2_store import MemoryShadowStore
  with pytest.raises(SourceUnavailable,match='PERSISTENT_STORE_REQUIRED'):
   read_committed_ack(MemoryShadowStore(),epoch='not-used',release_sha='0'*64)
+
+
+def test_durable_session_cutoff_rejects_old_reingestion_before_spool(tmp_path,monkeypatch):
+ j=MassiveJournal(tmp_path)
+ for i in range(3):j(None,gap('2026-09-25',i))
+ with j._connect() as db:
+  db.execute('DELETE FROM receipts WHERE sequence<=2')
+  db.execute("UPDATE retention_state SET pruned_through=2,retain_from_session='2026-09-26'")
+ reopened=MassiveJournal(tmp_path);original_spool=reopened.spool
+ def forbidden(*args):pytest.fail('old receipt reached spool')
+ monkeypatch.setattr(reopened,'spool',forbidden)
+ with pytest.raises(ValueError,match='SESSION_PRUNED'):reopened(None,gap('2026-09-25',0))
+ monkeypatch.setattr(reopened,'spool',original_spool)
+ assert reopened.page(2)['through']==3
+ fresh=MassiveJournal(tmp_path)
+ assert fresh(None,gap('2026-09-26',4))==4
+ assert fresh.page(2)['records'][0]['receipt']['event']['session']=='2026-09-25'
+
+
+@pytest.mark.parametrize('cutoff',['2026-99-99','not-a-date',20260926])
+def test_invalid_cutoff_refuses_reopen(tmp_path,cutoff):
+ j=MassiveJournal(tmp_path)
+ with j._connect() as db:db.execute('UPDATE retention_state SET retain_from_session=?',(cutoff,))
+ with pytest.raises(ValueError,match='RETENTION_STATE'):MassiveJournal(tmp_path)
+
+
+@pytest.mark.parametrize('requested',['2026-09-25','2026-09-26','2026-09-27'])
+def test_retention_cutoff_cannot_move_backwards(tmp_path,requested):
+ j=MassiveJournal(tmp_path)
+ j(None,gap('2026-09-26',0))
+ with j._connect() as db:
+  db.execute("UPDATE retention_state SET retain_from_session='2026-09-26'")
+ if requested<'2026-09-26':
+  with pytest.raises(ValueError,match='CUTOFF_REVERSED'):
+   plan_retention(j,committed_sequence=1,retain_from_session=requested)
+ else:
+  plan=plan_retention(j,committed_sequence=1,retain_from_session=requested)
+  assert plan['previous_cutoff']=='2026-09-26'
+ assert j.retention_cutoff()=='2026-09-26'
+ assert j.retention_floor()==0

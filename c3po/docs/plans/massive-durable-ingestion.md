@@ -47,3 +47,11 @@ A bound retention plan now compares every retained acknowledged local envelope w
 Before any pruning executor is enabled, a durable retention session cutoff must also reject re-ingestion of removed receipt identities. The retained sequence floor alone prevents stale readers but would not prevent an exact old receipt from receiving a new sequence after its digest row was deleted. No executor currently exposes this state.
 
 The executor must hold exclusive maintenance against the producer and evidence readers, verify coverage for the explicit complete consumer set, and keep a durable pending-unlink inventory in the same transaction as the new floor. Interrupted file removal must remain detectable and must never turn an unverified or newly referenced frame into a deletion candidate. Free-space counters must be rebuilt after maintenance. These are implementation requirements still pending, not passed review claims.
+
+The ingress guard for the durable retention cutoff is now implemented: a receipt from an older session is refused before spool writes and checked again before index insertion. It survives writer reopen; the retained predecessor remains readable, and accepted new sessions keep increasing sequence IDs. Fixture-only tests passed. The future pruning transaction must still advance this cutoff atomically with the floor and pending-unlink inventory; no pruning executor is enabled.
+
+Cooperative maintenance exclusion now has a private anchored shared/exclusive lock, held shared for the full producer lifetime. An exclusive holder refuses producer startup before journal or network access. Eighteen focused tests passed. Reader integration and all-consumer coverage remain pending, so this is not yet a safe pruning boundary.
+
+### Maintenance reader integration (2026-09-27)
+
+Journal append and page operations now hold shared maintenance access across the complete index/evidence operation. Recovery holds shared access throughout its verified scan. Read-only open requires an existing lock and never creates one. Focused validation: 77 passed. This remains cooperative exclusion, not an implemented pruning executor; complete consumer coverage, pending-unlink recovery, operational service and adversarial review remain required.

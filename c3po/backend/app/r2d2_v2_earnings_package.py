@@ -34,6 +34,7 @@ PACKAGE_FILES = (
     "microstructure_capture.py", "market_data/eodhd_stream.py",
     'r2d2_v2_massive_events.py',
     'r2d2_v2_massive_journal.py',
+    'r2d2_v2_massive_maintenance.py',
     'r2d2_v2_massive_producer.py',
     'r2d2_v2_massive_recovery.py',
     'r2d2_v2_massive_retention.py',

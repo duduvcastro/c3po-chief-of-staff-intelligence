@@ -7,10 +7,12 @@ import hashlib
 import os
 import sqlite3
 import stat
+from datetime import date
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from .r2d2_v2_massive_spool import MassiveSpool
+from .r2d2_v2_massive_maintenance import journal_access
 from .r2d2_v2_sources import canonical, _load_json, _open_directory, _read_file, SourceUnavailable
 
 
@@ -22,15 +24,16 @@ class MassiveJournal:
         self.read_only = False
         self.spool = MassiveSpool(root)
         self.path = self.spool.root / 'sequence.sqlite3'
-        self._bind_index(create=True)
-        with self._connect() as db:
-            if self._index_created:
-                db.execute('CREATE TABLE receipts (sequence INTEGER PRIMARY KEY, digest TEXT UNIQUE NOT NULL)')
-                db.execute('CREATE TABLE retention_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), pruned_through INTEGER NOT NULL CHECK(pruned_through>=0))')
-                db.execute('INSERT INTO retention_state VALUES (1,0)')
-            else:
-                # Missing state requires explicit reconciliation, not a reset.
-                self._bounds(db)
+        with journal_access(self.path.parent, create=True):
+            self._bind_index(create=True)
+            with self._connect() as db:
+                if self._index_created:
+                    db.execute('CREATE TABLE receipts (sequence INTEGER PRIMARY KEY, digest TEXT UNIQUE NOT NULL)')
+                    db.execute("CREATE TABLE retention_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), pruned_through INTEGER NOT NULL CHECK(pruned_through>=0), retain_from_session TEXT NOT NULL DEFAULT '')")
+                    db.execute("INSERT INTO retention_state VALUES (1,0,'')")
+                else:
+                    # Missing state requires explicit reconciliation, not a reset.
+                    self._bounds(db)
 
     @classmethod
     def open_reader(cls, root):
@@ -41,9 +44,10 @@ class MassiveJournal:
             raise ValueError('JOURNAL_READER_ROOT')
         obj.spool = SimpleNamespace(root=root)
         obj.path = root / 'sequence.sqlite3'
-        obj._bind_index(create=False)
-        with obj._connect() as db:
-            db.execute('SELECT sequence,digest FROM receipts LIMIT 0')
+        with journal_access(root):
+            obj._bind_index(create=False)
+            with obj._connect() as db:
+                db.execute('SELECT sequence,digest FROM receipts LIMIT 0')
         return obj
 
     @staticmethod
@@ -110,6 +114,12 @@ class MassiveJournal:
 
     @contextmanager
     def _connect(self):
+        with journal_access(self.path.parent):
+            with self._connect_locked() as db:
+                yield db
+
+    @contextmanager
+    def _connect_locked(self):
         self._check_index()
         # Both modes require the securely created index to exist. Never let
         # SQLite silently create a replacement if the bound file disappears.
@@ -134,17 +144,28 @@ class MassiveJournal:
             db.close()
 
     def __call__(self, raw, receipt):
+        with journal_access(self.path.parent):
+            return self._append_locked(raw, receipt)
+
+    def _append_locked(self, raw, receipt):
         if self.read_only:
             raise ValueError('JOURNAL_READ_ONLY')
         # A crash between these commits leaves orphan evidence, never an index
         # entry pointing at uncommitted bytes. Retrying the receipt is idempotent.
+        with self._connect() as db:
+            self._check_receipt_session(db, receipt)
         self.spool(raw, receipt)
         digest = hashlib.sha256(canonical(receipt)).hexdigest()
         with self._connect() as db:
+            self._check_receipt_session(db, receipt)
             db.execute('INSERT OR IGNORE INTO receipts(digest) VALUES (?)', (digest,))
             return db.execute('SELECT sequence FROM receipts WHERE digest=?', (digest,)).fetchone()[0]
 
     def _read_evidence(self, directory, name, budget, code):
+        with journal_access(self.path.parent):
+            return self._read_evidence_locked(directory, name, budget, code)
+
+    def _read_evidence_locked(self, directory, name, budget, code):
         # Anchor every directory component and validate the opened descriptor.
         # Checking a pathname before read_bytes permits replacement with a FIFO
         # or symlink between stat and open, including in parent directories.
@@ -160,10 +181,37 @@ class MassiveJournal:
             if root_fd is not None: os.close(root_fd)
 
     @staticmethod
+    def _validate_cutoff(value):
+        if type(value) is not str:
+            raise ValueError('JOURNAL_RETENTION_STATE')
+        if value:
+            try:
+                if date.fromisoformat(value).isoformat() != value:
+                    raise ValueError('JOURNAL_RETENTION_STATE')
+            except ValueError:
+                raise ValueError('JOURNAL_RETENTION_STATE') from None
+        return value
+
+    @staticmethod
+    def _check_receipt_session(db, receipt):
+        row = db.execute('SELECT retain_from_session FROM retention_state WHERE singleton=1').fetchone()
+        if row is None: raise ValueError('JOURNAL_RETENTION_STATE')
+        cutoff = MassiveJournal._validate_cutoff(row[0])
+        if cutoff:
+            session = receipt.get('event', {}).get('session')
+            try:
+                valid = type(session) is str and date.fromisoformat(session).isoformat()==session
+            except ValueError:
+                valid = False
+            if not valid or session < cutoff:
+                raise ValueError('JOURNAL_RECEIPT_SESSION_PRUNED')
+
+    @staticmethod
     def _bounds(db):
-        state = db.execute('SELECT singleton,pruned_through FROM retention_state').fetchall()
+        state = db.execute('SELECT singleton,pruned_through,retain_from_session FROM retention_state').fetchall()
         if len(state) != 1 or state[0][0] != 1 or type(state[0][1]) is not int or state[0][1] < 0:
             raise ValueError('JOURNAL_RETENTION_STATE')
+        MassiveJournal._validate_cutoff(state[0][2])
         floor = state[0][1]
         low, high = db.execute('SELECT MIN(sequence),MAX(sequence) FROM receipts').fetchone()
         if low is None:
@@ -173,11 +221,20 @@ class MassiveJournal:
             raise ValueError('JOURNAL_SEQUENCE_GAP')
         return floor, high
 
+    def retention_cutoff(self):
+        with self._connect() as db:
+            self._bounds(db)
+            return db.execute('SELECT retain_from_session FROM retention_state WHERE singleton=1').fetchone()[0]
+
     def retention_floor(self):
         with self._connect() as db:
             return self._bounds(db)[0]
 
     def page(self, after=0, *, through=None, limit=1024, byte_limit=4*1024*1024):
+        with journal_access(self.path.parent):
+            return self._page_locked(after, through=through, limit=limit, byte_limit=byte_limit)
+
+    def _page_locked(self, after=0, *, through=None, limit=1024, byte_limit=4*1024*1024):
         if type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 4096:
             raise ValueError('JOURNAL_PAGE_LIMIT')
         if type(byte_limit) is not int or not 1 <= byte_limit <= 16*1024*1024:

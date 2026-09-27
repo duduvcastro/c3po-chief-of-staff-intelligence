@@ -3,12 +3,19 @@
 Execution requires a separate exclusive producer/consumer maintenance boundary
 and a durable collector acknowledgement. A proposed cursor is not an ACK.
 """
+from .r2d2_v2_massive_maintenance import journal_access
 import hashlib
 from datetime import date
 from .r2d2_v2_sources import canonical, _require
 
 
 def plan_retention(journal, *, committed_sequence, retain_from_session, max_records=500000):
+    with journal_access(journal.path.parent):
+        return _plan_retention_locked(journal, committed_sequence=committed_sequence,
+                                      retain_from_session=retain_from_session, max_records=max_records)
+
+
+def _plan_retention_locked(journal, *, committed_sequence, retain_from_session, max_records=500000):
     _require(type(committed_sequence) is int and committed_sequence >= 0, 'RETENTION_ACK')
     _require(type(max_records) is int and 0 < max_records <= 500000, 'RETENTION_LIMIT')
     _require(isinstance(retain_from_session, str), 'RETENTION_SESSION')
@@ -17,6 +24,9 @@ def plan_retention(journal, *, committed_sequence, retain_from_session, max_reco
     except ValueError:
         raise ValueError('RETENTION_SESSION') from None
     _require(cutoff.isoformat() == retain_from_session, 'RETENTION_SESSION')
+    previous_cutoff = journal.retention_cutoff()
+    _require(not previous_cutoff or retain_from_session >= previous_cutoff,
+             'RETENTION_CUTOFF_REVERSED')
     floor = journal.retention_floor()
     _require(committed_sequence >= floor, 'RETENTION_ACK_PRUNED')
     after = floor
@@ -67,6 +77,7 @@ def plan_retention(journal, *, committed_sequence, retain_from_session, max_reco
         'verified_records': count,
         'snapshot_sha256': chain.hexdigest(),
         'previous_floor': floor,
+        'previous_cutoff': previous_cutoff,
         'prune_through': floor + len(removed),
         'receipt_sha256s': removed,
         'raw_sha256s': sorted(candidate_raw - retained_raw),
@@ -116,6 +127,14 @@ def read_committed_ack(store, *, epoch, release_sha):
 
 def plan_committed_retention(journal, store, *, epoch, release_sha, now,
                              retain_from_session, max_records=500000):
+    with journal_access(journal.path.parent):
+        return _plan_committed_retention_locked(
+            journal, store, epoch=epoch, release_sha=release_sha, now=now,
+            retain_from_session=retain_from_session, max_records=max_records)
+
+
+def _plan_committed_retention_locked(journal, store, *, epoch, release_sha, now,
+                                     retain_from_session, max_records=500000):
     """Bind the local retained prefix to one verified consumer snapshot.
 
     No deletion: coverage of any other consumer and maintenance exclusion must

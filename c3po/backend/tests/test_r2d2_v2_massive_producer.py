@@ -57,9 +57,19 @@ def test_replaced_lock_after_acquire_refuses_before_journal(tmp_path,calendar,mo
  root=tmp_path.resolve();original=fcntl.flock
  def swap(fd,operation):
   original(fd,operation)
-  (root/'producer.lock').rename(root/'old.lock')
-  (root/'producer.lock').touch(mode=0o600)
+  if operation & fcntl.LOCK_EX:
+   (root/'producer.lock').rename(root/'old.lock')
+   (root/'producer.lock').touch(mode=0o600)
  monkeypatch.setattr('app.r2d2_v2_massive_producer.fcntl.flock',swap)
  def forbidden(*args,**kwargs):raise AssertionError('must not connect')
  with pytest.raises(SourceUnavailable,match='LOCK_CHANGED'):invoke(root,calendar,forbidden)
  assert not (root/'sequence.sqlite3').exists()
+
+
+def test_maintenance_refuses_producer_before_journal_or_connection(tmp_path,calendar):
+ from app.r2d2_v2_massive_maintenance import journal_access
+ def forbidden(*args,**kwargs):pytest.fail('maintenance allowed network')
+ with journal_access(tmp_path,exclusive=True,create=True):
+  with pytest.raises(SourceUnavailable,match='MAINTENANCE_BUSY'):
+   invoke(tmp_path,calendar,forbidden)
+ assert not (tmp_path/'sequence.sqlite3').exists()

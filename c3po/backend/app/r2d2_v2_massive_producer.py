@@ -9,6 +9,7 @@ import stat
 from zoneinfo import ZoneInfo
 from .r2d2_v2_sources import SourceUnavailable, _open_directory
 from .r2d2_v2_massive_journal import MassiveJournal
+from .r2d2_v2_massive_maintenance import journal_access
 from .r2d2_v2_massive_stream import MassiveStreamState
 from .r2d2_v2_massive_recovery import restore_stream
 from .r2d2_v2_massive_scheduler import MinuteExpiry
@@ -16,6 +17,12 @@ from .r2d2_v2_massive_transport import run_connection
 
 
 def run_producer(root,symbols,calendar,token,*,utcnow,monotonic,stop,connector=None,max_seconds=3600):
+    with journal_access(root,create=True):
+        return _run_producer(root,symbols,calendar,token,utcnow=utcnow,monotonic=monotonic,
+                             stop=stop,connector=connector,max_seconds=max_seconds)
+
+
+def _run_producer(root,symbols,calendar,token,*,utcnow,monotonic,stop,connector=None,max_seconds=3600):
     directory=_open_directory(root)
     lock=None
     try:
