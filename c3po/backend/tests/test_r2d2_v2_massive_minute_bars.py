@@ -29,7 +29,7 @@ def test_invalid_volume(calendar,volume):
 def test_fractional_provider_volume_preserved(calendar):
  d=envelope();d['results'][0]['v']=25.5
  assert run(calendar,d)['volume']==25.5
-@pytest.mark.parametrize('seconds',[91,120])
+@pytest.mark.parametrize('seconds',[150.000001,151,180])
 def test_stale_massive_not_rehabilitated(calendar,seconds):
  assert run(calendar,now=MINUTE+timedelta(seconds=seconds))['event']['reason']=='MINUTE_LATE'
 def test_massive_open_minute_refused(calendar):
@@ -66,4 +66,13 @@ def test_reconnect_does_not_backfill_live(calendar):
 def test_stream_open_minute_refused(calendar):
  with pytest.raises(SourceUnavailable,match='NOT_CLOSED'):stream(calendar,received_at=MINUTE+timedelta(seconds=59))
 def test_stream_late_is_gap(calendar):
- got,_=stream(calendar,now=MINUTE+timedelta(seconds=91));assert got['event']['type']=='DATA_GAP'
+ got,_=stream(calendar,now=MINUTE+timedelta(seconds=150,microseconds=1));assert got['event']['type']=='DATA_GAP'
+
+@pytest.mark.parametrize('seconds',[91,120,150])
+def test_massive_valid_until_ninety_seconds_after_minute_end(calendar,seconds):
+ assert run(calendar,now=MINUTE+timedelta(seconds=seconds))['event']['type']=='BAR'
+
+@pytest.mark.parametrize('seconds',[91,120,150])
+def test_stream_valid_until_ninety_seconds_after_minute_end(calendar,seconds):
+ got,_=stream(calendar,now=MINUTE+timedelta(seconds=seconds))
+ assert got['event']['type']=='BAR'

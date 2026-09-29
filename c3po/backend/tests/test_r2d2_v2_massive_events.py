@@ -39,6 +39,6 @@ def test_future_receipt_refused(tmp_path,calendar):
 
 def test_gap_remains_gap_through_durable_boundary(tmp_path,calendar):
  j=MassiveJournal(tmp_path);s=MassiveStreamState(['AAPL'],calendar,j)
- at=MINUTE+timedelta(seconds=91);s.expire_minute(MINUTE,at)
+ at=MINUTE+timedelta(seconds=151);s.expire_minute(MINUTE,at)
  e=journal_envelope(j.page()['records'][0],at)
  assert e['event']['type']=='DATA_GAP' and 'close' not in e['event']
