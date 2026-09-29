@@ -30,7 +30,7 @@ order fill. Event IDs are idempotent only when their complete payload matches.
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_FLOOR
 import hashlib
 import json
@@ -148,9 +148,10 @@ def new_portfolio(initial_nav: float = 1_000_000.0) -> dict[str, Any]:
 
 def _record(*, episode_key: str, instrument_key: str, session: str, opened_at: str,
             maturity_at: str, geometry: dict[str, float], arm: str, quantity: float,
-            kind: str) -> dict[str, Any]:
+            kind: str, decision_at: str | None = None) -> dict[str, Any]:
     return {"episode_key": episode_key, "instrument_key": instrument_key,
             "session": session, "opened_at": opened_at, "maturity_at": maturity_at,
+            **({"decision_at": decision_at, "entry_at": opened_at} if decision_at else {}),
             "arm": arm, "kind": kind, "original": dict(geometry),
             "geometry": dict(geometry), "q0": quantity, "quantity": quantity,
             "initial_r_usd": quantity * geometry["R_unit"],
@@ -267,7 +268,8 @@ def _admission(state: Mapping[str, Any], instrument: str, g: dict[str, float], a
 def _register_candidate_inplace(state: dict[str, Any], *, episode_key: str, instrument_key: str,
                        session: str, opened_at: str, maturity_at: str,
                        geometry: Mapping[str, Any], arm: str,
-                       admission_block_reason: str | None = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+                       admission_block_reason: str | None = None, decision_at: str | None = None,
+                       admission_available_at: str | None = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Record both research arms; independently size/admit only the eligible arm."""
     ep, instrument = _key(episode_key), _key(instrument_key)
     session = _session(session)
@@ -279,6 +281,14 @@ def _register_candidate_inplace(state: dict[str, Any], *, episode_key: str, inst
     g = _geometry(geometry)
     payload = {"episode_key": ep, "instrument_key": instrument, "session": session,
                "opened_at": opened, "maturity_at": maturity, "geometry": g, "arm": arm}
+    if decision_at is not None:
+        decision_at = _iso(decision_at)
+        expected_entry = _time(decision_at).replace(second=0, microsecond=0) + timedelta(minutes=1)
+        if _time(opened) != expected_entry:
+            raise PortfolioInputError("Scheduled entry must be the next minute")
+        payload["decision_at"] = decision_at
+    if admission_available_at is not None and _time(admission_available_at) < _time(opened):
+        raise PortfolioInputError("Admission receipt precedes entry")
     if admission_block_reason is not None:
         admission_block_reason = _key(admission_block_reason)
     digest = _digest({**payload, "admission_block_reason": admission_block_reason})
@@ -289,7 +299,7 @@ def _register_candidate_inplace(state: dict[str, Any], *, episode_key: str, inst
         return result, deepcopy(result["research"][ep]), deepcopy(result["candidate_results"][ep])
     if any(r["instrument_key"] == instrument and r["session"] == session for r in result["research"].values()):
         raise PortfolioInputError("Only the first complete snapshot per name/session is allowed")
-    _advance(result, opened)
+    _advance(result, admission_available_at or opened)
     if result["session"] is None:
         result["session"] = session
     elif result["session"] != session:
@@ -304,7 +314,9 @@ def _register_candidate_inplace(state: dict[str, Any], *, episode_key: str, inst
         result["cash"] -= position["entry_cost"]
     result["candidate_hashes"][ep] = digest
     result["candidate_results"][ep] = decision
-    result["last_action"] = "CANDIDATE"
+    result["last_action"] = "SCHEDULED_ENTRY" if decision_at else "CANDIDATE"
+    if decision_at:
+        result["last_scheduled_entry_at"] = opened
     _terminal(result)
     return result, deepcopy(research), deepcopy(decision)
 
@@ -685,6 +697,9 @@ def _apply_event_inplace(state: dict[str, Any], event: Mapping[str, Any]) -> tup
             raise PortfolioInputError(str(exc)) from None
     if result["last_action"] == "CANDIDATE" and result["last_available_at"] == available:
         raise PortfolioInputError("Known events must precede simultaneous admissions")
+    if (result["last_action"] == "SCHEDULED_ENTRY" and result["last_available_at"] == available
+            and _time(at) < _time(result["last_scheduled_entry_at"])):
+        raise PortfolioInputError("Pre-entry events must precede scheduled entry")
     priority = {"SESSION_OPEN": 0, "SPLIT": 1, "DIVIDEND_ENTITLEMENT": 1,
                 "DIVIDEND_PAYMENT": 1, "MATURITY": 2, "EARNINGS": 2,
                 "TRADE": 3, "BAR": 3, "MARK": 4, "QUOTE": 4,
@@ -842,12 +857,14 @@ to the caller and this batch cannot be reused. Journaling returns are detached.
 def register_candidate(state: Mapping[str, Any], *, episode_key: str, instrument_key: str,
                        session: str, opened_at: str, maturity_at: str,
                        geometry: Mapping[str, Any], arm: str,
-                       admission_block_reason: str | None = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+                       admission_block_reason: str | None = None, decision_at: str | None = None,
+                       admission_available_at: str | None = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Single-operation compatibility wrapper over the transaction-local batch."""
     batch = PortfolioBatch(state)
     research, admission = batch.register(episode_key=episode_key, instrument_key=instrument_key,
         session=session, opened_at=opened_at, maturity_at=maturity_at, geometry=geometry,
-        arm=arm, admission_block_reason=admission_block_reason)
+        arm=arm, admission_block_reason=admission_block_reason, decision_at=decision_at,
+        admission_available_at=admission_available_at)
     return batch.finish(), research, admission
 
 

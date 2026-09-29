@@ -62,3 +62,52 @@ def test_missing_journal_schema_refuses_without_advancing_cursor(tmp_path,calend
  cursor={'massive_sequence':1}
  result=MassiveEventSource(reader).prepare_events(MINUTE+timedelta(seconds=70),cursor)
  assert result==dict(events=[],diagnostics=[{'code':'MASSIVE_SOURCE_UNVERIFIED'}],cursor=cursor)
+
+
+def test_large_equal_receipt_group_progresses_in_bounded_persistent_pages(tmp_path):
+ import sqlite3
+ from app.r2d2_v2_sources import canonical, _load_json
+ journal=MassiveJournal(tmp_path/'journal')
+ received=MINUTE+timedelta(seconds=70)
+ for index in range(4100):
+  journal(None,{'event':{'type':'DATA_GAP','at':MINUTE.isoformat(),
+   'available_at':received.isoformat(),'session':MINUTE.date().isoformat(),
+   'instrument_key':'US:AAPL','reason':'persistent-adversary-'+str(index)}})
+ source=MassiveEventSource(MassiveJournal.open_reader((tmp_path/'journal').resolve()))
+ first=source.prepare_events(received,{})
+ assert first['diagnostics']==[] and len(first['events'])==4096 and first['has_more']
+ assert first['cursor']=={'massive_sequence':4096}
+ assert first['page']['cutoff_received_at']==(received-timedelta(microseconds=1)).isoformat()
+ # Simulate the durable consumer transaction. A rollback cannot acknowledge
+ # the proposed page: a new reader must offer the exact same immutable input.
+ dbpath=tmp_path/'consumer.sqlite3'
+ with sqlite3.connect(dbpath) as db:
+  db.execute('CREATE TABLE applied (event_id TEXT PRIMARY KEY)')
+  db.execute('CREATE TABLE checkpoint (cursor BLOB NOT NULL)')
+  db.execute('INSERT INTO checkpoint VALUES (?)',(canonical({}),))
+ with sqlite3.connect(dbpath) as db:
+  db.executemany('INSERT INTO applied VALUES (?)',[(event['event_id'],) for event in first['events']])
+  db.execute('UPDATE checkpoint SET cursor=?',(canonical(first['cursor']),))
+  db.rollback()
+ with sqlite3.connect(dbpath) as db:
+  cursor=_load_json(db.execute('SELECT cursor FROM checkpoint').fetchone()[0])
+ with sqlite3.connect(dbpath) as db:
+  assert db.execute('SELECT COUNT(*) FROM applied').fetchone()[0]==0
+ restarted=MassiveEventSource(MassiveJournal.open_reader((tmp_path/'journal').resolve()))
+ assert restarted.prepare_events(received,cursor,snapshot=first['snapshot'])==first
+ with sqlite3.connect(dbpath) as db:
+  db.executemany('INSERT INTO applied VALUES (?)',[(event['event_id'],) for event in first['events']])
+  db.execute('UPDATE checkpoint SET cursor=?',(canonical(first['cursor']),))
+ with sqlite3.connect(dbpath) as db:
+  cursor=_load_json(db.execute('SELECT cursor FROM checkpoint').fetchone()[0])
+  assert db.execute('SELECT COUNT(*) FROM applied').fetchone()[0]==4096
+ tail=restarted.prepare_events(received,cursor,snapshot=first['snapshot'])
+ assert tail['diagnostics']==[] and len(tail['events'])==4 and not tail['has_more']
+ assert tail['cursor']=={'massive_sequence':4100}
+ assert tail['page']['cutoff_received_at'] is None
+ assert [event['sequence'] for page in (first,tail) for event in page['events']]==list(range(4100))
+ # A corrupt tail cannot skip its failed record or consume the proposal.
+ digest=journal.page(4096,limit=1)['records'][0]['receipt_sha256']
+ (tmp_path/'journal'/'receipts'/(digest+'.json')).write_bytes(b'{}')
+ failed=restarted.prepare_events(received,cursor,snapshot=first['snapshot'])
+ assert failed['diagnostics'] and failed['events']==[] and failed['cursor']==cursor

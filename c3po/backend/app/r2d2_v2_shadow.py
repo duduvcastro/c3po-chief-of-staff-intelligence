@@ -12,12 +12,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 import json
+import math
 import re
 import time
 from typing import Any
 
 from .r2d2_v2_calendar import NEW_YORK, ShadowCalendar
-from .r2d2_v2_contract import CandidateInputs, DailyBar, SplitRecord, RISK_C75, evaluate_candidate, input_complete
+from .r2d2_v2_contract import CandidateInputs, DailyBar, SplitRecord, RISK_C75, evaluate_candidate, input_complete, entry_geometry, CandidateValidationError
 from .r2d2_v2_earnings_package import (
     CONSENT_SCHEMA, EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA,
     EXPORT_SCHEMA, RELEASE_SCHEMA, STATE_SCHEMA,
@@ -28,6 +29,8 @@ from .r2d2_v2_portfolio import PortfolioBatch, apply_events, export_session_stat
 from .r2d2_v2_portfolio import earnings_public_sessions, eod_public_sessions
 from .r2d2_v2_sources import MANIFEST_SHA
 from .r2d2_v2_store import ShadowIntegrityError, canonical, digest, utc, validate_epoch
+
+EBAR_AMENDMENT_SHA = "b492766e4c2ef9e924141ca2be3e47dfbb237086b840aa6bf263b0b9bd0806b1"
 
 SCHEMA = STATE_SCHEMA
 AMENDMENT_SHA = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
@@ -64,6 +67,7 @@ class Release:
     earnings_closed_manifest_sha: str | None = None
     implementation_contract_sha: str | None = None
     implementation_package_sha: str | None = None
+    ebar_amendment_sha: str | None = None
 
     @classmethod
     def verify(cls, data: bytes, expected_sha: str, *, now: datetime, build_sha: str,
@@ -111,6 +115,11 @@ class Release:
         bindings = {key: body.get(key) for key in (
             "earnings_amendment_sha", "earnings_closed_manifest_sha", "implementation_contract_sha",
             "implementation_package_sha", "code_revision", "code_audit_sha", "source_audit_sha", "readiness_sha")}
+        ebar = body.get("ebar_amendment_sha")
+        if ebar is not None:
+            if ebar != EBAR_AMENDMENT_SHA:
+                raise ShadowIntegrityError("RELEASE_EBAR_POLICY_MISMATCH")
+            bindings["ebar_amendment_sha"] = ebar
         consents = body.get("package_consents")
         if (any(not _hash(bindings[key]) for key in ("code_audit_sha", "source_audit_sha", "readiness_sha"))
                 or not isinstance(consents, list) or len(consents) != 3
@@ -150,7 +159,7 @@ class Release:
                     or any(consented < ready for consented in consent_times)):
                 raise ShadowIntegrityError("READINESS_FIRST_SESSION_MISMATCH")
         return cls(epoch, mode, first, approved, revision, expected_sha, body.get("readiness_sha"),
-                   EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA, contract_sha, package_sha)
+                   EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA, contract_sha, package_sha, ebar)
 
 
 def _dt(value):
@@ -335,6 +344,9 @@ class ShadowCollector:
         self.schedule = self.calendar.sessions(release.first_session, 69)
         self.schedule_index = {day: index for index, day in enumerate(self.schedule)}
         self._causal_cache: dict[date, dict] = {}
+        self.minute_entry = release.ebar_amendment_sha == EBAR_AMENDMENT_SHA
+        if self.minute_entry and not getattr(source, "minute_bar_enabled", False):
+            raise ShadowIntegrityError("RELEASE_EBAR_SOURCE_REQUIRED")
 
     def _initial(self) -> dict:
         return {"schema": SCHEMA, "epoch": self.release.epoch, "manifest_sha": SIGNED_MANIFEST_SHA,
@@ -564,8 +576,25 @@ class ShadowCollector:
             if state["ledger"] is not None:
                 self._clock(state, journals, "SESSION_OPEN", key, detail["open"], now, portfolio=portfolio)
             if day == active_day:
-                self._events(state, journals, events, event_diagnostics, now, key, portfolio=portfolio, source_gaps=source_gaps)
+                remaining = list(events)
+                gaps = source_gaps
+                if self.minute_entry and not event_diagnostics:
+                    boundaries = sorted({utc(entry["entry_at"]) for entry in session.get("entries_pending", {}).values()
+                                         if utc(entry["entry_at"]) <= now})
+                    for boundary in boundaries:
+                        preceding = [event for event in remaining if utc(event["at"]) < boundary]
+                        remaining = [event for event in remaining if utc(event["at"]) >= boundary]
+                        self._events(state, journals, preceding, [], now, key, portfolio=portfolio,
+                            source_gaps=gaps, check_stale=False)
+                        gaps = None
+                        self._entries(state, journals, session, batch or {}, events, now,
+                            portfolio=portfolio, entry_cutoff=boundary)
+                    if not boundaries:
+                        self._entries(state, journals, session, batch or {}, events, now, portfolio=portfolio)
+                self._events(state, journals, remaining, event_diagnostics, now, key, portfolio=portfolio, source_gaps=gaps)
                 events_processed = True
+            if self.minute_entry and day != active_day and session.get("entries_pending"):
+                self._entries(state, journals, session, {}, [], now, portfolio=portfolio)
             if not suppress_capture and day == active_day and self._capture_window(now) and not session["capture_closed"]:
                 self._capture(state, journals, session, batch or {}, now, portfolio=portfolio, causal=causal)
                 touched = True
@@ -623,9 +652,11 @@ class ShadowCollector:
         state["clock_receipts"].append(key)
         journals.append({"journal_key": "clock:" + key, "type": "CLOCK", "event": event})
 
-    def _gap(self, state, journals, now, session, reason, *, gap_at=None, instrument=None, portfolio=None):
+    def _gap(self, state, journals, now, session, reason, *, gap_at=None, instrument=None, portfolio=None,
+             issue_session=None):
         scope = instrument or "*"
-        base_key = session + ":" + scope + ":" + reason
+        issue_session = issue_session or session
+        base_key = issue_session + ":" + scope + ":" + reason
         active = state["active_data_issues"].get(base_key)
         # A second outage after demonstrated restoration is a new factual
         # occurrence; an old recovery receipt cannot exempt future failures.
@@ -634,13 +665,14 @@ class ShadowCollector:
         known = key in state["gap_episode_receipts"]
         known_gap = utc(gap_at) if gap_at else now
         if not known:
-            issue = {"key": key, "session": session, "instrument": scope, "reason": reason,
+            issue = {"key": key, "session": issue_session, "instrument": scope, "reason": reason,
                      "at": known_gap.isoformat()}
             state["data_issues"].append(issue)
             state["active_data_issues"][base_key] = {**issue, "restored_instruments": []}
         affected = [r for r in state["ledger"]["research"].values()
                     if (instrument is None or r["instrument_key"] == instrument)
-                    and (r["status"] == "OPEN" or utc(r["opened_at"]) <= known_gap <
+                    and utc(r["opened_at"]) <= known_gap
+                    and (r["status"] == "OPEN" or known_gap <
                          utc(r["exit_at"] or (r["exit_interval"] or [None, now.isoformat()])[1]))]
         prior = state["gap_episode_receipts"].setdefault(key, [])
         new_episodes = sorted(r["episode_key"] for r in affected if r["episode_key"] not in prior)
@@ -682,7 +714,7 @@ class ShadowCollector:
             issue["session"] == session and issue["instrument"] in ("*", name)
             and name not in issue["restored_instruments"] for issue in state["active_data_issues"].values()) else None
 
-    def _events(self, state, journals, events, diagnostics, now, session, *, portfolio=None, archive_only=False, source_gaps=None):
+    def _events(self, state, journals, events, diagnostics, now, session, *, portfolio=None, archive_only=False, source_gaps=None, check_stale=True):
         if state["ledger"] is None:
             return
         if diagnostics:
@@ -763,7 +795,7 @@ class ShadowCollector:
                     and utc(record["exit_at"] or record["exit_interval"][1]) >= utc(event["at"])]
                 if event["type"] == "DATA_GAP":
                     self._gap(state, journals, now, session, "PRODUCER_DATA_GAP", gap_at=utc(event["at"]),
-                              instrument=name, portfolio=portfolio)
+                              instrument=name, portfolio=portfolio, issue_session=raw["session"])
                 if episodes and event["type"] in {"TRADE", "BAR"} and event.get("regular") is True:
                     at = utc(event["at"])
                     opening = self.calendar.details(at.astimezone(NEW_YORK).date())["open"]
@@ -793,6 +825,8 @@ class ShadowCollector:
             state["event_receipts"][item["event_id"]] = item["envelope_sha256"]
             journals.append({"journal_key": "event:" + item["event_id"], "type": "SOURCE_EVENT",
                              "source": item, "applied_event": event, "result": result})
+        if not check_stale:
+            return
         # Missing cycles or stale evidence are data failures, not zero returns.
         for episode in tuple(state["watch_episodes"]):
             record = state["ledger"]["research"][episode]
@@ -904,6 +938,20 @@ class ShadowCollector:
                       "episode_key": episode, "instrument_key": name, "observation": observation}
             if previous:
                 record.update(_pending_tail(previous))
+            if self.minute_entry and state["ledger"] is not None and evaluation["arm"] is not None:
+                entry = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+                pending = {"episode_key": episode, "instrument_key": name,
+                    "decision_at": now.isoformat(), "entry_at": entry.isoformat(),
+                    "evaluation": evaluation, "quote": None}
+                quote = _object(observation["source"].get("quote"))
+                if quote:
+                    pending["quote"] = {**quote, "bid_at": quote.get("bid_source_at"),
+                        "ask_at": quote.get("ask_source_at"), "collector_available_at": now.isoformat()}
+                session.setdefault("entries_pending", {})[name] = pending
+                record.update(decision_at=now.isoformat(), entry_at=entry.isoformat(), entry_status="PENDING")
+                session["candidates"][name].update(decision_at=now.isoformat(), entry_at=entry.isoformat(), entry_status="PENDING")
+                journals.append(record)
+                continue
             if state["ledger"] is not None and evaluation["arm"] is not None:
                 before_terminal = set(state["ledger"]["terminal_reasons"])
                 kwargs: dict[str, Any] = dict(episode_key=episode,
@@ -920,6 +968,82 @@ class ShadowCollector:
                 state["watch_episodes"][episode] = name
                 state["instrument_episodes"].setdefault(name, []).append(episode)
             journals.append(record)
+
+    def _entries(self, state, journals, session, batch, events, now, *, portfolio=None, entry_cutoff=None):
+        """Durable E-BAR decision -> entry transition; evidence never travels back in time."""
+        pending = session.get("entries_pending", {})
+        quotes = []
+        for event in events:
+            if event.get("type") == "QUOTE" and event.get("regular") is True:
+                quotes.append(("US:" + event["instrument_key"].split(":")[-1], dict(event)))
+        for row in _object(batch.get("universe")).get("instruments", []):
+            quote = _object(row.get("quote"))
+            if quote:
+                quotes.append((_instrument(row), {**quote,
+                    "bid_at": quote.get("bid_source_at"), "ask_at": quote.get("ask_source_at")}))
+        for name, entry in list(pending.items()):
+            entry_at = utc(entry["entry_at"])
+            for instrument, quote in quotes:
+                available = _dt(quote.get("available_at"))
+                if instrument != name or available is None or available > now or now > entry_at:
+                    continue
+                old = entry.get("quote")
+                if old is None or available >= utc(old["available_at"]):
+                    entry["quote"] = {**quote, "collector_available_at": now.isoformat()}
+                    if entry["quote"] != old:
+                        journals.append({"journal_key": "entry-quote:" + digest([entry["episode_key"], entry["quote"]]),
+                            "type": "ENTRY_QUOTE_OBSERVED", "episode_key": entry["episode_key"], "quote": entry["quote"]})
+            if now < entry_at or (entry_cutoff is not None and entry_at > entry_cutoff):
+                continue
+            quote = entry.get("quote")
+            reason, geometry = None, None
+            if quote is None:
+                reason = "ENTRY_QUOTE_MISSING"
+            else:
+                bid, ask = quote.get("bid"), quote.get("ask")
+                if (any(isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v)
+                        for v in (bid, ask)) or not 0 < bid <= ask):
+                    reason = "ENTRY_QUOTE_INVALID"
+                elif any(_dt(quote.get(k)) is None or not timedelta(0) <= entry_at - utc(quote[k]) <= timedelta(seconds=10)
+                         for k in ("bid_at", "ask_at")):
+                    reason = "ENTRY_QUOTE_STALE_OR_FUTURE"
+                elif (_dt(quote.get("available_at")) is None
+                      or any(utc(quote[k]) > entry_at for k in ("available_at", "collector_available_at"))
+                      or any(utc(quote[k]) > utc(quote["available_at"]) for k in ("bid_at", "ask_at"))):
+                    reason = "ENTRY_QUOTE_NOT_CAUSAL"
+                else:
+                    mid = bid + (ask - bid) / 2
+                    if mid < 5:
+                        reason = "ENTRY_QUOTE_PRICE_BELOW_MINIMUM"
+                    elif (ask - bid) / mid > .0020:
+                        reason = "ENTRY_QUOTE_SPREAD_TOO_WIDE"
+                    else:
+                        try:
+                            geometry = entry_geometry(mid, entry["evaluation"]["atr14"])
+                        except CandidateValidationError as error:
+                            reason = "ENTRY_QUOTE_" + error.code
+            evidence = {"journal_key": "entry:" + entry["episode_key"], "type": "CANDIDATE_ENTRY",
+                "instrument_key": name, "decision_at": entry["decision_at"], "entry_at": entry["entry_at"],
+                "observed_at": now.isoformat(), "quote": quote, "reason": reason, "geometry": geometry}
+            if reason is None:
+                evaluation = entry["evaluation"]
+                kwargs = dict(episode_key=entry["episode_key"], instrument_key=name, session=session["date"],
+                    opened_at=entry["entry_at"], decision_at=entry["decision_at"], admission_available_at=now.isoformat(),
+                    maturity_at=evaluation["maturity_at"], geometry=geometry, arm=evaluation["arm"],
+                    admission_block_reason=self._admission_block(state, session["date"], name))
+                before = set(state["ledger"]["terminal_reasons"])
+                if portfolio is not None:
+                    research, admission = portfolio.register(**kwargs)
+                else:
+                    state["ledger"], research, admission = register_candidate(state["ledger"], **kwargs)
+                evidence.update(research=research, admission=admission)
+                self._record_terminal(state, before, now.isoformat(), session["date"])
+                state["coverage_until"].setdefault(name, entry["entry_at"])
+                state["watch_episodes"][entry["episode_key"]] = name
+                state["instrument_episodes"].setdefault(name, []).append(entry["episode_key"])
+            session["candidates"][name].update(entry_status="REJECTED" if reason else "OPENED", entry_reason=reason)
+            journals.append(evidence)
+            del pending[name]
 
     def _close_capture(self, state, journals, session, now):
         if session["universe"] is None:

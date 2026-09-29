@@ -32,3 +32,21 @@ def journal_envelope(record, now):
     envelope['self_sha256']=hashlib.sha256(canonical(envelope)).hexdigest()
     _metadata(envelope,EVENT_SCHEMA,now)
     return envelope
+
+
+def session_envelope(record, now, *, epoch, session):
+    """Bind an otherwise identical receipt to its epoch/session continuity domain."""
+    from .r2d2_v2_massive_sessions import _session
+    import re
+    _require(type(epoch) is str and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}', epoch)
+             is not None, 'MASSIVE_SESSION_EPOCH')
+    _session(session)
+    envelope = journal_envelope(record, now)
+    _require(envelope['event']['session'] == session, 'MASSIVE_SESSION_RECEIPT_MISMATCH')
+    epoch_sha = hashlib.sha256(epoch.encode()).hexdigest()
+    envelope['source_id'] = 'massive-am-v2-' + epoch_sha[:32] + '-' + session
+    envelope['provenance'] = {**envelope['provenance'], 'version': 'session-v2'}
+    envelope.pop('self_sha256')
+    envelope['self_sha256'] = hashlib.sha256(canonical(envelope)).hexdigest()
+    _metadata(envelope, EVENT_SCHEMA, now)
+    return envelope

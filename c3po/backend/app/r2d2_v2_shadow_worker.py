@@ -57,11 +57,14 @@ def _with_massive_source(settings, source, release):
         return source  # Default OFF: no Massive directory/database/socket access.
     if release.mode != 'CERTIFIED':
         raise ShadowIntegrityError('MASSIVE_REQUIRES_CERTIFIED_RELEASE')
-    from .r2d2_v2_massive_journal import MassiveJournal
-    from .r2d2_v2_massive_source import MassiveEventSource
+    from .r2d2_v2_massive_sessions import SessionJournalRoot
+    from .r2d2_v2_massive_session_source import MassiveSessionEventSource
     from .r2d2_v2_composite_source import CompositeEventSource
-    reader = MassiveJournal.open_reader(settings.r2d2_v2_massive_journal_dir)
-    return CompositeEventSource(source, MassiveEventSource(reader))
+    try:
+        journals = SessionJournalRoot(settings.r2d2_v2_massive_journal_dir, release.epoch)
+    except (OSError, ValueError):
+        raise ShadowIntegrityError('MASSIVE_SESSION_ROOT_UNVERIFIED') from None
+    return CompositeEventSource(source, MassiveSessionEventSource(journals))
 
 
 def build_collector(settings, *, now: datetime) -> ShadowCollector | None:

@@ -102,7 +102,7 @@ def test_retention_scan_holds_lock_between_pages(tmp_path,monkeypatch):
  from app.r2d2_v2_massive_retention import plan_retention
  journal=MassiveJournal(tmp_path)
  for i in range(3):journal(None,{'event':{'type':'DATA_GAP','session':'2026-09-25','fixture':i}})
- original=journal.page
+ original=journal._page_locked
  calls=[]
  def page(*args,**kwargs):
   result=original(*args,**kwargs)
@@ -110,7 +110,7 @@ def test_retention_scan_holds_lock_between_pages(tmp_path,monkeypatch):
    with journal_access(tmp_path,exclusive=True):pytest.fail('maintenance entered between scan pages')
   calls.append(result['after'])
   return result
- monkeypatch.setattr(journal,'page',page)
+ monkeypatch.setattr(journal,'_page_locked',page)
  plan=plan_retention(journal,committed_sequence=3,retain_from_session='2026-09-26')
  assert plan['prune_through']==2
  assert len(calls)==2
@@ -127,3 +127,51 @@ def test_committed_retention_refuses_before_database_read(tmp_path,monkeypatch):
   with pytest.raises(SourceUnavailable,match='BUSY'):
    retention.plan_committed_retention(journal,None,epoch=28,release_sha='a'*64,
                                       now=None,retain_from_session='2026-09-26')
+
+
+
+def test_spool_initialization_refuses_before_child_directory_creation(tmp_path):
+ from app.r2d2_v2_massive_spool import MassiveSpool
+ with journal_access(tmp_path,exclusive=True,create=True):
+  with pytest.raises(SourceUnavailable,match='BUSY'):MassiveSpool(tmp_path)
+  assert not (tmp_path/'raw').exists()
+  assert not (tmp_path/'receipts').exists()
+
+
+def test_direct_spool_writer_obeys_maintenance(tmp_path):
+ from app.r2d2_v2_massive_spool import MassiveSpool
+ spool=MassiveSpool(tmp_path)
+ with journal_access(tmp_path,exclusive=True):
+  with pytest.raises(SourceUnavailable,match='BUSY'):
+   spool(None,{'event':{'type':'DATA_GAP'}})
+ assert not list((tmp_path/'receipts').iterdir())
+ assert spool.used_files==0
+ spool(None,{'event':{'type':'DATA_GAP'}})
+ assert spool.used_files==1
+
+
+
+def test_source_maintenance_refusal_keeps_cursor(tmp_path):
+ from datetime import datetime,timezone
+ from app.r2d2_v2_massive_journal import MassiveJournal
+ from app.r2d2_v2_massive_source import MassiveEventSource
+ source=MassiveEventSource(MassiveJournal(tmp_path));cursor={'massive_sequence':0}
+ with journal_access(tmp_path,exclusive=True):
+  result=source.prepare_events(datetime.now(timezone.utc),cursor)
+ assert result=={'events':[],'diagnostics':[{'code':'MASSIVE_SOURCE_UNVERIFIED'}],'cursor':cursor}
+
+
+def test_source_holds_shared_access_after_page_returns(tmp_path,monkeypatch):
+ from datetime import datetime,timezone
+ from app.r2d2_v2_massive_journal import MassiveJournal
+ from app.r2d2_v2_massive_source import MassiveEventSource
+ journal=MassiveJournal(tmp_path);original=journal.page
+ def page(*args,**kwargs):
+  result=original(*args,**kwargs)
+  with pytest.raises(SourceUnavailable,match='BUSY'):
+   with journal_access(tmp_path,exclusive=True):pytest.fail('maintenance entered between source reads')
+  return result
+ monkeypatch.setattr(journal,'page',page)
+ result=MassiveEventSource(journal).prepare_events(datetime.now(timezone.utc),{})
+ assert result['diagnostics']==[]
+ with journal_access(tmp_path,exclusive=True):pass

@@ -222,12 +222,20 @@ class MassiveJournal:
         return floor, high
 
     def retention_cutoff(self):
-        with self._connect() as db:
+        with journal_access(self.path.parent):
+            return self._retention_cutoff_locked()
+
+    def _retention_cutoff_locked(self):
+        with self._connect_locked() as db:
             self._bounds(db)
             return db.execute('SELECT retain_from_session FROM retention_state WHERE singleton=1').fetchone()[0]
 
     def retention_floor(self):
-        with self._connect() as db:
+        with journal_access(self.path.parent):
+            return self._retention_floor_locked()
+
+    def _retention_floor_locked(self):
+        with self._connect_locked() as db:
             return self._bounds(db)[0]
 
     def page(self, after=0, *, through=None, limit=1024, byte_limit=4*1024*1024):
@@ -239,7 +247,7 @@ class MassiveJournal:
             raise ValueError('JOURNAL_PAGE_LIMIT')
         if type(byte_limit) is not int or not 1 <= byte_limit <= 16*1024*1024:
             raise ValueError('JOURNAL_BYTE_LIMIT')
-        with self._connect() as db:
+        with self._connect_locked() as db:
             floor, high = self._bounds(db)
             if after < floor:
                 raise ValueError('JOURNAL_CURSOR_PRUNED')
@@ -257,7 +265,7 @@ class MassiveJournal:
             path=self.spool.root/'receipts'/(digest+'.json')
             if path.is_symlink() or not path.is_file() or path.stat().st_size > byte_limit:
                 raise ValueError('JOURNAL_RECEIPT_LIMIT')
-            data=self._read_evidence('receipts', digest+'.json', byte_limit, 'JOURNAL_RECEIPT_LIMIT')
+            data=self._read_evidence_locked('receipts', digest+'.json', byte_limit, 'JOURNAL_RECEIPT_LIMIT')
             if hashlib.sha256(data).hexdigest()!=digest:
                 raise ValueError('JOURNAL_RECEIPT_HASH')
             if used + len(data) > byte_limit:
@@ -279,7 +287,7 @@ class MassiveJournal:
                     if used+len(data)+raw_cost>byte_limit:
                         if not result:raise ValueError('JOURNAL_BYTE_LIMIT')
                         break
-                    raw_data=self._read_evidence('raw', raw_hash+'.json', size, 'JOURNAL_RAW_SIZE')
+                    raw_data=self._read_evidence_locked('raw', raw_hash+'.json', size, 'JOURNAL_RAW_SIZE')
                     if len(raw_data)!=size or hashlib.sha256(raw_data).hexdigest()!=raw_hash:
                         raise ValueError('JOURNAL_RAW_HASH')
                     verified_raw[raw_hash]=size

@@ -46,7 +46,11 @@ def _restore_stream_locked(state, journal, *, session, now=None, max_records=500
             _require(previous_session is None or event_session>=previous_session,'RECOVERY_SESSION_REVERSED')
             previous_session=event_session
             instrument=event['instrument_key']
-            _require(instrument.startswith('US:') and instrument[3:] in state.symbols,'RECOVERY_UNIVERSE_MISMATCH')
+            # Historical daily lists may differ. Verify their evidence without
+            # treating those instruments as members of today's stream state.
+            _require(instrument.startswith('US:') and
+                     (event_session!=session or instrument[3:] in state.symbols),
+                     'RECOVERY_UNIVERSE_MISMATCH')
             symbol=instrument[3:]
             minute=_time(receipt.get('minute',event['at'])).replace(second=0,microsecond=0)
             key=(symbol,int(minute.timestamp()*1000))

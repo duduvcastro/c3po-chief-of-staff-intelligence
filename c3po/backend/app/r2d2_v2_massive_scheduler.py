@@ -18,7 +18,7 @@ class MinuteExpiry:
             # Bound any catch-up invocation; caller fails closed after long stalls.
             _require(now-self.next_minute<=timedelta(minutes=120),'STREAM_SCHEDULER_STALLED')
             count=0
-            while now>self.next_minute+timedelta(seconds=90):
+            while now>self.next_minute+timedelta(seconds=150):
                 self.state.expire_minute(self.next_minute,now)
                 # Advance only after evidence persistence succeeds.
                 self.next_minute+=timedelta(minutes=1)

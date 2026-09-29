@@ -8,20 +8,25 @@ from .r2d2_v2_sources import SourceUnavailable, _load_json, _require
 from .r2d2_v2_minute_bars import MAX_RESPONSE_BYTES
 
 
-def pump(socket, state, token, *, utcnow, monotonic, tick, stop, max_seconds=3600,
-         auth_seconds=10, idle_seconds=75):
+def pump(socket, state, token, *, utcnow, monotonic, tick, stop, max_seconds=8*3600,
+         auth_seconds=10, idle_seconds=None):
     _require(isinstance(token,str) and bool(token) and len(token)<=4096,'STREAM_AUTH_REQUIRED')
-    _require(0<max_seconds<=8*3600 and 0<auth_seconds<=30 and 0<idle_seconds<90,'STREAM_LIMITS')
+    _require(0<max_seconds<=8*3600 and 0<auth_seconds<=30 and
+             (idle_seconds is None or 0<idle_seconds<90),'STREAM_LIMITS')
+    # AM silence is legitimate for symbols without eligible trades. The real
+    # socket uses ping/pong for liveness; expiry records missing minutes. An
+    # application-idle policy is opt-in and is never used by run_connection.
     started=monotonic();last=started;authenticated=False
     try:
         socket.send(json.dumps({'action':'auth','params':token}))
         while not stop():
             current=monotonic()
             if current-started>=max_seconds:
+                tick(utcnow())  # Seal the last expired minute before the deadline exit.
                 state.gap(utcnow(),'MASSIVE_SESSION_LIMIT');return 'SESSION_LIMIT'
             if not authenticated and current-started>=auth_seconds:
                 state.gap(utcnow(),'MASSIVE_AUTH_TIMEOUT');return 'AUTH_TIMEOUT'
-            if authenticated and current-last>=idle_seconds:
+            if authenticated and idle_seconds is not None and current-last>=idle_seconds:
                 state.gap(utcnow(),'MASSIVE_STREAM_IDLE');return 'IDLE'
             tick(utcnow())  # Expiry progresses even without frames.
             try:
@@ -47,19 +52,22 @@ def pump(socket, state, token, *, utcnow, monotonic, tick, stop, max_seconds=360
                     raise SourceUnavailable('STREAM_DATA_BEFORE_AUTH')
             if authenticated:
                 state.frame(frame,received)
+        tick(utcnow())  # stop() may become true just as the final minute expires.
         state.gap(utcnow(),'MASSIVE_STOPPED')
         return 'STOPPED'
     except Exception:
-        # No provider exception text or credentials escape into diagnostics.
-        state.gap(utcnow(),'MASSIVE_TRANSPORT_FAILURE')
-        raise SourceUnavailable('MASSIVE_TRANSPORT_FAILURE') from None
+        # Leave the handler before raising: even __context__ must not retain
+        # a provider exception that may contain the authentication token.
+        pass
     finally:
         try:socket.close()
         except Exception:pass
+    state.gap(utcnow(),'MASSIVE_TRANSPORT_FAILURE')
+    raise SourceUnavailable('MASSIVE_TRANSPORT_FAILURE')
 
 
 def run_connection(state, token, *, utcnow, monotonic, tick, stop,
-                   connector=None, max_seconds=3600):
+                   connector=None, max_seconds=8*3600):
     """Open one real-time connection. Never retry or choose a delayed endpoint.
 
     This function is not installed into a worker or CLI by itself. The caller
@@ -80,7 +88,9 @@ def run_connection(state, token, *, utcnow, monotonic, tick, stop,
                          max_size=MAX_RESPONSE_BYTES,max_queue=1,
                          compression=None,proxy=None,logger=logger)
     except Exception:
+        socket=None
+    if socket is None:
         state.gap(utcnow(),'MASSIVE_CONNECT_FAILURE')
-        raise SourceUnavailable('MASSIVE_CONNECT_FAILURE') from None
+        raise SourceUnavailable('MASSIVE_CONNECT_FAILURE')
     return pump(socket,state,token,utcnow=utcnow,monotonic=monotonic,tick=tick,
                 stop=stop,max_seconds=max_seconds)

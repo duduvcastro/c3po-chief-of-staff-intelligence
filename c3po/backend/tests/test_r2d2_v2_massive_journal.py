@@ -44,11 +44,11 @@ def test_shared_raw_verified_once_within_page_byte_budget(tmp_path,monkeypatch):
  from pathlib import Path
  from app.r2d2_v2_sources import canonical
  j=MassiveJournal(tmp_path);raw,r=evidence();other={**r,'fixture':2}
- j(raw,r);j(raw,other);reads=[];original=j._read_evidence
+ j(raw,r);j(raw,other);reads=[];original=j._read_evidence_locked
  def read(directory,*args):
   if directory=='raw':reads.append(directory)
   return original(directory,*args)
- monkeypatch.setattr(j,'_read_evidence',read)
+ monkeypatch.setattr(j,'_read_evidence_locked',read)
  budget=len(raw)+len(canonical(r))+len(canonical(other))
  assert len(j.page(byte_limit=budget)['records'])==2
  assert len(reads)==1
@@ -98,7 +98,7 @@ def test_sqlite_capacity_refuses_without_sequence_hole(tmp_path):
 def test_raw_replaced_after_stat_refuses_without_cursor(tmp_path,monkeypatch,replacement):
  import os
  j=MassiveJournal(tmp_path);raw,r=evidence();j(raw,r)
- path=tmp_path/'raw'/(r['raw_sha256']+'.json');original=j._read_evidence
+ path=tmp_path/'raw'/(r['raw_sha256']+'.json');original=j._read_evidence_locked
  def read(directory,*args):
   if directory=='raw':
    path.unlink()
@@ -107,19 +107,19 @@ def test_raw_replaced_after_stat_refuses_without_cursor(tmp_path,monkeypatch,rep
     outside=tmp_path/'outside';outside.write_bytes(raw);path.symlink_to(outside)
    else:path.write_bytes(raw+b'x')
   return original(directory,*args)
- monkeypatch.setattr(j,'_read_evidence',read)
+ monkeypatch.setattr(j,'_read_evidence_locked',read)
  with pytest.raises(ValueError,match='RAW_SIZE'):j.page()
  with j._connect() as db:assert db.execute('SELECT MAX(sequence) FROM receipts').fetchone()[0]==1
 
 
 def test_parent_replaced_by_symlink_before_read_refuses(tmp_path,monkeypatch):
- j=MassiveJournal(tmp_path);j(*evidence());original=j._read_evidence
+ j=MassiveJournal(tmp_path);j(*evidence());original=j._read_evidence_locked
  def read(directory,*args):
   if directory=='receipts':
    (tmp_path/'receipts').rename(tmp_path/'moved')
    (tmp_path/'receipts').symlink_to(tmp_path/'moved',target_is_directory=True)
   return original(directory,*args)
- monkeypatch.setattr(j,'_read_evidence',read)
+ monkeypatch.setattr(j,'_read_evidence_locked',read)
  with pytest.raises(ValueError,match='RECEIPT_LIMIT'):j.page()
 
 

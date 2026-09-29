@@ -107,7 +107,7 @@ def closed_minute(data: bytes, *, symbol: str, minute: datetime,
                              "session": day.isoformat(), "instrument_key": "US:" + symbol}
     # Never extend the motor's 90-second allowance. Late backfill is evidence
     # of a missed LIVE observation, even when the historical OHLC is valid.
-    if selected is None or now - minute > timedelta(seconds=90):
+    if selected is None or now - end > timedelta(seconds=90):
         event.update(type="DATA_GAP", reason="MINUTE_ABSENT" if selected is None else "MINUTE_LATE")
     else:
         event.update(type="BAR", end_at=end.isoformat(), open=selected["o"], high=selected["h"],

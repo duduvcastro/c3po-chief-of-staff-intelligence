@@ -94,7 +94,7 @@ def test_550_symbol_frames_real_cycle_over_90s_gap_and_late_bar(tmp_path,record_
   elapsed=time.perf_counter()-started
   record_property('local_frame550_cycle_seconds_'+str(i),elapsed)
   assert elapsed < 24, 'local frame-to-cycle budget exceeded'
-  assert len(stream.seen)+len(stream.sealed)<=550*4
+  assert len(stream.seen)+len(stream.sealed)<=550*5
   saved=collector.store.read(collector.release.epoch)['state']
   assert saved['raw_source_cursor']['massive']=={'massive_sequence':550*(i+1)}
   assert saved['ledger']['research']['synthetic-entry'].get('category')!='unobservable', (saved['data_issues'],saved['ledger']['research']['synthetic-entry'])
@@ -108,7 +108,7 @@ def test_550_symbol_frames_real_cycle_over_90s_gap_and_late_bar(tmp_path,record_
  assert journal.spool.used_bytes<=512*1024*1024
  assert journal.spool.used_files<=500000
  assert journal.path.stat().st_size<=64*1024*1024
- missing=START+timedelta(minutes=minutes);detected=missing+timedelta(seconds=91)
+ missing=START+timedelta(minutes=minutes);detected=missing+timedelta(seconds=151)
  if interruption=='producer_restart':
   from app.r2d2_v2_massive_producer import run_producer
   class StoppedSocket:
@@ -130,14 +130,38 @@ def test_550_symbol_frames_real_cycle_over_90s_gap_and_late_bar(tmp_path,record_
  before=journal.page()['through']
  if interruption=='producer_restart':
   from app.r2d2_v2_massive_recovery import restore_stream
-  from app.r2d2_v2_sources import SourceUnavailable
   stream=MassiveStreamState(names,collector.calendar,journal)
   restore_stream(stream,journal,session=START.date().isoformat(),now=detected)
   stream.connected(detected)
-  with pytest.raises(SourceUnavailable,match='MINUTE_CONNECTION_GAP'):
-   stream.frame(frame(missing),detected+timedelta(seconds=2))
+  # Restart records a point outage at detected; it cannot claim that missing
+  # was observed or sealed earlier. The late AM explicitly proves broken
+  # connection coverage for that minute, never a recoverable BAR/backfill.
+  minute_ms=int(missing.timestamp()*1000)
+  assert not any((name,minute_ms) in stream.sealed for name in names)
+  late_frame=frame(missing)
+  stream.frame(late_frame,detected+timedelta(seconds=2))
+  page=journal.page(before)
+  assert not page['has_more'] and page['through']==before+550
+  receipts=[row['receipt'] for row in page['records']]
+  assert len(receipts)==550
+  assert {r['event']['instrument_key'] for r in receipts}=={'US:'+name for name in names}
+  assert all(r['event']['type']=='DATA_GAP' and r['event']['reason']=='MINUTE_CONNECTION_GAP'
+             and r['event']['at']==missing.isoformat() and r['minute']==missing.isoformat()
+             and r['event']['available_at']==(detected+timedelta(seconds=2)).isoformat()
+             for r in receipts)
+  import hashlib
+  assert all(r['raw_sha256']==hashlib.sha256(late_frame).hexdigest() for r in receipts)
+  assert all((name,minute_ms) in stream.sealed and (name,minute_ms) not in stream.seen for name in names)
+  # Durable seals survive another recovery; the same late frame cannot add
+  # duplicate gaps or backfill after reconnect.
+  restored=MassiveStreamState(names,collector.calendar,journal)
+  restore_stream(restored,journal,session=START.date().isoformat(),now=detected+timedelta(seconds=2))
+  assert all((name,minute_ms) in restored.sealed and (name,minute_ms) not in restored.seen for name in names)
+  restored.connected(detected+timedelta(seconds=2))
+  restored.frame(late_frame,detected+timedelta(seconds=3))
+  assert journal.page()['through']==before+550
  else:
   stream.frame(frame(missing),detected+timedelta(seconds=2))
- assert journal.page()['through']==before
+  assert journal.page()['through']==before
  collector.cycle(detected+timedelta(seconds=3))
  assert collector.store.read(collector.release.epoch)['state']['ledger']['research']['synthetic-entry']['category']=='unobservable'

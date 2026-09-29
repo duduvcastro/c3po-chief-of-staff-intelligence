@@ -57,12 +57,12 @@ def test_reversed_session_refuses(tmp_path):
 
 
 def test_append_during_plan_refuses(tmp_path,monkeypatch):
- j=MassiveJournal(tmp_path);j(None,gap('2026-09-25',0));original=j.page
+ j=MassiveJournal(tmp_path);j(None,gap('2026-09-25',0));original=j._page_locked
  def page(*args,**kwargs):
   result=original(*args,**kwargs)
   if args[0]==0:j(None,gap('2026-09-25',1))
   return result
- monkeypatch.setattr(j,'page',page)
+ monkeypatch.setattr(j,'_page_locked',page)
  with pytest.raises(SourceUnavailable,match='SNAPSHOT_CHANGED'):
   plan_retention(j,committed_sequence=1,retain_from_session='2026-09-27')
 
@@ -172,3 +172,84 @@ def test_retention_cutoff_cannot_move_backwards(tmp_path,requested):
   assert plan['previous_cutoff']=='2026-09-26'
  assert j.retention_cutoff()=='2026-09-26'
  assert j.retention_floor()==0
+
+
+def test_retention_plan_under_exclusive_boundary_reads_raw_and_rejects_other_reader(tmp_path):
+ from app.r2d2_v2_massive_maintenance import journal_access
+ from app.r2d2_v2_massive_retention import _plan_retention_locked
+ j=MassiveJournal(tmp_path);raw,r=evidence()
+ j(raw,{**r,'event':{**r['event'],'session':'2026-09-24'}})
+ j(None,gap('2026-09-27',1))
+ reader=MassiveJournal.open_reader(tmp_path)
+ before=j.path.read_bytes()
+ with journal_access(tmp_path,exclusive=True):
+  plan=_plan_retention_locked(j,committed_sequence=2,retain_from_session='2026-09-26')
+  assert plan['prune_through']==1 and plan['raw_sha256s']==[r['raw_sha256']]
+  with pytest.raises(SourceUnavailable,match='MAINTENANCE_BUSY'):reader.page()
+ assert j.path.read_bytes()==before
+ assert reader.page()['through']==2
+
+
+def ack_snapshot_fixture(cursor, *, matching=True):
+ # Isolate parser checks behind a synthetic verified-read boundary. This is
+ # not a PostgreSQL durability/provenance proof.
+ import hashlib
+ from app.r2d2_v2_store import PostgresShadowStore
+ from app.r2d2_v2_sources import canonical
+ store=PostgresShadowStore(lambda:pytest.fail('read-only parser must not connect/write'))
+ row={'state':{'release_sha':'a'*64,'raw_source_cursor':cursor},'state_sha':'b'*64,'journal_head':'c'*64}
+ records=[{'payload':{'type':'SOURCE_CURSOR','cursor':cursor,
+  'cursor_sha256':hashlib.sha256(canonical(cursor)).hexdigest()},'record_sha':'d'*64}] if matching else []
+ store.read_with_journal=lambda epoch:(row,records)
+ return store,row,records
+
+
+def v2_ack_cursor():
+ return {'version':2,'quote_trade':{'files':{}},'massive':{'massive_sequence':3},
+  'barrier':{'sequence':0,'resolved':{'US:AAPL|2026-09-28|2026-09-28T14:00:00+00:00':{
+   'end_at':'2026-09-28T14:01:00+00:00','event_id':'massive-fixture','envelope_sha256':'e'*64}}}}
+
+
+@pytest.mark.parametrize('version',[0,1,2])
+def test_ack_extractor_preserves_standalone_v1_and_strict_v2(version):
+ from app.r2d2_v2_massive_retention import read_committed_ack
+ cursor=v2_ack_cursor()
+ if version==1:cursor.pop('barrier');cursor['version']=1
+ if version==0:cursor=cursor['massive']
+ store,_,_=ack_snapshot_fixture(cursor)
+ ack=read_committed_ack(store,epoch='fixture',release_sha='a'*64)
+ assert ack['committed_sequence']==3 and ack['ack_record_sha256']=='d'*64
+ assert ack['status']=='VERIFIED_ACK_OBSERVATION_NOT_DELETION_AUTHORITY'
+
+
+@pytest.mark.parametrize('malformation',[
+ 'extra','boolean_version','negative_ack','boolean_ack','extra_massive','missing_barrier',
+ 'extra_barrier','boolean_barrier_sequence','bad_proof','bad_hash','bad_end','bad_raw','bad_file','missing_ack_record'])
+def test_malformed_v2_ack_cannot_start_retention_plan_or_mutate_journal(tmp_path,monkeypatch,malformation):
+ import copy
+ from datetime import datetime,timezone
+ from app import r2d2_v2_massive_retention as retention
+ cursor=v2_ack_cursor();proof=next(iter(cursor['barrier']['resolved'].values()))
+ if malformation=='extra':cursor['extra']=True
+ elif malformation=='boolean_version':cursor['version']=True
+ elif malformation=='negative_ack':cursor['massive']['massive_sequence']=-1
+ elif malformation=='boolean_ack':cursor['massive']['massive_sequence']=True
+ elif malformation=='extra_massive':cursor['massive']['extra']=0
+ elif malformation=='missing_barrier':cursor.pop('barrier')
+ elif malformation=='extra_barrier':cursor['barrier']['extra']=0
+ elif malformation=='boolean_barrier_sequence':cursor['barrier']['sequence']=True
+ elif malformation=='bad_proof':proof['extra']=0
+ elif malformation=='bad_hash':proof['envelope_sha256']='bad'
+ elif malformation=='bad_end':proof['end_at']='2026-09-28T14:02:00+00:00'
+ elif malformation=='bad_raw':cursor['quote_trade']=[]
+ elif malformation=='bad_file':cursor['quote_trade']={'files':{'file':{'offset':True}}}
+ store,row,records=ack_snapshot_fixture(cursor,matching=malformation!='missing_ack_record')
+ snapshot=copy.deepcopy((row,records))
+ journal=MassiveJournal(tmp_path);journal(None,gap('2026-09-25',0))
+ before=journal.path.read_bytes()
+ monkeypatch.setattr(retention,'_plan_retention_locked',lambda *a,**k:pytest.fail('invalid ACK reached planner'))
+ with pytest.raises(SourceUnavailable):
+  retention.plan_committed_retention(journal,store,epoch='fixture',release_sha='a'*64,
+   now=datetime(2026,9,29,tzinfo=timezone.utc),retain_from_session='2026-09-26')
+ assert (row,records)==snapshot and journal.path.read_bytes()==before
+ assert journal.page()['through']==1 and journal.retention_floor()==0

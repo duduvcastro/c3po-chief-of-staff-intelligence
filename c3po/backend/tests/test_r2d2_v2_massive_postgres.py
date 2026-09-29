@@ -233,3 +233,99 @@ def test_retention_binds_local_evidence_not_just_equal_numeric_ack(tmp_path,pg_f
  with pytest.raises(SourceUnavailable,match='LOCAL_ACK_MISMATCH'):
   plan_committed_retention(unrelated,collector.store,**kwargs)
  assert unrelated.page()['through']==1 and journal.page()['through']==1
+
+
+def test_session_index_backend_loss_reoffers_two_local_sequences_and_restart(tmp_path,source,pg_factory):
+ """Opt-in real PostgreSQL; session-local1/1 survive one atomic rollback."""
+ from datetime import timedelta
+ import psycopg
+ from app.r2d2_v2_shadow import ShadowCollector
+ from app.r2d2_v2_composite_source import CompositeEventSource
+ from app.r2d2_v2_massive_sessions import SessionJournalRoot
+ from app.r2d2_v2_massive_session_source import MassiveSessionEventSource
+ from app.r2d2_v2_massive_retention import read_committed_ack,plan_committed_retention
+ from test_r2d2_v2_shadow_counterexamples import setup_state,DAY
+ from test_r2d2_v2_raw_source import write
+ write(source,b'')  # Observed empty capture; no missing-source diagnostic.
+ collector,state,session=setup_state(position=False)
+ epoch=collector.release.epoch
+ state['ledger']['session']=DAY
+ collector.store=InspectablePostgresStore(pg_factory)
+ collector.store.atomic(epoch,collector._initial(),lambda unused:(state,[],{}),cases.START)
+ root=tmp_path/'session-journals';root.mkdir(mode=0o700)
+ catalog=SessionJournalRoot(root,epoch,create=True)
+ days=['2026-09-04',DAY]
+ journals={}
+ for day in days:
+  journal=catalog.ensure_session(day,['SYNTH']);journals[day]=journal
+  at=day+'T14:00:00+00:00'
+  assert journal(None,{'event':{'type':'DATA_GAP','session':day,'instrument_key':'US:SYNTH',
+      'at':at,'available_at':at,'reason':'synthetic-session-proof'}})==1
+ collector.source=CompositeEventSource(source,MassiveSessionEventSource(catalog))
+ before=collector.store.read_with_journal(epoch)
+ now=cases.START+timedelta(seconds=66)
+ proposed=collector.source.prepare_events(now,{})
+ assert not proposed['diagnostics'] and len(proposed['events'])==1 and proposed['has_more']
+ assert proposed['events'][0]['sequence']==0
+ assert proposed['cursor']['massive']=={'version':2,'epoch':epoch,'sessions':{days[0]:1,DAY:0}}
+ attempted=[]
+ @contextmanager
+ def interrupt_commit():
+  with pg_factory() as conn:
+   class Connection:
+    def execute(self,sql,params=None):
+     if 'INSERT INTO r2d2_v2_shadow_journal' in sql:attempted.append(params)
+     return conn.execute(sql,params)
+    def commit(self):
+     with pg_factory() as control:
+      assert control.execute('SELECT pg_terminate_backend(%s)',(conn.info.backend_pid,)).fetchone()[0]
+     conn.commit()
+   yield Connection()
+ collector.store=InspectablePostgresStore(interrupt_commit)
+ with pytest.raises(psycopg.Error):collector.cycle(now)
+ collector.store=InspectablePostgresStore(pg_factory)
+ assert collector.store.read_with_journal(epoch)==before
+ assert collector.source.prepare_events(now,{})==proposed
+ replayed=[]
+ @contextmanager
+ def reconnect():
+  with pg_factory() as conn:
+   class Connection:
+    def execute(self,sql,params=None):
+     if 'INSERT INTO r2d2_v2_shadow_journal' in sql:replayed.append(params)
+     return conn.execute(sql,params)
+    def commit(self):conn.commit()
+   yield Connection()
+ collector.store=InspectablePostgresStore(reconnect)
+ collector.cycle(now)
+ assert attempted and replayed==attempted
+ collector.store=InspectablePostgresStore(pg_factory)
+ committed,records=collector.store.read_with_journal(epoch)
+ assert committed['state']['raw_source_cursor']==proposed['cursor']
+ events=[record for record in records if record['payload']['type']=='SOURCE_EVENT']
+ assert len(events)==1
+ restarted=ShadowCollector(InspectablePostgresStore(pg_factory),
+     CompositeEventSource(source,MassiveSessionEventSource(SessionJournalRoot(root,epoch))),
+     collector.release,calendar=collector.calendar)
+ tail=restarted.source.prepare_events(now+timedelta(seconds=1),proposed['cursor'])
+ assert not tail['diagnostics'] and len(tail['events'])==1 and not tail['has_more']
+ assert tail['events'][0]['sequence']==0
+ assert tail['events'][0]['source_id']!=proposed['events'][0]['source_id']
+ restarted.cycle(now+timedelta(seconds=1))
+ after,records=restarted.store.read_with_journal(epoch)
+ assert after['state']['raw_source_cursor']['massive']=={'version':2,'epoch':epoch,'sessions':{day:1 for day in days}}
+ events=[record for record in records if record['payload']['type']=='SOURCE_EVENT']
+ assert len(events)==2 and {record['payload']['source']['sequence'] for record in events}=={0}
+ assert len({record['payload']['source']['source_id'] for record in events})==2
+ ack=read_committed_ack(restarted.store,epoch=epoch,release_sha=collector.release.receipt_sha)
+ assert ack['committed_sessions']=={day:1 for day in days} and 'committed_sequence' not in ack
+ for day in days:
+  plan=plan_committed_retention(journals[day],restarted.store,epoch=epoch,
+      release_sha=collector.release.receipt_sha,now=now+timedelta(seconds=1),retain_from_session='2026-09-09',session=day)
+  assert plan['verified_committed_receipts']==1 and plan['committed_sequence']==1
+  assert plan['journal_session']==day and plan['prune_through']==0
+ restarted.cycle(now+timedelta(seconds=2))
+ final,records=restarted.store.read_with_journal(epoch)
+ assert final['state']['raw_source_cursor']['massive']==after['state']['raw_source_cursor']['massive']
+ assert len([record for record in records if record['payload']['type']=='SOURCE_EVENT'])==2
+ assert all(journal.page()['through']==1 for journal in journals.values())

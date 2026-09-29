@@ -19,8 +19,9 @@ def test_all_550_symbols_same_frame(calendar):
 def test_disconnect_gap_all_and_no_retroactive_fill(calendar):
  s,out=state(calendar,['AAPL','MSFT']);s.gap(MINUTE+timedelta(seconds=30),'DISCONNECTED');assert len(out)==2
  s.connected(MINUTE+timedelta(seconds=40))
- with pytest.raises(SourceUnavailable,match='CONNECTION_GAP'):s.frame(json.dumps([bar()]).encode(),MINUTE+timedelta(seconds=65))
- assert len(out)==2
+ s.frame(json.dumps([bar()]).encode(),MINUTE+timedelta(seconds=65))
+ assert len(out)==3 and out[-1][1]['event']['reason']=='MINUTE_CONNECTION_GAP'
+ assert s.connected_at==MINUTE+timedelta(seconds=40)
 
 def test_duplicate_and_conflict(calendar):
  s,out=state(calendar);raw=json.dumps([bar()]).encode();at=MINUTE+timedelta(seconds=65)
@@ -42,30 +43,30 @@ def test_status_invalidates(calendar):
 def test_expiry_only_missing_and_never_backfills(calendar):
  s,out=state(calendar,['AAPL','MSFT'])
  s.frame(json.dumps([bar()]).encode(),MINUTE+timedelta(seconds=65))
- s.expire_minute(MINUTE,MINUTE+timedelta(seconds=91))
+ s.expire_minute(MINUTE,MINUTE+timedelta(seconds=151))
  assert len(out)==2 and out[-1][1]['event']['instrument_key']=='US:MSFT'
  assert out[-1][1]['event']['type']=='DATA_GAP'
- s.frame(json.dumps([bar('MSFT')]).encode(),MINUTE+timedelta(seconds=92))
- s.expire_minute(MINUTE,MINUTE+timedelta(seconds=93))
+ s.frame(json.dumps([bar('MSFT')]).encode(),MINUTE+timedelta(seconds=152))
+ s.expire_minute(MINUTE,MINUTE+timedelta(seconds=153))
  assert len(out)==2
 
 def test_expiry_does_not_shorten_90_second_window(calendar):
  s,out=state(calendar)
  with pytest.raises(SourceUnavailable,match='NOT_EXPIRED'):
-  s.expire_minute(MINUTE,MINUTE+timedelta(seconds=90))
+  s.expire_minute(MINUTE,MINUTE+timedelta(seconds=150))
  assert not out and not s.sealed
 
 def test_expiry_disk_failure_not_sealed(calendar):
  s,out=state(calendar)
  def fail(*args):raise OSError('disk full')
  s.sink=fail
- with pytest.raises(OSError):s.expire_minute(MINUTE,MINUTE+timedelta(seconds=91))
+ with pytest.raises(OSError):s.expire_minute(MINUTE,MINUTE+timedelta(seconds=151))
  assert not s.sealed
 
 def test_expiry_outside_regular_session_emits_nothing(calendar):
  s,out=state(calendar)
  early=MINUTE.replace(hour=0)
- s.expire_minute(early,early+timedelta(seconds=91))
+ s.expire_minute(early,early+timedelta(seconds=151))
  assert not out
 
 @pytest.mark.parametrize('status',['connected','auth_success','success'])
@@ -139,7 +140,7 @@ def test_expiry_prunes_550_minute_state_without_allowing_old_fill(calendar):
  names=['S'+str(i) for i in range(550)];s,out=state(calendar,names)
  for i in range(10):
   minute=MINUTE+timedelta(minutes=i)
-  s.expire_minute(minute,minute+timedelta(seconds=91))
+  s.expire_minute(minute,minute+timedelta(seconds=151))
  assert len(s.sealed)==1650 and not s.seen
  assert len(out)==5500
  s.frame(json.dumps([bar(n) for n in names]).encode(),MINUTE+timedelta(minutes=11))

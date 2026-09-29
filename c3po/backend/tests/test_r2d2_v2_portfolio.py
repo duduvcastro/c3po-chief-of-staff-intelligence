@@ -643,3 +643,12 @@ def test_batch_duplicate_replays_match_wrappers_and_do_not_poison_success():
     assert batch.event(e)["status"] == "APPLIED"
     assert batch.event(e)["status"] == "DUPLICATE"
     assert len(batch.finish()["research"]) == 1
+
+
+def test_delayed_gap_before_entry_keeps_new_episode_observable():
+    state, _, _ = candidate()
+    state = apply(state, event('DATA_GAP', at='2026-09-08T13:59:00+00:00',
+                              available_at='2026-09-08T14:00:01+00:00', reason='old minute missing'))
+    for book in ('research', 'portfolio'):
+        assert state[book]['a']['category'] is None
+        assert 'DATA_GAP' not in state[book]['a']['flags']

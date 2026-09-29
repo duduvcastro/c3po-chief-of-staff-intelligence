@@ -67,12 +67,12 @@ def test_missing_minute_does_not_manufacture_price(calendar):
 
 
 def test_late_consumer_does_not_rehabilitate_live_coverage(calendar):
-    got = convert(calendar, now=MINUTE + timedelta(seconds=91))
+    got = convert(calendar, now=MINUTE + timedelta(seconds=151))
     assert got["event"]["reason"] == "MINUTE_LATE"
 
 
 def test_ninety_second_boundary_unchanged(calendar):
-    assert convert(calendar, now=MINUTE+timedelta(seconds=90))["event"]["type"] == "BAR"
+    assert convert(calendar, now=MINUTE+timedelta(seconds=150))["event"]["type"] == "BAR"
 
 
 @pytest.mark.parametrize("rows", [[row(), row()], [row(), row(t=int(MINUTE.timestamp()*1000)-60000)]])

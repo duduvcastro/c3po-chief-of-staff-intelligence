@@ -64,7 +64,7 @@ class MassiveStreamState:
         _require(all(isinstance(t, datetime) and t.utcoffset() is not None
                      for t in (minute, at)), 'STREAM_CLOCK')
         _require(minute.second == 0 and minute.microsecond == 0, 'STREAM_MINUTE')
-        _require(at > minute + timedelta(seconds=90), 'STREAM_NOT_EXPIRED')
+        _require(at > minute + timedelta(seconds=150), 'STREAM_NOT_EXPIRED')
         if self.reject_before_ms is not None and int(minute.timestamp()*1000)<self.reject_before_ms:
             return
         day = minute.astimezone(ZoneInfo('America/New_York')).date()
@@ -129,16 +129,19 @@ class MassiveStreamState:
                 result=massive_stream_minute(canonical([row]),symbol=row['sym'],minute=minute,
                     received_at=received_at,now=received_at,calendar=self.calendar,connected_at=self.connected_at)
             except SourceUnavailable as exc:
-                if str(exc) == 'MINUTE_CONNECTION_GAP':
-                    raise  # Connection continuity remains a stream-level guard.
-                event = dict(type='DATA_GAP', at=received_at.isoformat(),
+                connection_gap = str(exc) == 'MINUTE_CONNECTION_GAP'
+                event = dict(type='DATA_GAP',
+                             at=(minute if connection_gap else received_at).isoformat(),
                              available_at=received_at.isoformat(),
-                             session=received_at.astimezone(ZoneInfo('America/New_York')).date().isoformat(),
-                             instrument_key='US:' + row['sym'], reason='MASSIVE_INVALID_BAR')
+                             session=(day if connection_gap else received_at.astimezone(ZoneInfo('America/New_York')).date()).isoformat(),
+                             instrument_key='US:' + row['sym'],
+                             reason='MINUTE_CONNECTION_GAP' if connection_gap else 'MASSIVE_INVALID_BAR')
                 _validate_event(event, received_at)
                 self.sink(data, dict(event=event, raw_sha256=hashlib.sha256(data).hexdigest(),
                                     raw_bytes=len(data), frame_index=index,
-                                    provenance='MASSIVE_STREAM_INVALID_ROW',minute=minute.isoformat()))
+                                    provenance=('MASSIVE_STREAM_CONNECTION_GAP' if connection_gap
+                                                else 'MASSIVE_STREAM_INVALID_ROW'),
+                                    minute=minute.isoformat()))
                 self.sealed.add(key)  # Seal only after evidence is durable.
                 continue
             identity=canonical({k:row.get(k) for k in ('s','e','o','h','l','c','v')})

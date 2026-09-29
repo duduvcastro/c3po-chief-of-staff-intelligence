@@ -9,6 +9,7 @@ import stat
 from pathlib import Path
 import secrets
 from .r2d2_v2_sources import canonical
+from .r2d2_v2_massive_maintenance import journal_access
 
 class MassiveSpool:
     def __init__(self, root, *, max_bytes=512*1024*1024, max_files=500_000, min_free_bytes=1024*1024*1024):
@@ -23,25 +24,26 @@ class MassiveSpool:
         self._identities = {}
         root_fd = self._open_root(create=True)
         try:
-            self._identities['root'] = self._identity(root_fd)
-            for name in ('raw', 'receipts'):
-                try:
-                    os.mkdir(name, mode=0o700, dir_fd=root_fd)
-                except FileExistsError:
-                    pass
-                child_fd = self._open_child(root_fd, name)
-                try:
-                    self._identities[name] = self._identity(child_fd)
-                    # Count orphan/pending evidence without an unbounded list.
-                    with os.scandir(child_fd) as entries:
-                        for entry in entries:
-                            info = entry.stat(follow_symlinks=False)
-                            if not stat.S_ISREG(info.st_mode):
-                                raise ValueError('SPOOL_EXISTING_TYPE')
-                            self._reserve(info.st_size)
-                finally:
-                    os.close(child_fd)
-            os.fsync(root_fd)
+            with journal_access(self.root, create=True):
+                self._identities['root'] = self._identity(root_fd)
+                for name in ('raw', 'receipts'):
+                    try:
+                        os.mkdir(name, mode=0o700, dir_fd=root_fd)
+                    except FileExistsError:
+                        pass
+                    child_fd = self._open_child(root_fd, name)
+                    try:
+                        self._identities[name] = self._identity(child_fd)
+                        # Count orphan/pending evidence without an unbounded list.
+                        with os.scandir(child_fd) as entries:
+                            for entry in entries:
+                                info = entry.stat(follow_symlinks=False)
+                                if not stat.S_ISREG(info.st_mode):
+                                    raise ValueError('SPOOL_EXISTING_TYPE')
+                                self._reserve(info.st_size)
+                    finally:
+                        os.close(child_fd)
+                os.fsync(root_fd)
         finally:
             os.close(root_fd)
 
@@ -176,6 +178,11 @@ class MassiveSpool:
                 os.close(directory_fd)
 
     def __call__(self, raw, receipt):
+        self._check_directories()
+        with journal_access(self.root):
+            return self._append_locked(raw, receipt)
+
+    def _append_locked(self, raw, receipt):
         if raw is not None:
             if type(raw) is not bytes:
                 raise ValueError('SPOOL_RAW_TYPE')
