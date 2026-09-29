@@ -133,7 +133,12 @@ def test_explicit_next_session_recovery_verifies_history_without_restoring_old_m
  assert j.page()['through']==before
  restored.connected(now)
  restored.frame(json.dumps([bar()]).encode(),now)
- assert j.page()['through']==before
+ page=j.page(after=before)
+ assert page['through']==before+1 and len(page['records'])==1
+ event=page['records'][0]['receipt']['event']
+ assert event['type']=='DATA_GAP' and event['reason']=='MASSIVE_CROSS_SESSION_BAR'
+ assert event['session']==now.date().isoformat() and event['at']==event['available_at']==now.isoformat()
+ assert not restored.seen and not restored.sealed  # No old BAR or backfilled minute.
 
 
 @pytest.mark.parametrize('current_symbol',['AAPL','MSFT'])

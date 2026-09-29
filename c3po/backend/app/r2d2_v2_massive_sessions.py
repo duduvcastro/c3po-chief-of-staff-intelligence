@@ -3,14 +3,22 @@ from datetime import date
 from pathlib import Path
 import os
 import re
+import secrets
 import stat
+import time
 
 from .r2d2_v2_massive_journal import MassiveJournal
 from .r2d2_v2_massive_maintenance import journal_access
-from .r2d2_v2_sources import canonical, _load_json, _open_directory, _require
+from .r2d2_v2_sources import SourceUnavailable, canonical, _load_json, _open_directory, _require
 
 MAX_SESSIONS = 256
 _PARENT_FILES = {'epoch.json', 'maintenance.lock', 'producer.lock'}
+READY_LOCK_WAIT_SECONDS = 30.0
+READY_LOCK_POLL_SECONDS = 0.01
+_UNREADY_FILES = {'session.json', 'maintenance.lock', 'producer.lock'}
+_UNREADY_INDEX = {'sequence.sqlite3', 'sequence.sqlite3-journal', 'sequence.sqlite3-wal', 'sequence.sqlite3-shm'}
+_TEMPORARY = re.compile(r'\.(session|ready)\.json\.[0-9a-f]{16}\.tmp')
+_UNREADY_ENTRY_LIMIT = 32
 
 
 def _session(value):
@@ -18,7 +26,7 @@ def _session(value):
     try:
         parsed = date.fromisoformat(value)
     except ValueError:
-        _require(False, 'MASSIVE_SESSION_DATE')
+        raise SourceUnavailable('MASSIVE_SESSION_DATE') from None
     _require(parsed.isoformat() == value, 'MASSIVE_SESSION_DATE')
     return value
 
@@ -63,6 +71,85 @@ def _immutable(directory, name, value):
     finally:
         os.close(fd)
     os.fsync(directory)
+
+
+def _atomic_immutable(directory, name, value):
+    """Same bytes as _immutable, but a reader never observes a torn file.
+
+    Writers of these names hold the exclusive catalog lock, so the existence
+    check cannot race another cooperating writer. A crash leaves at most an
+    unpublished private temporary file, never a partial manifest.
+    """
+    data = canonical(value)
+    try:
+        existing = _private_file(directory, name)
+    except FileNotFoundError:
+        existing = None
+    if existing is not None:
+        _require(existing == data, 'MASSIVE_SESSION_MANIFEST_CHANGED')
+        return
+    temporary = '.' + name + '.' + secrets.token_hex(8) + '.tmp'
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                 0o600, dir_fd=directory)
+    published = False
+    try:
+        try:
+            view = memoryview(data)
+            while view:
+                count = os.write(fd, view)
+                _require(count > 0, 'MASSIVE_SESSION_MANIFEST_WRITE')
+                view = view[count:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        try:
+            os.stat(name, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            pass
+        else:
+            _require(False, 'MASSIVE_SESSION_MANIFEST_CHANGED')
+        os.rename(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
+        published = True
+    finally:
+        if not published:
+            try:
+                os.unlink(temporary, dir_fd=directory)
+            except OSError:
+                pass
+    os.fsync(directory)
+
+
+def _empty_unready(child):
+    """Ready is published before any append, so an unready session must hold
+    no evidence. Anything beyond initialization artifacts stays fail-closed.
+    Returns True when no index needs inspection (absent, or one empty file)."""
+    count = 0
+    index = set()
+    index_size = None
+    with os.scandir(child) as entries:
+        for entry in entries:
+            count += 1
+            _require(count <= _UNREADY_ENTRY_LIMIT, 'MASSIVE_SESSION_NOT_READY')
+            info = entry.stat(follow_symlinks=False)
+            _require(info.st_uid == os.geteuid() and not info.st_mode & 0o077,
+                     'MASSIVE_SESSION_FILE_UNSAFE')
+            if entry.name in ('raw', 'receipts'):
+                _require(stat.S_ISDIR(info.st_mode), 'MASSIVE_SESSION_FILE_UNSAFE')
+                evidence = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=child)
+                try:
+                    _require(not os.listdir(evidence), 'MASSIVE_SESSION_NOT_READY')
+                finally:
+                    os.close(evidence)
+                continue
+            _require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, 'MASSIVE_SESSION_FILE_UNSAFE')
+            if entry.name in _UNREADY_INDEX:
+                index.add(entry.name)
+                if entry.name == 'sequence.sqlite3':
+                    index_size = info.st_size
+                continue
+            _require(entry.name in _UNREADY_FILES or _TEMPORARY.fullmatch(entry.name) is not None,
+                     'MASSIVE_SESSION_NOT_READY')
+    return not index or (index == {'sequence.sqlite3'} and index_size == 0)
 
 
 class SessionJournalRoot:
@@ -190,7 +277,7 @@ class SessionJournalRoot:
                     info = os.fstat(child)
                     _require(info.st_uid == os.geteuid() and not info.st_mode & 0o077,
                              'MASSIVE_SESSION_DIRECTORY_UNSAFE')
-                    _immutable(child, 'session.json', {'schema': 'MASSIVE_SESSION_V1', 'epoch': self.epoch,
+                    _atomic_immutable(child, 'session.json', {'schema': 'MASSIVE_SESSION_V1', 'epoch': self.epoch,
                                                       'session': session, 'symbols': sorted(symbols),
                                                       'device': info.st_dev, 'inode': info.st_ino})
                 finally:
@@ -201,6 +288,18 @@ class SessionJournalRoot:
 
     def mark_ready(self, session):
         session = _session(session)
+        # Readers hold the shared catalog lock for a whole poll. Wait a bounded
+        # time for the exclusive lock instead of leaving the session unready.
+        deadline = time.monotonic() + READY_LOCK_WAIT_SECONDS
+        while True:
+            try:
+                return self._mark_ready(session)
+            except SourceUnavailable as exc:
+                if str(exc) != 'MASSIVE_MAINTENANCE_BUSY' or time.monotonic() >= deadline:
+                    raise
+            time.sleep(READY_LOCK_POLL_SECONDS)
+
+    def _mark_ready(self, session):
         with journal_access(self.root, exclusive=True):
             directory = _open_directory(self.root)
             try:
@@ -211,9 +310,52 @@ class SessionJournalRoot:
                 child = os.open('session_date=' + session, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                                 dir_fd=directory)
                 try:
-                    _immutable(child, 'ready.json', {'epoch': self.epoch, 'session': session})
+                    _atomic_immutable(child, 'ready.json', {'epoch': self.epoch, 'session': session})
                 finally:
                     os.close(child)
+            finally:
+                os.close(directory)
+
+    def _readiness(self, directory, session):
+        """True when published ready; False only for a verifiably empty unready session."""
+        child = os.open('session_date=' + session, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=directory)
+        try:
+            info = os.fstat(child)
+            _require(info.st_uid == os.geteuid() and not info.st_mode & 0o077,
+                     'MASSIVE_SESSION_DIRECTORY_UNSAFE')
+            try:
+                ready = _load_json(_private_file(child, 'ready.json'))
+            except FileNotFoundError:
+                ready = None
+            if ready is not None:
+                self._manifest(directory, session)
+                _require(ready == {'epoch': self.epoch, 'session': session}, 'MASSIVE_SESSION_READY_MISMATCH')
+                return True
+            try:
+                os.stat('session.json', dir_fd=child, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                self._manifest(directory, session)
+            settled = _empty_unready(child)
+        finally:
+            os.close(child)
+        if not settled:
+            # An initialized but unpublished index must verifiably hold no receipt.
+            journal = MassiveJournal.open_reader(self.session_path(session))
+            with journal._connect() as db:
+                _require(journal._bounds(db) == (0, 0), 'MASSIVE_SESSION_NOT_READY')
+        return False
+
+    def ready_sessions(self):
+        """Published sessions only. A verifiably empty unready session is skipped;
+        an unready session holding any evidence refuses the whole catalog."""
+        with journal_access(self.root):
+            directory = _open_directory(self.root)
+            try:
+                self._verify(directory)
+                return tuple(day for day in self._names(directory) if self._readiness(directory, day))
             finally:
                 os.close(directory)
 
@@ -236,7 +378,7 @@ class SessionJournalRoot:
                     try:
                         ready = _load_json(_private_file(child, 'ready.json'))
                     except FileNotFoundError:
-                        _require(False, 'MASSIVE_SESSION_NOT_READY')
+                        raise SourceUnavailable('MASSIVE_SESSION_NOT_READY') from None
                     _require(ready == {'epoch': self.epoch, 'session': session},
                              'MASSIVE_SESSION_READY_MISMATCH')
                 finally:

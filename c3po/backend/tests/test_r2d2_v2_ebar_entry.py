@@ -77,14 +77,14 @@ def test_entry_quote_guards_never_substitute_trade_or_later_quote(monkeypatch,ch
     assert not state['ledger']['research'] and not session['entries_pending']
 
 
-def test_restart_after_entry_can_use_only_quote_previously_observed(monkeypatch):
+def test_restart_uses_provider_quote_available_by_entry_even_when_read_later(monkeypatch):
     collector,state,session,entry,journals=pending(monkeypatch)
     at=utc(entry['entry_at']);before=(at-timedelta(seconds=5)).isoformat()
     collector._entries(state,journals,session,{},[quote(before)],utc(before))
     assert journals[-1]['type']=='ENTRY_QUOTE_OBSERVED'
     state=deepcopy(state);session=state['sessions'][DAY]
     collector._entries(state,journals,session,{},[quote(at.isoformat(),bid=200.,ask=200.)],at+timedelta(seconds=1))
-    assert next(iter(state['ledger']['research'].values()))['geometry']['P']==101.05
+    assert next(iter(state['ledger']['research'].values()))['geometry']['P']==200.
 
 
 def test_source_capability_alone_does_not_activate_ebar():
@@ -155,3 +155,25 @@ def test_restart_next_session_finishes_missing_entry_without_rescheduling(monkey
     assert not state['sessions'][DAY]['entries_pending']
     assert state['sessions'][DAY]['candidates'][INSTRUMENT]['entry_reason']=='ENTRY_QUOTE_MISSING'
     assert not state['ledger']['research']
+
+
+@pytest.mark.parametrize('delay',[0,1,45])
+def test_spooled_quote_entry_is_poll_cadence_independent(monkeypatch,delay):
+    collector,state,session,entry,journals=pending(monkeypatch)
+    at=utc(entry['entry_at'])
+    q=quote((at-timedelta(seconds=1)).isoformat(),bid=100.,ask=100.)
+    collector._entries(state,journals,session,{},[q],at+timedelta(seconds=delay))
+    record=next(iter(state['ledger']['research'].values()))
+    assert record['geometry']['P']==100. and record['opened_at']==at.isoformat()
+
+
+def test_later_snapshot_does_not_gain_spool_receipt_authority(monkeypatch):
+    collector,state,session,entry,journals=pending(monkeypatch)
+    entry['quote']=None
+    at=utc(entry['entry_at'])
+    row=batch()['universe']['instruments'][0]
+    row['quote']={'bid':100.,'ask':100.,'available_at':at.isoformat(),
+        'entry_evidence':'IMMUTABLE_EVENT',
+        'bid_source_at':at.isoformat(),'ask_source_at':at.isoformat()}
+    collector._entries(state,journals,session,{'universe':{'instruments':[row]}},[],at+timedelta(seconds=1))
+    assert journals[-1]['reason']=='ENTRY_QUOTE_MISSING'

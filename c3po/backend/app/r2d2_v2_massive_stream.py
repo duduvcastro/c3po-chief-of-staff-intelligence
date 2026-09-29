@@ -24,7 +24,9 @@ class MassiveStreamState:
         self._lock = RLock()
         self.symbols = frozenset(symbols)
         self.calendar, self.sink = calendar, sink
+        self.session = getattr(sink, 'session', None)
         self.connected_at = None
+        self.storage_stopped = False
         self.seen = {}
         self.sealed = set()
         self.reject_before_ms = None
@@ -37,8 +39,15 @@ class MassiveStreamState:
 
     @serialized
     def gap(self, at, reason):
+        if getattr(self.sink, 'storage_stopped', False):
+            self.connected_at = None
+            self.storage_stopped = True
+            return
         _require(isinstance(at,datetime) and at.utcoffset() is not None,'STREAM_CLOCK')
         day = at.astimezone(ZoneInfo('America/New_York')).date()
+        if self.session is not None and day.isoformat() != self.session:
+            self.connected_at = None
+            return
         if not self.calendar.is_session(day):
             self.connected_at = None
             return
@@ -93,7 +102,11 @@ class MassiveStreamState:
 
     @serialized
     def frame(self, data, received_at):
-        _require(self.connected_at is not None,'STREAM_DISCONNECTED')
+        connected_at = self.connected_at
+        if connected_at is None:
+            raise SourceUnavailable('STREAM_DISCONNECTED')
+        received_day = received_at.astimezone(ZoneInfo('America/New_York')).date().isoformat()
+        _require(self.session is None or received_day == self.session, 'STREAM_RECEIPT_SESSION_MISMATCH')
         _require(type(data) is bytes and 0 < len(data) <= MAX_RESPONSE_BYTES,'STREAM_FRAME_SIZE')
         parsed = _load_json(b'{"rows":'+data+b'}')
         _require(set(parsed)=={'rows'} and type(parsed['rows']) is list and len(parsed['rows'])<=4096,'STREAM_FRAME')
@@ -120,6 +133,18 @@ class MassiveStreamState:
             if not session['open'] <= minute < session['close']:
                 continue  # AM also carries extended-hours data; research is RTH.
 
+            if day.isoformat() != (self.session or received_day):
+                # The rejected provider timestamp is evidence, not the journal
+                # session. Report feed failure at its actual receipt clock.
+                event = dict(type='DATA_GAP', at=received_at.isoformat(), available_at=received_at.isoformat(),
+                             session=received_day, instrument_key='US:' + row['sym'],
+                             reason='MASSIVE_CROSS_SESSION_BAR')
+                _validate_event(event, received_at)
+                self.sink(data, dict(event=event, raw_sha256=hashlib.sha256(data).hexdigest(),
+                                    raw_bytes=len(data), frame_index=index, rejected_minute=minute.isoformat(),
+                                    provenance='MASSIVE_STREAM_CROSS_SESSION'))
+                continue
+
             key=(row['sym'],row['s'])
             if self.reject_before_ms is not None and row['s']<self.reject_before_ms:
                 continue
@@ -127,7 +152,7 @@ class MassiveStreamState:
                 continue  # A declared gap must not be filled by a late frame.
             try:
                 result=massive_stream_minute(canonical([row]),symbol=row['sym'],minute=minute,
-                    received_at=received_at,now=received_at,calendar=self.calendar,connected_at=self.connected_at)
+                    received_at=received_at,now=received_at,calendar=self.calendar,connected_at=connected_at)
             except SourceUnavailable as exc:
                 connection_gap = str(exc) == 'MINUTE_CONNECTION_GAP'
                 event = dict(type='DATA_GAP',

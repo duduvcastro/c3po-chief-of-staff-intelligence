@@ -118,13 +118,29 @@ def test_bar_off_retains_original_ninety_seconds_from_coverage():
 
 
 @pytest.mark.parametrize('terminal_fraction',[0,1])
-def test_late_bar_ending_at_or_before_terminal_cannot_keep_false_target(terminal_fraction):
+@pytest.mark.parametrize('bar_enabled',[False,True])
+def test_late_bar_policy_is_gated_and_flag_off_preserves_baseline(terminal_fraction,bar_enabled):
     _,state,_=setup_state()
     boundary=START+timedelta(minutes=1)
     trade=event('TRADE',boundary+timedelta(microseconds=terminal_fraction),boundary+timedelta(microseconds=terminal_fraction),price=110.)
     state['ledger'],_=apply_events(state['ledger'],[trade])
     cash=state['ledger']['cash']
-    state['ledger'],_=apply_events(state['ledger'],[bar(START,boundary+timedelta(seconds=10),low=90.)])
+    state['ledger'],_=apply_events(state['ledger'],[{**bar(START,boundary+timedelta(seconds=10),low=90.),
+        **({'minute_bar_evidence':True} if bar_enabled else {})}])
     row=state['ledger']['research']['synthetic-entry']
-    assert row['exit_cause']=='TARGET' and row['category']=='unobservable' and row['order_unknown']
+    assert row['exit_cause']=='TARGET'
+    assert row['category']==('unobservable' if bar_enabled else 'upper_first')
+    assert row['order_unknown'] is bar_enabled
     assert state['ledger']['cash']==cash
+
+
+@pytest.mark.parametrize('bar_enabled',[False,True])
+def test_historical_gap_scoping_preserves_flag_off_baseline(bar_enabled):
+    collector,state,_=setup_state()
+    collector.source=type('Capability',(),{'minute_bar_enabled':bar_enabled})()
+    at=datetime.fromisoformat(state['ledger']['research']['synthetic-entry']['opened_at'])-timedelta(seconds=1)
+    journals=[]
+    collector._gap(state,journals,START,DAY,'SYNTHETIC_OLD_GAP',gap_at=at,
+        instrument=INSTRUMENT,issue_session='2026-09-04')
+    assert state['data_issues'][-1]['session']==('2026-09-04' if bar_enabled else DAY)
+    assert bool(journals[-1]['events']) is (not bar_enabled)

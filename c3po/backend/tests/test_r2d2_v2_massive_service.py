@@ -127,8 +127,89 @@ def test_explicit_entrypoint_loads_private_manifest_and_external_token(tmp_path,
     monkeypatch.setattr(producer,'run_session',session)
     assert producer.main(['--manifest',str(manifest),'--journal-root',str(tmp_path),
                           '--token-env','OFFLINE_TEST_MASSIVE_KEY'])==0
-    assert calls==[(str(tmp_path),payload,'private-fixture')]
+    assert calls==[(tmp_path,payload,'private-fixture')] and type(calls[0][0]) is not str
+    assert 'OFFLINE_TEST_MASSIVE_KEY' not in os.environ
     assert 'private-fixture' not in capsys.readouterr().out
+
+
+def test_entrypoint_end_to_end_reaches_provider_and_journals(tmp_path,calendar,monkeypatch,capsys):
+    import signal
+    from types import SimpleNamespace
+    from app import r2d2_v2_massive_producer as producer
+    from app.r2d2_v2_massive_sessions import SessionJournalRoot
+    monkeypatch.setattr(producer.os,'fstatvfs',lambda fd:SimpleNamespace(
+        f_bavail=producer.MIN_SESSION_FREE_BYTES,f_frsize=1))
+    root=tmp_path.resolve()/'journal';root.mkdir(mode=0o700)
+    manifest=tmp_path/'daily.json'
+    manifest.write_text(json.dumps({'epoch':'offline-epoch','session':MINUTE.date().isoformat(),
+                                    'symbols':['AAPL'],'owner_uid':os.geteuid()}));manifest.chmod(0o600)
+    monkeypatch.setenv('OFFLINE_TEST_MASSIVE_KEY','private-fixture')
+    socket=Socket(['[{"ev":"status","status":"auth_success"}]']);connects=[]
+    def recv(timeout):
+        if socket.frames:return socket.frames.pop(0)
+        signal.raise_signal(signal.SIGTERM)  # the supervisor's stop, via the real handler
+        raise TimeoutError()
+    socket.recv=recv
+    def connect(uri,**options):connects.append(uri);return socket
+    handler=signal.getsignal(signal.SIGTERM)
+    assert producer.main(['--manifest',str(manifest),'--journal-root',str(root),
+                          '--token-env','OFFLINE_TEST_MASSIVE_KEY'],
+                         utcnow=lambda:MINUTE,monotonic=lambda:0,connector=connect)==0
+    out=capsys.readouterr().out
+    statuses=[json.loads(line)['status'] for line in out.splitlines()]
+    assert statuses[0]=='STARTING' and statuses[-1]=='STOPPED' and 'FAILED' not in statuses
+    assert connects==['wss://socket.massive.com/stocks'] and socket.closed
+    assert socket.sent[0]=={'action':'auth','params':'private-fixture'}
+    assert socket.sent[1]=={'action':'subscribe','params':'AM.AAPL'}
+    records=SessionJournalRoot(root,'offline-epoch').open_session(MINUTE.date().isoformat()).page()['records']
+    assert records and records[0]['sequence']==1
+    assert 'private-fixture' not in out and 'OFFLINE_TEST_MASSIVE_KEY' not in os.environ
+    assert signal.getsignal(signal.SIGTERM) is handler
+
+
+def test_entrypoint_relative_root_refuses_before_service(tmp_path,monkeypatch,capsys):
+    from app import r2d2_v2_massive_producer as producer
+    monkeypatch.setattr(producer,'run_session',lambda *a,**k:pytest.fail('relative root reached service'))
+    assert producer.main(['--manifest',str(tmp_path/'daily.json'),'--journal-root','journal'])==1
+    assert json.loads(capsys.readouterr().out)=={'status':'FAILED','reason':'MASSIVE_SERVICE_FAILURE',
+                                                 'code':'MASSIVE_SERVICE_ROOT'}
+
+
+def test_entrypoint_surfaces_constant_code_from_real_session(tmp_path,monkeypatch,capsys):
+    import fcntl
+    from app import r2d2_v2_massive_producer as producer
+    manifest=tmp_path/'daily.json'
+    manifest.write_text(json.dumps({'epoch':'offline-epoch','session':MINUTE.date().isoformat(),
+                                    'symbols':['AAPL'],'owner_uid':os.geteuid()}));manifest.chmod(0o600)
+    monkeypatch.setenv('OFFLINE_TEST_MASSIVE_KEY','private-fixture')
+    root=tmp_path.resolve();lock=root/'producer.lock';lock.touch(mode=0o600)
+    with lock.open('r') as held:
+        fcntl.flock(held,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        assert producer.main(['--manifest',str(manifest),'--journal-root',str(root),
+                              '--token-env','OFFLINE_TEST_MASSIVE_KEY'],utcnow=lambda:MINUTE,
+                             monotonic=lambda:0,
+                             connector=lambda *a,**k:pytest.fail('second producer opened provider'))==1
+    failed=[json.loads(line) for line in capsys.readouterr().out.splitlines()
+            if json.loads(line)['status']=='FAILED']
+    assert failed==[{'status':'FAILED','session':MINUTE.date().isoformat(),
+                     'code':'MASSIVE_PRODUCER_ALREADY_RUNNING'},
+                    {'status':'FAILED','reason':'MASSIVE_SERVICE_FAILURE',
+                     'code':'MASSIVE_PRODUCER_ALREADY_RUNNING'}]
+
+
+@pytest.mark.parametrize('error',[ValueError('fixture-private-token'),ValueError('PROVIDER_TEXT_NOT_A_CODE'),
+                                  RuntimeError('MASSIVE_PRODUCER_ALREADY_RUNNING'),
+                                  ValueError('MASSIVE_PRODUCER_ALREADY_RUNNING','extra'),
+                                  OSError(13,'/private/secret/path')])
+def test_failure_notice_omits_nonconstant_exception_text(tmp_path,calendar,monkeypatch,error):
+    def fail(*args,**kwargs):raise error
+    monkeypatch.setattr('app.r2d2_v2_massive_producer._run_session_root',fail)
+    notices=[]
+    with pytest.raises(SourceUnavailable,match='^MASSIVE_SERVICE_FAILURE$'):
+        run_session(tmp_path,{'epoch':'offline-epoch','session':MINUTE.date().isoformat(),'symbols':['AAPL'],
+                    'owner_uid':os.geteuid()},calendar,lambda:'fixture',utcnow=lambda:MINUTE,
+                    monotonic=lambda:0,stop=lambda:False,supervisor=notices.append)
+    assert notices[-1]=={'status':'FAILED','session':MINUTE.date().isoformat()}
 
 
 def test_entrypoint_rejects_writable_manifest_before_service(tmp_path,monkeypatch,capsys):
@@ -224,7 +305,7 @@ def test_session_reports_measured_storage_delta_at_exact_free_floor(tmp_path,cal
         f_bavail=producer.MIN_SESSION_FREE_BYTES,f_frsize=1))
     clock=[0];notices=[];socket=Socket([])
     # Stop after entry, so the real producer writes a durable local gap only.
-    def stop():clock[0]+=1;return clock[0]>1
+    def stop():clock[0]+=1;return clock[0]>2
     result=producer.run_session(tmp_path,{'epoch':'offline-epoch','session':MINUTE.date().isoformat(),
         'symbols':['AAPL'],'owner_uid':os.geteuid()},calendar,lambda:'fixture',
         utcnow=lambda:MINUTE,monotonic=lambda:0,stop=stop,supervisor=notices.append,
@@ -316,7 +397,7 @@ def test_daily_indexes_preserve_prior_bytes_and_measure_aggregate(tmp_path,calen
     notices=[]
     def daily(now,symbol):
         stops=[0]
-        def stop():stops[0]+=1;return stops[0]>1
+        def stop():stops[0]+=1;return stops[0]>2
         return producer.run_session(tmp_path,{'epoch':'offline-epoch','session':now.date().isoformat(),
             'symbols':[symbol],'owner_uid':os.geteuid()},calendar,lambda:'fixture',
             utcnow=lambda:now,monotonic=lambda:0,stop=stop,supervisor=notices.append,
@@ -382,7 +463,7 @@ def test_session_ready_publication_exposes_complete_journal_to_reader(tmp_path,c
     monkeypatch.setattr(producer.os,'fstatvfs',lambda fd:SimpleNamespace(
         f_bavail=producer.MIN_SESSION_FREE_BYTES,f_frsize=1))
     stops=[0]
-    def stop():stops[0]+=1;return stops[0]>1
+    def stop():stops[0]+=1;return stops[0]>2
     producer.run_session(tmp_path,{'epoch':'offline-epoch','session':MINUTE.date().isoformat(),
         'symbols':['AAPL'],'owner_uid':os.geteuid()},calendar,lambda:'fixture',
         utcnow=lambda:MINUTE,monotonic=lambda:0,stop=stop,supervisor=lambda n:None,

@@ -8,6 +8,8 @@ import fcntl
 import os
 import re
 import stat
+from typing import cast
+from pathlib import Path
 from zoneinfo import ZoneInfo
 from .r2d2_v2_sources import SourceUnavailable, _open_directory
 from .r2d2_v2_massive_journal import MassiveJournal
@@ -22,6 +24,31 @@ MIN_SESSION_FREE_BYTES=50*1024**3
 MAX_SESSION_EVIDENCE_BYTES=512*1024**2
 MAX_SESSION_INDEX_BYTES=64*1024**2
 MAX_SESSION_EVIDENCE_FILES=500_000
+_CODE=re.compile(r'[A-Z][A-Z0-9_]{0,79}')
+_CODE_MODULES=('r2d2_v2_sources','r2d2_v2_calendar','r2d2_v2_minute_bars',
+               'r2d2_v2_massive_journal','r2d2_v2_massive_maintenance','r2d2_v2_massive_stream',
+               'r2d2_v2_massive_recovery','r2d2_v2_massive_scheduler','r2d2_v2_massive_transport',
+               'r2d2_v2_massive_sessions','r2d2_v2_massive_producer')
+_codes=None
+
+
+def _failure_code(error):
+    """Constant diagnostic literal from these modules; never free exception text."""
+    global _codes
+    try:
+        args=error.args
+        if not (isinstance(error,ValueError) and len(args)==1 and type(args[0]) is str
+                and _CODE.fullmatch(args[0])):return None
+        if _codes is None:
+            import importlib,inspect
+            found=set()
+            for name in _CODE_MODULES:
+                source=inspect.getsource(importlib.import_module('.'+name,__package__))
+                found.update(re.findall(r'''['"]([A-Z][A-Z0-9_]{0,79})['"]''',source))
+            _codes=frozenset(found)
+        return args[0] if args[0] in _codes else None
+    except Exception:
+        return None
 
 
 def _storage_usage(directory, *, sessions=False):
@@ -83,10 +110,10 @@ def _storage_refusal(usage):
     return None
 
 
-def run_producer(root,symbols,calendar,token,*,utcnow,monotonic,stop,connector=None,max_seconds=8*3600, session_monitor=None, journal_ready=None):
+def run_producer(root,symbols,calendar,token,*,utcnow,monotonic,stop,connector=None,max_seconds=8*3600, session_monitor=None, journal_ready=None, start_allowed=None):
     with journal_access(root,create=True):
         return _run_producer(root,symbols,calendar,token,utcnow=utcnow,monotonic=monotonic,
-                             stop=stop,connector=connector,max_seconds=max_seconds,session_monitor=session_monitor,journal_ready=journal_ready)
+                             stop=stop,connector=connector,max_seconds=max_seconds,session_monitor=session_monitor,journal_ready=journal_ready,start_allowed=start_allowed)
 
 
 @contextmanager
@@ -131,16 +158,17 @@ def _producer_directory(root):
         os.close(directory)
 
 
-def _run_producer(root,symbols,calendar,token,*,utcnow,monotonic,stop,connector=None,max_seconds=8*3600, session_monitor=None, journal_ready=None):
+def _run_producer(root,symbols,calendar,token,*,utcnow,monotonic,stop,connector=None,max_seconds=8*3600, session_monitor=None, journal_ready=None, start_allowed=None):
     with _producer_directory(root) as directory:
         return _run_locked_producer(root,directory,symbols,calendar,token,utcnow=utcnow,
             monotonic=monotonic,stop=stop,connector=connector,max_seconds=max_seconds,
-            session_monitor=session_monitor,journal_ready=journal_ready)
+            session_monitor=session_monitor,journal_ready=journal_ready,start_allowed=start_allowed)
 
 
 def _run_locked_producer(root,directory,symbols,calendar,token,*,utcnow,monotonic,stop,
-                         connector,max_seconds,session_monitor,journal_ready):
+                         connector,max_seconds,session_monitor,journal_ready,start_allowed):
     budget_before=None
+    budget_session=None
     try:
         if session_monitor is not None:
             budget_session=utcnow().astimezone(ZoneInfo('America/New_York')).date().isoformat()
@@ -165,15 +193,18 @@ def _run_locked_producer(root,directory,symbols,calendar,token,*,utcnow,monotoni
         state=MassiveStreamState(symbols,calendar,journal)
         now=utcnow();session=now.astimezone(ZoneInfo('America/New_York')).date().isoformat()
         recovered=restore_stream(state,journal,session=session,now=now,allow_prior_sessions=True)
+        if state.storage_stopped:
+            raise SourceUnavailable('MASSIVE_STORAGE_CAPACITY')
+        journal.configure_storage_reserve(symbols, session=session)
         if recovered['records']:
             # Recovery proves retained evidence, never uninterrupted reception.
             state.gap(now,'MASSIVE_PRODUCER_RESTART')
-        scheduler=MinuteExpiry(state,now)
+        scheduler=MinuteExpiry(state,now,monotonic=monotonic)
         result=run_connection(state,token,utcnow=utcnow,monotonic=monotonic,
-                              tick=scheduler,stop=stop,connector=connector,max_seconds=max_seconds)
+                              tick=scheduler,stop=stop,connector=connector,max_seconds=max_seconds,start_allowed=start_allowed)
         return {'status':result,'recovered_records':recovered['records']}
     finally:
-        if budget_before is not None:
+        if budget_before is not None and session_monitor is not None and budget_session is not None:
             after=None
             try:
                 after=_storage_usage(directory)
@@ -190,7 +221,7 @@ def _run_locked_producer(root,directory,symbols,calendar,token,*,utcnow,monotoni
                 'review_after_sessions':3})
 
 
-def run_session(root, manifest, calendar, token_provider, *, utcnow, monotonic,
+def run_session(root: Path, manifest, calendar, token_provider, *, utcnow, monotonic,
                 stop, supervisor, connector=None):
     """Run one explicitly invoked daily session under the producer lock.
 
@@ -207,14 +238,14 @@ def run_session(root, manifest, calendar, token_provider, *, utcnow, monotonic,
              'MASSIVE_SERVICE_MANIFEST')
     _require(type(manifest['owner_uid']) is int and manifest['owner_uid']==os.geteuid(),
              'MASSIVE_SERVICE_OWNER')
-    _require(type(manifest['epoch']) is str and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}',manifest['epoch']) is not None,
+    _require(type(manifest['epoch']) is str and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}',cast(str,manifest['epoch'])) is not None,
              'MASSIVE_SERVICE_EPOCH')
     epoch=manifest['epoch']
     symbols=manifest['symbols']
     _require(type(symbols) is list and 0<len(symbols)<=550 and
              all(type(s) is str and _SYMBOL.fullmatch(s) for s in symbols) and
              len(set(symbols))==len(symbols), 'MASSIVE_SERVICE_SYMBOLS')
-    symbols=list(symbols)  # Freeze the approved daily list before secret loading.
+    symbols=list(cast(list[str],symbols))  # Freeze the approved daily list before secret loading.
     now=utcnow()
     _require(isinstance(now,datetime) and now.utcoffset() is not None,'MASSIVE_SERVICE_CLOCK')
     day=now.astimezone(ZoneInfo('America/New_York')).date()
@@ -222,9 +253,11 @@ def run_session(root, manifest, calendar, token_provider, *, utcnow, monotonic,
              'MASSIVE_SERVICE_SESSION')
     details=calendar.details(day)
     # Keep receiving through the final bar's 90-second post-close allowance.
+    not_before=details['open']-timedelta(seconds=60)
     deadline=details['close']+timedelta(seconds=91)
     seconds=(deadline-now).total_seconds()
-    _require(now<details['close'] and 0<seconds<=8*3600,'MASSIVE_SERVICE_WINDOW')
+    monotonic_deadline=monotonic()+seconds
+    _require(not_before<=now<details['close'] and 0<seconds<=8*3600,'MASSIVE_SERVICE_WINDOW')
     _require(callable(token_provider) and callable(supervisor),'MASSIVE_SERVICE_DEPENDENCIES')
     if stop():
         supervisor({'status':'STOPPED','session':day.isoformat()})
@@ -235,26 +268,33 @@ def run_session(root, manifest, calendar, token_provider, *, utcnow, monotonic,
     except Exception:
         pass
     _require(isinstance(token,str) and bool(token) and len(token)<=4096,'STREAM_AUTH_REQUIRED')
+    if stop():
+        supervisor({'status':'STOPPED','session':day.isoformat()})
+        return {'status':'STOPPED','recovered_records':0}
+    _require(not_before<=utcnow()<details['close'] and monotonic()<monotonic_deadline,'MASSIVE_SERVICE_WINDOW')
     supervisor({'status':'STARTING','session':day.isoformat(),
                 'symbols':len(symbols),'deadline':deadline.isoformat()})
-    result=None
+    result=None;code=None
     try:
         result=_run_session_root(root,epoch,day.isoformat(),symbols,calendar,token,
-            utcnow=utcnow,monotonic=monotonic,stop=lambda:stop() or utcnow()>=deadline,
-            connector=connector,max_seconds=seconds,supervisor=supervisor)
-    except Exception:
-        pass
+            utcnow=utcnow,monotonic=monotonic,stop=lambda:stop() or monotonic()>=monotonic_deadline,
+            connector=connector,max_seconds=seconds,supervisor=supervisor,
+            start_allowed=lambda:not_before<=utcnow()<details['close'] and monotonic()<monotonic_deadline)
+    except Exception as error:
+        code=_failure_code(error)
     finally:
         token=None
     if result is None:
-        supervisor({'status':'FAILED','session':day.isoformat()})
-        raise SourceUnavailable('MASSIVE_SERVICE_FAILURE')
+        failed={'status':'FAILED','session':day.isoformat()}
+        if code:failed['code']=code
+        supervisor(failed)
+        raise SourceUnavailable(code or 'MASSIVE_SERVICE_FAILURE')
     supervisor({'status':result['status'],'session':day.isoformat()})
     return result
 
 
 def _run_session_root(root,epoch,session,symbols,calendar,token,*,utcnow,monotonic,
-                      stop,connector,max_seconds,supervisor):
+                      stop,connector,max_seconds,supervisor,start_allowed=None):
     from .r2d2_v2_massive_sessions import SessionJournalRoot
     # This parent lock prevents concurrent processes opening different daily
     # children. Child producer/maintenance locks retain their existing semantics.
@@ -276,7 +316,7 @@ def _run_session_root(root,epoch,session,symbols,calendar,token,*,utcnow,monoton
             child=journals.prepare_session(session,symbols)
             return run_producer(child,symbols,calendar,token,utcnow=utcnow,monotonic=monotonic,
                 stop=stop,connector=connector,max_seconds=max_seconds,session_monitor=supervisor,
-                journal_ready=lambda:journals.mark_ready(session))
+                journal_ready=lambda:journals.mark_ready(session),start_allowed=start_allowed)
         finally:
             after=None
             try:
@@ -292,8 +332,12 @@ def _run_session_root(root,epoch,session,symbols,calendar,token,*,utcnow,monoton
             if after is None:raise SourceUnavailable('MASSIVE_SERVICE_STORAGE_UNVERIFIED')
 
 
-def main(argv=None):
-    """Explicit one-session process entrypoint for an external supervisor."""
+def main(argv=None,*,utcnow=None,monotonic=None,connector=None):
+    """Explicit one-session process entrypoint for an external supervisor.
+
+    Keyword seams exist for offline tests only; the CLI uses the wall clock and
+    the default provider connector.
+    """
     import argparse
     import json
     import signal
@@ -304,8 +348,8 @@ def main(argv=None):
     from .r2d2_v2_sources import _load_json, _require
 
     parser=argparse.ArgumentParser(description='Run one approved Massive daily session')
-    parser.add_argument('--journal-root',required=True)
-    parser.add_argument('--manifest',required=True)
+    parser.add_argument('--journal-root',required=True,type=Path)
+    parser.add_argument('--manifest',required=True,type=Path)
     parser.add_argument('--token-env',default='MASSIVE_API_KEY')
     args=parser.parse_args(argv)
     stopped=Event()
@@ -313,6 +357,8 @@ def main(argv=None):
     def notice(event):
         print(json.dumps(event,sort_keys=True),flush=True)
     try:
+        # Descriptor walks start at '/'; a relative root would silently re-anchor.
+        _require(args.journal_root.is_absolute(),'MASSIVE_SERVICE_ROOT')
         # Private regular manifest, bounded read, no symlink/FIFO following.
         fd=os.open(args.manifest,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
         try:
@@ -325,14 +371,20 @@ def main(argv=None):
             os.close(fd)
         for sig in (signal.SIGINT,signal.SIGTERM):
             previous[sig]=signal.signal(sig,lambda *_:stopped.set())
+        # The secret leaves the process environment once read.
         result=run_session(args.journal_root,manifest,ShadowCalendar(),
-                           lambda:os.environ.get(args.token_env),
-                           utcnow=lambda:datetime.now(timezone.utc),monotonic=time.monotonic,
-                           stop=stopped.is_set,supervisor=notice)
+                           lambda:os.environ.pop(args.token_env,None),
+                           utcnow=utcnow or (lambda:datetime.now(timezone.utc)),
+                           monotonic=monotonic or time.monotonic,
+                           stop=stopped.is_set,supervisor=notice,connector=connector)
         return 0 if result['status'] in ('STOPPED','SESSION_LIMIT') else 1
-    except Exception:
-        # Never serialize exceptions, their traceback, manifest or credentials.
-        notice({'status':'FAILED','reason':'MASSIVE_SERVICE_FAILURE'})
+    except Exception as error:
+        # Never serialize exceptions, their traceback, manifest or credentials;
+        # only a constant diagnostic literal defined in these modules.
+        failed={'status':'FAILED','reason':'MASSIVE_SERVICE_FAILURE'}
+        code=_failure_code(error)
+        if code and code!=failed['reason']:failed['code']=code
+        notice(failed)
         return 1
     finally:
         for sig,handler in previous.items():

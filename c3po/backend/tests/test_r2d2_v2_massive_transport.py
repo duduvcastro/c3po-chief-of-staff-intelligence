@@ -50,10 +50,10 @@ def test_data_before_auth_rejected():
 
 def test_real_connection_wrapper_limits_and_no_token_in_url_or_options():
  from app.r2d2_v2_massive_transport import run_connection
- calls=[];ws=Socket([]);state=State()
- def connect(uri,**options):calls.append((uri,options));return ws
+ calls=[];ws=Socket([]);state=State();stopped=[False]
+ def connect(uri,**options):calls.append((uri,options));stopped[0]=True;return ws
  at=datetime(2026,9,28,14,tzinfo=timezone.utc)
- assert run_connection(state,'private-token',utcnow=lambda:at,monotonic=lambda:0,tick=lambda at:None,stop=lambda:True,connector=connect)=='STOPPED'
+ assert run_connection(state,'private-token',utcnow=lambda:at,monotonic=lambda:0,tick=lambda at:None,stop=lambda:stopped[0],connector=connect)=='STOPPED'
  uri,options=calls[0]
  assert uri=='wss://socket.massive.com/stocks' and 'private-token' not in str(calls)
  assert options['max_queue']==1 and options['open_timeout']==10 and options['close_timeout']==3
@@ -68,3 +68,27 @@ def test_connect_failure_typed_without_retry_or_secret():
  with pytest.raises(SourceUnavailable,match='^MASSIVE_CONNECT_FAILURE$'):
   run_connection(state,'private-token',utcnow=lambda:at,monotonic=lambda:0,tick=lambda at:None,stop=lambda:False,connector=connect)
  assert calls==[1] and state.gaps==['MASSIVE_CONNECT_FAILURE']
+
+
+def test_stop_before_connector_never_opens_or_authenticates():
+ from app.r2d2_v2_massive_transport import run_connection
+ state=State();at=datetime(2026,9,28,14,tzinfo=timezone.utc)
+ def forbidden(*a,**k):pytest.fail('opened after stop')
+ assert run_connection(state,'private-token',utcnow=lambda:at,monotonic=lambda:0,tick=lambda at:None,stop=lambda:True,connector=forbidden)=='STOPPED'
+
+
+def test_window_expires_during_connect_never_sends_authentication():
+ from app.r2d2_v2_massive_transport import run_connection
+ state=State();socket=Socket([]);allowed=[True];at=datetime(2026,9,28,14,tzinfo=timezone.utc)
+ def connect(*a,**k):allowed[0]=False;return socket
+ with pytest.raises(SourceUnavailable):
+  run_connection(state,'private-token',utcnow=lambda:at,monotonic=lambda:0,tick=lambda at:None,stop=lambda:False,start_allowed=lambda:allowed[0],connector=connect)
+ assert socket.closed and socket.sent==[]
+
+
+def test_stop_during_auth_receive_never_subscribes():
+ state=State();socket=Socket([]);stopped=[False];at=datetime(2026,9,28,14,tzinfo=timezone.utc)
+ def recv(timeout):stopped[0]=True;return '[{"ev":"status","status":"auth_success"}]'
+ socket.recv=recv
+ assert pump(socket,state,'private-token',utcnow=lambda:at,monotonic=lambda:0,tick=lambda at:None,stop=lambda:stopped[0])=='STOPPED'
+ assert [x['action'] for x in socket.sent]==['auth'] and socket.closed

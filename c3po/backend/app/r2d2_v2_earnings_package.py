@@ -45,6 +45,7 @@ PACKAGE_FILES = (
     'r2d2_v2_massive_spool.py',
     'r2d2_v2_massive_stream.py',
     'r2d2_v2_massive_transport.py',
+    'r2d2_v2_massive_supervisor.py',
     'r2d2_v2_minute_bars.py',
     'r2d2_v2_composite_source.py',
 )

@@ -417,9 +417,11 @@ def _apply_bar(state: dict[str, Any], record: dict[str, Any], event: Mapping[str
         if terminal and _time(end) > _time(record["opened_at"]) and _time(start) < _time(terminal):
             if event.get("coverage_complete") is not True:
                 _flag(record, "LATE_COVERAGE_GAP_BEFORE_EXIT", order=True)
-            elif _time(terminal) <= _time(end):
+            elif (_time(terminal) < _time(end)
+                  or event.get("minute_bar_evidence") is True and _time(terminal) == _time(end)):
                 _flag(record, "LATE_INTERVAL_OVERLAPS_EXIT", order=True)
-            elif prices["low"] <= record["geometry"]["S"] or prices["high"] >= record["geometry"]["T"]:
+            elif (event.get("minute_bar_evidence") is True
+                  and (prices["low"] <= record["geometry"]["S"] or prices["high"] >= record["geometry"]["T"])):
                 # Even a completed earlier interval can overturn first-touch
                 # classification; never silently certify a later price exit.
                 _flag(record, "LATE_BAR_BEFORE_PRICE_DECISION", order=True)

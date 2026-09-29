@@ -9,7 +9,7 @@ from .r2d2_v2_minute_bars import MAX_RESPONSE_BYTES
 
 
 def pump(socket, state, token, *, utcnow, monotonic, tick, stop, max_seconds=8*3600,
-         auth_seconds=10, idle_seconds=None):
+         auth_seconds=10, idle_seconds=None,start_allowed=None):
     _require(isinstance(token,str) and bool(token) and len(token)<=4096,'STREAM_AUTH_REQUIRED')
     _require(0<max_seconds<=8*3600 and 0<auth_seconds<=30 and
              (idle_seconds is None or 0<idle_seconds<90),'STREAM_LIMITS')
@@ -18,6 +18,9 @@ def pump(socket, state, token, *, utcnow, monotonic, tick, stop, max_seconds=8*3
     # application-idle policy is opt-in and is never used by run_connection.
     started=monotonic();last=started;authenticated=False
     try:
+        if stop():
+            tick(utcnow());state.gap(utcnow(),'MASSIVE_STOPPED');return 'STOPPED'
+        _require(start_allowed is None or start_allowed(),'MASSIVE_SERVICE_WINDOW')
         socket.send(json.dumps({'action':'auth','params':token}))
         while not stop():
             current=monotonic()
@@ -38,6 +41,7 @@ def pump(socket, state, token, *, utcnow, monotonic, tick, stop, max_seconds=8*3
             _require(type(frame) is bytes and 0<len(frame)<=MAX_RESPONSE_BYTES,'STREAM_FRAME_SIZE')
             rows=_load_json(b'{"rows":'+frame+b'}').get('rows')
             _require(type(rows) is list and len(rows)<=4096,'STREAM_FRAME')
+            assert isinstance(rows,list)  # Shape was checked before iteration.
             for row in rows:
                 _require(type(row) is dict,'STREAM_ROW')
                 if row.get('ev')=='status':
@@ -45,6 +49,9 @@ def pump(socket, state, token, *, utcnow, monotonic, tick, stop, max_seconds=8*3
                     if status not in ('connected','auth_success','success'):
                         state.gap(received,'MASSIVE_PROVIDER_REFUSAL');return 'PROVIDER_REFUSAL'
                     if status=='auth_success' and not authenticated:
+                        if stop():
+                            tick(utcnow());state.gap(utcnow(),'MASSIVE_STOPPED');return 'STOPPED'
+                        _require(start_allowed is None or start_allowed(),'MASSIVE_SERVICE_WINDOW')
                         authenticated=True
                         state.connected(received)
                         socket.send(json.dumps({'action':'subscribe','params':','.join('AM.'+s for s in sorted(state.symbols))}))
@@ -62,12 +69,15 @@ def pump(socket, state, token, *, utcnow, monotonic, tick, stop, max_seconds=8*3
     finally:
         try:socket.close()
         except Exception:pass
+    if (getattr(state,'storage_stopped',False)
+            or getattr(getattr(state,'sink',None),'storage_stopped',False)):
+        raise SourceUnavailable('MASSIVE_STORAGE_CAPACITY')
     state.gap(utcnow(),'MASSIVE_TRANSPORT_FAILURE')
     raise SourceUnavailable('MASSIVE_TRANSPORT_FAILURE')
 
 
 def run_connection(state, token, *, utcnow, monotonic, tick, stop,
-                   connector=None, max_seconds=8*3600):
+                   connector=None, max_seconds=8*3600,start_allowed=None):
     """Open one real-time connection. Never retry or choose a delayed endpoint.
 
     This function is not installed into a worker or CLI by itself. The caller
@@ -82,6 +92,9 @@ def run_connection(state, token, *, utcnow, monotonic, tick, stop,
     # Dedicated disabled logger prevents protocol debug logs from recording auth.
     logger=logging.Logger('r2d2.massive.private_transport')
     logger.disabled=True
+    if stop():
+        tick(utcnow());state.gap(utcnow(),'MASSIVE_STOPPED');return 'STOPPED'
+    _require(start_allowed is None or start_allowed(),'MASSIVE_SERVICE_WINDOW')
     try:
         socket=connector('wss://socket.massive.com/stocks',open_timeout=10,
                          close_timeout=3,ping_interval=15,ping_timeout=10,
@@ -93,4 +106,4 @@ def run_connection(state, token, *, utcnow, monotonic, tick, stop,
         state.gap(utcnow(),'MASSIVE_CONNECT_FAILURE')
         raise SourceUnavailable('MASSIVE_CONNECT_FAILURE')
     return pump(socket,state,token,utcnow=utcnow,monotonic=monotonic,tick=tick,
-                stop=stop,max_seconds=max_seconds)
+                stop=stop,max_seconds=max_seconds,start_allowed=start_allowed)

@@ -655,7 +655,7 @@ class ShadowCollector:
     def _gap(self, state, journals, now, session, reason, *, gap_at=None, instrument=None, portfolio=None,
              issue_session=None):
         scope = instrument or "*"
-        issue_session = issue_session or session
+        issue_session = (issue_session or session) if getattr(self.source, "minute_bar_enabled", False) else session
         base_key = issue_session + ":" + scope + ":" + reason
         active = state["active_data_issues"].get(base_key)
         # A second outage after demonstrated restoration is a new factual
@@ -671,9 +671,10 @@ class ShadowCollector:
             state["active_data_issues"][base_key] = {**issue, "restored_instruments": []}
         affected = [r for r in state["ledger"]["research"].values()
                     if (instrument is None or r["instrument_key"] == instrument)
-                    and utc(r["opened_at"]) <= known_gap
-                    and (r["status"] == "OPEN" or known_gap <
-                         utc(r["exit_at"] or (r["exit_interval"] or [None, now.isoformat()])[1]))]
+                    and (r["status"] == "OPEN" and not getattr(self.source, "minute_bar_enabled", False)
+                         or utc(r["opened_at"]) <= known_gap
+                         and (r["status"] == "OPEN" or known_gap <
+                         utc(r["exit_at"] or (r["exit_interval"] or [None, now.isoformat()])[1])))]
         prior = state["gap_episode_receipts"].setdefault(key, [])
         new_episodes = sorted(r["episode_key"] for r in affected if r["episode_key"] not in prior)
         if known and not new_episodes:
@@ -762,6 +763,8 @@ class ShadowCollector:
             # Producer receipt and collector receipt are both archived. A file
             # read later never grants the collector knowledge at an earlier time.
             event = {**raw, "source_available_at": raw["available_at"], "available_at": now.isoformat(), "session": session}
+            if event["type"] == "BAR" and getattr(self.source, "minute_bar_enabled", False):
+                event["minute_bar_evidence"] = True
             if event["type"] == "QUOTE":
                 # Identity comes only from the validated envelope. Each packet
                 # reaches the ledger; never collapse these into a latest quote.
@@ -966,7 +969,8 @@ class ShadowCollector:
                 quote = _object(observation["source"].get("quote"))
                 if quote:
                     pending["quote"] = {**quote, "bid_at": quote.get("bid_source_at"),
-                        "ask_at": quote.get("ask_source_at"), "collector_available_at": now.isoformat()}
+                        "ask_at": quote.get("ask_source_at"), "collector_available_at": now.isoformat(),
+                        "entry_evidence": "SNAPSHOT"}
                 session.setdefault("entries_pending", {})[name] = pending
                 record.update(decision_at=now.isoformat(), entry_at=entry.isoformat(), entry_status="PENDING")
                 session["candidates"][name].update(decision_at=now.isoformat(), entry_at=entry.isoformat(), entry_status="PENDING")
@@ -995,17 +999,19 @@ class ShadowCollector:
         quotes = []
         for event in events:
             if event.get("type") == "QUOTE" and event.get("regular") is True:
-                quotes.append(("US:" + event["instrument_key"].split(":")[-1], dict(event)))
+                quotes.append(("US:" + event["instrument_key"].split(":")[-1],
+                    {**event, "entry_evidence": "IMMUTABLE_EVENT"}))
         for row in _object(batch.get("universe")).get("instruments", []):
             quote = _object(row.get("quote"))
             if quote:
-                quotes.append((_instrument(row), {**quote,
+                quotes.append((_instrument(row), {**quote, "entry_evidence": "SNAPSHOT",
                     "bid_at": quote.get("bid_source_at"), "ask_at": quote.get("ask_source_at")}))
         for name, entry in list(pending.items()):
             entry_at = utc(entry["entry_at"])
             for instrument, quote in quotes:
                 available = _dt(quote.get("available_at"))
-                if instrument != name or available is None or available > now or now > entry_at:
+                if (instrument != name or available is None or available > min(now, entry_at)
+                        or quote.get("entry_evidence") != "IMMUTABLE_EVENT" and now > entry_at):
                     continue
                 old = entry.get("quote")
                 if old is None or available >= utc(old["available_at"]):
@@ -1028,7 +1034,8 @@ class ShadowCollector:
                          for k in ("bid_at", "ask_at")):
                     reason = "ENTRY_QUOTE_STALE_OR_FUTURE"
                 elif (_dt(quote.get("available_at")) is None
-                      or any(utc(quote[k]) > entry_at for k in ("available_at", "collector_available_at"))
+                      or utc(quote["available_at"]) > entry_at
+                      or quote.get("entry_evidence") != "IMMUTABLE_EVENT" and utc(quote["collector_available_at"]) > entry_at
                       or any(utc(quote[k]) > utc(quote["available_at"]) for k in ("bid_at", "ask_at"))):
                     reason = "ENTRY_QUOTE_NOT_CAUSAL"
                 else:
@@ -1047,7 +1054,7 @@ class ShadowCollector:
                 "observed_at": now.isoformat(), "quote": quote, "reason": reason, "geometry": geometry}
             if reason is None:
                 evaluation = entry["evaluation"]
-                kwargs = dict(episode_key=entry["episode_key"], instrument_key=name, session=session["date"],
+                kwargs: dict[str, Any] = dict(episode_key=entry["episode_key"], instrument_key=name, session=session["date"],
                     opened_at=entry["entry_at"], decision_at=entry["decision_at"], admission_available_at=now.isoformat(),
                     maturity_at=evaluation["maturity_at"], geometry=geometry, arm=evaluation["arm"],
                     admission_block_reason=self._admission_block(state, session["date"], name))

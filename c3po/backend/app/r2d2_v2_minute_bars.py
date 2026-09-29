@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import math
 import re
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from .r2d2_v2_sources import SourceUnavailable, _load_json, _require, _validate_event
@@ -62,16 +62,17 @@ def closed_minute(data: bytes, *, symbol: str, minute: datetime,
                  "MINUTE_PROVIDER_STATUS_OR_IDENTITY")
         _require(envelope.get("adjusted") is False and not envelope.get("next_url"),
                  "MINUTE_ADJUSTMENT_OR_PAGINATION")
-        original = envelope.get("results", [])
+        original: Any = envelope.get("results", [])
         _require(type(original) is list and len(original) <= MAX_ROWS,
                  "MINUTE_RESPONSE_SCHEMA")
         _require(type(envelope.get("resultsCount")) is int
                  and envelope["resultsCount"] == len(original), "MINUTE_RESULTS_COUNT")
-        rows = []
+        rows: Any = []
         for item in original:
             _require(type(item) is dict and {"t", "o", "h", "l", "c", "v"} <= set(item)
                      and set(item) <= {"t", "o", "h", "l", "c", "v", "vw", "n", "otc"},
                      "MINUTE_ROW_SCHEMA")
+            item = cast(dict[str, Any], item)
             _require(item.get("otc", False) is False, "MINUTE_OTC")
             rows.append({**{k: item[k] for k in ("t", "o", "h", "l", "c", "v")},
                          "s": symbol, "i": "1m"})
@@ -85,6 +86,7 @@ def closed_minute(data: bytes, *, symbol: str, minute: datetime,
     previous = -1
     for row in rows:
         _require(type(row) is dict and set(row) == _FIELDS, "MINUTE_ROW_SCHEMA")
+        row = cast(dict[str, Any], row)
         _require(row["s"] == symbol and row["i"] == "1m", "MINUTE_IDENTITY")
         timestamp = row["t"]
         _require(type(timestamp) is int and timestamp > 0 and timestamp % 60000 == 0,
@@ -142,9 +144,11 @@ def massive_stream_minute(data: bytes, *, symbol: str, minute: datetime,
     rows = []
     allowed = {"ev", "sym", "v", "dv", "av", "dav", "op", "vw", "o", "c", "h",
                "l", "a", "z", "s", "e", "otc"}
-    for row in parsed["rows"]:
+    stream_rows = cast(list[Any], parsed["rows"])
+    for row in stream_rows:
         _require(type(row) is dict and {"ev", "sym", "v", "o", "c", "h", "l", "s", "e"}
                  <= set(row) and set(row) <= allowed, "MINUTE_STREAM_ROW")
+        row = cast(dict[str, Any], row)
         _require(row["ev"] == "AM" and row["sym"] == symbol, "MINUTE_IDENTITY")
         _require(type(row["s"]) is int and type(row["e"]) is int
                  and row["e"] - row["s"] == 60000, "MINUTE_STREAM_INTERVAL")

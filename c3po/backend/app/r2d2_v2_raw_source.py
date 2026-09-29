@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 import re
 import stat
-from typing import Any
+from typing import Any, cast
 
 from .r2d2_v2_raw_events import MAX_RAW_RECORD_BYTES, inspect_record
 from .r2d2_v2_sources import (
@@ -97,7 +97,8 @@ class SpoolShadowSource(FileShadowSource):
         self.calendar = calendar
 
     def prepare_events(self, now: datetime, cursor: dict, *, snapshot: dict | None = None,
-                       read_clock: Any = None, receipt_cutoff: datetime | None = None) -> dict:
+                       read_clock: Any = None, receipt_cutoff: datetime | None = None,
+                       with_references: bool = False) -> dict:
         """Offer a contiguous prefix at a common reception horizon.
 
         The record budget is a page target. Equal-reception groups are atomic:
@@ -213,6 +214,7 @@ class SpoolShadowSource(FileShadowSource):
                 cutoff = min(cutoff, receipt_cutoff) if cutoff is not None else receipt_cutoff
             proposed = {}
             raw_events = []
+            references = {}
             skipped_receipts = []
             notices = []
             delivered_count = 0
@@ -257,6 +259,17 @@ class SpoolShadowSource(FileShadowSource):
                                 "provenance", "manifest_sha", "amendment_sha", "self_sha256")},
                             "envelope_available_at": envelope["available_at"],
                             "envelope_sha256": hashlib.sha256(canonical(envelope)).hexdigest()})
+                        if with_references:
+                            references[envelope["event_id"]] = {"path": name,
+                                "offset": offset, "bytes": frame["bytes"], "sequence": sequence,
+                                "device": info.st_dev, "inode": info.st_ino,
+                                "raw_sha256": frame["sha256"],
+                                "witness": hashlib.sha256(expected_tail).hexdigest(),
+                                "received_max": high.isoformat() if high is not None else None,
+                                "instrument_key": envelope["event"]["instrument_key"],
+                                "session": envelope["event"]["session"],
+                                "available_at": envelope["event"]["available_at"],
+                                "envelope_sha256": raw_events[-1]["envelope_sha256"]}
                         sequence += 1
                     offset += frame["bytes"]
                     delivered_count += 1
@@ -282,6 +295,7 @@ class SpoolShadowSource(FileShadowSource):
             return {"events": events + raw_events, "diagnostics": [], "cursor": next_cursor,
                     "raw_receipts": raw_receipts, "skipped_receipts": skipped_receipts, "page": page,
                     "snapshot": snapshot,
+                    **({"raw_references": references} if with_references else {}),
                     "has_more": any(proposed[name]["offset"] < snapshot[name]["size"] for name in proposed)}
         except SourceUnavailable as exc:
             diagnostics = [{"code": str(exc)}]
@@ -291,3 +305,83 @@ class SpoolShadowSource(FileShadowSource):
             for _, fd, _ in handles:
                 os.close(fd)
         return {"events": [], "diagnostics": diagnostics, "cursor": cursor}
+
+    def prepare_scoped_events(self, now, cursor, **kwargs):
+        """The BAR composite may retain verified locators while delivering other names."""
+        return self.prepare_events(now, cursor, with_references=True, **kwargs)
+
+    def replay_references(self, now, references):
+        """Re-read retained frames; a locator is never evidence without its bytes."""
+        events = []
+        root = _open_dir(self.raw_root)
+        try:
+            for identity, ref in references.items():
+                self.validate_reference(identity, ref)
+                session, part = ref["path"].split("/")
+                directory = os.open(session, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=root)
+                try:
+                    _require(not os.fstat(directory).st_mode & 0o022, "RAW_DIRECTORY_WRITABLE_BY_OTHERS")
+                    fd = os.open(part, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=directory)
+                finally:
+                    os.close(directory)
+                try:
+                    info = os.fstat(fd)
+                    _require(stat.S_ISREG(info.st_mode) and not info.st_mode & 0o022
+                        and (info.st_dev, info.st_ino) == (ref["device"], ref["inode"]), "RAW_HELD_FILE_CHANGED")
+                    data = os.pread(fd, ref["bytes"], ref["offset"])
+                    _require(len(data) == ref["bytes"] and data.endswith(b"\n")
+                        and hashlib.sha256(data).hexdigest() == ref["raw_sha256"], "RAW_HELD_FRAME_CHANGED")
+                    inspected = inspect_record(data, relative_path=ref["path"], offset=ref["offset"],
+                        sequence=ref["sequence"], now=now, calendar=self.calendar)
+                    envelope = inspected["envelope"]
+                    _require(envelope is not None and envelope["event_id"] == identity
+                        and hashlib.sha256(canonical(envelope)).hexdigest() == ref["envelope_sha256"]
+                        and envelope["event"]["instrument_key"] == ref["instrument_key"]
+                        and envelope["event"]["session"] == ref["session"]
+                        and envelope["event"]["available_at"] == ref["available_at"], "RAW_HELD_ENVELOPE_CHANGED")
+                    assert envelope is not None
+                    events.append({**envelope["event"],
+                        **{key: envelope[key] for key in ("event_id", "source_id", "source_at", "sequence",
+                            "provenance", "manifest_sha", "amendment_sha", "self_sha256")},
+                        "envelope_available_at": envelope["available_at"],
+                        "envelope_sha256": ref["envelope_sha256"]})
+                finally:
+                    os.close(fd)
+        finally:
+            os.close(root)
+        return events
+
+    @staticmethod
+    def validate_reference(identity, ref):
+        _require(type(identity) is str and re.fullmatch(r"raw-[0-9a-f]{64}", identity) is not None
+            and type(ref) is dict and set(ref) == {"path", "offset", "bytes", "sequence", "device", "inode",
+                "raw_sha256", "witness", "received_max", "instrument_key", "session", "available_at", "envelope_sha256"},
+            "RAW_HELD_REFERENCE_INVALID")
+        ref=cast(dict[str, Any],ref)
+        _require(type(ref["path"]) is str
+            and re.fullmatch(r"session_date=\d{4}-\d{2}-\d{2}/feed=(quote|trade)-part-\d{5,}\.ndjson", ref["path"]) is not None
+            and all(type(ref[k]) is int and ref[k] >= 0 for k in ("offset", "sequence", "device", "inode"))
+            and type(ref["bytes"]) is int and 0 < ref["bytes"] <= MAX_RAW_RECORD_BYTES
+            and all(type(ref[k]) is str and re.fullmatch(r"[0-9a-f]{64}", ref[k]) is not None
+                    for k in ("raw_sha256", "witness", "envelope_sha256"))
+            and type(ref["instrument_key"]) is str and re.fullmatch(r"US:[A-Z0-9._-]+", ref["instrument_key"]) is not None
+            and type(ref["session"]) is str
+            and ref["path"].split("/")[0] == "session_date=" + ref["session"], "RAW_HELD_REFERENCE_INVALID")
+        _time(ref["available_at"])
+        if ref["received_max"] is not None:
+            _time(ref["received_max"])
+
+    @staticmethod
+    def scoped_event(event, scope, sequence):
+        from .r2d2_v2_sources import EVENT_SCHEMA
+        metadata={"event_id", "source_id", "source_at", "sequence", "provenance", "manifest_sha",
+                  "amendment_sha", "self_sha256", "envelope_available_at", "envelope_sha256"}
+        envelope={"schema":EVENT_SCHEMA,
+            **{key:event[key] for key in ("event_id", "source_at", "manifest_sha", "amendment_sha")},
+            "source_id":"composite-raw-v3:"+hashlib.sha256(scope.encode()).hexdigest(),
+            "sequence":sequence, "available_at":event["envelope_available_at"],
+            "provenance":{**event["provenance"], "origin_envelope_sha256":event["envelope_sha256"]},
+            "event":{key:value for key,value in event.items() if key not in metadata}}
+        envelope["self_sha256"]=hashlib.sha256(canonical(envelope)).hexdigest()
+        return {**event,**{key:envelope[key] for key in ("source_id", "sequence", "provenance", "self_sha256")},
+                "envelope_sha256":hashlib.sha256(canonical(envelope)).hexdigest()}

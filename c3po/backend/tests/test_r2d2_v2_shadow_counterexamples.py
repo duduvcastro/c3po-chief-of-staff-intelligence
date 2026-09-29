@@ -458,6 +458,7 @@ def test_pending_material_reversion_has_unique_receipts_and_only_first_full_row(
 
 def test_delayed_preentry_gap_does_not_attach_to_new_episode():
     collector, state, _ = setup_state()
+    collector.source = SimpleNamespace(minute_bar_enabled=True)
     journals = []
     collector._gap(state, journals, utc(OPEN)+timedelta(seconds=1), DAY,
                    'PRODUCER_DATA_GAP', gap_at=utc(OPEN)-timedelta(minutes=1), instrument=INSTRUMENT)
@@ -468,6 +469,7 @@ def test_delayed_preentry_gap_does_not_attach_to_new_episode():
 
 def test_prior_session_gap_does_not_block_current_session_or_attach_new_episode():
     collector, state, _ = setup_state()
+    collector.source = SimpleNamespace(minute_bar_enabled=True)
     at = '2026-09-04T14:00:00+00:00'
     now = utc(OPEN)+timedelta(seconds=1)
     event = source_event('DATA_GAP', at=at, available_at=at, session='2026-09-04', reason='OLD_GAP')

@@ -70,7 +70,7 @@ def test_raw_fifo_refuses_without_opening(tmp_path):
 
 def test_sqlite_capacity_refuses_without_sequence_hole(tmp_path):
  import sqlite3
- j=MassiveJournal(tmp_path,max_index_bytes=16384)
+ j=MassiveJournal(tmp_path,max_index_bytes=32768)
  committed=0
  for i in range(500):
   receipt={'event':{'type':'DATA_GAP','fixture':i}}
@@ -84,12 +84,12 @@ def test_sqlite_capacity_refuses_without_sequence_hole(tmp_path):
  else:
   pytest.fail('small index must exhaust')
  assert committed>0
- assert j.path.stat().st_size<=16384
+ assert j.path.stat().st_size<=32768
  reader=MassiveJournal.open_reader(tmp_path)
  assert reader.page()['through']==committed
  # An interrupted/failed insertion may leave raw receipts; reopening must
  # preserve all committed sequence positions and accept an exact old retry.
- reopened=MassiveJournal(tmp_path,max_index_bytes=16384)
+ reopened=MassiveJournal(tmp_path,max_index_bytes=32768)
  assert reopened(None,{'event':{'type':'DATA_GAP','fixture':0}})==1
  assert reopened.page()['through']==committed
 

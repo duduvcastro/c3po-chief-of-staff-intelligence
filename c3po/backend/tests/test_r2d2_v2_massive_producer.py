@@ -12,8 +12,11 @@ class Socket:
 
 
 def invoke(root,calendar,connector):
+ stopped=[False]
+ def connect(*args,**kwargs):
+  socket=connector(*args,**kwargs);stopped[0]=True;return socket
  return run_producer(root,['AAPL'],calendar,'offline-fixture-token',utcnow=lambda:MINUTE,
-     monotonic=lambda:0,stop=lambda:True,connector=connector)
+     monotonic=lambda:0,stop=lambda:stopped[0],connector=connect)
 
 
 def test_single_owner_refuses_before_any_connection(tmp_path,calendar):

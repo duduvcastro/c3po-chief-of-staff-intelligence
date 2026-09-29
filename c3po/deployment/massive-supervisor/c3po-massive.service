@@ -1,0 +1,30 @@
+[Unit]
+Description=Bounded daily Massive minute producer
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=8h
+StartLimitBurst=4
+
+[Service]
+Type=exec
+User=c3po-bar
+Group=c3po-bar
+WorkingDirectory=/opt/c3po-bar/current
+Environment=PYTHONPATH=/opt/c3po-bar/current/backend
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/c3po-bar/venv/bin/python -B -m app.r2d2_v2_massive_supervisor --journal-root /var/lib/c3po-bar/journal --manifest-directory /etc/c3po-bar/manifests --token-file /etc/c3po-bar/token --state-root /var/lib/c3po-bar/supervisor
+Restart=on-failure
+RestartSec=30s
+RestartPreventExitStatus=78
+TimeoutStopSec=30s
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/c3po-bar /opt/c3po-bar
+ReadWritePaths=/var/lib/c3po-bar/journal /var/lib/c3po-bar/supervisor
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=c3po-massive

@@ -6,6 +6,7 @@ and a durable collector acknowledgement. A proposed cursor is not an ACK.
 from .r2d2_v2_massive_maintenance import journal_access
 from .r2d2_v2_massive_sessions import MAX_SESSIONS
 import hashlib
+from typing import Any, cast
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 import re
@@ -104,7 +105,7 @@ def _committed_snapshot(store, *, epoch, release_sha, session=None):
     row, records = store.read_with_journal(epoch)
     _require(row is not None, 'RETENTION_EPOCH_MISSING')
     _require(row['state']['release_sha']==release_sha, 'RETENTION_RELEASE_MISMATCH')
-    cursor = row['state'].get('raw_source_cursor')
+    cursor = cast(dict[str, Any], row['state'].get('raw_source_cursor'))
     _require(type(cursor) is dict, 'RETENTION_CURSOR_MISSING')
     if set(cursor) in ({'massive_sequence'}, {'version','epoch','sessions'}):
         massive = cursor
@@ -113,15 +114,16 @@ def _committed_snapshot(store, *, epoch, release_sha, session=None):
         if cursor['version']==1:
             _require(set(cursor)=={'version','quote_trade','massive'}, 'RETENTION_CURSOR_FORMAT')
         else:
-            _require(cursor['version']==2 and set(cursor)=={'version','quote_trade','massive','barrier'},
+            _require(cursor['version'] in (2,3) and set(cursor)=={'version','quote_trade','massive','barrier'},
                      'RETENTION_CURSOR_FORMAT')
             from .r2d2_v2_composite_source import CompositeEventSource
             _require(len(canonical(cursor))<=2_000_000, 'RETENTION_CURSOR_LIMIT')
-            raw=cursor['quote_trade']
+            raw: dict[str, Any] = cursor['quote_trade']
             _require(type(raw) is dict and set(raw)<={'files'}
                      and type(raw.get('files',{})) is dict and len(raw.get('files',{}))<=4096,
                      'RETENTION_CURSOR_FORMAT')
-            for name, saved in raw.get('files',{}).items():
+            for name, saved_value in raw.get('files',{}).items():
+                saved = cast(dict[str, Any], saved_value)
                 _require(type(name) is str and type(saved) is dict
                          and set(saved) in ({'offset','sequence','device','inode','witness'},
                                             {'offset','sequence','device','inode','witness','received_max'})
@@ -131,16 +133,20 @@ def _committed_snapshot(store, *, epoch, release_sha, session=None):
                          and re.fullmatch(r'[0-9a-f]{64}',saved['witness']) is not None,
                          'RETENTION_CURSOR_FORMAT')
                 if saved.get('received_max') is not None:_time(saved['received_max'])
-            barrier=cursor['barrier']
-            _require(type(barrier) is dict and set(barrier)=={'resolved','sequence'}
+            barrier: dict[str, Any] = cursor['barrier']
+            fields={'resolved','sequence'} | ({'pending_raw','read_cursor','scope_sequences'} if cursor['version']==3 else set())
+            _require(type(barrier) is dict and set(barrier)==fields
                      and type(barrier['sequence']) is int and barrier['sequence']>=0
                      and type(barrier['resolved']) is dict
                      and len(barrier['resolved'])<=CompositeEventSource.MAX_PROOFS,
                      'RETENTION_BARRIER_FORMAT')
-            for key, proof in barrier['resolved'].items():
+            if cursor['version']==3:
+                CompositeEventSource._validate_scoped(barrier,retained=raw)
+            for key, proof_value in barrier['resolved'].items():
+                proof = cast(dict[str, Any], proof_value)
                 _require(type(key) is str and len(key)<=200 and type(proof) is dict
                          and set(proof)=={'end_at','event_id','envelope_sha256'}, 'RETENTION_BARRIER_PROOF')
-                parts=key.split('|')
+                parts=cast(str, key).split('|')
                 _require(len(parts)==3 and re.fullmatch(r'US:[A-Z0-9._-]+',parts[0]) is not None
                          and _time(parts[2]).astimezone(ZoneInfo('America/New_York')).date().isoformat()==parts[1]
                          and _time(proof['end_at'])-_time(parts[2])==timedelta(minutes=1)
@@ -154,7 +160,7 @@ def _committed_snapshot(store, *, epoch, release_sha, session=None):
         _require(session is None, 'RETENTION_LEGACY_SESSION_UNBOUND')
         sequence = massive['massive_sequence']
         _require(type(sequence) is int and sequence>=0, 'RETENTION_ACK')
-        position={'committed_sequence':sequence}
+        position: dict[str, Any] = {'committed_sequence':sequence}
     else:
         _require(set(massive)=={'version','epoch','sessions'} and type(massive['version']) is int
                  and massive['version']==2 and massive['epoch']==epoch
@@ -256,7 +262,7 @@ def plan_consumers_retention(journal, consumers, *, required_consumers, now,
     with journal_access(journal.path.parent):
         plans = {}
         for name in sorted(consumers):
-            descriptor = consumers[name]
+            descriptor = cast(dict[str, Any], consumers[name])
             _require(type(descriptor) is dict and set(descriptor) == {'store', 'epoch', 'release_sha'},
                      'RETENTION_CONSUMER_DESCRIPTOR')
             plans[name] = _plan_committed_retention_locked(

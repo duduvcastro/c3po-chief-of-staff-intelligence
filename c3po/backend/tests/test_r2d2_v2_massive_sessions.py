@@ -91,9 +91,12 @@ def test_wrong_session_or_daily_universe_receipt_is_not_consumed(tmp_path):
     source = MassiveSessionEventSource(journals)
     refused = source.prepare_events(NOW, {})
     assert refused['diagnostics'] and not refused['events'] and refused['cursor'] == {}
-    new = journals.ensure_session(NEW, ['MSFT']); new(None, gap(OLD, 'MSFT'))
-    refused = source.prepare_events(NOW, {'version': 2, 'epoch': EPOCH, 'sessions': {OLD: 1}})
-    assert refused['diagnostics'] and not refused['events']
+    new = journals.ensure_session(NEW, ['MSFT'])
+    with pytest.raises(ValueError, match='JOURNAL_RECEIPT_SESSION_MISMATCH'):
+        new(None, gap(OLD, 'MSFT'))
+    assert new.page()['through'] == 0
+    clean = source.prepare_events(NOW, {'version': 2, 'epoch': EPOCH, 'sessions': {OLD: 1}})
+    assert not clean['diagnostics'] and not clean['events']
 
 
 def test_manifest_list_and_epoch_cannot_be_reassigned(tmp_path):
@@ -113,11 +116,13 @@ def test_missing_parent_epoch_cannot_adopt_old_children(tmp_path):
     assert not (tmp_path/'epoch.json').exists()
 
 
-def test_unready_session_defers_without_mutation(tmp_path):
+def test_unready_session_is_empty_without_mutation(tmp_path):
+    # Ready precedes any append: an empty unready session is skipped, not a block.
     journals = root(tmp_path); path = journals.prepare_session(OLD, ['AAPL'])
     result = MassiveSessionEventSource(journals).prepare_events(NOW, {})
-    assert result == {'events': [], 'diagnostics': [{'code': 'RAW_APPEND_IN_PROGRESS'}], 'cursor': {}}
-    assert not (path/'sequence.sqlite3').exists()
+    assert not result['diagnostics'] and not result['events'] and not result['has_more']
+    assert result['cursor'] == result['snapshot'] == {'version': 2, 'epoch': EPOCH, 'sessions': {}}
+    assert not (path/'sequence.sqlite3').exists() and not (path/'ready.json').exists()
 
 
 @pytest.mark.parametrize('mutation', ['symlink', 'missing', 'corrupt'])

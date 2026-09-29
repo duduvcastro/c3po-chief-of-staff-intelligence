@@ -26,14 +26,15 @@ def test_missing_raw_preserves_cursor(tmp_path,calendar):
  assert result['diagnostics'] and result['cursor']=={} and result['events']==[]
 
 
-def test_reversed_reception_across_pages_does_not_advance(tmp_path,calendar):
+def test_reversed_reception_across_pages_preserves_original_clock(tmp_path,calendar):
  record(tmp_path,calendar);j=MassiveJournal(tmp_path)
  j(None,{'event':{'type':'DATA_GAP','at':MINUTE.isoformat(),
    'available_at':(MINUTE+timedelta(seconds=64)).isoformat(),
    'session':MINUTE.date().isoformat(),'instrument_key':'US:AAPL','reason':'fixture'}})
  cursor={'massive_sequence':1}
  result=MassiveEventSource(j).prepare_events(MINUTE+timedelta(seconds=70),cursor)
- assert result['diagnostics'] and result['cursor']==cursor and not result['events']
+ assert not result['diagnostics'] and result['cursor']=={'massive_sequence':2}
+ assert result['events'][0]['available_at']==(MINUTE+timedelta(seconds=64)).isoformat()
 
 
 def test_cursor_predecessor_corruption_refuses_following_page(tmp_path,calendar):

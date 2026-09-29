@@ -28,6 +28,7 @@ def _restore_stream_locked(state, journal, *, session, now=None, max_records=500
     # The restart clock bounds resident identities, not the evidence scan.
     # Evicted history remains verified on disk and can never be filled later.
     cutoff=None if now is None else int((now.replace(second=0,microsecond=0)-timedelta(minutes=3)).timestamp()*1000)
+    storage_stopped=False
     seen={};sealed=set();after=journal.retention_floor();through=None;count=0
     while True:
         page=journal.page(after,through=through,limit=1024)
@@ -58,6 +59,8 @@ def _restore_stream_locked(state, journal, *, session, now=None, max_records=500
                 _require(_time(event['available_at'])<=now and minute<=now,'RECOVERY_FUTURE_EVIDENCE')
             retain=event_session==session and (cutoff is None or key[1]>=cutoff)
             if event['type']=='DATA_GAP':
+                if event_session == session and event.get('reason') == 'MASSIVE_STORAGE_CAPACITY':
+                    storage_stopped = True
                 if retain:sealed.add(key)
             else:
                 _require(event['type']=='BAR','RECOVERY_EVENT_TYPE')
@@ -87,4 +90,5 @@ def _restore_stream_locked(state, journal, *, session, now=None, max_records=500
         _require(state.connected_at is None and not state.seen and not state.sealed,'RECOVERY_STATE_NOT_FRESH')
         state.seen=seen;state.sealed=sealed
         state.reject_before_ms=cutoff
+        state.storage_stopped=storage_stopped
     return {'records':count,'observed_minutes':len(seen),'sealed_minutes':len(sealed)}
