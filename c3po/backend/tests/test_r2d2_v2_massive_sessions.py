@@ -227,3 +227,19 @@ def test_copied_epoch_root_requires_explicit_migration(tmp_path):
     copied = tmp_path/'copied'; shutil.copytree(parent, copied)
     for create in (False, True):
         with pytest.raises(SourceUnavailable): SessionJournalRoot(copied, EPOCH, create=create)
+
+
+def test_session_source_event_limit_preserves_group_horizon_and_frozen_head(tmp_path):
+ journals=root(tmp_path);journal=journals.ensure_session(OLD,['AAPL'])
+ for n in range(20):journal(None,gap(OLD,number=n))
+ source=MassiveSessionEventSource(journals);cursor={};snapshot=None;seen=[]
+ for size in (7,7,6):
+  page=source.prepare_events(NOW,cursor,snapshot=snapshot,event_limit=7)
+  assert not page['diagnostics'] and len(page['events'])==size
+  seen.extend(e['sequence'] for e in page['events'])
+  if page['has_more']:assert page['page']['cutoff_received_at']=='2026-09-28T13:59:59.999999+00:00'
+  cursor=page['cursor'];snapshot=page['snapshot']
+ assert seen==list(range(20)) and cursor['sessions']=={OLD:20}
+ for invalid in (True,0,-1,4097):
+  page=source.prepare_events(NOW,{},event_limit=invalid)
+  assert page['diagnostics'] and not page['events'] and page['cursor']=={}

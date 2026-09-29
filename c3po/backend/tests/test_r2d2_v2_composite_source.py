@@ -68,14 +68,15 @@ def test_timeout_is_explicit_gap_before_release_and_not_a_bar(source,tmp_path):
  write(source,line())
  c=CompositeEventSource(source,MassiveEventSource(MassiveJournal(tmp_path/'massive')))
  deadline=AT.replace(second=0)+timedelta(seconds=90)
- held=c.prepare_events(deadline-timedelta(microseconds=1),{})
+ held=c.prepare_events(deadline,{})
  assert not held['events']
- released=c.prepare_events(deadline,held['cursor'])
+ expired=deadline+timedelta(microseconds=1)
+ released=c.prepare_events(expired,held['cursor'])
  assert not released['diagnostics']
  assert [e['type'] for e in released['events']]==['DATA_GAP','QUOTE']
  assert released['events'][0]['reason']=='BAR_WAIT_TIMEOUT'
- assert released['events'][0]['available_at']==deadline.isoformat()
- assert not c.prepare_events(deadline,released['cursor'])['events']
+ assert released['events'][0]['available_at']==expired.isoformat()
+ assert not c.prepare_events(expired,released['cursor'])['events']
 
 
 def test_other_instrument_or_session_bar_cannot_unblock(source,tmp_path):

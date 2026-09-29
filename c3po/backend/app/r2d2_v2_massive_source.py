@@ -12,23 +12,25 @@ from .r2d2_v2_sources import SourceUnavailable, canonical, _require, _time
 
 
 class MassiveEventSource:
+    minute_bar_enabled = True
     def __init__(self, journal):
         self.journal=journal
 
-    def prepare_events(self, now, cursor, *, snapshot=None, read_clock=None, receipt_cutoff=None):
+    def prepare_events(self, now, cursor, *, snapshot=None, read_clock=None, receipt_cutoff=None, event_limit=4096):
         try:
             with journal_access(self.journal.path.parent):
                 return self._prepare_events_locked(now, cursor, snapshot=snapshot,
-                                                   read_clock=read_clock, receipt_cutoff=receipt_cutoff)
+                                                   read_clock=read_clock, receipt_cutoff=receipt_cutoff, event_limit=event_limit)
         except (SourceUnavailable, OSError, ValueError):
             return dict(events=[],diagnostics=[{'code':'MASSIVE_SOURCE_UNVERIFIED'}],cursor=cursor)
 
-    def _prepare_events_locked(self, now, cursor, *, snapshot=None, read_clock=None, receipt_cutoff=None):
+    def _prepare_events_locked(self, now, cursor, *, snapshot=None, read_clock=None, receipt_cutoff=None, event_limit=4096):
         try:
+            _require(type(event_limit) is int and 1<=event_limit<=4096,'MASSIVE_EVENT_LIMIT')
             _require(type(cursor) is dict and set(cursor) <= {'massive_sequence'},'MASSIVE_CURSOR')
             after=cursor.get('massive_sequence',0)
             _require(snapshot is None or (type(snapshot) is dict and set(snapshot)=={'massive_through'}),'MASSIVE_SNAPSHOT')
-            page=self.journal.page(after,through=snapshot['massive_through'] if snapshot else None,limit=4096)
+            page=self.journal.page(after,through=snapshot['massive_through'] if snapshot else None,limit=event_limit)
             records=page['records']
             split_receipt=False
             if page['has_more'] and records:

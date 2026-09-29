@@ -803,7 +803,16 @@ class ShadowCollector:
                     coverage = max(utc(state["coverage_until"].get(name, first_entry)), opening, first_entry)
                     # A first print after a missing interval cannot close the
                     # position and thereby erase the preceding data failure.
-                    if at - coverage > timedelta(seconds=90):
+                    bar_mode = getattr(self.source, "minute_bar_enabled", False)
+                    # BAR coverage is the next required minute's start, not
+                    # its publication deadline. Raw-only mode retains 90 s.
+                    deadline = self._coverage_deadline(coverage, self.calendar.details(
+                        at.astimezone(NEW_YORK).date())["close"])
+                    stale = at > deadline if bar_mode else at - coverage > timedelta(seconds=90)
+                    if (bar_mode and event["type"] == "BAR" and utc(event["end_at"]) > coverage
+                            and now > utc(event["end_at"]) + timedelta(seconds=90)):
+                        stale = True
+                    if stale:
                         self._gap(state, journals, now, session, "LIVE_EVIDENCE_STALE", gap_at=coverage,
                                   instrument=name, portfolio=portfolio)
                     if event["type"] == "BAR" and event.get("coverage_complete") is True:
@@ -839,9 +848,20 @@ class ShadowCollector:
             day = now.astimezone(NEW_YORK).date()
             if self.calendar.is_session(day):
                 detail = self.calendar.details(day)
-                if min(now, detail["close"]) - max(last, detail["open"]) > timedelta(seconds=90):
-                    self._gap(state, journals, now, session, "LIVE_EVIDENCE_STALE", gap_at=max(last, detail["open"]),
+                covered = max(last, detail["open"])
+                if getattr(self.source, "minute_bar_enabled", False):
+                    stale = covered < detail["close"] and now > self._coverage_deadline(covered, detail["close"])
+                else:
+                    stale = min(now, detail["close"]) - covered > timedelta(seconds=90)
+                if stale:
+                    self._gap(state, journals, now, session, "LIVE_EVIDENCE_STALE", gap_at=covered,
                               instrument=record["instrument_key"], portfolio=portfolio)
+
+    def _coverage_deadline(self, covered, close):
+        if getattr(self.source, "minute_bar_enabled", False):
+            end = min(covered.replace(second=0, microsecond=0) + timedelta(minutes=1), close)
+            return end + timedelta(seconds=90)
+        return covered + timedelta(seconds=90)
 
     def _capture(self, state, journals, session, batch, now, *, portfolio=None, causal=None):
         session["attempts"] += 1

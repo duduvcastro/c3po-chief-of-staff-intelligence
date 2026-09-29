@@ -9,6 +9,7 @@ from .r2d2_v2_sources import SourceUnavailable, _require, _time, canonical
 
 
 class MassiveSessionEventSource:
+    minute_bar_enabled = True
     def __init__(self, journals):
         _require(isinstance(journals, SessionJournalRoot), 'MASSIVE_SESSION_ROOT_REQUIRED')
         self.journals = journals
@@ -29,17 +30,18 @@ class MassiveSessionEventSource:
     def _cursor(self, positions):
         return {'version': 2, 'epoch': self.journals.epoch, 'sessions': positions}
 
-    def prepare_events(self, now, cursor, *, snapshot=None, read_clock=None, receipt_cutoff=None):
+    def prepare_events(self, now, cursor, *, snapshot=None, read_clock=None, receipt_cutoff=None, event_limit=4096):
         try:
             with journal_access(self.journals.root):
-                return self._prepare(now, cursor, snapshot=snapshot, receipt_cutoff=receipt_cutoff)
+                return self._prepare(now, cursor, snapshot=snapshot, receipt_cutoff=receipt_cutoff, event_limit=event_limit)
         except (SourceUnavailable, OSError, ValueError, TypeError, KeyError, OverflowError, sqlite3.Error) as exc:
             code = ('RAW_APPEND_IN_PROGRESS' if str(exc) in
                     {'MASSIVE_SESSION_NOT_READY', 'MASSIVE_MAINTENANCE_BUSY'}
                     else 'MASSIVE_SESSION_SOURCE_UNVERIFIED')
             return dict(events=[], diagnostics=[{'code': code}], cursor=cursor)
 
-    def _prepare(self, now, cursor, *, snapshot, receipt_cutoff):
+    def _prepare(self, now, cursor, *, snapshot, receipt_cutoff, event_limit):
+        _require(type(event_limit) is int and 1<=event_limit<=4096, 'MASSIVE_SESSION_EVENT_LIMIT')
         positions = self._positions(cursor, empty=True)
         names = self.journals.sessions()
         _require(set(positions) <= set(names), 'MASSIVE_SESSION_CURSOR_MISSING_JOURNAL')
@@ -69,7 +71,7 @@ class MassiveSessionEventSource:
         journal = self.journals.open_session(day)
         instruments = {'US:' + symbol for symbol in self.journals.manifest(day)['symbols']}
         after = positions[day]
-        page = journal.page(after, through=heads[day], limit=4096)
+        page = journal.page(after, through=heads[day], limit=event_limit)
         records = page['records']
         _require(bool(records), 'MASSIVE_SESSION_PAGE_PROGRESS')
         split = False
