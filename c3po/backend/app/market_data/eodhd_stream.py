@@ -9,12 +9,19 @@ from threading import Event, RLock, Thread
 from time import monotonic
 from typing import Any
 
+import exchange_calendars as xcals
 import websockets
 
 from ..microstructure_capture import RawStreamCapture
 
 
 logger = logging.getLogger(__name__)
+
+MAX_STREAM_PRICE_DEVIATION = 0.35
+# Displayed prices follow the official session only. After-hours prints and
+# thin books replaced the close on 29/09/2026 (QQQM +9.3%, ZVRA +5.4%, AVGO
+# +3.9% above the official close).
+MAX_STREAM_QUOTE_SPREAD = 0.01
 
 
 @dataclass(frozen=True)
@@ -38,6 +45,24 @@ class EodhdStreamBar:
     close: float
     volume: float
     trades: int = 1
+
+
+def usable_display_tick(tick: Any, reference_price: float | None) -> bool:
+    """Accepts a stream tick as a displayed price only when it is plausible."""
+    price = getattr(tick, "price", None)
+    if not reference_price or reference_price <= 0 or not price or price <= 0:
+        return False
+    if getattr(tick, "source", "trade") == "quote":
+        bid, ask = getattr(tick, "bid", None), getattr(tick, "ask", None)
+        if not bid or not ask or ask < bid:
+            return False
+        if (ask - bid) / ((ask + bid) / 2) > MAX_STREAM_QUOTE_SPREAD:
+            return False
+    try:
+        regular = xcals.get_calendar("XNYS").is_open_on_minute(tick.as_of)
+    except (ValueError, TypeError, KeyError):
+        regular = False
+    return regular and abs(price / reference_price - 1) <= MAX_STREAM_PRICE_DEVIATION
 
 
 class EodhdRealtimeStream:

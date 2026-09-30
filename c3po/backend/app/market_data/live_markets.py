@@ -8,7 +8,7 @@ from ..config import Settings
 from ..schemas import LiveMarketIndexResponse, LiveMarketItem, LiveMarketsResponse
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
-from .eodhd_stream import EodhdRealtimeStream
+from .eodhd_stream import EodhdRealtimeStream, usable_display_tick
 from .http import JsonHttpClient
 from .indices import IndexQuotesService
 from .models import from_unix, number
@@ -357,6 +357,8 @@ class LiveMarketsService:
             return item
         tick = self.stream.quote(spec.symbol)
         if not tick or tick.as_of < item.as_of:
+            return item
+        if not usable_display_tick(tick, item.price or item.previous_close):
             return item
         previous_close = item.previous_close
         change = tick.price - previous_close if previous_close else item.change

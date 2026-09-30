@@ -30,8 +30,9 @@ from ..schemas import (
 )
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
-from .http import JsonHttpClient
-from .eodhd_stream import EodhdRealtimeStream
+from .http import DeadlineJsonHttpClient, JsonHttpClient
+from .massive import MassiveClient
+from .eodhd_stream import EodhdRealtimeStream, usable_display_tick
 from .models import canonical_us_security_name, canonical_us_security_type, from_unix, number
 from .live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
 from .indices import INDICES, IndexQuotesService, quote_status
@@ -43,6 +44,7 @@ CACHE_SECONDS = 55
 FALLBACK_CACHE_SECONDS = 8
 SYMBOL_CATALOG_SECONDS = 24 * 60 * 60
 MAX_STREAM_PRICE_DEVIATION = 0.35
+OFFICIAL_CLOSE_TOLERANCE_PERCENT = 0.5
 DIRECT_QUOTE_FALLBACK_AGE = timedelta(days=30)
 NEW_YORK = ZoneInfo("America/New_York")
 PORTFOLIO_MARKET_CALENDARS = {
@@ -92,6 +94,18 @@ class RealtimeMarketsService:
         self.settings = settings
         self.database = database
         self.http = http
+        # Official-close lookups run on the portfolio hot path: bounded, no retry.
+        self._official_close_http = (
+            DeadlineJsonHttpClient(timeout=3.0) if type(http) is JsonHttpClient else http
+        )
+        self._official_close_lock = Lock()
+        try:
+            self._massive_close_client = (
+                MassiveClient(settings.massive_base_url, settings.massive_api_token, self._official_close_http)
+                if settings.massive_api_token else None
+            )
+        except ValueError:
+            self._massive_close_client = None
         self.stream = stream
         self.indices = indices or IndexQuotesService(settings, http)
         self._lock = RLock()
@@ -104,6 +118,10 @@ class RealtimeMarketsService:
         self._portfolio_quotes: dict[str, tuple[datetime, RealtimeMarketLeader]] = {}
         self._us_reference_cache: dict[tuple[str, date], tuple[datetime, float | None, date | None]] = {}
         self._otc_origin_cache: dict[str, tuple[datetime, OtcOriginReference | None]] = {}
+        # (expires_at, close, source, divergence_percent vs the cross-check)
+        self._us_official_close_cache: dict[
+            tuple[str, date], tuple[datetime, float | None, str, float | None]
+        ] = {}
         self._intraday_series: dict[str, tuple[datetime, RealtimePortfolioIntradayResponse]] = {}
         self._index_history_failures: dict[tuple, datetime] = {}
         self._index_history_lock = Lock()
@@ -222,6 +240,17 @@ class RealtimeMarketsService:
             ):
                 reference_sessions[symbol] = row.as_of.astimezone(NEW_YORK).date()
         self._prime_us_reference_cache(reference_sessions, now)
+        self._prime_us_official_closes(
+            [
+                entry["symbol"] for entry in entries
+                if entry["market"] != "B3"
+                and not (
+                    entry["market"] == "OTC"
+                    and foreign_listing_policy_for(entry["symbol"]) is not None
+                )
+            ],
+            now,
+        )
 
         items: list[RealtimePortfolioItem] = []
         for entry in entries:
@@ -240,16 +269,23 @@ class RealtimeMarketsService:
             if not quote_row:
                 errors.append(f"{entry['symbol']}: quote unavailable")
                 continue
-            quote_row = (
-                self._apply_stream_row(quote_row)
-                if market != "B3" and not used_origin_fallback
-                else quote_row
+            official = (
+                self._us_closed_session_row(quote_row, now)
+                if market != "B3" and listing_policy is None
+                else None
             )
+            official_close = official[0] if official else None
+            if official_close is not None:
+                quote_row = official_close
+            elif market != "B3" and not used_origin_fallback:
+                quote_row = self._apply_stream_row(quote_row, display=True)
             quote_row = quote_row.model_copy(update={
                 "status": self._portfolio_quote_status(quote_row, market, now),
             })
             source = "Brapi Pro" if market == "B3" else (
-                "EODHD Real-Time WebSocket" if quote_row.status == "live" else "EODHD Bulk Live US"
+                official[1] if official is not None
+                else "EODHD Real-Time WebSocket" if quote_row.status == "live"
+                else "EODHD Bulk Live US"
             )
             reference_status = "not_applicable"
             reference_close = None
@@ -263,9 +299,18 @@ class RealtimeMarketsService:
             origin_reference_note = None
             market_label = market
             market_detail = None
+            if official is not None and official[2] is not None:
+                # Paid close and cross-check disagree: show it, do not hide it.
+                origin_reference_status = "divergent"
+                origin_reference_divergence_percent = official[2]
+                origin_reference_note = (
+                    f"a confirmar: fontes divergem {abs(official[2]):.1f}% no fechamento"
+                )
             if market == "OTC":
                 quote_row = quote_row.model_copy(update={"currency": "USD"})
-                if listing_policy is None:
+                if listing_policy is None and origin_reference_status == "divergent":
+                    pass  # Keep the "a confirmar" warning of the official close.
+                elif listing_policy is None:
                     origin_reference_status = "unmapped"
                     origin_reference_note = "sem listagem-mãe mapeada"
                 else:
@@ -344,6 +389,136 @@ class RealtimeMarketsService:
             sources=sources,
             errors=errors,
         )
+
+    @staticmethod
+    def _last_closed_session(now: datetime) -> tuple[date, datetime] | None:
+        try:
+            calendar = xcals.get_calendar("XNYS")
+            if calendar.is_open_on_minute(now):
+                return None
+            session = calendar.minute_to_session(now, direction="previous")
+            closed_at = calendar.session_close(session).to_pydatetime()
+        except (ValueError, TypeError, KeyError):
+            return None
+        return (session.date(), closed_at) if closed_at <= now else None
+
+    def _prime_us_official_closes(self, symbols: list[str], now: datetime) -> None:
+        """Fetches missing official closes in parallel, one refresh at a time."""
+        closed = self._last_closed_session(now)
+        if closed is None:
+            return
+        session_date, closed_at = closed
+        missing = sorted({
+            symbol for symbol in symbols
+            if not self._us_official_close_cache.get((symbol, session_date))
+            or now >= self._us_official_close_cache[(symbol, session_date)][0]
+        })
+        if not missing or not self._official_close_lock.acquire(blocking=False):
+            return  # Another request is refreshing; serve what is cached.
+        try:
+            def fetch(symbol: str) -> tuple[str, float | None, str, float | None]:
+                return (symbol, *self._resolve_official_close(symbol, session_date))
+
+            # The auction print can land minutes after 16:00: keep re-reading
+            # for 30 minutes before trusting a close for hours.
+            final = now >= closed_at + timedelta(minutes=30)
+            with ThreadPoolExecutor(max_workers=min(len(missing), 8)) as executor:
+                for symbol, close, source, divergence in executor.map(fetch, missing):
+                    if not final:
+                        ttl = timedelta(minutes=1)
+                    elif close is None or divergence is not None or "Yahoo" not in source:
+                        ttl = timedelta(minutes=5)  # Re-read until cross-checked.
+                    else:
+                        ttl = timedelta(hours=4)
+                    self._us_official_close_cache[(symbol, session_date)] = (
+                        now + ttl, close, source, divergence,
+                    )
+        finally:
+            self._official_close_lock.release()
+
+    def _resolve_official_close(
+        self,
+        symbol: str,
+        session_date: date,
+    ) -> tuple[float | None, str, float | None]:
+        """Massive (paid, consolidated) first; Yahoo cross-checks or backs up."""
+        client = self._massive_close_client
+
+        def read_massive() -> float | None:
+            try:
+                return client.daily_close(symbol, session_date=session_date) if client else None
+            except Exception:
+                return None
+
+        def read_yahoo() -> float | None:
+            try:
+                return self._yahoo_session_close(symbol, session_date)
+            except Exception:
+                return None
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            massive_future = executor.submit(read_massive)
+            yahoo_future = executor.submit(read_yahoo)
+            massive, yahoo = massive_future.result(), yahoo_future.result()
+        if massive is not None:
+            divergence = (massive / yahoo - 1) * 100 if yahoo else None
+            if divergence is not None and abs(divergence) <= OFFICIAL_CLOSE_TOLERANCE_PERCENT:
+                divergence = None
+            source = "Massive official close" + (" + Yahoo check" if yahoo else "")
+            return massive, source, divergence
+        if yahoo is not None:
+            return yahoo, "Yahoo Finance official close", None
+        return None, "", None
+
+    def _us_closed_session_row(
+        self,
+        row: RealtimeMarketLeader,
+        now: datetime,
+    ) -> tuple[RealtimeMarketLeader, str, float | None] | None:
+        """Pins a US row to the official close while the exchange is closed."""
+        closed = self._last_closed_session(now)
+        if closed is None:
+            return None
+        session_date, closed_at = closed
+        cached = self._us_official_close_cache.get((row.symbol, session_date))
+        if not cached or cached[1] is None or cached[1] <= 0:
+            return None
+        _, close, source, divergence = cached
+        return row.model_copy(update={
+            "price": close,
+            "cash_volume": close * row.volume,
+            "as_of": closed_at,
+            "status": "closed",
+            "delay_minutes": 0,
+        }), source, divergence
+
+    def _yahoo_session_close(self, symbol: str, session_date: date) -> float | None:
+        """Returns the regular-session close; after-hours trades are excluded."""
+        window_end = datetime(
+            session_date.year, session_date.month, session_date.day, tzinfo=NEW_YORK,
+        ) + timedelta(days=1)
+        payload = self._official_close_http.get_json(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}",
+            params={
+                "period1": int((window_end - timedelta(days=7)).timestamp()),
+                "period2": int(window_end.timestamp()),
+                "interval": "1d",
+                "events": "history",
+            },
+            headers={"User-Agent": "Mozilla/5.0 C3PO-Official-Close/1.0"},
+        )
+        result = payload["chart"]["result"][0]
+        meta = result.get("meta") or {}
+        if str(meta.get("symbol") or "").strip().upper() != symbol.upper():
+            return None
+        timestamps = result.get("timestamp") or []
+        closes = (((result.get("indicators") or {}).get("quote") or [{}])[0]).get("close") or []
+        for index, timestamp in enumerate(timestamps):
+            row_date = datetime.fromtimestamp(float(timestamp), timezone.utc).astimezone(NEW_YORK).date()
+            close = number(closes[index]) if index < len(closes) else None
+            if row_date == session_date and close is not None and close > 0:
+                return round(close, 4)  # Yahoo serves float32 closes (303.8299865…).
+        return None
 
     @staticmethod
     def _portfolio_quote_status(
@@ -1352,7 +1527,7 @@ class RealtimeMarketsService:
             not tick
             or tick.as_of.astimezone(market_timezone).date().isoformat() != response.session_date
             or tick.as_of < response.points[-1].as_of
-            or abs(tick.price / response.current - 1) > MAX_STREAM_PRICE_DEVIATION
+            or not usable_display_tick(tick, response.current)
         ):
             return response
         points = list(response.points)
@@ -1614,7 +1789,7 @@ class RealtimeMarketsService:
         ))
         self.stream.set_group(f"market:{market}", symbols, priority=50)
         updated = self._sort_leader_groups({
-            group: [self._apply_stream_row(item) for item in getattr(response, group)]
+            group: [self._apply_stream_row(item, display=True) for item in getattr(response, group)]
             for group in groups
         })
         live_count = sum(item.status == "live" for group in groups for item in updated[group])
@@ -1628,13 +1803,22 @@ class RealtimeMarketsService:
             "generated_at": now,
         })
 
-    def _apply_stream_row(self, row: RealtimeMarketLeader) -> RealtimeMarketLeader:
+    def _apply_stream_row(
+        self,
+        row: RealtimeMarketLeader,
+        *,
+        display: bool = False,
+    ) -> RealtimeMarketLeader:
+        # display=True applies the stricter screen guard; R2D2 v1 marks keep
+        # the original deviation rule.
         if not self.stream:
             return row
         tick = self.stream.quote(row.symbol)
         if not tick or tick.as_of < row.as_of:
             return row
-        if abs(tick.price / row.price - 1) > MAX_STREAM_PRICE_DEVIATION:
+        if display and not usable_display_tick(tick, row.price):
+            return row
+        if not display and abs(tick.price / row.price - 1) > MAX_STREAM_PRICE_DEVIATION:
             return row
         previous_close = self._us_previous_close.get(row.symbol)
         if previous_close is None and row.change_percent > -99.99:
