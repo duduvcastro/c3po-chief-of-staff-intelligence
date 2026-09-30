@@ -21,7 +21,8 @@ class MassiveResponseError(RuntimeError):
 class MassiveClient:
     """Small, auditable Massive REST client for Day D research data.
 
-    The production trading path does not import this client. Historical trades
+    R2D2 trading never calls it; `daily_close` feeds displayed closes only.
+    Historical trades
     and quotes retain both participant and SIP timestamps so replay can model
     event time separately from the time the consolidated feed knew the event.
     """

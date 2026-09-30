@@ -308,7 +308,9 @@ class RealtimeMarketsService:
                 )
             if market == "OTC":
                 quote_row = quote_row.model_copy(update={"currency": "USD"})
-                if listing_policy is None:
+                if listing_policy is None and origin_reference_status == "divergent":
+                    pass  # Keep the "a confirmar" warning of the official close.
+                elif listing_policy is None:
                     origin_reference_status = "unmapped"
                     origin_reference_note = "sem listagem-mãe mapeada"
                 else:
@@ -424,8 +426,8 @@ class RealtimeMarketsService:
                 for symbol, close, source, divergence in executor.map(fetch, missing):
                     if not final:
                         ttl = timedelta(minutes=1)
-                    elif close is None or divergence is not None:
-                        ttl = timedelta(minutes=5)
+                    elif close is None or divergence is not None or "Yahoo" not in source:
+                        ttl = timedelta(minutes=5)  # Re-read until cross-checked.
                     else:
                         ttl = timedelta(hours=4)
                     self._us_official_close_cache[(symbol, session_date)] = (
@@ -440,16 +442,24 @@ class RealtimeMarketsService:
         session_date: date,
     ) -> tuple[float | None, str, float | None]:
         """Massive (paid, consolidated) first; Yahoo cross-checks or backs up."""
-        massive = None
-        if self._massive_close_client is not None:
+        client = self._massive_close_client
+
+        def read_massive() -> float | None:
             try:
-                massive = self._massive_close_client.daily_close(symbol, session_date=session_date)
+                return client.daily_close(symbol, session_date=session_date) if client else None
             except Exception:
-                massive = None
-        try:
-            yahoo = self._yahoo_session_close(symbol, session_date)
-        except Exception:
-            yahoo = None
+                return None
+
+        def read_yahoo() -> float | None:
+            try:
+                return self._yahoo_session_close(symbol, session_date)
+            except Exception:
+                return None
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            massive_future = executor.submit(read_massive)
+            yahoo_future = executor.submit(read_yahoo)
+            massive, yahoo = massive_future.result(), yahoo_future.result()
         if massive is not None:
             divergence = (massive / yahoo - 1) * 100 if yahoo else None
             if divergence is not None and abs(divergence) <= OFFICIAL_CLOSE_TOLERANCE_PERCENT:
