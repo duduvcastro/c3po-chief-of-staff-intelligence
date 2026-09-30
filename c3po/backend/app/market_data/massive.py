@@ -5,9 +5,13 @@ from datetime import date, datetime, timezone
 import re
 from typing import Any
 from urllib.parse import quote, quote_plus, urlparse
+from zoneinfo import ZoneInfo
 
 from .http import JsonHttpClient, MarketDataRequestError
 from .models import number
+
+
+NEW_YORK = ZoneInfo("America/New_York")
 
 
 class MassiveResponseError(RuntimeError):
@@ -17,7 +21,8 @@ class MassiveResponseError(RuntimeError):
 class MassiveClient:
     """Small, auditable Massive REST client for Day D research data.
 
-    The production trading path does not import this client. Historical trades
+    R2D2 trading never calls it; `daily_close` feeds displayed closes only.
+    Historical trades
     and quotes retain both participant and SIP timestamps so replay can model
     event time separately from the time the consolidated feed knew the event.
     """
@@ -41,6 +46,23 @@ class MassiveClient:
         if parsed.scheme != "https" or not parsed.netloc:
             raise ValueError("Massive base URL must be an absolute HTTPS URL")
         self._origin = (parsed.scheme, parsed.netloc)
+
+    def daily_close(self, symbol: str, *, session_date: date) -> float | None:
+        """Unadjusted consolidated close of one regular session (display only)."""
+        day = session_date.isoformat()
+        for row in self._iter_results(
+            f"/v2/aggs/ticker/{self._symbol(symbol)}/range/1/day/{day}/{day}",
+            params={"adjusted": "false"},
+            max_pages=1,
+        ):
+            close = number(row.get("c"))
+            bar_ms = number(row.get("t"))
+            if close is None or bar_ms is None:
+                continue
+            bar_at = datetime.fromtimestamp(bar_ms / 1000, tz=timezone.utc)
+            if bar_at.astimezone(NEW_YORK).date() == session_date and close > 0:
+                return round(close, 4)
+        return None
 
     def iter_trades(self, symbol: str, *, session_date: date) -> Iterator[dict[str, Any]]:
         self._require_historical_access()

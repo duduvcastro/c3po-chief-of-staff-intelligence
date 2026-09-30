@@ -1287,8 +1287,11 @@ def test_realtime_portfolio_shows_official_close_after_hours(monkeypatch) -> Non
     monkeypatch.setattr(service, "_yahoo_session_close", session_close)
     assert service._us_closed_session_row(row, now) is None  # nothing fetched yet
     service._prime_us_official_closes(["QQQM"], now)
-    pinned = service._us_closed_session_row(row, now)
-    assert pinned is not None
+    pinned_result = service._us_closed_session_row(row, now)
+    assert pinned_result is not None
+    pinned, source, divergence = pinned_result
+    assert source == "Yahoo Finance official close"
+    assert divergence is None
     assert pinned.price == 303.83
     assert pinned.status == "closed"
     assert pinned.as_of == datetime(2026, 9, 29, 20, 0, tzinfo=timezone.utc)
@@ -1296,7 +1299,7 @@ def test_realtime_portfolio_shows_official_close_after_hours(monkeypatch) -> Non
     service._prime_us_official_closes(["QQQM"], now + timedelta(minutes=1))
     assert len(calls) == 1  # final close cached
     # Before the next open the last session close still applies.
-    assert service._us_closed_session_row(row, datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)).price == 303.83
+    assert service._us_closed_session_row(row, datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc))[0].price == 303.83
     # During the session the live path is used instead.
     service._prime_us_official_closes(["QQQM"], datetime(2026, 9, 30, 15, 0, tzinfo=timezone.utc))
     assert len(calls) == 1
@@ -1331,6 +1334,47 @@ def test_official_close_refresh_is_single_flight(monkeypatch) -> None:
     assert service._us_official_close_cache == {}
     service._prime_us_official_closes(["QQQM"], now)  # failure is cached, not raised
     assert service._us_official_close_cache[("QQQM", date(2026, 9, 29))][1] is None
+
+
+def test_official_close_prefers_massive_and_flags_divergence(monkeypatch) -> None:
+    settings = Settings(auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), StubHttp({}))  # type: ignore[arg-type]
+    day = date(2026, 9, 29)
+    closes = {"massive": 303.83, "yahoo": 303.83}
+
+    class StubMassive:
+        def daily_close(self, symbol, *, session_date):
+            if closes["massive"] is None:
+                raise RuntimeError("down")
+            return closes["massive"]
+
+    service._massive_close_client = StubMassive()  # type: ignore[assignment]
+    monkeypatch.setattr(service, "_yahoo_session_close", lambda symbol, session_date: closes["yahoo"])
+
+    assert service._resolve_official_close("QQQM", day) == (303.83, "Massive official close + Yahoo check", None)
+    closes["yahoo"] = 303.0  # 0.27%: inside tolerance
+    assert service._resolve_official_close("QQQM", day)[2] is None
+    closes["yahoo"] = 300.0  # 1.28%: shown as "a confirmar"
+    price, source, divergence = service._resolve_official_close("QQQM", day)
+    assert price == 303.83 and source.startswith("Massive") and round(divergence, 2) == 1.28
+    closes["yahoo"] = None
+    assert service._resolve_official_close("QQQM", day) == (303.83, "Massive official close", None)
+    closes.update(massive=None, yahoo=303.83)
+    assert service._resolve_official_close("QQQM", day) == (303.83, "Yahoo Finance official close", None)
+    closes["yahoo"] = None
+    assert service._resolve_official_close("QQQM", day) == (None, "", None)
+
+
+def test_massive_daily_close_reads_the_unadjusted_session_bar() -> None:
+    from app.market_data.massive import MassiveClient
+    bar_at = int(datetime(2026, 9, 29, 4, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    http = RoutingStubHttp({"/v2/aggs/ticker/QQQM/range/1/day/2026-09-29/2026-09-29": {
+        "status": "OK", "results": [{"c": 303.83, "t": bar_at}],
+    }, "/v2/aggs/ticker/QQQM/range/1/day/2026-09-30/2026-09-30": {"status": "OK", "results": []}})
+    client = MassiveClient("https://api.massive.com", "token", http)  # type: ignore[arg-type]
+    assert client.daily_close("QQQM", session_date=date(2026, 9, 29)) == 303.83
+    assert http.calls[0]["params"]["adjusted"] == "false"
+    assert client.daily_close("QQQM", session_date=date(2026, 9, 30)) is None
 
 
 def test_yahoo_session_close_picks_the_requested_session_only() -> None:
