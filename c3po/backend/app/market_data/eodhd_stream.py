@@ -18,10 +18,9 @@ from ..microstructure_capture import RawStreamCapture
 logger = logging.getLogger(__name__)
 
 MAX_STREAM_PRICE_DEVIATION = 0.35
-# Outside the regular session the book is thin: one-sided or wide quotes and
-# odd prints must not replace the last good price (QQQM 29/09/2026 20:00 ET
-# showed +9.5% while the session closed +0.2%).
-MAX_EXTENDED_HOURS_DEVIATION = 0.05
+# Displayed prices follow the official session only. After-hours prints and
+# thin books replaced the close on 29/09/2026 (QQQM +9.3%, ZVRA +5.4%, AVGO
+# +3.9% above the official close).
 MAX_STREAM_QUOTE_SPREAD = 0.01
 
 
@@ -63,8 +62,7 @@ def usable_display_tick(tick: Any, reference_price: float | None) -> bool:
         regular = xcals.get_calendar("XNYS").is_open_on_minute(tick.as_of)
     except (ValueError, TypeError, KeyError):
         regular = False
-    limit = MAX_STREAM_PRICE_DEVIATION if regular else MAX_EXTENDED_HOURS_DEVIATION
-    return abs(price / reference_price - 1) <= limit
+    return regular and abs(price / reference_price - 1) <= MAX_STREAM_PRICE_DEVIATION
 
 
 class EodhdRealtimeStream:
