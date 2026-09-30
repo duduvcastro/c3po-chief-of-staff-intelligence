@@ -30,7 +30,7 @@ from ..schemas import (
 )
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
-from .http import JsonHttpClient
+from .http import DeadlineJsonHttpClient, JsonHttpClient
 from .eodhd_stream import EodhdRealtimeStream, usable_display_tick
 from .models import canonical_us_security_name, canonical_us_security_type, from_unix, number
 from .live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
@@ -92,6 +92,11 @@ class RealtimeMarketsService:
         self.settings = settings
         self.database = database
         self.http = http
+        # Official-close lookups run on the portfolio hot path: bounded, no retry.
+        self._official_close_http = (
+            DeadlineJsonHttpClient(timeout=3.0) if type(http) is JsonHttpClient else http
+        )
+        self._official_close_lock = Lock()
         self.stream = stream
         self.indices = indices or IndexQuotesService(settings, http)
         self._lock = RLock()
@@ -223,6 +228,17 @@ class RealtimeMarketsService:
             ):
                 reference_sessions[symbol] = row.as_of.astimezone(NEW_YORK).date()
         self._prime_us_reference_cache(reference_sessions, now)
+        self._prime_us_official_closes(
+            [
+                entry["symbol"] for entry in entries
+                if entry["market"] != "B3"
+                and not (
+                    entry["market"] == "OTC"
+                    and foreign_listing_policy_for(entry["symbol"]) is not None
+                )
+            ],
+            now,
+        )
 
         items: list[RealtimePortfolioItem] = []
         for entry in entries:
@@ -352,12 +368,8 @@ class RealtimeMarketsService:
             errors=errors,
         )
 
-    def _us_closed_session_row(
-        self,
-        row: RealtimeMarketLeader,
-        now: datetime,
-    ) -> RealtimeMarketLeader | None:
-        """Pins a US row to the official close while the exchange is closed."""
+    @staticmethod
+    def _last_closed_session(now: datetime) -> tuple[date, datetime] | None:
         try:
             calendar = xcals.get_calendar("XNYS")
             if calendar.is_open_on_minute(now):
@@ -366,19 +378,53 @@ class RealtimeMarketsService:
             closed_at = calendar.session_close(session).to_pydatetime()
         except (ValueError, TypeError, KeyError):
             return None
-        if closed_at > now:
+        return (session.date(), closed_at) if closed_at <= now else None
+
+    def _prime_us_official_closes(self, symbols: list[str], now: datetime) -> None:
+        """Fetches missing official closes in parallel, one refresh at a time."""
+        closed = self._last_closed_session(now)
+        if closed is None:
+            return
+        session_date, closed_at = closed
+        missing = sorted({
+            symbol for symbol in symbols
+            if not self._us_official_close_cache.get((symbol, session_date))
+            or now >= self._us_official_close_cache[(symbol, session_date)][0]
+        })
+        if not missing or not self._official_close_lock.acquire(blocking=False):
+            return  # Another request is refreshing; serve what is cached.
+        try:
+            def fetch(symbol: str) -> tuple[str, float | None]:
+                try:
+                    return symbol, self._yahoo_session_close(symbol, session_date)
+                except Exception:
+                    return symbol, None
+
+            # The auction print can land minutes after 16:00: keep re-reading
+            # for 30 minutes before trusting a close for hours.
+            final = now >= closed_at + timedelta(minutes=30)
+            with ThreadPoolExecutor(max_workers=min(len(missing), 8)) as executor:
+                for symbol, close in executor.map(fetch, missing):
+                    if close is not None:
+                        ttl = timedelta(hours=4) if final else timedelta(minutes=1)
+                    else:
+                        ttl = timedelta(minutes=5) if final else timedelta(minutes=1)
+                    self._us_official_close_cache[(symbol, session_date)] = (now + ttl, close)
+        finally:
+            self._official_close_lock.release()
+
+    def _us_closed_session_row(
+        self,
+        row: RealtimeMarketLeader,
+        now: datetime,
+    ) -> RealtimeMarketLeader | None:
+        """Pins a US row to the official close while the exchange is closed."""
+        closed = self._last_closed_session(now)
+        if closed is None:
             return None
-        session_date = session.date()
+        session_date, closed_at = closed
         cached = self._us_official_close_cache.get((row.symbol, session_date))
-        if not cached or now >= cached[0]:
-            try:
-                close = self._yahoo_session_close(row.symbol, session_date)
-            except Exception:
-                close = None
-            ttl = timedelta(hours=4) if close is not None else timedelta(minutes=5)
-            self._us_official_close_cache[(row.symbol, session_date)] = (now + ttl, close)
-            cached = self._us_official_close_cache[(row.symbol, session_date)]
-        close = cached[1]
+        close = cached[1] if cached else None
         if close is None or close <= 0:
             return None
         return row.model_copy(update={
@@ -394,7 +440,7 @@ class RealtimeMarketsService:
         window_end = datetime(
             session_date.year, session_date.month, session_date.day, tzinfo=NEW_YORK,
         ) + timedelta(days=1)
-        payload = self.http.get_json(
+        payload = self._official_close_http.get_json(
             f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}",
             params={
                 "period1": int((window_end - timedelta(days=7)).timestamp()),

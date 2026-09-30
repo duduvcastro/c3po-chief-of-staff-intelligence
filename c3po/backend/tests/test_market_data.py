@@ -1285,18 +1285,52 @@ def test_realtime_portfolio_shows_official_close_after_hours(monkeypatch) -> Non
         return 303.83
 
     monkeypatch.setattr(service, "_yahoo_session_close", session_close)
+    assert service._us_closed_session_row(row, now) is None  # nothing fetched yet
+    service._prime_us_official_closes(["QQQM"], now)
     pinned = service._us_closed_session_row(row, now)
     assert pinned is not None
     assert pinned.price == 303.83
     assert pinned.status == "closed"
     assert pinned.as_of == datetime(2026, 9, 29, 20, 0, tzinfo=timezone.utc)
     assert calls == [("QQQM", date(2026, 9, 29))]
-    service._us_closed_session_row(row, now + timedelta(minutes=1))
-    assert len(calls) == 1  # cached
+    service._prime_us_official_closes(["QQQM"], now + timedelta(minutes=1))
+    assert len(calls) == 1  # final close cached
     # Before the next open the last session close still applies.
     assert service._us_closed_session_row(row, datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)).price == 303.83
     # During the session the live path is used instead.
+    service._prime_us_official_closes(["QQQM"], datetime(2026, 9, 30, 15, 0, tzinfo=timezone.utc))
+    assert len(calls) == 1
     assert service._us_closed_session_row(row, datetime(2026, 9, 30, 15, 0, tzinfo=timezone.utc)) is None
+
+
+def test_official_close_is_reread_right_after_the_bell(monkeypatch) -> None:
+    bell = datetime(2026, 9, 29, 20, 0, 30, tzinfo=timezone.utc)  # 16:00:30 ET
+    settings = Settings(auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), StubHttp({}))  # type: ignore[arg-type]
+    closes = iter([303.70, 303.83, 303.83])
+    monkeypatch.setattr(service, "_yahoo_session_close", lambda symbol, session_date: next(closes))
+    service._prime_us_official_closes(["QQQM"], bell)
+    assert service._us_official_close_cache[("QQQM", date(2026, 9, 29))][1] == 303.70
+    service._prime_us_official_closes(["QQQM"], bell + timedelta(minutes=2))
+    assert service._us_official_close_cache[("QQQM", date(2026, 9, 29))][1] == 303.83
+    later = bell + timedelta(minutes=45)
+    service._prime_us_official_closes(["QQQM"], later)
+    assert service._us_official_close_cache[("QQQM", date(2026, 9, 29))][0] == later + timedelta(hours=4)
+
+
+def test_official_close_refresh_is_single_flight(monkeypatch) -> None:
+    now = datetime(2026, 9, 30, 0, 5, tzinfo=timezone.utc)
+    settings = Settings(auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), StubHttp({}))  # type: ignore[arg-type]
+    monkeypatch.setattr(service, "_yahoo_session_close", lambda symbol, session_date: 1 / 0)
+    service._official_close_lock.acquire()
+    try:
+        service._prime_us_official_closes(["QQQM"], now)
+    finally:
+        service._official_close_lock.release()
+    assert service._us_official_close_cache == {}
+    service._prime_us_official_closes(["QQQM"], now)  # failure is cached, not raised
+    assert service._us_official_close_cache[("QQQM", date(2026, 9, 29))][1] is None
 
 
 def test_yahoo_session_close_picks_the_requested_session_only() -> None:
