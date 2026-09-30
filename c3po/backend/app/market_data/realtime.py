@@ -31,7 +31,7 @@ from ..schemas import (
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import JsonHttpClient
-from .eodhd_stream import EodhdRealtimeStream
+from .eodhd_stream import EodhdRealtimeStream, usable_display_tick
 from .models import canonical_us_security_name, canonical_us_security_type, from_unix, number
 from .live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
 from .indices import INDICES, IndexQuotesService, quote_status
@@ -104,6 +104,7 @@ class RealtimeMarketsService:
         self._portfolio_quotes: dict[str, tuple[datetime, RealtimeMarketLeader]] = {}
         self._us_reference_cache: dict[tuple[str, date], tuple[datetime, float | None, date | None]] = {}
         self._otc_origin_cache: dict[str, tuple[datetime, OtcOriginReference | None]] = {}
+        self._us_official_close_cache: dict[tuple[str, date], tuple[datetime, float | None]] = {}
         self._intraday_series: dict[str, tuple[datetime, RealtimePortfolioIntradayResponse]] = {}
         self._index_history_failures: dict[tuple, datetime] = {}
         self._index_history_lock = Lock()
@@ -240,16 +241,22 @@ class RealtimeMarketsService:
             if not quote_row:
                 errors.append(f"{entry['symbol']}: quote unavailable")
                 continue
-            quote_row = (
-                self._apply_stream_row(quote_row)
-                if market != "B3" and not used_origin_fallback
-                else quote_row
+            official_close = (
+                self._us_closed_session_row(quote_row, now)
+                if market != "B3" and listing_policy is None
+                else None
             )
+            if official_close is not None:
+                quote_row = official_close
+            elif market != "B3" and not used_origin_fallback:
+                quote_row = self._apply_stream_row(quote_row, display=True)
             quote_row = quote_row.model_copy(update={
                 "status": self._portfolio_quote_status(quote_row, market, now),
             })
             source = "Brapi Pro" if market == "B3" else (
-                "EODHD Real-Time WebSocket" if quote_row.status == "live" else "EODHD Bulk Live US"
+                "Yahoo Finance official close" if official_close is not None
+                else "EODHD Real-Time WebSocket" if quote_row.status == "live"
+                else "EODHD Bulk Live US"
             )
             reference_status = "not_applicable"
             reference_close = None
@@ -344,6 +351,71 @@ class RealtimeMarketsService:
             sources=sources,
             errors=errors,
         )
+
+    def _us_closed_session_row(
+        self,
+        row: RealtimeMarketLeader,
+        now: datetime,
+    ) -> RealtimeMarketLeader | None:
+        """Pins a US row to the official close while the exchange is closed."""
+        try:
+            calendar = xcals.get_calendar("XNYS")
+            if calendar.is_open_on_minute(now):
+                return None
+            session = calendar.minute_to_session(now, direction="previous")
+            closed_at = calendar.session_close(session).to_pydatetime()
+        except (ValueError, TypeError, KeyError):
+            return None
+        if closed_at > now:
+            return None
+        session_date = session.date()
+        cached = self._us_official_close_cache.get((row.symbol, session_date))
+        if not cached or now >= cached[0]:
+            try:
+                close = self._yahoo_session_close(row.symbol, session_date)
+            except Exception:
+                close = None
+            ttl = timedelta(hours=4) if close is not None else timedelta(minutes=5)
+            self._us_official_close_cache[(row.symbol, session_date)] = (now + ttl, close)
+            cached = self._us_official_close_cache[(row.symbol, session_date)]
+        close = cached[1]
+        if close is None or close <= 0:
+            return None
+        return row.model_copy(update={
+            "price": close,
+            "cash_volume": close * row.volume,
+            "as_of": closed_at,
+            "status": "closed",
+            "delay_minutes": 0,
+        })
+
+    def _yahoo_session_close(self, symbol: str, session_date: date) -> float | None:
+        """Returns the regular-session close; after-hours trades are excluded."""
+        window_end = datetime(
+            session_date.year, session_date.month, session_date.day, tzinfo=NEW_YORK,
+        ) + timedelta(days=1)
+        payload = self.http.get_json(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}",
+            params={
+                "period1": int((window_end - timedelta(days=7)).timestamp()),
+                "period2": int(window_end.timestamp()),
+                "interval": "1d",
+                "events": "history",
+            },
+            headers={"User-Agent": "Mozilla/5.0 C3PO-Official-Close/1.0"},
+        )
+        result = payload["chart"]["result"][0]
+        meta = result.get("meta") or {}
+        if str(meta.get("symbol") or "").strip().upper() != symbol.upper():
+            return None
+        timestamps = result.get("timestamp") or []
+        closes = (((result.get("indicators") or {}).get("quote") or [{}])[0]).get("close") or []
+        for index, timestamp in enumerate(timestamps):
+            row_date = datetime.fromtimestamp(float(timestamp), timezone.utc).astimezone(NEW_YORK).date()
+            close = number(closes[index]) if index < len(closes) else None
+            if row_date == session_date and close is not None and close > 0:
+                return round(close, 4)  # Yahoo serves float32 closes (303.8299865…).
+        return None
 
     @staticmethod
     def _portfolio_quote_status(
@@ -1352,7 +1424,7 @@ class RealtimeMarketsService:
             not tick
             or tick.as_of.astimezone(market_timezone).date().isoformat() != response.session_date
             or tick.as_of < response.points[-1].as_of
-            or abs(tick.price / response.current - 1) > MAX_STREAM_PRICE_DEVIATION
+            or not usable_display_tick(tick, response.current)
         ):
             return response
         points = list(response.points)
@@ -1614,7 +1686,7 @@ class RealtimeMarketsService:
         ))
         self.stream.set_group(f"market:{market}", symbols, priority=50)
         updated = self._sort_leader_groups({
-            group: [self._apply_stream_row(item) for item in getattr(response, group)]
+            group: [self._apply_stream_row(item, display=True) for item in getattr(response, group)]
             for group in groups
         })
         live_count = sum(item.status == "live" for group in groups for item in updated[group])
@@ -1628,13 +1700,22 @@ class RealtimeMarketsService:
             "generated_at": now,
         })
 
-    def _apply_stream_row(self, row: RealtimeMarketLeader) -> RealtimeMarketLeader:
+    def _apply_stream_row(
+        self,
+        row: RealtimeMarketLeader,
+        *,
+        display: bool = False,
+    ) -> RealtimeMarketLeader:
+        # display=True applies the stricter screen guard; R2D2 v1 marks keep
+        # the original deviation rule.
         if not self.stream:
             return row
         tick = self.stream.quote(row.symbol)
         if not tick or tick.as_of < row.as_of:
             return row
-        if abs(tick.price / row.price - 1) > MAX_STREAM_PRICE_DEVIATION:
+        if display and not usable_display_tick(tick, row.price):
+            return row
+        if not display and abs(tick.price / row.price - 1) > MAX_STREAM_PRICE_DEVIATION:
             return row
         previous_close = self._us_previous_close.get(row.symbol)
         if previous_close is None and row.change_percent > -99.99:

@@ -1002,7 +1002,7 @@ def test_live_markets_reads_treasury_yields_from_eodhd_government_bonds() -> Non
 
 
 def test_live_markets_overlays_eodhd_websocket_trade() -> None:
-    baseline_time = datetime(2026, 8, 15, 12, tzinfo=timezone.utc)
+    baseline_time = datetime(2026, 8, 14, 15, tzinfo=timezone.utc)  # Friday 11:00 ET
     stream = StubRealtimeStream({
         "AMZN": EodhdStreamQuote(
             symbol="AMZN",
@@ -1042,6 +1042,14 @@ def test_live_markets_overlays_eodhd_websocket_trade() -> None:
     assert item.status == "live"
     assert item.delay_minutes == 0
     assert round(item.change_percent or 0, 2) == 1.54
+
+    stream.quotes["AMZN"] = EodhdStreamQuote(
+        symbol="AMZN",
+        price=240.0,
+        as_of=datetime(2026, 8, 15, 0, 0, tzinfo=timezone.utc),  # 20:00 ET
+        market_state="extended-hours",
+    )
+    assert service._apply_eodhd_stream(spec, baseline).price == 230.0
 
 
 def test_realtime_b3_ranks_each_board_from_full_quote_list() -> None:
@@ -1241,6 +1249,82 @@ def test_realtime_us_overlays_visible_rows_with_websocket_trade() -> None:
     guarded = service.snapshot("nasdaq")
     assert guarded.gainers[0].price == 105
     assert guarded.gainers[0].status == "delayed"
+
+
+def test_realtime_stream_tick_rejects_implausible_display_prices() -> None:
+    from app.market_data.eodhd_stream import usable_display_tick as usable
+    regular = datetime(2026, 9, 29, 14, 0, tzinfo=timezone.utc)
+    after_hours = datetime(2026, 9, 30, 0, 0, tzinfo=timezone.utc)
+
+    def tick(price, as_of, *, source="trade", bid=None, ask=None):
+        return EodhdStreamQuote(symbol="QQQM", price=price, as_of=as_of, market_state="open",
+                                bid=bid, ask=ask, source=source)
+
+    assert usable(tick(304.5, regular), 303.83)
+    assert usable(tick(304.0, regular, source="quote", bid=303.9, ask=304.1), 303.83)
+    # A wide or one-sided book must never become the price, even in session.
+    assert not usable(tick(332.15, regular, source="quote", bid=303.0, ask=361.3), 303.83)
+    assert not usable(tick(304.0, regular, source="quote", bid=None, ask=304.0), 303.83)
+    # Outside the official session no stream tick replaces the displayed price.
+    assert not usable(tick(304.0, after_hours), 303.83)
+    assert not usable(tick(332.15, after_hours), 303.83)
+    assert not usable(tick(304.5, regular), 0)
+
+
+def test_realtime_portfolio_shows_official_close_after_hours(monkeypatch) -> None:
+    now = datetime(2026, 9, 30, 0, 5, tzinfo=timezone.utc)  # 20:05 ET
+    row = RealtimeMarketLeader(symbol="QQQM", name="QQQM", price=304.1, change_percent=0.3,
+        volume=1_878_886, cash_volume=0, currency="USD", exchange="NASDAQ",
+        as_of=datetime(2026, 9, 29, 23, 50, tzinfo=timezone.utc))
+    settings = Settings(auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), StubHttp({}))  # type: ignore[arg-type]
+    calls = []
+
+    def session_close(symbol, session_date):
+        calls.append((symbol, session_date))
+        return 303.83
+
+    monkeypatch.setattr(service, "_yahoo_session_close", session_close)
+    pinned = service._us_closed_session_row(row, now)
+    assert pinned is not None
+    assert pinned.price == 303.83
+    assert pinned.status == "closed"
+    assert pinned.as_of == datetime(2026, 9, 29, 20, 0, tzinfo=timezone.utc)
+    assert calls == [("QQQM", date(2026, 9, 29))]
+    service._us_closed_session_row(row, now + timedelta(minutes=1))
+    assert len(calls) == 1  # cached
+    # Before the next open the last session close still applies.
+    assert service._us_closed_session_row(row, datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)).price == 303.83
+    # During the session the live path is used instead.
+    assert service._us_closed_session_row(row, datetime(2026, 9, 30, 15, 0, tzinfo=timezone.utc)) is None
+
+
+def test_yahoo_session_close_picks_the_requested_session_only() -> None:
+    def ts(day):
+        return int(datetime(2026, 9, day, 13, 30, tzinfo=timezone.utc).timestamp())
+    http = RoutingStubHttp({"/v8/finance/chart/QQQM": {"chart": {"result": [{
+        "meta": {"symbol": "QQQM"},
+        "timestamp": [ts(28), ts(29)],
+        "indicators": {"quote": [{"close": [303.29, 303.83]}]},
+    }]}}})
+    settings = Settings(auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http)  # type: ignore[arg-type]
+    assert service._yahoo_session_close("QQQM", date(2026, 9, 29)) == 303.83
+    assert service._yahoo_session_close("QQQM", date(2026, 9, 30)) is None
+
+
+def test_realtime_r2d2_stream_marks_keep_original_deviation_rule() -> None:
+    now = datetime(2026, 9, 30, 0, 0, tzinfo=timezone.utc)
+    row = RealtimeMarketLeader(symbol="QQQM", name="QQQM", price=303.83, change_percent=0.18,
+        volume=100_000, cash_volume=303.83 * 100_000, currency="USD", exchange="NASDAQ",
+        as_of=now - timedelta(minutes=5))
+    stream = StubRealtimeStream({"QQQM": EodhdStreamQuote(symbol="QQQM", price=332.15, as_of=now,
+        market_state="open", bid=303.0, ask=361.3, source="quote")})
+    settings = Settings(auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), StubHttp({}), stream=stream)  # type: ignore[arg-type]
+
+    assert service._apply_stream_row(row).price == 332.15
+    assert service._apply_stream_row(row, display=True).price == 303.83
 
 
 def test_realtime_portfolio_persists_validated_symbols_and_reuses_quotes() -> None:
@@ -3227,6 +3311,10 @@ def test_b3_screen_without_a_generation_serves_the_cached_empty_view_and_does_no
 def test_rankings_reorder_after_quote_updates_without_mutating_scan(market, monkeypatch):
     from types import SimpleNamespace
     from app.schemas import RealtimeMarketIndex, RealtimeMarketResponse
+    import app.market_data.eodhd_stream as stream_module
+    # Ranking is under test, not the session guard; keep it clock-independent.
+    monkeypatch.setattr(stream_module.xcals, 'get_calendar',
+        lambda name: SimpleNamespace(is_open_on_minute=lambda minute: True))
     now = datetime.now(timezone.utc)
     rows = [RealtimeMarketLeader(symbol=s, name=s, price=p, change_percent=p-100,
         volume=100_000, cash_volume=p*100_000, currency='USD', exchange=market,
