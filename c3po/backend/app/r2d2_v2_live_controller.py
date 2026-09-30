@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 import stat
 import uuid
-from threading import Event, Thread
+from threading import Event, Thread, RLock
 from time import monotonic
 from typing import Any, Callable
 
@@ -139,10 +139,13 @@ def compact_live_receipt(receipt: dict) -> dict:
 class LiveGroupController:
     def __init__(self, settings: Any, stream: Any, *,
                  inventory: Callable = read_live_inventory, policy_reader: Callable = read_policy,
-                 clock: Callable = lambda: datetime.now(timezone.utc)) -> None:
+                 clock: Callable = lambda: datetime.now(timezone.utc), capacity_planner=None) -> None:
         self.settings, self.stream = settings, stream
         self.inventory, self.policy_reader, self.clock = inventory, policy_reader, clock
+        self.capacity_planner=capacity_planner
         self.stop_event = Event()
+        self._start_lock=RLock()
+        self._start_claimed=False
         self.thread: Thread | None = None
         self.proof_started: float | None = None
         self.proof_used = False
@@ -178,6 +181,10 @@ class LiveGroupController:
                 raise ShadowIntegrityError("LIVE_POLICY_CHANGED_RESTART_REQUIRED")
             self.policy_identity = identity
             state_sha = None
+            capacity_plan_sha=None
+            capacity_mode=None
+            capacity_deadline=None
+            capacity_fallback_names=None
             ttl = min(LEASE_SECONDS, (utc(policy["valid_until"]) - now).total_seconds())
             if policy["mode"] == "PROOF":
                 if self.proof_started is None:
@@ -201,8 +208,14 @@ class LiveGroupController:
                 release, saved = self.inventory(self.settings, policy, now)
                 if saved is None:
                     raise ShadowIntegrityError("LIVE_EPOCH_NOT_FOUND")
-                plan = plan_live_group(saved, release, capacity=policy["capacity"])
+                plan = (self.capacity_planner(saved,release,policy,now) if self.capacity_planner is not None
+                        else plan_live_group(saved, release, capacity=policy["capacity"]))
+                capacity_plan_sha=plan.get("capacity_plan_sha")
+                capacity_mode=plan.get("capacity_mode")
                 names, state_sha = plan["symbols"], plan["state_sha"]
+                if capacity_mode=='BOUND_MONITORED':
+                    capacity_deadline=plan.get('capacity_evidence_valid_until')
+                    capacity_fallback_names=plan.get('capacity_fallback_symbols')
             # DB/file I/O cannot extend an expired policy or refresh a stale plan.
             after = self.clock()
             if (monotonic()-started >= 10 or (after-now).total_seconds() >= 10
@@ -214,9 +227,24 @@ class LiveGroupController:
                 ttl = min(ttl, (utc(policy["valid_until"]) - after).total_seconds() - 5)
             if self.stop_event.is_set():
                 raise ShadowIntegrityError("LIVE_CONTROLLER_STOPPED")
+            # Final wall clock is read AFTER every authority/policy I/O callback.
+            # Evidence deadline gates this mutation, not the ongoing open-position lease.
+            after=self.clock()
+            if (monotonic()-started >= 10 or (after-now).total_seconds() >= 10
+                    or after < now or after >= utc(policy["valid_until"])):
+                raise ShadowIntegrityError("LIVE_REFRESH_TIMEOUT")
+            if capacity_mode=='BOUND_MONITORED':
+                if (plan.get('capacity_veto_mode','CONTINUOUS')!='DISPATCH_AND_DERIVATION_ONLY'
+                        and (capacity_deadline is None or after>=utc(capacity_deadline))):
+                    if capacity_fallback_names is None:
+                        raise ShadowIntegrityError('CAPACITY_FALLBACK_UNBOUND')
+                    names=capacity_fallback_names
+                    capacity_mode='OPEN_ONLY_FALLBACK';capacity_plan_sha=None
+            ttl=min(ttl,(utc(policy["valid_until"])-after).total_seconds())
             status = self.stream.set_v2_group(names, capacity=policy["capacity"], ttl=ttl, stop_event=self.stop_event)
             receipt = {"at": after.isoformat(), "policy_sha": identity, "mode": policy["mode"],
-                       "state_sha": state_sha, "status": "SUBSCRIPTION_REQUESTED", "readiness": "NOT_PROVEN",
+                       "state_sha": state_sha, "capacity_plan_sha":capacity_plan_sha,"capacity_mode":capacity_mode,
+                       "capacity_evidence_valid_until":capacity_deadline,"status": "SUBSCRIPTION_REQUESTED", "readiness": "NOT_PROVEN",
                        "subscription": status, "disk_written": "REQUIRES_INDEPENDENT_SESSION_FILE_READ"}
         except Exception as exc:
             before_drop = self.stream.v2_status()
@@ -327,14 +355,18 @@ class LiveGroupController:
             self.stream.set_group(GROUP_NAME, [])
 
     def start(self) -> None:
-        if not self.settings.r2d2_v2_live_policy_file or not self.settings.r2d2_v2_live_policy_sha:
-            return
-        self.thread = Thread(target=self._run, name="r2d2-v2-live", daemon=True)
-        try:
-            self.thread.start()
-        except Exception:
-            self.stream.set_group(GROUP_NAME, [])
-            logger.error("V2 subscription controller could not start")
+        with self._start_lock:
+            if self._start_claimed or self.stop_event.is_set():
+                return
+            if not self.settings.r2d2_v2_live_policy_file or not self.settings.r2d2_v2_live_policy_sha:
+                return
+            self._start_claimed=True
+            self.thread = Thread(target=self._run, name="r2d2-v2-live", daemon=True)
+            try:
+                self.thread.start()
+            except Exception:
+                self.stream.set_group(GROUP_NAME, [])
+                logger.error("V2 subscription controller could not start")
 
     def stop(self) -> None:
         self.stop_event.set()
