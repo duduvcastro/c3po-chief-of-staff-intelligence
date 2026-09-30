@@ -55,11 +55,11 @@ class MassiveClient:
             params={"adjusted": "false"},
             max_pages=1,
         ):
-            try:
-                close = float(row.get("c"))
-                bar_at = datetime.fromtimestamp(int(row.get("t")) / 1000, tz=timezone.utc)
-            except (TypeError, ValueError):
+            close = number(row.get("c"))
+            bar_ms = number(row.get("t"))
+            if close is None or bar_ms is None:
                 continue
+            bar_at = datetime.fromtimestamp(bar_ms / 1000, tz=timezone.utc)
             if bar_at.astimezone(NEW_YORK).date() == session_date and close > 0:
                 return round(close, 4)
         return None
