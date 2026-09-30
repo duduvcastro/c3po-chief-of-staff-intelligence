@@ -75,7 +75,8 @@ def test_timeout_is_explicit_gap_before_release_and_not_a_bar(source,tmp_path):
  assert not released['diagnostics']
  assert [e['type'] for e in released['events']]==['DATA_GAP','QUOTE']
  assert released['events'][0]['reason']=='BAR_WAIT_TIMEOUT'
- assert released['events'][0]['available_at']==expired.isoformat()
+ assert released['events'][0]['available_at']==deadline.isoformat()
+ assert c.prepare_events(expired+timedelta(seconds=1),held['cursor'])['events']==released['events']
  assert not c.prepare_events(expired,released['cursor'])['events']
 
 

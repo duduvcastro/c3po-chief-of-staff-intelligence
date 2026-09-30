@@ -343,7 +343,7 @@ class SessionJournalRoot:
             os.close(child)
         if not settled:
             # An initialized but unpublished index must verifiably hold no receipt.
-            journal = MassiveJournal.open_reader(self.session_path(session))
+            journal = MassiveJournal.open_reader(self.session_path(session), allow_uninitialized=True)
             with journal._connect() as db:
                 _require(journal._bounds(db) == (0, 0), 'MASSIVE_SESSION_NOT_READY')
         return False

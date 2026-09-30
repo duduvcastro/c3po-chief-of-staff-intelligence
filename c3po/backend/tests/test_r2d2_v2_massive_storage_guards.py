@@ -28,7 +28,18 @@ def test_previous_session_frame_becomes_current_causal_gap_without_poisoning_rea
     assert not stream.seen
     restarted=MassiveStreamState(['AAPL'],ShadowCalendar(),journal)
     assert restore_stream(restarted,journal,session='2026-09-29',now=NOW)['records']==1
-    assert not source.prepare_events(NOW,page['cursor'])['events']
+    assert restarted.seen==stream.seen=={} and restarted.sealed==stream.sealed==set()
+    # A valid current minute remains admissible on both live and recovered
+    # paths; rejected_minute cannot seal the receipt clock's current minute.
+    current=NOW.replace(second=0)
+    valid=json.dumps([{'ev':'AM','sym':'AAPL','s':int(current.timestamp()*1000),
+        'e':int((current+timedelta(minutes=1)).timestamp()*1000),'o':10,'h':12,'l':9,'c':11,'v':25}]).encode()
+    restarted.connected(current)
+    stream.frame(valid,current+timedelta(seconds=65))
+    restarted.frame(valid,current+timedelta(seconds=65))
+    assert restarted.seen==stream.seen and len(restarted.seen)==1
+    assert not restarted.sealed and not stream.sealed
+    assert not source.prepare_events(NOW,page['cursor'],snapshot=page['snapshot'])['events']
 
 
 def test_session_journal_refuses_foreign_receipt_before_writing_any_evidence(tmp_path):

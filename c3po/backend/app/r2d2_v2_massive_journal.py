@@ -29,8 +29,12 @@ class MassiveJournal:
         self.path = self.spool.root / 'sequence.sqlite3'
         with journal_access(self.path.parent, create=True):
             self._bind_index(create=True)
-            with self._connect() as db:
+            with self._connect_locked() as db:
                 if self._index_created:
+                    # SQLite DDL otherwise autocommits before the first DML.
+                    # Publish the complete schema or none of it. Unready
+                    # catalog probes distinguish an empty in-flight schema.
+                    db.execute('BEGIN IMMEDIATE')
                     db.execute('CREATE TABLE receipts (sequence INTEGER PRIMARY KEY, digest TEXT UNIQUE NOT NULL)')
                     db.execute("CREATE TABLE retention_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), pruned_through INTEGER NOT NULL CHECK(pruned_through>=0), retain_from_session TEXT NOT NULL DEFAULT '')")
                     db.execute("INSERT INTO retention_state VALUES (1,0,'')")
@@ -40,7 +44,9 @@ class MassiveJournal:
                     self._bounds(db)
 
     @classmethod
-    def open_reader(cls, root):
+    def open_reader(cls, root, *, allow_uninitialized=False):
+        if type(allow_uninitialized) is not bool:
+            raise ValueError('JOURNAL_READER_POLICY')
         obj = cls.__new__(cls)
         obj.read_only = True
         root = Path(root).absolute()
@@ -52,6 +58,8 @@ class MassiveJournal:
         with journal_access(root):
             obj._bind_index(create=False)
             with obj._connect() as db:
+                if allow_uninitialized and not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").fetchone():
+                    raise SourceUnavailable('MASSIVE_SESSION_NOT_READY')
                 db.execute('SELECT sequence,digest FROM receipts LIMIT 0')
         return obj
 

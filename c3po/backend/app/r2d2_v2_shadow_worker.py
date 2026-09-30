@@ -18,7 +18,7 @@ import time
 
 from .r2d2_v2_calendar import ShadowCalendar
 from .r2d2_v2_causal_audit import PostgresCausalReceiptVerifier
-from .r2d2_v2_shadow import Release, ShadowCollector, export_cohort
+from .r2d2_v2_shadow import EBAR_AMENDMENT_SHA, Release, ShadowCollector, export_cohort
 from .r2d2_v2_sources import FileShadowSource, capabilities
 from .r2d2_v2_raw_source import SpoolShadowSource
 from .r2d2_v2_store import PostgresShadowStore, ShadowIntegrityError, canonical
@@ -57,6 +57,8 @@ def _with_massive_source(settings, source, release):
         return source  # Default OFF: no Massive directory/database/socket access.
     if release.mode != 'CERTIFIED':
         raise ShadowIntegrityError('MASSIVE_REQUIRES_CERTIFIED_RELEASE')
+    if getattr(release, 'ebar_amendment_sha', None) != EBAR_AMENDMENT_SHA:
+        raise ShadowIntegrityError('MASSIVE_REQUIRES_EBAR_RELEASE')
     from .r2d2_v2_massive_sessions import SessionJournalRoot
     from .r2d2_v2_massive_session_source import MassiveSessionEventSource
     from .r2d2_v2_composite_source import CompositeEventSource

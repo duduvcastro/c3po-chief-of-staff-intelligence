@@ -61,7 +61,12 @@ def _restore_stream_locked(state, journal, *, session, now=None, max_records=500
             if event['type']=='DATA_GAP':
                 if event_session == session and event.get('reason') == 'MASSIVE_STORAGE_CAPACITY':
                     storage_stopped = True
-                if retain:sealed.add(key)
+                # Cross-session rejection is a point failure at receipt time,
+                # not a missing minute in this session. Live ingestion does
+                # not seal that minute, so restart must not invent a seal.
+                cross_session = (event.get('reason') == 'MASSIVE_CROSS_SESSION_BAR'
+                                 and receipt.get('provenance') == 'MASSIVE_STREAM_CROSS_SESSION')
+                if retain and not cross_session:sealed.add(key)
             else:
                 _require(event['type']=='BAR','RECOVERY_EVENT_TYPE')
                 raw_hash=receipt['raw_sha256']

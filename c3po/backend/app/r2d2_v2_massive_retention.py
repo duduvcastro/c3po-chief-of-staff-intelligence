@@ -135,7 +135,7 @@ def _committed_snapshot(store, *, epoch, release_sha, session=None):
                 if saved.get('received_max') is not None:_time(saved['received_max'])
             barrier: dict[str, Any] = cursor['barrier']
             fields={'resolved','sequence'} | ({'pending_raw','read_cursor','scope_sequences'} if cursor['version']==3 else set())
-            _require(type(barrier) is dict and set(barrier)==fields
+            _require(type(barrier) is dict and (set(barrier)==fields or cursor['version']==3 and set(barrier)==fields|{'file_bases'})
                      and type(barrier['sequence']) is int and barrier['sequence']>=0
                      and type(barrier['resolved']) is dict
                      and len(barrier['resolved'])<=CompositeEventSource.MAX_PROOFS,

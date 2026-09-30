@@ -27,6 +27,14 @@ def quote(at, **changes):
         'available_at':at,'bid_at':at,'ask_at':at,'bid':101.,'ask':101.1,**changes}
 
 
+def frontier(received, at=None, sequence=0):
+    """Another name's quote received after entry_at: the source passed it."""
+    from test_r2d2_v2_shadow_counterexamples import source_event
+    at=at or received
+    return source_event('QUOTE',at=at,available_at=received,sequence=sequence,instrument_key='US:FRONT',
+        source_id='frontier-source',event_id=f'frontier-{sequence}',bid=50.,ask=50.01,bid_at=at,ask_at=at,regular=True)
+
+
 @pytest.mark.parametrize('seconds',[0,.001,20,59])
 def test_always_next_minute_and_no_early_episode(monkeypatch,seconds):
     decision=utc(OPEN)+timedelta(seconds=seconds)
@@ -98,7 +106,8 @@ def test_cycle_first_bar_begins_at_entry_and_preentry_trade_does_not_close(monke
     at=entry['entry_at']
     earlier=source_event('TRADE',at='2026-09-08T14:00:59+00:00',price=200.,regular=True)
     q=source_event('QUOTE',at=at,sequence=1,bid=101.,ask=101.1,bid_at=at,ask_at=at,regular=True)
-    state,journals,_=collector._cycle(state,{},[earlier,q],[],utc(at))
+    received=(utc(at)+timedelta(milliseconds=1)).isoformat()
+    state,journals,_=collector._cycle(state,{},[earlier,q,frontier(received)],[],utc(received))
     record=next(iter(state['ledger']['research'].values()))
     assert record['status']=='OPEN' and record['opened_at']==at
     end=(utc(at)+timedelta(minutes=1)).isoformat()
@@ -111,14 +120,72 @@ def test_cycle_first_bar_begins_at_entry_and_preentry_trade_does_not_close(monke
 
 
 def test_missing_entry_quote_is_final_after_restart(monkeypatch):
+    # Missing is decided only once a later receipt proves the source passed
+    # entry_at; the clock reaching entry_at alone proves nothing (see below).
     collector,state,session,entry,journals=pending(monkeypatch)
     at=utc(entry['entry_at'])
     state,journals,_=collector._cycle(state,{},[],[],at)
+    assert INSTRUMENT in session['entries_pending'] and not state['ledger']['research']
+    received=at+timedelta(milliseconds=5)
+    state,journals,_=collector._cycle(state,{},[frontier(received.isoformat())],[],received)
     assert not state['ledger']['research']
     assert session['candidates'][INSTRUMENT]['entry_reason']=='ENTRY_QUOTE_MISSING'
+    assert journals[-2]['frontier_at']==received.isoformat()
     state=deepcopy(state)
     collector._entries(state,[],state['sessions'][DAY],{},[quote(at.isoformat())],at+timedelta(seconds=1))
     assert not state['ledger']['research']
+
+
+def test_backlogged_entry_quote_is_used_as_after_restart(monkeypatch):
+    # P2-5: at the first cycle after entry_at the quote received before it is
+    # still in the source backlog. Live must wait, as a restart would read it.
+    runs=[]
+    for live in (True,False):
+        collector,state,session,entry,journals=pending(monkeypatch)
+        at=utc(entry['entry_at'])
+        late=quote((at-timedelta(seconds=1)).isoformat(),bid=100.,ask=100.)
+        late.update(event_id='late-quote',source_id='quote-source',sequence=0,envelope_sha256='a'*64)
+        if live:
+            state,_,_=collector._cycle(state,{},[],[],at+timedelta(seconds=1))
+            assert INSTRUMENT in session['entries_pending']
+        now=at+timedelta(seconds=2)
+        state,_,_=collector._cycle(state,{},[late,frontier((at+timedelta(seconds=1)).isoformat())],[],now)
+        record=next(iter(state['ledger']['research'].values()))
+        runs.append((record['opened_at'],record['geometry']))
+    assert runs[0]==runs[1] and runs[0][1]['P']==100.
+
+
+@pytest.mark.parametrize('backlog,reason',[(False,'ENTRY_QUOTE_FRONTIER_TIMEOUT'),(True,None)])
+def test_unproven_entry_frontier_wait_is_bounded(monkeypatch,backlog,reason):
+    collector,state,session,entry,journals=pending(monkeypatch)
+    at=utc(entry['entry_at'])
+    collector._entries(state,journals,session,{},[quote((at-timedelta(seconds=1)).isoformat())],at-timedelta(seconds=1))
+    edge=at+shadow.ENTRY_FRONTIER_WAIT
+    state,_,_=collector._cycle(state,{},[],[],edge,frontier={'held':{},'backlog':False})
+    assert INSTRUMENT in session['entries_pending']
+    state,journals,_=collector._cycle(state,{},[],[],edge+timedelta(milliseconds=1),
+                                      frontier={'held':{},'backlog':backlog})
+    assert (INSTRUMENT in session['entries_pending'])==(reason is None)
+    assert session['candidates'][INSTRUMENT].get('entry_reason')==reason
+    assert not state['ledger']['research']
+
+
+def test_quote_held_behind_composite_barrier_blocks_entry(monkeypatch):
+    collector,state,session,entry,journals=pending(monkeypatch)
+    at=utc(entry['entry_at'])
+    now=at+timedelta(seconds=2)
+    held={INSTRUMENT:at-timedelta(seconds=1)}
+    state,_,_=collector._cycle(state,{},[frontier((at+timedelta(seconds=1)).isoformat())],[],now,
+                               frontier={'held':held,'backlog':False})
+    assert INSTRUMENT in session['entries_pending'] and entry['frontier_at']
+    assert shadow._held_receipts({'barrier':{'pending_raw':{'raw-x':{'instrument_key':INSTRUMENT,
+        'available_at':held[INSTRUMENT].isoformat()}}}})==held
+    assert shadow._held_receipts({'barrier':{'pending_raw':{'raw-x':{}}}})=={'*':shadow.datetime.min.replace(
+        tzinfo=shadow.timezone.utc)}
+    released=quote((at-timedelta(seconds=1)).isoformat(),bid=100.,ask=100.)
+    released.update(event_id='held-quote',source_id='quote-source',sequence=0,envelope_sha256='a'*64)
+    state,_,_=collector._cycle(state,{},[released],[],now+timedelta(seconds=1),frontier={'held':{},'backlog':False})
+    assert next(iter(state['ledger']['research'].values()))['geometry']['P']==100.
 
 
 def test_ebar_release_requires_same_amendment_in_all_three_consents():
@@ -147,13 +214,21 @@ def test_bad_entry_geometry_persists_reason_without_episode(monkeypatch):
     assert not state['ledger']['research']
 
 
-def test_restart_next_session_finishes_missing_entry_without_rescheduling(monkeypatch):
+@pytest.mark.parametrize('observed',[False,True])
+def test_restart_next_session_finishes_entry_without_rescheduling(monkeypatch,observed):
+    # P3: a pending entry of a closed session is never admitted the next day
+    # with the previous session's opened_at, even with a valid quote held.
     collector,state,session,entry,journals=pending(monkeypatch)
+    if observed:
+        at=utc(entry['entry_at'])
+        collector._entries(state,journals,session,{},[quote((at-timedelta(seconds=1)).isoformat())],at-timedelta(seconds=1))
+        assert entry['quote']
     state['last_session']=DAY
     state['ledger']['session']=DAY
-    state,_,_=collector._cycle(state,{},[],[],utc('2026-09-09T14:00:00+00:00'))
+    state,journals,_=collector._cycle(state,{},[],[],utc('2026-09-09T14:00:00+00:00'))
     assert not state['sessions'][DAY]['entries_pending']
-    assert state['sessions'][DAY]['candidates'][INSTRUMENT]['entry_reason']=='ENTRY_QUOTE_MISSING'
+    assert state['sessions'][DAY]['candidates'][INSTRUMENT]['entry_reason']=='ENTRY_SESSION_CLOSED'
+    assert next(j for j in journals if j['type']=='CANDIDATE_ENTRY')['reason']=='ENTRY_SESSION_CLOSED'
     assert not state['ledger']['research']
 
 

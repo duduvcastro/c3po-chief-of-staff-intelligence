@@ -1,9 +1,11 @@
 """One supervised attempt; no network or installation on import.
 
-systemd owns the 30-second restart backoff. Durable per-session claims cap even
-manual service restarts at four attempts; existing claims are never deleted.
+The wrapper waits 30/60/120/240 seconds before four bounded retries. Durable
+claims cap manual restarts and reboots too; existing claims are never deleted.
 """
 from datetime import timedelta
+from math import isfinite
+import time
 import hashlib
 import json
 import os
@@ -12,10 +14,25 @@ import stat
 from zoneinfo import ZoneInfo
 
 from .r2d2_v2_sources import SourceUnavailable, _load_json, _open_directory, _require
-from .r2d2_v2_massive_producer import _producer_directory, run_session
+from .r2d2_v2_massive_producer import _producer_directory, _failure_code, run_session
 
-MAX_ATTEMPTS = 4
+RETRY_DELAYS = (0, 30, 60, 120, 240)
+MAX_ATTEMPTS = len(RETRY_DELAYS)
 TERMINAL_EXIT = 78
+REFUSAL_CODES = frozenset({
+    'SUPERVISOR_SESSION','SUPERVISOR_WINDOW','SUPERVISOR_MANIFEST',
+    'SUPERVISOR_MANIFEST_CHANGED','SUPERVISOR_ATTEMPTS_EXHAUSTED',
+    'SUPERVISOR_PRIVATE_FILE','SUPERVISOR_FILE_CHANGED','SUPERVISOR_TOKEN',
+    'SUPERVISOR_MONOTONIC','SUPERVISOR_CLAIM_INVALID',
+})
+
+
+def refusal_code(error):
+    if isinstance(error,SourceUnavailable) and len(error.args)==1 and type(error.args[0]) is str and error.args[0] in REFUSAL_CODES:
+        return error.args[0]
+    if isinstance(error,OSError):return 'SUPERVISOR_FILE_UNAVAILABLE'
+    return _failure_code(error) or 'SUPERVISOR_UNVERIFIED'
+
 
 
 def private_bytes(path, maximum):
@@ -39,7 +56,7 @@ def private_bytes(path, maximum):
 
 
 def supervised_attempt(journal_root,manifest_directory,token_file,state_root,*,calendar,
-                       utcnow,monotonic,stop,notice,runner=run_session):
+                       utcnow,monotonic,stop,notice,runner=run_session,sleep=time.sleep):
     """Exit 78 is terminal configuration/window/cap refusal; 1 requests restart.
 
     Claims persist across failures and reboots. The approved dated manifest is
@@ -50,8 +67,10 @@ def supervised_attempt(journal_root,manifest_directory,token_file,state_root,*,c
     try:
         _require(calendar.is_session(day),'SUPERVISOR_SESSION')
         details=calendar.details(day)
-        _require(details['open']-timedelta(seconds=60)<=utcnow()<details['close'],
-                 'SUPERVISOR_WINDOW')
+        def check_window():
+            _require(details['open']-timedelta(seconds=60)<=utcnow()<details['close'],
+                     'SUPERVISOR_WINDOW')
+        check_window()
         manifest_raw=private_bytes(Path(manifest_directory)/(day.isoformat()+'.json'),65536)
         manifest=_load_json(manifest_raw)
         _require(manifest.get('session')==day.isoformat()
@@ -66,6 +85,8 @@ def supervised_attempt(journal_root,manifest_directory,token_file,state_root,*,c
                 except FileExistsError:
                     previous=_load_json(private_bytes(Path(state_root)/name,65536))
                     _require(previous.get('manifest_sha256')==binding,'SUPERVISOR_MANIFEST_CHANGED')
+                    _require(previous.get('session')==day.isoformat() and type(previous.get('attempt')) is int
+                             and previous['attempt']==attempt,'SUPERVISOR_CLAIM_INVALID')
                     attempt+=1;continue
                 with os.fdopen(fd,'wb') as output:
                     output.write(json.dumps({'session':day.isoformat(),'attempt':attempt,
@@ -74,6 +95,22 @@ def supervised_attempt(journal_root,manifest_directory,token_file,state_root,*,c
                 os.fsync(directory)
                 break
             _require(attempt<=MAX_ATTEMPTS,'SUPERVISOR_ATTEMPTS_EXHAUSTED')
+            delay=RETRY_DELAYS[attempt-1]
+            if delay:
+                notice({'status':'BACKOFF','session':day.isoformat(),'attempt':attempt,'seconds':delay})
+            previous_clock=monotonic()
+            _require(isfinite(previous_clock),'SUPERVISOR_MONOTONIC')
+            until=previous_clock+delay
+            while True:
+                if stop():
+                    notice({'status':'STOPPED','session':day.isoformat(),'attempt':attempt})
+                    return 0
+                check_window()
+                current=monotonic()
+                _require(isfinite(current) and current>=previous_clock,'SUPERVISOR_MONOTONIC')
+                previous_clock=current
+                if current>=until:break
+                sleep(min(1.0,until-current))
             token=private_bytes(token_file,4096).decode('utf-8').strip()
             _require(bool(token) and '\n' not in token and '\r' not in token,'SUPERVISOR_TOKEN')
             notice({'status':'ATTEMPT','session':day.isoformat(),'attempt':attempt,'maximum':MAX_ATTEMPTS})
@@ -82,14 +119,16 @@ def supervised_attempt(journal_root,manifest_directory,token_file,state_root,*,c
                 result=runner(Path(journal_root),manifest,calendar,lambda:token,
                     utcnow=utcnow,monotonic=monotonic,stop=stop,supervisor=notice)
                 return 0 if result['status'] in ('STOPPED','SESSION_LIMIT') else 1
-            except Exception:
-                notice({'status':'FAILED','session':day.isoformat(),'reason':'SUPERVISOR_PRODUCER_FAILURE'})
+            except Exception as error:
+                notice({'status':'FAILED','session':day.isoformat(),'reason':'SUPERVISOR_PRODUCER_FAILURE',
+                        'code':refusal_code(error)})
                 return 1
             finally:token=None
-    except Exception:
+    except Exception as error:
         # No exception text, token, provider output or arbitrary file bytes.
         notice({'status':'DATA_GAP','session':day.isoformat(),'reason':'SUPERVISOR_REFUSED',
-                'provider_connected':None if provider_attempted else False,'restart_allowed':False})
+                'provider_connected':None if provider_attempted else False,'restart_allowed':False,
+                'code':refusal_code(error)})
         return TERMINAL_EXIT
 
 

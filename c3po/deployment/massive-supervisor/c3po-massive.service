@@ -3,7 +3,7 @@ Description=Bounded daily Massive minute producer
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=8h
-StartLimitBurst=4
+StartLimitBurst=6
 
 [Service]
 Type=exec
@@ -14,7 +14,7 @@ Environment=PYTHONPATH=/opt/c3po-bar/current/backend
 Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/c3po-bar/venv/bin/python -B -m app.r2d2_v2_massive_supervisor --journal-root /var/lib/c3po-bar/journal --manifest-directory /etc/c3po-bar/manifests --token-file /etc/c3po-bar/token --state-root /var/lib/c3po-bar/supervisor
 Restart=on-failure
-RestartSec=30s
+RestartSec=1s
 RestartPreventExitStatus=78
 TimeoutStopSec=30s
 KillMode=control-group

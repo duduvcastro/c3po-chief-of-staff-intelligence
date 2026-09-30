@@ -12,6 +12,7 @@ class CompositeEventSource:
     MAX_PROOFS = 16384
     MAX_PENDING_RAW = 1024
     MAX_RAW_SCOPES = 8192
+    MAX_FILE_BASES = 4096
     MAX_BARRIER_BYTES = 1_900_000
     MAX_CURSOR_BYTES = 2_000_000
     # Keep room for one 550-name missing-minute round while BAR ingestion is
@@ -41,16 +42,17 @@ class CompositeEventSource:
                 raise SourceUnavailable('COMPOSITE_CURSOR_MIGRATION_REQUIRED')
             barrier: dict[str, Any] = cursors.get('barrier', {'resolved': {}, 'sequence': 0})
             extended={'resolved','sequence','pending_raw','read_cursor','scope_sequences'}
-            _require(type(barrier) is dict and set(barrier) in ({'resolved','sequence'},extended)
+            _require(type(barrier) is dict and set(barrier) in ({'resolved','sequence'},extended,extended|{'file_bases'})
                 and type(barrier['resolved']) is dict and len(barrier['resolved'])<=self.MAX_PROOFS
                 and type(barrier['sequence']) is int and barrier['sequence']>=0,'COMPOSITE_BARRIER_CURSOR')
             barrier=cast(dict[str, Any],barrier)
             _require(len(canonical(cursor)) <= 2_000_000, 'COMPOSITE_CURSOR_LIMIT')
             pending_raw=dict(barrier.get('pending_raw',{}))
             scope_sequences=dict(barrier.get('scope_sequences',{}))
+            file_bases=dict(barrier.get('file_bases',{}))
             read_cursor=barrier.get('read_cursor',cursors['quote_trade'])
             if scoped:
-                _require(not cursor or set(barrier)==extended,'COMPOSITE_SCOPED_CURSOR')
+                _require(not cursor or set(barrier) in (extended,extended|{'file_bases'}),'COMPOSITE_SCOPED_CURSOR')
                 self._validate_scoped(barrier,retained=cursors['quote_trade'])
                 replay=self.quote_trade.replay_references(now,pending_raw) if pending_raw else []
             else:
@@ -69,7 +71,7 @@ class CompositeEventSource:
                     # possible pending payload. The finalized proposal is checked
                     # again with its exact newly-held references below.
                     page['_scoped_reserve']=2+len(canonical({'read_cursor':page['cursor'],
-                        'scope_sequences':prospective,'pending_raw':pending_raw}))
+                        'scope_sequences':prospective,'pending_raw':pending_raw,'file_bases':file_bases}))
                 return page
             for key, value in cast(dict[str, dict[str, Any]], barrier['resolved']).items():
                 _require(type(key) is str and len(key)<=200 and type(value) is dict
@@ -183,9 +185,9 @@ class CompositeEventSource:
                     and _time(verified_horizon)>=end+timedelta(seconds=90))
                 if now-end>timedelta(seconds=90) and deadline_passed:
                     gap={'event_id':'composite-gap:'+sha256(key.encode()).hexdigest(),
-                        'source_id':'composite-barrier-v2','sequence':sequence,'type':'DATA_GAP',
+                        'source_id':'composite-gap-v3:'+sha256(key.encode()).hexdigest(),'sequence':0,'type':'DATA_GAP',
                         'instrument_key':event['instrument_key'],'session':event['session'],
-                        'at':start.isoformat(),'available_at':now.isoformat(),
+                        'at':start.isoformat(),'available_at':(end+timedelta(seconds=90)).isoformat(),
                         'reason':'BAR_WAIT_TIMEOUT','source_at':start.isoformat()}
                     gap['envelope_sha256']=sha256(canonical(gap)).hexdigest()
                     proof=self._proof(gap,end.isoformat())
@@ -228,11 +230,14 @@ class CompositeEventSource:
                         delivered.append(event);continue
                     scope=event['instrument_key']+'|'+event['session']+'|'+event['source_id']
                     seq=scope_sequences.get(scope,0)
-                    scoped_event=self.quote_trade.scoped_event(event,scope,seq)
+                    base=file_bases.get(references[event['event_id']]['path'],0)
+                    delivery_scope=scope if base==0 else scope+'|generation:'+str(base)
+                    scoped_event=self.quote_trade.scoped_event(event,delivery_scope,seq)
                     scope_sequences[scope]=seq+1
                     delivered.append(scoped_event)
-                _require(len(scope_sequences)<=self.MAX_RAW_SCOPES,'COMPOSITE_RAW_SCOPE_LIMIT')
                 next_read=pages['quote_trade']['cursor']
+                self._fold_scopes(scope_sequences,file_bases,pending_raw,next_read,now)
+                _require(len(scope_sequences)<=self.MAX_RAW_SCOPES,'COMPOSITE_RAW_SCOPE_LIMIT')
                 retained={'files':{name:dict(saved) for name,saved in next_read.get('files',{}).items()}}
                 for ref in pending_raw.values():
                     saved=retained['files'][ref['path']]
@@ -243,6 +248,7 @@ class CompositeEventSource:
                     'raw_receipts':{e['event_id']:e['envelope_sha256'] for e in delivered
                                     if e['event_id'] in references}}
                 extra={'pending_raw':pending_raw,'read_cursor':next_read,'scope_sequences':scope_sequences}
+                if file_bases:extra['file_bases']=file_bases
                 pages['quote_trade']['_scoped_reserve']=2+len(canonical(extra))
             _require(len(resolved)<=self.MAX_PROOFS,'COMPOSITE_BARRIER_LIMIT')
             events=gaps+[e for p in pages.values() for e in p['events']]
@@ -264,7 +270,8 @@ class CompositeEventSource:
                 snapshot=frozen,has_more=pages['massive'].get('has_more',False) or
                     (not held and pages['quote_trade'].get('has_more',False)))
         except SourceUnavailable as error:
-            code='COMPOSITE_CURSOR_CAPACITY' if str(error)=='COMPOSITE_CURSOR_CAPACITY' else 'COMPOSITE_SOURCE_UNVERIFIED'
+            code=str(error) if str(error) in {'COMPOSITE_CURSOR_CAPACITY','COMPOSITE_FILE_BASE_LIMIT',
+                'COMPOSITE_RAW_SCOPE_LIMIT'} else 'COMPOSITE_SOURCE_UNVERIFIED'
             return dict(events=[],diagnostics=[{'code':code}],cursor=cursor)
         except (OSError,ValueError,TypeError,KeyError,OverflowError):
             return dict(events=[],diagnostics=[{'code':'COMPOSITE_SOURCE_UNVERIFIED'}],cursor=cursor)
@@ -303,12 +310,38 @@ class CompositeEventSource:
     def _key(event, start):
         return event['instrument_key']+'|'+event['session']+'|'+_time(start).isoformat()
 
+    def _fold_scopes(self,scopes,bases,pending,read_cursor,now):
+        """Retire delivered counters when the physical file has no held refs.
+
+        This also applies intraday and to empty non-session directories. No
+        calendar lookup or external sealing is needed. A later append gets a
+        new source generation from the committed base, never a silent reset.
+        """
+        # Leave at least half the scope budget for the next offer. Ordinary
+        # append polls preserve their source generation; only metadata pressure
+        # retires counters, after the current offer's identities are allocated.
+        high_water=max(1,self.MAX_RAW_SCOPES//2)
+        if len(scopes)<high_water and len(canonical(scopes))<self.MAX_BARRIER_BYTES//4:
+            return
+        held={ref['path'] for ref in pending.values()}
+        for path in read_cursor.get('files',{}):
+            if path in held:
+                continue
+            source='raw-'+sha256(path.encode()).hexdigest()
+            keys=[scope for scope in scopes if scope.endswith('|'+source)]
+            if keys:
+                bases[path]=bases.get(path,0)+sum(scopes.pop(scope) for scope in keys)
+        _require(len(bases)<=self.MAX_FILE_BASES,'COMPOSITE_FILE_BASE_LIMIT')
+
     @classmethod
     def _validate_scoped(cls, barrier: dict[str, Any], *, retained: Any=None):
         from .r2d2_v2_raw_source import SpoolShadowSource
         if set(barrier)=={'resolved','sequence'}:
             return
         pending=barrier['pending_raw'];scopes=barrier['scope_sequences']
+        bases=barrier.get('file_bases',{})
+        _require(type(bases) is dict and len(bases)<=cls.MAX_FILE_BASES
+            and all(type(value) is int and value>0 for value in bases.values()),'COMPOSITE_FILE_BASES')
         _require(type(pending) is dict and len(pending)<=cls.MAX_PENDING_RAW
             and type(scopes) is dict and len(scopes)<=cls.MAX_RAW_SCOPES
             and type(barrier['read_cursor']) is dict and set(barrier['read_cursor'])<={'files'},
@@ -323,6 +356,7 @@ class CompositeEventSource:
 
         files=barrier['read_cursor'].get('files',{})
         _require(type(files) is dict and len(files)<=4096,'COMPOSITE_SCOPED_FILES')
+        _require(all(type(path) is str and path in files for path in bases),'COMPOSITE_FILE_BASES')
         totals={}
         for scope,sequence in scopes.items():
             source=scope.rsplit('|',1)[1];totals[source]=totals.get(source,0)+sequence
@@ -338,7 +372,9 @@ class CompositeEventSource:
             expected['files'][path]=dict(saved)
             refs=[ref for ref in pending.values() if ref['path']==path]
             source='raw-'+sha256(path.encode()).hexdigest()
-            _require(saved['sequence']==totals.pop(source,0)+len(refs),'COMPOSITE_SCOPED_ACCOUNTING')
+            _require(saved['sequence']==bases.get(path,0)+totals.pop(source,0)+len(refs),'COMPOSITE_SCOPED_ACCOUNTING')
+            _require(all(scope.split('|')[1]==path.split('/',1)[0].split('=',1)[1]
+                for scope in scopes if scope.endswith('|'+source)),'COMPOSITE_SCOPED_SESSION')
             _require(len({ref['sequence'] for ref in refs})==len(refs),'COMPOSITE_SCOPED_ACCOUNTING')
             for ref in refs:
                 _require(ref['offset']+ref['bytes']<=saved['offset'] and ref['sequence']<saved['sequence']
