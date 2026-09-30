@@ -1243,6 +1243,73 @@ def test_realtime_us_overlays_visible_rows_with_websocket_trade() -> None:
     assert guarded.gainers[0].status == "delayed"
 
 
+def test_realtime_stream_tick_rejects_implausible_display_prices() -> None:
+    from app.market_data.eodhd_stream import usable_display_tick as usable
+    regular = datetime(2026, 9, 29, 14, 0, tzinfo=timezone.utc)
+    after_hours = datetime(2026, 9, 30, 0, 0, tzinfo=timezone.utc)
+
+    def tick(price, as_of, *, source="trade", bid=None, ask=None):
+        return EodhdStreamQuote(symbol="QQQM", price=price, as_of=as_of, market_state="open",
+                                bid=bid, ask=ask, source=source)
+
+    assert usable(tick(304.5, regular), 303.83)
+    assert usable(tick(304.0, regular, source="quote", bid=303.9, ask=304.1), 303.83)
+    # A wide or one-sided book must never become the price, even in session.
+    assert not usable(tick(332.15, regular, source="quote", bid=303.0, ask=361.3), 303.83)
+    assert not usable(tick(304.0, regular, source="quote", bid=None, ask=304.0), 303.83)
+    # After hours only small moves replace the last good price.
+    assert usable(tick(306.0, after_hours), 303.83)
+    assert not usable(tick(332.15, after_hours), 303.83)
+    assert not usable(tick(332.15, after_hours), 0)
+
+
+def test_realtime_portfolio_keeps_last_price_on_after_hours_outlier() -> None:
+    timestamp = int(datetime(2026, 9, 29, 23, 55, tzinfo=timezone.utc).timestamp())
+    catalog = [{"Code": "MSFT", "Name": "Microsoft", "Exchange": "NASDAQ", "Type": "Common Stock", "Currency": "USD"}]
+    quotes = [{"code": "MSFT.US", "timestamp": timestamp, "close": 105, "previousClose": 50, "change_p": 5, "volume": 1_000_000}]
+    http = RoutingStubHttp({
+        "/api/exchange-symbol-list/US": catalog,
+        "/api/real-time/AAPL.US": quotes,
+        "/stable/batch-quote": [{"symbol": symbol, "price": 22000, "previousClose": 21800, "timestamp": timestamp} for symbol in ("^BVSP", "^IXIC", "^NYA")],
+    })
+    stream = StubRealtimeStream({"MSFT": EodhdStreamQuote(
+        symbol="MSFT",
+        price=115,
+        as_of=datetime.fromtimestamp(timestamp + 60, tz=timezone.utc),
+        market_state="open",
+    )})
+    settings = Settings(fmp_api_token="configured", eodhd_api_token="configured", auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), http, stream=stream)  # type: ignore[arg-type]
+
+    guarded = service.snapshot("nasdaq")
+    assert guarded.gainers[0].price == 105
+    assert guarded.gainers[0].status != "live"
+
+    stream.quotes["MSFT"] = EodhdStreamQuote(
+        symbol="MSFT",
+        price=106,
+        as_of=datetime.fromtimestamp(timestamp + 120, tz=timezone.utc),
+        market_state="open",
+    )
+    accepted = service.snapshot("nasdaq")
+    assert accepted.gainers[0].price == 106
+    assert accepted.gainers[0].status == "live"
+
+
+def test_realtime_r2d2_stream_marks_keep_original_deviation_rule() -> None:
+    now = datetime(2026, 9, 30, 0, 0, tzinfo=timezone.utc)
+    row = RealtimeMarketLeader(symbol="QQQM", name="QQQM", price=303.83, change_percent=0.18,
+        volume=100_000, cash_volume=303.83 * 100_000, currency="USD", exchange="NASDAQ",
+        as_of=now - timedelta(minutes=5))
+    stream = StubRealtimeStream({"QQQM": EodhdStreamQuote(symbol="QQQM", price=332.15, as_of=now,
+        market_state="open", bid=303.0, ask=361.3, source="quote")})
+    settings = Settings(auth_cookie_secure=False)
+    service = RealtimeMarketsService(settings, Database(settings), StubHttp({}), stream=stream)  # type: ignore[arg-type]
+
+    assert service._apply_stream_row(row).price == 332.15
+    assert service._apply_stream_row(row, display=True).price == 303.83
+
+
 def test_realtime_portfolio_persists_validated_symbols_and_reuses_quotes() -> None:
     http = RoutingStubHttp({
         "/api/quote/list": {"stocks": [
@@ -3227,6 +3294,9 @@ def test_b3_screen_without_a_generation_serves_the_cached_empty_view_and_does_no
 def test_rankings_reorder_after_quote_updates_without_mutating_scan(market, monkeypatch):
     from types import SimpleNamespace
     from app.schemas import RealtimeMarketIndex, RealtimeMarketResponse
+    import app.market_data.eodhd_stream as stream_module
+    # Ranking is under test, not the after-hours guard; keep it clock-independent.
+    monkeypatch.setattr(stream_module, 'MAX_EXTENDED_HOURS_DEVIATION', stream_module.MAX_STREAM_PRICE_DEVIATION)
     now = datetime.now(timezone.utc)
     rows = [RealtimeMarketLeader(symbol=s, name=s, price=p, change_percent=p-100,
         volume=100_000, cash_volume=p*100_000, currency='USD', exchange=market,
