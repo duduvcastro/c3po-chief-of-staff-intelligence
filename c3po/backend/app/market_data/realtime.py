@@ -31,6 +31,7 @@ from ..schemas import (
 from .brapi import BrapiClient
 from .eodhd import EodhdClient
 from .http import DeadlineJsonHttpClient, JsonHttpClient
+from .massive import MassiveClient
 from .eodhd_stream import EodhdRealtimeStream, usable_display_tick
 from .models import canonical_us_security_name, canonical_us_security_type, from_unix, number
 from .live_markets import MARKET_SPECS as LIVE_MARKET_SPECS
@@ -43,6 +44,7 @@ CACHE_SECONDS = 55
 FALLBACK_CACHE_SECONDS = 8
 SYMBOL_CATALOG_SECONDS = 24 * 60 * 60
 MAX_STREAM_PRICE_DEVIATION = 0.35
+OFFICIAL_CLOSE_TOLERANCE_PERCENT = 0.5
 DIRECT_QUOTE_FALLBACK_AGE = timedelta(days=30)
 NEW_YORK = ZoneInfo("America/New_York")
 PORTFOLIO_MARKET_CALENDARS = {
@@ -97,6 +99,13 @@ class RealtimeMarketsService:
             DeadlineJsonHttpClient(timeout=3.0) if type(http) is JsonHttpClient else http
         )
         self._official_close_lock = Lock()
+        try:
+            self._massive_close_client = (
+                MassiveClient(settings.massive_base_url, settings.massive_api_token, self._official_close_http)
+                if settings.massive_api_token else None
+            )
+        except ValueError:
+            self._massive_close_client = None
         self.stream = stream
         self.indices = indices or IndexQuotesService(settings, http)
         self._lock = RLock()
@@ -109,7 +118,10 @@ class RealtimeMarketsService:
         self._portfolio_quotes: dict[str, tuple[datetime, RealtimeMarketLeader]] = {}
         self._us_reference_cache: dict[tuple[str, date], tuple[datetime, float | None, date | None]] = {}
         self._otc_origin_cache: dict[str, tuple[datetime, OtcOriginReference | None]] = {}
-        self._us_official_close_cache: dict[tuple[str, date], tuple[datetime, float | None]] = {}
+        # (expires_at, close, source, divergence_percent vs the cross-check)
+        self._us_official_close_cache: dict[
+            tuple[str, date], tuple[datetime, float | None, str, float | None]
+        ] = {}
         self._intraday_series: dict[str, tuple[datetime, RealtimePortfolioIntradayResponse]] = {}
         self._index_history_failures: dict[tuple, datetime] = {}
         self._index_history_lock = Lock()
@@ -257,11 +269,12 @@ class RealtimeMarketsService:
             if not quote_row:
                 errors.append(f"{entry['symbol']}: quote unavailable")
                 continue
-            official_close = (
+            official = (
                 self._us_closed_session_row(quote_row, now)
                 if market != "B3" and listing_policy is None
                 else None
             )
+            official_close = official[0] if official else None
             if official_close is not None:
                 quote_row = official_close
             elif market != "B3" and not used_origin_fallback:
@@ -270,7 +283,7 @@ class RealtimeMarketsService:
                 "status": self._portfolio_quote_status(quote_row, market, now),
             })
             source = "Brapi Pro" if market == "B3" else (
-                "Yahoo Finance official close" if official_close is not None
+                official[1] if official is not None
                 else "EODHD Real-Time WebSocket" if quote_row.status == "live"
                 else "EODHD Bulk Live US"
             )
@@ -286,6 +299,13 @@ class RealtimeMarketsService:
             origin_reference_note = None
             market_label = market
             market_detail = None
+            if official is not None and official[2] is not None:
+                # Paid close and cross-check disagree: show it, do not hide it.
+                origin_reference_status = "divergent"
+                origin_reference_divergence_percent = official[2]
+                origin_reference_note = (
+                    f"a confirmar: fontes divergem {abs(official[2]):.1f}% no fechamento"
+                )
             if market == "OTC":
                 quote_row = quote_row.model_copy(update={"currency": "USD"})
                 if listing_policy is None:
@@ -394,46 +414,73 @@ class RealtimeMarketsService:
         if not missing or not self._official_close_lock.acquire(blocking=False):
             return  # Another request is refreshing; serve what is cached.
         try:
-            def fetch(symbol: str) -> tuple[str, float | None]:
-                try:
-                    return symbol, self._yahoo_session_close(symbol, session_date)
-                except Exception:
-                    return symbol, None
+            def fetch(symbol: str) -> tuple[str, float | None, str, float | None]:
+                return (symbol, *self._resolve_official_close(symbol, session_date))
 
             # The auction print can land minutes after 16:00: keep re-reading
             # for 30 minutes before trusting a close for hours.
             final = now >= closed_at + timedelta(minutes=30)
             with ThreadPoolExecutor(max_workers=min(len(missing), 8)) as executor:
-                for symbol, close in executor.map(fetch, missing):
-                    if close is not None:
-                        ttl = timedelta(hours=4) if final else timedelta(minutes=1)
+                for symbol, close, source, divergence in executor.map(fetch, missing):
+                    if not final:
+                        ttl = timedelta(minutes=1)
+                    elif close is None or divergence is not None:
+                        ttl = timedelta(minutes=5)
                     else:
-                        ttl = timedelta(minutes=5) if final else timedelta(minutes=1)
-                    self._us_official_close_cache[(symbol, session_date)] = (now + ttl, close)
+                        ttl = timedelta(hours=4)
+                    self._us_official_close_cache[(symbol, session_date)] = (
+                        now + ttl, close, source, divergence,
+                    )
         finally:
             self._official_close_lock.release()
+
+    def _resolve_official_close(
+        self,
+        symbol: str,
+        session_date: date,
+    ) -> tuple[float | None, str, float | None]:
+        """Massive (paid, consolidated) first; Yahoo cross-checks or backs up."""
+        massive = None
+        if self._massive_close_client is not None:
+            try:
+                massive = self._massive_close_client.daily_close(symbol, session_date=session_date)
+            except Exception:
+                massive = None
+        try:
+            yahoo = self._yahoo_session_close(symbol, session_date)
+        except Exception:
+            yahoo = None
+        if massive is not None:
+            divergence = (massive / yahoo - 1) * 100 if yahoo else None
+            if divergence is not None and abs(divergence) <= OFFICIAL_CLOSE_TOLERANCE_PERCENT:
+                divergence = None
+            source = "Massive official close" + (" + Yahoo check" if yahoo else "")
+            return massive, source, divergence
+        if yahoo is not None:
+            return yahoo, "Yahoo Finance official close", None
+        return None, "", None
 
     def _us_closed_session_row(
         self,
         row: RealtimeMarketLeader,
         now: datetime,
-    ) -> RealtimeMarketLeader | None:
+    ) -> tuple[RealtimeMarketLeader, str, float | None] | None:
         """Pins a US row to the official close while the exchange is closed."""
         closed = self._last_closed_session(now)
         if closed is None:
             return None
         session_date, closed_at = closed
         cached = self._us_official_close_cache.get((row.symbol, session_date))
-        close = cached[1] if cached else None
-        if close is None or close <= 0:
+        if not cached or cached[1] is None or cached[1] <= 0:
             return None
+        _, close, source, divergence = cached
         return row.model_copy(update={
             "price": close,
             "cash_volume": close * row.volume,
             "as_of": closed_at,
             "status": "closed",
             "delay_minutes": 0,
-        })
+        }), source, divergence
 
     def _yahoo_session_close(self, symbol: str, session_date: date) -> float | None:
         """Returns the regular-session close; after-hours trades are excluded."""

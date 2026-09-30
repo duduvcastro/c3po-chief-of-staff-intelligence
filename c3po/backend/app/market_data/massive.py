@@ -5,9 +5,13 @@ from datetime import date, datetime, timezone
 import re
 from typing import Any
 from urllib.parse import quote, quote_plus, urlparse
+from zoneinfo import ZoneInfo
 
 from .http import JsonHttpClient, MarketDataRequestError
 from .models import number
+
+
+NEW_YORK = ZoneInfo("America/New_York")
 
 
 class MassiveResponseError(RuntimeError):
@@ -41,6 +45,23 @@ class MassiveClient:
         if parsed.scheme != "https" or not parsed.netloc:
             raise ValueError("Massive base URL must be an absolute HTTPS URL")
         self._origin = (parsed.scheme, parsed.netloc)
+
+    def daily_close(self, symbol: str, *, session_date: date) -> float | None:
+        """Unadjusted consolidated close of one regular session (display only)."""
+        day = session_date.isoformat()
+        for row in self._iter_results(
+            f"/v2/aggs/ticker/{self._symbol(symbol)}/range/1/day/{day}/{day}",
+            params={"adjusted": "false"},
+            max_pages=1,
+        ):
+            try:
+                close = float(row.get("c"))
+                bar_at = datetime.fromtimestamp(int(row.get("t")) / 1000, tz=timezone.utc)
+            except (TypeError, ValueError):
+                continue
+            if bar_at.astimezone(NEW_YORK).date() == session_date and close > 0:
+                return round(close, 4)
+        return None
 
     def iter_trades(self, symbol: str, *, session_date: date) -> Iterator[dict[str, Any]]:
         self._require_historical_access()
