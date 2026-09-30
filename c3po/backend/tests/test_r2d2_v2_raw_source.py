@@ -841,3 +841,20 @@ def test_d1_plain_provider_status_stays_non_tick_without_global_gap(source):
     collector=seed_collector(source);collector.cycle(NOW)
     state=collector.store.read(collector.release.epoch)['state']
     assert state['data_issues']==[] and state['ledger']['portfolio']['synthetic-entry']['exit_cause']=='EOD_POSITIVE'
+
+
+def test_composite_horizon_preserves_later_input_and_same_time_group(source):
+    write(source,line(99)+line(100)+line(101,received=AT+timedelta(seconds=2)))
+    first=source.prepare_events(NOW,{},receipt_cutoff=AT)
+    assert not first['diagnostics'] and len(first['events'])==2
+    assert first['has_more'] and first['cursor']['files'][PART]['sequence']==2
+    assert source.prepare_events(NOW,{},receipt_cutoff=AT)==first
+    following=source.prepare_events(NOW,first['cursor'],snapshot=first['snapshot'])
+    assert not following['diagnostics'] and len(following['events'])==1
+    assert following['cursor']['files'][PART]['sequence']==3
+
+
+def test_composite_horizon_future_refused_without_advancing(source):
+    write(source,line())
+    result=source.prepare_events(NOW,{},receipt_cutoff=NOW+timedelta(seconds=1))
+    assert result['diagnostics'] and result['cursor']=={} and not result['events']

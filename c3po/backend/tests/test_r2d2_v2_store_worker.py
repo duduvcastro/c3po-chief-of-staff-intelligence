@@ -513,7 +513,8 @@ def test_state_policy_cannot_silently_cross_into_new_collector(calendar,field,va
 def test_implementation_manifest_hashes_bytes_without_asserting_authorization():
     descriptor=implementation_package()
     assert descriptor['status']=='DESCRIPTOR_NOT_AUTHORIZATION'
-    assert len(descriptor['source_sha256'])==23
+    assert len(descriptor['source_sha256'])==39
+    assert 'r2d2_v2_massive_supervisor.py' in descriptor['source_sha256']
     assert {'r2d2_v2_live_group.py', 'r2d2_v2_live_controller.py', 'r2d2_worker.py'} <= descriptor['source_sha256'].keys()
     assert {'r2d2_v2_raw_events.py', 'r2d2_v2_raw_source.py'} <= set(descriptor['source_sha256'])
     assert {'r2d2_v2_eod.py', 'r2d2_v2_calendar.py', 'r2d2_v2_counterfactual.py',

@@ -18,7 +18,7 @@ import time
 
 from .r2d2_v2_calendar import ShadowCalendar
 from .r2d2_v2_causal_audit import PostgresCausalReceiptVerifier
-from .r2d2_v2_shadow import Release, ShadowCollector, export_cohort
+from .r2d2_v2_shadow import EBAR_AMENDMENT_SHA, Release, ShadowCollector, export_cohort
 from .r2d2_v2_sources import FileShadowSource, capabilities
 from .r2d2_v2_raw_source import SpoolShadowSource
 from .r2d2_v2_store import PostgresShadowStore, ShadowIntegrityError, canonical
@@ -52,6 +52,23 @@ def recheck_release(settings, collector: ShadowCollector) -> None:
         raise ShadowIntegrityError("RELEASE_CHANGED")
 
 
+def _with_massive_source(settings, source, release):
+    if not getattr(settings, 'r2d2_v2_massive_bars_enabled', False):
+        return source  # Default OFF: no Massive directory/database/socket access.
+    if release.mode != 'CERTIFIED':
+        raise ShadowIntegrityError('MASSIVE_REQUIRES_CERTIFIED_RELEASE')
+    if getattr(release, 'ebar_amendment_sha', None) != EBAR_AMENDMENT_SHA:
+        raise ShadowIntegrityError('MASSIVE_REQUIRES_EBAR_RELEASE')
+    from .r2d2_v2_massive_sessions import SessionJournalRoot
+    from .r2d2_v2_massive_session_source import MassiveSessionEventSource
+    from .r2d2_v2_composite_source import CompositeEventSource
+    try:
+        journals = SessionJournalRoot(settings.r2d2_v2_massive_journal_dir, release.epoch)
+    except (OSError, ValueError):
+        raise ShadowIntegrityError('MASSIVE_SESSION_ROOT_UNVERIFIED') from None
+    return CompositeEventSource(source, MassiveSessionEventSource(journals))
+
+
 def build_collector(settings, *, now: datetime) -> ShadowCollector | None:
     if not settings.r2d2_v2_shadow_enabled:
         return None  # OFF has no filesystem/DB/provider side effects.
@@ -72,7 +89,7 @@ def build_collector(settings, *, now: datetime) -> ShadowCollector | None:
               if release.mode == "CERTIFIED"
               else FileShadowSource(settings.r2d2_v2_shadow_source_dir, **source_args))
     return ShadowCollector(PostgresShadowStore(database.connection),
-                           source,
+                           _with_massive_source(settings, source, release),
                            release, calendar=calendar)
 
 

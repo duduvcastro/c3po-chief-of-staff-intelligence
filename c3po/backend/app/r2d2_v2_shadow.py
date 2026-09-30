@@ -12,12 +12,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 import json
+import math
 import re
 import time
 from typing import Any
 
 from .r2d2_v2_calendar import NEW_YORK, ShadowCalendar
-from .r2d2_v2_contract import CandidateInputs, DailyBar, SplitRecord, RISK_C75, evaluate_candidate, input_complete
+from .r2d2_v2_contract import CandidateInputs, DailyBar, SplitRecord, RISK_C75, evaluate_candidate, input_complete, entry_geometry, CandidateValidationError
 from .r2d2_v2_earnings_package import (
     CONSENT_SCHEMA, EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA,
     EXPORT_SCHEMA, RELEASE_SCHEMA, STATE_SCHEMA,
@@ -28,6 +29,8 @@ from .r2d2_v2_portfolio import PortfolioBatch, apply_events, export_session_stat
 from .r2d2_v2_portfolio import earnings_public_sessions, eod_public_sessions
 from .r2d2_v2_sources import MANIFEST_SHA
 from .r2d2_v2_store import ShadowIntegrityError, canonical, digest, utc, validate_epoch
+
+EBAR_AMENDMENT_SHA = "b492766e4c2ef9e924141ca2be3e47dfbb237086b840aa6bf263b0b9bd0806b1"
 
 SCHEMA = STATE_SCHEMA
 AMENDMENT_SHA = "3a25b9929d0c65aa97fe90b9c9cfc7dd904fedde23df884e8e42f199ae2e5ff4"
@@ -64,6 +67,7 @@ class Release:
     earnings_closed_manifest_sha: str | None = None
     implementation_contract_sha: str | None = None
     implementation_package_sha: str | None = None
+    ebar_amendment_sha: str | None = None
 
     @classmethod
     def verify(cls, data: bytes, expected_sha: str, *, now: datetime, build_sha: str,
@@ -111,6 +115,11 @@ class Release:
         bindings = {key: body.get(key) for key in (
             "earnings_amendment_sha", "earnings_closed_manifest_sha", "implementation_contract_sha",
             "implementation_package_sha", "code_revision", "code_audit_sha", "source_audit_sha", "readiness_sha")}
+        ebar = body.get("ebar_amendment_sha")
+        if ebar is not None:
+            if ebar != EBAR_AMENDMENT_SHA:
+                raise ShadowIntegrityError("RELEASE_EBAR_POLICY_MISMATCH")
+            bindings["ebar_amendment_sha"] = ebar
         consents = body.get("package_consents")
         if (any(not _hash(bindings[key]) for key in ("code_audit_sha", "source_audit_sha", "readiness_sha"))
                 or not isinstance(consents, list) or len(consents) != 3
@@ -150,7 +159,7 @@ class Release:
                     or any(consented < ready for consented in consent_times)):
                 raise ShadowIntegrityError("READINESS_FIRST_SESSION_MISMATCH")
         return cls(epoch, mode, first, approved, revision, expected_sha, body.get("readiness_sha"),
-                   EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA, contract_sha, package_sha)
+                   EARNINGS_AMENDMENT_SHA, EARNINGS_CLOSED_MANIFEST_SHA, contract_sha, package_sha, ebar)
 
 
 def _dt(value):
@@ -234,6 +243,28 @@ def candidate_inputs(row: dict, batch: dict, now: datetime, calendar: ShadowCale
         daily_price_basis=daily.get("adjustment"), earnings_component=earnings,
         source_at=source_at, available_at=available,
         sources=sources, source_versions=versions, source_hashes=hashes, source_issues=tuple(dict.fromkeys(issues)))
+
+
+# An entry waits for the source frontier at most through the end of its minute
+# plus the 90 s BAR rule; the session close bounds any wait absolutely.
+ENTRY_FRONTIER_WAIT = timedelta(seconds=150)
+
+
+def _held_receipts(cursor) -> dict[str, datetime]:
+    """Earliest provider receipt per name held behind the composite barrier.
+
+    The barrier retains verified locators of raw ticks it may not release yet.
+    An unreadable locator holds every name ("*"): never assume it is absent.
+    """
+    held: dict[str, datetime] = {}
+    refs = _object(_object(_object(cursor).get("barrier")).get("pending_raw"))
+    for ref in refs.values():
+        ref = _object(ref)
+        at, key = _dt(ref.get("available_at")), ref.get("instrument_key")
+        name = "US:" + key.split(":")[-1] if isinstance(key, str) and at is not None else "*"
+        at = at or datetime.min.replace(tzinfo=timezone.utc)
+        held[name] = min(held.get(name, at), at)
+    return held
 
 
 def _instrument(row: dict) -> str:
@@ -335,6 +366,9 @@ class ShadowCollector:
         self.schedule = self.calendar.sessions(release.first_session, 69)
         self.schedule_index = {day: index for index, day in enumerate(self.schedule)}
         self._causal_cache: dict[date, dict] = {}
+        self.minute_entry = release.ebar_amendment_sha == EBAR_AMENDMENT_SHA
+        if self.minute_entry and not getattr(source, "minute_bar_enabled", False):
+            raise ShadowIntegrityError("RELEASE_EBAR_SOURCE_REQUIRED")
 
     def _initial(self) -> dict:
         return {"schema": SCHEMA, "epoch": self.release.epoch, "manifest_sha": SIGNED_MANIFEST_SHA,
@@ -391,7 +425,8 @@ class ShadowCollector:
                 next_cursor=prepared["cursor"] if prepared is not None else None,
                 raw_receipts=prepared.get("raw_receipts", {}) if prepared else {},
                 skipped_receipts=prepared.get("skipped_receipts", []) if prepared else [],
-                raw_page=prepared.get("page") if prepared else None), now)
+                raw_page=prepared.get("page") if prepared else None,
+                backlog=bool(prepared.get("has_more")) if prepared else False), now)
         if prepared is not None:
             from .r2d2_v2_raw_source import MAX_PAGES_PER_CYCLE, MAX_DRAIN_SECONDS
             pages = 1
@@ -415,7 +450,8 @@ class ShadowCollector:
                         causal=None, cursor=cursor, next_cursor=page["cursor"],
                         raw_receipts=page.get("raw_receipts", {}),
                         skipped_receipts=page.get("skipped_receipts", []),
-                        raw_page=page.get("page"), continuation=True), now)
+                        raw_page=page.get("page"), continuation=True,
+                        backlog=bool(page.get("has_more"))), now)
                 pages += 1
             result["raw_pages"] = pages
             result["raw_backlog_pending"] = bool(prepared.get("has_more", bool(prepared["diagnostics"])))
@@ -448,7 +484,7 @@ class ShadowCollector:
 
     def _cycle_with_cursor(self, state, batch, events, diagnostics, now, *, causal,
                            cursor, next_cursor, raw_receipts=None, skipped_receipts=None,
-                           raw_page=None, continuation=False):
+                           raw_page=None, continuation=False, backlog=False):
         self._validate_state(state, now)
         if cursor is not None and state.get("raw_source_cursor", {}) != cursor:
             raise ShadowIntegrityError("RAW_SOURCE_CURSOR_CONCURRENT_CHANGE")
@@ -484,9 +520,10 @@ class ShadowCollector:
                 "reason": "RAW_QUARANTINE_" + row["code"]}
                 for row in (skipped_receipts or [])
                 if row.get("disposition") == "QUARANTINED" and row.get("instrument_key"))
+        frontier = {"held": _held_receipts(next_cursor), "backlog": backlog}
         state, journals, response = self._cycle(state, batch, events, diagnostics, now,
             causal=causal, source_gaps=source_gaps, suppress_capture=continuation,
-            count_cycle=not continuation)
+            count_cycle=not continuation, frontier=frontier)
         # A failed transition rolls back both receipts and cursor. No cursor
         # advances if events were not processed (for example before session 1).
         if (cursor is not None and not diagnostics and next_cursor != cursor
@@ -500,20 +537,41 @@ class ShadowCollector:
                 if state["event_receipts"].get(identity) != receipt:
                     raise ShadowIntegrityError("RAW_SOURCE_ACK_MISMATCH")
                 del state["event_receipts"][identity]
-            journals.append({"journal_key": "raw-cursor:" + digest(next_cursor),
+            # Receipts of an earlier offer of this position that the acknowledged
+            # page no longer carries (a deferred cycle) are released here too.
+            released = {}
+            for identity, receipt in state.pop("provisional_receipts", {}).items():
+                if identity in (raw_receipts or {}):
+                    continue
+                if state["event_receipts"].get(identity) != receipt:
+                    raise ShadowIntegrityError("RAW_SOURCE_ACK_MISMATCH")
+                del state["event_receipts"][identity]
+                released[identity] = receipt
+            sequenced = state.pop("event_sequence_deferred", {})
+            cursor_journal = {"journal_key": "raw-cursor:" + digest(next_cursor),
                 "type": "SOURCE_CURSOR", "previous_sha256": digest(cursor),
                 "cursor_sha256": digest(next_cursor), "cursor": next_cursor,
                 "raw_receipts": raw_receipts or {},
                 "skipped_receipts": skipped_receipts or [],
                 "skipped_receipts_sha256": digest(skipped_receipts or []),
                 "page": raw_page,
-                "observed_at": now.isoformat()})
+                "observed_at": now.isoformat()}
+            if released or sequenced:
+                cursor_journal.update(released_receipts=released, released_sequences=sequenced)
+            journals.append(cursor_journal)
             if state["last_cycle_at"] != now.isoformat():
                 state["last_cycle_at"] = now.isoformat()
                 if not continuation:
                     state["cycle_count"] += 1
             response = public_summary(state)
             response["observed_at"] = now.isoformat()
+        elif cursor is not None and raw_receipts:
+            # Unacknowledged offer: its receipts stay (ID mutation checks) until
+            # the position is acknowledged, even if never offered again.
+            provisional = {identity: receipt for identity, receipt in raw_receipts.items()
+                           if state["event_receipts"].get(identity) == receipt}
+            if provisional:
+                state["provisional_receipts"] = {**state.get("provisional_receipts", {}), **provisional}
         if poll_journal and state["last_cycle_at"] != now.isoformat():
             state["last_cycle_at"] = now.isoformat()
             if not continuation:
@@ -527,8 +585,11 @@ class ShadowCollector:
         return state, journals, response
 
     def _cycle(self, state, batch, events, event_diagnostics, now, *, causal=None, source_gaps=None,
-               suppress_capture=False, count_cycle=True):
+               suppress_capture=False, count_cycle=True, frontier=None):
         self._validate_state(state, now)
+        # Without a source cursor nothing is held. The frontier is proven only
+        # by delivered evidence (a later quote); the clock only ends the wait.
+        frontier = frontier if frontier is not None else {"held": {}, "backlog": False}
         journals = []
         portfolio = _LazyPortfolio(state) if state["ledger"] is not None else None
         active_day = now.astimezone(NEW_YORK).date()
@@ -564,8 +625,69 @@ class ShadowCollector:
             if state["ledger"] is not None:
                 self._clock(state, journals, "SESSION_OPEN", key, detail["open"], now, portfolio=portfolio)
             if day == active_day:
-                self._events(state, journals, events, event_diagnostics, now, key, portfolio=portfolio, source_gaps=source_gaps)
+                remaining = list(events)
+                gaps = source_gaps
+                floor = None
+                checked = None
+                if self.minute_entry and not event_diagnostics:
+                    # Sequence is receipt order, `at` provider time: contiguity
+                    # is proven once over the whole receipt, before any split.
+                    sequence_gap, checked = self._sequence_gap(state, remaining)
+                    if sequence_gap:
+                        gaps = source_gaps = list(source_gaps or []) + [
+                            {"instrument": None, "reason": "EVENT_SEQUENCE_GAP"}]
+                    boundaries = sorted({utc(entry["entry_at"]) for entry in session.get("entries_pending", {}).values()
+                                         if utc(entry["entry_at"]) <= now})
+                    for boundary in boundaries:
+                        # Everything known at this receipt and dated before the
+                        # entry precedes it: source gaps, pre-entry events and
+                        # the stale checks of existing episodes. The scheduled
+                        # entry is then the last transition before any evidence
+                        # dated at/after entry_at.
+                        preceding = [event for event in remaining if utc(event["at"]) < boundary]
+                        remaining = [event for event in remaining if utc(event["at"]) >= boundary]
+                        self._events(state, journals, preceding, [], now, key, portfolio=portfolio,
+                            source_gaps=gaps, stale_window=(floor, boundary), sequenced=True)
+                        gaps = None
+                        self._entries(state, journals, session, batch or {}, events, now,
+                            portfolio=portfolio, entry_cutoff=boundary, frontier=frontier)
+                        # A source failure observed at `now` (>= entry_at) also
+                        # covers the episode just opened; `_gap` adds only the
+                        # newly affected episodes to the recorded issue.
+                        self._source_gaps(state, journals, now, key, source_gaps, portfolio=portfolio)
+                        floor = boundary
+                        waiting = any(utc(entry["entry_at"]) <= boundary
+                                      for entry in session.get("entries_pending", {}).values())
+                        if waiting or self._reveals_gap_before(state, remaining, boundary):
+                            # An entry still awaiting its source frontier, or
+                            # later evidence exposing a gap dated before this
+                            # entry: that evidence stays unacknowledged (no
+                            # receipt, no cursor advance) for a later receipt,
+                            # as do later-due entries; it never precedes/follows
+                            # the entry out of order here.
+                            remaining = None
+                            break
+                    if not boundaries:
+                        self._entries(state, journals, session, batch or {}, events, now, portfolio=portfolio,
+                                      frontier=frontier)
+                if remaining is not None:
+                    self._events(state, journals, remaining, event_diagnostics, now, key, portfolio=portfolio,
+                        source_gaps=gaps, stale_window=(floor, None), sequenced=checked is not None)
+                if checked is not None:
+                    # Offered but deferred packets were sequenced at this receipt;
+                    # their re-offer is not a second gap. Released on ACK.
+                    sequenced = {identity: value for identity, value in
+                                 state.get("event_sequence_deferred", {}).items()
+                                 if identity not in state["event_receipts"]}
+                    sequenced.update({item["event_id"]: [item["source_id"], item["sequence"]]
+                                      for item in checked if item["event_id"] not in state["event_receipts"]})
+                    if sequenced:
+                        state["event_sequence_deferred"] = sequenced
+                    else:
+                        state.pop("event_sequence_deferred", None)
                 events_processed = True
+            if self.minute_entry and day != active_day and session.get("entries_pending"):
+                self._entries(state, journals, session, {}, [], now, portfolio=portfolio, frontier=frontier)
             if not suppress_capture and day == active_day and self._capture_window(now) and not session["capture_closed"]:
                 self._capture(state, journals, session, batch or {}, now, portfolio=portfolio, causal=causal)
                 touched = True
@@ -623,9 +745,11 @@ class ShadowCollector:
         state["clock_receipts"].append(key)
         journals.append({"journal_key": "clock:" + key, "type": "CLOCK", "event": event})
 
-    def _gap(self, state, journals, now, session, reason, *, gap_at=None, instrument=None, portfolio=None):
+    def _gap(self, state, journals, now, session, reason, *, gap_at=None, instrument=None, portfolio=None,
+             issue_session=None):
         scope = instrument or "*"
-        base_key = session + ":" + scope + ":" + reason
+        issue_session = (issue_session or session) if getattr(self.source, "minute_bar_enabled", False) else session
+        base_key = issue_session + ":" + scope + ":" + reason
         active = state["active_data_issues"].get(base_key)
         # A second outage after demonstrated restoration is a new factual
         # occurrence; an old recovery receipt cannot exempt future failures.
@@ -634,14 +758,16 @@ class ShadowCollector:
         known = key in state["gap_episode_receipts"]
         known_gap = utc(gap_at) if gap_at else now
         if not known:
-            issue = {"key": key, "session": session, "instrument": scope, "reason": reason,
+            issue = {"key": key, "session": issue_session, "instrument": scope, "reason": reason,
                      "at": known_gap.isoformat()}
             state["data_issues"].append(issue)
             state["active_data_issues"][base_key] = {**issue, "restored_instruments": []}
         affected = [r for r in state["ledger"]["research"].values()
                     if (instrument is None or r["instrument_key"] == instrument)
-                    and (r["status"] == "OPEN" or utc(r["opened_at"]) <= known_gap <
-                         utc(r["exit_at"] or (r["exit_interval"] or [None, now.isoformat()])[1]))]
+                    and (r["status"] == "OPEN" and not getattr(self.source, "minute_bar_enabled", False)
+                         or utc(r["opened_at"]) <= known_gap
+                         and (r["status"] == "OPEN" or known_gap <
+                         utc(r["exit_at"] or (r["exit_interval"] or [None, now.isoformat()])[1])))]
         prior = state["gap_episode_receipts"].setdefault(key, [])
         new_episodes = sorted(r["episode_key"] for r in affected if r["episode_key"] not in prior)
         if known and not new_episodes:
@@ -682,21 +808,71 @@ class ShadowCollector:
             issue["session"] == session and issue["instrument"] in ("*", name)
             and name not in issue["restored_instruments"] for issue in state["active_data_issues"].values()) else None
 
-    def _events(self, state, journals, events, diagnostics, now, session, *, portfolio=None, archive_only=False, source_gaps=None):
+    def _source_gaps(self, state, journals, now, session, source_gaps, *, portfolio=None):
+        seen_gaps = set()
+        for gap in (source_gaps or []):
+            identity = (gap["instrument"], gap["reason"])
+            if identity in seen_gaps:
+                continue
+            seen_gaps.add(identity)
+            self._gap(state, journals, now, session, gap["reason"],
+                      instrument=gap["instrument"], portfolio=portfolio)
+
+    def _reveals_gap_before(self, state, events, boundary):
+        """Could unapplied evidence dated at/after `boundary` open a gap dated before it?
+
+        Only the regular TRADE/BAR evidence check dates a gap at a name's
+        coverage. It is evaluated over a superset of that check's episodes (so
+        at most as late a coverage): False is exact, True only defers evidence.
+        """
+        opening = self.calendar.details(boundary.astimezone(NEW_YORK).date())["open"]
+        research = state["ledger"]["research"]
+        for item in events:
+            if state["event_receipts"].get(item["event_id"]) is not None:
+                continue
+            if item.get("type") not in {"TRADE", "BAR"} or item.get("regular") is not True:
+                continue
+            parts = str(item.get("instrument_key", "")).split(":")
+            if len(parts) != 2 or parts[0] not in {"NYSE", "NASDAQ", "US"}:
+                continue
+            name = "US:" + parts[1]
+            episodes = [research[key] for key in state["instrument_episodes"].get(name, [])]
+            episodes = [record for record in episodes if record["status"] == "OPEN"
+                or (record["exit_at"] or (record["exit_interval"] or [None, None])[1]) is not None
+                and utc(record["exit_at"] or record["exit_interval"][1]) >= boundary]
+            if not episodes:
+                continue
+            first_entry = min(utc(record["opened_at"]) for record in episodes)
+            if max(utc(state["coverage_until"].get(name, first_entry)), opening, first_entry) < boundary:
+                return True
+        return False
+
+    @staticmethod
+    def _sequence_gap(state, events):
+        """Source sequence is a separate proof from timestamps: missing packets
+        cannot silently disappear after restart or journal-file rotation."""
+        deferred = state.get("event_sequence_deferred", {})
+        pending = [item for item in events if state["event_receipts"].get(item["event_id"]) is None]
+        gap = False
+        for item in sorted(pending, key=lambda e: (e["source_id"], e["sequence"])):
+            if deferred.get(item["event_id"]) == [item["source_id"], item["sequence"]]:
+                continue  # Already sequenced when first offered, then deferred.
+            source = item["source_id"]
+            expected = state["event_sequences"].get(source, -1) + 1
+            if item["sequence"] != expected:
+                gap = True
+            state["event_sequences"][source] = max(item["sequence"], expected - 1)
+        return gap, pending
+
+    def _events(self, state, journals, events, diagnostics, now, session, *, portfolio=None, archive_only=False,
+                source_gaps=None, stale_window=(None, None), sequenced=False):
         if state["ledger"] is None:
             return
         if diagnostics:
             self._gap(state, journals, now, session, "EVENT_SOURCE_UNVERIFIED", portfolio=portfolio)
             return
         if not archive_only:
-            seen_gaps = set()
-            for gap in (source_gaps or []):
-                identity = (gap["instrument"], gap["reason"])
-                if identity in seen_gaps:
-                    continue
-                seen_gaps.add(identity)
-                self._gap(state, journals, now, session, gap["reason"],
-                          instrument=gap["instrument"], portfolio=portfolio)
+            self._source_gaps(state, journals, now, session, source_gaps, portfolio=portfolio)
         pending = []
         for item in events:
             identity, receipt = item["event_id"], item["envelope_sha256"]
@@ -709,14 +885,8 @@ class ShadowCollector:
         priority = {"SPLIT": 1, "DIVIDEND_ENTITLEMENT": 1, "DIVIDEND_PAYMENT": 1,
                     "BAR": 3, "TRADE": 3, "MARK": 4, "EARNINGS": 2, "QUOTE": 4, "DATA_GAP": 1,
                     "EARNINGS_OBSERVATION_FAILED": 1}
-        # Source sequence is a separate proof from timestamps: missing packets
-        # cannot silently disappear after restart or journal-file rotation.
-        for item in sorted(pending, key=lambda e: (e["source_id"], e["sequence"])):
-            source = item["source_id"]
-            expected = state["event_sequences"].get(source, -1) + 1
-            if item["sequence"] != expected:
-                self._gap(state, journals, now, session, "EVENT_SEQUENCE_GAP", portfolio=portfolio)
-            state["event_sequences"][source] = max(item["sequence"], expected - 1)
+        if not sequenced and self._sequence_gap(state, pending)[0]:
+            self._gap(state, journals, now, session, "EVENT_SEQUENCE_GAP", portfolio=portfolio)
         # All packets become known to this collector at `now` below. Order that
         # shared receipt by source instant and event precedence; unequal
         # producer receipt times must not let a quote beat a simultaneous stop.
@@ -730,6 +900,8 @@ class ShadowCollector:
             # Producer receipt and collector receipt are both archived. A file
             # read later never grants the collector knowledge at an earlier time.
             event = {**raw, "source_available_at": raw["available_at"], "available_at": now.isoformat(), "session": session}
+            if event["type"] == "BAR" and getattr(self.source, "minute_bar_enabled", False):
+                event["minute_bar_evidence"] = True
             if event["type"] == "QUOTE":
                 # Identity comes only from the validated envelope. Each packet
                 # reaches the ledger; never collapse these into a latest quote.
@@ -763,7 +935,7 @@ class ShadowCollector:
                     and utc(record["exit_at"] or record["exit_interval"][1]) >= utc(event["at"])]
                 if event["type"] == "DATA_GAP":
                     self._gap(state, journals, now, session, "PRODUCER_DATA_GAP", gap_at=utc(event["at"]),
-                              instrument=name, portfolio=portfolio)
+                              instrument=name, portfolio=portfolio, issue_session=raw["session"])
                 if episodes and event["type"] in {"TRADE", "BAR"} and event.get("regular") is True:
                     at = utc(event["at"])
                     opening = self.calendar.details(at.astimezone(NEW_YORK).date())["open"]
@@ -771,7 +943,16 @@ class ShadowCollector:
                     coverage = max(utc(state["coverage_until"].get(name, first_entry)), opening, first_entry)
                     # A first print after a missing interval cannot close the
                     # position and thereby erase the preceding data failure.
-                    if at - coverage > timedelta(seconds=90):
+                    bar_mode = getattr(self.source, "minute_bar_enabled", False)
+                    # BAR coverage is the next required minute's start, not
+                    # its publication deadline. Raw-only mode retains 90 s.
+                    deadline = self._coverage_deadline(coverage, self.calendar.details(
+                        at.astimezone(NEW_YORK).date())["close"])
+                    stale = at > deadline if bar_mode else at - coverage > timedelta(seconds=90)
+                    if (bar_mode and event["type"] == "BAR" and utc(event["end_at"]) > coverage
+                            and now > utc(event["end_at"]) + timedelta(seconds=90)):
+                        stale = True
+                    if stale:
                         self._gap(state, journals, now, session, "LIVE_EVIDENCE_STALE", gap_at=coverage,
                                   instrument=name, portfolio=portfolio)
                     if event["type"] == "BAR" and event.get("coverage_complete") is True:
@@ -794,6 +975,13 @@ class ShadowCollector:
             journals.append({"journal_key": "event:" + item["event_id"], "type": "SOURCE_EVENT",
                              "source": item, "applied_event": event, "result": result})
         # Missing cycles or stale evidence are data failures, not zero returns.
+        # `stale_window` = (floor, before) around scheduled entries of this
+        # receipt. Before an entry, evidence dated at/after it is not applied
+        # yet, so only gaps starting before it are decided here; such a gap
+        # cannot be repaired by that later evidence. After an entry at `floor`,
+        # gaps starting before it were already decided at this same receipt
+        # and are never emitted behind the entry.
+        floor, before = stale_window
         for episode in tuple(state["watch_episodes"]):
             record = state["ledger"]["research"][episode]
             last = max(utc(state["coverage_until"].get(record["instrument_key"], record["opened_at"])),
@@ -805,9 +993,22 @@ class ShadowCollector:
             day = now.astimezone(NEW_YORK).date()
             if self.calendar.is_session(day):
                 detail = self.calendar.details(day)
-                if min(now, detail["close"]) - max(last, detail["open"]) > timedelta(seconds=90):
-                    self._gap(state, journals, now, session, "LIVE_EVIDENCE_STALE", gap_at=max(last, detail["open"]),
+                covered = max(last, detail["open"])
+                if (floor is not None and covered < floor) or (before is not None and covered >= before):
+                    continue
+                if getattr(self.source, "minute_bar_enabled", False):
+                    stale = covered < detail["close"] and now > self._coverage_deadline(covered, detail["close"])
+                else:
+                    stale = min(now, detail["close"]) - covered > timedelta(seconds=90)
+                if stale:
+                    self._gap(state, journals, now, session, "LIVE_EVIDENCE_STALE", gap_at=covered,
                               instrument=record["instrument_key"], portfolio=portfolio)
+
+    def _coverage_deadline(self, covered, close):
+        if getattr(self.source, "minute_bar_enabled", False):
+            end = min(covered.replace(second=0, microsecond=0) + timedelta(minutes=1), close)
+            return end + timedelta(seconds=90)
+        return covered + timedelta(seconds=90)
 
     def _capture(self, state, journals, session, batch, now, *, portfolio=None, causal=None):
         session["attempts"] += 1
@@ -904,6 +1105,21 @@ class ShadowCollector:
                       "episode_key": episode, "instrument_key": name, "observation": observation}
             if previous:
                 record.update(_pending_tail(previous))
+            if self.minute_entry and state["ledger"] is not None and evaluation["arm"] is not None:
+                entry = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+                pending = {"episode_key": episode, "instrument_key": name,
+                    "decision_at": now.isoformat(), "entry_at": entry.isoformat(),
+                    "evaluation": evaluation, "quote": None}
+                quote = _object(observation["source"].get("quote"))
+                if quote:
+                    pending["quote"] = {**quote, "bid_at": quote.get("bid_source_at"),
+                        "ask_at": quote.get("ask_source_at"), "collector_available_at": now.isoformat(),
+                        "entry_evidence": "SNAPSHOT"}
+                session.setdefault("entries_pending", {})[name] = pending
+                record.update(decision_at=now.isoformat(), entry_at=entry.isoformat(), entry_status="PENDING")
+                session["candidates"][name].update(decision_at=now.isoformat(), entry_at=entry.isoformat(), entry_status="PENDING")
+                journals.append(record)
+                continue
             if state["ledger"] is not None and evaluation["arm"] is not None:
                 before_terminal = set(state["ledger"]["terminal_reasons"])
                 kwargs: dict[str, Any] = dict(episode_key=episode,
@@ -920,6 +1136,115 @@ class ShadowCollector:
                 state["watch_episodes"][episode] = name
                 state["instrument_episodes"].setdefault(name, []).append(episode)
             journals.append(record)
+
+    def _entries(self, state, journals, session, batch, events, now, *, portfolio=None, entry_cutoff=None,
+                 frontier=None):
+        """Durable E-BAR decision -> entry transition; evidence never travels back in time.
+
+        A cycle passes `frontier` (held receipts, backlog): the entry resolves
+        only after a delivered quote received after entry_at proves that the
+        source has passed it, so a restart resolves on the same evidence as
+        live. `None` is only for callers that supply the complete evidence.
+        """
+        pending = session.get("entries_pending", {})
+        closed = self.calendar.details(date.fromisoformat(session["date"]))["close"]
+        quotes = []
+        for event in events:
+            if event.get("type") == "QUOTE" and event.get("regular") is True:
+                quotes.append(("US:" + event["instrument_key"].split(":")[-1],
+                    {**event, "entry_evidence": "IMMUTABLE_EVENT"}))
+        for row in _object(batch.get("universe")).get("instruments", []):
+            quote = _object(row.get("quote"))
+            if quote:
+                quotes.append((_instrument(row), {**quote, "entry_evidence": "SNAPSHOT",
+                    "bid_at": quote.get("bid_source_at"), "ask_at": quote.get("ask_source_at")}))
+        for name, entry in list(pending.items()):
+            entry_at = utc(entry["entry_at"])
+            for instrument, quote in quotes:
+                available = _dt(quote.get("available_at"))
+                if (quote.get("entry_evidence") == "IMMUTABLE_EVENT" and available is not None
+                        and entry_at < available <= now and (entry.get("frontier_at") is None
+                        or available < utc(entry["frontier_at"]))):
+                    # Receipt order within the quote feed: a later receipt of
+                    # any name proves every earlier unheld receipt was delivered.
+                    entry["frontier_at"] = available.isoformat()
+                if (instrument != name or available is None or available > min(now, entry_at)
+                        or quote.get("entry_evidence") != "IMMUTABLE_EVENT" and now > entry_at):
+                    continue
+                old = entry.get("quote")
+                if old is None or available >= utc(old["available_at"]):
+                    entry["quote"] = {**quote, "collector_available_at": now.isoformat()}
+                    if entry["quote"] != old:
+                        journals.append({"journal_key": "entry-quote:" + digest([entry["episode_key"], entry["quote"]]),
+                            "type": "ENTRY_QUOTE_OBSERVED", "episode_key": entry["episode_key"], "quote": entry["quote"]})
+            if now < entry_at or (entry_cutoff is not None and entry_at > entry_cutoff):
+                continue
+            held = (frontier or {}).get("held", {})
+            proven = frontier is None or (entry.get("frontier_at") is not None
+                and all(held.get(key) is None or held[key] > entry_at for key in (name, "*")))
+            quote = entry.get("quote")
+            reason, geometry = None, None
+            if now >= closed:
+                reason = "ENTRY_SESSION_CLOSED"
+            elif not proven:
+                # A backlog still before entry_at advances the cursor, so waiting
+                # for it holds nothing. Once this entry itself holds offered
+                # evidence dated at/after entry_at, it never holds the stream
+                # beyond entry_at + ENTRY_FRONTIER_WAIT of collector time.
+                holding = any(_dt(event.get("at")) is not None and utc(event["at"]) >= entry_at
+                              and state["event_receipts"].get(event.get("event_id")) is None for event in events)
+                if now <= entry_at + ENTRY_FRONTIER_WAIT or (frontier or {}).get("backlog") and not holding:
+                    continue
+                reason = "ENTRY_QUOTE_FRONTIER_TIMEOUT"
+            elif quote is None:
+                reason = "ENTRY_QUOTE_MISSING"
+            else:
+                bid, ask = quote.get("bid"), quote.get("ask")
+                if (any(isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v)
+                        for v in (bid, ask)) or not 0 < bid <= ask):
+                    reason = "ENTRY_QUOTE_INVALID"
+                elif any(_dt(quote.get(k)) is None or not timedelta(0) <= entry_at - utc(quote[k]) <= timedelta(seconds=10)
+                         for k in ("bid_at", "ask_at")):
+                    reason = "ENTRY_QUOTE_STALE_OR_FUTURE"
+                elif (_dt(quote.get("available_at")) is None
+                      or utc(quote["available_at"]) > entry_at
+                      or quote.get("entry_evidence") != "IMMUTABLE_EVENT" and utc(quote["collector_available_at"]) > entry_at
+                      or any(utc(quote[k]) > utc(quote["available_at"]) for k in ("bid_at", "ask_at"))):
+                    reason = "ENTRY_QUOTE_NOT_CAUSAL"
+                else:
+                    mid = bid + (ask - bid) / 2
+                    if mid < 5:
+                        reason = "ENTRY_QUOTE_PRICE_BELOW_MINIMUM"
+                    elif (ask - bid) / mid > .0020:
+                        reason = "ENTRY_QUOTE_SPREAD_TOO_WIDE"
+                    else:
+                        try:
+                            geometry = entry_geometry(mid, entry["evaluation"]["atr14"])
+                        except CandidateValidationError as error:
+                            reason = "ENTRY_QUOTE_" + error.code
+            evidence = {"journal_key": "entry:" + entry["episode_key"], "type": "CANDIDATE_ENTRY",
+                "instrument_key": name, "decision_at": entry["decision_at"], "entry_at": entry["entry_at"],
+                "observed_at": now.isoformat(), "quote": quote, "reason": reason, "geometry": geometry,
+                "frontier_at": entry.get("frontier_at")}
+            if reason is None:
+                evaluation = entry["evaluation"]
+                kwargs: dict[str, Any] = dict(episode_key=entry["episode_key"], instrument_key=name, session=session["date"],
+                    opened_at=entry["entry_at"], decision_at=entry["decision_at"], admission_available_at=now.isoformat(),
+                    maturity_at=evaluation["maturity_at"], geometry=geometry, arm=evaluation["arm"],
+                    admission_block_reason=self._admission_block(state, session["date"], name))
+                before = set(state["ledger"]["terminal_reasons"])
+                if portfolio is not None:
+                    research, admission = portfolio.register(**kwargs)
+                else:
+                    state["ledger"], research, admission = register_candidate(state["ledger"], **kwargs)
+                evidence.update(research=research, admission=admission)
+                self._record_terminal(state, before, now.isoformat(), session["date"])
+                state["coverage_until"].setdefault(name, entry["entry_at"])
+                state["watch_episodes"][entry["episode_key"]] = name
+                state["instrument_episodes"].setdefault(name, []).append(entry["episode_key"])
+            session["candidates"][name].update(entry_status="REJECTED" if reason else "OPENED", entry_reason=reason)
+            journals.append(evidence)
+            del pending[name]
 
     def _close_capture(self, state, journals, session, now):
         if session["universe"] is None:

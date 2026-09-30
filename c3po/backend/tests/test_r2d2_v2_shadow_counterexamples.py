@@ -454,3 +454,27 @@ def test_pending_material_reversion_has_unique_receipts_and_only_first_full_row(
     assert pending_records[0]['material_sha256'] == pending_records[2]['material_sha256']
     assert sum('observation' in row for row in pending_records) == 1
     assert session['pending'][INSTRUMENT]['revision'] == 3
+
+
+def test_delayed_preentry_gap_does_not_attach_to_new_episode():
+    collector, state, _ = setup_state()
+    collector.source = SimpleNamespace(minute_bar_enabled=True)
+    journals = []
+    collector._gap(state, journals, utc(OPEN)+timedelta(seconds=1), DAY,
+                   'PRODUCER_DATA_GAP', gap_at=utc(OPEN)-timedelta(minutes=1), instrument=INSTRUMENT)
+    assert state['ledger']['research']['synthetic-entry']['category'] is None
+    assert all('synthetic-entry' not in keys for keys in state['gap_episode_receipts'].values())
+    assert journals[-1]['events'] == []
+
+
+def test_prior_session_gap_does_not_block_current_session_or_attach_new_episode():
+    collector, state, _ = setup_state()
+    collector.source = SimpleNamespace(minute_bar_enabled=True)
+    at = '2026-09-04T14:00:00+00:00'
+    now = utc(OPEN)+timedelta(seconds=1)
+    event = source_event('DATA_GAP', at=at, available_at=at, session='2026-09-04', reason='OLD_GAP')
+    collector._events(state, [], [event], [], now, DAY)
+    assert collector._admission_block(state, DAY, INSTRUMENT) is None
+    assert collector._admission_block(state, '2026-09-04', INSTRUMENT) is not None
+    assert state['ledger']['research']['synthetic-entry']['category'] is None
+    assert all('synthetic-entry' not in keys for keys in state['gap_episode_receipts'].values())

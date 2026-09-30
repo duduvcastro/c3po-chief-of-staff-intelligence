@@ -197,6 +197,8 @@ class Settings(BaseSettings):
     r2d2_v2_live_policy_file: str = ""
     r2d2_v2_live_policy_sha: str = ""
     r2d2_v2_shadow_enabled: bool = False
+    r2d2_v2_massive_bars_enabled: bool = False
+    r2d2_v2_massive_journal_dir: Path = Path("/app/data/r2d2-v2-massive")
     r2d2_v2_shadow_source_dir: Path = Path("/app/data/r2d2-v2-source")
     r2d2_v2_shadow_release_file: Path = Path("/app/data/r2d2-v2-release.json")
     r2d2_v2_shadow_release_sha: str = ""

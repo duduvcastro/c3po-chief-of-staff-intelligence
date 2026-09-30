@@ -32,6 +32,22 @@ PACKAGE_FILES = (
     "r2d2_v2_raw_events.py", "r2d2_v2_raw_source.py",
     "r2d2_v2_live_group.py", "r2d2_v2_live_controller.py", "r2d2_worker.py",
     "microstructure_capture.py", "market_data/eodhd_stream.py",
+    'r2d2_v2_massive_events.py',
+    'r2d2_v2_massive_journal.py',
+    'r2d2_v2_massive_maintenance.py',
+    'r2d2_v2_massive_producer.py',
+    'r2d2_v2_massive_recovery.py',
+    'r2d2_v2_massive_retention.py',
+    'r2d2_v2_massive_scheduler.py',
+    'r2d2_v2_massive_sessions.py',
+    'r2d2_v2_massive_session_source.py',
+    'r2d2_v2_massive_source.py',
+    'r2d2_v2_massive_spool.py',
+    'r2d2_v2_massive_stream.py',
+    'r2d2_v2_massive_transport.py',
+    'r2d2_v2_massive_supervisor.py',
+    'r2d2_v2_minute_bars.py',
+    'r2d2_v2_composite_source.py',
 )
 
 
