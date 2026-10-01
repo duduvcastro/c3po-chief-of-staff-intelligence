@@ -77,9 +77,15 @@ def _fast_risk_watcher_loop(service: R2D2PaperService, stop: Event, interval_sec
         stop.wait(max(0.0, interval - elapsed))
 
 
-def main() -> None:
+def main(*, capacity_planner=None, capacity_bootstrap=None) -> None:
     with startup_job():
         settings = get_settings()
+        if getattr(settings,'r2d2_v2_capacity_required',False) and capacity_planner is None:
+            if capacity_bootstrap is None:
+                raise ValueError('CAPACITY_BOOTSTRAP_UNBOUND')
+            capacity_planner=capacity_bootstrap(settings)
+            if not callable(capacity_planner):
+                raise ValueError('CAPACITY_BOOTSTRAP_UNBOUND')
         init_sentry(settings, service_name="r2d2-worker")
         database = Database(settings)
         database.initialize()
@@ -178,7 +184,7 @@ def main() -> None:
             fast_risk_thread.start()
         else:
             logger.info("R2D2 fast risk watcher disabled by feature flag")
-    live_controller = LiveGroupController(settings, stream)
+    live_controller = LiveGroupController(settings, stream, capacity_planner=capacity_planner)
     live_controller.start()
     try:
         while True:
@@ -247,4 +253,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    from .r2d2_v2_capacity_bootstrap import load_capacity_planner
+    main(capacity_bootstrap=load_capacity_planner)

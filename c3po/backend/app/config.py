@@ -196,6 +196,10 @@ class Settings(BaseSettings):
     # Independent V2 process; no collector or release is enabled by this change.
     r2d2_v2_live_policy_file: str = ""
     r2d2_v2_live_policy_sha: str = ""
+    r2d2_v2_capacity_required: bool = False
+    r2d2_v2_capacity_veto_mode: str = "DISPATCH_AND_DERIVATION_ONLY"
+    r2d2_v2_capacity_config_file: str = ""
+    r2d2_v2_capacity_config_sha: str = ""
     r2d2_v2_shadow_enabled: bool = False
     r2d2_v2_massive_bars_enabled: bool = False
     r2d2_v2_massive_journal_dir: Path = Path("/app/data/r2d2-v2-massive")
