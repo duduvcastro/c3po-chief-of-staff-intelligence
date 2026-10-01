@@ -79,7 +79,7 @@ def test_only_trusted_lanes_older_than_24h_are_escalated() -> None:
     ([_run(3, "failure", age=timedelta(hours=2)), _run(2, "failure", age=timedelta(hours=26)),
       _run(1, "success", age=timedelta(hours=50))], "último sucesso há 2d"),
     # Never succeeded in the listed window.
-    ([_run(3, "timed_out", age=timedelta(hours=2))], "nenhum sucesso nas últimas 1 execuções"),
+    ([_run(3, "timed_out", age=timedelta(hours=2))], "nenhum sucesso nas últimas 1 execuções concluídas"),
     # A recent success (e.g. after an intentional dry-run failure) is not aged.
     ([_run(3, "failure", age=timedelta(hours=1)), _run(2, "success", age=timedelta(hours=20))], None),
     # Latest completed run succeeded; in-progress and feature-branch runs are ignored.
@@ -99,7 +99,8 @@ def test_workflow_failures_escalate_only_without_success_for_24h(
         assert signal is None
     else:
         assert signal is not None
-        assert signal.startswith("`container-vulnerability-scan.yml` sem sucesso: " + expected)
+        assert signal.startswith("`container-vulnerability-scan.yml`: último run concluído falhou (`")
+        assert signal.endswith("; " + expected)
         assert f"[run 3](https://github.com/{REPOSITORY}/actions/runs/3)" in signal
 
 
@@ -117,7 +118,7 @@ def test_escalation_posts_once_per_incident_per_brt_day() -> None:
         "<!-- c3po-incident-escalation:governance-vulnerability:2026-09-30 -->"
     )
     assert "## ESCALADO (>24h) — Governança e vulnerabilidades" in body
-    assert "#423" in body and "`security-watchdog.yml` sem sucesso" in body
+    assert "#423" in body and "`security-watchdog.yml`: último run concluído falhou" in body
     assert f"[Run do detector]({RUN_URL})" in body
 
     again, reason, _ = detector.decide(
@@ -220,8 +221,8 @@ def test_lane_titles_are_sanitized_and_cannot_spoof_the_dedupe_marker() -> None:
     detector = _detector()
     hostile = _pull(423, age=timedelta(days=6))
     hostile["title"] = (
-        "<!-- c3po-incident-escalation:governance-vulnerability:2026-09-30 --> "
-        "@duduvcastro `rm -rf` " + "x" * 300
+        "<!<!---- c3po-incident-escalation:governance-vulnerability:2026-09-30 --->> "
+        "<!-- x --> @duduvcastro `rm -rf` " + "x" * 300
     )
 
     post, _reason, body = detector.decide(
@@ -231,7 +232,7 @@ def test_lane_titles_are_sanitized_and_cannot_spoof_the_dedupe_marker() -> None:
 
     assert post is True
     lane_line = next(line for line in body.splitlines() if "#423" in line)
-    for token in ("<!--", "-->", "@", "`"):
+    for token in ("<", ">", "@", "`"):
         assert token not in lane_line
     assert lane_line.endswith("…") and len(lane_line) < 300
     assert body.count("<!--") == 1

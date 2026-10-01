@@ -1,8 +1,10 @@
 name: Escalate aged security incidents
 
 # Posts at most one comment per incident per BRT day to the Fable/Codex channel
-# (repository variable C3PO_ESCALATION_ISSUE, default issue #429) when GitHub itself shows a security signal stuck for >24h: a
-# trusted automation/* lane still open, or a security workflow without success.
+# (repository variable C3PO_ESCALATION_ISSUE, default issue #429) when GitHub
+# itself shows a security signal stuck for >24h: a trusted automation/* lane
+# open for >24h, or a security workflow whose last completed run failed with
+# no success in 24h (a workflow that stopped running is not detected here).
 # Uses only the workflow GITHUB_TOKEN; no secrets, no host or database access.
 
 on:

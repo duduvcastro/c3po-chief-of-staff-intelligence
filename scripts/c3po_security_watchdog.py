@@ -70,6 +70,13 @@ def _check_locked(root, now, *, run, health, write, hold):
     return report
 
 
+def daily_execution_verified(evidence, now):
+    # Only the security routine's own "errors" count. "escalation_errors" (the
+    # >24h escalation channel) is observability and must never fail the day.
+    return not (evidence.get("last_dispatch_date") != now.date().isoformat()
+                or evidence.get("status") == "failed" or evidence.get("errors"))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--verify-daily", action="store_true")
@@ -79,8 +86,7 @@ def main():
         report = check(ROOT, now)
         if args.verify_daily and report["status"] != "explicit_maintenance_hold":
             evidence = load_evidence(ROOT / "runtime/security/security-automation-report.json", now, 1.5)
-            if (evidence.get("last_dispatch_date") != now.date().isoformat()
-                    or evidence.get("status") == "failed" or evidence.get("errors")):
+            if not daily_execution_verified(evidence, now):
                 report["healthy"] = False
                 report["status"] = "failed"
                 report["errors"].append("daily_security_execution_not_verified")

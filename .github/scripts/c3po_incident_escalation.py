@@ -37,10 +37,11 @@ def _age(delta: timedelta) -> str:
 
 
 def _text(value: Any, limit: int = 100) -> str:
-    """Untrusted text: no HTML comment delimiters (dedupe marker spoofing),
-    no mentions, no code spans; single line; truncated."""
+    """Untrusted text: no angle brackets at all (no HTML comment can be
+    reassembled, e.g. "<!<!----"), no mentions, no code spans; single line;
+    truncated."""
     text = str(value)
-    for token in ("<!--", "-->", "@", "`"):
+    for token in ("<", ">", "@", "`"):
         text = text.replace(token, "")
     text = " ".join(text.split()).replace("|", "/")
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -82,7 +83,8 @@ def lane_signals(pulls: Any, repository: str, now: datetime) -> list[str]:
 
 
 def workflow_signal(workflow: str, runs: Any, now: datetime, repository: str) -> str | None:
-    """Latest completed main-branch run failed and nothing succeeded for >24h."""
+    """The latest completed main-branch run failed and nothing succeeded in the
+    last 24h. A workflow that stopped running entirely is NOT detected here."""
     if not isinstance(runs, list):
         raise ValueError(f"{workflow}: run listing is not a list")
     completed = sorted(
@@ -112,9 +114,9 @@ def workflow_signal(workflow: str, runs: Any, now: datetime, repository: str) ->
     if isinstance(run_id, bool) or not isinstance(run_id, int):
         raise ValueError(f"{workflow}: run id is invalid")
     return (
-        f"`{workflow}` sem sucesso: {quiet}; última conclusão "
-        f"`{_text(latest.get('conclusion'), 30)}` no "
-        f"[run {run_id}](https://github.com/{repository}/actions/runs/{run_id})"
+        f"`{workflow}`: último run concluído falhou "
+        f"(`{_text(latest.get('conclusion'), 30)}`, "
+        f"[run {run_id}](https://github.com/{repository}/actions/runs/{run_id})); {quiet}"
     )
 
 

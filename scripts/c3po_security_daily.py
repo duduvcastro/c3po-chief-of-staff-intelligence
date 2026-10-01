@@ -28,6 +28,7 @@ REPO_ID = 1336399383
 REPORT = "security-automation-report.json"
 HOLD = Path("/etc/c3po/security-maintenance.hold")
 CONFIG = Path("/etc/c3po/security-automation.json")
+ESCALATION_WORKFLOW = "incident-escalation.yml"
 REQUIRED_JOBS = {"Sensitive files", "Secret scan", "Backend tests", "Python type check",
                  "Frontend build", "Security remediation proof"}
 
@@ -177,6 +178,32 @@ def ensure_workflows(gh, hold):
             raise RuntimeError("Security workflow explicitly disabled: " + workflow)
 
 
+def escalation_workflow_errors(gh, hold):
+    """The >24h escalation channel is observability, never a security gate.
+
+    Its state and latest main-branch result are reported only under
+    ``escalation_errors``: they never enter ``errors`` (which the watchdog's
+    --verify-daily treats as a failed day, which in turn vetoes merge and
+    reboot), and no 404, transient HTTP error or malformed payload here can
+    stop the cycle. An inactivity suspension is restored like the other
+    security workflows; any other non-active state is only reported."""
+    path = "/actions/workflows/" + ESCALATION_WORKFLOW
+    try:
+        state = gh.request(path)["state"]
+        if state == "disabled_inactivity" and not hold:
+            gh.request(path + "/enable", "PUT")
+        elif state != "active":
+            return [ESCALATION_WORKFLOW + ":state:" + str(state)]
+        runs = gh.request(path + "/runs?per_page=1&branch=main")["workflow_runs"]
+        if runs and runs[0]["status"] == "completed" and runs[0]["conclusion"] not in ("success", "skipped"):
+            return [ESCALATION_WORKFLOW + ":" + str(runs[0]["conclusion"])]
+    except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
+        # Never include exception text (URLs or response bodies may carry secrets).
+        return [ESCALATION_WORKFLOW + ":" + type(exc).__name__
+                + (f":{exc.code}" if isinstance(exc, HTTPError) else "")]
+    return []
+
+
 def proof_passed(gh, pr):
     runs = gh.pages("/actions/workflows/c3po-pipeline.yml/runs?event=workflow_dispatch&branch="
                     + pr["head"]["ref"] + "&head_sha=" + pr["head"]["sha"], "workflow_runs")
@@ -268,22 +295,16 @@ def cycle(root, gh, now, config, previous):
         evidence_errors.append("image_evidence_unavailable")
     deployed = (root / ".deploy-version").read_text().strip()
     main_sha = gh.request("/git/ref/heads/main")["object"]["sha"]
-    escalation_errors = []
-    for workflow in ("dependency-security.yml", "container-vulnerability-scan.yml", "c3po-pipeline.yml",
-                     "incident-escalation.yml"):
+    for workflow in ("dependency-security.yml", "container-vulnerability-scan.yml", "c3po-pipeline.yml"):
         # Checking the most recent result prevents a green inventory from hiding a
         # failed repair job. A pending run is recorded as pending, not successful.
         query = f"/actions/workflows/{workflow}/runs?per_page=1"
         if workflow == "c3po-pipeline.yml":
             query += "&event=push&branch=main"
-        elif workflow == "incident-escalation.yml":
-            query += "&branch=main"
         runs = gh.request(query)["workflow_runs"]
         if runs and runs[0]["status"] == "completed" and runs[0]["conclusion"] not in ("success", "skipped"):
-            # A broken escalation channel must be visible (unhealthy report) but
-            # never veto the evidence-gated security merge or reboot.
-            (escalation_errors if workflow == "incident-escalation.yml" else evidence_errors).append(
-                workflow + ":" + str(runs[0]["conclusion"]))
+            evidence_errors.append(workflow + ":" + str(runs[0]["conclusion"]))
+    escalation_errors = escalation_workflow_errors(gh, HOLD.exists())
     try:
         npm = load_evidence(directory / "repository-npm-advisories.json", now, 26)
         if npm["schema"] != "C3PO_NPM_ADVISORIES-v1" or npm["source_revision"] != main_sha:
@@ -300,6 +321,8 @@ def cycle(root, gh, now, config, previous):
               "reboot_required": os_report.get("reboot_required"), "deployed_sha": deployed, "main_sha": main_sha,
               "host_report_sha256": os_report.get("report_sha256"),
               "image_report_sha256": images.get("report_sha256"), "errors": evidence_errors,
+              # Observability only: never part of "errors", "healthy" or any gate.
+              "escalation_errors": escalation_errors,
               "last_dispatch_date": previous.get("last_dispatch_date"),
               "last_dispatched_deploy": previous.get("last_dispatched_deploy"), "status": "observed"}
     report["automatic_reboot"] = config.get("automatic_reboot") is True
@@ -351,7 +374,7 @@ def cycle(root, gh, now, config, previous):
         may_write = lambda: maintenance_open(datetime.now(timezone.utc), config, HOLD.exists()) and healthy_host(root)
         report["status"], report["pull_request"] = promote(
             gh, alerts, deployed, images, may_write=may_write)
-    report["errors"] = evidence_errors + dispatch_errors + escalation_errors
+    report["errors"] = evidence_errors + dispatch_errors
     # No "resolved" state until fresh scanners and application health prove it.
     report["healthy"] = (deployed == main_sha and not report["errors"] and not alerts and report["security_pending"] == 0
                          and report["reboot_required"] is False and images.get("scan_status") == "complete"

@@ -290,11 +290,20 @@ The daily `Escalate aged security incidents` workflow (07:20 BRT, workflow
 token only) posts at most one comment per incident per BRT day to the channel
 issue (repository variable `C3PO_ESCALATION_ISSUE`, default #429) for what
 GitHub itself can see: trusted `automation/*` lanes open >24h and security
-workflows without success for >24h. If the channel is closed, locked or has
-2,400+ comments the run fails red and keeps the undelivered text in its log;
-point the variable at a new channel issue. The host security routine watches
-this workflow's latest main-branch run and reports a failure as an error
-without vetoing evidence-gated merges or reboots. Dependabot counts, branch
+workflows whose last completed run failed (último run concluído falhou) with
+no success in the last 24h. A workflow that stopped running entirely is not
+detected by this check. If the channel is closed, locked or has 2,400+
+comments the run fails red and keeps the undelivered text in its log; point
+the variable at a new channel issue. The host security routine reports this
+workflow's state and latest main-branch result only under
+`escalation_errors`, never under `errors`: it does not change `healthy`, the
+watchdog's `--verify-daily`, or any merge/reboot gate, and a 404 or transient
+GitHub error is recorded there instead of stopping the cycle. The app shows
+it as an attention-level cause (`escalonamento automático (>24h) com
+falha: ...`), never offline. It is deliberately not in `ensure_workflows`,
+where a non-active state raises and would stop the whole security routine;
+an inactivity suspension is restored by the same non-blocking check.
+Dependabot counts, branch
 protection drift, host OS/reboot state and `maintenance_hold` are visible only
 in the app; GitHub cannot read that escalation record without a new read
 credential, so today those causes are escalated only inside the app incident
