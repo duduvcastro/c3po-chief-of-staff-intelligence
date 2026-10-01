@@ -282,3 +282,47 @@ def test_pagination_never_sends_credential_to_other_target(url):
     gh.request = lambda *a, **k: ([{'number': 1}], '<' + url + '>; rel="next"')
     with pytest.raises(ValueError, match='pagination target'):
         gh.pages('/dependabot/alerts?state=open')
+
+
+def test_failed_escalation_workflow_is_reported_without_vetoing_maintenance(tmp_path, monkeypatch):
+    now = datetime(2026, 9, 12, 10, tzinfo=timezone.utc)
+    (tmp_path / "runtime/security").mkdir(parents=True)
+    (tmp_path / ".deploy-version").write_text("a" * 40)
+    monkeypatch.setattr(daily, "HOLD", tmp_path / "hold")
+    monkeypatch.setattr(daily, "MARKER", tmp_path / "marker")
+    monkeypatch.setattr(daily, "trial_present", lambda _: False)
+    monkeypatch.setattr(daily, "healthy_host", lambda _: True)
+    monkeypatch.setattr(daily, "boot_receipt", lambda *args, **kwargs: None)
+    monkeypatch.setattr(daily, "validate_report", lambda _: None)
+    def evidence(path, *args):
+        if path.name == "host-os-vulnerability-report.json":
+            return {"schema": "C3PO_HOST_OS_VULNERABILITY_REPORT-v1", "updates": {"security_pending": 0},
+                    "reboot_required": False, "report_sha256": "0" * 64}
+        if path.name == "repository-npm-advisories.json":
+            return {"schema": "C3PO_NPM_ADVISORIES-v1", "source_revision": "a" * 40, "alerts": []}
+        if path.name == "security-watchdog-report.json":
+            return {"schema": "C3PO_SECURITY_WATCHDOG-v1", "errors": [], "status": "verified",
+                    "generated_at": now.isoformat()}
+        return {"report_sha256": "1" * 64, "scan_status": "complete", "errors": [], "finding_total": 0,
+                "generated_at": now.isoformat()}
+    monkeypatch.setattr(daily, "load_evidence", evidence)
+    promoted = []
+    monkeypatch.setattr(daily, "promote", lambda *args, **kwargs: promoted.append(1) or ("no_validated_candidate", None))
+    queries = []
+    class GH:
+        def pages(self, path):
+            return []
+        def request(self, path, method="GET", body=None):
+            if method == "POST":
+                return None
+            if path == "/git/ref/heads/main":
+                return {"object": {"sha": "a" * 40}}
+            queries.append(path)
+            if path.startswith("/actions/workflows/incident-escalation.yml/"):
+                return {"workflow_runs": [{"status": "completed", "conclusion": "failure"}]}
+            return {"workflow_runs": []}
+    report = daily.cycle(tmp_path, GH(), now, {"automatic_merge": True}, {})
+    assert "/actions/workflows/incident-escalation.yml/runs?per_page=1&branch=main" in queries
+    assert report["errors"] == ["incident-escalation.yml:failure"]
+    assert report["status"] == "no_validated_candidate" and promoted == [1]
+    assert report["healthy"] is False

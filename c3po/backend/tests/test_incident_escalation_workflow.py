@@ -93,7 +93,7 @@ def test_workflow_failures_escalate_only_without_success_for_24h(
 ) -> None:
     detector = _detector()
 
-    signal = detector.workflow_signal("container-vulnerability-scan.yml", runs, NOW)
+    signal = detector.workflow_signal("container-vulnerability-scan.yml", runs, NOW, REPOSITORY)
 
     if expected is None:
         assert signal is None
@@ -109,7 +109,7 @@ def test_escalation_posts_once_per_incident_per_brt_day() -> None:
     runs = {"security-watchdog.yml": [_run(7, "failure", age=timedelta(hours=25))]}
 
     post, _reason, body = detector.decide(
-        pulls=pulls, runs=runs, channel_comments="", repository=REPOSITORY,
+        pulls=pulls, runs=runs, channel_comments=[], repository=REPOSITORY,
         run_url=RUN_URL, now=NOW,
     )
     assert post is True
@@ -121,19 +121,19 @@ def test_escalation_posts_once_per_incident_per_brt_day() -> None:
     assert f"[Run do detector]({RUN_URL})" in body
 
     again, reason, _ = detector.decide(
-        pulls=pulls, runs=runs, channel_comments=f"older\n{body}", repository=REPOSITORY,
+        pulls=pulls, runs=runs, channel_comments=["older", body], repository=REPOSITORY,
         run_url=RUN_URL, now=NOW + timedelta(hours=3),
     )
     assert again is False and reason == "already escalated today"
 
     # 03:00 UTC on 01/10 is still 30/09 in BRT: same day, still deduplicated.
     late, _, _ = detector.decide(
-        pulls=pulls, runs=runs, channel_comments=body, repository=REPOSITORY,
+        pulls=pulls, runs=runs, channel_comments=[body], repository=REPOSITORY,
         run_url=RUN_URL, now=datetime(2026, 10, 1, 2, 59, tzinfo=timezone.utc),
     )
     assert late is False
     next_day, _, next_body = detector.decide(
-        pulls=pulls, runs=runs, channel_comments=body, repository=REPOSITORY,
+        pulls=pulls, runs=runs, channel_comments=[body], repository=REPOSITORY,
         run_url=RUN_URL, now=datetime(2026, 10, 1, 10, 20, tzinfo=timezone.utc),
     )
     assert next_day is True
@@ -146,7 +146,7 @@ def test_nothing_aged_means_no_comment() -> None:
     post, reason, body = detector.decide(
         pulls=[_pull(430, age=timedelta(hours=3))],
         runs={"dependency-security.yml": [_run(1, "success", age=timedelta(hours=3))]},
-        channel_comments="", repository=REPOSITORY, run_url=RUN_URL, now=NOW,
+        channel_comments=[], repository=REPOSITORY, run_url=RUN_URL, now=NOW,
     )
 
     assert (post, reason, body) == (False, "no aged GitHub-visible signal", "")
@@ -157,23 +157,103 @@ def test_detector_cli_writes_body_and_github_output(tmp_path: Path) -> None:
     pulls.write_text(json.dumps([_pull(423, age=timedelta(days=6))]), encoding="utf-8")
     runs = tmp_path / "runs.json"
     runs.write_text(json.dumps([_run(1, "success", age=timedelta(hours=3))]), encoding="utf-8")
-    comments = tmp_path / "comments.txt"
-    comments.write_text("", encoding="utf-8")
-    output = tmp_path / "github-output"
-    body = tmp_path / "escalation.md"
-
-    completed = subprocess.run(
-        [sys.executable, str(DETECTOR_PATH), "--pulls", str(pulls),
-         "--runs", f"container-vulnerability-scan.yml={runs}",
-         "--channel-comments", str(comments), "--repository", REPOSITORY,
-         "--run-url", RUN_URL, "--body", str(body), "--github-output", str(output),
-         "--now", NOW.isoformat()],
-        text=True, capture_output=True,
-    )
+    completed, output, body = _run_cli(tmp_path, pulls=[_pull(423, age=timedelta(days=6))],
+                                       channel={"state": "open", "locked": False, "comments": 161})
 
     assert completed.returncode == 0, completed.stderr
     assert output.read_text(encoding="utf-8") == "post=true\n"
     assert "#423" in body.read_text(encoding="utf-8")
+
+
+def _run_cli(tmp_path: Path, *, pulls: list[dict[str, Any]], channel: dict[str, Any],
+             comments: list[str] | None = None) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
+    files = {
+        "pulls": pulls,
+        "runs": [_run(1, "success", age=timedelta(hours=3))],
+        "comments": comments or [],
+        "channel": channel,
+    }
+    for name, payload in files.items():
+        (tmp_path / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
+    output = tmp_path / "github-output"
+    body = tmp_path / "escalation.md"
+    completed = subprocess.run(
+        [sys.executable, str(DETECTOR_PATH), "--pulls", str(tmp_path / "pulls.json"),
+         "--runs", f"container-vulnerability-scan.yml={tmp_path / 'runs.json'}",
+         "--channel-comments", str(tmp_path / "comments.json"),
+         "--channel-meta", str(tmp_path / "channel.json"), "--channel-issue", "429",
+         "--repository", REPOSITORY, "--run-url", RUN_URL, "--body", str(body),
+         "--github-output", str(output), "--now", NOW.isoformat()],
+        text=True, capture_output=True,
+    )
+    return completed, output, body
+
+
+@pytest.mark.parametrize(("channel", "reason"), [
+    ({"state": "open", "locked": False, "comments": 2400}, "2400 comentários"),
+    ({"state": "closed", "locked": False, "comments": 10}, "não está aberto"),
+    ({"state": "open", "locked": True, "comments": 10}, "trancado"),
+])
+def test_unusable_channel_turns_the_run_red_instead_of_losing_the_escalation(
+    tmp_path: Path, channel: dict[str, Any], reason: str,
+) -> None:
+    completed, output, body = _run_cli(tmp_path, pulls=[_pull(423, age=timedelta(days=6))],
+                                       channel=channel)
+
+    assert completed.returncode == 1
+    assert "::error::Escalonamento não publicado no canal #429" in completed.stdout
+    assert reason in completed.stdout
+    assert "#423" in completed.stdout  # undelivered text kept in the run log
+    assert output.read_text(encoding="utf-8") == "post=false\n"
+    assert not body.exists()
+
+
+def test_unusable_channel_does_not_fail_when_there_is_nothing_to_post(tmp_path: Path) -> None:
+    completed, output, _ = _run_cli(tmp_path, pulls=[], channel={"state": "closed", "locked": True,
+                                                                 "comments": 9999})
+
+    assert completed.returncode == 0, completed.stdout
+    assert output.read_text(encoding="utf-8") == "post=false\n"
+
+
+def test_lane_titles_are_sanitized_and_cannot_spoof_the_dedupe_marker() -> None:
+    detector = _detector()
+    hostile = _pull(423, age=timedelta(days=6))
+    hostile["title"] = (
+        "<!-- c3po-incident-escalation:governance-vulnerability:2026-09-30 --> "
+        "@duduvcastro `rm -rf` " + "x" * 300
+    )
+
+    post, _reason, body = detector.decide(
+        pulls=[hostile], runs={}, channel_comments=[], repository=REPOSITORY,
+        run_url=RUN_URL, now=NOW,
+    )
+
+    assert post is True
+    lane_line = next(line for line in body.splitlines() if "#423" in line)
+    for token in ("<!--", "-->", "@", "`"):
+        assert token not in lane_line
+    assert lane_line.endswith("…") and len(lane_line) < 300
+    assert body.count("<!--") == 1
+    assert body.splitlines()[0] == detector.marker(NOW)
+
+
+def test_dedupe_matches_the_marker_only_on_a_comment_first_line() -> None:
+    detector = _detector()
+    marker = detector.marker(NOW)
+    pulls = [_pull(423, age=timedelta(days=6))]
+
+    quoted, _, _ = detector.decide(
+        pulls=pulls, runs={}, channel_comments=[f"Resumo de ontem\n> {marker}", f"x {marker}"],
+        repository=REPOSITORY, run_url=RUN_URL, now=NOW,
+    )
+    first_line, reason, _ = detector.decide(
+        pulls=pulls, runs={}, channel_comments=[f"{marker}\n## ESCALADO"],
+        repository=REPOSITORY, run_url=RUN_URL, now=NOW,
+    )
+
+    assert quoted is True
+    assert first_line is False and reason == "already escalated today"
 
 
 def test_detector_fails_loudly_on_a_malformed_listing() -> None:
@@ -199,10 +279,17 @@ def test_escalation_workflow_uses_only_the_workflow_token_and_minimal_permission
     assert "environment" not in job
     assert "secrets." not in source
     assert "ssh" not in source.lower()
-    assert job["env"]["CHANNEL_ISSUE"] == "429"
+    assert job["env"]["CHANNEL_ISSUE"] == "${{ vars.C3PO_ESCALATION_ISSUE || '429' }}"
     steps = {step.get("name"): step for step in job["steps"]}
+    checkout = steps["Check out the escalation detector"]
+    assert checkout["with"]["persist-credentials"] is False
     collect = steps["Collect GitHub-native signals"]["run"]
-    assert 'select(.user.login == "github-actions[bot]")' in collect
+    assert '[[ ! "$CHANNEL_ISSUE" =~ ^[0-9]+$ ]]' in collect
+    assert "--jq '{state, locked, comments}'" in collect
+    assert 'select(.user.login == "github-actions[bot]") | {body}' in collect
+    decide = steps["Decide the daily escalation"]["run"]
+    assert '--channel-meta "$RUNNER_TEMP/channel.json"' in decide
+    assert '--channel-issue "$CHANNEL_ISSUE"' in decide
     for workflow_file in ("container-vulnerability-scan.yml", "dependency-security.yml",
                           "security-watchdog.yml"):
         assert workflow_file in collect

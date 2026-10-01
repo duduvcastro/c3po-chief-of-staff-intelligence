@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 from argparse import Namespace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -526,9 +527,11 @@ def test_zero_gate_rejects_any_fixable_finding(tmp_path: Path) -> None:
         controller.verify_zero(Namespace(report=report_path))
 
 
+
 CLOSE_STALE_PATH = ROOT / ".github" / "scripts" / "c3po_close_stale_lanes.sh"
 SCAN_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "container-vulnerability-scan.yml"
 LANE_RUN_URL = "https://github.com/duduvcastro/c3po/actions/runs/777"
+TRIGGER_FILE = "c3po/security/container-rebuild-trigger.json"
 
 
 def _lane_trigger(scanner: ModuleType, controller: ModuleType, **kwargs: Any) -> dict[str, Any]:
@@ -541,18 +544,40 @@ def _lane_trigger(scanner: ModuleType, controller: ModuleType, **kwargs: Any) ->
     )
 
 
-def _fresh_clean_report(scanner: ModuleType, *, unfixed_ids: tuple[str, ...] = ()) -> dict[str, Any]:
+def _fresh_clean_report(scanner: ModuleType, *, unfixed_ids: tuple[str, ...] = (),
+                        age: timedelta = timedelta(hours=1),
+                        backend_occurrences: bool = True) -> dict[str, Any]:
+    """Zero fixable findings; the backend image still reports an unrelated unfixed
+    occurrence (a real scan of that image is not empty)."""
     report = _report(scanner, critical=0, high=0)
-    report["generated_at"] = "2026-09-30T03:30:00+00:00"
+    report["generated_at"] = (datetime.now(timezone.utc) - age).isoformat()
     image = report["images"][0]
+    if backend_occurrences:
+        image["occurrences"].append({"vulnerability_id": "CVE-UNRELATED-1", "severity": "low",
+                                     "package": "other-lib", "installed_version": "1",
+                                     "fixed_version": "", "target": "debian"})
     for vulnerability_id in unfixed_ids:
         image["occurrences"].append({"vulnerability_id": vulnerability_id, "severity": "high",
                                      "package": "high-lib", "installed_version": "3.0",
                                      "fixed_version": "", "target": "debian"})
+    image["image_id"] = "sha256:" + "b" * 64
+    image["finding_total"] = len(image["occurrences"])
     report["by_severity"]["high"] = len(unfixed_ids)
-    report["finding_total"] = len(unfixed_ids)
+    report["by_severity"]["low"] = int(backend_occurrences)
+    report["finding_total"] = len(image["occurrences"])
     report["report_sha256"] = scanner.report_sha256(report)
     return report
+
+
+def _bot_metadata(**overrides: Any) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "files": [{"path": TRIGGER_FILE, "changeType": "MODIFIED", "additions": 3, "deletions": 3}],
+        "commits": [{"oid": "a" * 40, "authors": [{"login": "github-actions[bot]",
+                                                  "name": "github-actions[bot]"}]}],
+        "comments": [{"author": {"login": "github-actions"}, "body": "evidence"}],
+    }
+    metadata.update(overrides)
+    return metadata
 
 
 def test_stale_lane_closes_only_when_every_lane_finding_left_a_clean_fresh_scan() -> None:
@@ -576,8 +601,23 @@ def test_stale_lane_closes_only_when_every_lane_finding_left_a_clean_fresh_scan(
     assert "reversível" in body
 
 
+def test_a_fully_clean_rebuilt_image_with_zero_occurrences_still_closes_the_lane() -> None:
+    # Real shape of 30/09/2026: backend, web and database all had zero occurrences.
+    scanner, controller = _modules()
+    trigger = _lane_trigger(scanner, controller, critical=0, high=1)
+    fresh = _fresh_clean_report(scanner, backend_occurrences=False)
+    assert fresh["images"][0]["occurrences"] == []
+
+    close, reason, resolved = controller.stale_lane_decision(fresh, trigger)
+
+    assert close is True, reason
+    assert resolved == ["CVE-HIGH-0"]
+
+
 @pytest.mark.parametrize("case", ["still_present_unfixed", "fixable_elsewhere", "dry_run",
-                                  "wrong_schema", "no_findings", "not_newer"])
+                                  "wrong_schema", "no_findings", "not_newer", "older_than_6h",
+                                  "future_dated", "lane_image_missing", "lane_image_unidentified",
+                                  "lane_image_inconsistent"])
 def test_stale_lane_is_kept_open_on_any_doubt(case: str) -> None:
     scanner, controller = _modules()
     trigger = _lane_trigger(scanner, controller, critical=0, high=1)
@@ -586,7 +626,7 @@ def test_stale_lane_is_kept_open_on_any_doubt(case: str) -> None:
         fresh = _fresh_clean_report(scanner, unfixed_ids=("CVE-HIGH-0",))
     elif case == "fixable_elsewhere":
         fresh = _report(scanner, critical=0, high=0, low=1)
-        fresh["generated_at"] = "2026-09-30T03:30:00+00:00"
+        fresh["generated_at"] = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         fresh["report_sha256"] = scanner.report_sha256(fresh)
     elif case == "dry_run":
         trigger["dry_run"] = True
@@ -594,8 +634,21 @@ def test_stale_lane_is_kept_open_on_any_doubt(case: str) -> None:
         trigger["schema"] = "SOMETHING-ELSE"
     elif case == "no_findings":
         trigger["findings"] = []
+    elif case == "not_newer":
+        trigger["generated_at"] = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    elif case == "older_than_6h":
+        # A re-run of an old workflow run must never close a lane.
+        fresh = _fresh_clean_report(scanner, age=timedelta(hours=6, minutes=1))
+    elif case == "future_dated":
+        fresh = _fresh_clean_report(scanner, age=-timedelta(hours=1))
+    elif case == "lane_image_missing":
+        trigger["findings"][0]["image"] = "web"
+    elif case == "lane_image_unidentified":
+        fresh["images"][0]["image_id"] = ""
+        fresh["report_sha256"] = scanner.report_sha256(fresh)
     else:
-        trigger["generated_at"] = "2026-10-01T00:00:00+00:00"
+        fresh["images"][0]["finding_total"] = 5
+        fresh["report_sha256"] = scanner.report_sha256(fresh)
 
     close, reason, resolved = controller.stale_lane_decision(fresh, trigger)
 
@@ -615,8 +668,54 @@ def test_stale_lane_fails_closed_on_an_incomplete_fresh_scan() -> None:
         controller.stale_lane_decision(fresh, trigger)
 
 
+def test_only_machine_owned_lanes_may_be_closed() -> None:
+    _, controller = _modules()
+    human = {"login": "duduvcastro", "name": "Eduardo"}
+    bot = {"login": "github-actions[bot]"}
+
+    assert controller.lane_ownership_problem(_bot_metadata()) is None
+    assert controller.lane_ownership_problem(_bot_metadata(
+        files=[{"path": TRIGGER_FILE, "changeType": "ADDED"}])) is None
+    for metadata in (
+        _bot_metadata(files=[{"path": TRIGGER_FILE, "changeType": "MODIFIED"},
+                             {"path": "c3po/backend/Dockerfile", "changeType": "MODIFIED"}]),
+        _bot_metadata(files=[{"path": "c3po/backend/Dockerfile", "changeType": "MODIFIED"}]),
+        _bot_metadata(files=[{"path": TRIGGER_FILE, "changeType": "DELETED"}]),
+        _bot_metadata(commits=[{"authors": [bot]}, {"authors": [human]}]),
+        _bot_metadata(commits=[{"authors": [bot, human]}]),
+        _bot_metadata(commits=[]),
+        _bot_metadata(comments=[{"body": "<!-- c3po-container-remediation-stale-close:abc -->\nx"}]),
+        _bot_metadata(comments=None),
+        [],
+    ):
+        assert controller.lane_ownership_problem(metadata)
+
+
+def _write_cli_inputs(tmp_path: Path, report: dict[str, Any], trigger: dict[str, Any],
+                      metadata: dict[str, Any]) -> Namespace:
+    paths = {name: tmp_path / f"{name}.json" for name in ("report", "trigger", "metadata")}
+    for name, payload in (("report", report), ("trigger", trigger), ("metadata", metadata)):
+        paths[name].write_text(json.dumps(payload), encoding="utf-8")
+    return Namespace(report=paths["report"], trigger=paths["trigger"], pr_metadata=paths["metadata"],
+                     run_url=LANE_RUN_URL, comment=tmp_path / "comment.md", now=None)
+
+
+def test_stale_lane_cli_refuses_a_human_touched_lane(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    scanner, controller = _modules()
+    args = _write_cli_inputs(
+        tmp_path, _fresh_clean_report(scanner), _lane_trigger(scanner, controller, critical=0, high=1),
+        _bot_metadata(commits=[{"authors": [{"login": "duduvcastro"}]}]),
+    )
+
+    assert controller.stale_lane(args) == 0
+    decision = json.loads(capsys.readouterr().out)
+    assert decision["close"] is False and "human-owned" in decision["reason"]
+    assert not args.comment.exists()
+
+
 def _run_close_stale(tmp_path: Path, *, report: dict[str, Any], trigger: dict[str, Any] | None,
-                     existing_comments: list[str] | None = None,
+                     metadata: dict[str, Any] | None = None, extra_lane: bool = False,
+                     fail_close: str = "",
                      prefix: str = "automation/container-security-rebuild-") -> tuple[subprocess.CompletedProcess[str], str]:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -633,21 +732,21 @@ def _run_close_stale(tmp_path: Path, *, report: dict[str, Any], trigger: dict[st
         {"number": 501, "headRefName": "automation/container-security-rebuild-fork-1",
          "baseRefName": "main", "isCrossRepository": True},
     ]
+    if extra_lane:
+        lanes.append({"number": 424, "headRefName": "automation/container-security-rebuild-abc-2",
+                      "baseRefName": "main", "isCrossRepository": False})
     (tmp_path / "lanes.json").write_text(json.dumps(lanes), encoding="utf-8")
-    (tmp_path / "comments.json").write_text(
-        json.dumps({"comments": [{"body": body} for body in existing_comments or []]}),
-        encoding="utf-8",
-    )
+    (tmp_path / "metadata.json").write_text(json.dumps(metadata or _bot_metadata()), encoding="utf-8")
     (fake_bin / "gh").write_text(
         """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$GH_LOG"
 case "$1 $2" in
   "pr list") cat "$FAKE_DIR/lanes.json" ;;
-  "pr view") cat "$FAKE_DIR/comments.json" ;;
+  "pr view") cat "$FAKE_DIR/metadata.json" ;;
+  "pr close") if [ "$3" = "$FAIL_CLOSE" ]; then exit 1; fi ;;
   "pr comment") while [ "$#" -gt 0 ]; do
       if [ "$1" = "--body-file" ]; then cp "$2" "$FAKE_DIR/posted.md"; fi; shift; done ;;
-  "pr close") ;;
   *) echo "unexpected gh command: $*" >&2; exit 1 ;;
 esac
 """,
@@ -675,14 +774,14 @@ esac
         cwd=ROOT,
         env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}",
              "GITHUB_REPOSITORY": "duduvcastro/c3po", "RUNNER_TEMP": str(tmp_path),
-             "GH_LOG": str(log_path), "FAKE_DIR": str(tmp_path)},
+             "GH_LOG": str(log_path), "FAKE_DIR": str(tmp_path), "FAIL_CLOSE": fail_close},
         text=True,
         capture_output=True,
     )
     return completed, log_path.read_text(encoding="utf-8")
 
 
-def test_close_stale_lanes_comments_then_closes_only_the_production_lane(tmp_path: Path) -> None:
+def test_close_stale_lanes_closes_then_comments_only_on_the_production_lane(tmp_path: Path) -> None:
     scanner, controller = _modules()
     trigger = _lane_trigger(scanner, controller, critical=0, high=1)
     fresh = _fresh_clean_report(scanner)
@@ -691,8 +790,9 @@ def test_close_stale_lanes_comments_then_closes_only_the_production_lane(tmp_pat
 
     assert completed.returncode == 0, completed.stderr
     assert "--app github-actions" in log
+    assert "pr view 423 --repo duduvcastro/c3po --json files,commits,comments" in log
     assert "git fetch --no-tags --quiet origin refs/heads/automation/container-security-rebuild-5c26f660271f-1" in log
-    assert log.index("pr comment 423") < log.index("pr close 423")
+    assert log.index("pr close 423") < log.index("pr comment 423")
     assert "500" not in log.replace("--limit 100", "") and "501" not in log
     assert "Closed stale remediation lane #423" in completed.stdout
     posted = (tmp_path / "posted.md").read_text(encoding="utf-8")
@@ -700,36 +800,52 @@ def test_close_stale_lanes_comments_then_closes_only_the_production_lane(tmp_pat
     assert "gh pr merge" not in CLOSE_STALE_PATH.read_text(encoding="utf-8")
 
 
-def test_close_stale_lanes_does_not_repeat_the_comment_after_a_partial_run(tmp_path: Path) -> None:
-    scanner, controller = _modules()
-    trigger = _lane_trigger(scanner, controller, critical=0, high=1)
-    fresh = _fresh_clean_report(scanner)
-    marker = f"<!-- c3po-container-remediation-stale-close:{fresh['report_sha256']} -->"
-
-    completed, log = _run_close_stale(tmp_path, report=fresh, trigger=trigger,
-                                      existing_comments=[marker + "\nprevious run"])
-
-    assert completed.returncode == 0, completed.stderr
-    assert "pr comment 423" not in log
-    assert "pr close 423" in log
-
-
-@pytest.mark.parametrize("case", ["finding_still_present", "unreadable_trigger"])
+@pytest.mark.parametrize("case", ["finding_still_present", "human_commit", "extra_file", "reopened_by_human"])
 def test_close_stale_lanes_keeps_lanes_open_on_doubt(tmp_path: Path, case: str) -> None:
     scanner, controller = _modules()
     trigger = _lane_trigger(scanner, controller, critical=0, high=1)
     fresh = _fresh_clean_report(scanner)
+    metadata = _bot_metadata()
     if case == "finding_still_present":
         fresh = _fresh_clean_report(scanner, unfixed_ids=("CVE-HIGH-0",))
+    elif case == "human_commit":
+        metadata = _bot_metadata(commits=[{"authors": [{"login": "duduvcastro"}]}])
+    elif case == "extra_file":
+        metadata = _bot_metadata(files=[{"path": TRIGGER_FILE, "changeType": "MODIFIED"},
+                                        {"path": "c3po/frontend/Dockerfile", "changeType": "MODIFIED"}])
+    else:
+        metadata = _bot_metadata(comments=[{"body": "<!-- c3po-container-remediation-stale-close:old -->"}])
 
-    completed, log = _run_close_stale(
-        tmp_path, report=fresh, trigger=None if case == "unreadable_trigger" else trigger,
-    )
+    completed, log = _run_close_stale(tmp_path, report=fresh, trigger=trigger, metadata=metadata)
 
     assert completed.returncode == 0, completed.stderr
-    assert "Lane #423 kept open" in completed.stdout
+    assert "::notice::Lane #423 kept open" in completed.stdout
     assert "pr comment" not in log
     assert "pr close" not in log
+
+
+def test_close_stale_lanes_collects_errors_without_abandoning_other_lanes(tmp_path: Path) -> None:
+    scanner, controller = _modules()
+    completed, log = _run_close_stale(
+        tmp_path, report=_fresh_clean_report(scanner),
+        trigger=_lane_trigger(scanner, controller, critical=0, high=1),
+        extra_lane=True, fail_close="423",
+    )
+
+    assert completed.returncode != 0
+    assert "::error::Stale-lane reconciliation: #423: close failed" in completed.stdout
+    assert "pr comment 423" not in log
+    assert "pr close 424" in log and "pr comment 424" in log
+    assert "Closed stale remediation lane #424" in completed.stdout
+
+
+def test_close_stale_lanes_reports_an_unreadable_trigger_as_an_error(tmp_path: Path) -> None:
+    scanner, _ = _modules()
+    completed, log = _run_close_stale(tmp_path, report=_fresh_clean_report(scanner), trigger=None)
+
+    assert completed.returncode != 0
+    assert "#423: trigger evidence not readable" in completed.stdout
+    assert "pr close" not in log and "pr comment" not in log
 
 
 def test_close_stale_lanes_refuses_the_dry_run_lane_prefix(tmp_path: Path) -> None:

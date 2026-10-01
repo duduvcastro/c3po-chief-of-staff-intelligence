@@ -21,6 +21,7 @@ INCIDENT_KEY = "governance-vulnerability"
 THRESHOLD = timedelta(hours=24)
 SUCCESSFUL = {"success", "skipped", "neutral"}
 BOT_LOGIN = "github-actions[bot]"
+CHANNEL_COMMENT_LIMIT = 2400
 
 
 def _parse_time(value: Any) -> datetime:
@@ -36,7 +37,12 @@ def _age(delta: timedelta) -> str:
 
 
 def _text(value: Any, limit: int = 100) -> str:
-    text = " ".join(str(value).split()).replace("|", "/")
+    """Untrusted text: no HTML comment delimiters (dedupe marker spoofing),
+    no mentions, no code spans; single line; truncated."""
+    text = str(value)
+    for token in ("<!--", "-->", "@", "`"):
+        text = text.replace(token, "")
+    text = " ".join(text.split()).replace("|", "/")
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
@@ -75,7 +81,7 @@ def lane_signals(pulls: Any, repository: str, now: datetime) -> list[str]:
     return [text for _created, text in sorted(signals)]
 
 
-def workflow_signal(workflow: str, runs: Any, now: datetime) -> str | None:
+def workflow_signal(workflow: str, runs: Any, now: datetime, repository: str) -> str | None:
     """Latest completed main-branch run failed and nothing succeeded for >24h."""
     if not isinstance(runs, list):
         raise ValueError(f"{workflow}: run listing is not a list")
@@ -108,8 +114,34 @@ def workflow_signal(workflow: str, runs: Any, now: datetime) -> str | None:
     return (
         f"`{workflow}` sem sucesso: {quiet}; última conclusão "
         f"`{_text(latest.get('conclusion'), 30)}` no "
-        f"[run {run_id}]({_text(latest.get('html_url'), 200)})"
+        f"[run {run_id}](https://github.com/{repository}/actions/runs/{run_id})"
     )
+
+
+def already_escalated(channel_comments: Any, escalation_marker: str) -> bool:
+    """Dedupe only on a bot comment whose FIRST line is the marker; a marker
+    quoted anywhere else in a comment never suppresses the escalation."""
+    if not isinstance(channel_comments, list):
+        raise ValueError("channel comment listing is not a list")
+    return any(
+        isinstance(body, str) and body.split("\n", 1)[0].strip() == escalation_marker
+        for body in channel_comments
+    )
+
+
+def channel_problem(channel: Any, *, limit: int = CHANNEL_COMMENT_LIMIT) -> str | None:
+    if not isinstance(channel, dict):
+        return "metadados do canal ilegíveis"
+    if channel.get("state") != "open":
+        return f"canal não está aberto (state={_text(channel.get('state'), 20)})"
+    if channel.get("locked") is not False:
+        return "canal está trancado (locked)"
+    comments = channel.get("comments")
+    if isinstance(comments, bool) or not isinstance(comments, int):
+        return "contagem de comentários do canal ilegível"
+    if comments >= limit:
+        return f"canal com {comments} comentários (limite operacional {limit}); abra um canal novo e aponte C3PO_ESCALATION_ISSUE"
+    return None
 
 
 def render(signals: list[str], escalation_marker: str, run_url: str) -> str:
@@ -137,20 +169,20 @@ def decide(
     *,
     pulls: Any,
     runs: dict[str, Any],
-    channel_comments: str,
+    channel_comments: Any,
     repository: str,
     run_url: str,
     now: datetime,
 ) -> tuple[bool, str, str]:
     signals = lane_signals(pulls, repository, now)
     for workflow in sorted(runs):
-        signal = workflow_signal(workflow, runs[workflow], now)
+        signal = workflow_signal(workflow, runs[workflow], now, repository)
         if signal:
             signals.append(signal)
     escalation_marker = marker(now)
     if not signals:
         return False, "no aged GitHub-visible signal", ""
-    if escalation_marker in channel_comments:
+    if already_escalated(channel_comments, escalation_marker):
         return False, "already escalated today", ""
     return True, f"{len(signals)} aged signal(s)", render(signals, escalation_marker, run_url)
 
@@ -159,7 +191,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pulls", type=Path, required=True)
     parser.add_argument("--runs", action="append", default=[], metavar="WORKFLOW=FILE")
-    parser.add_argument("--channel-comments", type=Path, required=True)
+    parser.add_argument("--channel-comments", type=Path, required=True,
+                        help="JSON list of recent bot comment bodies on the channel issue")
+    parser.add_argument("--channel-meta", type=Path, required=True,
+                        help="JSON {state, locked, comments} of the channel issue")
+    parser.add_argument("--channel-issue", required=True)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--run-url", required=True)
     parser.add_argument("--body", type=Path, required=True)
@@ -172,6 +208,8 @@ def main() -> int:
     args = parse_args()
     if not args.run_url.startswith("https://github.com/"):
         raise SystemExit("run_url must be an HTTPS GitHub URL")
+    if not args.channel_issue.isdigit():
+        raise SystemExit("channel issue must be a number")
     runs: dict[str, Any] = {}
     for item in args.runs:
         workflow, _, path = item.partition("=")
@@ -182,17 +220,27 @@ def main() -> int:
     post, reason, body = decide(
         pulls=json.loads(args.pulls.read_text(encoding="utf-8")),
         runs=runs,
-        channel_comments=args.channel_comments.read_text(encoding="utf-8"),
+        channel_comments=json.loads(args.channel_comments.read_text(encoding="utf-8")),
         repository=args.repository,
         run_url=args.run_url,
         now=now,
     )
+    problem = (
+        channel_problem(json.loads(args.channel_meta.read_text(encoding="utf-8")))
+        if post else None
+    )
+    if problem:
+        # Fail the run (red) instead of silently losing the escalation; the
+        # undelivered text stays in the run log. It never contains secrets.
+        print(f"::error::Escalonamento não publicado no canal #{args.channel_issue}: {problem}")
+        print(body)
+        post = False
     if post:
         args.body.write_text(body, encoding="utf-8")
     with args.github_output.open("a", encoding="utf-8") as handle:
         handle.write(f"post={'true' if post else 'false'}\n")
-    print(json.dumps({"post": post, "reason": reason}, sort_keys=True))
-    return 0
+    print(json.dumps({"post": post, "reason": problem or reason}, sort_keys=True))
+    return 1 if problem else 0
 
 
 if __name__ == "__main__":

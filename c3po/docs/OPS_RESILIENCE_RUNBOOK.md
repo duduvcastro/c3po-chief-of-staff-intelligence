@@ -269,13 +269,17 @@ merge or auto-merge command; protected-branch approval remains external.
 ### Stale lanes, incident causes and >24h escalation
 
 When the validated production report has zero fixable findings, the controller
-re-checks every open `automation/container-security-rebuild-*` lane against the
-trigger evidence on its own branch. It comments (run, report self-hash, counts)
-and closes the lane only if the fresh report is complete, newer than the lane
-evidence and none of the lane's vulnerability ids appears in any occurrence.
-Any doubt keeps the lane open; the step is `continue-on-error` so a GitHub API
-failure leaves the lane visible instead of turning the scan dead-man red.
-Closing is reversible and never deletes the branch.
+re-checks every open `automation/container-security-rebuild-*` lane. It closes
+a lane only if the lane is machine-owned (the rebuild trigger is its only
+changed file, every commit is by `github-actions[bot]`, and no human reopened
+it after an earlier automatic close) and the fresh report is complete, less
+than 6h old, newer than the lane evidence, still covers every image the lane
+names (present, with Trivy's image identity and consistent per-image counts; a
+clean image legitimately has zero occurrences), and contains none of the
+lane's vulnerability ids. It closes first, then comments with the run, report
+self-hash and counts. Any doubt keeps the lane open; per-lane failures are
+collected without abandoning other lanes and turn the step red, while
+`continue-on-error` keeps the scan dead-man truthful. The branch is kept.
 
 The governance incident detail lists each non-healthy component in Portuguese
 (`Causas: lane de remediação #N aberta há Xd; Dependabot medium 2; ...`) and
@@ -283,13 +287,18 @@ its evidence carries `causes` plus an `escalation` record. After 24h in the
 same unresolved episode the detail is prefixed `ESCALADO (>24h)` (severity is
 unchanged) and `escalation.dedup_key` is `governance-vulnerability:<BRT date>`.
 The daily `Escalate aged security incidents` workflow (07:20 BRT, workflow
-token only) posts at most one comment per incident per BRT day to issue #429
-for what GitHub itself can see: trusted `automation/*` lanes open >24h and
-security workflows without success for >24h. Dependabot counts, branch
+token only) posts at most one comment per incident per BRT day to the channel
+issue (repository variable `C3PO_ESCALATION_ISSUE`, default #429) for what
+GitHub itself can see: trusted `automation/*` lanes open >24h and security
+workflows without success for >24h. If the channel is closed, locked or has
+2,400+ comments the run fails red and keeps the undelivered text in its log;
+point the variable at a new channel issue. The host security routine watches
+this workflow's latest main-branch run and reports a failure as an error
+without vetoing evidence-gated merges or reboots. Dependabot counts, branch
 protection drift, host OS/reboot state and `maintenance_hold` are visible only
 in the app; GitHub cannot read that escalation record without a new read
 credential, so today those causes are escalated only inside the app incident
-and do not reach #429.
+and do not reach the channel.
 
 ### Supervised positive controller dry-run
 

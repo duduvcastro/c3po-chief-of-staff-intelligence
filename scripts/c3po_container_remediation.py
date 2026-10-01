@@ -5,7 +5,7 @@ import argparse
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -435,16 +435,70 @@ def plan_dry_run_positive(args: argparse.Namespace) -> int:
     return _plan(args, dry_run=True)
 
 
+TRIGGER_PATH = "c3po/security/container-rebuild-trigger.json"
+STALE_CLOSE_MARKER_PREFIX = "<!-- c3po-container-remediation-stale-close:"
+LANE_BOT_LOGIN = "github-actions[bot]"
+FRESH_REPORT_MAX_AGE = timedelta(hours=6)
+FRESH_REPORT_MAX_SKEW = timedelta(minutes=5)
+IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def lane_ownership_problem(metadata: Any) -> str | None:
+    """Same human-owned rule as the host auto-merge: only a lane whose sole
+    change is the rebuild trigger and whose every commit is by the bot is
+    machine-owned. A lane a human reopened after an automatic close is a
+    human decision and is never closed again by the controller."""
+    if not isinstance(metadata, dict):
+        return "lane metadata is not verifiable"
+    files = metadata.get("files")
+    if (
+        not isinstance(files, list)
+        or len(files) != 1
+        or not isinstance(files[0], dict)
+        or files[0].get("path") != TRIGGER_PATH
+        or files[0].get("changeType") not in ("MODIFIED", "ADDED")
+    ):
+        return "lane changes more than the rebuild trigger (human-owned)"
+    commits = metadata.get("commits")
+    if not isinstance(commits, list) or not commits:
+        return "lane commit history is not verifiable"
+    for commit in commits:
+        authors = commit.get("authors") if isinstance(commit, dict) else None
+        if (
+            not isinstance(authors, list)
+            or not authors
+            or any(
+                not isinstance(author, dict) or author.get("login") != LANE_BOT_LOGIN
+                for author in authors
+            )
+        ):
+            return "lane has commits not authored by github-actions[bot] (human-owned)"
+    comments = metadata.get("comments")
+    if not isinstance(comments, list):
+        return "lane comments are not verifiable"
+    if any(
+        isinstance(comment, dict)
+        and str(comment.get("body", "")).lstrip().startswith(STALE_CLOSE_MARKER_PREFIX)
+        for comment in comments
+    ):
+        return "lane was reopened after an automatic stale close (human decision)"
+    return None
+
+
 def stale_lane_decision(
     report: dict[str, Any],
     trigger: dict[str, Any],
+    *,
+    now: datetime | None = None,
 ) -> tuple[bool, str, list[str]]:
     """Decide whether an open production lane is obsolete after a fresh scan.
 
     Close only when the fresh production report is complete, error-free,
-    dead-man attested, newer than the lane's evidence, has zero fixable
-    findings of any severity, and none of the lane's vulnerability ids
-    appears in ANY occurrence of the fresh report (fixable or not).
+    dead-man attested, less than 6h old, newer than the lane's evidence, has
+    zero fixable findings of any severity, still covers every image the lane
+    was opened for (present, with Trivy's image identity and consistent
+    per-image evidence), and none of the lane's vulnerability ids appears in
+    ANY occurrence of the fresh report.
     """
     counts, _ = validate_report(report)
     if sum(counts.values()):
@@ -459,18 +513,43 @@ def stale_lane_decision(
     if not isinstance(raw_findings, list) or not raw_findings:
         return False, "lane trigger has no findings to reconcile", []
     lane_ids: set[str] = set()
+    lane_images: set[str] = set()
     for finding in raw_findings:
-        value = finding.get("vulnerability_id") if isinstance(finding, dict) else None
+        if not isinstance(finding, dict):
+            return False, "lane trigger finding is not an object", []
+        value = finding.get("vulnerability_id")
+        image = finding.get("image")
         if not isinstance(value, str) or not value.strip():
             return False, "lane trigger finding has no vulnerability id", []
+        if not isinstance(image, str) or not image.strip():
+            return False, "lane trigger finding has no image", []
         lane_ids.add(value.strip())
+        lane_images.add(image.strip())
     try:
         lane_generated = datetime.fromisoformat(str(trigger.get("generated_at")))
         fresh_generated = datetime.fromisoformat(str(report.get("generated_at")))
+        if fresh_generated.tzinfo is None:
+            return False, "fresh report generated_at has no timezone", []
         if fresh_generated <= lane_generated:
             return False, "fresh report is not newer than the lane evidence", []
     except (TypeError, ValueError):
         return False, "lane or report generated_at is not comparable", []
+    age = (now or datetime.now(timezone.utc)) - fresh_generated
+    if age > FRESH_REPORT_MAX_AGE or age < -FRESH_REPORT_MAX_SKEW:
+        return False, "fresh report is not from the last 6h (re-run of an old scan?)", []
+    images = {str(image["label"]): image for image in report["images"]}
+    for label in sorted(lane_images):
+        image = images.get(label)
+        if image is None:
+            return False, f"lane image {label} is missing from the fresh report", []
+        # A clean rebuilt image legitimately has zero occurrences (30/09/2026: all
+        # three production images). Prove it was really scanned instead: Trivy's
+        # image identity is present and the per-image total matches its evidence.
+        if not IMAGE_ID_PATTERN.fullmatch(str(image.get("image_id") or "")):
+            return False, f"lane image {label} has no scanned image identity in the fresh report", []
+        occurrences = image.get("occurrences")
+        if not isinstance(occurrences, list) or image.get("finding_total") != len(occurrences):
+            return False, f"lane image {label} occurrence evidence is inconsistent", []
     present = {
         str(occurrence.get("vulnerability_id", "")).strip()
         for image in report["images"]
@@ -527,7 +606,12 @@ def stale_lane(args: argparse.Namespace) -> int:
         raise ReportValidationError("run_url must be an HTTPS GitHub URL")
     report = load_report(args.report)
     trigger = load_report(args.trigger)
-    close, reason, resolved_ids = stale_lane_decision(report, trigger)
+    now = datetime.fromisoformat(args.now) if args.now else None
+    ownership = lane_ownership_problem(load_report(args.pr_metadata))
+    if ownership is not None:
+        print(json.dumps({"close": False, "reason": ownership}, sort_keys=True))
+        return 0
+    close, reason, resolved_ids = stale_lane_decision(report, trigger, now=now)
     if close:
         args.comment.write_text(
             render_stale_lane_comment(report, trigger, resolved_ids, run_url=args.run_url),
@@ -581,6 +665,8 @@ def parse_args() -> argparse.Namespace:
     stale_parser.add_argument("--trigger", type=Path, required=True)
     stale_parser.add_argument("--run-url", required=True)
     stale_parser.add_argument("--comment", type=Path, required=True)
+    stale_parser.add_argument("--pr-metadata", type=Path, required=True)
+    stale_parser.add_argument("--now", default=None)
     stale_parser.set_defaults(handler=stale_lane)
 
     verify_parser = subparsers.add_parser("verify-zero")
