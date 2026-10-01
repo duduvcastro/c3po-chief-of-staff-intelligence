@@ -311,7 +311,11 @@ def cycle(root, gh, now, config, previous):
     # First cycle whose npm audit did not describe the then-current main. Kept
     # across further main changes and cleared only by an audit of the current
     # main, so a stuck regeneration cannot stay pending by main moving again.
-    npm_lag_since = previous.get("npm_lag_since") or now.isoformat()
+    # Only a missing/None anchor starts the clock: any other stored value,
+    # falsy ones included, is validated below and never silently replaced.
+    npm_lag_since = previous.get("npm_lag_since")
+    if npm_lag_since is None:
+        npm_lag_since = now.isoformat()
     today = now.date().isoformat()
     # Daily and post-deploy scans keep the maintenance-hour gate. A new main
     # re-dispatches only dependency-security, at any hour, so its npm evidence
@@ -328,6 +332,9 @@ def cycle(root, gh, now, config, previous):
             npm_lag_since = None
             alerts = merge_alerts(alerts, npm["alerts"])
         else:
+            if not isinstance(npm_lag_since, str):
+                raise ValueError("Invalid npm lag anchor")
+            # A malformed or naive timestamp raises here and fails closed too.
             lag = now - datetime.fromisoformat(npm_lag_since)
             if (not re.fullmatch(r"[0-9a-f]{40}", str(npm["source_revision"]))
                     or not timedelta(0) <= lag < NPM_REVISION_GRACE

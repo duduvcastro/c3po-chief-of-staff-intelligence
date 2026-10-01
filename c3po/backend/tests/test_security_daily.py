@@ -525,7 +525,14 @@ def test_chained_main_moves_never_restart_the_npm_lag_clock(tmp_path, monkeypatc
     lambda now: "not-a-time",
     lambda now: now.replace(tzinfo=None).isoformat(),
     lambda now: 1234,
-], ids=["future", "garbage", "naive", "not_a_string"])
+    # Falsy but present: a corrupted anchor, never "absent" (would restart the clock).
+    lambda now: "",
+    lambda now: False,
+    lambda now: 0,
+    lambda now: [],
+    lambda now: {},
+], ids=["future", "garbage", "naive", "not_a_string",
+        "empty_string", "false", "zero", "empty_list", "empty_dict"])
 def test_future_or_malformed_npm_lag_anchor_fails_closed(tmp_path, monkeypatch, anchor):
     now = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
     _maintenance_ready(tmp_path, monkeypatch, now)
@@ -536,12 +543,45 @@ def test_future_or_malformed_npm_lag_anchor_fails_closed(tmp_path, monkeypatch, 
     report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True}, previous)
 
     assert report["pending"] == [] and report["errors"] == ["npm_evidence_unavailable"]
-    assert report["npm_lag_since"] == anchor(now)
+    assert report["status"] == "blocked_missing_evidence" and report["healthy"] is False
+    # The corrupted anchor is kept, with its type, not silently reset.
+    assert report["npm_lag_since"] == anchor(now) and type(report["npm_lag_since"]) is type(anchor(now))
     # Only an audit of the current main clears the anchor.
     _npm(monkeypatch, _audit("a" * 40))
     recovered = daily.cycle(tmp_path, gh, now + timedelta(hours=1), {"automatic_merge": True}, report)
     assert recovered["errors"] == [] and recovered["pending"] == []
     assert recovered["npm_lag_since"] is None
+
+
+@pytest.mark.parametrize("state", [{}, {"npm_lag_since": None}], ids=["missing", "none"])
+def test_missing_or_none_npm_lag_anchor_starts_the_clock(tmp_path, monkeypatch, state):
+    now = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, now)
+    _npm(monkeypatch, _audit("b" * 40))
+
+    report = daily.cycle(tmp_path, _EscalationGH(), now, {"automatic_merge": True},
+                         {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40, **state})
+
+    assert report["pending"] == ["npm_evidence_pending"] and report["errors"] == []
+    assert report["npm_lag_since"] == now.isoformat() and report["healthy"] is False
+
+
+@pytest.mark.parametrize("stored", ["", False, 0, [], {}, None],
+                         ids=["empty_string", "false", "zero", "empty_list", "empty_dict", "none"])
+def test_falsy_last_dispatched_main_is_never_a_dispatch_already_issued(tmp_path, monkeypatch, stored):
+    now = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, now)
+    _npm(monkeypatch, _audit("b" * 40))
+    refused = _EscalationGH(dispatch_error=HTTPError("https://api.github.com/private", 403, "body", {}, None))
+    previous = {"main_sha": "b" * 40, "last_dispatched_main": stored}
+
+    report = daily.cycle(tmp_path, refused, now, {"automatic_merge": True}, previous)
+    assert report["pending"] == [] and "npm_evidence_unavailable" in report["errors"]
+
+    gh = _EscalationGH()
+    report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True}, previous)
+    assert gh.writes == [DEPENDENCY_DISPATCH] and report["last_dispatched_main"] == "a" * 40
+    assert report["pending"] == ["npm_evidence_pending"]
 
 
 def test_known_npm_findings_of_the_earlier_audit_stay_visible_while_pending(tmp_path, monkeypatch):
