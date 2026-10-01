@@ -15,6 +15,7 @@ RULE = 'OPEN_FIRST_THEN_EXISTING_CAUSAL_ORDER_V1_PROPOSED'
 PHASES = ['admission', 'bar_manifest', 'quote_refresh', 'quote_capture']
 ORDER = {'owner_sha': OWNER, 'epoch': EPOCH, 'authorized_sessions': list(SESSIONS), 'capacity': 550}
 POLICY = {'schema': 'R2D2_V2_LIVE_POLICY_V1', 'capacity': 550}
+OUTSIDE = ('2026-10-02', '2026-10-12')  # XNYS sessions adjacent to the epoch, never authorized by it
 
 
 def template(day):
@@ -119,12 +120,14 @@ def test_wrong_day_template_is_refused():
 
 def test_day_outside_the_epoch_is_refused():
     authority, _, _ = build()
-    assert authority.verify_binding(binding('2026-10-09'), NOW) is False
+    assert not set(OUTSIDE) & set(SESSIONS)
+    for day in OUTSIDE:
+        assert authority.verify_binding(binding(day), NOW) is False
 
 
 @pytest.mark.parametrize('shas', [
     {day: digest(template(day)) for day in SESSIONS[:-1]},
-    {**{day: digest(template(day)) for day in SESSIONS}, '2026-10-09': digest(template('2026-10-09'))},
+    {**{day: digest(template(day)) for day in SESSIONS}, OUTSIDE[1]: digest(template(OUTSIDE[1]))},
     {**{day: digest(template(day)) for day in SESSIONS}, SESSIONS[1]: 'B' * 64},
     {**{day: digest(template(day)) for day in SESSIONS}, SESSIONS[1]: digest(template(SESSIONS[2]))},
     [digest(template(day)) for day in SESSIONS],
