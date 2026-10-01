@@ -508,12 +508,14 @@ def test_readme_catalog_init_script_runs_against_the_real_catalog(container,monk
         assert tree_snapshot(other.journal)==before
     fresh=layout('malformed')
     assert run(fresh.journal,'not an epoch')[0]==1 and list(fresh.journal.iterdir())==[]
-    # The documented run: the unit's image and journal mount only, no network, the script on stdin.
-    command=re.search(r'^docker run --rm -i .*?< catalog-init\.py$',readme,re.S|re.M)
-    assert command is not None
+    # The documented run: the unit's image and journal mount only, no network, the script on stdin, and the same
+    # empty docker CLI configuration directory as the unit, set as a prefix of that one command.
+    command=re.search(r'^DOCKER_CONFIG=\S+ docker run --rm -i .*?< catalog-init\.py$',readme,re.S|re.M)
+    assert command is not None and len(re.findall(r'^(?:\S+ )?docker run --rm -i ',readme,re.M))==1
     argv=shlex.split(command.group(0).replace('\\\n',' ').replace('<HOST_JOURNAL_ROOT>','/h').replace('<CONTAINER_JOURNAL_ROOT>','/c')
         .replace('<IMAGE_ID>','IMAGE').replace('< catalog-init.py',''))
-    assert argv==['docker','run','--rm','-i','--pull','never','--init','--user','0:0','--network','none','--read-only',
+    assert 'Environment='+argv[0].replace('<HOST_CONFIG_DIR>','@HOST_CONFIG_DIR@') in unit_text().splitlines()
+    assert argv[1:]==['docker','run','--rm','-i','--pull','never','--init','--user','0:0','--network','none','--read-only',
         '--cap-drop','ALL','--security-opt','no-new-privileges','--mount','type=bind,source=/h,target=/c',
         'IMAGE','python','-I','-B','-','/c','$epoch']
 
@@ -532,8 +534,21 @@ def test_readme_names_the_operations_in_order_and_the_substitution_grammar():
         'after the producer has marked that day\'s session ready','decision of the activation rite','waiting_admission_coverage',
         'size within 1–4096','IFS= read -rs token_line','set -o noclobber','mv -T /etc/c3po-bar/token.new /etc/c3po-bar/token',
         '56706990080','**Late manifest.**','**Accepted risk for this epoch.**'))
+    # The recipe writes only a non-empty value and reports only a file it has just written.
+    assert ('\nIFS= read -rs token_line\n[ -n "$token_line" ] && printf \'%s\\n\' "$token_line" > /etc/c3po-bar/token'
+        ' && stat -c \'%u %g %a %h\' /etc/c3po-bar/token\nunset token_line\nexit\n') in readme
+    # 4b keeps its name and its heading, and the recommended place is right after operation 2.
+    assert all(value in readme for value in ('Recommended sequence: 1 preflight → 2 provisioning (with the retention tag) → '
+        '**4b catalog initialisation** → owner token delivery → 3 exclusive unit installation → 4 readback → 5 activation.',
+        '**new directory under a new authorisation**','**Exactly one polling reader runs against a journal root.**',
+        '**Exactly one polling reader may run against a journal root.**','**Exception: a stop during a lock wait.**',
+        '`SOURCE_DIRECTORY_NOT_PRIVATE`','**The switch happens between session days**','**Known wart: a wrong number of arguments.**',
+        'written in the 4b authorisation','strictly below `MIN_SESSION_FREE_BYTES`'))
     assert not any(value in readme for value in ('with Massive bars disabled**','no separate catalog initialisation step',
-        'that rite\'s decision; it is not settled here'))
+        'that rite\'s decision; it is not settled here','the next attempt comes 30 seconds later','At or below the floor',
+        'the reader is not polling while the producer starts','a directory refusal',
+        'bounds the two precondition commands and the launch of the docker CLI together',
+        '4 readback → 4b catalog initialisation → 5 activation'))
     assert all(value in readme for value in ('`^/[A-Za-z0-9._/-]+$`','`^sha256:[0-9a-f]{64}$`','`^[A-Za-z0-9][A-Za-z0-9_.-]*$`',
         '`host`, `none` and `container:*` are **forbidden in production**','**must fail if any `@` survives**',
         'one GO each','python -m app.r2d2_v2_shadow_worker','**No compose service launches that module.**',
