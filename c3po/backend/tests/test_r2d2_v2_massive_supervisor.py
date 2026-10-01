@@ -254,6 +254,8 @@ def test_unit_container_flags_are_pinned():
     assert tail==SUPERVISOR_TAIL
     assert set(re.findall(r'@[A-Z_]+@',unit))==PLACEHOLDERS and unit.count('@')==2*len(re.findall(r'@[A-Z_]+@',unit))
     assert unit.count('@HOST_CONFIG_DIR@')==3 and unit.count('@IMAGE_ID@')==1 and unit.count('@NETWORK@')==1
+    # None of these in the template is what makes the shlex rendering equivalent to systemd's own parsing.
+    assert not set('%$"\';')&set(unit)
 
 
 def test_unit_forbids_unsafe_container_options():
@@ -269,7 +271,7 @@ def test_unit_forbids_unsafe_container_options():
     assert limit is not None and stops==['25','25'] and grace==25<int(limit.group(1))==30
 
 
-def test_rendered_unit_paths_match_reader_mount(monkeypatch):
+def test_rendered_unit_paths_match_backend_data_mount(monkeypatch):
     from app.config import Settings
     values={'@IMAGE_ID@':'sha256:'+'a'*64,'@HOST_JOURNAL_ROOT@':'/mnt/day-d-data/r2d2-v2-massive-epoch03',
         '@CONTAINER_JOURNAL_ROOT@':'/app/day-d-data/r2d2-v2-massive-epoch03','@HOST_STATE_ROOT@':'/var/lib/c3po-bar/supervisor',
@@ -294,7 +296,10 @@ def test_rendered_unit_paths_match_reader_mount(monkeypatch):
     compose=(UNIT_ROOT.parents[1]/'compose.yml').read_text()
     worker=re.search(r'^  r2d2-worker:\n((?:    .*\n|\n)+)',compose,re.M)
     assert worker is not None and re.search(r'^      - \S+:/app/day-d-data$',worker.group(1),re.M)
-    # Reader and producer are both uid 0: neither the service nor the image selects another user.
+    # r2d2-worker is NOT the journal reader (it runs app.r2d2_worker); it only shows how the backend image mounts the
+    # data volume and that neither compose nor the image selects a user. The reader's launcher must match both.
+    assert re.search(r'^    command: \["python", "-m", "app\.r2d2_worker"\]$',worker.group(1),re.M)
+    assert 'r2d2_v2_shadow_worker' not in compose
     assert not re.search(r'^    user:',worker.group(1),re.M)
     assert not re.search(r'^\s*USER\b',(UNIT_ROOT.parents[1]/'backend'/'Dockerfile').read_text(),re.M)
     assert state_root!=journal and journal not in state_root.parents and state_root not in journal.parents
@@ -420,11 +425,11 @@ def test_reader_guards_stay_strict_for_container_layout(container,monkeypatch):
     assert list(exposed.journal.iterdir())==[]
 
 
-def test_catalog_preinit_is_idempotent_and_required(container):
+def test_reader_refuses_empty_root_and_catalog_creation_is_idempotent(container):
     from app.r2d2_v2_massive_sessions import SessionJournalRoot
     from app.r2d2_v2_sources import SourceUnavailable
     from app.r2d2_v2_store import ShadowIntegrityError
-    layout,produce=container;tree=layout('preinit')
+    layout,produce=container;tree=layout('catalog')
     with pytest.raises(ShadowIntegrityError,match='^MASSIVE_SESSION_ROOT_UNVERIFIED$'):reader(tree.journal)
     assert list(tree.journal.iterdir())==[]
     SessionJournalRoot(tree.journal,EPOCH,create=True)
@@ -442,6 +447,18 @@ def test_catalog_preinit_is_idempotent_and_required(container):
     assert code==0 and len(connects)==1
     assert tree_snapshot(tree.journal)['epoch.json']==created['epoch.json']
     assert source.journals.ready_sessions()==(tree.day,) and poll(source)['diagnostics']==[]
+
+
+def test_readme_names_the_five_operations_and_the_substitution_grammar():
+    readme=(UNIT_ROOT/'README.md').read_text()
+    headings=[line for line in readme.splitlines() if re.match(r'### \d\. ',line)]
+    assert headings==['### 1. Preflight (read-only)','### 2. Provisioning (directories and configuration)',
+        '### 3. Exclusive unit installation (no activation, no overwrite)','### 4. Readback / conference','### 5. Activation']
+    assert all(value in readme for value in ('`^/[A-Za-z0-9._/-]+$`','`^sha256:[0-9a-f]{64}$`','`^[A-Za-z0-9][A-Za-z0-9_.-]*$`',
+        '`host`, `none` and `container:*` are **forbidden in production**','**must fail if any `@` survives**',
+        'one GO each','python -m app.r2d2_v2_shadow_worker','**No compose service launches that module.**',
+        'MASSIVE_SESSION_ROOT_UNVERIFIED','MASSIVE_MAINTENANCE_BUSY','c3po/backend:massive-supervisor-'))
+    assert all(name in readme for name in PLACEHOLDERS)
 
 
 def test_pipeline_exercises_rendered_unit_on_a_real_engine():
