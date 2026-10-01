@@ -15,6 +15,8 @@ MAX_SESSIONS = 256
 _PARENT_FILES = {'epoch.json', 'maintenance.lock', 'producer.lock'}
 READY_LOCK_WAIT_SECONDS = 30.0
 READY_LOCK_POLL_SECONDS = 0.01
+CATALOG_LOCK_WAIT_SECONDS = 30.0
+CATALOG_LOCK_POLL_SECONDS = 0.01
 _UNREADY_FILES = {'session.json', 'maintenance.lock', 'producer.lock'}
 _UNREADY_INDEX = {'sequence.sqlite3', 'sequence.sqlite3-journal', 'sequence.sqlite3-wal', 'sequence.sqlite3-shm'}
 _TEMPORARY = re.compile(r'\.(session|ready)\.json\.[0-9a-f]{16}\.tmp')
@@ -152,6 +154,23 @@ def _empty_unready(child):
     return not index or (index == {'sequence.sqlite3'} and index_size == 0)
 
 
+def _wait_exclusive(attempt):
+    """Readers hold the shared catalog lock for a whole poll. Wait a bounded
+    time for the exclusive lock instead of failing the producer start.
+
+    Each attempt opens and closes its own descriptors, so nothing is held
+    across the sleep. Only the lock refusal is retried, and it is raised
+    unchanged after the deadline; every other refusal is raised at once."""
+    deadline = time.monotonic() + CATALOG_LOCK_WAIT_SECONDS
+    while True:
+        try:
+            return attempt()
+        except SourceUnavailable as exc:
+            if str(exc) != 'MASSIVE_MAINTENANCE_BUSY' or time.monotonic() >= deadline:
+                raise
+        time.sleep(CATALOG_LOCK_POLL_SECONDS)
+
+
 class SessionJournalRoot:
     """One private, existing parent directory belongs to exactly one epoch.
 
@@ -164,6 +183,13 @@ class SessionJournalRoot:
         _require(type(create) is bool, 'MASSIVE_SESSION_POLICY')
         self.root = Path(root).absolute()
         self.epoch = epoch
+        if create:
+            # Readers never create; their open keeps the immediate refusal.
+            _wait_exclusive(lambda: self._bind(True))
+        else:
+            self._bind(False)
+
+    def _bind(self, create):
         directory = _open_directory(self.root)
         try:
             info = os.fstat(directory)
@@ -175,7 +201,7 @@ class SessionJournalRoot:
                     existing = self._names(directory)
                     _require(not existing or 'epoch.json' in os.listdir(directory),
                              'MASSIVE_SESSION_EPOCH_MISSING')
-                    _immutable(directory, 'epoch.json', {'schema': 'MASSIVE_SESSION_ROOT_V1', 'epoch': epoch,
+                    _immutable(directory, 'epoch.json', {'schema': 'MASSIVE_SESSION_ROOT_V1', 'epoch': self.epoch,
                                                           'device': info.st_dev, 'inode': info.st_ino})
                 self._verify(directory)
         finally:
@@ -260,6 +286,9 @@ class SessionJournalRoot:
         _require(type(symbols) in (list, tuple, set, frozenset) and 0 < len(symbols) <= 550
                  and all(type(s) is str and re.fullmatch(r'[A-Z0-9][A-Z0-9.-]{0,19}', s) is not None
                          for s in symbols) and len(set(symbols)) == len(symbols), 'MASSIVE_SESSION_SYMBOLS')
+        return _wait_exclusive(lambda: self._prepare_session(session, symbols))
+
+    def _prepare_session(self, session, symbols):
         with journal_access(self.root, exclusive=True):
             directory = _open_directory(self.root)
             try:
