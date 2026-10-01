@@ -266,6 +266,31 @@ prerequisite and is checked before mutation. Although GitHub groups create and
 approve permission in one setting, this workflow contains no review, approval,
 merge or auto-merge command; protected-branch approval remains external.
 
+### Stale lanes, incident causes and >24h escalation
+
+When the validated production report has zero fixable findings, the controller
+re-checks every open `automation/container-security-rebuild-*` lane against the
+trigger evidence on its own branch. It comments (run, report self-hash, counts)
+and closes the lane only if the fresh report is complete, newer than the lane
+evidence and none of the lane's vulnerability ids appears in any occurrence.
+Any doubt keeps the lane open; the step is `continue-on-error` so a GitHub API
+failure leaves the lane visible instead of turning the scan dead-man red.
+Closing is reversible and never deletes the branch.
+
+The governance incident detail lists each non-healthy component in Portuguese
+(`Causas: lane de remediação #N aberta há Xd; Dependabot medium 2; ...`) and
+its evidence carries `causes` plus an `escalation` record. After 24h in the
+same unresolved episode the detail is prefixed `ESCALADO (>24h)` (severity is
+unchanged) and `escalation.dedup_key` is `governance-vulnerability:<BRT date>`.
+The daily `Escalate aged security incidents` workflow (07:20 BRT, workflow
+token only) posts at most one comment per incident per BRT day to issue #429
+for what GitHub itself can see: trusted `automation/*` lanes open >24h and
+security workflows without success for >24h. Dependabot counts, branch
+protection drift, host OS/reboot state and `maintenance_hold` are visible only
+in the app; GitHub cannot read that escalation record without a new read
+credential, so today those causes are escalated only inside the app incident
+and do not reach #429.
+
 ### Supervised positive controller dry-run
 
 The positive path is exercised only by manual `workflow_dispatch` from `main`,

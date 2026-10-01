@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -434,6 +435,108 @@ def plan_dry_run_positive(args: argparse.Namespace) -> int:
     return _plan(args, dry_run=True)
 
 
+def stale_lane_decision(
+    report: dict[str, Any],
+    trigger: dict[str, Any],
+) -> tuple[bool, str, list[str]]:
+    """Decide whether an open production lane is obsolete after a fresh scan.
+
+    Close only when the fresh production report is complete, error-free,
+    dead-man attested, newer than the lane's evidence, has zero fixable
+    findings of any severity, and none of the lane's vulnerability ids
+    appears in ANY occurrence of the fresh report (fixable or not).
+    """
+    counts, _ = validate_report(report)
+    if sum(counts.values()):
+        return False, f"fresh production scan still has fixable findings: {counts}", []
+    if (
+        trigger.get("schema") != TRIGGER_SCHEMA
+        or trigger.get("dry_run") is not False
+        or trigger.get("evidence_scope") != "production_runtime"
+    ):
+        return False, "lane trigger is not a production remediation trigger", []
+    raw_findings = trigger.get("findings")
+    if not isinstance(raw_findings, list) or not raw_findings:
+        return False, "lane trigger has no findings to reconcile", []
+    lane_ids: set[str] = set()
+    for finding in raw_findings:
+        value = finding.get("vulnerability_id") if isinstance(finding, dict) else None
+        if not isinstance(value, str) or not value.strip():
+            return False, "lane trigger finding has no vulnerability id", []
+        lane_ids.add(value.strip())
+    try:
+        lane_generated = datetime.fromisoformat(str(trigger.get("generated_at")))
+        fresh_generated = datetime.fromisoformat(str(report.get("generated_at")))
+        if fresh_generated <= lane_generated:
+            return False, "fresh report is not newer than the lane evidence", []
+    except (TypeError, ValueError):
+        return False, "lane or report generated_at is not comparable", []
+    present = {
+        str(occurrence.get("vulnerability_id", "")).strip()
+        for image in report["images"]
+        for occurrence in image.get("occurrences") or []
+        if isinstance(occurrence, dict)
+    }
+    present.update(
+        str(finding.get("vulnerability_id", "")).strip()
+        for image in report["images"]
+        for finding in image.get("fixable_high_critical") or []
+        if isinstance(finding, dict)
+    )
+    remaining = sorted(lane_ids & present)
+    if remaining:
+        return False, f"lane findings still present in the fresh scan: {', '.join(remaining[:10])}", []
+    return True, "every lane finding is absent from a clean fresh production scan", sorted(lane_ids)
+
+
+def render_stale_lane_comment(
+    report: dict[str, Any],
+    trigger: dict[str, Any],
+    resolved_ids: list[str],
+    *,
+    run_url: str,
+) -> str:
+    run_id = run_url.rstrip("/").rsplit("/", 1)[-1]
+    counts, _ = validate_report(report)
+    shown = ", ".join(f"`{_cell(item)}`" for item in resolved_ids[:20])
+    if len(resolved_ids) > 20:
+        shown += f" (+{len(resolved_ids) - 20})"
+    return "\n".join([
+        f"<!-- c3po-container-remediation-stale-close:{report['report_sha256']} -->",
+        "## Lane encerrada: achados já ausentes em produção",
+        "",
+        "O scan completo mais recente das imagens em produção não tem nenhum achado "
+        "fixável e nenhuma CVE desta lane aparece no report (nem sem correção). "
+        "A lane ficou obsoleta e foi fechada pelo controlador remoto; o fechamento é "
+        "reversível (reabra se discordar).",
+        "",
+        f"- Run do scan: [`{_cell(run_id)}`]({run_url})",
+        f"- Report self-hash: `{report['report_sha256']}`",
+        f"- Gerado em: `{_cell(str(report.get('generated_at')))}`",
+        f"- Fixáveis no scan novo: critical {counts['critical']}, high {counts['high']}, "
+        f"medium {counts['medium']}, low {counts['low']}, sem classificação {counts['unknown']}",
+        f"- Ocorrências totais no scan novo (inclui sem correção): {report.get('finding_total')}",
+        f"- Chave de deduplicação da lane: `{_cell(str(trigger.get('remediation_key')))}`",
+        f"- CVEs da lane ausentes no scan novo: {shown}",
+        "",
+    ])
+
+
+def stale_lane(args: argparse.Namespace) -> int:
+    if not args.run_url.startswith("https://github.com/"):
+        raise ReportValidationError("run_url must be an HTTPS GitHub URL")
+    report = load_report(args.report)
+    trigger = load_report(args.trigger)
+    close, reason, resolved_ids = stale_lane_decision(report, trigger)
+    if close:
+        args.comment.write_text(
+            render_stale_lane_comment(report, trigger, resolved_ids, run_url=args.run_url),
+            encoding="utf-8",
+        )
+    print(json.dumps({"close": close, "reason": reason}, sort_keys=True))
+    return 0
+
+
 def verify_zero(args: argparse.Namespace) -> int:
     report = load_report(args.report)
     counts, _ = validate_report(
@@ -472,6 +575,13 @@ def parse_args() -> argparse.Namespace:
     dry_run_parser.add_argument("--artifact-name", required=True)
     dry_run_parser.add_argument("--github-output", type=Path, required=True)
     dry_run_parser.set_defaults(handler=plan_dry_run_positive)
+
+    stale_parser = subparsers.add_parser("stale-lane")
+    stale_parser.add_argument("--report", type=Path, required=True)
+    stale_parser.add_argument("--trigger", type=Path, required=True)
+    stale_parser.add_argument("--run-url", required=True)
+    stale_parser.add_argument("--comment", type=Path, required=True)
+    stale_parser.set_defaults(handler=stale_lane)
 
     verify_parser = subparsers.add_parser("verify-zero")
     verify_parser.add_argument("--report", type=Path, required=True)

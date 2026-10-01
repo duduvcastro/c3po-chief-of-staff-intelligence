@@ -1,0 +1,77 @@
+name: Escalate aged security incidents
+
+# Posts at most one comment per incident per BRT day to the Fable/Codex channel
+# (issue #429) when GitHub itself shows a security signal stuck for >24h: a
+# trusted automation/* lane still open, or a security workflow without success.
+# Uses only the workflow GITHUB_TOKEN; no secrets, no host or database access.
+
+on:
+  schedule:
+    # 07:20 BRT: after the 00:17 scan and the 02:15 attestation, before the
+    # owner's morning review. Every signal must already be older than 24h.
+    - cron: "20 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c3po-incident-escalation
+  cancel-in-progress: false
+
+jobs:
+  escalate:
+    name: Escalate aged incidents to the Fable-Codex channel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+      pull-requests: read
+    env:
+      CHANNEL_ISSUE: "429"
+    steps:
+      - name: Check out the escalation detector
+        uses: actions/checkout@v6
+
+      - name: Collect GitHub-native signals
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/pulls?state=open&base=main&per_page=100" \
+            --jq '.[]' | jq -s '.' > "$RUNNER_TEMP/open-pulls.json"
+          for workflow in container-vulnerability-scan.yml dependency-security.yml security-watchdog.yml; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=main&per_page=50" \
+              --jq '.workflow_runs' > "$RUNNER_TEMP/runs-$workflow.json"
+          done
+          since=$(date -u -d '-3 days' +%Y-%m-%dT%H:%M:%SZ)
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues/$CHANNEL_ISSUE/comments?since=$since&per_page=100" \
+            --jq '.[] | select(.user.login == "github-actions[bot]") | .body' \
+            > "$RUNNER_TEMP/channel-comments.txt"
+
+      - name: Decide the daily escalation
+        id: decide
+        run: |
+          python3 .github/scripts/c3po_incident_escalation.py \
+            --pulls "$RUNNER_TEMP/open-pulls.json" \
+            --runs "container-vulnerability-scan.yml=$RUNNER_TEMP/runs-container-vulnerability-scan.yml.json" \
+            --runs "dependency-security.yml=$RUNNER_TEMP/runs-dependency-security.yml.json" \
+            --runs "security-watchdog.yml=$RUNNER_TEMP/runs-security-watchdog.yml.json" \
+            --channel-comments "$RUNNER_TEMP/channel-comments.txt" \
+            --repository "$GITHUB_REPOSITORY" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --body "$RUNNER_TEMP/escalation.md" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Post the escalation to the Fable-Codex channel
+        if: steps.decide.outputs.post == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "$CHANNEL_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file "$RUNNER_TEMP/escalation.md"
