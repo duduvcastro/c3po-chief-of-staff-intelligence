@@ -2,8 +2,8 @@
 import hashlib
 from datetime import date,timedelta
 from typing import Any,Callable,cast
-from .r2d2_v2_epoch_assembler import DELEGABLE,DOCUMENT_ORDER_SHA,canonical,digest,stamp,is_sha
-from .r2d2_v2_store import ShadowIntegrityError
+from .r2d2_v2_epoch_assembler import DELEGABLE,DOCUMENT_ORDER_SHA,digest,stamp,is_sha
+from .r2d2_v2_store import ShadowIntegrityError,digest as store_digest
 from .r2d2_v2_document_format import normalize_document,act_b_template_shas
 
 
@@ -11,11 +11,12 @@ def need(ok,code):
     if not ok:raise ShadowIntegrityError(code)
 
 
-def ascii_canonical(value,code):
-    # The store digest escapes non-ASCII and the assembler digest does not; only
-    # ASCII canonical bytes hash identically under both.
-    try:canonical(value).decode('ascii')
-    except UnicodeError:raise ShadowIntegrityError(code) from None
+def one_digest_namespace(value,code):
+    # The store digest escapes everything outside printable ASCII (DEL included) and the
+    # assembler digest does not; the contract and GO layers compare one against the other.
+    try:same=store_digest(value)==digest(value)
+    except UnicodeError:same=False
+    need(same,code)
 
 
 def scope(record,epoch,first,day):
@@ -105,7 +106,7 @@ class DocumentAuthority:
 
     def check_binding(self,document,now):
         c=document['contract'];identity=c['assembler_plan']['proposal']['identity']
-        ascii_canonical(c['template'],'DOCUMENT_BINDING_NOT_ASCII');ascii_canonical(c['order'],'DOCUMENT_BINDING_NOT_ASCII')
+        one_digest_namespace(c['template'],'DOCUMENT_BINDING_DIGEST_NAMESPACE');one_digest_namespace(c['order'],'DOCUMENT_BINDING_DIGEST_NAMESPACE')
         act=self.act_b(now,epoch=document['epoch'],first=identity['first_session'],day=document['day'])
         need(c['template']['day']==document['day'],'DOCUMENT_TEMPLATE_DAY')
         template_sha=act_b_template_shas(act)[document['day']]

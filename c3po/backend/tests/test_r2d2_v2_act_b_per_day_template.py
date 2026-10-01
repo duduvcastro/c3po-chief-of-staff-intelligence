@@ -247,23 +247,30 @@ def test_unsorted_days_are_refused():
     assert all(authority.verify_binding(binding(day), NOW) is False for day in SESSIONS)
 
 
-def test_non_ascii_template_or_order_is_refused_with_its_own_code():
-    day, rule = SESSIONS[0], RULE + '\u00c9'
+@pytest.mark.parametrize('odd_character', ['\u00c9', '\x7f'])
+def test_template_outside_the_shared_digest_namespace_is_refused_with_its_own_code(odd_character):
+    day, rule = SESSIONS[0], RULE + odd_character
     odd = {**template(day), 'rule': rule}
     assert digest(odd) != store_digest(odd) and digest(template(day)) == store_digest(template(day))
+    assert canonical(odd).isascii() is (odd_character == '\x7f')
     shas = {**{d: digest(template(d)) for d in SESSIONS}, day: digest(odd)}
     authority, _, _ = build(act_overrides={'template_shas': shas, 'cut_rule': rule},
                             templates=[{**entry(d), 'sha': shas[d]} for d in SESSIONS])
     assert authority.act_b(NOW, day=day)['template_shas'][day] == digest(odd)
     document = binding(day)
     document['contract']['template'] = odd
-    assert code(lambda: authority.check_binding(document, NOW)) == 'DOCUMENT_BINDING_NOT_ASCII'
+    assert code(lambda: authority.check_binding(document, NOW)) == 'DOCUMENT_BINDING_DIGEST_NAMESPACE'
     assert authority.verify_binding(document, NOW) is False
-    plain, _, _ = build()
-    document = binding(day)
-    document['contract']['order'] = {**ORDER, 'owner_sha': '\u00e9' * 64}
-    assert code(lambda: plain.check_binding(document, NOW)) == 'DOCUMENT_BINDING_NOT_ASCII'
-    assert plain.verify_binding(document, NOW) is False
+
+
+@pytest.mark.parametrize('odd_owner', ['\u00e9' * 64, 'a' * 63 + '\x7f', '\ud800'])
+def test_order_outside_the_shared_digest_namespace_is_refused_with_its_own_code(odd_owner):
+    authority, _, _ = build()
+    document = binding(SESSIONS[0])
+    document['contract']['order'] = {**ORDER, 'owner_sha': odd_owner}
+    assert code(lambda: authority.check_binding(document, NOW)) == 'DOCUMENT_BINDING_DIGEST_NAMESPACE'
+    assert authority.verify_binding(document, NOW) is False
+    assert authority.verify_binding(binding(SESSIONS[0]), NOW) is True
 
 
 def arm_go(authority, root, pins, *, day, pinned_day, digest_day):
