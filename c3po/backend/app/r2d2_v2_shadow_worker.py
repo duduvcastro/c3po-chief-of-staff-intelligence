@@ -69,7 +69,7 @@ def _with_massive_source(settings, source, release):
     return CompositeEventSource(source, MassiveSessionEventSource(journals))
 
 
-def build_collector(settings, *, now: datetime) -> ShadowCollector | None:
+def build_collector(settings, *, now: datetime, capacity_config=None) -> ShadowCollector | None:
     if not settings.r2d2_v2_shadow_enabled:
         return None  # OFF has no filesystem/DB/provider side effects.
     if not settings.database_url:
@@ -78,6 +78,11 @@ def build_collector(settings, *, now: datetime) -> ShadowCollector | None:
     calendar = ShadowCalendar()
     release = Release.verify(data, settings.r2d2_v2_shadow_release_sha, now=now,
                              build_sha=settings.build_sha, calendar=calendar)
+    loaded_capacity = None
+    if getattr(settings,'r2d2_v2_capacity_required',False) and capacity_config is None:
+        from .r2d2_v2_capacity_bootstrap import CapacityConfig
+        loaded_capacity = CapacityConfig(settings)
+        loaded_capacity.release(release)
     # Construction alone does not open a connection. Never initialize() here:
     # that routine owns application-wide migrations/backfills outside V2.
     from .database import Database
@@ -88,6 +93,13 @@ def build_collector(settings, *, now: datetime) -> ShadowCollector | None:
                   first_session=release.first_session, calendar=calendar, **source_args)
               if release.mode == "CERTIFIED"
               else FileShadowSource(settings.r2d2_v2_shadow_source_dir, **source_args))
+    store = PostgresShadowStore(database.connection)
+    if loaded_capacity is not None:
+        capacity_config = loaded_capacity.collector_config(release,store)
+    if capacity_config is not None:
+        from .r2d2_v2_capacity_wiring import build_capacity_collector
+        return build_capacity_collector(store=store,
+            source=_with_massive_source(settings, source, release),release=release,calendar=calendar,config=capacity_config)
     return ShadowCollector(PostgresShadowStore(database.connection),
                            _with_massive_source(settings, source, release),
                            release, calendar=calendar)
@@ -104,6 +116,7 @@ def _private_export(path: Path, payload: dict) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capabilities", action="store_true", help="Static read-only source readiness; no database")
+    parser.add_argument("--prepare-capacity-day", help="Commit an explicitly authorized pre-open capacity binding")
     parser.add_argument("--once", action="store_true", help="One authorized live cycle")
     parser.add_argument("--export-cohort", type=int, choices=(40, 60))
     parser.add_argument("--output", type=Path)
@@ -111,6 +124,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.capabilities:
         print(json.dumps(capabilities(), sort_keys=True))
         return 0
+    if args.prepare_capacity_day and (args.once or args.export_cohort or args.output):
+        parser.error("--prepare-capacity-day is exclusive")
     if args.export_cohort and not args.output:
         parser.error("--export-cohort requires a new private --output file")
     from .config import get_settings
@@ -119,6 +134,13 @@ def main(argv: list[str] | None = None) -> int:
     collector = build_collector(settings, now=now)
     if collector is None:
         print('{"status":"OFF","collection":false}')
+        return 0
+    if args.prepare_capacity_day:
+        from .r2d2_v2_capacity_bound import CapacityBoundCollector
+        from .r2d2_v2_capacity_wiring import prepare_capacity_day
+        if not isinstance(collector,CapacityBoundCollector):
+            raise ShadowIntegrityError('CAPACITY_CONFIG_REQUIRED')
+        print(json.dumps(prepare_capacity_day(collector.store,collector,args.prepare_capacity_day),sort_keys=True))
         return 0
     if args.export_cohort:
         saved, journal = collector.store.read_with_journal(collector.release.epoch)

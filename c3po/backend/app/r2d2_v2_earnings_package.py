@@ -23,6 +23,15 @@ STATE_SCHEMA = "R2D2_V2_SHADOW_STATE_V3"
 EXPORT_SCHEMA = "R2D2_V2_COHORT_EXPORT_V3"
 INFERENCE_SCHEMA = "R2D2_V2_INFERENCE_INPUT_V3"
 PACKAGE_FILES = (
+    "r2d2_v2_document_format.py",
+    "r2d2_v2_capacity_bound.py",
+    "r2d2_v2_capacity_authority.py",
+    "r2d2_v2_capacity_live.py",
+    "r2d2_v2_epoch_assembler.py",
+    "r2d2_v2_capacity_anchored.py",
+    "r2d2_v2_document_authority.py",
+    "r2d2_v2_capacity_wiring.py",
+    "r2d2_v2_capacity_bootstrap.py",
     "r2d2_v2_earnings_package.py", "r2d2_v2_earnings_policy.py",
     "r2d2_v2_earnings_events.py", "r2d2_v2_contract.py", "r2d2_v2_portfolio.py",
     "r2d2_v2_sources.py", "r2d2_v2_shadow.py", "r2d2_v2_inference_input.py",
