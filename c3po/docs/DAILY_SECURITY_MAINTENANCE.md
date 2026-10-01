@@ -12,7 +12,9 @@ CI, sem chamadas a modelos de IA. A fiscalização diária adicional do Codex n�
   15 minutos; healthchecks de início, sucesso e falha. Reinicializações necessárias são solicitadas automaticamente pelo controlador na janela de 07:00–09:00 BRT e verificadas após a volta. O unattended-upgrades mantém seu reboot próprio desabilitado: existe um único controlador de reinício.
 * **Repositório:** o timer `c3po-security-daily.timer`, no host, consulta os avisos
   abertos do Dependabot; o CI também executa `pnpm audit` diariamente, independentemente da entrega dos alertas pelo GitHub. Avisos adicionais são deduplicados por pacote/GHSA e entram no painel. Após 07:00 BRT, uma vez por dia e após novo deploy, dispara
-  `dependency-security.yml`. A credencial permanece no host; a exportação contém
+  `dependency-security.yml`. Além disso, no primeiro ciclo que vê uma nova main
+  (`last_dispatched_main`), redispara somente `dependency-security.yml`, a qualquer
+  hora, para regenerar a auditoria npm dessa revisão. A credencial permanece no host; a exportação contém
   somente avisos, nomes de pacotes e versões corrigidas públicas.
 * **Imagens:** reutiliza o scanner Trivy diário existente e dispara nova varredura
   após cada deploy. As imagens são exportadas e examinadas fora do servidor.
@@ -117,6 +119,15 @@ credencial, parser ou consulta não produz um relatório saudável. Relatório a
 ou antigo aparece no painel; falhas geram notificação de job pelo mecanismo existente,
 deduplicada por dia. A disponibilidade do worker de governança continua coberta
 pelo seu healthcheck externo existente.
+
+Auditoria npm íntegra e recente (< 26h), mas de uma revisão anterior, logo após a
+main mudar (até 3h desde o primeiro ciclo que viu a nova main, `main_observed_at`)
+e com o redisparo já solicitado para essa main, é registrada em `pending`
+(`npm_evidence_pending`, status `waiting_npm_evidence`), não em `errors`: o relatório
+nunca fica saudável, promoção e reboot seguem bloqueados como com evidência ausente,
+e a governança mostra atenção ("evidência npm pendente pós-deploy (regenerando)")
+sem notificação de falha de job. Sem redisparo, ou passada a janela, volta a ser
+o erro `npm_evidence_unavailable`.
 
 Validação de aceitação em produção: timer habilitado, primeiro ciclo registrado,
 permissões do token conferidas, PR/CI/merge controlado na janela e scan posterior

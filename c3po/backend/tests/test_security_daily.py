@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
@@ -193,6 +194,8 @@ def test_dispatch_403_does_not_skip_independent_reboot_or_claim_success(tmp_path
     assert report["healthy"] is False
     assert report["last_dispatch_date"] is None
     assert report["last_dispatched_deploy"] is None
+    assert report["last_dispatched_main"] is None
+    assert report["pending"] == []
     assert "sensitive response" not in json.dumps(report)
     if condition == "ready":
         assert report["status"] == "reboot_requested"
@@ -317,17 +320,20 @@ def _maintenance_ready(tmp_path, monkeypatch, now, *, watchdog_errors=()):
 
 
 class _EscalationGH:
-    def __init__(self, *, state="active", runs=(), error=None):
+    def __init__(self, *, state="active", runs=(), error=None, main="a" * 40, dispatch_error=None):
         self.state, self.runs, self.error = state, list(runs), error
+        self.main, self.dispatch_error = main, dispatch_error
         self.writes = []
     def pages(self, path):
         return []
     def request(self, path, method="GET", body=None):
         if method != "GET":
+            if self.dispatch_error is not None:
+                raise self.dispatch_error
             self.writes.append((method, path))
             return None
         if path == "/git/ref/heads/main":
-            return {"object": {"sha": "a" * 40}}
+            return {"object": {"sha": self.main}}
         if path.startswith("/actions/workflows/incident-escalation.yml"):
             if self.error is not None:
                 raise self.error
@@ -391,3 +397,154 @@ def test_escalation_channel_errors_are_recorded_without_crashing_the_cycle(tmp_p
     assert report["status"] == "no_validated_candidate"
     assert [w for w in client.writes if "incident-escalation" in w[1]] == writes
     assert "secret" not in json.dumps(report)
+
+
+DEPENDENCY_DISPATCH = ("POST", "/actions/workflows/dependency-security.yml/dispatches")
+IMAGE_DISPATCH = ("POST", "/actions/workflows/container-vulnerability-scan.yml/dispatches")
+
+
+def _audit(revision, **changes):
+    return {"schema": "C3PO_NPM_ADVISORIES-v1", "source_revision": revision, "alerts": [], **changes}
+
+
+def _npm(monkeypatch, audit):
+    """Serve this npm audit; every other evidence layer stays as configured."""
+    layers = daily.load_evidence
+    def evidence(path, *args):
+        if path.name == "repository-npm-advisories.json":
+            return audit
+        return layers(path, *args)
+    monkeypatch.setattr(daily, "load_evidence", evidence)
+
+
+def _deployed_before(tmp_path, now):
+    # Image evidence generated at ``now`` postdates the deploy, so in these
+    # cycles only the npm state can keep ``healthy`` False.
+    stamp = (now - timedelta(hours=1)).timestamp()
+    os.utime(tmp_path / ".deploy-version", (stamp, stamp))
+
+
+def test_new_main_npm_lag_is_pending_with_same_cycle_dispatch_even_before_10utc(tmp_path, monkeypatch):
+    # 01/10/2026: every new main opened a CRITICAL incident until the next
+    # dispatch, which after a night deploy only came at 10 UTC (7-8h later).
+    night = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
+    promoted = _maintenance_ready(tmp_path, monkeypatch, night)
+    _deployed_before(tmp_path, night)
+    _npm(monkeypatch, _audit("b" * 40))
+    previous = {"main_sha": "b" * 40, "main_observed_at": (night - timedelta(days=1)).isoformat(),
+                "last_dispatched_main": "b" * 40, "last_dispatch_date": "2026-09-11",
+                "last_dispatched_deploy": "b" * 40}
+    gh = _EscalationGH()
+
+    report = daily.cycle(tmp_path, gh, night, {"automatic_merge": True}, previous)
+
+    assert gh.writes == [DEPENDENCY_DISPATCH]
+    assert report["errors"] == [] and report["pending"] == ["npm_evidence_pending"]
+    assert report["status"] == "waiting_npm_evidence" and report["healthy"] is False
+    assert report["last_dispatched_main"] == "a" * 40
+    assert report["main_observed_at"] == night.isoformat()
+    # The revision dispatch does not consume the day's 10 UTC scans.
+    assert report["last_dispatch_date"] == "2026-09-11" and report["last_dispatched_deploy"] == "b" * 40
+    # The inventory published before the dispatch already carries the pending, never the error.
+    published = json.loads((tmp_path / "runtime/security" / daily.REPORT).read_text())
+    assert published["pending"] == ["npm_evidence_pending"] and published["errors"] == []
+    assert promoted == []
+
+    later = night + timedelta(hours=1)
+    again = daily.cycle(tmp_path, gh, later, {"automatic_merge": True}, report)
+    assert gh.writes == [DEPENDENCY_DISPATCH]
+    assert again["errors"] == [] and again["pending"] == ["npm_evidence_pending"]
+    assert again["main_observed_at"] == night.isoformat()
+
+    _npm(monkeypatch, _audit("a" * 40))
+    morning = night.replace(hour=10)
+    ready = daily.cycle(tmp_path, gh, morning, {"automatic_merge": True}, again)
+    assert gh.writes == [DEPENDENCY_DISPATCH, DEPENDENCY_DISPATCH, IMAGE_DISPATCH]
+    assert ready["errors"] == [] and ready["pending"] == [] and ready["healthy"] is True
+    assert ready["last_dispatch_date"] == "2026-09-12" and promoted == [1]
+
+
+def test_npm_lag_past_the_grace_window_is_the_error_again(tmp_path, monkeypatch):
+    now = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, now)
+    _npm(monkeypatch, _audit("b" * 40))
+    gh = _EscalationGH()
+    first = daily.cycle(tmp_path, gh, now, {"automatic_merge": True},
+                        {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40})
+    assert first["pending"] == ["npm_evidence_pending"]
+
+    report = daily.cycle(tmp_path, gh, now + daily.NPM_REVISION_GRACE, {"automatic_merge": True}, first)
+
+    assert report["pending"] == [] and report["errors"] == ["npm_evidence_unavailable"]
+    assert report["status"] == "blocked_missing_evidence" and report["healthy"] is False
+    assert gh.writes == [DEPENDENCY_DISPATCH]
+
+
+def test_main_moving_without_deploy_redispatches_dependency_security_only(tmp_path, monkeypatch):
+    watchdog = importlib.import_module("c3po_security_watchdog")
+    now = datetime(2026, 9, 12, 11, 10, tzinfo=timezone.utc)
+    promoted = _maintenance_ready(tmp_path, monkeypatch, now)
+    (tmp_path / ".deploy-version").write_text("b" * 40)
+    _npm(monkeypatch, _audit("b" * 40))
+    previous = {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40,
+                "last_dispatch_date": "2026-09-12", "last_dispatched_deploy": "b" * 40}
+    gh = _EscalationGH()
+
+    report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True}, previous)
+
+    assert gh.writes == [DEPENDENCY_DISPATCH]
+    assert report["pending"] == ["npm_evidence_pending"] and report["errors"] == []
+    # Gates stay as closed as with missing evidence: no promotion inside the window.
+    assert report["status"] == "waiting_npm_evidence" and promoted == []
+    # A pending wait is not a failed day for --verify-daily.
+    assert watchdog.daily_execution_verified(report, now) is True
+
+
+def test_npm_lag_without_a_dispatch_for_the_new_main_stays_an_error(tmp_path, monkeypatch):
+    now = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, now)
+    _npm(monkeypatch, _audit("b" * 40))
+    gh = _EscalationGH(dispatch_error=HTTPError("https://api.github.com/private", 403, "secret body", {}, None))
+
+    report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True},
+                         {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40})
+
+    assert report["pending"] == []
+    assert report["errors"] == ["npm_evidence_unavailable", "scan_dispatch:HTTPError:403"]
+    assert report["last_dispatched_main"] == "b" * 40
+    assert "secret" not in json.dumps(report)
+
+
+@pytest.mark.parametrize("audit", [
+    _audit("b" * 40, schema="C3PO_NPM_ADVISORIES-v0"),
+    _audit("not-a-revision"),
+    _audit("b" * 40, alerts=None),
+    {"schema": "C3PO_NPM_ADVISORIES-v1", "alerts": []},
+])
+def test_only_a_well_formed_audit_of_an_earlier_revision_can_be_pending(tmp_path, monkeypatch, audit):
+    now = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, now)
+    _npm(monkeypatch, audit)
+    gh = _EscalationGH()
+
+    report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True},
+                         {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40})
+
+    assert report["pending"] == [] and report["errors"] == ["npm_evidence_unavailable"]
+    assert gh.writes == [DEPENDENCY_DISPATCH]
+
+
+def test_state_file_from_the_previous_version_dispatches_once_and_starts_the_clock(tmp_path, monkeypatch):
+    now = datetime(2026, 9, 12, 11, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, now)
+    _npm(monkeypatch, _audit("a" * 40))
+    legacy = {"main_sha": "a" * 40, "last_dispatch_date": "2026-09-12", "last_dispatched_deploy": "a" * 40}
+    gh = _EscalationGH()
+
+    report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True}, legacy)
+    again = daily.cycle(tmp_path, gh, now + timedelta(hours=1), {"automatic_merge": True}, report)
+
+    assert gh.writes == [DEPENDENCY_DISPATCH]
+    assert report["errors"] == [] and report["pending"] == []
+    assert report["main_observed_at"] == again["main_observed_at"] == now.isoformat()
+    assert again["last_dispatched_main"] == "a" * 40
