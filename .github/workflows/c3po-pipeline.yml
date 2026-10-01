@@ -271,6 +271,77 @@ jobs:
             /legacy/c3po/backend/tests/test_r2d2_exit_policy_truth.py \
             | tee "$RUNNER_TEMP/backend-runtime/pytest.log"
 
+      - name: Exercise the Massive supervisor unit against the backend image
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation)
+        working-directory: ${{ github.workspace }}
+        # Renders ExecStart from the repository unit template and runs it on a real
+        # engine with no network, no token and no manifest: the supervisor must refuse
+        # with 78 before any claim. Outside the session window the refusal is
+        # SUPERVISOR_SESSION/WINDOW; inside it the missing dated manifest refuses first.
+        # Every guard is explicit (`|| exit 1`); nothing here relies on `set -e`.
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/backend-runtime"
+          mkdir -p "$out" || exit 1
+          [ -x /usr/bin/docker ] || { echo "docker is not at /usr/bin/docker" >&2; exit 1; }
+          id="$(docker image inspect --format '{{.Id}}' c3po/backend:pr-validation)" || exit 1
+          [[ "$id" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "unexpected image id: $id" >&2; exit 1; }
+          base="$(sudo mktemp -d)" || exit 1
+          [[ "$base" == /* && "$base" != *@* ]] || exit 1
+          sudo install -d -m 0700 -o 0 -g 0 "$base/data/journal" "$base/state" "$base/etc" \
+            "$base/etc/manifests" "$base/etc/docker-cli" || exit 1
+          python3 - "$id" "$base" > "$out/supervisor-argv.bin" <<'PY' || exit 1
+          import re, shlex, sys
+          image, base = sys.argv[1:]
+          unit = open("c3po/deployment/massive-supervisor/c3po-massive.service", encoding="utf-8").read()
+          lines = [line for line in unit.replace("\\\n", " ").splitlines() if line.startswith("ExecStart=")]
+          values = {
+              "@IMAGE_ID@": image,
+              "@HOST_JOURNAL_ROOT@": base + "/data/journal",
+              "@CONTAINER_JOURNAL_ROOT@": "/app/day-d-data/r2d2-v2-massive-epoch03",
+              "@HOST_STATE_ROOT@": base + "/state",
+              "@HOST_CONFIG_DIR@": base + "/etc",
+              "@NETWORK@": "none",
+          }
+          if len(lines) != 1 or set(re.findall(r"@[A-Z_]+@", unit)) != set(values):
+              sys.exit("unit template no longer matches the six documented substitutions")
+          command = lines[0][len("ExecStart="):]
+          for name, value in values.items():
+              command = command.replace(name, value)
+          argv = shlex.split(command)
+          if "@" in command or argv[:2] != ["/usr/bin/docker", "run"] or image not in argv:
+              sys.exit("rendered ExecStart is not a docker run of the pinned image id")
+          sys.stdout.write("\0".join(argv) + "\0")
+          PY
+          mapfile -d '' -t argv < "$out/supervisor-argv.bin" || exit 1
+          [ "${#argv[@]}" -ge 30 ] || { echo "rendered ExecStart is too short" >&2; exit 1; }
+          printf '%q ' "${argv[@]}" > "$out/supervisor-command.txt" || exit 1
+          rc=0
+          sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${argv[@]}" \
+            > "$out/supervisor-stdout.log" 2> "$out/supervisor-stderr.log" || rc=$?
+          cat "$out/supervisor-stdout.log" || exit 1
+          cat "$out/supervisor-stderr.log" >&2 || exit 1
+          echo "supervisor exit status: $rc" | tee "$out/supervisor-exit.txt" || exit 1
+          [ "$rc" -eq 78 ] || { echo "expected the terminal refusal 78, got $rc" >&2; exit 1; }
+          python3 - "$out/supervisor-stdout.log" <<'PY' || exit 1
+          import json, sys
+          lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+          if len(lines) != 1:
+              sys.exit("expected exactly one stdout line, got %d" % len(lines))
+          event = json.loads(lines[0])
+          expected = {"status": "DATA_GAP", "reason": "SUPERVISOR_REFUSED", "provider_connected": False, "restart_allowed": False}
+          codes = {"SUPERVISOR_SESSION", "SUPERVISOR_WINDOW", "SUPERVISOR_FILE_UNAVAILABLE"}
+          if any(event.get(key) != value for key, value in expected.items()) or event.get("code") not in codes:
+              sys.exit("unexpected refusal receipt")
+          PY
+          left="$(sudo find "$base/state" "$base/data/journal" -mindepth 1)" || exit 1
+          [ -z "$left" ] || { echo "refusal left a claim or a journal object" >&2; exit 1; }
+          containers="$(docker ps -a --filter 'name=^c3po-massive$' -q)" || exit 1
+          [ -z "$containers" ] || { echo "leftover c3po-massive container" >&2; exit 1; }
+
       - name: Publish backend runtime check
         if: >-
           always() &&
