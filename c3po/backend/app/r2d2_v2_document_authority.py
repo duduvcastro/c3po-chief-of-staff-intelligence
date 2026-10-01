@@ -4,7 +4,7 @@ from datetime import date,timedelta
 from typing import Any,Callable,cast
 from .r2d2_v2_epoch_assembler import DELEGABLE,DOCUMENT_ORDER_SHA,digest,stamp,is_sha
 from .r2d2_v2_store import ShadowIntegrityError
-from .r2d2_v2_document_format import normalize_document
+from .r2d2_v2_document_format import normalize_document,act_b_template_shas
 
 
 def need(ok,code):
@@ -88,13 +88,18 @@ class DocumentAuthority:
             need(template['epoch']==epoch and template['first_session']==first and type(template['phases']) is list
                  and template['phases'] and len(template['phases'])==len(set(template['phases'])),'TEMPLATE_SET_SCOPE')
             need(set(template['authorized_sessions'])<=set(body['authorized_sessions']),'TEMPLATE_SET_DAYS')
+        by_day=act_b_template_shas(body)
+        if 'template_shas' in body:
+            need(all(any(t['sha']==sha and type(t['authorized_sessions']) is list and d in t['authorized_sessions']
+                         for t in body['templates']) for d,sha in by_day.items()),'TEMPLATE_MAP_SET')
         return body
 
     def verify_binding(self,document,now):
         try:
             c=document['contract'];identity=c['assembler_plan']['proposal']['identity']
             act=self.act_b(now,epoch=document['epoch'],first=identity['first_session'],day=document['day'])
-            need(act['order_sha']==digest(c['order']) and act['template_sha']==digest(c['template']) and act['policy_sha']==digest(c['policy']),'DOCUMENT_BINDING')
+            template_sha=act_b_template_shas(act)[document['day']]
+            need(act['order_sha']==digest(c['order']) and template_sha==digest(c['template']) and act['policy_sha']==digest(c['policy']),'DOCUMENT_BINDING')
             need(act['capacity']==550 and act['cut_rule']==c['template']['rule'],'DOCUMENT_CAPACITY_RULE')
             return True
         except Exception:return False

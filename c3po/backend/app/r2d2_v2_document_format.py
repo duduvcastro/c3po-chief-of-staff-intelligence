@@ -45,6 +45,24 @@ def normalized_fields(body,required,optional=()):
     need(set(required)<=set(body)<=set(required)|set(optional),'DOCUMENT_BODY_FIELDS')
 
 
+def act_b_template_shas(body):
+    """Contract-template digest per authorized session; each template binds its own day.
+
+    `template_shas` must name exactly the authorized sessions. The scalar
+    `template_sha` form is accepted only for an Act B scoped to a single session.
+    """
+    days=body['authorized_sessions']
+    need(type(days) is list and days and all(type(d) is str for d in days) and len(days)==len(set(days)),'ACT_B_TEMPLATE_DAYS')
+    need(('template_sha' in body)!=('template_shas' in body),'ACT_B_TEMPLATE_FORM')
+    if 'template_sha' in body:
+        need(len(days)==1 and is_sha(body['template_sha']),'ACT_B_TEMPLATE_SCALAR')
+        return {days[0]:body['template_sha']}
+    shas=body['template_shas']
+    need(type(shas) is dict and set(shas)==set(days) and len(shas)==len(days)
+         and all(is_sha(v) for v in shas.values()) and len(set(shas.values()))==len(shas),'ACT_B_TEMPLATE_MAP')
+    return dict(shas)
+
+
 def normalize_document(label,raw):
     if label in {'CODEX','FABLE','DUDU'} and raw.lstrip().startswith(b'{'):
         return normalize_owner_signature(raw) if label=='DUDU' else normalize_legacy_a(label,raw)
@@ -63,11 +81,13 @@ def normalize_document(label,raw):
             if label.startswith('B_'):need(is_sha(body['body_sha']) and is_sha(body['act_a_head']),'DOCUMENT_B_SHA')
         elif label=='ACT_B':
             need(kind=='ACT_B','DOCUMENT_KIND')
-            normalized_fields(body,{'status','chain_head','order_sha','template_sha','policy_sha','capacity','cut_rule',
+            normalized_fields(body,{'status','chain_head','order_sha','policy_sha','capacity','cut_rule',
                 'subphases','individual_go_issuers','owner_countersign_phases','rollback_disposition','epoch','first_session',
-                'authorized_sessions','causal_order','policy_epoch_validity','automatic_retry','document_order_sha','act_a_scope_map','templates','template_set_sha'})
+                'authorized_sessions','causal_order','policy_epoch_validity','automatic_retry','document_order_sha','act_a_scope_map','templates','template_set_sha'},
+                {'template_sha','template_shas'})
             need(body['status']=='ACCEPTED' and type(body['capacity']) is int and body['capacity']==550,'ACT_B_UNBOUND')
-            need(all(is_sha(body[k]) for k in ('chain_head','order_sha','template_sha','policy_sha','document_order_sha','template_set_sha')),'ACT_B_HASH_UNBOUND')
+            need(all(is_sha(body[k]) for k in ('chain_head','order_sha','policy_sha','document_order_sha','template_set_sha')),'ACT_B_HASH_UNBOUND')
+            act_b_template_shas(body)
             need(body['individual_go_issuers']==['FABLE'],'ACT_B_ISSUER_DECISION')
             need(body['owner_countersign_phases']==['bar_merge_deploy_recertify','install_release','activate','wind_down_28'],'ACT_B_OWNER_SCOPE')
             need(body['rollback_disposition']=='REVALIDATE_UNCOMMITTED_ONLY' and body['automatic_retry'] is False,'ACT_B_RETRY_DECISION')
