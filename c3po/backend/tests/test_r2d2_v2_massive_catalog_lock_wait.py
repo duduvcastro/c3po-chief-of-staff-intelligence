@@ -3,6 +3,7 @@
 Real flock contention: every holder below is a second open file description
 of the same maintenance.lock, exactly what another process would hold.
 """
+import contextlib
 from datetime import datetime, timezone
 import os
 import re
@@ -28,31 +29,86 @@ BUSY = '^MASSIVE_MAINTENANCE_BUSY$'
 # No wait in this file lasts longer than this. A wait that never ends must fail its test, not hang it.
 WAIT_CEILING_SECONDS = 5.0
 # That ceiling sits inside the patched sleep, so it only sees code that still sleeps. This one covers a whole
-# test on the wall clock and needs nothing from the code under test: the file takes about 1.5 s in all.
+# test on the wall clock and needs nothing from the code under test: unmutated, the file takes a few seconds in all.
 TEST_WALL_SECONDS = 20.0
+# The alarm raises a failure into the test, and a loop that catches BaseException swallows it. If the same test is
+# still running this long after the failure was raised, the alarm fires again and ends the process with this status.
+HARD_EXIT_GRACE_SECONDS = 5.0
+HARD_EXIT_STATUS = 70
+# Accepted bound: the worst case is about TEST_WALL_SECONDS (20 s) per spinning test, because each one runs up to
+# the alarm before it fails. One that also swallows the failure ends the whole run HARD_EXIT_GRACE_SECONDS later.
 # Clock reads and attempts allowed on the fake clock, where nothing blocks (13 reads and 5 attempts at most unmutated).
 FAKE_CLOCK_CEILING = 64
 
 
+def _hard_exit(config, line):
+    """End the process with HARD_EXIT_STATUS. os._exit raises nothing, so there is nothing for the code under
+    test to catch. One line is written to stderr first, where that can be done."""
+    try:
+        try:
+            capture = config.pluginmanager.getplugin('capturemanager')
+            if capture is not None:
+                capture.suspend_global_capture(in_=False)  # until then fd 2 is pytest's capture file
+        finally:
+            os.write(2, line.encode())
+    finally:
+        os._exit(HARD_EXIT_STATUS)
+
+
+@contextlib.contextmanager
+def _ceiling(config, name):
+    """Arm the wall-clock alarm; on the way out put back the handler and the timer that were there.
+
+    The first firing fails the test. A second firing while the same test is still running ends the process:
+    the failure was swallowed, or the test took longer than the grace to unwind. Yields False, unarmed, where
+    SIGALRM cannot be used: no SIGALRM or setitimer, another thread than the main one, or a current handler
+    that was not installed from Python and so could not be put back."""
+    if not (hasattr(signal, 'SIGALRM') and hasattr(signal, 'setitimer')
+            and threading.current_thread() is threading.main_thread()
+            and signal.getsignal(signal.SIGALRM) is not None):
+        yield False
+        return
+    fired = []
+    def expired(signum, frame):
+        fired.append(1)
+        if len(fired) > 1:
+            _hard_exit(config, '%s: still running %.0f s after its wall-clock failure was raised, exit status %d\n'
+                       % (name, HARD_EXIT_GRACE_SECONDS, HARD_EXIT_STATUS))
+        pytest.fail('test still running after %.0f s on the wall clock' % TEST_WALL_SECONDS)
+    began = time.monotonic()
+    # The timer first: from here until the handler is in place no alarm is due for TEST_WALL_SECONDS.
+    found = signal.setitimer(signal.ITIMER_REAL, TEST_WALL_SECONDS, HARD_EXIT_GRACE_SECONDS)
+    previous = unset = object()
+    try:
+        previous = signal.signal(signal.SIGALRM, expired)
+        yield True
+    finally:
+        try:
+            if previous is not unset:
+                signal.signal(signal.SIGALRM, signal.SIG_IGN)  # a firing from here on is dropped, not raised
+        finally:
+            try:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+            finally:
+                try:
+                    if previous is not unset:
+                        signal.signal(signal.SIGALRM, previous)
+                finally:
+                    if found[0] > 0:
+                        # A timer that was already armed runs on, less the time spent here; one that came
+                        # due meanwhile fires at once.
+                        left = max(found[0] - (time.monotonic() - began), 0.001)
+                        signal.setitimer(signal.ITIMER_REAL, left, found[1])
+
+
 @pytest.fixture(autouse=True)
-def wall_clock_ceiling():
+def wall_clock_ceiling(request):
     """Fail any test of this file that is still running after TEST_WALL_SECONDS.
 
     A retry loop with neither a deadline nor a sleep never reaches the patched sleep; the alarm
-    interrupts it all the same. Yields False, unarmed, where SIGALRM cannot be used."""
-    if not (hasattr(signal, 'SIGALRM') and hasattr(signal, 'setitimer')
-            and threading.current_thread() is threading.main_thread()):
-        yield False
-        return
-    def expired(signum, frame):
-        pytest.fail('test still running after %.0f s on the wall clock' % TEST_WALL_SECONDS)
-    previous = signal.signal(signal.SIGALRM, expired)
-    signal.setitimer(signal.ITIMER_REAL, TEST_WALL_SECONDS)
-    try:
-        yield True
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, signal.SIG_DFL if previous is None else previous)
+    interrupts it all the same. Yields False, unarmed, where SIGALRM cannot be used (see _ceiling)."""
+    with _ceiling(request.config, request.node.nodeid) as armed:
+        yield armed
 
 
 def root(tmp_path):
@@ -184,16 +240,62 @@ def test_zero_wait_is_the_previous_immediate_refusal(tmp_path, monkeypatch):
     assert waited == []
 
 
-def test_wall_clock_ceiling_interrupts_a_loop_that_never_sleeps(wall_clock_ceiling):
+def spin():
+    """A loop that never sleeps, itself bounded."""
+    until = time.monotonic() + WAIT_CEILING_SECONDS
+    while time.monotonic() < until:
+        pass
+
+
+def test_wall_clock_ceiling_fails_a_loop_that_never_sleeps_and_exits_if_that_is_swallowed(wall_clock_ceiling, request,
+                                                                                          monkeypatch):
     if not wall_clock_ceiling:
         pytest.skip('SIGALRM is not available here')
     remaining, interval = signal.getitimer(signal.ITIMER_REAL)
-    assert 0 < remaining <= TEST_WALL_SECONDS and interval == 0
-    signal.setitimer(signal.ITIMER_REAL, 0.05)  # the same handler, sooner
+    assert 0 < remaining <= TEST_WALL_SECONDS and interval == HARD_EXIT_GRACE_SECONDS
+    exits = []
+    class Exited(Exception):
+        pass
+    def exited(config, line):
+        exits.append(line); raise Exited
+    # The real exit is not taken here: it would end this run. Only the decision to take it is observed.
+    monkeypatch.setitem(globals(), '_hard_exit', exited)
+    # Each timer below is armed inside its block and fires once, so no firing can land outside the block.
     with pytest.raises(pytest.fail.Exception, match='still running after %.0f s on the wall clock' % TEST_WALL_SECONDS):
-        until = time.monotonic() + WAIT_CEILING_SECONDS
-        while time.monotonic() < until:
-            pass
+        signal.setitimer(signal.ITIMER_REAL, 0.05)  # the same handler, sooner
+        spin()
+    assert exits == []
+    with pytest.raises(Exited):
+        signal.setitimer(signal.ITIMER_REAL, 0.05)  # the second firing of the same test
+        spin()
+    assert len(exits) == 1 and exits[0].startswith(request.node.nodeid + ': still running')
+    assert exits[0].endswith('exit status %d\n' % HARD_EXIT_STATUS) and exits[0].count('\n') == 1
+    assert HARD_EXIT_STATUS not in range(6) and 0 < HARD_EXIT_STATUS < 126  # not one of pytest's own, not a signal
+
+
+def test_wall_clock_ceiling_puts_back_the_handler_and_the_timer_it_found(wall_clock_ceiling, request):
+    if not wall_clock_ceiling:
+        pytest.skip('SIGALRM is not available here')
+    handler = signal.getsignal(signal.SIGALRM)
+    before, interval = signal.getitimer(signal.ITIMER_REAL)
+    with _ceiling(request.config, 'inner') as armed:  # a second one, inside the one of the fixture
+        assert armed is True and signal.getsignal(signal.SIGALRM) is not handler
+        assert signal.getitimer(signal.ITIMER_REAL)[1] == HARD_EXIT_GRACE_SECONDS
+    after, again = signal.getitimer(signal.ITIMER_REAL)
+    assert signal.getsignal(signal.SIGALRM) is handler and 0 < after <= before and again == interval
+    # Another thread arms nothing and changes nothing.
+    seen = []
+    def elsewhere():
+        with _ceiling(request.config, 'thread') as armed:
+            seen.append((armed, signal.getsignal(signal.SIGALRM) is handler))
+    thread = threading.Thread(target=elsewhere); thread.start(); thread.join(WAIT_CEILING_SECONDS)
+    assert seen == [(False, True)] and signal.getitimer(signal.ITIMER_REAL)[1] == interval
+    # No timer armed on the way in: none on the way out, also when the body raises.
+    signal.setitimer(signal.ITIMER_REAL, 0)
+    with pytest.raises(ValueError, match='^inside$'):
+        with _ceiling(request.config, 'inner'):
+            raise ValueError('inside')
+    assert signal.getsignal(signal.SIGALRM) is handler and signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
 
 
 def test_wait_is_bounded_by_the_monotonic_clock_and_reraises_the_last_refusal(monkeypatch):
@@ -385,3 +487,9 @@ def test_readme_worst_case_figures_follow_the_constants():
     expired = (int(min(sessions_module.CATALOG_LOCK_WAIT_SECONDS, sessions_module.READY_LOCK_WAIT_SECONDS))
                + int(restart.group(1)) + supervisor_module.RETRY_DELAYS[1])
     assert expired == 61 > 60 and 'add up to %d seconds, more than the 60 the start had' % expired in readme
+    # What the document says about the ceilings of this file follows the constants at its top, and claims no more.
+    assert all(value in readme for value in ('the patched sleep fails past %d seconds' % WAIT_CEILING_SECONDS,
+        'the fake clock fails past %d reads or attempts' % FAKE_CLOCK_CEILING,
+        'an alarm fails any test still running after %d seconds' % TEST_WALL_SECONDS,
+        'if the same test is still running %d seconds later' % HARD_EXIT_GRACE_SECONDS,
+        'not a proof that the file cannot hang'))

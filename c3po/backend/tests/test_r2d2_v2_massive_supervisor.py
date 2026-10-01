@@ -524,7 +524,7 @@ def test_readme_catalog_init_script_runs_against_the_real_catalog(container,monk
         'IMAGE','python','-I','-B','-','/c','$epoch']
 
 
-def test_readme_names_the_operations_in_order_and_the_substitution_grammar():
+def test_readme_names_the_operations_in_order_and_the_substitution_grammar(monkeypatch):
     readme=(UNIT_ROOT/'README.md').read_text()
     headings=[line for line in readme.splitlines() if re.match(r'### (\d[a-z]?\. |Owner token delivery)',line)]
     assert headings==['### 1. Preflight (read-only)','### 2. Provisioning (directories and configuration)',
@@ -552,7 +552,18 @@ def test_readme_names_the_operations_in_order_and_the_substitution_grammar():
         'that rite\'s decision; it is not settled here','the next attempt comes 30 seconds later','At or below the floor',
         'the reader is not polling while the producer starts','a directory refusal',
         'bounds the two precondition commands and the launch of the docker CLI together',
-        '4 readback → 4b catalog initialisation → 5 activation'))
+        '4 readback → 4b catalog initialisation → 5 activation','under a second in these runs',
+        'under one second for a full 4096-event page','No test of that file can hang'))
+    # A replacement leaf also moves the reader's journal directory. The name written here is the one the settings read.
+    from app.config import Settings
+    variable='C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR'
+    monkeypatch.setenv(variable,'/app/day-d-data/another-leaf')
+    assert Settings().r2d2_v2_massive_journal_dir==Path('/app/day-d-data/another-leaf')
+    assert readme.count("the reader's `"+variable+"`, which must equal the new `@CONTAINER_JOURNAL_ROOT@`")==2
+    assert '`'+variable+'` equal to `@CONTAINER_JOURNAL_ROOT@`, **explicitly**' in readme
+    # Creating that leaf and running 4b on it are two authorisations.
+    assert all(value in readme for value in ('a new directory and **two** further authorisations, not one',
+        'has its own authorisation again (two in all, see the sequence above)'))
     assert all(value in readme for value in ('`^/[A-Za-z0-9._/-]+$`','`^sha256:[0-9a-f]{64}$`','`^[A-Za-z0-9][A-Za-z0-9_.-]*$`',
         '`host`, `none` and `container:*` are **forbidden in production**','**must fail if any `@` survives**',
         'one GO each','python -m app.r2d2_v2_shadow_worker','**No compose service launches that module.**',
