@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -282,3 +283,111 @@ def test_pagination_never_sends_credential_to_other_target(url):
     gh.request = lambda *a, **k: ([{'number': 1}], '<' + url + '>; rel="next"')
     with pytest.raises(ValueError, match='pagination target'):
         gh.pages('/dependabot/alerts?state=open')
+
+
+
+def _maintenance_ready(tmp_path, monkeypatch, now, *, watchdog_errors=()):
+    """A cycle where every security gate is green, so only the escalation channel varies."""
+    (tmp_path / "runtime/security").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".deploy-version").write_text("a" * 40)
+    monkeypatch.setattr(daily, "HOLD", tmp_path / "hold")
+    monkeypatch.setattr(daily, "MARKER", tmp_path / "marker")
+    monkeypatch.setattr(daily, "trial_present", lambda _: False)
+    monkeypatch.setattr(daily, "healthy_host", lambda _: True)
+    monkeypatch.setattr(daily, "boot_receipt", lambda *args, **kwargs: None)
+    monkeypatch.setattr(daily, "validate_report", lambda _: None)
+    def evidence(path, *args):
+        if path.name == "host-os-vulnerability-report.json":
+            return {"schema": "C3PO_HOST_OS_VULNERABILITY_REPORT-v1", "updates": {"security_pending": 0},
+                    "reboot_required": False, "report_sha256": "0" * 64}
+        if path.name == "repository-npm-advisories.json":
+            return {"schema": "C3PO_NPM_ADVISORIES-v1", "source_revision": "a" * 40, "alerts": []}
+        if path.name == "security-watchdog-report.json":
+            if watchdog_errors:
+                raise ValueError("Watchdog failed")
+            return {"schema": "C3PO_SECURITY_WATCHDOG-v1", "errors": [], "status": "verified",
+                    "generated_at": now.isoformat()}
+        return {"report_sha256": "1" * 64, "scan_status": "complete", "errors": [], "finding_total": 0,
+                "generated_at": now.isoformat()}
+    monkeypatch.setattr(daily, "load_evidence", evidence)
+    promoted = []
+    monkeypatch.setattr(daily, "promote",
+                        lambda *args, **kwargs: promoted.append(1) or ("no_validated_candidate", None))
+    return promoted
+
+
+class _EscalationGH:
+    def __init__(self, *, state="active", runs=(), error=None):
+        self.state, self.runs, self.error = state, list(runs), error
+        self.writes = []
+    def pages(self, path):
+        return []
+    def request(self, path, method="GET", body=None):
+        if method != "GET":
+            self.writes.append((method, path))
+            return None
+        if path == "/git/ref/heads/main":
+            return {"object": {"sha": "a" * 40}}
+        if path.startswith("/actions/workflows/incident-escalation.yml"):
+            if self.error is not None:
+                raise self.error
+            if path == "/actions/workflows/incident-escalation.yml":
+                return {"state": self.state}
+            assert path.endswith("/runs?per_page=1&branch=main")
+            return {"workflow_runs": self.runs}
+        return {"workflow_runs": []}
+
+
+def test_failed_escalation_run_never_feeds_errors_nor_blocks_the_watchdog_chain(tmp_path, monkeypatch):
+    watchdog = importlib.import_module("c3po_security_watchdog")
+    now = datetime(2026, 9, 12, 10, tzinfo=timezone.utc)
+    promoted = _maintenance_ready(tmp_path, monkeypatch, now)
+    failed = [{"status": "completed", "conclusion": "failure"}]
+
+    report = daily.cycle(tmp_path, _EscalationGH(runs=failed), now, {"automatic_merge": True}, {})
+    baseline = daily.cycle(tmp_path, _EscalationGH(), now, {"automatic_merge": True}, {})
+
+    assert report["errors"] == [] and baseline["errors"] == []
+    assert report["escalation_errors"] == ["incident-escalation.yml:failure"]
+    assert baseline["escalation_errors"] == []
+    assert report["healthy"] == baseline["healthy"]
+    assert report["status"] == "no_validated_candidate" and promoted == [1, 1]
+    # Chain of 30/09 review: --verify-daily must still verify the day, so the
+    # watchdog report stays clean and the next cycle keeps merge/reboot gates open.
+    assert watchdog.daily_execution_verified(report, now) is True
+    assert watchdog.daily_execution_verified({**report, "errors": ["x"]}, now) is False
+    next_cycle = daily.cycle(tmp_path, _EscalationGH(runs=failed), now, {"automatic_merge": True}, report)
+    assert next_cycle["status"] == "no_validated_candidate" and promoted == [1, 1, 1]
+
+
+def test_watchdog_failure_still_blocks_so_the_chain_test_is_meaningful(tmp_path, monkeypatch):
+    now = datetime(2026, 9, 12, 10, tzinfo=timezone.utc)
+    promoted = _maintenance_ready(tmp_path, monkeypatch, now, watchdog_errors=["daily_security_execution_not_verified"])
+
+    report = daily.cycle(tmp_path, _EscalationGH(), now, {"automatic_merge": True}, {})
+
+    assert report["status"] == "blocked_missing_evidence" and promoted == []
+
+
+@pytest.mark.parametrize(("gh", "expected", "writes"), [
+    (lambda: _EscalationGH(error=HTTPError(
+        "https://api.github.com/private?token=secret", 404, "secret body", {}, None)),
+     ["incident-escalation.yml:HTTPError:404"], []),
+    (lambda: _EscalationGH(error=URLError("secret host")),
+     ["incident-escalation.yml:URLError"], []),
+    (lambda: _EscalationGH(state="disabled_manually"), ["incident-escalation.yml:state:disabled_manually"], []),
+    (lambda: _EscalationGH(state="disabled_inactivity"), [],
+     [("PUT", "/actions/workflows/incident-escalation.yml/enable")]),
+])
+def test_escalation_channel_errors_are_recorded_without_crashing_the_cycle(tmp_path, monkeypatch, gh, expected, writes):
+    now = datetime(2026, 9, 12, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, now)
+    client = gh()
+
+    report = daily.cycle(tmp_path, client, now, {"automatic_merge": True}, {})
+
+    assert report["escalation_errors"] == expected
+    assert report["errors"] == []
+    assert report["status"] == "no_validated_candidate"
+    assert [w for w in client.writes if "incident-escalation" in w[1]] == writes
+    assert "secret" not in json.dumps(report)

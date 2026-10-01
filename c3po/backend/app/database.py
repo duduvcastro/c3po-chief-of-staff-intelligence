@@ -365,6 +365,30 @@ class Database:
             None,
         )
 
+    def operational_incident_open_since(self, incident_key: str) -> datetime | None:
+        """When the current unresolved episode began: the latest opened/reopened
+        event (``opened_at`` keeps the first opening forever, even after a
+        resolve/reopen cycle). None when the incident is absent or resolved."""
+        incident = self.operational_incident_by_key(incident_key)
+        if not incident or incident["status"] == "resolved":
+            return None
+        if not self.database_url:
+            starts = [
+                event["occurred_at"]
+                for event in self._operational_incident_events
+                if event["incident_id"] == incident["id"]
+                and event["event_type"] in {"opened", "reopened"}
+            ]
+            return max(starts) if starts else None
+        with self.connection() as connection:
+            row = connection.execute(
+                """SELECT occurred_at FROM operational_incident_events
+                   WHERE incident_id = %s AND event_type IN ('opened','reopened')
+                   ORDER BY occurred_at DESC, created_at DESC LIMIT 1""",
+                (incident["id"],),
+            ).fetchone()
+        return row[0] if row else None
+
     def operational_incident_by_key(self, incident_key: str) -> dict[str, Any] | None:
         return next(
             (item for item in self.list_operational_incidents(limit=1000) if item["incident_key"] == incident_key),

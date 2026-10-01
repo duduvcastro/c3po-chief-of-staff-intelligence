@@ -93,3 +93,37 @@ def test_critical_job_signal_reaches_ledger_even_without_vapid() -> None:
     assert len(incidents) == 1
     assert incidents[0]["severity"] == "critical"
     assert incidents[0]["title"] == "Backup failed"
+
+
+def test_open_since_tracks_the_current_unresolved_episode() -> None:
+    service = _service()
+    opened_at = datetime(2026, 9, 24, 9, 0, tzinfo=timezone.utc)
+    kwargs = {
+        "incident_key": "governance-vulnerability",
+        "source": "governance",
+        "severity": "attention",
+        "title": "Governança requer ação",
+        "detail": "Causas: lane",
+        "deep_link": "/?view=health",
+    }
+    assert service.open_since("governance-vulnerability") is None
+
+    opened = service.signal(**kwargs, evidence={"n": 1}, at=opened_at)
+    service.signal(**kwargs, evidence={"n": 2}, at=opened_at + timedelta(hours=2))
+    assert service.open_since("governance-vulnerability") == opened_at
+
+    service.database.transition_operational_incident(
+        incident_id=opened["id"], event_type="acknowledged", actor_email="owner@example.com",
+        detail="seen", at=opened_at + timedelta(hours=3),
+    )
+    assert service.open_since("governance-vulnerability") == opened_at
+
+    service.database.transition_operational_incident(
+        incident_id=opened["id"], event_type="resolved", actor_email="owner@example.com",
+        detail="fixed", at=opened_at + timedelta(hours=4),
+    )
+    assert service.open_since("governance-vulnerability") is None
+
+    reopened_at = opened_at + timedelta(hours=30)
+    service.signal(**kwargs, evidence={"n": 3}, at=reopened_at)
+    assert service.open_since("governance-vulnerability") == reopened_at

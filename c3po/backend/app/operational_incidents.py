@@ -90,6 +90,10 @@ class OperationalIncidentService:
             at=datetime.now(timezone.utc),
         )
 
+    def open_since(self, incident_key: str) -> datetime | None:
+        """Start of the current unresolved episode, or None when there is none."""
+        return self.database.operational_incident_open_since(incident_key)
+
     def resolve_key(self, incident_key: str, detail: str) -> dict[str, Any] | None:
         incident = self.database.operational_incident_by_key(incident_key)
         if not incident or incident["status"] == "resolved":

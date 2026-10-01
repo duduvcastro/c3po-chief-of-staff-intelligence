@@ -266,6 +266,49 @@ prerequisite and is checked before mutation. Although GitHub groups create and
 approve permission in one setting, this workflow contains no review, approval,
 merge or auto-merge command; protected-branch approval remains external.
 
+### Stale lanes, incident causes and >24h escalation
+
+When the validated production report has zero fixable findings, the controller
+re-checks every open `automation/container-security-rebuild-*` lane. It closes
+a lane only if the lane is machine-owned (the rebuild trigger is its only
+changed file, every commit is by `github-actions[bot]`, and no human reopened
+it after an earlier automatic close) and the fresh report is complete, less
+than 6h old, newer than the lane evidence, still covers every image the lane
+names (present, with Trivy's image identity and consistent per-image counts; a
+clean image legitimately has zero occurrences), and contains none of the
+lane's vulnerability ids. It closes first, then comments with the run, report
+self-hash and counts. Any doubt keeps the lane open; per-lane failures are
+collected without abandoning other lanes and turn the step red, while
+`continue-on-error` keeps the scan dead-man truthful. The branch is kept.
+
+The governance incident detail lists each non-healthy component in Portuguese
+(`Causas: lane de remediação #N aberta há Xd; Dependabot medium 2; ...`) and
+its evidence carries `causes` plus an `escalation` record. After 24h in the
+same unresolved episode the detail is prefixed `ESCALADO (>24h)` (severity is
+unchanged) and `escalation.dedup_key` is `governance-vulnerability:<BRT date>`.
+The daily `Escalate aged security incidents` workflow (07:20 BRT, workflow
+token only) posts at most one comment per incident per BRT day to the channel
+issue (repository variable `C3PO_ESCALATION_ISSUE`, default #429) for what
+GitHub itself can see: trusted `automation/*` lanes open >24h and security
+workflows whose last completed run failed (último run concluído falhou) with
+no success in the last 24h. A workflow that stopped running entirely is not
+detected by this check. If the channel is closed, locked or has 2,400+
+comments the run fails red and keeps the undelivered text in its log; point
+the variable at a new channel issue. The host security routine reports this
+workflow's state and latest main-branch result only under
+`escalation_errors`, never under `errors`: it does not change `healthy`, the
+watchdog's `--verify-daily`, or any merge/reboot gate, and a 404 or transient
+GitHub error is recorded there instead of stopping the cycle. The app shows
+it as an attention-level cause (`escalonamento automático (>24h) com
+falha: ...`), never offline. It is deliberately not in `ensure_workflows`,
+where a non-active state raises and would stop the whole security routine;
+an inactivity suspension is restored by the same non-blocking check.
+Dependabot counts, branch
+protection drift, host OS/reboot state and `maintenance_hold` are visible only
+in the app; GitHub cannot read that escalation record without a new read
+credential, so today those causes are escalated only inside the app incident
+and do not reach the channel.
+
 ### Supervised positive controller dry-run
 
 The positive path is exercised only by manual `workflow_dispatch` from `main`,
