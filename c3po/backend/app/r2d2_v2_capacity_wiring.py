@@ -1,6 +1,7 @@
 """Offline documentary-authority wiring; real format and Act B remain UNBOUND."""
 from datetime import date
 from pathlib import Path
+from typing import Any
 from .r2d2_v2_epoch_assembler import canonical,digest,validate_go
 from .r2d2_v2_capacity_anchored import AnchoredRoot,need
 from .r2d2_v2_document_authority import DocumentAuthority
@@ -103,7 +104,7 @@ class ConsumerEntrypoints:
 
 
 
-def build_capacity_collector(*,store,source,release,calendar,config):
+def build_capacity_collector(*,store,source,release,calendar,config: dict[str,Any]):
     needed={'payload_root','go_root','authority','clock','binding_reader','epoch'}
     need(type(config) is dict and set(config)==needed and config['epoch']==release.epoch,'WIRING_CONFIG_FIELDS')
     need(isinstance(config['authority'],DocumentAuthority),'DOCUMENT_AUTHORITY_REQUIRED')
@@ -121,7 +122,7 @@ def controller_planner(*,calendar,authority):
 
 def bootstrap_capacity_planner(settings):
     """__main__ seam; no context means UNBOUND, never silently open-only."""
-    context=getattr(settings,'r2d2_v2_capacity_context',None)
+    context: Any=getattr(settings,'r2d2_v2_capacity_context',None)
     need(type(context) is dict and set(context)=={'calendar','authority'},'CAPACITY_BOOTSTRAP_UNBOUND')
     need(isinstance(context['authority'],DocumentAuthority),'DOCUMENT_AUTHORITY_REQUIRED')
     return controller_planner(calendar=context['calendar'],authority=context['authority'])

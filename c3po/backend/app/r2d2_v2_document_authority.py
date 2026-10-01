@@ -1,6 +1,7 @@
 """Pinned documentary evidence; restoration does not renew a GO or its veto view."""
 import hashlib
 from datetime import date,timedelta
+from typing import Any,Callable,cast
 from .r2d2_v2_epoch_assembler import DELEGABLE,DOCUMENT_ORDER_SHA,digest,stamp,is_sha
 from .r2d2_v2_store import ShadowIntegrityError
 from .r2d2_v2_document_format import normalize_document
@@ -37,7 +38,7 @@ class DocumentAuthority:
 
     def current(self,now):
         need(callable(self.revocation_reader),'REVOCATION_UNBOUND')
-        self.check_view(self.revocation_reader(now),now)
+        self.check_view(cast(Callable[...,Any],self.revocation_reader)(now),now)
 
     def check_restore_revocation(self,now):
         # Optional renewable evidence is distinct from the one GO dispatch snapshot.
@@ -57,7 +58,7 @@ class DocumentAuthority:
         mapping=act['act_a_scope_map']
         need(type(mapping) is dict and set(mapping)=={'CODEX','FABLE','DUDU'},'ACT_A_MAP')
         for role in ('CODEX','FABLE','DUDU'):
-            record=self.record(role);mapped=mapping[role]
+            record=self.record(role);mapped: Any=mapping[role]
             need(set(mapped)=={'signature_sha','document_sha256','epoch','first_session','authorized_sessions'},'ACT_A_MAP_FIELDS')
             need(mapped['signature_sha']==self.pins[role]['sha256'] and mapped['document_sha256']==act['document_order_sha'],'ACT_A_MAP_HASH')
             scope(mapped,epoch,first,day)

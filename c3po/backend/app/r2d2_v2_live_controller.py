@@ -234,7 +234,7 @@ class LiveGroupController:
                     or after < now or after >= utc(policy["valid_until"])):
                 raise ShadowIntegrityError("LIVE_REFRESH_TIMEOUT")
             if capacity_mode=='BOUND_MONITORED':
-                if (plan.get('capacity_veto_mode','CONTINUOUS')!='DISPATCH_AND_DERIVATION_ONLY'
+                if (plan.get('capacity_veto_mode','CONTINUOUS')!='DISPATCH_AND_DERIVATION_ONLY'  # pyright: ignore[reportPossiblyUnboundVariable] -- BOUND_MONITORED is only set in the branch that binds plan
                         and (capacity_deadline is None or after>=utc(capacity_deadline))):
                     if capacity_fallback_names is None:
                         raise ShadowIntegrityError('CAPACITY_FALLBACK_UNBOUND')

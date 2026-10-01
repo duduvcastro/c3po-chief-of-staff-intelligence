@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 EPOCH = 'R2D2-V2-SHADOW-2026-10-02'
 FIRST_SESSION = '2026-10-02'
@@ -111,7 +111,7 @@ def plan(identity: dict, *, day: str, phase: str, bindings: dict, policy: dict |
             'execution_authorized':False,'missing_bindings':missing,'proposal':state,
             'proposal_sha':digest(state),'diff':delta}
 
-def validate_go(go: dict | None, proposed: dict, *, now: datetime,
+def validate_go(go: Any, proposed: dict, *, now: datetime,
                 authority_verifier: Callable[[dict,dict],bool] | None=None) -> dict:
     """Validate supplied evidence only; never generates GO or executes anything.
     The injected verifier must independently verify signatures/publication/veto.
@@ -131,7 +131,7 @@ def validate_go(go: dict | None, proposed: dict, *, now: datetime,
     need(isinstance(now,datetime) and now.utcoffset() is not None,'CLOCK_UTC_REQUIRED')
     before,after=stamp(go['not_before']),stamp(go['not_after'])
     need(before<=now<after,'GO_WINDOW')
-    window=go['authority_receipts'].get('phase_window') if type(go['authority_receipts']) is dict else None
+    window: Any=go['authority_receipts'].get('phase_window') if type(go['authority_receipts']) is dict else None
     need(type(window) is dict and set(window)=={'epoch','day','phase','not_before','not_after'},'PHASE_WINDOW_REQUIRED')
     need(digest(window)==bindings['phase_window_sha'],'PHASE_WINDOW_HASH')
     need(window['epoch']==EPOCH and window['day']==go['day'] and window['phase']==go['phase'],'PHASE_WINDOW_SCOPE')
@@ -143,7 +143,7 @@ def validate_go(go: dict | None, proposed: dict, *, now: datetime,
         need(is_sha(receipts.get('signed_act_b_sha')) and is_sha(receipts.get('publication_receipt_sha')),'ACT_B_REQUIRED')
         need(stamp(receipts.get('published_at'))<=before-timedelta(minutes=15),'GO_NOTICE_TOO_SHORT')
     need(authority_verifier is not None,'AUTHORITY_VERIFIER_UNBOUND')
-    need(authority_verifier(go,proposed) is True,'AUTHORITY_UNVERIFIED_OR_VETOED')
+    need(cast(Callable[[dict,dict],bool],authority_verifier)(go,proposed) is True,'AUTHORITY_UNVERIFIED_OR_VETOED')
     return {'status':'EVIDENCE_CHECKED_OFFLINE_ONLY','execution_authorized':False,
             'attempt_key':digest([EPOCH,go['day'],go['phase'],go['template_sha']]),
             'go_sha':digest(go),'requires_durable_single_use_executor':True}

@@ -5,6 +5,7 @@ issue GO, fetch a ledger, or authorize a socket. Existing runtime is unchanged.
 """
 from copy import deepcopy
 from datetime import date
+from typing import Any
 from .r2d2_v2_calendar import NEW_YORK
 from .r2d2_v2_capacity_authority import validate_contract, calendar_pin
 import re
@@ -68,9 +69,9 @@ DOCUMENT_FIELDS=frozenset(('schema','epoch','release_sha','contract','causal','d
 
 
 @safe_input
-def validate_document(document):
+def validate_document(document: Any):
     from .r2d2_v2_epoch_assembler import is_sha
-    p=document
+    p: dict[str,Any]=document
     need(type(p) is dict and set(p)==DOCUMENT_FIELDS,'CAPACITY_DOCUMENT_FIELDS')
     need(p['schema']=='V2_DAILY_CAPACITY_BINDING_CANDIDATE_V1','CAPACITY_DOCUMENT_SCHEMA')
     need(all(is_sha(p[k]) for k in ('release_sha','causal_commitment_sha','causal_list_sha','ledger_state_sha','rule_sha')),'CAPACITY_DOCUMENT_SHA')
@@ -112,7 +113,7 @@ class DailyCapacityBinding:
         """Reattach evidence already committed atomically; never refresh/rederive it."""
         try:
             need(type(persisted) is dict and set(persisted)=={'sha','document'},'CAPACITY_RESTORE_FIELDS')
-            doc=deepcopy(persisted['document'])
+            doc: Any=deepcopy(persisted['document'])
             need(digest(doc)==persisted['sha'],'CAPACITY_RESTORE_HASH')
             validate_document(doc)
             validate_contract(doc['contract'],release=release,day=doc['day'],causal=doc['causal'],calendar=calendar)
@@ -259,15 +260,15 @@ class CapacityBoundCollector(ShadowCollector):
                     'entry_at':entry.get('entry_at')})
         return super()._entries(state,journals,session,batch,events,now,**kwargs)
 
-    def _close_capture(self,state,journals,session,now):
+    def _close_capture(self,state,journals,session: Any,now):
         # Keep the causal universe intact. Give deliberate exclusions their own
         # terminal evidence so the base closure only diagnoses actual missing data.
         p=None
         if session.get('capacity_binding') is not None:
             try:
-                persisted=session['capacity_binding']
+                persisted: dict[str,Any]=session['capacity_binding']
                 need(type(persisted) is dict and set(persisted)=={'sha','document'},'CAPACITY_CLOSURE_FIELDS')
-                document=persisted['document']
+                document: dict[str,Any]=persisted['document']
                 need(type(document) is dict and isinstance(persisted['sha'],str) and
                      re.fullmatch('[0-9a-f]{64}',persisted['sha']) is not None and
                      digest(document)==persisted['sha'],'CAPACITY_CLOSURE_HASH')

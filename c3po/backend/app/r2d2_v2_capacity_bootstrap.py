@@ -2,6 +2,7 @@
 import hashlib,json
 from pathlib import Path
 from datetime import datetime,timezone
+from typing import Any,cast
 from .r2d2_v2_capacity_anchored import AnchoredRoot,need
 from .r2d2_v2_document_authority import DocumentAuthority
 from .r2d2_v2_document_format import PinnedVetoReader,RenewableVetoReader
@@ -69,7 +70,7 @@ class CapacityConfig:
                 need(channel is None,'CAPACITY_RESTORE_CHANNEL_DISABLED')
             else:
                 need(type(channel) is dict and set(channel)=={'root','pointer_file'},'CAPACITY_RESTORE_CHANNEL')
-                root=channel['root']
+                root: Any=channel['root']
                 need(type(root) is dict and set(root)=={'path','identity'} and type(root['path']) is str
                      and Path(root['path']).is_absolute() and is_sha(root['identity']),'CAPACITY_RESTORE_ROOT_PIN')
                 name=channel['pointer_file']
@@ -84,7 +85,7 @@ class CapacityConfig:
         need(type(pin) is dict and set(pin)=={'file','sha256'} and type(pin['file']) is str and pin['file'] not in {'','.','..'} and '/' not in pin['file'] and is_sha(pin['sha256']),'CAPACITY_CONFIG_PIN')
 
     def verify(self):
-        need(hashlib.sha256(self.config_root.read(self.name)).hexdigest()==self.sha,'CAPACITY_CONFIG_CHANGED')
+        need(hashlib.sha256(cast(AnchoredRoot,self.config_root).read(self.name)).hexdigest()==self.sha,'CAPACITY_CONFIG_CHANGED')
         for root in self.roots.values():root.verify()
 
     def release(self,release):
