@@ -320,9 +320,11 @@ def _maintenance_ready(tmp_path, monkeypatch, now, *, watchdog_errors=()):
 
 
 class _EscalationGH:
-    def __init__(self, *, state="active", runs=(), error=None, main="a" * 40, dispatch_error=None):
+    def __init__(self, *, state="active", runs=(), error=None, main="a" * 40, dispatch_error=None,
+                 workflow_runs=None):
         self.state, self.runs, self.error = state, list(runs), error
         self.main, self.dispatch_error = main, dispatch_error
+        self.workflow_runs = workflow_runs or {}
         self.writes = []
     def pages(self, path):
         return []
@@ -341,6 +343,9 @@ class _EscalationGH:
                 return {"state": self.state}
             assert path.endswith("/runs?per_page=1&branch=main")
             return {"workflow_runs": self.runs}
+        for workflow, runs in self.workflow_runs.items():
+            if path.startswith(f"/actions/workflows/{workflow}/runs"):
+                return {"workflow_runs": runs}
         return {"workflow_runs": []}
 
 
@@ -431,9 +436,8 @@ def test_new_main_npm_lag_is_pending_with_same_cycle_dispatch_even_before_10utc(
     promoted = _maintenance_ready(tmp_path, monkeypatch, night)
     _deployed_before(tmp_path, night)
     _npm(monkeypatch, _audit("b" * 40))
-    previous = {"main_sha": "b" * 40, "main_observed_at": (night - timedelta(days=1)).isoformat(),
-                "last_dispatched_main": "b" * 40, "last_dispatch_date": "2026-09-11",
-                "last_dispatched_deploy": "b" * 40}
+    previous = {"main_sha": "b" * 40, "npm_lag_since": None, "last_dispatched_main": "b" * 40,
+                "last_dispatch_date": "2026-09-11", "last_dispatched_deploy": "b" * 40}
     gh = _EscalationGH()
 
     report = daily.cycle(tmp_path, gh, night, {"automatic_merge": True}, previous)
@@ -442,7 +446,7 @@ def test_new_main_npm_lag_is_pending_with_same_cycle_dispatch_even_before_10utc(
     assert report["errors"] == [] and report["pending"] == ["npm_evidence_pending"]
     assert report["status"] == "waiting_npm_evidence" and report["healthy"] is False
     assert report["last_dispatched_main"] == "a" * 40
-    assert report["main_observed_at"] == night.isoformat()
+    assert report["npm_lag_since"] == night.isoformat()
     # The revision dispatch does not consume the day's 10 UTC scans.
     assert report["last_dispatch_date"] == "2026-09-11" and report["last_dispatched_deploy"] == "b" * 40
     # The inventory published before the dispatch already carries the pending, never the error.
@@ -454,28 +458,122 @@ def test_new_main_npm_lag_is_pending_with_same_cycle_dispatch_even_before_10utc(
     again = daily.cycle(tmp_path, gh, later, {"automatic_merge": True}, report)
     assert gh.writes == [DEPENDENCY_DISPATCH]
     assert again["errors"] == [] and again["pending"] == ["npm_evidence_pending"]
-    assert again["main_observed_at"] == night.isoformat()
+    assert again["npm_lag_since"] == night.isoformat()
 
     _npm(monkeypatch, _audit("a" * 40))
     morning = night.replace(hour=10)
     ready = daily.cycle(tmp_path, gh, morning, {"automatic_merge": True}, again)
     assert gh.writes == [DEPENDENCY_DISPATCH, DEPENDENCY_DISPATCH, IMAGE_DISPATCH]
     assert ready["errors"] == [] and ready["pending"] == [] and ready["healthy"] is True
+    assert ready["npm_lag_since"] is None
     assert ready["last_dispatch_date"] == "2026-09-12" and promoted == [1]
 
 
-def test_npm_lag_past_the_grace_window_is_the_error_again(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("elapsed", "pending"), [
+    (timedelta(hours=2, minutes=59), True),
+    (daily.NPM_REVISION_GRACE, False),
+    (timedelta(hours=3, minutes=1), False),
+], ids=["2h59", "3h00", "3h01"])
+def test_npm_lag_grace_window_boundary(tmp_path, monkeypatch, elapsed, pending):
     now = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
     _maintenance_ready(tmp_path, monkeypatch, now)
     _npm(monkeypatch, _audit("b" * 40))
     gh = _EscalationGH()
     first = daily.cycle(tmp_path, gh, now, {"automatic_merge": True},
                         {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40})
-    assert first["pending"] == ["npm_evidence_pending"]
+    assert first["pending"] == ["npm_evidence_pending"] and first["npm_lag_since"] == now.isoformat()
 
-    report = daily.cycle(tmp_path, gh, now + daily.NPM_REVISION_GRACE, {"automatic_merge": True}, first)
+    report = daily.cycle(tmp_path, gh, now + elapsed, {"automatic_merge": True}, first)
+
+    if pending:
+        assert report["pending"] == ["npm_evidence_pending"] and report["errors"] == []
+        assert report["status"] == "waiting_npm_evidence"
+    else:
+        assert report["pending"] == [] and report["errors"] == ["npm_evidence_unavailable"]
+        assert report["status"] == "blocked_missing_evidence"
+    assert report["healthy"] is False and report["npm_lag_since"] == now.isoformat()
+    assert gh.writes == [DEPENDENCY_DISPATCH]
+
+
+def test_chained_main_moves_never_restart_the_npm_lag_clock(tmp_path, monkeypatch):
+    # A regeneration stuck queued/in progress is not a completed failure, so
+    # only the clock from the first lag bounds it while main keeps moving.
+    start = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, start)
+    _npm(monkeypatch, _audit("b" * 40))
+    report = {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40}
+    writes = []
+    for elapsed, main in ((timedelta(0), "a"), (timedelta(hours=1), "c"), (timedelta(hours=2), "d")):
+        gh = _EscalationGH(main=main * 40, workflow_runs={
+            "dependency-security.yml": [{"status": "queued", "conclusion": None}]})
+        report = daily.cycle(tmp_path, gh, start + elapsed, {"automatic_merge": True}, report)
+        writes += gh.writes
+        assert report["pending"] == ["npm_evidence_pending"] and report["errors"] == []
+
+    gh = _EscalationGH(main="e" * 40)
+    report = daily.cycle(tmp_path, gh, start + timedelta(hours=3, minutes=1), {"automatic_merge": True}, report)
+    writes += gh.writes
 
     assert report["pending"] == [] and report["errors"] == ["npm_evidence_unavailable"]
+    assert report["npm_lag_since"] == start.isoformat()
+    # Every new main is still re-dispatched; only the clock does not restart.
+    assert writes == [DEPENDENCY_DISPATCH] * 4
+
+
+@pytest.mark.parametrize("anchor", [
+    lambda now: (now + timedelta(minutes=5)).isoformat(),
+    lambda now: "not-a-time",
+    lambda now: now.replace(tzinfo=None).isoformat(),
+    lambda now: 1234,
+], ids=["future", "garbage", "naive", "not_a_string"])
+def test_future_or_malformed_npm_lag_anchor_fails_closed(tmp_path, monkeypatch, anchor):
+    now = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, now)
+    _npm(monkeypatch, _audit("b" * 40))
+    gh = _EscalationGH()
+    previous = {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40, "npm_lag_since": anchor(now)}
+
+    report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True}, previous)
+
+    assert report["pending"] == [] and report["errors"] == ["npm_evidence_unavailable"]
+    assert report["npm_lag_since"] == anchor(now)
+    # Only an audit of the current main clears the anchor.
+    _npm(monkeypatch, _audit("a" * 40))
+    recovered = daily.cycle(tmp_path, gh, now + timedelta(hours=1), {"automatic_merge": True}, report)
+    assert recovered["errors"] == [] and recovered["pending"] == []
+    assert recovered["npm_lag_since"] is None
+
+
+def test_known_npm_findings_of_the_earlier_audit_stay_visible_while_pending(tmp_path, monkeypatch):
+    now = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, now)
+    for path, content in files().items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(content)
+    high = deps.npm_alerts({"metadata": {"vulnerabilities": {"high": 1}}, "advisories": {"1": {
+        "module_name": "next", "github_advisory_id": "GHSA-2xp9-vwfh-vxw4", "severity": "high",
+        "patched_versions": ">=15.5.24"}}})
+    _npm(monkeypatch, _audit("b" * 40, alerts=high))
+
+    report = daily.cycle(tmp_path, _EscalationGH(), now, {"automatic_merge": True},
+                         {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40})
+
+    assert report["pending"] == ["npm_evidence_pending"] and report["errors"] == []
+    assert report["alerts"] == high and report["healthy"] is False
+
+
+def test_failed_dependency_security_run_denies_the_npm_pending(tmp_path, monkeypatch):
+    now = datetime(2026, 9, 12, 4, 10, tzinfo=timezone.utc)
+    _maintenance_ready(tmp_path, monkeypatch, now)
+    _npm(monkeypatch, _audit("b" * 40))
+    gh = _EscalationGH(workflow_runs={
+        "dependency-security.yml": [{"status": "completed", "conclusion": "failure"}]})
+
+    report = daily.cycle(tmp_path, gh, now, {"automatic_merge": True},
+                         {"main_sha": "b" * 40, "last_dispatched_main": "b" * 40})
+
+    assert report["pending"] == []
+    assert report["errors"] == ["dependency-security.yml:failure", "npm_evidence_unavailable"]
     assert report["status"] == "blocked_missing_evidence" and report["healthy"] is False
     assert gh.writes == [DEPENDENCY_DISPATCH]
 
@@ -534,7 +632,7 @@ def test_only_a_well_formed_audit_of_an_earlier_revision_can_be_pending(tmp_path
     assert gh.writes == [DEPENDENCY_DISPATCH]
 
 
-def test_state_file_from_the_previous_version_dispatches_once_and_starts_the_clock(tmp_path, monkeypatch):
+def test_state_file_from_the_previous_version_dispatches_once(tmp_path, monkeypatch):
     now = datetime(2026, 9, 12, 11, 10, tzinfo=timezone.utc)
     _maintenance_ready(tmp_path, monkeypatch, now)
     _npm(monkeypatch, _audit("a" * 40))
@@ -546,5 +644,5 @@ def test_state_file_from_the_previous_version_dispatches_once_and_starts_the_clo
 
     assert gh.writes == [DEPENDENCY_DISPATCH]
     assert report["errors"] == [] and report["pending"] == []
-    assert report["main_observed_at"] == again["main_observed_at"] == now.isoformat()
+    assert report["npm_lag_since"] is None and again["npm_lag_since"] is None
     assert again["last_dispatched_main"] == "a" * 40

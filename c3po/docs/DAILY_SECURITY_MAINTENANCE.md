@@ -120,14 +120,18 @@ ou antigo aparece no painel; falhas geram notificação de job pelo mecanismo ex
 deduplicada por dia. A disponibilidade do worker de governança continua coberta
 pelo seu healthcheck externo existente.
 
-Auditoria npm íntegra e recente (< 26h), mas de uma revisão anterior, logo após a
-main mudar (até 3h desde o primeiro ciclo que viu a nova main, `main_observed_at`)
-e com o redisparo já solicitado para essa main, é registrada em `pending`
-(`npm_evidence_pending`, status `waiting_npm_evidence`), não em `errors`: o relatório
-nunca fica saudável, promoção e reboot seguem bloqueados como com evidência ausente,
-e a governança mostra atenção ("evidência npm pendente pós-deploy (regenerando)")
-sem notificação de falha de job. Sem redisparo, ou passada a janela, volta a ser
-o erro `npm_evidence_unavailable`.
+Auditoria npm íntegra e recente (< 26h), mas de uma revisão anterior, é registrada
+em `pending` (`npm_evidence_pending`, status `waiting_npm_evidence`), não em `errors`,
+somente até 3h desde o primeiro ciclo com defasagem (`npm_lag_since`, mantido mesmo
+que a main mude de novo e zerado só por auditoria da main atual), com o redisparo
+já solicitado para a main atual e sem falha na última execução de
+`dependency-security.yml`. O relatório nunca fica saudável, promoção e reboot seguem
+bloqueados como com evidência ausente, e os avisos conhecidos da auditoria anterior
+continuam no relatório (critical/high npm mantêm a governança em falha). Sem
+critical/high, a governança mostra atenção ("evidência npm pendente pós-deploy
+(regenerando)") sem notificação de falha de job. Fora dessas condições, inclusive
+com âncora futura ou inválida, é o erro `npm_evidence_unavailable`; `pending`
+malformado é tratado como falha.
 
 Validação de aceitação em produção: timer habilitado, primeiro ciclo registrado,
 permissões do token conferidas, PR/CI/merge controlado na janela e scan posterior

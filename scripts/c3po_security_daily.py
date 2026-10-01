@@ -31,8 +31,8 @@ CONFIG = Path("/etc/c3po/security-automation.json")
 ESCALATION_WORKFLOW = "incident-escalation.yml"
 REQUIRED_JOBS = {"Sensitive files", "Secret scan", "Backend tests", "Python type check",
                  "Frontend build", "Security remediation proof"}
-# Bounded wait for the npm evidence of a main this routine first saw less than
-# this long ago (at least two further hourly cycles); afterwards it is an error again.
+# Bounded wait, from the first cycle whose npm audit lagged main (at least two
+# further hourly cycles); afterwards the lag is an error again.
 NPM_REVISION_GRACE = timedelta(hours=3)
 
 
@@ -308,10 +308,10 @@ def cycle(root, gh, now, config, previous):
         if runs and runs[0]["status"] == "completed" and runs[0]["conclusion"] not in ("success", "skipped"):
             evidence_errors.append(workflow + ":" + str(runs[0]["conclusion"]))
     escalation_errors = escalation_workflow_errors(gh, HOLD.exists())
-    # First cycle that sees this main (also the first after upgrading a state
-    # file without the field). The npm grace below is measured from here.
-    main_observed_at = ((previous.get("main_observed_at") if previous.get("main_sha") == main_sha else None)
-                        or now.isoformat())
+    # First cycle whose npm audit did not describe the then-current main. Kept
+    # across further main changes and cleared only by an audit of the current
+    # main, so a stuck regeneration cannot stay pending by main moving again.
+    npm_lag_since = previous.get("npm_lag_since") or now.isoformat()
     today = now.date().isoformat()
     # Daily and post-deploy scans keep the maintenance-hour gate. A new main
     # re-dispatches only dependency-security, at any hour, so its npm evidence
@@ -325,15 +325,19 @@ def cycle(root, gh, now, config, previous):
         if npm["schema"] != "C3PO_NPM_ADVISORIES-v1" or not isinstance(npm["alerts"], list):
             raise ValueError("Invalid npm audit")
         if npm["source_revision"] == main_sha:
+            npm_lag_since = None
             alerts = merge_alerts(alerts, npm["alerts"])
-        elif (re.fullmatch(r"[0-9a-f]{40}", str(npm["source_revision"]))
-              and now - datetime.fromisoformat(main_observed_at) < NPM_REVISION_GRACE):
-            # Fresh, sealed audit of an earlier main while the audit of this one
-            # is (re)requested below. Never healthy and every gate stays closed;
-            # its stale findings are not merged (as with any mismatch).
-            pending.append("npm_evidence_pending")
         else:
-            raise ValueError("npm audit does not describe current main")
+            lag = now - datetime.fromisoformat(npm_lag_since)
+            if (not re.fullmatch(r"[0-9a-f]{40}", str(npm["source_revision"]))
+                    or not timedelta(0) <= lag < NPM_REVISION_GRACE
+                    or any(error.startswith("dependency-security.yml:") for error in evidence_errors)):
+                raise ValueError("npm audit does not describe current main")
+            # Fresh, sealed audit of an earlier main while the audit of this one
+            # is (re)requested below. Never healthy and every gate stays closed.
+            # Its known findings stay visible (and keep their severity) meanwhile.
+            alerts = merge_alerts(alerts, npm["alerts"])
+            pending.append("npm_evidence_pending")
     except (ValueError, KeyError, OSError, TypeError):
         evidence_errors.append("npm_evidence_unavailable")
     blocked = []
@@ -352,7 +356,7 @@ def cycle(root, gh, now, config, previous):
               "last_dispatch_date": previous.get("last_dispatch_date"),
               "last_dispatched_deploy": previous.get("last_dispatched_deploy"),
               "last_dispatched_main": previous.get("last_dispatched_main"),
-              "main_observed_at": main_observed_at, "status": "observed"}
+              "npm_lag_since": npm_lag_since, "status": "observed"}
     report["automatic_reboot"] = config.get("automatic_reboot") is True
     report["reboot"] = reboot
     try:
