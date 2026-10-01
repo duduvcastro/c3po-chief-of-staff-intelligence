@@ -276,10 +276,12 @@ jobs:
           github.event_name == 'pull_request' ||
           (github.event_name == 'workflow_dispatch' && inputs.remediation)
         working-directory: ${{ github.workspace }}
-        # Renders ExecStart from the repository unit template and runs it on a real
-        # engine with no network, no token and no manifest: the supervisor must refuse
-        # with 78 before any claim. Outside the session window the refusal is
-        # SUPERVISOR_SESSION/WINDOW; inside it the missing dated manifest refuses first.
+        # Renders ExecStartPre and ExecStart from the repository unit template and runs
+        # them on a real engine with no network, no token and no manifest: the image
+        # check must print the pinned ID, and the supervisor must refuse with 78 before
+        # any claim. Outside the session window the refusal is SUPERVISOR_SESSION/WINDOW;
+        # inside it the missing dated manifest refuses first. The run uses --init, so
+        # the engine must provide docker-init.
         # Every guard is explicit (`|| exit 1`); nothing here relies on `set -e`.
         shell: bash
         run: |
@@ -293,11 +295,16 @@ jobs:
           [[ "$base" == /* && "$base" != *@* ]] || exit 1
           sudo install -d -m 0700 -o 0 -g 0 "$base/data/journal" "$base/state" "$base/etc" \
             "$base/etc/manifests" "$base/etc/docker-cli" || exit 1
-          python3 - "$id" "$base" > "$out/supervisor-argv.bin" <<'PY' || exit 1
+          init="$(docker info --format '{{.InitBinary}}')" || exit 1
+          [ -n "$init" ] || { echo "the engine reports no init binary" >&2; exit 1; }
+          echo "engine init binary: $init"
+          python3 - "$id" "$base" "$out" <<'PY' || exit 1
           import re, shlex, sys
-          image, base = sys.argv[1:]
+          image, base, out = sys.argv[1:]
           unit = open("c3po/deployment/massive-supervisor/c3po-massive.service", encoding="utf-8").read()
-          lines = [line for line in unit.replace("\\\n", " ").splitlines() if line.startswith("ExecStart=")]
+          joined = unit.replace("\\\n", " ").splitlines()
+          lines = [line for line in joined if line.startswith("ExecStart=")]
+          checks = [line for line in joined if line.startswith("ExecStartPre=/")]
           values = {
               "@IMAGE_ID@": image,
               "@HOST_JOURNAL_ROOT@": base + "/data/journal",
@@ -308,17 +315,35 @@ jobs:
           }
           if len(lines) != 1 or set(re.findall(r"@[A-Z_]+@", unit)) != set(values):
               sys.exit("unit template no longer matches the six documented substitutions")
-          command = lines[0][len("ExecStart="):]
-          for name, value in values.items():
-              command = command.replace(name, value)
-          argv = shlex.split(command)
-          if "@" in command or argv[:2] != ["/usr/bin/docker", "run"] or image not in argv:
-              sys.exit("rendered ExecStart is not a docker run of the pinned image id")
-          sys.stdout.write("\0".join(argv) + "\0")
+          if len(checks) != 1:
+              sys.exit("unit template no longer has exactly one mandatory ExecStartPre")
+          def render(command):
+              for name, value in values.items():
+                  command = command.replace(name, value)
+              if "@" in command:
+                  sys.exit("a placeholder survived the render")
+              return shlex.split(command)
+          argv = render(lines[0][len("ExecStart="):])
+          check = render(checks[0][len("ExecStartPre="):])
+          if argv[:2] != ["/usr/bin/docker", "run"] or argv.count(image) != 1 or "--init" not in argv:
+              sys.exit("rendered ExecStart is not a docker run --init of the pinned image id")
+          if check != ["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", image]:
+              sys.exit("rendered ExecStartPre is not the image check of the pinned image id")
+          for name, value in (("supervisor-argv.bin", argv), ("supervisor-check-argv.bin", check)):
+              with open(out + "/" + name, "w", encoding="utf-8") as output:
+                  output.write("\0".join(value) + "\0")
           PY
           mapfile -d '' -t argv < "$out/supervisor-argv.bin" || exit 1
+          mapfile -d '' -t check < "$out/supervisor-check-argv.bin" || exit 1
           [ "${#argv[@]}" -ge 30 ] || { echo "rendered ExecStart is too short" >&2; exit 1; }
+          [ "${#check[@]}" -eq 6 ] || { echo "rendered ExecStartPre has the wrong length" >&2; exit 1; }
           printf '%q ' "${argv[@]}" > "$out/supervisor-command.txt" || exit 1
+          seen="$(sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${check[@]}")" || { echo "the rendered image check failed" >&2; exit 1; }
+          [ "$seen" = "$id" ] || { echo "the rendered image check printed $seen, expected $id" >&2; exit 1; }
+          absent="sha256:$(printf '%064d' 0)" || exit 1
+          if sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${check[@]:0:5}" "$absent" > /dev/null 2>&1; then
+            echo "the image check accepted an image id that does not exist" >&2; exit 1
+          fi
           rc=0
           sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${argv[@]}" \
             > "$out/supervisor-stdout.log" 2> "$out/supervisor-stderr.log" || rc=$?

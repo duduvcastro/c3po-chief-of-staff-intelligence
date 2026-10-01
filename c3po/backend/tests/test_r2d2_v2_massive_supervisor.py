@@ -1,10 +1,12 @@
 from datetime import timedelta
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shlex
 import stat
+import sys
 from types import SimpleNamespace
 from typing import Any
 import pytest
@@ -31,12 +33,12 @@ def exec_start(unit):
 
 
 def run_options(argv,image):
-    """(options before the image, command after it); only --rm/--read-only are valueless."""
+    """(options before the image, command after it); only --rm/--init/--read-only are valueless."""
     assert argv[:2]==['/usr/bin/docker','run'] and argv.count(image)==1
     at=argv.index(image);head=argv[2:at];options=[];index=0
     while index<len(head):
         assert head[index].startswith('--')
-        if head[index] in ('--rm','--read-only'):options.append((head[index],None));index+=1
+        if head[index] in ('--rm','--init','--read-only'):options.append((head[index],None));index+=1
         else:options.append((head[index],head[index+1]));index+=2
     return options,argv[at+1:]
 
@@ -141,14 +143,19 @@ def test_unit_binds_restart_backoff_cap_and_private_token_path():
     assert all(value in unit for value in ('Restart=on-failure','RestartSec=1s','StartLimitBurst=6','StartLimitIntervalSec=8h','RestartPreventExitStatus=78','--token-file /etc/c3po-bar/token'))
     assert 'MASSIVE_API_KEY=' not in unit
     assert 'OnBootSec=30s' in (UNIT_ROOT/'c3po-massive.timer').read_text()
-    assert all(value in lines for value in ('Requires=docker.service','TimeoutStopSec=30s','KillMode=control-group',
-        'ExecStartPre=-/usr/bin/docker rm c3po-massive','ExecStop=-/usr/bin/docker stop -t 25 c3po-massive',
-        'ExecStopPost=-/usr/bin/docker stop -t 25 c3po-massive'))
+    assert all(value in lines for value in ('Requires=docker.service','TimeoutStartSec=60s','TimeoutStopSec=30s','KillMode=control-group',
+        'ExecStop=-/usr/bin/docker stop -t 25 c3po-massive','ExecStopPost=-/usr/bin/docker stop -t 25 c3po-massive'))
+    # The leftover removal may fail (leading '-'); the image check may not: a missing image fails the start
+    # before any container is created.
+    assert [line for line in lines if line.startswith('ExecStartPre=')]==['ExecStartPre=-/usr/bin/docker rm c3po-massive',
+        'ExecStartPre=/usr/bin/docker image inspect --format {{.Id}} @IMAGE_ID@']
+    assert [sum(line.startswith(key+'=') for line in lines) for key in ('TimeoutStartSec','TimeoutStopSec','RestartSec',
+        'StartLimitBurst','StartLimitIntervalSec','RestartPreventExitStatus')]==[1]*6
     after=[line for line in lines if line.startswith('After=')]
     assert len(after)==1 and 'docker.service' in after[0].split('=',1)[1].split()
     assert [line for line in lines if line.startswith('Environment')]==['Environment=DOCKER_CONFIG=@HOST_CONFIG_DIR@/docker-cli']
     assert not any(line.lstrip().startswith('#') for line in lines)
-    assert [sum(line.startswith(key+'=') for line in lines) for key in ('ExecStartPre','ExecStart','ExecStop','ExecStopPost')]==[1,1,1,1]
+    assert [sum(line.startswith(key+'=') for line in lines) for key in ('ExecStartPre','ExecStart','ExecStop','ExecStopPost')]==[2,1,1,1]
 
 
 def test_competing_wrapper_cannot_open_second_connection(setup):
@@ -242,7 +249,7 @@ def test_boot_outside_session_refuses_before_files_are_read(tmp_path,calendar,mo
 
 def test_unit_container_flags_are_pinned():
     unit=unit_text();options,tail=run_options(exec_start(unit),'@IMAGE_ID@')
-    assert options==[('--rm',None),('--name','c3po-massive'),('--pull','never'),('--user','0:0'),('--workdir','/app'),
+    assert options==[('--rm',None),('--init',None),('--restart','no'),('--name','c3po-massive'),('--pull','never'),('--user','0:0'),('--workdir','/app'),
         ('--network','@NETWORK@'),('--read-only',None),('--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=256m'),
         ('--cap-drop','ALL'),('--security-opt','no-new-privileges'),('--pids-limit','512'),('--stop-timeout','25'),
         ('--mount','type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@'),
@@ -253,16 +260,19 @@ def test_unit_container_flags_are_pinned():
     assert [value for value in mounts if value.endswith(',readonly')]==[mounts[2]] and ',target=/etc/c3po-bar,' in mounts[2]
     assert tail==SUPERVISOR_TAIL
     assert set(re.findall(r'@[A-Z_]+@',unit))==PLACEHOLDERS and unit.count('@')==2*len(re.findall(r'@[A-Z_]+@',unit))
-    assert unit.count('@HOST_CONFIG_DIR@')==3 and unit.count('@IMAGE_ID@')==1 and unit.count('@NETWORK@')==1
+    assert unit.count('@HOST_CONFIG_DIR@')==3 and unit.count('@IMAGE_ID@')==2 and unit.count('@NETWORK@')==1
     # None of these in the template is what makes the shlex rendering equivalent to systemd's own parsing.
     assert not set('%$"\';')&set(unit)
 
 
 def test_unit_forbids_unsafe_container_options():
     unit=unit_text();argv=exec_start(unit)
-    forbidden={'--init','--restart','-d','--detach','-t','-i','-e','--env','--env-file','-v','--volume','--privileged',
+    forbidden={'-d','--detach','-t','-i','-e','--env','--env-file','-v','--volume','--privileged',
         '--cap-add','--cidfile','--pid','--ipc','--tty','--interactive','--device','--add-host','--publish','-p','--userns'}
     assert not forbidden&set(argv) and not any(value.split('=',1)[0] in forbidden for value in argv)
+    # The only restart policy is the explicit "no"; --init is a bare flag. systemd owns every restart.
+    assert [argv[index+1] for index,value in enumerate(argv) if value=='--restart']==['no'] and argv.count('--init')==1
+    assert not any(value.startswith(('--restart=','--init=')) for value in argv)
     assert not any(value in unit for value in ('docker.sock','DOCKER_HOST','c3po/backend:production',':rollback','/opt/c3po-bar',
         'User=','Group=','TZ=','rm -f','--force','ProtectSystem','ReadOnlyPaths','ReadWritePaths','MASSIVE_API_KEY','--token-env'))
     stops=re.findall(r'^ExecStop(?:Post)?=-/usr/bin/docker stop -t (\d+) c3po-massive$',unit,re.M)
@@ -449,11 +459,81 @@ def test_reader_refuses_empty_root_and_catalog_creation_is_idempotent(container)
     assert source.journals.ready_sessions()==(tree.day,) and poll(source)['diagnostics']==[]
 
 
-def test_readme_names_the_five_operations_and_the_substitution_grammar():
+def catalog_init_script(readme):
+    found=re.findall(r'^<!-- catalog-init-script:begin -->\n```python\n(.*?)```\n<!-- catalog-init-script:end -->$',readme,re.S|re.M)
+    assert len(found)==1
+    return found[0]
+
+
+def test_readme_catalog_init_script_runs_against_the_real_catalog(container,monkeypatch,capsys):
+    """Executes the exact script text of the README (operation 4b) and then the reader path."""
+    from app.r2d2_v2_store import ShadowIntegrityError
+    readme=(UNIT_ROOT/'README.md').read_text();script=catalog_init_script(readme)
+    assert script.endswith('\n') and len(script.splitlines())<=24
+    assert 'Its SHA-256 is `'+hashlib.sha256(script.encode()).hexdigest()+'`' in readme
+    layout,produce=container;epoch='R2D2-V2-SHADOW-CATALOG-INIT';program=compile(script,'catalog-init.py','exec')
+    def run(root,*arguments):
+        with monkeypatch.context() as patch:
+            # `python -I -B - <root> <epoch>`: the program arrives on stdin and sees only its two arguments.
+            patch.setattr(sys,'argv',['-',str(root),*arguments]);patch.setattr(sys,'path',list(sys.path))
+            try:exec(program,{'__name__':'__main__'});code=0
+            except SystemExit as refused:code=refused.code
+        lines=capsys.readouterr().out.splitlines()
+        assert len(lines)==1
+        return code,json.loads(lines[0])
+    tree=layout('init');root=os.stat(tree.journal)
+    assert run(tree.journal,epoch)==(0,{'status':'CATALOG_READY','created':True,'epoch':epoch,'device':root.st_dev,
+        'inode':root.st_ino,'entries':['epoch.json','maintenance.lock']})
+    assert all(stat.S_IMODE(os.lstat(tree.journal/name).st_mode)==0o600 for name in os.listdir(tree.journal))
+    created=tree_snapshot(tree.journal)
+    # Same epoch again: idempotent, nothing rewritten.
+    code,receipt=run(tree.journal,epoch)
+    assert code==0 and receipt['created'] is False and receipt['epoch']==epoch and tree_snapshot(tree.journal)==created
+    # Another epoch, a malformed epoch, a missing argument: refused, the bound root is untouched.
+    assert run(tree.journal,'R2D2-V2-SHADOW-OTHER')==(1,{'status':'CATALOG_REFUSED','code':'MASSIVE_SESSION_MANIFEST_CHANGED'})
+    assert run(tree.journal,'not an epoch')==(1,{'status':'CATALOG_REFUSED','code':'EPOCH_INVALID'})
+    assert run(tree.journal)[0]==1 and tree_snapshot(tree.journal)==created
+    # The reader path (no create) accepts the initialised root for that epoch only.
+    source=reader(tree.journal,epoch);result=poll(source)
+    assert source.journals.ready_sessions()==() and result['diagnostics']==[] and result['events']==[]
+    with pytest.raises(ShadowIntegrityError,match='^MASSIVE_SESSION_ROOT_UNVERIFIED$'):reader(tree.journal,'R2D2-V2-SHADOW-OTHER')
+    assert tree_snapshot(tree.journal)==created
+    # A root that is not empty and has no catalog is refused before anything is created in it.
+    for name in ('producer.lock','lost+found'):
+        other=layout('occupied-'+name[:4])
+        if name=='producer.lock':(other.journal/name).touch(mode=0o600)
+        else:(other.journal/name).mkdir(mode=0o700)
+        before=tree_snapshot(other.journal)
+        assert run(other.journal,epoch)==(1,{'status':'CATALOG_REFUSED','code':'CATALOG_INIT_ROOT_NOT_EMPTY'})
+        assert tree_snapshot(other.journal)==before
+    fresh=layout('malformed')
+    assert run(fresh.journal,'not an epoch')[0]==1 and list(fresh.journal.iterdir())==[]
+    # The documented run: the unit's image and journal mount only, no network, the script on stdin.
+    command=re.search(r'^docker run --rm -i .*?< catalog-init\.py$',readme,re.S|re.M)
+    assert command is not None
+    argv=shlex.split(command.group(0).replace('\\\n',' ').replace('<HOST_JOURNAL_ROOT>','/h').replace('<CONTAINER_JOURNAL_ROOT>','/c')
+        .replace('<IMAGE_ID>','IMAGE').replace('< catalog-init.py',''))
+    assert argv==['docker','run','--rm','-i','--pull','never','--init','--user','0:0','--network','none','--read-only',
+        '--cap-drop','ALL','--security-opt','no-new-privileges','--mount','type=bind,source=/h,target=/c',
+        'IMAGE','python','-I','-B','-','/c','$epoch']
+
+
+def test_readme_names_the_operations_in_order_and_the_substitution_grammar():
     readme=(UNIT_ROOT/'README.md').read_text()
-    headings=[line for line in readme.splitlines() if re.match(r'### \d\. ',line)]
+    headings=[line for line in readme.splitlines() if re.match(r'### (\d[a-z]?\. |Owner token delivery)',line)]
     assert headings==['### 1. Preflight (read-only)','### 2. Provisioning (directories and configuration)',
-        '### 3. Exclusive unit installation (no activation, no overwrite)','### 4. Readback / conference','### 5. Activation']
+        '### Owner token delivery (between operations 2 and 4)',
+        '### 3. Exclusive unit installation (no activation, no overwrite)','### 4. Readback / conference',
+        '### 4b. Catalog initialisation (own authorisation, before the first prepare-capacity-day)','### 5. Activation']
+    order=[readme.index(value) for value in ('### Catalog initialisation\n','### Daily order\n','1. **The catalog exists**',
+        '2. **`prepare-capacity-day`**','3. **That day\'s manifest**','4. **09:29 New York time: the producer run.**','5. **The reader**')]
+    assert order==sorted(order)
+    assert all(value in readme for value in ('with Massive bars enabled — it must be','RELEASE_EBAR_SOURCE_REQUIRED',
+        'after the producer has marked that day\'s session ready','decision of the activation rite','waiting_admission_coverage',
+        'size within 1–4096','IFS= read -rs token_line','set -o noclobber','mv -T /etc/c3po-bar/token.new /etc/c3po-bar/token',
+        '56706990080','**Late manifest.**','**Accepted risk for this epoch.**'))
+    assert not any(value in readme for value in ('with Massive bars disabled**','no separate catalog initialisation step',
+        'that rite\'s decision; it is not settled here'))
     assert all(value in readme for value in ('`^/[A-Za-z0-9._/-]+$`','`^sha256:[0-9a-f]{64}$`','`^[A-Za-z0-9][A-Za-z0-9_.-]*$`',
         '`host`, `none` and `container:*` are **forbidden in production**','**must fail if any `@` survives**',
         'one GO each','python -m app.r2d2_v2_shadow_worker','**No compose service launches that module.**',
@@ -469,6 +549,9 @@ def test_pipeline_exercises_rendered_unit_on_a_real_engine():
     assert all('"'+name+'"' in step for name in PLACEHOLDERS) and '"@NETWORK@": "none"' in step
     assert all(value in step for value in ('c3po/deployment/massive-supervisor/c3po-massive.service',
         "docker image inspect --format '{{.Id}}' c3po/backend:pr-validation",'^sha256:[0-9a-f]{64}$',
+        'line.startswith("ExecStartPre=/")','["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", image]',
+        'sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${check[@]}"','[ "$seen" = "$id" ] ||','"--init" not in argv',
+        "docker info --format '{{.InitBinary}}'",
         'sudo install -d -m 0700 -o 0 -g 0','sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${argv[@]}"',
         '[ "$rc" -eq 78 ] ||','"status": "DATA_GAP"','sudo find "$base/state" "$base/data/journal" -mindepth 1',
         "docker ps -a --filter 'name=^c3po-massive$' -q"))

@@ -11,7 +11,8 @@ StartLimitBurst=6
 Type=exec
 Environment=DOCKER_CONFIG=@HOST_CONFIG_DIR@/docker-cli
 ExecStartPre=-/usr/bin/docker rm c3po-massive
-ExecStart=/usr/bin/docker run --rm --name c3po-massive --pull never \
+ExecStartPre=/usr/bin/docker image inspect --format {{.Id}} @IMAGE_ID@
+ExecStart=/usr/bin/docker run --rm --init --restart no --name c3po-massive --pull never \
   --user 0:0 --workdir /app --network @NETWORK@ \
   --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
   --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 --stop-timeout 25 \
@@ -25,6 +26,7 @@ ExecStopPost=-/usr/bin/docker stop -t 25 c3po-massive
 Restart=on-failure
 RestartSec=1s
 RestartPreventExitStatus=78
+TimeoutStartSec=60s
 TimeoutStopSec=30s
 KillMode=control-group
 UMask=0077

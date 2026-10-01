@@ -21,9 +21,16 @@ No owner or mode guard is relaxed. Nothing existing is chowned or chmodded, and 
 
 The signed epoch order requires the supervisor to be handled as five **distinct, separately authorised operations, one GO each**, in this sequence. A GO for one operation authorises nothing in the next. None of them is performed by this repository, by the deploy pipeline or by a compose service.
 
+Two further steps sit inside that sequence and are **not** covered by any of the five GOs:
+
+- the **owner's token delivery**, between operations 2 and 4 (see "Token procedure");
+- the **catalog initialisation** (4b), which writes inside the journal root and has **its own authorisation and receipt**. It must be complete before the first `prepare-capacity-day` of the epoch. Whether the order counts it as a sixth operation or as an addendum to one of the five is for the signatories; this document only requires that it is authorised separately and receipted.
+
+Sequence: 1 preflight → 2 provisioning (with the retention tag) → owner token delivery → 3 exclusive unit installation → 4 readback → 4b catalog initialisation → 5 activation.
+
 ### 1. Preflight (read-only)
 
-- **Does:** reads the host state needed to decide the six substitution values and the layout: whether any path of the layout or either unit file already exists, owner and mode of `/etc/systemd/system` and of the data volume root, free bytes on the data volume, `systemctl --version`, the Docker server version, whether the Docker unit is `docker.service`, `docker info` (no user-namespace remapping, no rootless mode), and the image ID of `c3po/backend:production`.
+- **Does:** reads the host state needed to decide the six substitution values and the layout: whether any path of the layout or either unit file already exists, owner and mode of `/etc/systemd/system` and of the data volume root, free bytes on the data volume, `systemctl --version`, the Docker server version, whether the Docker unit is `docker.service`, `docker info` (no user-namespace remapping, no rootless mode, and the init binary it reports, see "Activation gate"), and the image ID of `c3po/backend:production`. An image ID read before the deploy of the merged revision is an observation only: the ID that is rendered is the one read after that deploy (see "Image pin and lifecycle").
 - **Must not:** create, change or delete anything; start, stop, enable or reload anything; read the token or any secret; run a container.
 - **Reads back:** the observations themselves, as the receipt.
 
@@ -40,10 +47,14 @@ The signed epoch order requires the supervisor to be handled as five **distinct,
   | `/var/lib/c3po-bar` | `root:root` | 0700 | the directory below |
   | `/var/lib/c3po-bar/supervisor` = `@HOST_STATE_ROOT@` | `root:root` | 0700 | empty |
 
-- **Must not:** chown or chmod any existing object, including the data volume root; reuse an existing directory; write the token (the owner does that, see "Token procedure"); write a manifest; install a unit; create anything inside the journal root (the producer creates the catalog, see "Catalog and first-day order"); create an account, a virtualenv or anything under `/opt`.
+- **Must not:** chown or chmod any existing object, including the data volume root; reuse an existing directory; write the token (the owner does that, see "Token procedure"); write a manifest; install a unit; create anything inside the journal root (operation 4b does that, under its own authorisation); create an account, a virtualenv or anything under `/opt`.
 - **Reads back:** owner, group, mode and emptiness of each created path; owner and mode of the data volume root (recorded, not changed); the retention tag resolving to the intended image ID.
 
 The daily manifest and the token are separate deliveries with their own authority; they are not part of this operation.
+
+### Owner token delivery (between operations 2 and 4)
+
+The owner places the token after operation 2 has created `/etc/c3po-bar` and before operation 4 reads its metadata, following "Token procedure". It is not one of the operator's operations and no GO of the sequence covers it. **Operation 4 fails closed if the token is absent**: no readback, no activation.
 
 ### 3. Exclusive unit installation (no activation, no overwrite)
 
@@ -58,28 +69,78 @@ The daily manifest and the token are separate deliveries with their own authorit
 - **Reads back:**
   - bytes and SHA-256 of the rendered `c3po-massive.service` and of the timer, compared with an independent render from the reviewed template;
   - the six values as they appear in the rendered unit;
-  - owner, group and mode of every path of the layout, of the token (metadata only) and of the data volume root;
+  - owner, group and mode of every path of the layout and of the data volume root;
+  - the token, **metadata only**: uid, gid, mode, link count, and the statement "size within 1–4096" (true or false). The size itself is not recorded, because it discloses the token length. If the token is absent the readback fails closed;
   - the image ID resolves locally (`docker image inspect --format '{{.Id}}' <ID>`) and the retention tag resolves to the same ID;
+  - the init binary: `docker info --format '{{.InitBinary}}'` and the path, owner and mode of the `docker-init` executable on the host (the unit uses `--init`);
   - `systemctl is-enabled c3po-massive.timer` shows `disabled`, and neither unit is active;
   - free space on the journal filesystem (see "Activation gate");
   - `systemctl --version` (at least 240, for `Type=exec`), the Docker server version (at least 20.10, for `--pull never`), and that the Docker unit is `docker.service` (`systemctl is-active docker.service`).
 
+### 4b. Catalog initialisation (own authorisation, before the first prepare-capacity-day)
+
+- **Does:** one run of the pinned image, described exactly under "Catalog initialisation": creates `maintenance.lock` and `epoch.json` in the empty journal root, binding the epoch string of the signed release and the device and inode of the directory.
+- **Must not:** run with any other mount, with a network, or with a script whose SHA-256 differs from the one in the authorisation; take the epoch from anything but the signed release body; run on a root that holds anything other than a catalog already bound to the same epoch; be repeated as a way to "fix" a root (a wrong binding is permanent, the recovery is a new directory under a new authorisation).
+- **Reads back:** the single JSON line printed by the script (the receipt), the names, owner and mode of the two files in the root, and the epoch of the receipt compared by command with the `epoch` field of the release bytes.
+
 ### 5. Activation
 
-- **Does:** `systemctl enable --now c3po-massive.timer` — the **timer only**. The service is started by the timer.
-- **Must not:** enable or start `c3po-massive.service` directly; happen before the activation gate below is satisfied; be implied by operation 3 or 4.
-- **Reads back:** `systemctl is-enabled` and `is-active` of the timer, the next elapse time, and the state of the service (see the `OnBootSec` note under "Operations").
+- **Does:** `systemctl enable --now c3po-massive.timer` — the **timer only**. The service is started by the timer. It is then followed by `systemctl reset-failed c3po-massive.service` (see below).
+- **Must not:** enable or start `c3po-massive.service` directly; happen before the activation gate below is satisfied; be implied by operation 3, 4 or 4b; **be performed inside the session window** (from 60 seconds before the XNYS open until the close).
+- **Reads back:** `systemctl is-enabled` and `is-active` of the timer, the next elapse time, the single refusal line of the immediate start, and the state of the service after `reset-failed`.
 
 Activation has its own authorisation. Installing the units is not activation.
+
+**What `enable --now` does at once.** The timer carries `OnBootSec=30s`. On a host that has been up for more than 30 seconds that trigger is already in the past, so activating the timer starts the service immediately *(documented systemd behaviour, not observed on the host)*:
+
+- **outside the window** (the required case): the supervisor refuses before reading any file — one `DATA_GAP` line with `SUPERVISOR_WINDOW` (or `SUPERVISOR_SESSION` on a non-session day), exit 78, no claim, no token read, no connection. The unit is left failed and one of the six starts of the eight-hour interval is used. `systemctl reset-failed c3po-massive.service` is the expected next step, not an alternative: it clears the failed state and the start counter, so the 09:29 start has all six.
+- **inside the window, with that day's manifest and the token in place:** it is a **real attempt** — claim 1 is taken, the token is read and the provider connection is opened. That is a session start decided by the clock of whoever typed the command, which is why activation inside the window is forbidden.
+- **inside the window, without the manifest:** exit 78 (`SUPERVISOR_FILE_UNAVAILABLE`), no claim.
 
 ## Token procedure
 
 - The **owner** places the provider token, through a private channel, as a private file at `/etc/c3po-bar/token`. It never transits the coordination channel, a command line, the environment, a log or a receipt.
 - The file is created by **exclusive creation**, mode **0600**, owned by **uid 0**, under `umask 077`. It is a regular file with a single link, 1 to 4096 bytes, holding one line.
-- Never write it with `echo`, as a command argument, or as a heredoc in a recorded shell: each of those leaves the value in shell history, a process listing or a transcript. Never export it as an environment variable.
-- **Readback is metadata only:** uid, gid, mode, link count and size. Never the content, never a digest of the content, never a line count (that requires reading it).
-- Only the authorised supervisor process reads the content, in memory, after the claim and the backoff of each attempt. A token that is empty or spans several lines is therefore detected only after the first claim: it costs one attempt and ends that start in a terminal 78 (`SUPERVISOR_TOKEN`). So does a file with the wrong mode, owner or link count, or a configuration directory with any group/other bit (`SUPERVISOR_PRIVATE_FILE`, or a refusal of the directory).
-- **Rotation** is replacing the file between sessions, by the owner, with the same procedure. The supervisor re-reads the file at each attempt; nothing caches it.
+- Never write it with `echo`, as a command argument, or as a heredoc in a recorded shell: each of those leaves the value in shell history, a process listing or a transcript. Never export it as an environment variable. Never open the file in an editor: editors leave swap and backup files in `/etc/c3po-bar`.
+- **Readback is metadata only:** uid, gid, mode, link count and whether the size is within 1–4096. Never the content, never a digest of the content, never the size itself (it is the token length), never a line count (that requires reading it).
+- Only the authorised supervisor process reads the content, in memory, after the claim and the backoff of each attempt, so a bad token is detected only **after one claim**: it costs one attempt and ends that start in a terminal 78. The code reported depends on the defect (`r2d2_v2_massive_supervisor.py`, `private_bytes` lines 38–55 and the token read at lines 114–115):
+
+  | Defect | Code | Where |
+  | --- | --- | --- |
+  | zero bytes, more than 4096 bytes, mode other than 0600, another owner, more than one link, not a regular file | `SUPERVISOR_PRIVATE_FILE` | `private_bytes`, lines 45–47 |
+  | only whitespace, or more than one line | `SUPERVISOR_TOKEN` | line 115 |
+  | bytes that are not UTF-8 | `SUPERVISOR_UNVERIFIED` | the decode at line 114 raises; `refusal_code` falls through, lines 30–34 |
+  | missing file, or a symbolic link | `SUPERVISOR_FILE_UNAVAILABLE` | the open at line 42 fails; `refusal_code`, line 33 |
+  | configuration directory with any group/other bit | a directory refusal | `_open_directory`, line 40 |
+
+  Every row is exit 78 after one claim. A single trailing newline is accepted (the value is stripped).
+
+**Approved recipe (first delivery).** The owner runs this, by hand, in an interactive **bash** root shell that is not being recorded (no `script`, no terminal multiplexer logging, no sudo input/output logging), with the token on the clipboard or typed:
+
+```
+unset HISTFILE
+set +o history
+umask 077
+set -o noclobber
+IFS= read -rs token_line
+printf '%s\n' "$token_line" > /etc/c3po-bar/token
+unset token_line
+stat -c '%u %g %a %h' /etc/c3po-bar/token
+exit
+```
+
+- `unset HISTFILE` and `set +o history`: nothing typed in this shell is written to a history file or kept in the history list.
+- `umask 077`: the file is created 0600.
+- `set -o noclobber`: the `>` redirection creates the file **exclusively**; if `/etc/c3po-bar/token` already exists the command fails and nothing is written.
+- `IFS= read -rs token_line`: bash reads one line from the terminal **without echo** (`-s`), without backslash processing (`-r`) and without trimming (`IFS=`). The owner pastes or types the token and presses Enter; nothing appears on the screen.
+- `printf` is a bash **builtin**: no process is created, so the value never appears in an argument list or a process listing. `token_line` is a shell variable that is never exported, so it is in no environment. It writes exactly one line.
+- `unset token_line` drops the value; `exit` ends the shell.
+- `stat` prints uid, gid, mode and link count, expected `0 0 600 1`. It deliberately does not print the size.
+
+The recipe was exercised offline for the exclusive-create and mode behaviour only; it has not been run on the host.
+
+**Rotation.** Exclusive creation refuses an existing path, so rotation is **not** the first-delivery recipe again. Between sessions (never between 09:29 and 16:02 New York time), the owner repeats the recipe with `/etc/c3po-bar/token.new` as the target of the redirection (same directory, still exclusive, still 0600) and then runs `mv -T /etc/c3po-bar/token.new /etc/c3po-bar/token`. The rename is atomic and stays on one filesystem; the previous token is unlinked by it. The supervisor re-reads the file at each attempt; nothing caches it. A rotation is followed by a metadata readback like the first delivery.
+
 - The host `.env` holds a `MASSIVE_API_TOKEN` for other purposes. This unit does **not** use it, and it must not be copied here through the environment. The unit passes no environment to the container.
 - The producer CLI has a `--token-env` option. It is **out of scope** of this rite; the unit uses `--token-file` only, and the repository tests reject `--token-env` in the template.
 
@@ -89,7 +150,7 @@ Activation has its own authorisation. Installing the units is not activation.
 
 | Placeholder | Occurrences | Meaning | Example |
 | --- | --- | --- | --- |
-| `@IMAGE_ID@` | 1 | Image ID of the deployed backend image, read on the host. Never a tag. | `sha256:0123…cdef` |
+| `@IMAGE_ID@` | 2 | Image ID of the deployed backend image, read on the host: the image check and the run. Never a tag. | `sha256:0123…cdef` |
 | `@HOST_JOURNAL_ROOT@` | 2 | Host path of the dedicated journal root, inside the data volume. | `/mnt/day-d-data/r2d2-v2-massive-epoch03` |
 | `@CONTAINER_JOURNAL_ROOT@` | 2 | The same directory as seen inside the containers. | `/app/day-d-data/r2d2-v2-massive-epoch03` |
 | `@HOST_STATE_ROOT@` | 2 | Host path of the attempt/claim journal. | `/var/lib/c3po-bar/supervisor` |
@@ -114,16 +175,25 @@ After substitution the render **must fail if any `@` survives** anywhere in the 
 
 - `--pull never` and the image **ID**: the unit can never fetch an image or follow a moving tag.
 - `--rm` and the fixed `--name c3po-massive`: one container at most, removed on exit; a leftover name makes the next start fail instead of running twice.
+- `--init`: PID 1 in the container is `docker-init` (tini), and the supervisor is its child. `docker-init` forwards SIGTERM to the supervisor, reaps children, and exits with the supervisor's own exit status, so 0, 1 and 78 reach systemd unchanged *(documented Docker behaviour, not observed on the host)*. It requires the `docker-init` binary on the host; the activation gate reads it back, and the pipeline smoke runs with it. See "Stop" for what it changes.
+- `--restart no`: the container has no restart policy of its own; systemd owns every restart. Written as two words like every other option of the line; it is the same as `--restart=no`, and Docker rejects any other policy together with `--rm`.
 - `--user 0:0`: every guard compares against the effective uid, and the reader must have the same one.
 - `--read-only` with `--tmpfs /tmp` (256 MiB, `noexec,nosuid,nodev`): the only writable paths are the two read-write binds.
 - `--cap-drop ALL`, `--security-opt no-new-privileges`, `--pids-limit 512`: root in the container owns its files and needs no capability to read or write them.
-- No `--init`: Python is PID 1 and installs its own SIGTERM handler, so `docker stop` reaches the orderly shutdown directly. See "Stop" for the window before the handler exists.
 - No environment at all (`-e`, `--env-file`, `TZ`, `C3PO_*`): the container receives only the image defaults. The token is a file.
 - Three `--mount type=bind` entries, never `-v`: `--mount` refuses a missing source instead of creating a root-owned directory.
 - `--stop-timeout 25` and `docker stop -t 25`, below `TimeoutStopSec=30s`.
 - `Environment=DOCKER_CONFIG=@HOST_CONFIG_DIR@/docker-cli` applies to the docker CLI only: an empty root-owned directory, so root's contexts, proxies and credential helpers cannot leak in. `DOCKER_HOST` is not set (default socket). The container sees that directory, empty, through the read-only configuration mount.
 
-Never add: `--init`, `--restart`, `-d`, `-t`, `-i`, `-e`/`--env`/`--env-file`, `-v`/`--volume`, `--privileged`, `--cap-add`, `--cidfile`, `--pid`, `--ipc`, a mount of the Docker socket, a tag reference such as `c3po/backend:production` or `:rollback`, a forced removal (`rm -f`, `--force`), `User=`/`Group=`. The repository tests pin the argument list and reject each of these.
+Never add: a `--restart` policy other than `no`, `-d`, `-t`, `-i`, `-e`/`--env`/`--env-file`, `-v`/`--volume`, `--privileged`, `--cap-add`, `--cidfile`, `--pid`, `--ipc`, a mount of the Docker socket, a tag reference such as `c3po/backend:production` or `:rollback`, a forced removal (`rm -f`, `--force`), `User=`/`Group=`. The repository tests pin the argument list and reject each of these.
+
+### Start preconditions
+
+- `ExecStartPre=-/usr/bin/docker rm c3po-massive` removes a stopped leftover of the fixed name. The leading `-` makes its failure (normally `No such container`) harmless.
+- `ExecStartPre=/usr/bin/docker image inspect --format {{.Id}} @IMAGE_ID@` has **no** leading `-`: if the pinned image is not present the start fails at this line, with the status of the image check, before any container is created. On success it prints the image ID, one line, to the journal. The braces are literal for systemd: it expands only `%` specifiers and `$` variables, and neither appears in the template (the repository tests pin that, and the pipeline runs this exact line on a real engine).
+- `TimeoutStartSec=60s` bounds the two precondition commands and the launch of the docker CLI together.
+
+**Accepted risk for this epoch.** A failure of the image check, and a docker exit of 125, 126 or 127, are ordinary failures for systemd: `Restart=on-failure` restarts them after `RestartSec=1s`, with no supervisor backoff, no claim and no receipt, and each one counts towards the six starts of `StartLimitBurst`. Six such failures spend the day's starts in a few seconds. `RestartSec`, the start limit and `RestartPreventExitStatus` are deliberately left as they were. The mitigations are the retention tag (the image cannot be garbage-collected by a deploy), the readback of operation 4 and the activation gate (image, mounts and init binary are checked before activation), and alerting on the `start-limit` result.
 
 ## Image pin and lifecycle
 
@@ -135,12 +205,14 @@ docker image inspect --format '{{.Id}}' c3po/backend:production
 
 With the containerd image store the ID is the manifest digest of the image as loaded on the host. It will **not** equal an ID computed on the CI runner, so it cannot be taken from the pipeline, from a build log or from another machine. The value is read once, validated against `^sha256:[0-9a-f]{64}$`, and used for the retention tag and for the render.
 
-**A missing image is a failed start.** With `--pull never`, an ID that does not resolve locally makes `docker run` exit 125. That consumes one of the six systemd starts, takes **no claim** and emits no receipt (see the exit table).
+**A missing image is a failed start.** An ID that does not resolve locally fails the image check in `ExecStartPre`, before `docker run` is reached (and `--pull never` would make `docker run` itself exit 125). That consumes one of the six systemd starts, takes **no claim** and emits no receipt; it is restarted after one second like any other failure (see "Start preconditions" and the exit table).
+
+**Which read binds.** The ID that is rendered and tagged is the one read **after the deploy of the merged revision**. An ID noted in an earlier preflight must not be rendered.
 
 **Retention.** Nothing in the unit keeps the image present. The deploy pipeline, at each deploy, removes the `c3po/backend:rollback` tag, tags the image of the running `api` container as `:rollback`, loads the new image as `:production`, and after a healthy deploy runs `docker image prune --force`, which removes only dangling (untagged) images. For an image referenced only by ID this implies:
 
 - after the first later deploy it is still tagged, as `:rollback`;
-- at the second later deploy the `:rollback` tag is removed from it. It then has no tag at all. Whether Docker deletes it at that tag removal or at the following prune was not observed on the host *(unverified)*; in either case it does not survive that deploy unless a container still uses it, and every start of the unit after that is a 125.
+- at the second later deploy the `:rollback` tag is removed from it. It then has no tag at all. Whether Docker deletes it at that tag removal or at the following prune was not observed on the host *(unverified)*; in either case it does not survive that deploy unless a container still uses it, and every start of the unit after that fails at the image check.
 
 The explicit retention step is a **dedicated tag**, for example `c3po/backend:massive-supervisor-epoch03`, pointing at the pinned ID:
 
@@ -154,25 +226,103 @@ docker image tag <IMAGE_ID> c3po/backend:massive-supervisor-<epoch label>
 
 **Next deploy.** A deploy or a rollback does not change what the unit runs. The old unit keeps running the old image, by ID, until it is re-rendered. Meanwhile the reader may already run a newer image; nothing in this unit detects that.
 
-**Next epoch, or a deliberate image change.** A new render (new image ID, and for a new epoch a new journal leaf and a new retention tag) goes through the same five operations under its own authorisation. Because operation 3 never overwrites, the previous timer is first disabled and the previous unit files are removed by a separately authorised step. The old retention tag is removed only after the new unit is active and the old one is gone.
+**Next epoch, or a deliberate image change.** The sequence is repeated under its own authorisations, but operation 2 is **not** repeated as written, because it refuses existing paths. For a later epoch:
+
+- **created new:** only the new journal leaf (`<data volume>/<new leaf>`, exclusive, `root:root` 0700, empty), the new retention tag, and the catalog of the new root (operation 4b with the new epoch);
+- **re-rendered:** the unit, with the new image ID and the new leaf. Because operation 3 never overwrites, the previous timer is first disabled and the previous unit files are removed **under a separate authorisation**; only then is operation 3 run again;
+- **kept untouched:** the configuration directory with `manifests` and `docker-cli`, the token, and the claims root `/var/lib/c3po-bar/supervisor`. Claims are never removed; they are named by session date, so old ones do not affect later days.
+
+The old retention tag is removed only after the new unit is active and the old one is gone. The old journal root is not deleted by any step described here.
 
 ## Catalog and first-day order
 
-There is **no separate catalog initialisation step**. The producer creates the catalog itself on its first run: `_run_session_root` calls `SessionJournalRoot(root, epoch, create=True)`, which creates `maintenance.lock` and writes `epoch.json` in an empty private root, binding the epoch string and the device and inode of the directory. The repository test `test_container_layout_writer_and_reader_agree` runs the producer on an empty root with no prior step.
+**Why a separate initialisation exists.** The order of the first day is circular without it:
 
-The epoch written into the catalog is the `epoch` key of **that day's manifest**. It must equal the `epoch` field of the signed release body that the reader verifies. A wrong epoch in the first manifest binds the root permanently: the reader refuses it from then on, and the only recovery is a new directory. Copy the string from the signed release; do not type it.
+- A release that carries `ebar_amendment_sha` **requires** a minute-bar source. `ShadowCollector.__init__` raises `RELEASE_EBAR_SOURCE_REQUIRED` otherwise (`r2d2_v2_shadow.py` lines 369–371), and `CapacityBoundCollector` inherits that constructor (`r2d2_v2_capacity_bound.py` line 186). So for such a release every invocation of `python -m app.r2d2_v2_shadow_worker`, **including `--prepare-capacity-day`**, runs with Massive bars enabled; the collector is built before the argument is handled. Running it with Massive bars disabled is not an option the activation rite can choose: the code refuses.
+- With Massive bars enabled, the worker builds `SessionJournalRoot(journal directory, release.epoch)` **without** `create` (`r2d2_v2_shadow_worker.py` lines 55–70). If the root is missing, empty, not private, owned by another uid or bound to another epoch, it refuses with `MASSIVE_SESSION_ROOT_UNVERIFIED` and exits. It creates nothing and does not retry by itself.
+- The producer creates the catalog only at its first run (`r2d2_v2_massive_producer.py` line 315, `SessionJournalRoot(root, epoch, create=True)`; `r2d2_v2_massive_sessions.py` lines 172–179). That run needs the dated manifest, and the manifest needs that day's `prepare-capacity-day`.
 
-What the reader does on a root without a catalog: with Massive bars enabled, the V2 shadow worker builds `SessionJournalRoot(journal directory, release.epoch)` without `create`. If the root is missing, empty, not private, owned by another uid or bound to another epoch, the worker refuses at start with `MASSIVE_SESSION_ROOT_UNVERIFIED` and exits. It does not create anything and does not retry by itself. This applies to **every** invocation of that module with Massive bars enabled, including `--prepare-capacity-day`, because the source is built before the argument is handled. With Massive bars disabled the worker touches no Massive directory.
+Hence the catalog is initialised **before the first `prepare-capacity-day`**, by operation 4b. The application has no catalog-only entry point: the only caller of `SessionJournalRoot(..., create=True)` in `app/` is the producer. Operation 4b therefore follows the project's pattern for one-off host actions: a hash-pinned script, delivered on standard input to an isolated interpreter, used once, with a receipt.
 
-Order for the first day of an epoch:
+### Catalog initialisation
 
-1. Operations 1 to 4 are complete; the journal root exists, `root:root` 0700, and is empty.
-2. `prepare-capacity-day` for that day runs in the V2 shadow worker **with Massive bars disabled**. It derives and commits the capacity binding and does not read the event source. Running it with Massive bars enabled at this point refuses with `MASSIVE_SESSION_ROOT_UNVERIFIED`, because no catalog exists yet. Whether the activation rite permits this invocation with the flag disabled is that rite's decision; it is not settled here.
-3. That day's manifest is delivered, before 09:29 New York time.
-4. 09:29 New York time: the timer starts the unit. The producer's first run creates and binds the catalog for the epoch, then the session directory.
-5. Only after the catalog exists (the journal root holds `epoch.json` with the release epoch) may the reader be started with Massive bars enabled.
+**The epoch string.** It is the `epoch` field of the signed release body, the same field the reader verifies (`Release.verify`, `r2d2_v2_shadow.py` line 92, validated at line 95). It is **never typed by hand**: it is extracted by command from the release bytes whose SHA-256 is the release hash of the authorisation, for example
 
-On later days the catalog already exists and step 2 may run with Massive bars enabled.
+```
+epoch="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["epoch"])' <release file>)"
+```
+
+and the authorisation carries the resulting string so that the receipt can be compared with it. **A wrong epoch binds the root permanently**: `epoch.json` is written once and never rewritten, the reader refuses the root from then on, and the only recovery is a new directory.
+
+**The command.** Same pinned image ID as the unit, only the journal mount, at the same container path as the unit, no network:
+
+```
+sha256sum catalog-init.py
+docker run --rm -i --pull never --init --user 0:0 --network none --read-only \
+  --cap-drop ALL --security-opt no-new-privileges \
+  --mount type=bind,source=<HOST_JOURNAL_ROOT>,target=<CONTAINER_JOURNAL_ROOT> \
+  <IMAGE_ID> python -I -B - <CONTAINER_JOURNAL_ROOT> "$epoch" < catalog-init.py
+```
+
+- `-i` only connects standard input, which carries the script; there is no terminal.
+- `python -I -B -` reads the program from standard input in isolated mode: no environment variables, no user site directory, and neither the current directory nor a script directory on the import path; `-B` writes no bytecode. The script adds `/app` itself, which is where the image keeps the application.
+- No state root, no configuration directory, no token, no manifest and no network are available to this container.
+- The first command must print the SHA-256 given below; the run is not started otherwise.
+
+**The reference script.** `catalog-init.py` is exactly the lines between the two markers, each ended by a newline. Its SHA-256 is `715d7a660e7a2c4dd5c11287063726cc971156dd6fefc2365c431c9aee0f4bb7`. A repository test extracts these lines from this document, checks that hash and executes them against the real module.
+
+<!-- catalog-init-script:begin -->
+```python
+import json, os, sys
+sys.path.insert(0, '/app')
+try:
+    from app.r2d2_v2_massive_sessions import SessionJournalRoot
+    from app.r2d2_v2_store import validate_epoch
+    root, epoch = sys.argv[1:]
+    validate_epoch(epoch)
+    before = sorted(os.listdir(root))
+    if before and 'epoch.json' not in before:
+        raise ValueError('CATALOG_INIT_ROOT_NOT_EMPTY')
+    SessionJournalRoot(root, epoch, create=True)
+    SessionJournalRoot(root, epoch)
+    with open(os.path.join(root, 'epoch.json'), 'rb') as stream:
+        catalog = json.loads(stream.read())
+    receipt = {'status': 'CATALOG_READY', 'created': not before, 'epoch': catalog['epoch'],
+               'device': catalog['device'], 'inode': catalog['inode'], 'entries': sorted(os.listdir(root))}
+except Exception as error:
+    code = error.args[0] if len(error.args) == 1 and type(error.args[0]) is str else type(error).__name__
+    print(json.dumps({'status': 'CATALOG_REFUSED', 'code': code}, sort_keys=True))
+    raise SystemExit(1)
+print(json.dumps(receipt, sort_keys=True))
+```
+<!-- catalog-init-script:end -->
+
+**What it does and refuses.**
+
+- **Empty root:** creates `maintenance.lock` and `epoch.json` (both 0600), then opens the root again the way the reader does (without `create`), and prints one line: `status` `CATALOG_READY`, `created` true, the `epoch`, `device` and `inode` read back from `epoch.json`, and the two entry names. Exit 0.
+- **Root already bound to the same epoch:** changes nothing and prints the same line with `created` false. Exit 0. The operation is idempotent.
+- **Root bound to another epoch:** refused by the module itself, `MASSIVE_SESSION_MANIFEST_CHANGED` (`_immutable`, `r2d2_v2_massive_sessions.py` line 62: an existing `epoch.json` must equal the bytes that would be written). Nothing is changed. Exit 1.
+- **Root that is not empty and has no `epoch.json`:** refused by the script before the module is called, `CATALOG_INIT_ROOT_NOT_EMPTY`, so nothing is created. The script is deliberately stricter than the module here: the module alone would create `maintenance.lock` first, tolerate a root that holds only lock files, and refuse a session directory without a catalog (`MASSIVE_SESSION_EPOCH_MISSING`, line 177) or any other name (`MASSIVE_SESSION_LAYOUT`, line 204).
+- **An epoch outside the release grammar:** refused, `EPOCH_INVALID` (`validate_epoch`, the check the release verification applies). This catches a string that is not an epoch; it cannot catch a well-formed epoch of another release, which is why the string is extracted and compared by command.
+- A refusal prints one line with `status` `CATALOG_REFUSED` and a `code`, and exits 1. The line holds no secret; this container has none.
+
+**Receipt and readback.** The printed line is the receipt. The readback adds: `epoch` of the receipt equal to the extracted string, compared by command; the journal root holding exactly `epoch.json` and `maintenance.lock`, `root:root` 0600; and `stat -c '%d %i' <HOST_JOURNAL_ROOT>` on the host. The device and inode seen in the container are expected to equal the host's for a bind mount; that was not observed *(unverified)*, and a difference is a finding to report, not something to correct.
+
+This run has not been executed in a container anywhere; the repository test executes the script text against the real module on a temporary directory.
+
+### Daily order
+
+The same order applies to the first day and to every later day; the only difference is that on the first day the catalog comes from operation 4b.
+
+1. **The catalog exists**: the journal root holds `epoch.json` bound to the release epoch (operation 4b on the first day; already there afterwards).
+2. **`prepare-capacity-day`** for that day runs in the V2 shadow worker **with Massive bars enabled — it must be**, for the reason above. It derives and commits the capacity binding; building its collector opens the catalog read-only, which is why step 1 comes first.
+3. **That day's manifest** is delivered to `/etc/c3po-bar/manifests/`, **before 09:29 New York time** (see "Daily manifest" for a late one).
+4. **09:29 New York time: the producer run.** The timer starts the unit; the producer opens the existing catalog, prepares the session directory and publishes the ready marker before it appends anything.
+5. **The reader** (the long-running V2 shadow worker) is started **after the producer has marked that day's session ready** — `session_date=<day>/ready.json` exists in the journal root — not merely when `epoch.json` exists.
+
+About step 5: the code would let the reader start earlier, as soon as the catalog exists, and with operation 4b that is true before 09:29. Doing so puts a polling reader across the producer's start, which is the lock contention described under "Known limits" (the producer does not retry the lock; a collision costs a claim). Starting the reader after the ready marker avoids the collision at the first start of the day. It does not protect the producer's later restarts while the reader is polling. Whether the reader starts earlier, and how it is paused around a producer restart, is a **decision of the activation rite**; this document states the conservative condition and the limit.
+
+If the first attempt of the day ends before the session is prepared (low disk, a token refusal), no ready marker exists and the reader has nothing to read for that day until a later attempt succeeds.
 
 ## Reader requirements
 
@@ -184,7 +334,7 @@ This unit works only if that launcher gives the reader:
 - the journal root at the **same container path** as `@CONTAINER_JOURNAL_ROOT@`, on the same filesystem (the catalog binds device and inode); mounting the data volume at `/app/day-d-data` satisfies this;
 - **read access** to the root. The reader writes nothing in the journal tree; it opens the existing `maintenance.lock` read-only for a shared lock. A read-only mount is expected to be sufficient but was not exercised *(unverified)*;
 - `C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR` equal to `@CONTAINER_JOURNAL_ROOT@`, **explicitly**. The default is `/app/data/r2d2-v2-massive`; a launcher that omits the variable makes the reader refuse with `MASSIVE_SESSION_ROOT_UNVERIFIED`;
-- `C3PO_R2D2_V2_MASSIVE_BARS_ENABLED` set only according to the first-day order above.
+- `C3PO_R2D2_V2_MASSIVE_BARS_ENABLED` enabled for every invocation of an EBAR release, including `--prepare-capacity-day` (see "Daily order").
 
 The launcher's contract must name these values and prove them in its own readback. Nothing in this directory does.
 
@@ -203,12 +353,14 @@ Exit statuses seen by systemd:
 | 0 | supervisor: STOPPED / SESSION_LIMIT | success, no restart |
 | 1 | supervisor: attempt failed | restart; the next process claims the next attempt |
 | 78 | supervisor: terminal refusal | no restart for that start |
-| 125, 126, 127 | docker: missing image or mount source, daemon unavailable, name conflict, command not runnable | restart; consumes systemd starts, **never claims**, emits **no** receipt |
+| status of `ExecStartPre` | image check: pinned image absent, or daemon unreachable | start fails before `docker run`; restart; consumes systemd starts, **never claims**, emits **no** receipt |
+| 125, 126, 127 | docker: missing mount source, daemon unavailable, name conflict, command not runnable; a missing init binary is expected to land here too *(status not established)* | restart; consumes systemd starts, **never claims**, emits **no** receipt |
 | 137 | container killed | restart; the interrupted attempt stays consumed |
+| 143 | supervisor terminated by SIGTERM before its handler existed (see "Stop") | failure; no claim exists yet |
 
-The 125–137 failures bypass the 30/60/120/240 backoff: six starts can be spent in seconds with no `DATA_GAP` line. `--rm` can also surface a clean 78 as 125 if waiting for the removal fails; that direction is fail-safe for coverage claims but costs a start. Alert on the unit results `start-limit` **and** `dependency`: with `Requires=docker.service`, a Docker service that fails its start leaves this unit with a `dependency` result, no restart and no receipt.
+The image-check and 125–143 failures bypass the 30/60/120/240 backoff: six starts can be spent in seconds with no `DATA_GAP` line (the accepted risk under "Start preconditions"). `--rm` can also surface a clean 78 as 125 if waiting for the removal fails; that direction is fail-safe for coverage claims but costs a start. Alert on the unit results `start-limit` **and** `dependency`: with `Requires=docker.service`, a Docker service that fails its start leaves this unit with a `dependency` result, no restart and no receipt.
 
-`ExecStartPre` (`docker rm`) runs under the default `TimeoutStartSec` (90 seconds unless the host changed the default). With a hung Docker daemon each start can spend up to that long, ends as a failure with no receipt, and consumes one of the six starts.
+The two `ExecStartPre` commands run under `TimeoutStartSec=60s`. With a hung Docker daemon each start can spend up to that long, ends as a failure with no receipt, and consumes one of the six starts.
 
 ## Filesystem layout
 
@@ -227,17 +379,21 @@ All objects are `root:root`. New directories are created exclusively (refuse if 
 | `/etc/c3po-bar/token` | exactly **0600**, regular, single link, 1–4096 bytes, one line | Provider token, placed by the owner. Never under the data volume. |
 | `/etc/systemd/system/c3po-massive.service`, `.timer` | 0644 | Rendered unit and verbatim timer, created exclusively by operation 3. |
 
+A low-disk refusal (see "Known limits") leaves **only `producer.lock`** in an otherwise empty journal root: the producer creates that lock before it measures free space. That is a valid state for the producer and for operation 4b's code path, but the reader still refuses the root (no catalog), and operation 4b's script refuses it as not empty; this cannot arise in the documented order, where 4b precedes every producer start.
+
 The state root nested in the journal root is refused by the producer (`MASSIVE_SERVICE_STORAGE_UNVERIFIED`, exit 1). A foreign entry in the journal root makes every reader poll refuse. The journal root with any group/other bit, or owned by another uid, is refused by producer and reader alike. Only the journal root itself is checked for privacy; its ancestors are checked only for symbolic links.
 
 ## Daily manifest
 
 The manifest has exactly the keys `epoch`, `session`, `symbols`, `owner_uid`. `owner_uid` is the JSON integer `0`. `epoch` equals the signed release epoch. There is **one manifest per session date**, and it can only be written after that day's `prepare-capacity-day`, because the symbols are that day's committed capacity binding. It must be in place before 09:29 New York time. A missing manifest inside the window is a terminal 78 for that start, with no claim. Once the first claim binds the manifest's SHA-256 its bytes are frozen for the day; a change is refused and never resets allowance.
 
+**Late manifest.** If the manifest is not in place at 09:29, that start ends in 78 (`SUPERVISOR_FILE_UNAVAILABLE`) with no claim, and `RestartPreventExitStatus=78` means **nothing retries it**: the timer does not fire again that day. The recovery is a manual `systemctl start c3po-massive.service`, **inside the session window, after the manifest is in place, under its own authorisation** (operation 5 covers the timer only). Cost: the refused 09:29 start took no claim, so the manual start takes claim 1 and all five attempts remain; it has used one of the six systemd starts, so the sixth process, the one that would print `SUPERVISOR_ATTEMPTS_EXHAUSTED`, may instead end as `start-limit` unless `reset-failed` is run first. The minutes between the open and the manual start are a coverage gap that nothing backfills. The same recovery applies to a 78 caused by a bad token, except that the token refusal has already consumed claim 1, so four attempts remain.
+
 ## Stop
 
 `systemctl stop` runs `docker stop -t 25`: SIGTERM to the supervisor, which closes the socket and exits 0 after its storage scans. `TimeoutStopSec=30s` applies to each stop command separately; with a hung Docker daemon the worst case is about three such periods (around 90 seconds). Do not promise 30 seconds in total.
 
-Python is PID 1 in the container, and the kernel ignores a SIGTERM sent to PID 1 while no handler is installed. The supervisor installs its handler in `main()`, after the interpreter has started and the modules are imported. A stop that arrives in that window is ignored: `docker stop` waits the full 25 seconds and then kills the container (137). The unit ends failed, not stopped. No claim exists yet at that point.
+With `--init`, PID 1 in the container is `docker-init`, which forwards SIGTERM to the supervisor. The supervisor installs its handler in `main()`, after the interpreter has started and the modules are imported. A stop that arrives before that reaches a Python process with the default disposition, which terminates at once: the container is expected to exit 143 without waiting the 25 seconds, and the unit ends failed, not stopped. No claim exists yet at that point. Without `--init` Python would be PID 1, the kernel would ignore that early SIGTERM, and the stop would wait the full 25 seconds and end in a kill (137). All of this paragraph is documented behaviour of Docker, tini and the kernel; **none of it was observed**, and the rehearsal's stop case is what proves it.
 
 A forced kill consumes the attempt (137) and the next recovery treats it as a gap. It may also leave a hot `sequence.sqlite3-journal` in the session directory, which the read-only reader cannot roll back and therefore refuses; recovery is an authorised read-write open as uid 0 with the same image, never a deletion.
 
@@ -250,12 +406,13 @@ Terminal refusal receipts retain `reason=SUPERVISOR_REFUSED` and add a safe `cod
 ## Operations
 
 - Operate only through `systemctl`. The effect on the unit of an out-of-band `docker stop` or `docker restart` of `c3po-massive` was not established *(unverified)*; do not use them.
-- The journal stream is not pure JSON. Docker prints the container name on stop, and `No such container` from `ExecStartPre` and from the stop commands once the container is gone (once after a failed exit, twice after a clean one). Parsers must match the JSON status fields, not assume every line parses.
+- The journal stream is not pure JSON. The image check prints the image ID at every start, Docker prints the container name on stop, and `No such container` from `ExecStartPre` and from the stop commands once the container is gone (once after a failed exit, twice after a clean one). Parsers must match the JSON status fields, not assume every line parses.
 - Do not infer clean coverage from exit 0 or a healthy unit state. Route `DATA_GAP`, `FAILED`, `start-limit` and `dependency` to the approved alert destination; none is configured by this candidate.
 - If the docker CLI is killed while the container lives, the next start fails on the name (125) until the stop commands and the asynchronous removal finish: two or three starts. A container stuck in a dead or removal-in-progress state defeats the non-forced `docker rm`; an operator removes it manually after confirming it is not running, then runs `systemctl reset-failed c3po-massive.service`. The unit never forces a removal.
-- `OnBootSec=30s` fires immediately when the timer is activated more than 30 seconds after boot. That start ends in 78 outside the window, leaves the unit failed and uses one of the six starts if it happens within eight hours of 09:29. Activate earlier, or run `systemctl reset-failed c3po-massive.service` after activation.
+- `OnBootSec=30s` fires immediately when the timer is activated more than 30 seconds after boot. Activation is therefore done outside the session window and followed by `systemctl reset-failed c3po-massive.service`; see operation 5 for what the immediate start does inside and outside the window.
 - An explicit `systemctl restart docker` stops and restarts this unit through `Requires=`: outside the window that is a 78 and a consumed start, inside it a new claim and a short gap. Hold Docker package upgrades and avoid Docker restarts during sessions; a daemon crash is unproven.
-- Schedule host reboots outside 09:29–16:02 New York time. How the security reboot controller classifies the running supervisor container was not established *(unverified)*.
+- Schedule host reboots outside 09:29–16:02 New York time.
+- **The automatic security reboot waits while the supervisor container runs.** `scripts/c3po_security_reboot.py`, `admission_coverage` (lines 187–204), lists every running container with `docker ps -q` and returns false for any container whose `com.docker.compose.service` label is not one of the services it knows. The `c3po-massive` container is started by `docker run` and has no such label, so while it runs the controller answers `waiting_admission_coverage` (lines 153–154) and does not request the reboot. Because of `--rm` the container exists only while the unit runs, that is, during session hours; outside them it does not hold a reboot back. The same holds for any other container started outside compose, including the V2 shadow worker of the activation rite and the short-lived container of operation 4b. A pending security reboot therefore cannot complete during a session; check the security report at each readback and let the reboot happen outside the window. This is read from the code; it was not observed on the host.
 - Do not add a compose service, a restart policy or a second loop or timer for the producer.
 
 ## Weaker than the previous native unit
@@ -272,8 +429,8 @@ The previous candidate ran the supervisor natively as an unprivileged `c3po-bar`
 
 ## Known limits
 
-- **Free-space floor.** The producer requires 50 GiB free (`MIN_SESSION_FREE_BYTES`, 53687091200 bytes), measured with `fstatvfs` on the journal root's filesystem, which is the data volume. Below it the attempt ends with exit **1**, not 78 (`MASSIVE_SERVICE_LOW_DISK`), before any provider connection. Exit 1 restarts, so all five attempts of the day are burnt. The data volume had about 50.4 GiB free on 2026-10-01: the margin is a few hundred MiB.
-- **Lock contention at start.** The producer takes the catalog lock exclusively and without waiting when it starts (catalog open and session preparation); the reader holds a shared lock for the duration of each poll. If the reader holds it at that instant, the attempt ends with exit 1 and `MASSIVE_MAINTENANCE_BUSY`, with no provider connection, and **consumes a claim**. The next attempt follows after the backoff. This predates the container layout and is not fixed here.
+- **Free-space floor.** The producer requires 50 GiB free (`MIN_SESSION_FREE_BYTES`, 53687091200 bytes), measured with `fstatvfs` on the journal root's filesystem, which is the data volume. Below it the attempt ends with exit **1**, not 78 (`MASSIVE_SERVICE_LOW_DISK`), before any provider connection. Exit 1 restarts, and the floor is checked again at **every** attempt (`r2d2_v2_massive_producer.py` lines 304–311), so all five attempts of the day are burnt. A session may itself write up to 512 MiB of evidence (`MAX_SESSION_EVIDENCE_BYTES`) plus 64 MiB of index (`MAX_SESSION_INDEX_BYTES`): **576 MiB (603979776 bytes) per session**. A volume that starts a day barely above the floor can therefore fall below it during that day (attempts 2–5 after a crash) and start the next day below it. The data volume had about 50.4 GiB free on 2026-10-01: that margin is smaller than one session's own budget. The activation gate carries the required number.
+- **Lock contention at start.** The producer takes the catalog lock with `LOCK_EX|LOCK_NB` and **no retry**, twice at each start: at the catalog open and at the session preparation (`r2d2_v2_massive_sessions.py` lines 172 and 263). Only the later ready marker waits (up to 30 seconds, retrying every 10 ms). The reader takes the shared lock for the duration of **each poll**, and polls every `C3PO_R2D2_V2_SHADOW_POLL_SECONDS` (default 1.0 second, allowed 0.25 to 5.0); how long one poll holds the lock was not measured. If the reader holds the lock at either instant, the attempt ends with exit 1 and `MASSIVE_MAINTENANCE_BUSY`, with no provider connection, and **consumes a claim**; the next attempt comes 30 seconds later and can collide again, up to the five claims. The reverse also happens: a reader that starts while the producer holds the exclusive lock refuses with `MASSIVE_SESSION_ROOT_UNVERIFIED` and exits. This predates the container layout and is not fixed here. **Operational mitigation (a decision of the activation rite, not enforced by any code):** the reader is not polling while the producer starts — it is started only after the session is marked ready (see "Daily order"), and it is paused, or stopped and started again after the ready marker, around any producer restart during the session.
 - A change of the data disk's device number across a reboot makes both sides refuse the root; there is no in-code recovery.
 - Cooperative local locks do not prove provider-account exclusivity on other hosts; that remains the owner's responsibility.
 - `RequiresMountsFor` is inert if systemd has no mount unit for the data volume.
@@ -291,14 +448,17 @@ Operation 5 is not authorised until both parts below are on record.
 1. The Docker unit is `docker.service` and is active.
 2. `systemctl --version` reports at least 240 (`Type=exec`).
 3. The Docker server version is at least 20.10 (`--pull never`).
-4. Free space on the journal root's filesystem (`df -B1 --output=avail <data volume>`) is above 53687091200 bytes with a margin that covers the expected growth until the next session; at or below the floor every attempt of the day is spent.
+4. Free space on the journal root's filesystem (`df -B1 --output=avail <data volume>`) is at least **53687091200 bytes (the 50 GiB floor) plus 603979776 bytes (576 MiB) for each session that will be retained before space is next freed, plus the expected growth of every other writer on the data volume over the same period**. For five sessions and no other growth that is 56706990080 bytes. At or below the floor every attempt of the day is spent. The authorisation states the number of sessions and the allowance for other writers; a reading below the resulting number is a refusal, and freeing space is a separate authorised action.
 5. The image ID resolves locally and the retention tag points at it.
-6. Token metadata: uid 0, gid 0, mode exactly 0600, one link, size between 1 and 4096; parent directory 0700.
+6. Token metadata: uid 0, gid 0, mode exactly 0600, one link, and "size within 1–4096" true (the size is not recorded); parent directory 0700. An absent token fails the readback.
 7. The timer is `disabled` and inactive.
+8. The init binary required by `--init`: `docker info --format '{{.InitBinary}}'` names it and the `docker-init` executable exists on the host (path, owner and mode recorded). Which path the daemon resolves was not established *(unverified)*; rehearsal item 5 is the proof that a container actually starts with it.
+
+**Catalog (from operation 4b):** the receipt of the catalog initialisation is on record, the journal root holds exactly `epoch.json` and `maintenance.lock`, and the epoch of the receipt equals the `epoch` field of the signed release.
 
 **Rehearsal**, separately authorised, of the rendered unit against a throwaway journal root, state root, configuration directory and unit name:
 
-1. `systemctl stop` ends the main process with exit 0 in under 25 seconds, `STOPPED` in the journal, no leftover container.
+1. `systemctl stop` ends the main process with exit 0 in under 25 seconds, `STOPPED` in the journal, no leftover container. This needs a session-day window and a manifest (outside the window the supervisor exits 78 at once and there is nothing to stop), and it reuses the fixed container name, so it cannot overlap an active production unit.
 2. A TLS connection to `socket.massive.com:443` succeeds from `@NETWORK@`, without a token.
 3. `systemd-analyze verify` passes on the installed systemd version.
 4. `docker info` shows neither user-namespace remapping nor rootless mode.
@@ -307,8 +467,8 @@ Operation 5 is not authorised until both parts below are on record.
 
 ## Offline verification and pending checks
 
-Repository tests pin the unit text and its argument list, reject the forbidden options, check that the template holds none of the characters that would make a textual render differ from systemd's own parsing, render the template with sample values and check the paths against the backend data mount, and run the real supervisor, producer and reader code on a temporary tree with the container layout: writer and reader agree on uid and path, the reader leaves the tree untouched, the producer creates the catalog on an empty root, the reader refuses an empty root, and a different owner, a non-private root, a foreign entry, a nested state root, a foreign manifest owner and an exposed token directory are all refused. They also pin that this document names the five operations and the substitution grammar.
+Repository tests pin the unit text and its argument list, reject the forbidden options, check that the template holds none of the characters that would make a textual render differ from systemd's own parsing, render the template with sample values and check the paths against the backend data mount, and run the real supervisor, producer and reader code on a temporary tree with the container layout: writer and reader agree on uid and path, the reader leaves the tree untouched, the producer creates the catalog on an empty root, the reader refuses an empty root, the catalog-initialisation script of this document (extracted from it, with its SHA-256 checked) creates the catalog, is idempotent, refuses another epoch and a non-empty root, and is then accepted by the reader path, and a different owner, a non-private root, a foreign entry, a nested state root, a foreign manifest owner and an exposed token directory are all refused. They also pin that this document names the operations in order and the substitution grammar. A separate file runs the real catalog, SQLite and lock code for four guard cases (owner mismatch, private root and index, wrong path, read-only reader under shared locks).
 
-The pipeline renders `ExecStart` from this template and runs it against the validation image on the runner's Docker with three root-owned 0700 binds, the image by ID and no network. It requires exit 78, exactly one `DATA_GAP` line, no claim, no journal object and no leftover container. That proves the option set, mount-target creation under a read-only root filesystem, imports under the capability/pid/tmpfs limits, the ID reference with `--pull never`, and propagation of 78 through `--rm`. It runs on pull requests and remediation dispatches only, not on the build that produces the deployed image.
+The pipeline renders the mandatory `ExecStartPre` and `ExecStart` from this template and runs them against the validation image on the runner's Docker with three root-owned 0700 binds, the image by ID and no network. The image check must print the pinned ID and must fail for an ID that does not exist. The run requires exit 78, exactly one `DATA_GAP` line, no claim, no journal object and no leftover container. That proves the option set including `--init` and `--restart no`, mount-target creation under a read-only root filesystem, imports under the capability/pid/tmpfs limits, the ID reference with `--pull never`, and propagation of 78 through `docker-init` and `--rm`. It runs on pull requests and remediation dispatches only, not on the build that produces the deployed image.
 
-Not proven anywhere yet: stop and SIGTERM as PID 1, egress, DNS and CA trust from `@NETWORK@`, ID resolution under the host's image store, deletion or survival of an untagged image across deploys, behaviour of an empty `DOCKER_CONFIG` directory on the host, the reader on a read-only mount, the stop bound with many retained sessions, alert delivery, and real provider behaviour. These stay pending until the rehearsal above is separately authorized.
+Not proven anywhere yet: systemd's own parsing of the unit (including the braces of the image check), stop and SIGTERM through `docker-init`, the catalog initialisation in a container, the token recipe on the host, egress, DNS and CA trust from `@NETWORK@`, ID resolution under the host's image store, deletion or survival of an untagged image across deploys, behaviour of an empty `DOCKER_CONFIG` directory on the host, the reader on a read-only mount, the stop bound with many retained sessions, alert delivery, and real provider behaviour. These stay pending until the rehearsal above is separately authorized.
