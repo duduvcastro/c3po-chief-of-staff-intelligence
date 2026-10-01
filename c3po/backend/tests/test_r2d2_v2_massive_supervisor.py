@@ -21,6 +21,9 @@ PLACEHOLDERS={'@IMAGE_ID@','@HOST_JOURNAL_ROOT@','@CONTAINER_JOURNAL_ROOT@','@HO
 SUPERVISOR_TAIL=['python','-B','-m','app.r2d2_v2_massive_supervisor','--journal-root','@CONTAINER_JOURNAL_ROOT@',
     '--manifest-directory','/etc/c3po-bar/manifests','--token-file','/etc/c3po-bar/token','--state-root','/var/lib/c3po-bar/supervisor']
 EPOCH='R2D2-V2-CONTAINER-LAYOUT'
+# The catalog-init script of the README (operation 4b), pinned here as a literal: the README states its own hash,
+# so the two could otherwise change together unnoticed.
+CATALOG_INIT_SHA256='715d7a660e7a2c4dd5c11287063726cc971156dd6fefc2365c431c9aee0f4bb7'
 
 
 def unit_text():return (UNIT_ROOT/'c3po-massive.service').read_text()
@@ -471,6 +474,7 @@ def test_readme_catalog_init_script_runs_against_the_real_catalog(container,monk
     readme=(UNIT_ROOT/'README.md').read_text();script=catalog_init_script(readme)
     assert script.endswith('\n') and len(script.splitlines())<=24
     assert 'Its SHA-256 is `'+hashlib.sha256(script.encode()).hexdigest()+'`' in readme
+    assert hashlib.sha256(script.encode()).hexdigest()==CATALOG_INIT_SHA256 and readme.count(CATALOG_INIT_SHA256)==1
     layout,produce=container;epoch='R2D2-V2-SHADOW-CATALOG-INIT';program=compile(script,'catalog-init.py','exec')
     def run(root,*arguments):
         with monkeypatch.context() as patch:

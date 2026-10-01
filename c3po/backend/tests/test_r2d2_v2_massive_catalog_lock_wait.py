@@ -6,6 +6,7 @@ of the same maintenance.lock, exactly what another process would hold.
 from datetime import datetime, timezone
 import os
 import re
+import signal
 import threading
 import time
 from types import SimpleNamespace
@@ -26,6 +27,32 @@ NOW = datetime(2026, 10, 6, 15, tzinfo=timezone.utc)
 BUSY = '^MASSIVE_MAINTENANCE_BUSY$'
 # No wait in this file lasts longer than this. A wait that never ends must fail its test, not hang it.
 WAIT_CEILING_SECONDS = 5.0
+# That ceiling sits inside the patched sleep, so it only sees code that still sleeps. This one covers a whole
+# test on the wall clock and needs nothing from the code under test: the file takes about 1.5 s in all.
+TEST_WALL_SECONDS = 20.0
+# Clock reads and attempts allowed on the fake clock, where nothing blocks (13 reads and 5 attempts at most unmutated).
+FAKE_CLOCK_CEILING = 64
+
+
+@pytest.fixture(autouse=True)
+def wall_clock_ceiling():
+    """Fail any test of this file that is still running after TEST_WALL_SECONDS.
+
+    A retry loop with neither a deadline nor a sleep never reaches the patched sleep; the alarm
+    interrupts it all the same. Yields False, unarmed, where SIGALRM cannot be used."""
+    if not (hasattr(signal, 'SIGALRM') and hasattr(signal, 'setitimer')
+            and threading.current_thread() is threading.main_thread()):
+        yield False
+        return
+    def expired(signum, frame):
+        pytest.fail('test still running after %.0f s on the wall clock' % TEST_WALL_SECONDS)
+    previous = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, TEST_WALL_SECONDS)
+    try:
+        yield True
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, signal.SIG_DFL if previous is None else previous)
 
 
 def root(tmp_path):
@@ -157,26 +184,47 @@ def test_zero_wait_is_the_previous_immediate_refusal(tmp_path, monkeypatch):
     assert waited == []
 
 
+def test_wall_clock_ceiling_interrupts_a_loop_that_never_sleeps(wall_clock_ceiling):
+    if not wall_clock_ceiling:
+        pytest.skip('SIGALRM is not available here')
+    remaining, interval = signal.getitimer(signal.ITIMER_REAL)
+    assert 0 < remaining <= TEST_WALL_SECONDS and interval == 0
+    signal.setitimer(signal.ITIMER_REAL, 0.05)  # the same handler, sooner
+    with pytest.raises(pytest.fail.Exception, match='still running after %.0f s on the wall clock' % TEST_WALL_SECONDS):
+        until = time.monotonic() + WAIT_CEILING_SECONDS
+        while time.monotonic() < until:
+            pass
+
+
 def test_wait_is_bounded_by_the_monotonic_clock_and_reraises_the_last_refusal(monkeypatch):
-    clock = [100.0]; waited = []; allowed = [8]
+    clock = [100.0]; waited = []; allowed = [8]; reads = []
+    def spinning(what, count):
+        # Nothing blocks on the fake clock. A retry that stopped sleeping, or that never ends, must fail
+        # here: left alone it spins for ever and keeps every refusal it raised.
+        if count > FAKE_CLOCK_CEILING:
+            pytest.fail('%s number %d on the fake clock, at most %d expected' % (what, count, FAKE_CLOCK_CEILING))
+    def monotonic():
+        reads.append(1); spinning('clock read', len(reads))
+        return clock[0]
     def sleep(seconds):
-        # The fake clock never blocks, so an unbounded or over-eager retry must fail here, not spin.
+        # An unbounded or over-eager retry that still sleeps fails here.
         if len(waited) >= allowed[0]:
             pytest.fail('sleep number %d, at most %d expected' % (len(waited) + 1, allowed[0]))
         waited.append(seconds); clock[0] += seconds
     # No wall clock is available to the module here: only monotonic and sleep.
-    monkeypatch.setattr(sessions_module, 'time', SimpleNamespace(monotonic=lambda: clock[0], sleep=sleep))
+    monkeypatch.setattr(sessions_module, 'time', SimpleNamespace(monotonic=monotonic, sleep=sleep))
     monkeypatch.setattr(sessions_module, 'CATALOG_LOCK_WAIT_SECONDS', 1.0)
     monkeypatch.setattr(sessions_module, 'CATALOG_LOCK_POLL_SECONDS', 0.25)
     raised = []
     def busy():
+        spinning('attempt', len(raised) + 1)
         raised.append(SourceUnavailable('MASSIVE_MAINTENANCE_BUSY')); raise raised[-1]
     with pytest.raises(SourceUnavailable) as refused:
         sessions_module._wait_exclusive(busy)
     assert refused.value is raised[-1] and len(raised) == 5 and waited == [0.25] * 4
     del waited[:]; attempts = []
     def released():
-        attempts.append(clock[0])
+        attempts.append(clock[0]); spinning('attempt', len(attempts))
         if len(attempts) < 3:
             raise SourceUnavailable('MASSIVE_MAINTENANCE_BUSY')
         return 'entered'
@@ -186,10 +234,11 @@ def test_wait_is_bounded_by_the_monotonic_clock_and_reraises_the_last_refusal(mo
                   ValueError('MASSIVE_MAINTENANCE_BUSY'), OSError('MASSIVE_MAINTENANCE_BUSY')):
         calls = []
         def other():
-            calls.append(1); raise error
+            calls.append(1); spinning('attempt', len(calls)); raise error
         with pytest.raises(type(error)) as immediate:
             sessions_module._wait_exclusive(other)
         assert immediate.value is error and calls == [1] and waited == []
+    assert len(reads) <= FAKE_CLOCK_CEILING // 2  # the ceiling keeps its margin over the real number of reads
 
 
 def test_other_refusals_are_raised_at_once_without_sleeping(tmp_path, monkeypatch):
@@ -330,3 +379,9 @@ def test_readme_worst_case_figures_follow_the_constants():
         'retrying every %d ms' % round(sessions_module.CATALOG_LOCK_POLL_SECONDS * 1000),
         '(' + spoken(supervisor_module.RETRY_DELAYS[1:], ' or ') + ', by attempt number)'))
     assert 'the next attempt comes 30 seconds later' not in readme
+    # One expired wait on the first attempt already costs the 09:30 minute: the wait, RestartSec and the
+    # backoff of the second attempt are longer than the 60 seconds between the 09:29:00 start and the open.
+    assert 'OnCalendar=Mon..Fri *-*-* 09:29:00 America/New_York' in (UNIT_ROOT/'c3po-massive.timer').read_text()
+    expired = (int(min(sessions_module.CATALOG_LOCK_WAIT_SECONDS, sessions_module.READY_LOCK_WAIT_SECONDS))
+               + int(restart.group(1)) + supervisor_module.RETRY_DELAYS[1])
+    assert expired == 61 > 60 and 'add up to %d seconds, more than the 60 the start had' % expired in readme
