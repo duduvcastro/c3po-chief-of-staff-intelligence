@@ -378,7 +378,9 @@ def test_the_refusal_check_accepts_exactly_one_refusal_line_with_a_listed_code(t
 
 
 def children_of(pid):
-    listed = subprocess.run(['ps', '-A', '-o', 'pid=,ppid=,args='], capture_output=True, text=True, timeout=30).stdout
+    # One -o per column: procps reads `pid=,ppid=,args=` as a single column whose header is the rest of the text.
+    listed = subprocess.run(['ps', '-A', '-ww', '-o', 'pid=', '-o', 'ppid=', '-o', 'args='], capture_output=True,
+                            text=True, timeout=30).stdout
     found = []
     for line in listed.splitlines():
         parts = line.split(None, 2)
@@ -399,6 +401,8 @@ def test_the_stop_driver_and_the_notice_check_of_the_step_on_a_real_launcher_pro
     pin = hashlib.sha256((mounted / 'reader_launcher.py').read_bytes()).hexdigest()
     done, _, stage = render(tmp_path, STOP, 'true', pin=pin)
     assert done.returncode == 0
+    # The listing must see a known child before anything is started: the stand-in sleeps for an hour.
+    assert os.getpid() in [pid for pid, _ in children_of(os.getppid())]
     keep = {key: value for key, value in os.environ.items() if not key.startswith(('C3PO_', 'PYTHON'))}
     parent = subprocess.Popen([sys.executable, '-I', '-B', str(mounted / 'stop_driver.py')], cwd=str(tmp_path),
         env={**keep, **environment(stage)}, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -409,7 +413,15 @@ def test_the_stop_driver_and_the_notice_check_of_the_step_on_a_real_launcher_pro
             found = [pid for pid, arguments in children_of(parent.pid) if MARKER in arguments]
             child = found[0] if found else None
             time.sleep(0.1)
-        assert child is not None, parent.communicate()
+        if child is None:
+            # Never wait for the stand-in's own end: ask the launcher to stop it, within the ceiling.
+            if parent.poll() is None:
+                parent.send_signal(signal.SIGTERM)
+            try:
+                seen = parent.communicate(timeout=CEILING_SECONDS)
+            except subprocess.TimeoutExpired:
+                parent.kill(); seen = parent.communicate()
+            pytest.fail('the stand-in worker never appeared under the launcher: %r' % (seen,))
         time.sleep(0.5)                                        # past at least one tick of the launcher's loop
         assert parent.poll() is None
         parent.send_signal(signal.SIGTERM)
