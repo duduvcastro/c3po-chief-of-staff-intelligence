@@ -31,6 +31,9 @@ CONFIG = Path("/etc/c3po/security-automation.json")
 ESCALATION_WORKFLOW = "incident-escalation.yml"
 REQUIRED_JOBS = {"Sensitive files", "Secret scan", "Backend tests", "Python type check",
                  "Frontend build", "Security remediation proof"}
+# Bounded wait, from the first cycle whose npm audit lagged main (at least two
+# further hourly cycles); afterwards the lag is an error again.
+NPM_REVISION_GRACE = timedelta(hours=3)
 
 
 def command(args):
@@ -305,12 +308,44 @@ def cycle(root, gh, now, config, previous):
         if runs and runs[0]["status"] == "completed" and runs[0]["conclusion"] not in ("success", "skipped"):
             evidence_errors.append(workflow + ":" + str(runs[0]["conclusion"]))
     escalation_errors = escalation_workflow_errors(gh, HOLD.exists())
+    # First cycle whose npm audit did not describe the then-current main. Kept
+    # across further main changes and cleared only by an audit of the current
+    # main, so a stuck regeneration cannot stay pending by main moving again.
+    # Only a missing/None anchor starts the clock: any other stored value,
+    # falsy ones included, is validated below and never silently replaced.
+    npm_lag_since = previous.get("npm_lag_since")
+    if npm_lag_since is None:
+        npm_lag_since = now.isoformat()
+    today = now.date().isoformat()
+    # Daily and post-deploy scans keep the maintenance-hour gate. A new main
+    # re-dispatches only dependency-security, at any hour, so its npm evidence
+    # is regenerated from the same cycle that first sees the mismatch.
+    scan_due = now.hour >= 10 and (previous.get("last_dispatch_date") != today
+                                   or previous.get("last_dispatched_deploy") != deployed)
+    revision_due = previous.get("last_dispatched_main") != main_sha
+    pending = []
     try:
         npm = load_evidence(directory / "repository-npm-advisories.json", now, 26)
-        if npm["schema"] != "C3PO_NPM_ADVISORIES-v1" or npm["source_revision"] != main_sha:
-            raise ValueError("npm audit does not describe current main")
-        alerts = merge_alerts(alerts, npm["alerts"])
-    except (ValueError, KeyError, OSError):
+        if npm["schema"] != "C3PO_NPM_ADVISORIES-v1" or not isinstance(npm["alerts"], list):
+            raise ValueError("Invalid npm audit")
+        if npm["source_revision"] == main_sha:
+            npm_lag_since = None
+            alerts = merge_alerts(alerts, npm["alerts"])
+        else:
+            if not isinstance(npm_lag_since, str):
+                raise ValueError("Invalid npm lag anchor")
+            # A malformed or naive timestamp raises here and fails closed too.
+            lag = now - datetime.fromisoformat(npm_lag_since)
+            if (not re.fullmatch(r"[0-9a-f]{40}", str(npm["source_revision"]))
+                    or not timedelta(0) <= lag < NPM_REVISION_GRACE
+                    or any(error.startswith("dependency-security.yml:") for error in evidence_errors)):
+                raise ValueError("npm audit does not describe current main")
+            # Fresh, sealed audit of an earlier main while the audit of this one
+            # is (re)requested below. Never healthy and every gate stays closed.
+            # Its known findings stay visible (and keep their severity) meanwhile.
+            alerts = merge_alerts(alerts, npm["alerts"])
+            pending.append("npm_evidence_pending")
+    except (ValueError, KeyError, OSError, TypeError):
         evidence_errors.append("npm_evidence_unavailable")
     blocked = []
     if alerts:
@@ -321,10 +356,14 @@ def cycle(root, gh, now, config, previous):
               "reboot_required": os_report.get("reboot_required"), "deployed_sha": deployed, "main_sha": main_sha,
               "host_report_sha256": os_report.get("report_sha256"),
               "image_report_sha256": images.get("report_sha256"), "errors": evidence_errors,
+              # Bounded waits: not errors, but never healthy and never open a gate.
+              "pending": pending,
               # Observability only: never part of "errors", "healthy" or any gate.
               "escalation_errors": escalation_errors,
               "last_dispatch_date": previous.get("last_dispatch_date"),
-              "last_dispatched_deploy": previous.get("last_dispatched_deploy"), "status": "observed"}
+              "last_dispatched_deploy": previous.get("last_dispatched_deploy"),
+              "last_dispatched_main": previous.get("last_dispatched_main"),
+              "npm_lag_since": npm_lag_since, "status": "observed"}
     report["automatic_reboot"] = config.get("automatic_reboot") is True
     report["reboot"] = reboot
     try:
@@ -336,29 +375,36 @@ def cycle(root, gh, now, config, previous):
         evidence_errors.append("watchdog_evidence_unavailable")
     # Publish inventory before starting its consumer. A crash cannot masquerade as success.
     write_report(directory / REPORT, report)
-    today = now.date().isoformat()
     dispatch_errors = []
-    if now.hour >= 10 and (previous.get("last_dispatch_date") != today
-                           or previous.get("last_dispatched_deploy") != deployed):
+    if scan_due or revision_due:
         try:
             gh.request("/actions/workflows/dependency-security.yml/dispatches", "POST", {"ref": "main"})
-            gh.request("/actions/workflows/container-vulnerability-scan.yml/dispatches", "POST",
-                       {"ref": "main", "inputs": {"controller_dry_run_phase": "none"}})
+            report["last_dispatched_main"] = main_sha
+            if scan_due:
+                gh.request("/actions/workflows/container-vulnerability-scan.yml/dispatches", "POST",
+                           {"ref": "main", "inputs": {"controller_dry_run_phase": "none"}})
+                # Only the daily/deploy scan counts as the day's dispatch.
+                report["last_dispatch_date"] = today
+                report["last_dispatched_deploy"] = deployed
         except OSError as exc:
             # A failed scan request remains an operational failure, but does not
             # invalidate independent, fresh evidence for an OS reboot. Never
             # include exception text (URLs or response bodies may carry secrets).
             dispatch_errors.append("scan_dispatch:" + type(exc).__name__
                                    + (f":{exc.code}" if isinstance(exc, HTTPError) else ""))
-        else:
-            report["last_dispatch_date"] = today
-            report["last_dispatched_deploy"] = deployed
+    if pending and report["last_dispatched_main"] != main_sha:
+        # No regeneration requested for this main: the mismatch is today's error.
+        pending.clear()
+        evidence_errors.append("npm_evidence_unavailable")
     if HOLD.exists():
         report["status"] = "maintenance_hold"
     elif MARKER.exists():
         report["status"] = "reboot_requested"
     elif evidence_errors:
         report["status"] = "blocked_missing_evidence"
+    elif pending:
+        # Same gates as missing evidence (no promotion, no reboot), not an error.
+        report["status"] = "waiting_npm_evidence"
     elif not healthy_host(root):
         report["status"] = "blocked_unhealthy_host"
     elif report["reboot_required"] is True and deployed == main_sha:
@@ -376,7 +422,8 @@ def cycle(root, gh, now, config, previous):
             gh, alerts, deployed, images, may_write=may_write)
     report["errors"] = evidence_errors + dispatch_errors
     # No "resolved" state until fresh scanners and application health prove it.
-    report["healthy"] = (deployed == main_sha and not report["errors"] and not alerts and report["security_pending"] == 0
+    report["healthy"] = (deployed == main_sha and not report["errors"] and not pending and not alerts
+                         and report["security_pending"] == 0
                          and report["reboot_required"] is False and images.get("scan_status") == "complete"
                          and images.get("errors") == [] and images.get("finding_total") == 0
                          and datetime.fromisoformat(images["generated_at"]).timestamp() >= (root / ".deploy-version").stat().st_mtime
@@ -415,7 +462,7 @@ def main():
             report = cycle(args.root, gh, now, config, previous)
         except Exception as exc:
             report = {**previous, "schema": "C3PO_SECURITY_AUTOMATION-v1", "generated_at": now.isoformat(),
-                      "healthy": False, "status": "failed",
+                      "healthy": False, "status": "failed", "pending": [],
                       "errors": [type(exc).__name__ + (f":{exc.code}" if isinstance(exc, HTTPError) else "")]}
             write_report(path, report)
             raise SystemExit("Security automation failed; see sanitized report") from None
