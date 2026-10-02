@@ -282,6 +282,9 @@ def test_the_alert_unit_writes_one_private_dated_marker_and_never_overwrites(tmp
 
 # ---------------------------------------------------------------- a render with sample values
 
+CONTAINER_JOURNAL_GRAMMAR = r'/c3po-[a-z0-9][a-z0-9-]*'
+
+
 def render(template, values):
     """The substitution grammar of the document; refuses what the installer must refuse."""
     assert set(values) == set(PLACEHOLDERS)
@@ -290,10 +293,10 @@ def render(template, values):
         if not re.fullmatch(r'/[A-Za-z0-9._/-]+', value) or value.endswith('/') or any(
                 part in ('', '.', '..') for part in value.split('/')[1:]):
             raise ValueError(name)
-    # One component below '/', and none of the names this container already uses there.
+    # One component below '/' whose name begins with `c3po-`: no name of the image or of the engine does, so the
+    # grammar needs no list of them. The two such names this container already uses are refused.
     container = values['@CONTAINER_JOURNAL_ROOT@']
-    if not re.fullmatch(r'/[A-Za-z0-9._-]+', container) or container in ('/.', '/..', '/app', '/tmp', '/c3po-capacity',
-                                                                         '/c3po-reader'):
+    if not re.fullmatch(CONTAINER_JOURNAL_GRAMMAR, container) or container in ('/c3po-capacity', '/c3po-reader'):
         raise ValueError('@CONTAINER_JOURNAL_ROOT@')
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', values['@IMAGE_ID@']):
         raise ValueError('@IMAGE_ID@')
@@ -372,16 +375,44 @@ def test_rendered_unit_matches_the_backend_data_mount():
     ('@CONTAINER_JOURNAL_ROOT@', '/app'), ('@CONTAINER_JOURNAL_ROOT@', '/tmp'), ('@CONTAINER_JOURNAL_ROOT@', '/c3po-capacity'),
     ('@CONTAINER_JOURNAL_ROOT@', '/c3po-reader'), ('@CONTAINER_JOURNAL_ROOT@', '/var/journal'), ('@CONTAINER_JOURNAL_ROOT@', '/..'),
     ('@CONTAINER_JOURNAL_ROOT@', '/c3po-journal/'), ('@CONTAINER_JOURNAL_ROOT@', 'c3po-journal'),
-    ('@CONTAINER_JOURNAL_ROOT@', '/c3po journal'), ('@CONTAINER_JOURNAL_ROOT@', '/c3po-journal,readonly=false')])
+    ('@CONTAINER_JOURNAL_ROOT@', '/c3po journal'), ('@CONTAINER_JOURNAL_ROOT@', '/c3po-journal,readonly=false'),
+    # Names the engine mounts into or the image has at '/', and names outside the `c3po-` prefix.
+    ('@CONTAINER_JOURNAL_ROOT@', '/etc'), ('@CONTAINER_JOURNAL_ROOT@', '/sbin'), ('@CONTAINER_JOURNAL_ROOT@', '/proc'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/dev'), ('@CONTAINER_JOURNAL_ROOT@', '/sys'), ('@CONTAINER_JOURNAL_ROOT@', '/var'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/usr'), ('@CONTAINER_JOURNAL_ROOT@', '/bin'), ('@CONTAINER_JOURNAL_ROOT@', '/lib'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/run'), ('@CONTAINER_JOURNAL_ROOT@', '/root'), ('@CONTAINER_JOURNAL_ROOT@', '/home'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/opt'), ('@CONTAINER_JOURNAL_ROOT@', '/mnt'), ('@CONTAINER_JOURNAL_ROOT@', '/srv'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/media'), ('@CONTAINER_JOURNAL_ROOT@', '/.dockerenv'), ('@CONTAINER_JOURNAL_ROOT@', '/.'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/journal'), ('@CONTAINER_JOURNAL_ROOT@', '/c3po'), ('@CONTAINER_JOURNAL_ROOT@', '/c3po-'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/c3po--journal'), ('@CONTAINER_JOURNAL_ROOT@', '/C3PO-journal'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/c3po-Journal'), ('@CONTAINER_JOURNAL_ROOT@', '/c3po-journal.d'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/c3po-journal_1'), ('@CONTAINER_JOURNAL_ROOT@', '/c3po-journal\n')])
 def test_the_render_refuses_values_outside_the_grammar(name, value):
     with pytest.raises(ValueError):
         render(text('c3po-reader.service'), {**SAMPLE, name: value})
     document = text('README.md')
-    assert all(phrase in document for phrase in ('`^/[A-Za-z0-9._/-]+$`', '`^sha256:[0-9a-f]{64}$`', '`^/[A-Za-z0-9._-]+$`',
-        'for the four host paths', '`/app`, `/tmp`, `/c3po-capacity` and `/c3po-reader`',
+    grammar = next(line for line in document.splitlines() if line.startswith('- for `@CONTAINER_JOURNAL_ROOT@`:'))
+    assert all(phrase in grammar for phrase in ('`^%s$`' % CONTAINER_JOURNAL_GRAMMAR, 'whose name begins with `c3po-`',
+        'the two such names this container already uses: `/c3po-capacity` and `/c3po-reader`',
+        'No name the image or the engine has at `/` begins with `c3po-`', '`MASSIVE_SESSION_LAYOUT`',
+        '*(expected engine behaviour, not exercised: unverified)*',
+        "**This is a condition on the producer's signed parameter**"))
+    # The earlier grammar accepted every name the image has at '/'; neither it nor its disclaimer is left.
+    assert '`^/[A-Za-z0-9._-]+$`' not in document and 'is **not** refused by this grammar' not in document
+    assert all(phrase in document for phrase in ('`^/[A-Za-z0-9._/-]+$`', '`^sha256:[0-9a-f]{64}$`',
+        'for the four host paths',
         '**A journal root inside the data volume is the earlier layout and is refused**',
         'when either journal value differs from the one in the installed producer unit',
         '`host`, `none`, `bridge` and `container:*` are **forbidden in production**', 'must fail if any `@` survives'))
+
+
+@pytest.mark.parametrize('value', ['/c3po-journal', '/c3po-bar-journal', '/c3po-j', '/c3po-0', '/c3po-journal-epoch03'])
+def test_the_render_accepts_a_container_journal_root_inside_the_grammar(value):
+    unit = render(text('c3po-reader.service'), {**SAMPLE, '@CONTAINER_JOURNAL_ROOT@': value})
+    assert '  --mount type=bind,source=/var/lib/c3po-bar/journal,target=%s,readonly \\\n' % value in unit
+    # The application's own directory is not inside the grammar: the image keeps it at /app.
+    assert re.search(r'^WORKDIR /app$', (BACKEND / 'Dockerfile').read_text(), re.M)
+    assert not re.fullmatch(CONTAINER_JOURNAL_GRAMMAR, '/app') and re.fullmatch(CONTAINER_JOURNAL_GRAMMAR, SAMPLE['@CONTAINER_JOURNAL_ROOT@'])
 
 
 # ---------------------------------------------------------------- the worker-direct fallback (D1)
@@ -502,7 +533,17 @@ def test_the_document_places_the_journal_outside_the_data_volume_and_states_its_
         'Nothing is deleted or moved', 'its journal bind is the producer\'s own `--mount` line with `,readonly` appended',
         'never typed a second time', '**Why a child of `/`.**', '**Effective filesystem.**',
         '**Ownership under `--cap-drop ALL`.**', 'The producer unit runs `--user 0:0`', 'reads them **as their owner**',
-        'uid 1000, mode 0755', '`r2d2_v2_massive_producer.py` lines 61–62', '*(unverified)*'))
+        'uid 1000, mode 0755', '`r2d2_v2_massive_producer.py` lines 61–62', '*(unverified)*',
+        # The GO's copy of the two values is made by command, and the ownership argument names what it depends on.
+        "whose own two values are copied by command from the readback of the producer's unit installation",
+        '**This holds only on an engine without user-namespace remapping and not rootless**',
+        '`MASSIVE_SESSION_ROOT_UNVERIFIED` (`r2d2_v2_shadow_worker.py` lines 65–68',
+        'read-only receipt of 2026-10-02 UTC'))
+    worker = (BACKEND / 'app' / 'r2d2_v2_shadow_worker.py').read_text().splitlines()
+    assert 'SessionJournalRoot(settings.r2d2_v2_massive_journal_dir' in worker[65] and 'except (OSError, ValueError):' in worker[66]
+    assert "ShadowIntegrityError('MASSIVE_SESSION_ROOT_UNVERIFIED')" in worker[67] and worker[64].strip() == 'try:'
+    # The decision carries no date here: only the receipt is dated, with its zone.
+    assert 'decision of 20' not in document and not re.search(r'2026-10-02(?! UTC)', document)
     # The figures of the decision are the producer's constants, for the five sessions of the epoch.
     per_session = producer.MAX_SESSION_EVIDENCE_BYTES + producer.MAX_SESSION_INDEX_BYTES
     assert (producer.MIN_SESSION_FREE_BYTES, per_session, len(SESSIONS)) == (53687091200, 603979776, 5)
@@ -524,7 +565,41 @@ def test_the_document_places_the_journal_outside_the_data_volume_and_states_its_
     assert all(phrase in activation for phrase in (
         '**parameters and mounts:**', '**effective filesystem:**', '**ownership:**', '**catalog binding:**',
         '**free space, revalidated:**', "`stat -c '%d %i' @HOST_JOURNAL_ROOT@`", '`f_bavail × f_frsize` of `statvfs`',
-        '53687091200', '603979776', '56706990080', 'the device number differs from the data volume\'s'))
+        '53687091200', '603979776', '56706990080', 'the device number differs from the data volume\'s',
+        "`docker info --format '{{json .SecurityOptions}}'` names neither `userns` nor `rootless`"))
+    # The readback of the running container reads the engine's own list of mounts, and only formatted fields.
+    liveness = document.split('\n### 6. Liveness readbacks\n')[1].split('\n### ')[0]
+    assert all(phrase in liveness for phrase in (
+        "- **Mounts:** `docker inspect --format '{{json .Mounts}}' c3po-reader` lists exactly four binds, each with `RW` false",
+        'the journal one has the source and the target the GO names', 'That format prints the mounts and nothing of the environment',
+        'Unformatted `docker inspect` output is never copied into a receipt', '*(unverified)*'))
+    # What measures the free-space floor: the producer at every attempt, the host twice, nothing in between.
+    limits = document.split('\n## Known limits\n')[1].split('\n## ')[0]
+    shared = next(line for line in limits.splitlines() if line.startswith('- **The journal shares the root filesystem.**'))
+    assert all(phrase in shared for phrase in (
+        '**In code, at every attempt:**', 'at the start of every attempt of every session', 'refuses below the floor of 53687091200 bytes',
+        '`MASSIVE_SERVICE_LOW_DISK`', '`r2d2_v2_massive_producer.py` lines 304–311', 'the supervisor exits 1 before any provider connection',
+        'while the free space stays below the floor every later attempt meets the same refusal',
+        'The reader then gets no bars for the rest of that day',
+        '**On the host, twice:**', "the GO's larger number", 'nothing on the host measures it between the two or afterwards',
+        'Nothing warns before the floor is reached'))
+    assert 'nothing measures it between or afterwards' not in document
+    assert 'before=_storage_usage(directory,sessions=True)' in source[303]
+    assert "before['free_bytes']<MIN_SESSION_FREE_BYTES" in source[306] and "'MASSIVE_SERVICE_LOW_DISK'" in source[307]
+    assert source[310].strip() == 'raise SourceUnavailable(reason)'
+    supervisor = (BACKEND / 'app' / 'r2d2_v2_massive_supervisor.py').read_text()
+    assert "'reason':'SUPERVISOR_PRODUCER_FAILURE'" in supervisor and 'MASSIVE_SERVICE_LOW_DISK' not in supervisor   # not a 78
+    assert all(phrase in limits for phrase in (
+        '- **Both journal values exist twice on the host**, in the two installed units, and the container value a third time, in `pins.env`',
+        "the catalog binds the device of the journal root, which is now the root filesystem's"))
+    assert 'a third time in `pins.env`' not in document
+    # The sentences that carry the decision outside the journal section.
+    journal_line = next(line for line in document.splitlines() if line.startswith('- `C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR` is'))
+    assert '**never a path under `/app/day-d-data`**' in journal_line and 'the journal is not in the data volume' in journal_line
+    data_row = next(line for line in document.splitlines() if line.startswith('| `@HOST_DATA_ROOT@` |'))
+    assert 'The journal is not in it' in data_row and 'journal is a leaf' not in document
+    container_row = next(line for line in document.splitlines() if line.startswith('| `@CONTAINER_JOURNAL_ROOT@` |'))
+    assert 'a child of `/` whose name begins with `c3po-`' in container_row and '| `/c3po-journal` |' in container_row
     # Nothing in the document still places the journal in the data volume, except where it names the earlier layout.
     for line in document.splitlines():
         if 'journal' in line.lower() and '/app/day-d-data/<leaf>' in line:

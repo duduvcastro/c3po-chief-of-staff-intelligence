@@ -417,9 +417,11 @@ jobs:
         timeout-minutes: 5
         # Renders the reader unit template (ExecCondition, ExecStartPre, ExecStart, ExecStop)
         # and runs the image check and the start on a real engine with no network and no
-        # database: throwaway root-owned 0700 directories (data, journal, capacity and
-        # configuration), each bound read-only, the journal one at the container journal root
-        # that pins.env names, and the three environment files with both collection flags off.
+        # database: throwaway root-owned 0700 directories; data, journal and capacity are bound
+        # read-only, the journal one at the container journal root that pins.env names, and of
+        # the configuration directory only its launcher subdirectory is bound, read-only (the
+        # configuration directory itself is never mounted); the three environment files have
+        # both collection flags off.
         # The journal directory is empty and nothing opens it here. The launcher must end
         # in 78 with exactly one REFUSED line: READER_SESSION or READER_WINDOW outside the
         # session windows of the epoch, READER_DISABLED inside one. A second start with

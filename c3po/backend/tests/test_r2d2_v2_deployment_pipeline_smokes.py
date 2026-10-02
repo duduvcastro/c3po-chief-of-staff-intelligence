@@ -185,6 +185,17 @@ def test_the_refusal_step_runs_the_rendered_unit_and_requires_one_documented_ref
     for name in (REFUSAL, STOP):
         assert step(name)['run'].count('"%s"' % JOURNAL) == 1 and '/app/day-d-data/smoke/journal' not in raw(name)
         assert 'C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=/' not in raw(name)
+        # Both steps refuse a rendered start shorter than the one with the journal bind (46 elements).
+        assert step(name)['run'].count('[ "${#argv[@]}" -ge 46 ] || fail "rendered ExecStart is too short"') == 1
+        assert not re.search(r'#argv\[@\]\}" -ge (?!46 )', step(name)['run'])
+    # The comment says what is bound: three directories and the launcher subdirectory, never the configuration directory.
+    assert all(phrase in text for phrase in (
+        '# database: throwaway root-owned 0700 directories; data, journal and capacity are bound',
+        '# read-only, the journal one at the container journal root that pins.env names, and of',
+        '# the configuration directory only its launcher subdirectory is bound, read-only (the',
+        '# configuration directory itself is never mounted)'))
+    assert 'each bound read-only' not in text
+    assert '(values["@HOST_CONFIG_DIR@"] + "/launcher", "/c3po-reader")' in text
     # The start is the rendered argument list, unchanged: nothing is appended to it and nothing is replaced in it.
     script = step(REFUSAL)['run']
     assert not re.search(r'^\s*argv(\[[^\]]*\])?\+?=', script, re.M) and '--env ' not in script
@@ -208,7 +219,10 @@ def test_the_stop_step_stops_the_rendered_start_with_the_rendered_stop():
         'docker top c3po-reader > "$out/reader-stop-top.txt"', '[ "$(grep -c -- "$marker" "$out/reader-stop-top.txt")" -eq 1 ]',
         'sudo kill -0 "$runner"', "docker inspect --format '{{.HostConfig.Init}}' c3po-reader", '[ "$init" = true ] ||',
         "docker inspect --format '{{json .Mounts}}' c3po-reader > \"$out/reader-stop-mounts.txt\"",
-        'python3 - "$out/reader-stop-argv.bin" "$out/reader-stop-mounts.txt" <<\'PY\' ||',
+        'python3 - "$out/reader-stop-argv.bin" "$out/reader-stop-mounts.txt" <<\'PY\' '
+        '|| fail "the engine does not list the four read-only binds of the rendered unit"',
+        '|| fail "the mounts of the container could not be read"',
+        '[ "${#argv[@]}" -ge 46 ] || fail "rendered ExecStart is too short"',
         'sudo install -d -m 0700 -o 0 -g 0 "$base/data" "$base/journal" "$base/capacity" "$base/etc"',
         'sudo find "$base/data" "$base/journal" "$base/capacity" -mindepth 1',
         'sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${stop[@]}" > "$out/reader-stop-docker-stop.log" 2>&1',
@@ -298,7 +312,9 @@ def test_both_reader_steps_embed_the_same_render_and_it_renders_the_unit_and_the
     # file and the two source directories are the only values still under /app/day-d-data.
     assert pins[documented.index('C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR')] == 'C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=' + JOURNAL
     assert [line.split('=', 1)[0] for line in pins if '/app/day-d-data' in line] == DATA_NAMES
-    assert len(Path(JOURNAL).parts) == 2 and JOURNAL not in ('/app', '/tmp', '/c3po-capacity', '/c3po-reader')
+    # The smoke's container journal root is inside the grammar of the document, which the document states.
+    assert re.fullmatch(r'/c3po-[a-z0-9][a-z0-9-]*', JOURNAL) and JOURNAL not in ('/c3po-capacity', '/c3po-reader')
+    assert len(Path(JOURNAL).parts) == 2 and '`^/c3po-[a-z0-9][a-z0-9-]*$`' in (READER / 'README.md').read_text()
     other = (stage / 'pins-other.env').read_text().splitlines()
     assert other[:-1] == pins[:-1] and other[-1] == 'C3PO_READER_LAUNCHER_SHA256=' + '0' * 64
     assert (stage / 'activation.env').read_text() == readme_block('activation-env').replace('=true', '=false')

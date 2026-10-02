@@ -375,12 +375,43 @@ def test_the_readme_gives_the_dispatch_the_journal_bind_of_the_units_read_only()
         "the producer unit's `@CONTAINER_JOURNAL_ROOT@`, a child of `/`", 'the journal catalog', '`maintenance.lock`'))
     assert '/app/day-d-data' not in journal and '`/c3po-capacity`' in capacity and '`/etc/c3po-bar/manifests`' in manifests
     for phrase in ("the payload's own readback must show the four mounts and nothing else", '**The journal bind.**',
-                   '**Parameters.**', '**Effective filesystem.**', '**Ownership and isolation.**',
+                   '**Parameters.**', '**Effective filesystem.**',
                    '**The overlap guard is unchanged.**', '`findmnt -n -o TARGET,SOURCE,FSTYPE --target <host journal root>`',
                    'the device number differs from the data volume\'s', '`MASSIVE_SESSION_ROOT_UNVERIFIED`',
                    "`C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR` of `pins.env` is the producer unit's `@CONTAINER_JOURNAL_ROOT@`",
-                   'not a path under `/app/day-d-data`', '*(unverified)*'):
+                   'not a path under `/app/day-d-data`', '*(unverified)*',
+                   # The bind is read-only, and the decision carries no date here.
+                   'The bind carries `readonly`.', "By the owner's decision (its record is outside this repository)",
+                   # Where the expected filesystem values live: not in the tool's REQUEST or dispatch GO.
+                   '**Where the expected values live:**',
+                   'Its REQUEST and its dispatch GO carry `source`, `target` and `readonly` for each mount and nothing else',
+                   'each dispatch GO binds them through `payload_sha256`',
+                   'the host-binding document behind `host_binding_sha256`',
+                   "**until one of them carries the values, no dispatch GO names the journal's filesystem**",
+                   # Ownership and isolation are checks of the payload, not a statement.
+                   '**Ownership and isolation, checked before `docker run`.**', 'The payload refuses unless:',
+                   'a real directory, not a symbolic link, `root:root`, mode 0700',
+                   '`epoch.json` and `maintenance.lock` in it are regular files, `root:root`, mode 0600, one link',
+                   '`docker info` names neither user-namespace remapping nor rootless mode',
+                   # The floor: the producer measures it at every attempt; the host measures the GO's number twice.
+                   'The producer itself measures the floor of 53687091200 bytes at every attempt and refuses below it '
+                   '(`MASSIVE_SERVICE_LOW_DISK`)', 'and by nothing in between'):
         assert phrase in section, phrase
+    assert 'decision of 20' not in readme and 'they are the ones its GO names' not in readme
+    # The two documents of the tool have no slot for a filesystem line or a device number: the README says so because
+    # the code is so.
+    tool = (DEPLOYMENT / 'capacity_day_documents.py').read_text()
+    for function in ('request_document', 'dispatch_go_document'):
+        body = tool.split('\ndef %s(' % function)[1].split('\ndef ')[0]
+        assert 'host_binding_sha256' in body and not any(word in body for word in ('device', 'findmnt', 'filesystem', 'fstype'))
+    assert "'payload_sha256': payload_sha" in tool.split('\ndef dispatch_go_document(')[1].split('\ndef ')[0]
+    documents = (DEPLOYMENT / 'README.documents.md').read_text()
+    row = next(line for line in documents.splitlines() if line.startswith('| `mounts` |'))
+    assert all(phrase in row for phrase in (
+        'For this epoch the list has four entries', '**The tool cannot tell whether the journal bind is present or names the right directory**',
+        "So are the checks of the journal's filesystem, owner and mode",
+        'the REQUEST and the dispatch GO carry only `source`, `target` and `readonly` for a mount',
+        'in the payload bytes (bound by `payload_sha256`) or in the document behind `host_binding_sha256`'))
     assert 'exactly three' not in readme and 'the three mounts' not in readme.replace('the three mounts of', '')
     assert 'The four mounts on the host' in readme
     # The unit both sides copy: the reader's journal bind is the producer's line, read-only.

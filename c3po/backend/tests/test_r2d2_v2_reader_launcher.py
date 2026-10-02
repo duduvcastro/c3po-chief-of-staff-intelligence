@@ -13,6 +13,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -69,10 +70,16 @@ def calendar():
     return result
 
 
+# The journal directory as pins.env gives it: the producer unit's container journal root, a child of '/', never a
+# leaf of the data bind (deployment/reader/README.md, "Journal root").
+JOURNAL_DIR = '/c3po-journal'
+assert re.fullmatch(r'/c3po-[a-z0-9][a-z0-9-]*', JOURNAL_DIR) and JOURNAL_DIR not in ('/c3po-capacity', '/c3po-reader')
+
+
 def enabled(**changes):
     """The real settings class, with the reader's variables as the three environment files give them."""
     values = dict(r2d2_v2_shadow_enabled=True, r2d2_v2_massive_bars_enabled=True, database_url=PRIVATE_URL,
-        r2d2_v2_massive_journal_dir='/app/day-d-data/journal-leaf', build_sha='a' * 40,
+        r2d2_v2_massive_journal_dir=JOURNAL_DIR, build_sha='a' * 40,
         r2d2_v2_shadow_release_sha='b' * 64, r2d2_v2_capacity_required=True, r2d2_v2_capacity_config_sha='c' * 64)
     return Settings(**{**values, **changes})
 
@@ -120,21 +127,27 @@ class FakeChild:
 
 def run_day(calendar, start, *, plans=None, stop_at=None, ready_at=None, settings=None, sessions=SESSIONS,
             pin='', sha=None):
-    clock = Clock(start); notices = []; children = []
+    clock = Clock(start); notices = []; children = []; looked = []
 
     def spawn(phase):
         children.append(FakeChild(clock, phase, (plans or {}).get(phase, {})))
         return children[-1]
 
+    def ready(journal, key):
+        looked.append(journal)
+        return ready_at is not None and clock.now >= ready_at
+
     status = launcher.supervise(utcnow=clock, sleep=clock.sleep, notice=notices.append, spawn=spawn,
         calendar=calendar, sessions=sessions, settings=settings or enabled,
         stop_requested=lambda: stop_at is not None and clock.now >= stop_at,
-        ready=lambda journal, key: ready_at is not None and clock.now >= ready_at,
+        ready=ready,
         launcher_sha=sha, launcher_pin=pin)
     # Whatever the outcome, no child is left running and every notice is one JSON line without the secret.
     assert all(child.code is not None and child.closes >= 1 for child in children)
     text = [json.dumps(item, sort_keys=True) for item in notices]
-    assert not any('\n' in line or 'NEVERPRINTED' in line or '/app/' in line for line in text)
+    assert not any('\n' in line or 'NEVERPRINTED' in line or '/app/' in line or JOURNAL_DIR in line for line in text)
+    # The marker is looked for in the journal directory of the settings, unchanged: the top-level bind target.
+    assert set(looked) <= {JOURNAL_DIR}
     return status, notices, children, clock
 
 
