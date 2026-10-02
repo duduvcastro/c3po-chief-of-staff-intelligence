@@ -213,7 +213,7 @@ def test_observation_resolves_labels_adjustment_basis_bands_and_the_persisted_co
     assert dated["consensus"]["published_at"] == "2026-09-04" and dated["consensus_status"] == "present"  # a date-only clock: that day's midnight UTC, before 22:00
     # an unattested block — any of the FIVE fields of PROMO-2 c missing (source, horizon, currency, instant, hash; C396-4), or an unparseable
     # instant — is never the consensus that existed: excluded by the explicit cause, the source's own error untouched
-    for field, value, cause in (("source", None, "source"), ("source", "", "source"), ("horizon", None, "horizon"), ("horizon", "", "horizon"),
+    for field, value, cause in (("source", None, "source"), ("source", "", "source"), ("horizon", None, "horizon"), ("horizon", "", "horizon"), ("horizon", "N/D", "horizon"),
                                 ("currency", None, "currency"), ("published_at", None, "published_at"), ("published_at", "", "published_at"),
                                 ("published_at", "soon", "instant_unparseable"), ("payload_sha256", None, "payload_sha256")):
         block = {**record["decomposition"]["consensus"], field: value}
@@ -238,6 +238,21 @@ def test_observation_resolves_labels_adjustment_basis_bands_and_the_persisted_co
     rerun = panel.observation(_record("NASDAQ", "AAPL", tp=250.0, price=230.0, instant=datetime(2026, 9, 4, 22, 0, tzinfo=UTC),
                                       published_at=datetime(2026, 9, 6, tzinfo=UTC), rerun_of="c1"), at_session, labels)
     assert rerun["rerun_of"] == "c1" and rerun["published_at"] == "2026-09-06T00:00:00+00:00" and rerun["prediction_instant"] == "2026-09-04T22:00:00+00:00"
+
+
+def test_the_official_horizon_12m_is_present_while_an_unattested_literal_is_refused() -> None:
+    """P2-1: the official emitter's block (``consensus_block`` defaults the horizon to ``12m``) is ``present``; the PIT
+    re-executor's ``N/D`` — a literal that attests nothing (design §3) — is ``consensus_unattested:horizon``, as None/""."""
+    instant = datetime(2026, 9, 4, 22, 0, tzinfo=UTC)
+    record = _record("NASDAQ", "AAPL", tp=250.0, price=230.0, instant=instant)
+    assert record["decomposition"]["consensus"]["horizon"] == "12m" and panel._consensus_of(record)[1] == "present"
+    explicit = _record("NASDAQ", "AAPL", tp=250.0, price=230.0, instant=instant, consensus_horizon="12m")
+    assert panel._consensus_of(explicit)[1] == "present"
+    assert panel.UNATTESTED_HORIZONS == ("N/D",)
+    for literal in panel.UNATTESTED_HORIZONS:
+        unattested = _record("NASDAQ", "AAPL", tp=250.0, price=230.0, instant=instant, consensus_horizon=literal)
+        assert unattested["decomposition"]["consensus"]["horizon"] == literal and panel._consensus_of(unattested)[1] == "consensus_unattested:horizon"
+        assert panel._consensus_of(unattested)[0]["tp"] == 275.0  # reported, never compared
 
 
 def test_horizon_metrics_keep_immature_out_of_the_denominator_and_intersect_the_mask() -> None:
