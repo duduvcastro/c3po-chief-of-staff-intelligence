@@ -114,7 +114,8 @@ def readme_block(name):
 def test_the_three_steps_follow_the_supervisor_step_and_precede_the_artefact_upload():
     listed = steps(); names = [item.get('name') for item in listed]
     at = names.index(SUPERVISOR)
-    assert names[at:at + 5] == [SUPERVISOR, REFUSAL, STOP, WRITER, UPLOAD]
+    # The compose capacity-mount render (PR #437) sits between the supervisor step and these three.
+    assert names[at:at + 6] == [SUPERVISOR, 'Render the compose capacity mount on a real engine', REFUSAL, STOP, WRITER, UPLOAD]
     built = step('Validate production Docker images')
     assert '--tag c3po/backend:pr-validation' in built['run']
     for name in NEW_STEPS:
