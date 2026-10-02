@@ -3,7 +3,7 @@ Description=Day-bounded R2D2 V2 shadow reader
 Wants=network-online.target
 Requires=docker.service
 After=network-online.target docker.service
-RequiresMountsFor=@HOST_DATA_ROOT@ @HOST_CAPACITY_ROOT@ @HOST_CONFIG_DIR@
+RequiresMountsFor=@HOST_DATA_ROOT@ @HOST_JOURNAL_ROOT@ @HOST_CAPACITY_ROOT@ @HOST_CONFIG_DIR@
 StartLimitIntervalSec=8h
 StartLimitBurst=40
 OnFailure=c3po-reader-alert.service
@@ -24,6 +24,7 @@ ExecStart=/usr/bin/docker run --rm --init --restart no --name c3po-reader --pull
   --env-file @HOST_CONFIG_DIR@/pins.env \
   --env-file @HOST_CONFIG_DIR@/activation.env \
   --mount type=bind,source=@HOST_DATA_ROOT@,target=/app/day-d-data,readonly \
+  --mount type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@,readonly \
   --mount type=bind,source=@HOST_CAPACITY_ROOT@,target=/c3po-capacity,readonly \
   --mount type=bind,source=@HOST_CONFIG_DIR@/launcher,target=/c3po-reader,readonly \
   @IMAGE_ID@ \

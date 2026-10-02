@@ -417,8 +417,10 @@ jobs:
         timeout-minutes: 5
         # Renders the reader unit template (ExecCondition, ExecStartPre, ExecStart, ExecStop)
         # and runs the image check and the start on a real engine with no network and no
-        # database: throwaway root-owned 0700 directories, the launcher bound read-only, and
-        # the three environment files with both collection flags off. The launcher must end
+        # database: throwaway root-owned 0700 directories (data, journal, capacity and
+        # configuration), each bound read-only, the journal one at the container journal root
+        # that pins.env names, and the three environment files with both collection flags off.
+        # The journal directory is empty and nothing opens it here. The launcher must end
         # in 78 with exactly one REFUSED line: READER_SESSION or READER_WINDOW outside the
         # session windows of the epoch, READER_DISABLED inside one. A second start with
         # another launcher hash in pins.env must end in READER_LAUNCHER_PIN: the pin file
@@ -449,7 +451,7 @@ jobs:
           stage="$(mktemp -d)" || fail "no staging directory"
           base="$(sudo mktemp -d)" || fail "no throwaway directory"
           [[ "$base" == /* && "$base" != *@* ]] || fail "unusable throwaway directory"
-          sudo install -d -m 0700 -o 0 -g 0 "$base/data" "$base/capacity" "$base/etc" \
+          sudo install -d -m 0700 -o 0 -g 0 "$base/data" "$base/journal" "$base/capacity" "$base/etc" \
             "$base/etc/docker-cli" "$base/etc/launcher" || fail "the throwaway directories could not be created"
           python3 - "$id" "$base" "$out" "$stage" reader-refusal "$pin" false <<'PY' || fail "the reader unit could not be rendered"
           import re, shlex, sys
@@ -461,12 +463,14 @@ jobs:
           values = {
               "@IMAGE_ID@": image,
               "@HOST_DATA_ROOT@": base + "/data",
+              "@HOST_JOURNAL_ROOT@": base + "/journal",
+              "@CONTAINER_JOURNAL_ROOT@": "/c3po-journal",
               "@HOST_CAPACITY_ROOT@": base + "/capacity",
               "@HOST_CONFIG_DIR@": base + "/etc",
               "@NETWORK@": "none",
           }
           if set(re.findall(r"@[A-Z_]+@", unit)) != set(values):
-              sys.exit("unit template no longer matches the five documented substitutions")
+              sys.exit("unit template no longer matches the seven documented substitutions")
           def rendered(key, lead, count):
               # Lines of one key whose command starts with `lead`; the optional-failure dash is not part of the command.
               found = [line[len(key) + 1:].lstrip("-") for line in joined if line.startswith(key + "=" + lead)]
@@ -490,6 +494,14 @@ jobs:
               sys.exit("rendered ExecStart does not end in the launcher command")
           if [argv[at + 1] for at, value in enumerate(argv) if value == "--env-file"] != files:
               sys.exit("rendered ExecStart does not read exactly the three environment files")
+          # The journal is its own read-only bind, at the container path that pins.env names below; never under the data bind.
+          binds = [(values["@HOST_DATA_ROOT@"], "/app/day-d-data"),
+                   (values["@HOST_JOURNAL_ROOT@"], values["@CONTAINER_JOURNAL_ROOT@"]),
+                   (values["@HOST_CAPACITY_ROOT@"], "/c3po-capacity"),
+                   (values["@HOST_CONFIG_DIR@"] + "/launcher", "/c3po-reader")]
+          if [argv[at + 1] for at, value in enumerate(argv) if value == "--mount"] != [
+                  "type=bind,source=%s,target=%s,readonly" % bind for bind in binds]:
+              sys.exit("rendered ExecStart does not have exactly the four read-only binds")
           if rendered("ExecCondition", "/", 3) != [["/usr/bin/test", "-f", path] for path in files]:
               sys.exit("rendered ExecCondition lines do not name the three environment files")
           if check != ["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", image]:
@@ -507,7 +519,7 @@ jobs:
               "C3PO_R2D2_V2_SHADOW_RELEASE_SHA=" + zero,
               "C3PO_R2D2_V2_SHADOW_SOURCE_DIR=/app/day-d-data/smoke/source",
               "C3PO_R2D2_MICROSTRUCTURE_RAW_DIR=/app/day-d-data/provider=eodhd/microstructure/raw",
-              "C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=/app/day-d-data/smoke/journal",
+              "C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=" + values["@CONTAINER_JOURNAL_ROOT@"],
               "C3PO_R2D2_V2_CAPACITY_REQUIRED=true",
               "C3PO_R2D2_V2_CAPACITY_VETO_MODE=DISPATCH_AND_DERIVATION_ONLY",
               "C3PO_R2D2_V2_CAPACITY_CONFIG_FILE=/c3po-capacity/config/smoke.json",
@@ -524,7 +536,7 @@ jobs:
           PY
           mapfile -d '' -t argv < "$out/reader-refusal-argv.bin" || fail "the rendered ExecStart could not be read"
           mapfile -d '' -t check < "$out/reader-refusal-check-argv.bin" || fail "the rendered ExecStartPre could not be read"
-          [ "${#argv[@]}" -ge 40 ] || fail "rendered ExecStart is too short"
+          [ "${#argv[@]}" -ge 46 ] || fail "rendered ExecStart is too short"
           [ "${#check[@]}" -eq 6 ] || fail "rendered ExecStartPre has the wrong length"
           printf '%q ' "${argv[@]}" > "$out/reader-refusal-command.txt" || fail "the rendered command could not be recorded"
           sudo install -m 0600 -o 0 -g 0 "$launcher" "$base/etc/launcher/reader_launcher.py" || fail "the launcher could not be placed"
@@ -559,7 +571,7 @@ jobs:
           refusal flags-off READER_SESSION READER_WINDOW READER_DISABLED || fail "the reader did not refuse as documented"
           sudo install -m 0600 -o 0 -g 0 "$stage/pins-other.env" "$base/etc/pins.env" || fail "pins.env could not be replaced"
           refusal other-pin READER_LAUNCHER_PIN || fail "another launcher hash in pins.env was not refused"
-          left="$(sudo find "$base/data" "$base/capacity" -mindepth 1)" || fail "the mount sources could not be listed"
+          left="$(sudo find "$base/data" "$base/journal" "$base/capacity" -mindepth 1)" || fail "the mount sources could not be listed"
           [ -z "$left" ] || fail "the refusal left an object in a mount source"
           containers="$(docker ps -a --filter 'name=^c3po-reader$' -q)" || fail "the containers could not be listed"
           [ -z "$containers" ] || fail "leftover c3po-reader container"
@@ -575,9 +587,11 @@ jobs:
         # seams, a clock frozen one hour before the open of the first session in the image
         # and a sleeping stand-in instead of the worker. Both flags are on (the constant
         # bytes of activation.env); no worker, no network and no database are involved.
-        # Once the stand-in is visible in the container, the rendered ExecStop (docker stop)
-        # must end the start with exit 0, a STARTING and a STOPPED notice with the child
-        # ended by SIGTERM and not killed, no container and no stand-in process left.
+        # Once the stand-in is visible in the container, the engine must list exactly the four
+        # read-only binds of the rendered start, the journal one among them, and the rendered
+        # ExecStop (docker stop) must end the start with exit 0, a STARTING and a STOPPED
+        # notice with the child ended by SIGTERM and not killed, no container and no stand-in
+        # process left. The journal directory is empty: the bind is listed, nothing opens it.
         # What it does not exercise: the worker itself, systemd, and the launcher's own
         # clock and phases (the refusal step above runs the unmodified command).
         # Every guard is explicit; nothing here relies on `set -e`.
@@ -610,7 +624,7 @@ jobs:
           stage="$(mktemp -d)" || fail "no staging directory"
           base="$(sudo mktemp -d)" || fail "no throwaway directory"
           [[ "$base" == /* && "$base" != *@* ]] || fail "unusable throwaway directory"
-          sudo install -d -m 0700 -o 0 -g 0 "$base/data" "$base/capacity" "$base/etc" \
+          sudo install -d -m 0700 -o 0 -g 0 "$base/data" "$base/journal" "$base/capacity" "$base/etc" \
             "$base/etc/docker-cli" "$base/etc/launcher" || fail "the throwaway directories could not be created"
           python3 - "$id" "$base" "$out" "$stage" reader-stop "$pin" true <<'PY' || fail "the reader unit could not be rendered"
           import re, shlex, sys
@@ -622,12 +636,14 @@ jobs:
           values = {
               "@IMAGE_ID@": image,
               "@HOST_DATA_ROOT@": base + "/data",
+              "@HOST_JOURNAL_ROOT@": base + "/journal",
+              "@CONTAINER_JOURNAL_ROOT@": "/c3po-journal",
               "@HOST_CAPACITY_ROOT@": base + "/capacity",
               "@HOST_CONFIG_DIR@": base + "/etc",
               "@NETWORK@": "none",
           }
           if set(re.findall(r"@[A-Z_]+@", unit)) != set(values):
-              sys.exit("unit template no longer matches the five documented substitutions")
+              sys.exit("unit template no longer matches the seven documented substitutions")
           def rendered(key, lead, count):
               # Lines of one key whose command starts with `lead`; the optional-failure dash is not part of the command.
               found = [line[len(key) + 1:].lstrip("-") for line in joined if line.startswith(key + "=" + lead)]
@@ -651,6 +667,14 @@ jobs:
               sys.exit("rendered ExecStart does not end in the launcher command")
           if [argv[at + 1] for at, value in enumerate(argv) if value == "--env-file"] != files:
               sys.exit("rendered ExecStart does not read exactly the three environment files")
+          # The journal is its own read-only bind, at the container path that pins.env names below; never under the data bind.
+          binds = [(values["@HOST_DATA_ROOT@"], "/app/day-d-data"),
+                   (values["@HOST_JOURNAL_ROOT@"], values["@CONTAINER_JOURNAL_ROOT@"]),
+                   (values["@HOST_CAPACITY_ROOT@"], "/c3po-capacity"),
+                   (values["@HOST_CONFIG_DIR@"] + "/launcher", "/c3po-reader")]
+          if [argv[at + 1] for at, value in enumerate(argv) if value == "--mount"] != [
+                  "type=bind,source=%s,target=%s,readonly" % bind for bind in binds]:
+              sys.exit("rendered ExecStart does not have exactly the four read-only binds")
           if rendered("ExecCondition", "/", 3) != [["/usr/bin/test", "-f", path] for path in files]:
               sys.exit("rendered ExecCondition lines do not name the three environment files")
           if check != ["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", image]:
@@ -668,7 +692,7 @@ jobs:
               "C3PO_R2D2_V2_SHADOW_RELEASE_SHA=" + zero,
               "C3PO_R2D2_V2_SHADOW_SOURCE_DIR=/app/day-d-data/smoke/source",
               "C3PO_R2D2_MICROSTRUCTURE_RAW_DIR=/app/day-d-data/provider=eodhd/microstructure/raw",
-              "C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=/app/day-d-data/smoke/journal",
+              "C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=" + values["@CONTAINER_JOURNAL_ROOT@"],
               "C3PO_R2D2_V2_CAPACITY_REQUIRED=true",
               "C3PO_R2D2_V2_CAPACITY_VETO_MODE=DISPATCH_AND_DERIVATION_ONLY",
               "C3PO_R2D2_V2_CAPACITY_CONFIG_FILE=/c3po-capacity/config/smoke.json",
@@ -700,7 +724,7 @@ jobs:
           PY
           mapfile -d '' -t argv < "$out/reader-stop-argv.bin" || fail "the rendered ExecStart could not be read"
           mapfile -d '' -t stop < "$out/reader-stop-stop-argv.bin" || fail "the rendered ExecStop could not be read"
-          [ "${#argv[@]}" -ge 40 ] || fail "rendered ExecStart is too short"
+          [ "${#argv[@]}" -ge 46 ] || fail "rendered ExecStart is too short"
           [ "${#stop[@]}" -eq 5 ] || fail "rendered ExecStop has the wrong length"
           last=$(( ${#argv[@]} - 1 ))
           [ "${argv[$last]}" = /c3po-reader/reader_launcher.py ] || fail "rendered ExecStart does not end in the launcher"
@@ -727,6 +751,27 @@ jobs:
           [ "$running" -eq 1 ] || fail "the stand-in child never appeared in the container"
           init="$(docker inspect --format '{{.HostConfig.Init}}' c3po-reader)" || fail "the container could not be inspected"
           [ "$init" = true ] || fail "the container does not run under docker-init"
+          docker inspect --format '{{json .Mounts}}' c3po-reader > "$out/reader-stop-mounts.txt" \
+            || fail "the mounts of the container could not be read"
+          python3 - "$out/reader-stop-argv.bin" "$out/reader-stop-mounts.txt" <<'PY' || fail "the engine does not list the four read-only binds of the rendered unit"
+          import json, sys
+          argv = open(sys.argv[1], encoding="utf-8").read().split("\0")
+          wanted = []
+          for at, value in enumerate(argv):
+              if value == "--mount":
+                  fields = argv[at + 1].split(",")
+                  pairs = dict(field.split("=", 1) for field in fields if "=" in field)
+                  if set(pairs) != {"type", "source", "target"} or pairs["type"] != "bind":
+                      sys.exit("a rendered mount is not a bind with a source and a target")
+                  if [field for field in fields if "=" not in field] != ["readonly"]:
+                      sys.exit("a rendered mount is not read-only")
+                  wanted.append([pairs["source"], pairs["target"], False])
+          # The engine's own list: every bind of the running container, with what it may write.
+          listed = json.loads(open(sys.argv[2], encoding="utf-8").read())
+          seen = [[item.get("Source"), item.get("Destination"), item.get("RW")] for item in listed if item.get("Type") == "bind"]
+          if len(wanted) != 4 or sorted(map(json.dumps, seen)) != sorted(map(json.dumps, wanted)):
+              sys.exit("the engine lists other binds than the rendered unit")
+          PY
           started=$SECONDS
           sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${stop[@]}" > "$out/reader-stop-docker-stop.log" 2>&1 \
             || fail "the rendered ExecStop failed"
@@ -761,7 +806,7 @@ jobs:
           if pgrep -f -- "$marker" > "$out/reader-stop-left.txt"; then
             fail "the stand-in child is still running"
           fi
-          left="$(sudo find "$base/data" "$base/capacity" -mindepth 1)" || fail "the mount sources could not be listed"
+          left="$(sudo find "$base/data" "$base/journal" "$base/capacity" -mindepth 1)" || fail "the mount sources could not be listed"
           [ -z "$left" ] || fail "the run left an object in a mount source"
 
       - name: Exercise the manifest writer off path against the backend image

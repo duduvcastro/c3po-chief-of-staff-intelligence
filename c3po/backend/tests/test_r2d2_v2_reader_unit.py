@@ -25,7 +25,12 @@ from app.r2d2_v2_epoch_assembler import SESSIONS
 BACKEND = Path(__file__).resolve().parents[1]
 UNIT_ROOT = BACKEND.parent / 'deployment' / 'reader'
 SUPERVISOR_ROOT = BACKEND.parent / 'deployment' / 'massive-supervisor'
-PLACEHOLDERS = ('@IMAGE_ID@', '@HOST_DATA_ROOT@', '@HOST_CAPACITY_ROOT@', '@HOST_CONFIG_DIR@', '@NETWORK@')
+PLACEHOLDERS = ('@IMAGE_ID@', '@HOST_DATA_ROOT@', '@HOST_JOURNAL_ROOT@', '@CONTAINER_JOURNAL_ROOT@', '@HOST_CAPACITY_ROOT@',
+                '@HOST_CONFIG_DIR@', '@NETWORK@')
+HOST_PATHS = ('@HOST_DATA_ROOT@', '@HOST_JOURNAL_ROOT@', '@HOST_CAPACITY_ROOT@', '@HOST_CONFIG_DIR@')
+# The producer's own bind line with `readonly` added: same source, same container path.
+JOURNAL_MOUNT = 'type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@,readonly'
+REQUIRES = 'RequiresMountsFor=@HOST_DATA_ROOT@ @HOST_JOURNAL_ROOT@ @HOST_CAPACITY_ROOT@ @HOST_CONFIG_DIR@'
 ENV_FILES = ['@HOST_CONFIG_DIR@/secret.env', '@HOST_CONFIG_DIR@/pins.env', '@HOST_CONFIG_DIR@/activation.env']
 LAUNCHER_TAIL = ['python', '-I', '-B', '/c3po-reader/reader_launcher.py']
 WORKER_TAIL = ['python', '-B', '-m', 'app.r2d2_v2_shadow_worker']
@@ -36,6 +41,7 @@ OPTIONS = [('--rm', None), ('--init', None), ('--restart', 'no'), ('--name', 'c3
     ('--security-opt', 'no-new-privileges'), ('--pids-limit', '512'), ('--stop-timeout', '25'),
     ('--env-file', ENV_FILES[0]), ('--env-file', ENV_FILES[1]), ('--env-file', ENV_FILES[2]),
     ('--mount', 'type=bind,source=@HOST_DATA_ROOT@,target=/app/day-d-data,readonly'),
+    ('--mount', JOURNAL_MOUNT),
     ('--mount', 'type=bind,source=@HOST_CAPACITY_ROOT@,target=/c3po-capacity,readonly')]
 LAUNCHER_MOUNT = ('--mount', 'type=bind,source=@HOST_CONFIG_DIR@/launcher,target=/c3po-reader,readonly')
 FORBIDDEN = {'-d', '--detach', '-t', '--tty', '-i', '--interactive', '-e', '--env', '-v', '--volume', '--privileged',
@@ -109,23 +115,45 @@ def test_unit_container_arguments_are_pinned():
     assert tail == LAUNCHER_TAIL
     assert set(re.findall(r'@[A-Z_]+@', unit)) == set(PLACEHOLDERS)
     assert unit.count('@') == 2 * len(re.findall(r'@[A-Z_]+@', unit))
-    assert [unit.count(name) for name in PLACEHOLDERS] == [2, 2, 2, 9, 1]
+    assert [unit.count(name) for name in PLACEHOLDERS] == [2, 2, 2, 1, 2, 9, 1]
     # None of these in the template is what makes a textual render equal to systemd's own parsing.
     assert not set('%$"\';') & set(unit)
     assert not any(line.lstrip().startswith('#') for line in unit.splitlines())
 
 
-def test_every_mount_is_a_read_only_bind_and_two_targets_are_children_of_the_root():
+def test_every_mount_is_a_read_only_bind_and_the_fixed_targets_are_children_of_the_root():
     options, _ = run_options(exec_start(text('c3po-reader.service')), '@IMAGE_ID@')
     found = mounts(options)
-    assert len(found) == 3 and all(mount['type'] == 'bind' and mount['flags'] == ['readonly'] for mount in found)
-    assert [mount['target'] for mount in found] == ['/app/day-d-data', '/c3po-capacity', '/c3po-reader']
+    assert len(found) == 4 and all(mount['type'] == 'bind' and mount['flags'] == ['readonly'] for mount in found)
+    assert all(set(mount) == {'type', 'source', 'target', 'flags'} for mount in found)
+    assert [mount['target'] for mount in found] == ['/app/day-d-data', '@CONTAINER_JOURNAL_ROOT@', '/c3po-capacity', '/c3po-reader']
     # AnchoredRoot hashes (device, inode) of every component below '/': a pinned capacity root must have no
     # component on the container's own filesystem, so its mount target is a child of '/'.
-    assert all(len(Path(mount['target']).parts) == 2 for mount in found[1:])
+    assert all(len(Path(mount['target']).parts) == 2 for mount in found[2:])
     # The configuration directory is never visible in the container: only its launcher subdirectory is.
-    assert [mount['source'] for mount in found] == ['@HOST_DATA_ROOT@', '@HOST_CAPACITY_ROOT@', '@HOST_CONFIG_DIR@/launcher']
+    assert [mount['source'] for mount in found] == ['@HOST_DATA_ROOT@', '@HOST_JOURNAL_ROOT@', '@HOST_CAPACITY_ROOT@',
+                                                    '@HOST_CONFIG_DIR@/launcher']
     assert not any(option in ('-v', '--volume') or 'docker.sock' in (value or '') for option, value in options)
+
+
+def test_the_journal_bind_is_the_producer_line_made_read_only_at_the_same_path_and_uid():
+    unit = text('c3po-reader.service'); producer = (SUPERVISOR_ROOT / 'c3po-massive.service').read_text()
+    options, _ = run_options(exec_start(unit), '@IMAGE_ID@')
+    producer_options, producer_tail = run_options(exec_start(producer), '@IMAGE_ID@')
+    writable, = [value for name, value in producer_options if name == '--mount' and 'JOURNAL' in value]
+    assert writable == 'type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@'
+    # One journal bind in the reader, and it is the producer's line with `readonly` appended: never read-write.
+    assert [value for name, value in options if name == '--mount' and 'JOURNAL' in value] == [writable + ',readonly'] == [JOURNAL_MOUNT]
+    # The path the producer writes to is the path it binds, so it is the path the reader's pins name.
+    assert producer_tail[producer_tail.index('--journal-root') + 1] == '@CONTAINER_JOURNAL_ROOT@'
+    # Both sides are uid 0 with no capability: the reader reads the producer's private objects as their owner.
+    for side in (options, producer_options):
+        assert ('--user', '0:0') in side and ('--cap-drop', 'ALL') in side
+    # The two names appear in the reader unit only where the bind and its mount ordering need them.
+    lines = unit.splitlines()
+    assert [line for line in lines if '@HOST_JOURNAL_ROOT@' in line] == [REQUIRES, '  --mount ' + JOURNAL_MOUNT + ' \\']
+    assert [line for line in lines if '@CONTAINER_JOURNAL_ROOT@' in line] == ['  --mount ' + JOURNAL_MOUNT + ' \\']
+    assert REQUIRES.split('=', 1)[1].split() == list(HOST_PATHS)
 
 
 def test_the_environment_arrives_only_through_the_three_private_files():
@@ -161,7 +189,7 @@ def test_unit_binds_the_restart_and_stop_contract():
         'RestartPreventExitStatus=78', 'StartLimitIntervalSec=8h', 'StartLimitBurst=40', 'TimeoutStartSec=60s',
         'TimeoutStopSec=30s', 'KillMode=control-group', 'UMask=0077', 'NoNewPrivileges=true',
         'SyslogIdentifier=c3po-reader', 'OnFailure=c3po-reader-alert.service',
-        'RequiresMountsFor=@HOST_DATA_ROOT@ @HOST_CAPACITY_ROOT@ @HOST_CONFIG_DIR@',
+        REQUIRES,
         'ExecStop=-/usr/bin/docker stop -t 25 c3po-reader', 'ExecStopPost=-/usr/bin/docker stop -t 25 c3po-reader'))
     assert [sum(line.startswith(key + '=') for line in lines) for key in ('ExecCondition', 'ExecStartPre', 'ExecStart',
         'ExecStop', 'ExecStopPost', 'Restart', 'RestartSec', 'StartLimitBurst', 'RestartPreventExitStatus',
@@ -257,20 +285,29 @@ def test_the_alert_unit_writes_one_private_dated_marker_and_never_overwrites(tmp
 def render(template, values):
     """The substitution grammar of the document; refuses what the installer must refuse."""
     assert set(values) == set(PLACEHOLDERS)
-    for name in ('@HOST_DATA_ROOT@', '@HOST_CAPACITY_ROOT@', '@HOST_CONFIG_DIR@'):
+    for name in HOST_PATHS:
         value = values[name]
         if not re.fullmatch(r'/[A-Za-z0-9._/-]+', value) or value.endswith('/') or any(
                 part in ('', '.', '..') for part in value.split('/')[1:]):
             raise ValueError(name)
+    # One component below '/', and none of the names this container already uses there.
+    container = values['@CONTAINER_JOURNAL_ROOT@']
+    if not re.fullmatch(r'/[A-Za-z0-9._-]+', container) or container in ('/.', '/..', '/app', '/tmp', '/c3po-capacity',
+                                                                         '/c3po-reader'):
+        raise ValueError('@CONTAINER_JOURNAL_ROOT@')
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', values['@IMAGE_ID@']):
         raise ValueError('@IMAGE_ID@')
     network = values['@NETWORK@']
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', network) or network in ('host', 'none', 'bridge'):
         raise ValueError('@NETWORK@')
-    config = Path(values['@HOST_CONFIG_DIR@'])
-    for other in (Path(values['@HOST_DATA_ROOT@']), Path(values['@HOST_CAPACITY_ROOT@'])):
+    config = Path(values['@HOST_CONFIG_DIR@']); journal = Path(values['@HOST_JOURNAL_ROOT@'])
+    for other in (Path(values['@HOST_DATA_ROOT@']), Path(values['@HOST_CAPACITY_ROOT@']), journal):
         if config == other or other in config.parents:
             raise ValueError('@HOST_CONFIG_DIR@')
+    # The journal root is none of the other three, lies inside none of them and contains none of them.
+    for other in (Path(values['@HOST_DATA_ROOT@']), Path(values['@HOST_CAPACITY_ROOT@']), config):
+        if journal == other or other in journal.parents or journal in other.parents:
+            raise ValueError('@HOST_JOURNAL_ROOT@')
     for name, value in values.items():
         template = template.replace(name, value)
     if '@' in template:
@@ -279,6 +316,7 @@ def render(template, values):
 
 
 SAMPLE = {'@IMAGE_ID@': 'sha256:' + 'a' * 64, '@HOST_DATA_ROOT@': '/mnt/day-d-data',
+          '@HOST_JOURNAL_ROOT@': '/var/lib/c3po-bar/journal', '@CONTAINER_JOURNAL_ROOT@': '/c3po-journal',
           '@HOST_CAPACITY_ROOT@': '/mnt/day-d-data/r2d2-v2-capacity-epoch03', '@HOST_CONFIG_DIR@': '/etc/c3po-reader',
           '@NETWORK@': 'c3po_c3po_internal'}
 
@@ -287,11 +325,17 @@ def test_rendered_unit_matches_the_backend_data_mount():
     unit = render(text('c3po-reader.service'), SAMPLE)
     options, tail = run_options(exec_start(unit), SAMPLE['@IMAGE_ID@'])
     assert tail == LAUNCHER_TAIL and ('--network', 'c3po_c3po_internal') in options
-    assert [mount['source'] for mount in mounts(options)] == ['/mnt/day-d-data', '/mnt/day-d-data/r2d2-v2-capacity-epoch03',
-                                                             '/etc/c3po-reader/launcher']
+    assert [mount['source'] for mount in mounts(options)] == ['/mnt/day-d-data', '/var/lib/c3po-bar/journal',
+        '/mnt/day-d-data/r2d2-v2-capacity-epoch03', '/etc/c3po-reader/launcher']
+    # Every target but the data volume's is a child of '/': the journal is not reached through the data bind.
+    targets = [mount['target'] for mount in mounts(options)]
+    assert targets == ['/app/day-d-data', '/c3po-journal', '/c3po-capacity', '/c3po-reader']
+    assert all(len(Path(target).parts) == 2 for target in targets[1:])
+    assert 'RequiresMountsFor=/mnt/day-d-data /var/lib/c3po-bar/journal /mnt/day-d-data/r2d2-v2-capacity-epoch03 /etc/c3po-reader' \
+        in unit.splitlines()
     assert [value for name, value in options if name == '--env-file'] == [
         '/etc/c3po-reader/secret.env', '/etc/c3po-reader/pins.env', '/etc/c3po-reader/activation.env']
-    # Same data mount as the compose services, so /app/day-d-data/<leaf> is the producer's journal root.
+    # Same data mount as the compose services: the release file and the source directories keep their container paths.
     compose = (BACKEND.parent / 'compose.yml').read_text()
     worker = re.search(r'^  r2d2-worker:\n((?:    .*\n|\n)+)', compose, re.M)
     assert worker is not None and re.search(r'^      - \S+:/app/day-d-data$', worker.group(1), re.M)
@@ -302,6 +346,13 @@ def test_rendered_unit_matches_the_backend_data_mount():
     assert not re.search(r'^\s*USER\b', (BACKEND / 'Dockerfile').read_text(), re.M)
     producer = (SUPERVISOR_ROOT / 'c3po-massive.service').read_text()
     assert 'ExecStartPre=/usr/bin/docker image inspect --format {{.Id}} @IMAGE_ID@' in producer   # one image, one check
+    # The producer template rendered with the same two values binds the same directory at the same path, read-write,
+    # and writes to it; the reader's line differs by `readonly` alone.
+    for name in ('@HOST_JOURNAL_ROOT@', '@CONTAINER_JOURNAL_ROOT@'):
+        producer = producer.replace(name, SAMPLE[name])
+    assert '  --mount type=bind,source=/var/lib/c3po-bar/journal,target=/c3po-journal \\\n' in producer
+    assert '  --mount type=bind,source=/var/lib/c3po-bar/journal,target=/c3po-journal,readonly \\\n' in unit
+    assert ' --journal-root /c3po-journal ' in producer
 
 
 @pytest.mark.parametrize('name,value', [
@@ -309,12 +360,27 @@ def test_rendered_unit_matches_the_backend_data_mount():
     ('@NETWORK@', 'a b'), ('@IMAGE_ID@', 'c3po/backend:production'), ('@IMAGE_ID@', 'sha256:' + 'A' * 64),
     ('@HOST_DATA_ROOT@', '/mnt/day d'), ('@HOST_DATA_ROOT@', '/mnt/../etc'), ('@HOST_DATA_ROOT@', '/mnt/day-d-data/'),
     ('@HOST_CAPACITY_ROOT@', '/mnt/x,readonly=false'), ('@HOST_CAPACITY_ROOT@', '/mnt/%h'), ('@HOST_CAPACITY_ROOT@', '/mnt/$x'),
-    ('@HOST_CONFIG_DIR@', '/mnt/day-d-data/reader'), ('@HOST_CONFIG_DIR@', '/mnt/day-d-data'), ('@HOST_CONFIG_DIR@', 'etc/c3po-reader')])
+    ('@HOST_CONFIG_DIR@', '/mnt/day-d-data/reader'), ('@HOST_CONFIG_DIR@', '/mnt/day-d-data'), ('@HOST_CONFIG_DIR@', 'etc/c3po-reader'),
+    ('@HOST_CONFIG_DIR@', '/var/lib/c3po-bar/journal/reader'), ('@HOST_CONFIG_DIR@', '/var/lib/c3po-bar/journal'),
+    # The earlier layout, the journal root as a leaf of the data volume, is refused on both sides.
+    ('@HOST_JOURNAL_ROOT@', '/mnt/day-d-data/r2d2-v2-massive-epoch03'), ('@HOST_JOURNAL_ROOT@', '/mnt/day-d-data'),
+    ('@HOST_JOURNAL_ROOT@', '/mnt'), ('@HOST_JOURNAL_ROOT@', '/mnt/day-d-data/r2d2-v2-capacity-epoch03/journal'),
+    ('@HOST_JOURNAL_ROOT@', '/etc/c3po-reader/journal'), ('@HOST_JOURNAL_ROOT@', '/etc'),
+    ('@HOST_JOURNAL_ROOT@', '/var/lib/c3po-bar/journal/'), ('@HOST_JOURNAL_ROOT@', 'var/lib/c3po-bar/journal'),
+    ('@HOST_JOURNAL_ROOT@', '/var/lib/x,readonly=false'), ('@HOST_JOURNAL_ROOT@', '/var/lib/../journal'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/app/day-d-data/r2d2-v2-massive-epoch03'), ('@CONTAINER_JOURNAL_ROOT@', '/app/day-d-data'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/app'), ('@CONTAINER_JOURNAL_ROOT@', '/tmp'), ('@CONTAINER_JOURNAL_ROOT@', '/c3po-capacity'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/c3po-reader'), ('@CONTAINER_JOURNAL_ROOT@', '/var/journal'), ('@CONTAINER_JOURNAL_ROOT@', '/..'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/c3po-journal/'), ('@CONTAINER_JOURNAL_ROOT@', 'c3po-journal'),
+    ('@CONTAINER_JOURNAL_ROOT@', '/c3po journal'), ('@CONTAINER_JOURNAL_ROOT@', '/c3po-journal,readonly=false')])
 def test_the_render_refuses_values_outside_the_grammar(name, value):
     with pytest.raises(ValueError):
         render(text('c3po-reader.service'), {**SAMPLE, name: value})
     document = text('README.md')
-    assert all(phrase in document for phrase in ('`^/[A-Za-z0-9._/-]+$`', '`^sha256:[0-9a-f]{64}$`',
+    assert all(phrase in document for phrase in ('`^/[A-Za-z0-9._/-]+$`', '`^sha256:[0-9a-f]{64}$`', '`^/[A-Za-z0-9._-]+$`',
+        'for the four host paths', '`/app`, `/tmp`, `/c3po-capacity` and `/c3po-reader`',
+        '**A journal root inside the data volume is the earlier layout and is refused**',
+        'when either journal value differs from the one in the installed producer unit',
         '`host`, `none`, `bridge` and `container:*` are **forbidden in production**', 'must fail if any `@` survives'))
 
 
@@ -329,7 +395,7 @@ def test_the_fallback_unit_is_the_shipped_unit_without_the_launcher():
                 .replace('  python -I -B /c3po-reader/reader_launcher.py\n', '  python -B -m app.r2d2_v2_shadow_worker\n')
                 .replace('RestartPreventExitStatus=78\n', 'RestartPreventExitStatus=78\nSuccessExitStatus=143\n'))
     assert fallback == expected != shipped
-    assert [fallback.count(name) for name in PLACEHOLDERS] == [2, 2, 2, 8, 1]
+    assert [fallback.count(name) for name in PLACEHOLDERS] == [2, 2, 2, 1, 2, 8, 1]
     assert not FORBIDDEN & set(exec_start(fallback)) and not set('%$"\';') & set(fallback)
     stop_service = block('fallback-stop-service').splitlines()
     assert 'Type=oneshot' in stop_service and 'ExecStart=/usr/bin/systemctl stop c3po-reader.service' in stop_service
@@ -364,6 +430,13 @@ def test_the_environment_names_of_the_document_are_the_ones_the_code_reads():
         'C3PO_R2D2_V2_CAPACITY_REQUIRED', 'C3PO_R2D2_V2_CAPACITY_VETO_MODE', 'C3PO_R2D2_V2_CAPACITY_CONFIG_FILE',
         'C3PO_R2D2_V2_CAPACITY_CONFIG_SHA', 'C3PO_R2D2_V2_SHADOW_POLL_SECONDS', 'C3PO_READER_LAUNCHER_SHA256']
     assert pin_names[-1] == launcher().LAUNCHER_PIN_ENV
+    # The journal directory is the producer unit's container root, read from the installed unit: no longer a leaf of
+    # the data volume. Only the release file and the two source directories are still under /app/day-d-data.
+    assert pins[pin_names.index('C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR')] == \
+        'C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=<@CONTAINER_JOURNAL_ROOT@ of the installed producer unit>'
+    assert [name for name, line in zip(pin_names, pins) if '/app/day-d-data' in line] == [
+        'C3PO_R2D2_V2_SHADOW_RELEASE_FILE', 'C3PO_R2D2_V2_SHADOW_SOURCE_DIR', 'C3PO_R2D2_MICROSTRUCTURE_RAW_DIR']
+    assert '/app/day-d-data/<journal leaf>' not in text('README.md')
     assert activation == 'C3PO_R2D2_V2_SHADOW_ENABLED=true\nC3PO_R2D2_V2_MASSIVE_BARS_ENABLED=true\n'
     assert hashlib.sha256(activation.encode()).hexdigest() == ACTIVATION_SHA and ACTIVATION_SHA in text('README.md')
     documented = set(pin_names[:-1]) | {line.split('=', 1)[0] for line in activation.splitlines()} | {'C3PO_DATABASE_URL'}
@@ -398,7 +471,7 @@ def test_the_document_states_what_is_open_what_is_refused_and_what_is_unverified
                    '`--pid`', '`--ipc`', '`--label`', '`--network host`', '`EnvironmentFile=`', '`SuccessExitStatus=`',
                    '`docker exec`', 'a fourth `--env-file`', 'Docker socket'):
         assert option in never, option
-    for heading in ('## Daily contract', '## The launcher file', '## Environment files', '## Units',
+    for heading in ('## Journal root', '## Daily contract', '## The launcher file', '## Environment files', '## Units',
                     '## Process and restart contract', '## Operations', '### 1. Provisioning', '### 2. Unit installation (no activation, no overwrite)',
                     '### 3. Pins', '### 4. Activation', '### 5. Pins replacement', '### 6. Liveness readbacks',
                     '### 7. Restart with the same pinned bytes', '### 8. Deactivation', '## Stop',
@@ -414,3 +487,47 @@ def test_the_document_states_what_is_open_what_is_refused_and_what_is_unverified
             script.PRE_OPEN_SECONDS) == (90, 10, 1200, 21600)
     assert all(phrase in document for phrase in ('09:28:30 (open − 90 s)', '09:29:50 (open − 10 s)',
         'close + 20 min (16:20:00)', 'open − 6 h … close + 20 min', "`APP_ROOT = '/app'`"))
+
+
+def test_the_document_places_the_journal_outside_the_data_volume_and_states_its_guards():
+    from app import r2d2_v2_massive_producer as producer
+    document = text('README.md'); unit = text('c3po-reader.service')
+    # The placeholder table is the unit: seven names, each with its count.
+    assert '| `c3po-reader.service` | `/etc/systemd/system/c3po-reader.service`, rendered | seven |' in document
+    table = dict(re.findall(r'^\| `(@[A-Z_]+@)` \| (\d+) \|', document, re.M))
+    assert table == {name: str(unit.count(name)) for name in PLACEHOLDERS} and len(table) == 7
+    section = document.split('\n## Journal root\n')[1].split('\n## ')[0]
+    assert all(phrase in section for phrase in (
+        '**not inside the data volume**', "the host's **root filesystem**", '`/var/lib/c3po-bar/journal`',
+        'Nothing is deleted or moved', 'its journal bind is the producer\'s own `--mount` line with `,readonly` appended',
+        'never typed a second time', '**Why a child of `/`.**', '**Effective filesystem.**',
+        '**Ownership under `--cap-drop ALL`.**', 'The producer unit runs `--user 0:0`', 'reads them **as their owner**',
+        'uid 1000, mode 0755', '`r2d2_v2_massive_producer.py` lines 61–62', '*(unverified)*'))
+    # The figures of the decision are the producer's constants, for the five sessions of the epoch.
+    per_session = producer.MAX_SESSION_EVIDENCE_BYTES + producer.MAX_SESSION_INDEX_BYTES
+    assert (producer.MIN_SESSION_FREE_BYTES, per_session, len(SESSIONS)) == (53687091200, 603979776, 5)
+    assert producer.MIN_SESSION_FREE_BYTES + len(SESSIONS) * per_session == 56706990080
+    assert all(str(number) in section for number in (53687091200, 56706990080))
+    source = (BACKEND / 'app' / 'r2d2_v2_massive_producer.py').read_text().splitlines()
+    assert 'os.fstatvfs(directory)' in source[60] and 'f_bavail*capacity.f_frsize' in source[61]
+    # The guards of the installation, of the pins and of the activation name the same checks.
+    install = document.split('\n### 2. Unit installation (no activation, no overwrite)\n')[1].split('\n### ')[0]
+    pins = document.split('\n### 3. Pins\n')[1].split('\n### ')[0]
+    activation = document.split('\n### 4. Activation\n')[1].split('\n### ')[0]
+    assert all(phrase in install for phrase in (
+        'the producer unit is installed', 'Without an installed producer unit the installation refuses',
+        '`findmnt -n -o TARGET,SOURCE,FSTYPE --target @HOST_JOURNAL_ROOT@`', '`stat -c %d @HOST_JOURNAL_ROOT@`',
+        '**differs** from `stat -c %d @HOST_DATA_ROOT@`', '`root:root`, mode 0700', '**isolation:**',
+        'validates the seven values against the grammar'))
+    assert 'equals the `@CONTAINER_JOURNAL_ROOT@` value of the installed producer unit' in pins
+    assert 'is not under `/app/day-d-data`' in pins and 'journal leaf' not in document
+    assert all(phrase in activation for phrase in (
+        '**parameters and mounts:**', '**effective filesystem:**', '**ownership:**', '**catalog binding:**',
+        '**free space, revalidated:**', "`stat -c '%d %i' @HOST_JOURNAL_ROOT@`", '`f_bavail × f_frsize` of `statvfs`',
+        '53687091200', '603979776', '56706990080', 'the device number differs from the data volume\'s'))
+    # Nothing in the document still places the journal in the data volume, except where it names the earlier layout.
+    for line in document.splitlines():
+        if 'journal' in line.lower() and '/app/day-d-data/<leaf>' in line:
+            assert 'earlier' in line, line
+    assert 'the same inode, as the producer\'s journal root. The reader takes' not in document
+    assert 'all four mounts are read-only' in document and '**Four read-only binds**' in document

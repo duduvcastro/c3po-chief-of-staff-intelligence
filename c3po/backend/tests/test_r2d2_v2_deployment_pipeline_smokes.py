@@ -2,8 +2,8 @@
 runner's Docker engine, and runs offline everything in them that needs no engine.
 
 Offline here means: the workflow is parsed, the shell text of each step is checked with `bash -n`, and the Python
-programs embedded in the steps are extracted and run for real against the checkout (the unit render, the three
-receipt checks, and the stop driver with a real launcher process and a real SIGTERM). No docker command of the
+programs embedded in the steps are extracted and run for real against the checkout (the unit render, the mount
+check, the three receipt checks, and the stop driver with a real launcher process and a real SIGTERM). No docker command of the
 steps is run by this file: what the steps prove on an engine exists only after a pipeline run.
 """
 import hashlib
@@ -42,6 +42,8 @@ IMAGE = 'sha256:' + 'ab' * 32
 MARKER = 'c3po-reader-stand-in-worker'
 ACTIVATION_SHA = '2053f3f6f528ad7dc56d500666ac2cf48f79c3aadd3c98eb35b53ee92eff611b'
 CEILING_SECONDS = 90.0
+JOURNAL = '/c3po-journal'                 # the container journal root of the smoke: a child of '/', outside the data bind
+DATA_NAMES = ['C3PO_R2D2_V2_SHADOW_RELEASE_FILE', 'C3PO_R2D2_V2_SHADOW_SOURCE_DIR', 'C3PO_R2D2_MICROSTRUCTURE_RAW_DIR']
 
 
 def steps():
@@ -162,8 +164,12 @@ def test_the_refusal_step_runs_the_rendered_unit_and_requires_one_documented_ref
         'c3po/deployment/reader/c3po-reader.service', 'launcher=c3po/deployment/reader/reader_launcher.py',
         "docker image inspect --format '{{.Id}}' c3po/backend:pr-validation", '^sha256:[0-9a-f]{64}$',
         'pin="$(sha256sum "$launcher" | cut -d \' \' -f 1)"',
-        'sudo install -d -m 0700 -o 0 -g 0 "$base/data" "$base/capacity" "$base/etc"',
+        'sudo install -d -m 0700 -o 0 -g 0 "$base/data" "$base/journal" "$base/capacity" "$base/etc"',
         '"$base/etc/docker-cli" "$base/etc/launcher"', '"@NETWORK@": "none"',
+        '"@HOST_JOURNAL_ROOT@": base + "/journal"', '"@CONTAINER_JOURNAL_ROOT@": "%s"' % JOURNAL,
+        '(values["@HOST_JOURNAL_ROOT@"], values["@CONTAINER_JOURNAL_ROOT@"])',
+        '"C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=" + values["@CONTAINER_JOURNAL_ROOT@"]',
+        'rendered ExecStart does not have exactly the four read-only binds', '[ "${#argv[@]}" -ge 46 ] ||',
         'python3 - "$id" "$base" "$out" "$stage" reader-refusal "$pin" false <<\'PY\'',
         'sudo install -m 0600 -o 0 -g 0 "$launcher" "$base/etc/launcher/reader_launcher.py"',
         'sudo install -m 0600 -o 0 -g 0 "$stage/$name.env" "$base/etc/$name.env"',
@@ -174,7 +180,11 @@ def test_the_refusal_step_runs_the_rendered_unit_and_requires_one_documented_ref
         'refusal flags-off READER_SESSION READER_WINDOW READER_DISABLED ||',
         'sudo install -m 0600 -o 0 -g 0 "$stage/pins-other.env" "$base/etc/pins.env"',
         'refusal other-pin READER_LAUNCHER_PIN ||',
-        'sudo find "$base/data" "$base/capacity" -mindepth 1', "docker ps -a --filter 'name=^c3po-reader$' -q"))
+        'sudo find "$base/data" "$base/journal" "$base/capacity" -mindepth 1', "docker ps -a --filter 'name=^c3po-reader$' -q"))
+    # The container journal root is written once and reused: no step names a journal under the data bind.
+    for name in (REFUSAL, STOP):
+        assert step(name)['run'].count('"%s"' % JOURNAL) == 1 and '/app/day-d-data/smoke/journal' not in raw(name)
+        assert 'C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=/' not in raw(name)
     # The start is the rendered argument list, unchanged: nothing is appended to it and nothing is replaced in it.
     script = step(REFUSAL)['run']
     assert not re.search(r'^\s*argv(\[[^\]]*\])?\+?=', script, re.M) and '--env ' not in script
@@ -197,12 +207,18 @@ def test_the_stop_step_stops_the_rendered_start_with_the_rendered_stop():
         '> "$out/reader-stop-stdout.log" 2> "$out/reader-stop-stderr.log" &', 'runner=$!',
         'docker top c3po-reader > "$out/reader-stop-top.txt"', '[ "$(grep -c -- "$marker" "$out/reader-stop-top.txt")" -eq 1 ]',
         'sudo kill -0 "$runner"', "docker inspect --format '{{.HostConfig.Init}}' c3po-reader", '[ "$init" = true ] ||',
+        "docker inspect --format '{{json .Mounts}}' c3po-reader > \"$out/reader-stop-mounts.txt\"",
+        'python3 - "$out/reader-stop-argv.bin" "$out/reader-stop-mounts.txt" <<\'PY\' ||',
+        'sudo install -d -m 0700 -o 0 -g 0 "$base/data" "$base/journal" "$base/capacity" "$base/etc"',
+        'sudo find "$base/data" "$base/journal" "$base/capacity" -mindepth 1',
         'sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${stop[@]}" > "$out/reader-stop-docker-stop.log" 2>&1',
         'wait "$runner" || rc=$?', '[ "$rc" -eq 0 ] ||', '[ "$elapsed" -lt 20 ] ||',
         '!= ["STARTING", "STOPPED"]', '"child_signal": "SIGTERM"', '"killed": False', '"launcher_pinned": True',
         "docker ps -a --filter 'name=^c3po-reader$' -q", 'if pgrep -f -- "$marker" > "$out/reader-stop-left.txt"; then'))
     # Exactly one element of the rendered start is replaced, and the container is stopped only by the unit's own line.
     assert script.count('argv[$last]=') == 1 and script.count('"${stop[@]}"') == 1
+    # The engine's list of mounts is read while the container runs: after the stand-in is seen, before the stop.
+    assert script.index('[ "$running" -eq 1 ] ||') < script.index('{{json .Mounts}}') < script.index('"${stop[@]}"')
     assert 'docker stop' not in script.replace('after docker stop', '').replace('"docker", "stop"', '')
     assert 'docker kill' not in script and script.count('docker rm --force c3po-reader') == 1
     driver = program(STOP, 'cat > "$stage/stop_driver.py"')
@@ -247,8 +263,10 @@ def test_both_reader_steps_embed_the_same_render_and_it_renders_the_unit_and_the
     done, out, stage = render(tmp_path, REFUSAL, 'false')
     assert (done.returncode, done.stdout, done.stderr) == (0, '', '')
     unit = (READER / 'c3po-reader.service').read_text()
-    values = {'@IMAGE_ID@': IMAGE, '@HOST_DATA_ROOT@': '/throwaway/data', '@HOST_CAPACITY_ROOT@': '/throwaway/capacity',
+    values = {'@IMAGE_ID@': IMAGE, '@HOST_DATA_ROOT@': '/throwaway/data', '@HOST_JOURNAL_ROOT@': '/throwaway/journal',
+              '@CONTAINER_JOURNAL_ROOT@': JOURNAL, '@HOST_CAPACITY_ROOT@': '/throwaway/capacity',
               '@HOST_CONFIG_DIR@': '/throwaway/etc', '@NETWORK@': 'none'}
+    assert set(values) == set(re.findall(r'@[A-Z_]+@', unit))
     for name, value in values.items():
         unit = unit.replace(name, value)
     start, = [line for line in unit.replace('\\\n', ' ').splitlines() if line.startswith('ExecStart=')]
@@ -258,7 +276,13 @@ def test_both_reader_steps_embed_the_same_render_and_it_renders_the_unit_and_the
         assert items[-1] == ''
         return items[:-1]
 
-    assert argv('argv') == shlex.split(start[len('ExecStart='):]) and len(argv('argv')) >= 40
+    assert argv('argv') == shlex.split(start[len('ExecStart='):]) and len(argv('argv')) == 46
+    # Four binds, each read-only: the journal directory at the container journal root, outside the data bind.
+    binds = [argv('argv')[at + 1] for at, value in enumerate(argv('argv')) if value == '--mount']
+    assert binds == ['type=bind,source=/throwaway/data,target=/app/day-d-data,readonly',
+                     'type=bind,source=/throwaway/journal,target=%s,readonly' % JOURNAL,
+                     'type=bind,source=/throwaway/capacity,target=/c3po-capacity,readonly',
+                     'type=bind,source=/throwaway/etc/launcher,target=/c3po-reader,readonly']
     assert argv('argv')[-4:] == ['python', '-I', '-B', '/c3po-reader/reader_launcher.py']
     assert argv('check-argv') == ['/usr/bin/docker', 'image', 'inspect', '--format', '{{.Id}}', IMAGE]
     assert argv('stop-argv') == ['/usr/bin/docker', 'stop', '-t', '25', 'c3po-reader']
@@ -270,6 +294,11 @@ def test_both_reader_steps_embed_the_same_render_and_it_renders_the_unit_and_the
     documented = [line.split('=', 1)[0] for line in readme_block('pins-env').splitlines()]
     pins = (stage / 'pins.env').read_text().splitlines()
     assert [line.split('=', 1)[0] for line in pins] == documented and pins[-1] == 'C3PO_READER_LAUNCHER_SHA256=' + 'c' * 64
+    # The journal directory of pins.env is the target of the journal bind, never a leaf of the data bind; the release
+    # file and the two source directories are the only values still under /app/day-d-data.
+    assert pins[documented.index('C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR')] == 'C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=' + JOURNAL
+    assert [line.split('=', 1)[0] for line in pins if '/app/day-d-data' in line] == DATA_NAMES
+    assert len(Path(JOURNAL).parts) == 2 and JOURNAL not in ('/app', '/tmp', '/c3po-capacity', '/c3po-reader')
     other = (stage / 'pins-other.env').read_text().splitlines()
     assert other[:-1] == pins[:-1] and other[-1] == 'C3PO_READER_LAUNCHER_SHA256=' + '0' * 64
     assert (stage / 'activation.env').read_text() == readme_block('activation-env').replace('=true', '=false')
@@ -291,7 +320,14 @@ def test_both_reader_steps_embed_the_same_render_and_it_renders_the_unit_and_the
     ('python -I -B /c3po-reader/reader_launcher.py', 'python -B -m app.r2d2_v2_shadow_worker', 'launcher command'),
     ('--init ', '', 'docker run --init'),
     ('ExecStop=-/usr/bin/docker stop -t 25 c3po-reader', 'ExecStop=-/usr/bin/docker kill c3po-reader', 'stop of the reader'),
-    ('--network @NETWORK@', '--network @NETWORK@ --label x=@OTHER@', 'five documented substitutions'),
+    ('--network @NETWORK@', '--network @NETWORK@ --label x=@OTHER@', 'seven documented substitutions'),
+    # The journal bind: removed, read-write, under the data bind, from another source, or joined by a fifth bind.
+    ('  --mount type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@,readonly \\\n', '', 'seven documented substitutions'),
+    ('target=@CONTAINER_JOURNAL_ROOT@,readonly', 'target=@CONTAINER_JOURNAL_ROOT@', 'four read-only binds'),
+    ('target=@CONTAINER_JOURNAL_ROOT@,readonly', 'target=/app/day-d-data@CONTAINER_JOURNAL_ROOT@,readonly', 'four read-only binds'),
+    ('source=@HOST_JOURNAL_ROOT@,', 'source=@HOST_DATA_ROOT@/journal,', 'four read-only binds'),
+    ('target=/c3po-capacity,readonly', 'target=/c3po-capacity,readonly --mount type=bind,source=@HOST_JOURNAL_ROOT@,target=/extra',
+     'four read-only binds'),
     ('ExecStartPre=/usr/bin/docker image inspect', 'ExecStartPre=-/usr/bin/docker image inspect', '1 ExecStartPre line'),
 ])
 def test_the_render_refuses_a_unit_that_is_no_longer_the_documented_one(tmp_path, old, new, message):
@@ -340,6 +376,7 @@ def test_the_smoke_environment_loads_in_the_real_settings_and_ends_in_the_accept
 
     settings_names = {name[len('C3PO_'):].lower() for name in environment(stage) if name != launcher.LAUNCHER_PIN_ENV}
     assert settings_names <= set(Settings.model_fields) and len(settings_names) == 14
+    assert environment(stage)['C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR'] == JOURNAL
     first = date.fromisoformat(sorted(SESSIONS)[0]); opened = calendar.details(first)['open']
     assert end('pins', opened - timedelta(hours=1)) == 'READER_DISABLED'
     assert end('pins', opened + timedelta(hours=1)) == 'READER_DISABLED'
@@ -348,6 +385,47 @@ def test_the_smoke_environment_loads_in_the_real_settings_and_ends_in_the_accept
     # The other pin is refused before the day is looked at, whatever the clock.
     for now in (opened - timedelta(hours=1), opened - timedelta(days=2)):
         assert end('pins-other', now) == 'READER_LAUNCHER_PIN'
+
+
+def test_the_mount_check_of_the_stop_step_accepts_only_the_four_read_only_binds_of_the_render(tmp_path):
+    """The check reads the rendered argument list and the engine's list of mounts. The list here has the shape
+    `docker inspect --format '{{json .Mounts}}'` prints; what a real engine prints is seen only in a pipeline run."""
+    done, out, _ = render(tmp_path, STOP, 'true')
+    assert done.returncode == 0
+    check = program(STOP, 'python3 - "$out/reader-stop-argv.bin" "$out/reader-stop-mounts.txt"')
+    rendered = out / 'reader-stop-argv.bin'
+
+    def bind(source, target, writable=False):
+        return {'Type': 'bind', 'Source': source, 'Destination': target, 'Mode': '', 'RW': writable, 'Propagation': 'rprivate'}
+
+    engine = [bind('/throwaway/data', '/app/day-d-data'), bind('/throwaway/journal', JOURNAL),
+              bind('/throwaway/capacity', '/c3po-capacity'), bind('/throwaway/etc/launcher', '/c3po-reader')]
+    tmpfs = {'Type': 'tmpfs', 'Source': '', 'Destination': '/tmp', 'Mode': '', 'RW': True, 'Propagation': ''}
+
+    def judged(listed, argv=rendered):
+        path = tmp_path / ('mounts-%d.txt' % len(list(tmp_path.iterdir())))
+        path.write_text(listed if isinstance(listed, str) else json.dumps(listed) + '\n')
+        return run_program(check, argv, path).returncode
+
+    assert judged(engine) == 0 and judged(list(reversed(engine)) + [tmpfs]) == 0
+    journal = engine[1]
+    for other in ([engine[0]] + engine[2:],                                                     # no journal bind
+                  [engine[0], {**journal, 'RW': True}] + engine[2:],                            # writable
+                  [engine[0], {**journal, 'Destination': '/app/day-d-data/journal'}] + engine[2:],   # under the data bind
+                  [engine[0], {**journal, 'Source': '/throwaway/data/journal'}] + engine[2:],   # another directory
+                  engine + [bind('/throwaway/etc', '/etc/c3po-reader')],                        # a fifth bind
+                  [{**item, 'RW': True} for item in engine], [], 'not json'):
+        assert judged(other) != 0, other
+    # A rendered start whose journal bind lost `readonly` is refused whatever the engine lists.
+    items = rendered.read_text().split('\0')
+    at = items.index('type=bind,source=/throwaway/journal,target=%s,readonly' % JOURNAL)
+    for changed in (items[at][:-len(',readonly')], items[at] + ',bind-propagation=shared', items[at].replace('type=bind', 'type=volume')):
+        loose = tmp_path / ('argv-%d.bin' % len(list(tmp_path.iterdir())))
+        loose.write_text('\0'.join(items[:at] + [changed] + items[at + 1:]))
+        assert judged([engine[0], {**journal, 'RW': changed.endswith(JOURNAL)}] + engine[2:], argv=loose) != 0, changed
+    fewer = tmp_path / 'argv-fewer.bin'
+    fewer.write_text('\0'.join(items[:at - 1] + items[at + 1:]))
+    assert judged([engine[0]] + engine[2:], argv=fewer) != 0
 
 
 def sample(tmp_path, name, *lines):
