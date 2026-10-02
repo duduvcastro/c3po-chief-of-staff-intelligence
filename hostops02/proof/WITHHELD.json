@@ -1,0 +1,8 @@
+{
+ "epoch_readback": {
+  "DESIGN.md": {
+   "reason": "design notes; one line of abbreviations names an absolute path of the author's workstation, so the file is not published. No test, tool or run of the operation reads it.",
+   "sha256": "9ac730edaf7357b54f9d4f0ba0e206408b2fde469bfd8d9d5650b81763b1664f"
+  }
+ }
+}

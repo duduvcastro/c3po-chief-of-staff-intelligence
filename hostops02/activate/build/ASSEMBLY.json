@@ -1,0 +1,61 @@
+{
+ "activation_allowed": false,
+ "core_parts": {
+  "core": "ecf72edaf2bae478186e642bc93804bd567384c5d13dfab2bb4c4d55d00eef7a",
+  "docker": "4602f6f07a4502a3decec99cd415737efb429e3b1a188b368939a090bc3b3aa5",
+  "files": "6b96ad64fe8ce5a9a2293b109964e069c2ad32169e7d421449da3f88516b60ba",
+  "lock": "17099e318c9f7df61b570563fba45868ff6e0b884120265a01572bcb7d2ef554",
+  "parents": "3f5eafa763339068424304d23efdbffeb19a0910d5600eef7e534c13a81cd38b",
+  "runner": "2a1cc5bc73a0d456eb596aea65caaffcf7dd3834cbbd844a02a69486bbdacaa7"
+ },
+ "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "date_class": "WRITE_FIRST_SESSION",
+ "dates": [
+  "2026-10-05"
+ ],
+ "dispatcher_changed_lines": [
+  15,
+  16,
+  102,
+  103,
+  109,
+  118,
+  127,
+  128,
+  129,
+  141,
+  142,
+  146,
+  147,
+  162,
+  205,
+  213,
+  219,
+  239
+ ],
+ "dispatcher_line_count_equal": true,
+ "dispatcher_sha256": "de41057f377c06d3345fe011472b5fa591ec46b3b7671fc91db906258a31e221",
+ "final_payload_bytes": 206335,
+ "final_payload_sha256": "37b685d52ff16d4d5b6ef4fb70cf012e46078b91f88da1e210de481493a47986",
+ "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+ "module": "activate",
+ "name": "activate",
+ "operation": "GO_WRITE_HOSTOPS02_ACTIVATE_01",
+ "operation_part_sha256": "f55eb984466310050bd73a56997a4c03d2e45548fefc7a4ecaef8d590abf2d71",
+ "parts": [
+  "core",
+  "runner",
+  "docker",
+  "parents",
+  "files",
+  "lock"
+ ],
+ "schema": "HOSTOPS02_ASSEMBLY_V1",
+ "scope_sha256": "0f6b1e458bf93b7210a15fb7f4556fe9666f5ca9e104b06703a20a00568193e8",
+ "source_bytes": 139580,
+ "source_sha256": "cc05438954f2ba49d5f3bd1b8ef515b3b4601f2cc53436a36460fb3406f85c44",
+ "spec_sha256": "f2fc1f08abf02affff0f6ba8daf1f7aeb6a94b150123a819359c241ac77c6fe2",
+ "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+ "unbound_request_bytes": 10992,
+ "writes_allowed": true
+}

@@ -1,0 +1,1527 @@
+{
+ "by_target": {
+  "linux_proof": 41,
+  "predispatch": 72,
+  "release_fields": 19
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 132,
+  "redundant_survivors": 0,
+  "single": 132,
+  "survivors": 0
+ },
+ "errors": [],
+ "list": "tools",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "binding/linux_proof.py": "f24307db09f1744188e1574c5b4bf05798870f88c9ec2b8f0ed074288a7abdcf",
+  "binding/predispatch.py": "2945e9884e57738aade4e4a35acbde33d25e214bea4a74550684b819516959f5",
+  "binding/release_fields.py": "81c9a119ce127fe7a2e4e39d3968af5a7d0fdad47b5c4009d58c0449b100a95d",
+  "build/ASSEMBLY.json": "da2e3baba931af0b3a8bc9f7570e1f0014cbbd0daefd4846d47daf03d54a90f7",
+  "build/AUTHORITY.UNBOUND.json": "fa4d6ef5d9d6c467f8d62263b4845afaed2d75cfd1b883899dcbf43ab8b27b29",
+  "build/DISPATCH.UNBOUND.json": "0224cc3e9a7f2a83ae0bf6f09f185eb53e5fb8cfc9a6f918e2856963c07a9bd0",
+  "build/DISPATCH_SCOPE_DELTA.diff": "f21cd44db90349a78a858bca44f445d669f0537dbc87453d87d578fde384ec95",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "54450b106bbdc3c9b108304b6ade092164069b266d5705abc68f505e1b26ea8c",
+  "build/GO.UNBOUND.json": "f8046c1c8ca00c3f9457e964fcd2db84ae6b549d464b962cbcc348882d61db5b",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "9f6e558195e35d6bcb68c91b5c7141acd8553f3d4f9eaa37cb976844c70b537b",
+  "build/REQUEST.UNBOUND.json": "3d01270706f42d22962a570385093734ffdefda97a76ee479fc8bc5fcbe976e5",
+  "build/dispatch_once.py": "49233a0dcab1670a9166e525cb06b362bd9c512d624c7911d8c00452f6794be0",
+  "build/install_release.py": "e4cb46f947ca9bfbbfaf9419e56fb42665353ec27faaff8376c381a7d03b6fae",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "a319f2d3a7be361b7816ba92e6f184f418caadf69d20c745fadefcfcb9ef5b11",
+  "mutation/review.py": "e5be51e441994d6b29e555e711a731dc203790bb53fb08e3c8c728849a0344b8",
+  "mutation/sweep.py": "a99785c57345e49f10e52e2d27a3c8049b3618d6b5dc18dd7e8968b7e8644e2f",
+  "mutation/tools.py": "f5f1eb55a541c7f0067d7db72ea151d6cd80a3b7e3ce44eb199b5c9a74b2dbfc",
+  "op.py": "0317fde20c9083887588ae2bda3d58a8371b5fe5d4451c4addfa62a1422984e1",
+  "spec.py": "f0f2e58f0de24e54aa538c7891a0d6100ffc9533726ec99de52bca829e28fbff",
+  "tests/conftest.py": "38945e6e79e4a68bf0f39f89604f61de35721ef4742d1b82660308c3ec355636",
+  "tests/fixtures/M0_FIXTURE.W1_EMULATION.json": "0d2dd8700667862210e0c54f93f75116d3c94d7ba8333067f7dd388ea7b06d29",
+  "tests/fixtures/M0_RECEIPT.W1_EMULATION.json": "f514aecaff28a2cf5ce81f0c97bd920a6614d658260cb2a5ef693937353142ac",
+  "tests/fixtures/M0_REQUEST.W1_EMULATION.json": "399ed2190c657ca66a82d4f9b3735285ee852d7b5960f2dea1c2be548665bf5d",
+  "tests/fixtures/RELEASE_VERIFY.SYNTHETIC.json": "4e7fce26ae35058c61b8028eb7a8d8a053278332ad48fe3d727ce0f2e1531041",
+  "tests/fixtures/release.SYNTHETIC.json": "b110f364d7d7eeeb884a7038668a4fb7f158dbdd86200c772116eebad14c05f1",
+  "tests/k10.py": "4979395a65ec0d0fe098e6be5fd6fbf3ff43aa0416bd36e398441c4fa738699c",
+  "tests/make_m0_fixture.py": "8dc4abc70252e25247eb6200bd42d91fddc4ddc3929ccfcf9b11d192b856d35d",
+  "tests/make_synthetic_release.py": "1fc2a7ee6ac20e1fb3cbdc4a973fa90ea01d7765f30862d735ecea0834f2f1e8",
+  "tests/native_child.py": "fb5d1fcb67b0571fb7b7e34a2054d13dc55429c7f4d28f126c83961ff6b09d71",
+  "tests/native_support.py": "2f249ea3da9e20ae6444f32347f7e7e9ccda8df406470761c576f26be75d6691",
+  "tests/test_binding.py": "cedcfad5cad513d6ac8c9013a536c331b85f60044bebe2e3b31147e4cafef0d9",
+  "tests/test_conformance.py": "f0de361cd6223610a4850b3a13d17d363880a24dd32388e51235abbc2c385d73",
+  "tests/test_dispatch_guards.py": "1e8cf44ba450e9c457fdf3e4c0ff25635d93e068078760ee1b7114cf411eec30",
+  "tests/test_effects_guards.py": "0ad93414cf7f34fe3534b3169be9120dd731809cb799131ba8b2059da2533dcf",
+  "tests/test_install_release.py": "ebddf60cd6290991e6ed7bae001c6f5b6a9ccfbc161d0cef3f2bc0893015a4bc",
+  "tests/test_linux_proof.py": "c64a28f11d913315cd6c11404b6baa1629cee4dfe340d54f6ae17859ff395031",
+  "tests/test_native.py": "2af0db02103ff06d52bbb424efcbf74d3c36c1c971acc6e39ae3457832c9f1de",
+  "tests/test_predispatch.py": "79df45053d9873c3bcd336c6ad2f1b1c72e1272d7ba354973ba7e44c1f1bf7ab",
+  "tests/test_purity.py": "449eb77d6dafd2b18f64a73c1f4ca9a8e14841c5819518767ed79dbf424a1fdc"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "required_zero_survivors": true,
+ "results": [
+  {
+   "first_failure": "E   AssertionError: (('REQUEST_IS_OF_THIS_PAYLOAD',), [])",
+   "killed": true,
+   "mutant": "G_REQUEST_IS_OF_THIS_PAYLOAD_answered_true",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 5 passed in 1.43s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PLAN_IS_ONE_THE_SOURCE_ACCEPTS', 'PARENT_ROWS_ARE_THE_SIGNED_ROWS'), ['PARENT_ROWS_ARE_THE_SIGNED_ROWS'])",
+   "killed": true,
+   "mutant": "G_PLAN_IS_ONE_THE_SOURCE_ACCEPTS_answered_true",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 5 passed in 1.43s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('EVIDENCE_IS_THE_PRECHECK_RECEIPT_THE_REQUEST_NAMES',), [])",
+   "killed": true,
+   "mutant": "G_EVIDENCE_IS_THE_PRECHECK_RECEIPT_THE_REQUEST_NAMES_answered_true",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 5 passed in 1.45s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_RECEIPT_IS_SEALED_AND_OF_THE_M0_REQUEST',), [])",
+   "killed": true,
+   "mutant": "G_M0_RECEIPT_IS_SEALED_AND_OF_THE_M0_REQUEST_answered_true",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 3 passed in 0.99s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_IS_OF_THE_W1_BYTES_THIS_TOOL_READS',), [])",
+   "killed": true,
+   "mutant": "G_M0_IS_OF_THE_W1_BYTES_THIS_TOOL_READS_answered_true",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 3 passed in 1.03s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_EXIT_IS_OF_THAT_RECEIPT',), [])",
+   "killed": true,
+   "mutant": "G_M0_EXIT_IS_OF_THAT_RECEIPT_answered_true",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 3 passed in 1.04s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_SECTIONS_COMPLETE', 'DESTINATION_IS_ABSENT_BY_ITS_EXACT_NAME'), ['DESTINATION_IS_ABSENT_BY_ITS_EXACT_NAME'])",
+   "killed": true,
+   "mutant": "G_M0_SECTIONS_COMPLETE_answered_true",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 2 passed in 0.73s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_SECTIONS_COMPLETE', 'M0_IS_OF_THE_SAME_DAY_AND_NOT_OLDER_THAN_AN_HOUR', 'HOST_CLOCK_AGREES_WITH_THIS_MACHINE', '...AS_THE_EVIDENCE', 'PARENT_ROWS_ARE_THE_SIGNED_ROWS', 'VOLUME_IS_MOUNTED_READ_WRITE', 'FILESYSTEM_HAS_HARD_LINKS', ...])",
+   "killed": true,
+   "mutant": "G_M0_IS_OF_THE_SAME_DAY_AND_NOT_OLDER_THAN_AN_HOUR_answered_true",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 3 passed in 0.99s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_SECTIONS_COMPLETE', 'M0_IS_OF_THE_SAME_DAY_AND_NOT_OLDER_THAN_AN_HOUR', 'HOST_CLOCK_AGREES_WITH_THIS_MACHINE', '...AS_THE_EVIDENCE', 'PARENT_ROWS_ARE_THE_SIGNED_ROWS', 'VOLUME_IS_MOUNTED_READ_WRITE', 'FILESYSTEM_HAS_HARD_LINKS', ...])",
+   "killed": true,
+   "mutant": "G_HOST_CLOCK_AGREES_WITH_THIS_MACHINE_answered_true",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 3 passed in 0.88s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('TIME_LEFT_TO_PREPARE_PUBLISH_AND_RESUME',), [])",
+   "killed": true,
+   "mutant": "G_TIME_LEFT_TO_PREPARE_PUBLISH_AND_RESUME_answered_true",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 4 passed in 1.26s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('RESUME_NOT_BEFORE_NOT_BEFORE_PLUS_120_SECONDS',), [])",
+   "killed": true,
+   "mutant": "G_RESUME_NOT_BEFORE_NOT_BEFORE_PLUS_120_SECONDS_answered_true",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 4 passed in 1.33s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('RESUME_BEFORE_THE_LATEST_START',), [])",
+   "killed": true,
+   "mutant": "G_RESUME_BEFORE_THE_LATEST_START_answered_true",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 4 passed in 1.33s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('EXECUTOR_IS_ROOT',), [])",
+   "killed": true,
+   "mutant": "G_EXECUTOR_IS_ROOT_answered_true",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 2 passed in 0.08s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('SAME_BOOT_AS_THE_EVIDENCE',), [])",
+   "killed": true,
+   "mutant": "G_SAME_BOOT_AS_THE_EVIDENCE_answered_true",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.14s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PARENT_ROWS_ARE_THE_SIGNED_ROWS',), [])",
+   "killed": true,
+   "mutant": "G_PARENT_ROWS_ARE_THE_SIGNED_ROWS_answered_true",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 2 passed in 0.27s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('VOLUME_IS_MOUNTED_READ_WRITE',), [])",
+   "killed": true,
+   "mutant": "G_VOLUME_IS_MOUNTED_READ_WRITE_answered_true",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 2 passed in 0.41s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('FILESYSTEM_HAS_HARD_LINKS',), [])",
+   "killed": true,
+   "mutant": "G_FILESYSTEM_HAS_HARD_LINKS_answered_true",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 2 passed in 0.49s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PIN_IS_A_REGULAR_FILE_OF_ROOT_ROOT',), [])",
+   "killed": true,
+   "mutant": "G_PIN_IS_A_REGULAR_FILE_OF_ROOT_ROOT_answered_true",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 2 passed in 0.57s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('DESTINATION_IS_ABSENT_BY_ITS_EXACT_NAME',), [])",
+   "killed": true,
+   "mutant": "G_DESTINATION_IS_ABSENT_BY_ITS_EXACT_NAME_answered_true",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 2 passed in 0.75s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('FREE_BYTES_FAR_ABOVE_THE_FLOOR',), [])",
+   "killed": true,
+   "mutant": "G_FREE_BYTES_FAR_ABOVE_THE_FLOOR_answered_true",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed in 0.84s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('FREE_INODES_FAR_ABOVE_TWO',), [])",
+   "killed": true,
+   "mutant": "G_FREE_INODES_FAR_ABOVE_TWO_answered_true",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed in 0.86s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PRIMARY_WAS_NEVER_DISPATCHED',), [])",
+   "killed": true,
+   "mutant": "G_PRIMARY_WAS_NEVER_DISPATCHED_answered_true",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 6 passed in 1.56s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('DESTINATION_IS_ABSENT_BY_ITS_EXACT_NAME',), [])",
+   "killed": true,
+   "mutant": "G50_a_check_that_raises_is_true",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed in 0.77s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('SAME_BOOT_AS_THE_EVIDENCE',), [])",
+   "killed": true,
+   "mutant": "G51_boot_margin_dropped",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 2 passed in 0.14s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('HOST_CLOCK_AGREES_WITH_THIS_MACHINE',), [])",
+   "killed": true,
+   "mutant": "G52_clock_skew_one_second_more",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 4 passed in 1.11s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_IS_OF_THE_SAME_DAY_AND_NOT_OLDER_THAN_AN_HOUR',), [])",
+   "killed": true,
+   "mutant": "G53_snapshot_may_be_one_second_older",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 4 passed in 1.20s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('RESUME_NOT_BEFORE_NOT_BEFORE_PLUS_120_SECONDS',), [])",
+   "killed": true,
+   "mutant": "G54_resume_one_second_earlier",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 4 passed in 1.34s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('TIME_LEFT_TO_PREPARE_PUBLISH_AND_RESUME',), [])",
+   "killed": true,
+   "mutant": "G55_watchdog_one_second_less",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 4 passed in 1.34s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('FREE_BYTES_FAR_ABOVE_THE_FLOOR',), [])",
+   "killed": true,
+   "mutant": "G56_free_bytes_factor_one_less",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed in 0.84s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('FREE_INODES_FAR_ABOVE_TWO',), [])",
+   "killed": true,
+   "mutant": "G57_free_inodes_floor_one_less",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed in 0.85s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('FILESYSTEM_HAS_HARD_LINKS',), [])",
+   "killed": true,
+   "mutant": "G58_a_filesystem_without_hard_links_accepted",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 2 passed in 0.60s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PIN_IS_A_REGULAR_FILE_OF_ROOT_ROOT',), [])",
+   "killed": true,
+   "mutant": "G59_pin_group_not_judged",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 2 passed in 0.58s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PIN_IS_A_REGULAR_FILE_OF_ROOT_ROOT',), [])",
+   "killed": true,
+   "mutant": "G60_pin_owner_not_judged",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 2 passed in 0.66s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PIN_IS_A_REGULAR_FILE_OF_ROOT_ROOT',), [])",
+   "killed": true,
+   "mutant": "G61_pin_type_not_judged",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 2 passed in 0.60s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PIN_IS_A_REGULAR_FILE_OF_ROOT_ROOT',), [])",
+   "killed": true,
+   "mutant": "G62_pin_presence_not_judged",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 2 passed in 0.58s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PARENT_ROWS_ARE_THE_SIGNED_ROWS',), [])",
+   "killed": true,
+   "mutant": "G63_parent_row_path_not_compared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 2 passed in 0.32s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PARENT_ROWS_ARE_THE_SIGNED_ROWS',), [])",
+   "killed": true,
+   "mutant": "G64_parent_row_device_not_compared",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 2 passed in 0.29s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PARENT_ROWS_ARE_THE_SIGNED_ROWS',), [])",
+   "killed": true,
+   "mutant": "G65_parent_row_inode_not_compared",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 2 passed in 0.23s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PARENT_ROWS_ARE_THE_SIGNED_ROWS',), [])",
+   "killed": true,
+   "mutant": "G66_parent_row_uid_not_compared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 2 passed in 0.35s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PARENT_ROWS_ARE_THE_SIGNED_ROWS',), [])",
+   "killed": true,
+   "mutant": "G67_parent_row_gid_not_compared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 2 passed in 0.29s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PARENT_ROWS_ARE_THE_SIGNED_ROWS',), [])",
+   "killed": true,
+   "mutant": "G68_parent_row_mode_not_compared",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 2 passed in 0.34s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PARENT_ROWS_ARE_THE_SIGNED_ROWS',), [])",
+   "killed": true,
+   "mutant": "G69_parent_row_type_not_judged",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 2 passed in 0.36s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PARENT_ROWS_ARE_THE_SIGNED_ROWS',), [])",
+   "killed": true,
+   "mutant": "G70_parent_source_not_judged",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 2 passed in 0.40s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PARENT_ROWS_ARE_THE_SIGNED_ROWS',), [])",
+   "killed": true,
+   "mutant": "G71_fewer_rows_than_signed_accepted",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 2 passed in 0.40s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('VOLUME_IS_MOUNTED_READ_WRITE',), [])",
+   "killed": true,
+   "mutant": "G72_volume_conjunct_1_dropped",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 2 passed in 0.39s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('VOLUME_IS_MOUNTED_READ_WRITE',), [])",
+   "killed": true,
+   "mutant": "G73_volume_conjunct_2_dropped",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 2 passed in 0.44s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('VOLUME_IS_MOUNTED_READ_WRITE',), [])",
+   "killed": true,
+   "mutant": "G74_volume_conjunct_3_dropped",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 2 passed in 0.43s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('VOLUME_IS_MOUNTED_READ_WRITE',), [])",
+   "killed": true,
+   "mutant": "G75_volume_conjunct_4_dropped",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 2 passed in 0.48s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('VOLUME_IS_MOUNTED_READ_WRITE',), [])",
+   "killed": true,
+   "mutant": "G76_volume_conjunct_5_dropped",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 2 passed in 0.53s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_RECEIPT_IS_SEALED_AND_OF_THE_M0_REQUEST',), [])",
+   "killed": true,
+   "mutant": "G77_receipt_hash_not_recomputed",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 3 passed in 0.89s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_EXIT_IS_OF_THAT_RECEIPT',), [])",
+   "killed": true,
+   "mutant": "G78_uncertain_snapshot_accepted",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 3 passed in 1.12s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_EXIT_IS_OF_THAT_RECEIPT',), [])",
+   "killed": true,
+   "mutant": "G79_exit_not_bound_to_the_receipt_bytes",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 3 passed in 0.94s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_RECEIPT_IS_SEALED_AND_OF_THE_M0_REQUEST',), [])",
+   "killed": true,
+   "mutant": "G80_receipt_not_bound_to_the_m0_request",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 3 passed in 0.97s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_RECEIPT_IS_SEALED_AND_OF_THE_M0_REQUEST',), [])",
+   "killed": true,
+   "mutant": "G81_receipt_of_another_host_accepted",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 3 passed in 0.91s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('EVIDENCE_IS_THE_PRECHECK_RECEIPT_THE_REQUEST_NAMES',), [])",
+   "killed": true,
+   "mutant": "G82_evidence_need_not_be_named_by_the_request",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 5 passed in 1.51s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('EVIDENCE_IS_THE_PRECHECK_RECEIPT_THE_REQUEST_NAMES',), [])",
+   "killed": true,
+   "mutant": "G83_evidence_boot_not_compared_with_the_plan",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 5 passed in 1.43s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('SAME_BOOT_AS_THE_EVIDENCE',), [])",
+   "killed": true,
+   "mutant": "G84_evidence_taken_after_the_snapshot_accepted",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 5 passed in 1.57s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('SAME_BOOT_AS_THE_EVIDENCE',), [])",
+   "killed": true,
+   "mutant": "G85_boot_epoch_of_any_type",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 2 passed in 0.20s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('DESTINATION_IS_ABSENT_BY_ITS_EXACT_NAME',), [])",
+   "killed": true,
+   "mutant": "G86_destination_candidate_row_of_another_index",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed in 0.82s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('DESTINATION_IS_ABSENT_BY_ITS_EXACT_NAME',), [])",
+   "killed": true,
+   "mutant": "G87_destination_unanswered_counts_as_absent",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 2 passed in 0.71s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_IS_OF_THE_SAME_DAY_AND_NOT_OLDER_THAN_AN_HOUR',), [])",
+   "killed": true,
+   "mutant": "G88_snapshot_of_another_day_accepted",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 4 passed in 1.17s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('M0_IS_OF_THE_SAME_DAY_AND_NOT_OLDER_THAN_AN_HOUR',), [])",
+   "killed": true,
+   "mutant": "G89_snapshot_from_the_future_accepted",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 4 passed in 1.21s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PRIMARY_WAS_NEVER_DISPATCHED',), [])",
+   "killed": true,
+   "mutant": "G90_spare_ignores_the_claim_of_the_primary",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 6 passed in 1.64s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PRIMARY_WAS_NEVER_DISPATCHED',), [])",
+   "killed": true,
+   "mutant": "G91_spare_accepts_its_own_go_as_the_primary",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 6 passed in 1.58s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PRIMARY_WAS_NEVER_DISPATCHED',), [])",
+   "killed": true,
+   "mutant": "G92_spare_accepts_a_go_of_another_operation",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 6 passed in 1.72s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ['--step', 'prepare', '--role', 'primary', '--request', '<path>', ...]",
+   "killed": true,
+   "mutant": "G93_spare_may_omit_the_primary",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 7 passed in 1.79s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PRIMARY_WAS_NEVER_DISPATCHED',), [])",
+   "killed": true,
+   "mutant": "G94_claim_looked_for_under_another_name",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 6 passed in 1.73s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('REQUEST_IS_OF_THIS_PAYLOAD',), [])",
+   "killed": true,
+   "mutant": "G95_request_of_another_payload_accepted",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 5 passed in 1.47s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('PLAN_IS_ONE_THE_SOURCE_ACCEPTS', 'PARENT_ROWS_ARE_THE_SIGNED_ROWS'), ['PARENT_ROWS_ARE_THE_SIGNED_ROWS'])",
+   "killed": true,
+   "mutant": "G96_plan_not_validated",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 5 passed in 1.42s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: m0-receipt",
+   "killed": true,
+   "mutant": "G97_unreadable_input_is_a_do_not_dispatch_with_exit_1",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 7 passed in 1.73s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('EXECUTOR_IS_ROOT',), ['EXECUTOR_IS_ROOT'])",
+   "killed": true,
+   "mutant": "G98_exit_0_whatever_failed",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.11s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('EXECUTOR_IS_ROOT',), ['EXECUTOR_IS_ROOT'])",
+   "killed": true,
+   "mutant": "G99_decision_allowed_whatever_failed",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.13s",
+   "tests": [
+    "test_predispatch.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['VALIDATION_NAMES_ONE_TEST_COUNT', 'ROOT_IS_THE_WHOLE_SUITE_OF_THIS_SEAL', 'USER_IS_THE_WHOLE_SUITE_OF_THIS_SEAL'], ['ROOT_IS_THE_WHOLE_SUITE_OF_THIS_SEAL', 'USER_IS_THE_WHOLE_SUITE_OF_THIS_SEAL'])",
+   "killed": true,
+   "mutant": "L_VALIDATION_NAMES_ONE_TEST_COUNT_answered_true",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed in 0.34s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_EVERY_CREATING_TEST_RAN'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_EVERY_CREATING_TEST_RAN_answered_true",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 21 passed in 0.27s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_EFFECTIVE_UID_AND_GID_0'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_EFFECTIVE_UID_AND_GID_0_answered_true",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 2 passed in 0.14s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_PYTHON_3_12'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_PYTHON_3_12_answered_true",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 passed in 0.16s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_FILESYSTEM_EXT4'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_FILESYSTEM_EXT4_answered_true",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 8 passed in 0.19s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_CREATED_DIRECTORY_ROOT_ROOT_0700'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_CREATED_DIRECTORY_ROOT_ROOT_0700_answered_true",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 10 passed in 0.18s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_CREATED_FILE_ROOT_ROOT_0600_ONE_LINK'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_CREATED_FILE_ROOT_ROOT_0600_ONE_LINK_answered_true",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 12 passed in 0.18s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['USER_IS_NOT_ROOT'], [])",
+   "killed": true,
+   "mutant": "L_USER_IS_NOT_ROOT_answered_true",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed in 0.45s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['USER_IS_NOT_ROOT', 'TWO_DIFFERENT_FILES'], ['USER_IS_NOT_ROOT'])",
+   "killed": true,
+   "mutant": "L_TWO_DIFFERENT_FILES_answered_true",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed in 0.40s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_IS_THE_WHOLE_SUITE_OF_THIS_SEAL'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_IS_THE_WHOLE_SUITE_OF_THIS_SEAL_answered_true",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed in 0.34s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['USER_IS_THE_WHOLE_SUITE_OF_THIS_SEAL'], [])",
+   "killed": true,
+   "mutant": "L_USER_IS_THE_WHOLE_SUITE_OF_THIS_SEAL_answered_true",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed in 0.37s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_NO_FAILURE_NO_ERROR'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_NO_FAILURE_NO_ERROR_answered_true",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed in 0.28s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['USER_NO_FAILURE_NO_ERROR'], [])",
+   "killed": true,
+   "mutant": "L_USER_NO_FAILURE_NO_ERROR_answered_true",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed in 0.31s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_EVERY_CREATING_TEST_RAN', 'ROOT_RECORD_PRESENT'], ['ROOT_EVERY_CREATING_TEST_RAN'])",
+   "killed": true,
+   "mutant": "L_ROOT_RECORD_PRESENT_answered_true",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed in 0.30s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['USER_RECORD_PRESENT', 'USER_RAN_ON_LINUX', 'USER_PAYLOAD_IS_THE_SEALED_ONE', 'USER_SHA256SUMS_IS_THIS_SEAL', 'USER_...ER_SHA256SUMS_IS_THIS_SEAL', 'USER_RUN_COMPLETED_WITH_FIVE_CREATING_CALLS', 'USER_KERNEL_NOATIME', 'USER_IS_NOT_ROOT'])",
+   "killed": true,
+   "mutant": "L_USER_RECORD_PRESENT_answered_true",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed in 0.39s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_RAN_ON_LINUX'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_RAN_ON_LINUX_answered_true",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 4 passed in 0.13s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['USER_RAN_ON_LINUX'], [])",
+   "killed": true,
+   "mutant": "L_USER_RAN_ON_LINUX_answered_true",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 21 passed in 0.36s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_PAYLOAD_IS_THE_SEALED_ONE'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_PAYLOAD_IS_THE_SEALED_ONE_answered_true",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 15 passed in 0.20s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['USER_PAYLOAD_IS_THE_SEALED_ONE'], [])",
+   "killed": true,
+   "mutant": "L_USER_PAYLOAD_IS_THE_SEALED_ONE_answered_true",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 21 passed in 0.32s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_SHA256SUMS_IS_THIS_SEAL'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_SHA256SUMS_IS_THIS_SEAL_answered_true",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 16 passed in 0.22s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['USER_RECORD_PRESENT', 'USER_RAN_ON_LINUX', 'USER_PAYLOAD_IS_THE_SEALED_ONE', 'USER_SHA256SUMS_IS_THIS_SEAL', 'USER_..._PAYLOAD_IS_THE_SEALED_ONE', 'USER_RUN_COMPLETED_WITH_FIVE_CREATING_CALLS', 'USER_KERNEL_NOATIME', 'USER_IS_NOT_ROOT'])",
+   "killed": true,
+   "mutant": "L_USER_SHA256SUMS_IS_THIS_SEAL_answered_true",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 21 passed in 0.37s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_RUN_COMPLETED_WITH_FIVE_CREATING_CALLS'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_RUN_COMPLETED_WITH_FIVE_CREATING_CALLS_answered_true",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 18 passed in 0.21s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['USER_RECORD_PRESENT', 'USER_RAN_ON_LINUX', 'USER_PAYLOAD_IS_THE_SEALED_ONE', 'USER_SHA256SUMS_IS_THIS_SEAL', 'USER_...N_LINUX', 'USER_PAYLOAD_IS_THE_SEALED_ONE', 'USER_SHA256SUMS_IS_THIS_SEAL', 'USER_KERNEL_NOATIME', 'USER_IS_NOT_ROOT'])",
+   "killed": true,
+   "mutant": "L_USER_RUN_COMPLETED_WITH_FIVE_CREATING_CALLS_answered_true",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 21 passed in 0.40s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_KERNEL_NOATIME'], [])",
+   "killed": true,
+   "mutant": "L_ROOT_KERNEL_NOATIME_answered_true",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 7 passed in 0.15s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['USER_RECORD_PRESENT', 'USER_RAN_ON_LINUX', 'USER_PAYLOAD_IS_THE_SEALED_ONE', 'USER_SHA256SUMS_IS_THIS_SEAL', 'USER_...IS_THE_SEALED_ONE', 'USER_SHA256SUMS_IS_THIS_SEAL', 'USER_RUN_COMPLETED_WITH_FIVE_CREATING_CALLS', 'USER_IS_NOT_ROOT'])",
+   "killed": true,
+   "mutant": "L_USER_KERNEL_NOATIME_answered_true",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 21 passed in 0.43s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (0 == 0 and [] == ['test_synthe... by the test']",
+   "killed": true,
+   "mutant": "L50_a_skipped_test_counts_as_passed",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 1 passed in 0.12s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_NO_FAILURE_NO_ERROR', 'ROOT_EVERY_CREATING_TEST_RAN'], ['ROOT_NO_FAILURE_NO_ERROR'])",
+   "killed": true,
+   "mutant": "L51_a_failed_test_counts_as_passed",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 21 passed in 0.32s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_NO_FAILURE_NO_ERROR', 'ROOT_EVERY_CREATING_TEST_RAN'], ['ROOT_NO_FAILURE_NO_ERROR'])",
+   "killed": true,
+   "mutant": "L52_an_error_is_not_a_failure",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 21 passed in 0.38s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_EVERY_CREATING_TEST_RAN'], [])",
+   "killed": true,
+   "mutant": "L53_one_passed_parameter_is_enough",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 21 passed in 0.35s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_EFFECTIVE_UID_AND_GID_0'], ['ROOT_EFFECTIVE_UID_AND_GID_0'])",
+   "killed": true,
+   "mutant": "L54_exit_0_whatever_was_decided",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.14s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_EFFECTIVE_UID_AND_GID_0'], ['ROOT_EFFECTIVE_UID_AND_GID_0'])",
+   "killed": true,
+   "mutant": "L55_accepted_whatever_failed",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.11s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (1 == 1 and 'LINUX_PROOF_REFUSED' == 'LINUX_PROOF_REFUSED'",
+   "killed": true,
+   "mutant": "L56_an_unreadable_file_is_ignored",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 22 passed in 0.34s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_PYTHON_3_12'], [])",
+   "killed": true,
+   "mutant": "L57_python_of_any_3_1x",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 passed in 0.13s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_IS_THE_WHOLE_SUITE_OF_THIS_SEAL'], [])",
+   "killed": true,
+   "mutant": "L58_case_count_not_compared_with_the_seal",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 21 passed in 0.27s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (['ROOT_IS_THE_WHOLE_SUITE_OF_THIS_SEAL'], [])",
+   "killed": true,
+   "mutant": "L59_declared_count_trusted_without_the_cases",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 21 passed in 0.31s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('test_native..._linux_proof') == ('test_native..._linux_proof')",
+   "killed": true,
+   "mutant": "L60_required_test_1_not_required",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed in 0.03s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('test_native..._linux_proof') == ('test_native..._linux_proof')",
+   "killed": true,
+   "mutant": "L61_required_test_2_not_required",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed in 0.03s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('test_native..._linux_proof') == ('test_native..._linux_proof')",
+   "killed": true,
+   "mutant": "L62_required_test_3_not_required",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed in 0.06s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('test_native..._linux_proof') == ('test_native..._linux_proof')",
+   "killed": true,
+   "mutant": "L63_required_test_4_not_required",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed in 0.05s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('test_native..._linux_proof') == ('test_native..._linux_proof')",
+   "killed": true,
+   "mutant": "L64_required_test_5_not_required",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed in 0.04s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('test_native...orm_lacks_it') == ('test_native..._linux_proof')",
+   "killed": true,
+   "mutant": "L65_recording_test_not_required",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed in 0.04s",
+   "tests": [
+    "test_linux_proof.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('EXPECTATION_INVALID', (1, '', 'REFUSED RELEASE_SHA256_NOT_THE_EXPECTED_HASH",
+   "killed": true,
+   "mutant": "B01_EXPECTATION_INVALID_not_refused",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 2 passed in 0.21s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('RELEASE_SHA256_NOT_THE_EXPECTED_HASH', (0, '{\"expected\":{\"code_revision\":\"0123456789abcdef0123456789abcdef01234567\",...885018fbd517775a034084664\"},\"request_bytes_added\":7104,\"schema\":\"HOSTOPS02_INSTALL_RELEASE_BINDING_FIELDS_V2\"}",
+   "killed": true,
+   "mutant": "B02_RELEASE_SHA256_NOT_THE_EXPECTED_HASH_not_refused",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 2 passed in 0.09s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('RELEASE_CODE_REVISION_NOT_THE_EXPECTED_REVISION', (1, '', 'REFUSED EXPECTATION_NOT_THE_DEPLOYED_RELEASE",
+   "killed": true,
+   "mutant": "B03_RELEASE_CODE_REVISION_NOT_THE_EXPECTED_REVISION_not_refused",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.12s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('RELEASE_PACKAGE_NOT_THE_EXPECTED_PACKAGE', (1, '', 'REFUSED EXPECTATION_NOT_THE_DEPLOYED_RELEASE",
+   "killed": true,
+   "mutant": "B04_RELEASE_PACKAGE_NOT_THE_EXPECTED_PACKAGE_not_refused",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.12s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('RELEASE_IS_A_SYNTHETIC_FIXTURE', (0, '{\"expected\":{\"code_revision\":\"0123456789abcdef0123456789abcdef01234567\",\"expec...d86200c772116eebad14c05f1\"},\"request_bytes_added\":7176,\"schema\":\"HOSTOPS02_INSTALL_RELEASE_BINDING_FIELDS_V2\"}",
+   "killed": true,
+   "mutant": "B05_RELEASE_IS_A_SYNTHETIC_FIXTURE_not_refused",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.19s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('EXPECTATION_NOT_THE_DEPLOYED_RELEASE', (0, '{\"expected\":{\"code_revision\":\"0123456789abcdef0123456789abcdef01234567\",...885018fbd517775a034084664\"},\"request_bytes_added\":7104,\"schema\":\"HOSTOPS02_INSTALL_RELEASE_BINDING_FIELDS_V2\"}",
+   "killed": true,
+   "mutant": "B06_EXPECTATION_NOT_THE_DEPLOYED_RELEASE_not_refused",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 2 passed in 0.13s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'code_revisi...e212e72bdb84'} == {'code_revisi...e212e72bdb84'}",
+   "killed": true,
+   "mutant": "B10_deployed_revision_is_another",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed in 0.04s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'code_revisi...cccccccccccc'} == {'code_revisi...e212e72bdb84'}",
+   "killed": true,
+   "mutant": "B11_deployed_package_is_another",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed in 0.03s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('EXPECTATION_NOT_THE_DEPLOYED_RELEASE', (0, '{\"expected\":{\"code_revision\":\"0123456789abcdef0123456789abcdef01234567\",...f1cfcc59a0c7332bece5f4793\"},\"request_bytes_added\":7104,\"schema\":\"HOSTOPS02_INSTALL_RELEASE_BINDING_FIELDS_V2\"}",
+   "killed": true,
+   "mutant": "B12_deployed_package_not_compared",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.11s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('EXPECTATION_NOT_THE_DEPLOYED_RELEASE', (0, '{\"expected\":{\"code_revision\":\"0123456789abcdef0123456789abcdef01234567\",...885018fbd517775a034084664\"},\"request_bytes_added\":7104,\"schema\":\"HOSTOPS02_INSTALL_RELEASE_BINDING_FIELDS_V2\"}",
+   "killed": true,
+   "mutant": "B13_deployed_revision_not_compared",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.11s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_binding.py::test_constants_of_the_tool_are_the_deployed_revision_and_package_and_the_fixture_is_neither",
+   "killed": true,
+   "mutant": "B14_fixture_mark_is_another_text",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed in 0.03s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('RELEASE_IS_A_SYNTHETIC_FIXTURE', (0, '{\"expected\":{\"code_revision\":\"0123456789abcdef0123456789abcdef01234567\",\"expec...a5c9c1091a2dbd27dcbda29be\"},\"request_bytes_added\":7092,\"schema\":\"HOSTOPS02_INSTALL_RELEASE_BINDING_FIELDS_V2\"}",
+   "killed": true,
+   "mutant": "B15_fixture_mark_looked_for_at_the_top_level_only",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.16s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: [PosixPath('<path>')]",
+   "killed": true,
+   "mutant": "B16_an_option_may_be_missing",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 3 passed in 0.30s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: [PosixPath('<path>', '--expect-code-revision', '0123456789abcdef0123456789abcdef01234567', '--expect-package-sha', ...]",
+   "killed": true,
+   "mutant": "B17_an_option_may_be_given_twice",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 3 passed in 0.42s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ['--force', '--expect-sha256', 'b110f364d7d7eeeb884a7038668a4fb7f158dbdd86200c772116eebad14c05f1', '--expect-code-revision', '0123456789abcdef0123456789abcdef01234567', '--expect-package-sha', ...]",
+   "killed": true,
+   "mutant": "B18_an_unknown_option_is_a_file",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 3 passed in 0.44s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('EXPECTATION_INVALID', (1, '', 'REFUSED RELEASE_SHA256_NOT_THE_EXPECTED_HASH",
+   "killed": true,
+   "mutant": "B19_zero_hash_expectation_accepted",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed in 0.18s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('EXPECTATION_INVALID', (1, '', 'REFUSED RELEASE_SHA256_NOT_THE_EXPECTED_HASH",
+   "killed": true,
+   "mutant": "B20_expectation_grammar_unchecked",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 2 passed in 0.14s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('RELEASE_SHA256_NOT_THE_EXPECTED_HASH', (0, '', 'REFUSED RELEASE_SHA256_NOT_THE_EXPECTED_HASH",
+   "killed": true,
+   "mutant": "B21_refusal_is_exit_0",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 2 passed in 0.06s",
+   "tests": [
+    "test_binding.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('EXPECTATION_NOT_THE_DEPLOYED_RELEASE', (0, '{\"expected\":{\"code_revision\":\"0123456789abcdef0123456789abcdef01234567\",...885018fbd517775a034084664\"},\"request_bytes_added\":7104,\"schema\":\"HOSTOPS02_INSTALL_RELEASE_BINDING_FIELDS_V2\"}",
+   "killed": true,
+   "mutant": "B22_command_line_takes_the_deployed_values_from_the_file",
+   "returncode": 1,
+   "seconds": 0.5,
+   "summary": "1 failed, 2 passed in 0.08s",
+   "tests": [
+    "test_binding.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

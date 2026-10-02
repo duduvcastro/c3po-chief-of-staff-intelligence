@@ -1,0 +1,44 @@
+{
+ "activate": {
+  "files": 42,
+  "final_payload_unbound_sha256": "37b685d52ff16d4d5b6ef4fb70cf012e46078b91f88da1e210de481493a47986",
+  "operation": "GO_WRITE_HOSTOPS02_ACTIVATE_01",
+  "payload_source_sha256": "cc05438954f2ba49d5f3bd1b8ef515b3b4601f2cc53436a36460fb3406f85c44",
+  "scope_sha256": "0f6b1e458bf93b7210a15fb7f4556fe9666f5ca9e104b06703a20a00568193e8",
+  "seal_file": "SHA256SUMS",
+  "seal_sha256": "3f0eea45e6580f05a5490983a87dcc7b6677dc78911ee7e66afc6602c7f57373"
+ },
+ "catalog_init": {
+  "files": 34,
+  "final_payload_unbound_sha256": "669454bd6ce3d72287f7dfc5cf136121471ba19fbf05cf21ba3825eaf82b438c",
+  "operation": "GO_WRITE_HOSTOPS02_CATALOG_INIT_01",
+  "payload_source_sha256": "d584aa93380513a4eca37a877eca93d78a899dd56a86d9075f977bd56fff5d15",
+  "scope_sha256": "c06a705f5ccdf9360e301ec45a6920ece3b175a691afa52a9881022127048c21",
+  "seal_file": "SHA256SUMS",
+  "seal_sha256": "8b2bced33c01be75605838bf3a31e7f5dd3a65cd9cc34e245bbcd55fea3f38a9"
+ },
+ "core": {
+  "files": 75,
+  "generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "seal_file": "CORE_SHA256SUMS",
+  "seal_sha256": "c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f"
+ },
+ "epoch_readback": {
+  "files": 36,
+  "final_payload_unbound_sha256": "93655c352f5b2ef418968220e73fe9787bfaf9911005044fe6c004f709ebd031",
+  "operation": "GO_READONLY_HOSTOPS02_EPOCH_READBACK_01",
+  "payload_source_sha256": "cabc95a04bed751de1824fa8151c58b81e736bc7ea037df3baca01759aa556d4",
+  "scope_sha256": "395ada5f02f0ae83c85a50e3813c298ad35771fd1b94a829b7e0e71ee3774d30",
+  "seal_file": "SHA256SUMS",
+  "seal_sha256": "b1a810fea1e695ba3ef25f7dc839136bbb0c9995f89eef777bc2f93215703c1f"
+ },
+ "install_release": {
+  "files": 55,
+  "final_payload_unbound_sha256": "54450b106bbdc3c9b108304b6ade092164069b266d5705abc68f505e1b26ea8c",
+  "operation": "GO_WRITE_HOSTOPS02_INSTALL_RELEASE_01",
+  "payload_source_sha256": "e4cb46f947ca9bfbbfaf9419e56fb42665353ec27faaff8376c381a7d03b6fae",
+  "scope_sha256": "41043cafe76d8ccabddaca9095039bd7400a088571ff45631d717620fa97f2d4",
+  "seal_file": "SHA256SUMS",
+  "seal_sha256": "2705134655d7e580f389a7b32178e18b22d8ca75f2d5b206de3c90483fb84b82"
+ }
+}

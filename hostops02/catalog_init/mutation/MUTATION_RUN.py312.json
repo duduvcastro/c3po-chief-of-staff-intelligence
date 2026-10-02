@@ -1,0 +1,4915 @@
+{
+ "complete_run": true,
+ "core_generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "core_seal_sha256": "c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f",
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 304,
+  "redundant_survivors": 0,
+  "single": 304,
+  "survivors": 0
+ },
+ "errors": [],
+ "operation_sha256": {
+  "build/ASSEMBLY.json": "0dfc1a93d0a6f364c392a0b5f439f99b0ff34df24ee226082b31eff4fde842d9",
+  "build/AUTHORITY.UNBOUND.json": "205b8746461abf3ba67b03e7ab4546428804115ff949c509f24e873cad204db6",
+  "build/DISPATCH.UNBOUND.json": "288ca9aafcef3974445f84d69d43c76a3a011c4fc917a80c7ae7eb0e61c1234e",
+  "build/DISPATCH_SCOPE_DELTA.diff": "e34bb91d64d5a0e1b55d2d329584310f6ac9f115a02b467066bb30921676d3a9",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "669454bd6ce3d72287f7dfc5cf136121471ba19fbf05cf21ba3825eaf82b438c",
+  "build/GO.UNBOUND.json": "fa17157a14087bcf76c0e2d87b4a7dc410081ac2457e200fa5960c2ad2fc3afb",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "fb6375813d076474ecbe314751049e393cb28767bd469c3f079b2e87c66d5e6d",
+  "build/REQUEST.UNBOUND.json": "3a25d9f1851f58997e5e9eee8590971bf6dd1c07b45e51eb920596de616ddf0b",
+  "build/catalog_init.py": "d584aa93380513a4eca37a877eca93d78a899dd56a86d9075f977bd56fff5d15",
+  "build/dispatch_once.py": "9b6f3eacbe5a07eafcf720483a52f04f157e908ac7aa22b944cb0db02221cc57",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "b3a1e51b8224c7a3b5f0dc5f8e2f26ecfd30e572487b346fcd060b03140fc846",
+  "mutation/mutate.py": "8559d8ec7e1f968a68095d07f9f2e5b096306648a118a7ae4342e5fa96bb348c",
+  "op.py": "1028141555c45175ed63ea703d1503f59642752d0376c9dfbd3ba09325a21985",
+  "spec.py": "8ffbb20eef70866b83d1350ad123fa9353b3a8a7af340cfcca48dbe48002b7be",
+  "tests/conftest.py": "0565f8c994704334b99bb9d42e1a715b5ec4192c0c0fc31f63bc84d2506bf705",
+  "tests/k2a.py": "3afc93eeb46b81ebffc9baa5bf67c21f326d6887a453c10c02931cd447666773",
+  "tests/test_catalog_init.py": "174bbca48313a725756bbd307429826a849f435421d76b2893ad9f1821d1f8fd",
+  "tests/test_conformance.py": "bddfec011539f0bfe29fe6797b480fd11b37d93a504b8d66576f54c7390834ed",
+  "tests/test_linux_root.py": "4d7e10301298879931d40dfe78bdc3fe02861b2c230afeac3f9fe07ce1ef1779",
+  "tests/test_native.py": "4a7582c7a4749a7add096b57974c0cf86ce7d6c0289bcc902d1144035422962d",
+  "tests/test_real_script.py": "6ccf77be92b3908e9c6031510c41a67afdd908af2c791c6995667871be6add04",
+  "tests/test_review_findings.py": "6f24f2a63c42bc38b1179b3db992fe8469470f5407e6d5f3704b29954e045aca",
+  "tests/test_review_purity.py": "7cf7a4ee2d6d2c45d8453e69ca67d925c000a10de6fb4bcad9407a843b9ec443",
+  "tests/test_static_pins.py": "5097c46e1929950b0e8c5f6fd305cafe00b72610383ac2dc0e16ccef42ba6223"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "release_tree_at_hand": true,
+ "results": [
+  {
+   "first_failure": "E   KeyError: 'mode'",
+   "killed": true,
+   "mutant": "C01_epoch_constant_is_another_day",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 12 deselected in 0.69s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "C02_rehearsal_epoch_may_be_a_shadow_epoch",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.33s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "C03_throwaway_name_is_any_name",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.37s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "C04_throwaway_label_may_be_empty",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.35s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "C05_catalog_file_mode_0644",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 12 deselected in 0.62s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "C06_catalog_names_are_others",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 12 deselected in 0.68s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...ECTS', 'REAL') == ('METADATA_ON...ECTS', 'REAL')",
+   "killed": true,
+   "mutant": "C07_catalog_schema_is_another",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 12 deselected in 0.69s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'CATALOG_READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "C08_entry_limit_of_the_readback_raised",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 37 passed, 12 deselected in 3.02s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'CATALOG_READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "C09_epoch_json_read_limit_raised",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 37 passed, 12 deselected in 3.14s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (11 == 11 and 11 == 8)",
+   "killed": true,
+   "mutant": "C10_every_new_container_row_printed",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 47 passed, 12 deselected in 3.51s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "C11_app_allowed_as_container_path",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.73s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "C12_var_allowed_as_container_path",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.84s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "C13_no_allowance_for_the_rehearsal_directory",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 23 passed, 12 deselected in 2.35s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['GO_READONLY..._PRECHECK_01'] == ['GO_READONLY...PROVISION_01']",
+   "killed": true,
+   "mutant": "C14_provisioning_evidence_not_required",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 12 passed, 12 deselected in 1.55s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['GO_WRITE_SU...PROVISION_01'] == ['GO_READONLY...PROVISION_01']",
+   "killed": true,
+   "mutant": "C15_precheck_evidence_not_required",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 12 passed, 12 deselected in 1.56s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "C16_run_gets_the_short_class",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 12 deselected in 0.63s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REHEARSAL',...OSTIC_STRING') == ('REHEARSAL',...OSTIC_STRING')",
+   "killed": true,
+   "mutant": "C17_rehearsal_succeeds_with_the_outcome_of_the_real_run",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.66s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "C18_real_run_succeeds_with_the_outcome_of_the_rehearsal",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.77s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_a_death_before_the_first_effect_is_a_refusal_and_after_it_a_partial_of_unknown_state[REAL]",
+   "killed": true,
+   "mutant": "C19_writes_any_day_of_the_epoch",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 52 passed, 12 deselected in 3.50s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_the_script_this_source_carries_is_the_only_one_and_a_changed_constant_refuses_everything",
+   "killed": true,
+   "mutant": "S01_script_bytes_not_compared",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 10 passed, 12 deselected in 1.45s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_the_script_this_source_carries_is_the_only_one_and_a_changed_constant_refuses_everything",
+   "killed": true,
+   "mutant": "S02_script_compared_by_size_only",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 10 passed, 12 deselected in 1.51s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "S03_signed_script_hash_not_compared",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.86s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_the_script_this_source_carries_is_the_only_one_and_a_changed_constant_refuses_everything",
+   "killed": true,
+   "mutant": "S04_script_not_checked_before_the_claim",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 10 passed, 12 deselected in 1.54s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: Error('Only base64 data is allowed')",
+   "killed": true,
+   "mutant": "S05_undecodable_script_escapes_as_an_exception",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 10 passed, 12 deselected in 1.57s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REAL', 23, 'CHAIN_ROW_INVALID')",
+   "killed": true,
+   "mutant": "V01_rows_of_the_root_directory_accepted",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.86s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: object of type 'NoneType' has no len()",
+   "killed": true,
+   "mutant": "V02_rows_type_unchecked",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.83s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "V03_private_directory_group_unchecked",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.92s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "V04_private_directory_mode_is_only_closed_to_others",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.94s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "V05_private_directory_mode_unchecked",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.86s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "V06_mount_point_accepted",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'expect': 'A...3, ...}}, ...} == {'path': '/va...e': '/'}, ...}",
+   "killed": true,
+   "mutant": "V07_rehearsal_acts_on_the_signed_parent_itself",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.65s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "V08_bind_is_read_only",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.60s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "V09_script_gets_the_host_path",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 12 deselected in 0.61s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "V10_interpreter_not_isolated",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 12 deselected in 0.69s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REAL', 0, 'MODE_INVALID')",
+   "killed": true,
+   "mutant": "P01_mode_unchecked",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.73s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P02_evidence_boot_unchecked",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P03_image_revision_unchecked",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.73s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P04_container_path_may_be_nested",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REAL', 16, 'CONTAINER_JOURNAL_ROOT_INVALID')",
+   "killed": true,
+   "mutant": "P05_container_path_may_begin_with_a_dot",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.79s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P06_forbidden_top_level_directories_accepted",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.84s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P07_container_path_unchecked",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.85s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P08_docker_config_need_not_be_private",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.07s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P09_docker_config_may_be_any_private_directory",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.06s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P25_docker_config_may_be_any_directory_of_the_configuration_tree",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.05s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'mode'",
+   "killed": true,
+   "mutant": "P26_docker_config_of_the_unit_is_another_directory",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 12 deselected in 0.70s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P10_real_mode_accepts_a_throwaway_name",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.10s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P11_real_mode_accepts_a_reference_chain",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.09s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P12_real_journal_root_need_not_be_private",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.12s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P27_real_journal_root_is_any_private_directory",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.15s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P28_journal_root_need_not_be_in_the_private_parent",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.21s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P29_journal_root_may_lie_anywhere_inside_the_private_parent",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.13s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P30_journal_root_only_named_like_a_leaf_of_the_private_parent",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.21s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P31_state_root_accepted_as_a_journal_root",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.10s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P32_state_root_is_another_directory",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.11s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P33_journal_rows_need_not_be_private",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.02s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P13_real_epoch_is_any_shadow_epoch",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 7 passed, 12 deselected in 0.94s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P14_real_epoch_is_any_epoch",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.07s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P15_rehearsal_parent_may_be_setgid",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.44s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: can only concatenate str (not \"NoneType\") to str",
+   "killed": true,
+   "mutant": "P16_throwaway_name_unchecked",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.29s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P17_reference_need_not_be_private",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.37s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P34_reference_is_any_private_directory",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.34s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P18_rehearsal_on_another_filesystem",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.43s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P19_throwaway_created_in_any_signed_directory",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.36s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P20_throwaway_created_anywhere_below_var_lib",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.34s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'mode'",
+   "killed": true,
+   "mutant": "P35_throwaway_parent_is_the_private_parent",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.67s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_plan_refusals_are_authentication_refusals_and_nothing_is_touched",
+   "killed": true,
+   "mutant": "P21_rehearsal_epoch_unchecked",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 7 passed, 12 deselected in 1.40s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_validate_plan_refuses_by_itself_what_the_command_could_not_carry",
+   "killed": true,
+   "mutant": "P24_command_not_validated_by_validate_plan",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 11 passed, 12 deselected in 1.53s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F01_effects_operation",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 12 deselected in 0.67s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REAL', 'REH...OSTIC_STRING') == ('REHEARSAL',...OSTIC_STRING')",
+   "killed": true,
+   "mutant": "F02_effects_mode",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.69s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'expect': 'A...3, ...}}, ...} == {'path': '/va...e': '/'}, ...}",
+   "killed": true,
+   "mutant": "F03_effects_journal_path",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.72s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F04_effects_is_the_real_root",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.77s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'expect': 'P...3, ...}}, ...} == {'path': '/va...e': '/'}, ...}",
+   "killed": true,
+   "mutant": "F05_effects_journal_expectation",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.79s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F06_effects_journal_chain",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.73s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'expect': 'A...3, ...}}, ...} == {'path': '/va...e': '/'}, ...}",
+   "killed": true,
+   "mutant": "F07_effects_chain_is_of",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.71s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F08_effects_stays",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.62s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == {'path': '/var/lib/c3po-bar/journal', 'row': {'path': '/var/lib/c3po-bar/journal', 'device': 801, 'inode': 5054, 'uid'..._sha256': 'e066fc6d67abc1868b7aa8bd6171c55150da7c16639e68c6083b90c655c0503d', 'mount_point_by_device_change': '/', ...}",
+   "killed": true,
+   "mutant": "F09_effects_reference_absent",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.70s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'chain_sha25...var/lib', ...} == {'path': '/va...ge': '/', ...}",
+   "killed": true,
+   "mutant": "F10_effects_reference_chain",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.76s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'chain_sha25...journal', ...} == {'path': '/va...ge': '/', ...}",
+   "killed": true,
+   "mutant": "F11_effects_reference_expectation",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'chain_sha25...journal', ...} == {'path': '/va...ge': '/', ...}",
+   "killed": true,
+   "mutant": "F12_effects_reference_same_device",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.74s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F13_effects_docker_config_chain",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 12 deselected in 0.73s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F14_effects_docker_config_expectation",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.79s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'chain_sha25...ge': '/', ...} == {'path': '/et...ge': '/', ...}",
+   "killed": true,
+   "mutant": "F33_effects_rehearsal_said_to_use_the_directory_of_the_unit",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.71s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'chain_sha25...ge': '/', ...} == {'path': '/et...ge': '/', ...}",
+   "killed": true,
+   "mutant": "F34_effects_directory_of_the_unit_said_to_be_given_to_docker_by_a_rehearsal",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.64s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F35_effects_directory_of_the_unit_said_not_to_be_given_to_docker_by_a_real_run",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.65s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == {'path': '/var/lib/c3po-bar-rehearsal-20261003a.docker-cli', 'expect': 'ABSENT_THEN_CREATED_0700_BY_THIS_RUN_EMPTY_AFTER_IT', 'given_to_docker': True, 'stays_after_the_run': True}",
+   "killed": true,
+   "mutant": "F36_effects_without_the_directory_a_rehearsal_gives_docker",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.73s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'expect': 'A...he_run': True} == {'path': '/va...he_run': True}",
+   "killed": true,
+   "mutant": "F37_effects_rehearsal_directory_for_docker_is_the_throwaway_root",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.73s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'expect': 'P...he_run': True} == {'path': '/va...he_run': True}",
+   "killed": true,
+   "mutant": "F38_effects_rehearsal_directory_for_docker_expectation",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'expect': 'A...he_run': True} == {'path': '/va...he_run': True}",
+   "killed": true,
+   "mutant": "F39_effects_rehearsal_directory_said_not_to_be_given_to_docker",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.77s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'expect': 'A...e_run': False} == {'path': '/va...he_run': True}",
+   "killed": true,
+   "mutant": "F40_effects_rehearsal_directory_said_to_be_removed",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.77s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert '/var/lib/c3p...3a.docker-cli' == '/etc/c3po-bar/docker-cli'",
+   "killed": true,
+   "mutant": "F41_effects_docker_config_variable_is_always_the_units",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.74s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F42_effects_without_the_docker_config_variable",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 12 deselected in 0.76s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F15_effects_image_id",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.69s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F16_effects_image_revision",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.70s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F17_effects_docker_arguments_without_the_fixed_words",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.76s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F18_effects_bind",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F19_effects_network",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.72s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F20_effects_script_hash",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.69s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F21_effects_script_size",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 12 deselected in 0.77s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F22_effects_time_limit",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 12 deselected in 0.83s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REHEARSAL',...OSTIC_STRING') == ('REHEARSAL',...OSTIC_STRING')",
+   "killed": true,
+   "mutant": "F23_effects_epoch",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.77s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REHEARSAL',...90bf6443e858') == ('REHEARSAL',...OSTIC_STRING')",
+   "killed": true,
+   "mutant": "F24_effects_epoch_source",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.79s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'by_the_cont...ctal': '0600'} == {'by_this_pro...ctal': '0600'}",
+   "killed": true,
+   "mutant": "F25_effects_created_by_this_process",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.79s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'by_the_cont...ctal': '0600'} == {'by_this_pro...ctal': '0600'}",
+   "killed": true,
+   "mutant": "F43_effects_created_by_this_process_without_the_directory_for_docker",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.71s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F26_effects_created_by_the_container",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.67s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F27_effects_file_mode",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 12 deselected in 0.72s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REHEARSAL',...OSTIC_STRING') == ('REHEARSAL',...OSTIC_STRING')",
+   "killed": true,
+   "mutant": "F28_effects_success_outcome",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.72s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F29_effects_evidence_boot",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.70s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F30_effects_pre_existing_modified",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 12 deselected in 0.67s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F31_effects_removes",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 12 deselected in 0.64s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'.../', ...}, ...} == {'operation':...y': None, ...}",
+   "killed": true,
+   "mutant": "F32_effects_activation",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.72s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('not enough v...ted 2, got 1)' == 'NOT_A_CONSTANT_CODE'",
+   "killed": true,
+   "mutant": "L01_raw_refusal_text_reaches_the_receipt",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 36 passed, 12 deselected in 2.58s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "L02_extra_keys_accepted",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.16s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "L03_keys_unchecked",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.29s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "L04_created_may_be_any_truthy_value",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.26s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "L05_epoch_of_the_line_not_compared",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.25s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "L06_entries_of_the_line_compared_as_a_set",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.24s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "L07_entries_of_the_line_not_compared",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.24s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'CATALOG_IDENTITY_NOT_THE_HOSTS')",
+   "killed": true,
+   "mutant": "L08_device_type_unchecked",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.32s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'CATALOG_IDENTITY_NOT_THE_HOSTS')",
+   "killed": true,
+   "mutant": "L09_inode_type_unchecked",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.53s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'CATALOG_IDENTITY_NOT_THE_HOSTS')",
+   "killed": true,
+   "mutant": "L10_inode_zero_accepted",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.65s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "L11_created_false_accepted",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.51s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "L12_other_epoch_accepted",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.58s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "L13_other_entries_accepted",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.64s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "L14_status_other_than_ready_or_refused_kept",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.60s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_a_refusal_of_the_script_is_reported_with_its_constant_code_and_never_with_raw_text",
+   "killed": true,
+   "mutant": "B01_other_entries_not_counted",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 36 passed, 12 deselected in 3.13s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'CATALOG_READBACK_UNAVAILABLE')",
+   "killed": true,
+   "mutant": "B02_files_read_by_following_the_name_blindly",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 37 passed, 12 deselected in 3.19s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...ECTS', 'REAL') == ('METADATA_ON...ECTS', 'REAL')",
+   "killed": true,
+   "mutant": "B03_expected_identity_swapped",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 12 deselected in 0.86s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...E_USED_AGAIN') == ('METADATA_ON...ADY_VERIFIED')",
+   "killed": true,
+   "mutant": "B04_expected_epoch_is_the_constant",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.95s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B05_epoch_json_compared_as_json",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 37 passed, 12 deselected in 3.02s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B06_epoch_json_compared_by_prefix",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B07_file_read_need_not_be_the_file_looked_at",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 39 passed, 12 deselected in 3.12s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B08_root_not_verified_after_the_run",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B09_device_of_a_file_unchecked",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.67s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'RUN_ESCAPED_STATE_UNKNOWN')",
+   "killed": true,
+   "mutant": "B10_file_type_unchecked",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.61s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B11_file_owner_unchecked",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.67s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B12_file_group_unchecked",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.51s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B13_file_mode_unchecked",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.60s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B14_file_links_unchecked",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.49s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B15_file_device_unchecked",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.55s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B16_a_third_entry_accepted",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.42s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B17_only_epoch_json_checked",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.35s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B18_only_the_lock_checked",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.33s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "B19_bytes_of_epoch_json_not_required",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.57s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'SCRIPT_OUTPUT_NOT_ONE_LINE')",
+   "killed": true,
+   "mutant": "R01_engine_status_not_told_apart",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 32 passed, 12 deselected in 1.86s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'ENGINE_COULD_NOT_RUN_THE_CONTAINER')",
+   "killed": true,
+   "mutant": "R12_engine_status_spends_a_verified_root",
+   "returncode": 1,
+   "seconds": 9.3,
+   "summary": "1 failed, 69 passed, 12 deselected in 8.56s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'SCRIPT_OUTPUT_NOT_ONE_LINE')",
+   "killed": true,
+   "mutant": "R13_engine_status_without_a_verified_catalog_reported_as_the_scripts",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 32 passed, 12 deselected in 1.85s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'ENGINE_COULD_NOT_RUN_THE_CONTAINER')",
+   "killed": true,
+   "mutant": "R14_engine_status_judged_as_a_status_of_the_script",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 69 passed, 12 deselected in 8.58s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'ENGINE_STATUS_AFTER_A_VERIFIED_CATALOG')",
+   "killed": true,
+   "mutant": "R15_every_status_but_zero_left_to_the_line_and_the_readback",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 34 passed, 12 deselected in 1.87s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'SCRIPT_OUTPUT_NOT_ONE_LINE')",
+   "killed": true,
+   "mutant": "R16_only_125_is_a_status_of_docker_itself",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 32 passed, 12 deselected in 1.77s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'SCRIPT_FAILED')",
+   "killed": true,
+   "mutant": "R02_missing_line_not_told_apart",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 34 passed, 12 deselected in 1.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'SCRIPT_FAILED')",
+   "killed": true,
+   "mutant": "R03_refusal_of_the_script_not_told_apart",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 34 passed, 12 deselected in 1.88s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'ENGINE_STATUS_AFTER_A_VERIFIED_CATALOG')",
+   "killed": true,
+   "mutant": "R04_exit_status_of_the_run_ignored",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 34 passed, 12 deselected in 1.95s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'CATALOG_IDENTITY_NOT_THE_HOSTS')",
+   "killed": true,
+   "mutant": "R05_line_not_required_as_signed",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.34s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "R06_identity_of_the_container_not_compared_with_the_hosts",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.44s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "R07_only_the_inode_compared",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.45s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "R08_only_the_device_compared",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 34 passed, 12 deselected in 2.41s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'CATALOG_READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "R09_unavailable_readback_not_told_apart",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 31 passed, 12 deselected in 2.13s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "R10_host_readback_not_required",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 37 passed, 12 deselected in 2.80s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'CONTAINER_LISTING_UNAVAILABLE_AFTER_RUN')",
+   "killed": true,
+   "mutant": "R11_unavailable_readback_accepted",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 31 passed, 12 deselected in 2.17s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "K01_executor_identity_unchecked",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.39s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "K02_executor_group_unchecked",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.43s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [('mkdir', '/...un', 'ps -a')] == [('umask', 63...n --rm'), ...]",
+   "killed": true,
+   "mutant": "K03_umask_inherited",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.60s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [('umask', 18...n --rm'), ...] == [('umask', 63...n --rm'), ...]",
+   "killed": true,
+   "mutant": "K04_umask_022",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.63s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "K05_boot_of_the_evidence_unchecked",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.48s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'DOCKER_CONFIG_DIRECTORY_NOT_EMPTY_AFTER_THE_READS')",
+   "killed": true,
+   "mutant": "K06_docker_run_under_a_configuration_directory_with_content",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.52s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "K07_real_root_of_the_rehearsal_may_hold_entries",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.86s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'DESTINATION_APPEARED_AFTER_PRECHECK')",
+   "killed": true,
+   "mutant": "K08_existing_throwaway_not_refused_by_the_precheck",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 5 passed, 12 deselected in 0.77s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REAL', 43, 'JOURNAL_ROOT_NOT_EMPTY', 'found on the file system before any docker command is started')",
+   "killed": true,
+   "mutant": "K09_docker_started_with_a_root_that_holds_entries",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.67s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'COMMAND_FAILED')",
+   "killed": true,
+   "mutant": "K10_absent_image_not_told_apart",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.63s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "K11_image_id_not_compared",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.50s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "K12_image_revision_not_compared",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.52s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'COMMAND_FAILED')",
+   "killed": true,
+   "mutant": "K13_failed_listing_not_told_apart",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.36s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PARENT_REPLACED",
+   "killed": true,
+   "mutant": "K14_no_last_look_at_the_held_directories",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.62s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PARENT_REPLACED",
+   "killed": true,
+   "mutant": "K27_no_last_look_at_the_directory_a_rehearsal_created",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 22 passed, 12 deselected in 1.72s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: JOURNAL_ROOT_NOT_EMPTY",
+   "killed": true,
+   "mutant": "K15_no_last_look_at_the_real_root",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.59s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DOCKER_CONFIG_DIRECTORY_NOT_EMPTY_AFTER_THE_READS",
+   "killed": true,
+   "mutant": "K16_no_last_look_at_the_configuration_directory",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.33s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (144 > 20 and 0 >= 2)",
+   "killed": true,
+   "mutant": "K52_count_that_could_not_be_taken_reported_as_a_changed_directory",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 75 passed, 12 deselected in 6.64s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('OSError', 79)",
+   "killed": true,
+   "mutant": "K53_count_that_could_not_be_taken_accepted",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 75 passed, 12 deselected in 5.74s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'DOCKER_CONFIG_DIRECTORY_NOT_EMPTY')",
+   "killed": true,
+   "mutant": "K28_what_the_reads_left_not_told_apart_from_what_was_found",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.13s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DOCKER_CONFIG_DIRECTORY_NOT_EMPTY_AFTER_THE_READS",
+   "killed": true,
+   "mutant": "K29_last_look_counts_the_directory_of_the_unit_whatever_docker_was_given",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 22 passed, 12 deselected in 1.36s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DOCKER_CONFIG_DIRECTORY_NOT_EMPTY_AFTER_THE_READS",
+   "killed": true,
+   "mutant": "K30_count_after_the_reads_not_reported",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.29s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('OSError', 79)",
+   "killed": true,
+   "mutant": "K38_count_that_could_not_be_taken_reported_as_zero",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 75 passed, 12 deselected in 5.70s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'docker_config_entries_after_the_reads'",
+   "killed": true,
+   "mutant": "K39_directory_not_counted_after_a_read_that_failed",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.25s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('docker_config_entries_after_the_reads' not in {'docker_config_entries': 0, 'journal_root_entries': 0, 'docker_config_entries_after_the_reads': 0})",
+   "killed": true,
+   "mutant": "K40_directory_counted_although_no_docker_command_was_started",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 74 passed, 12 deselected in 5.41s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'DOCKER_CONFIG_DIRECTORY_NOT_READ_AFTER_THE_READS')",
+   "killed": true,
+   "mutant": "K41_failure_of_a_read_lost_once_the_directory_was_counted",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 13 passed, 12 deselected in 0.88s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...INER_STARTED') == ('PARTIAL_MET...INER_STARTED')",
+   "killed": true,
+   "mutant": "K42_changed_directory_does_not_outrank_the_first_finding",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 74 passed, 12 deselected in 5.38s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...INER_STARTED') == ('PARTIAL_MET...INER_STARTED')",
+   "killed": true,
+   "mutant": "K43_unknown_count_does_not_outrank_the_first_finding",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 76 passed, 12 deselected in 6.29s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'IMAGE_REVISION_MISMATCH')",
+   "killed": true,
+   "mutant": "K44_first_finding_not_kept",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 74 passed, 12 deselected in 5.47s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...INER_STARTED') == ('PARTIAL_MET...INER_STARTED')",
+   "killed": true,
+   "mutant": "K45_unknown_count_reported_as_a_changed_directory",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 76 passed, 12 deselected in 6.09s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...INER_STARTED') == ('PARTIAL_MET...INER_STARTED')",
+   "killed": true,
+   "mutant": "K46_changed_directory_reported_as_an_unknown_count",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 74 passed, 12 deselected in 5.78s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...INER_STARTED') == ('PARTIAL_MET...INER_STARTED')",
+   "killed": true,
+   "mutant": "K47_changed_directory_of_the_unit_called_a_refusal",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.30s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('OSError', 79, 'DOCKER_CONFIG_DIRECTORY_NOT_READ_AFTER_THE_READS')",
+   "killed": true,
+   "mutant": "K48_unknown_directory_of_the_unit_called_a_refusal",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 75 passed, 12 deselected in 6.37s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...INER_STARTED') == ('PARTIAL_MET...INER_STARTED')",
+   "killed": true,
+   "mutant": "K49_changed_directory_of_the_unit_called_a_refusal_when_known",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.23s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...INER_STARTED') == ('PARTIAL_MET...INER_STARTED')",
+   "killed": true,
+   "mutant": "K50_precheck_of_a_real_run_decided_without_the_count",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 74 passed, 12 deselected in 6.39s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'IMAGE_REVISION_MISMATCH')",
+   "killed": true,
+   "mutant": "K51_reads_of_a_rehearsal_decided_without_the_count",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 74 passed, 12 deselected in 6.59s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'COMMAND_NOT_STARTED_BUDGET')",
+   "killed": true,
+   "mutant": "K17_budget_unchecked",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 23 passed, 12 deselected in 1.50s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'COMMAND_NOT_STARTED_BUDGET')",
+   "killed": true,
+   "mutant": "K18_budget_without_the_reserve",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 23 passed, 12 deselected in 1.42s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "K19_budget_without_the_allowance_of_the_rehearsal",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 23 passed, 12 deselected in 1.49s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REAL', 16.0)",
+   "killed": true,
+   "mutant": "K20_budget_with_the_allowance_in_real_mode",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 23 passed, 12 deselected in 1.49s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [(['image', '...li', 8, True)] == [(['image', '...li', 8, True)]",
+   "killed": true,
+   "mutant": "K21_image_read_with_roots_own_configuration",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 12 deselected in 0.47s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [(['image', '....docker-cli')] == [(['image', '....docker-cli')]",
+   "killed": true,
+   "mutant": "K31_image_read_of_a_rehearsal_under_the_directory_of_the_unit",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.45s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [(['image', '...li', 8, True)] == [(['image', '...li', 8, True)]",
+   "killed": true,
+   "mutant": "K22_first_listing_with_roots_own_configuration",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 12 deselected in 0.45s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [(['image', '....docker-cli')] == [(['image', '....docker-cli')]",
+   "killed": true,
+   "mutant": "K32_first_listing_of_a_rehearsal_under_the_directory_of_the_unit",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.51s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'docker_conf...': True}, ...} == {'docker_conf...: False}, ...}",
+   "killed": true,
+   "mutant": "K33_existing_directory_for_docker_not_refused_by_the_precheck",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.61s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'docker_conf...': True}, ...} == {'docker_conf...: False}, ...}",
+   "killed": true,
+   "mutant": "K34_existing_throwaway_root_not_refused_by_the_precheck",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.60s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "K35_probe_that_did_not_establish_absence_accepted",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 92 passed, 12 deselected in 9.86s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: the docker binary is looked at before a directory is created for it",
+   "killed": true,
+   "mutant": "K36_rehearsal_creates_a_directory_for_a_docker_that_cannot_be_started",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 3 passed, 12 deselected in 0.47s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: JOURNAL_ROOT_NOT_EMPTY",
+   "killed": true,
+   "mutant": "K37_last_look_of_a_real_run_without_its_root",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.59s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'JOURNAL_ROOT_NOT_EMPTY')",
+   "killed": true,
+   "mutant": "K23_precheck_failure_is_not_a_refusal",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 4 passed, 12 deselected in 0.64s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "E01_container_started_in_a_directory_that_is_not_as_asked",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 51 passed, 12 deselected in 2.82s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNTOUCHED_NO...AINER_STARTED' == 'NOT_TO_BE_USED_AGAIN'",
+   "killed": true,
+   "mutant": "E02_created_directory_not_labelled_as_spent",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 14 passed, 12 deselected in 1.57s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('NOT_TO_BE_USED_AGAIN' == 'UNTOUCHED_NO...AINER_STARTED'",
+   "killed": true,
+   "mutant": "E39_refused_rehearsal_labelled_as_spent",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 51 passed, 12 deselected in 2.74s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...ECTS', 'REAL') == ('METADATA_ON...ECTS', 'REAL')",
+   "killed": true,
+   "mutant": "E03_run_with_roots_own_configuration",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 12 deselected in 0.65s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...E_USED_AGAIN') == ('METADATA_ON...ADY_VERIFIED')",
+   "killed": true,
+   "mutant": "E40_run_of_a_rehearsal_under_the_directory_of_the_unit",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.53s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'READS_FAILED')",
+   "killed": true,
+   "mutant": "E41_reads_made_whatever_became_of_the_directory_for_docker",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 51 passed, 12 deselected in 2.36s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DOCKER_CONFIG_DIRECTORY_NOT_EMPTY_AFTER_THE_READS",
+   "killed": true,
+   "mutant": "E42_last_look_of_a_rehearsal_at_the_directory_of_the_unit",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 22 passed, 12 deselected in 1.48s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'READS_FAILED')",
+   "killed": true,
+   "mutant": "E43_failing_call_of_a_read_not_told_apart",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 19 passed, 12 deselected in 1.43s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'RUN_ESCAPED_STATE_UNKNOWN')",
+   "killed": true,
+   "mutant": "E44_container_started_whatever_became_of_the_throwaway_root",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 51 passed, 12 deselected in 2.36s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...INER_STARTED') == ('METADATA_ON...ADY_VERIFIED')",
+   "killed": true,
+   "mutant": "E45_directory_for_docker_created_beside_the_real_root",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.57s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'by_the_cont...ctal': '0600'} == {'by_this_pro...ctal': '0600'}",
+   "killed": true,
+   "mutant": "E46_rehearsal_gives_docker_the_directory_of_the_unit",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.46s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'by_the_cont...ctal': '0600'} == {'by_this_pro...ctal': '0600'}",
+   "killed": true,
+   "mutant": "E47_directory_for_docker_is_the_throwaway_root_itself",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.45s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'by_the_cont...ctal': '0600'} == {'by_this_pro...ctal': '0600'}",
+   "killed": true,
+   "mutant": "E48_directory_for_docker_named_with_a_hyphen",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.47s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "E49_directory_of_the_unit_read_back_after_the_run_of_a_rehearsal",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 50 passed, 12 deselected in 2.34s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'path': '/et...fter': 0, ...} == {'path': '/va...fter': 0, ...}",
+   "killed": true,
+   "mutant": "E50_receipt_names_the_directory_of_the_unit_for_a_rehearsal",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.44s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'path': '/va...fter': 0, ...} == {'path': '/va...fter': 0, ...}",
+   "killed": true,
+   "mutant": "E51_receipt_says_the_directory_of_the_unit_for_a_rehearsal",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.49s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "E52_engine_status_after_a_verified_catalog_not_reported",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 69 passed, 12 deselected in 5.67s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: [(('fstat', '/etc/c3po-bar/docker-cli'), ['/etc/c3po-bar/docker-cli'], 'REFUSED', 'PRECHECK_OS_ERROR'), (('fstat', '/v...ECHECK_FAILED'), (('fstat', '/var/lib/c3po-bar/journal'), ['/var/lib/c3po-bar/journal'], 'REFUSED', 'PRECHECK_FAILED')]",
+   "killed": true,
+   "mutant": "E53_no_descriptor_closed_when_a_walked_directory_cannot_be_held",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 80 passed, 12 deselected in 7.65s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "E54_chains_walked_without_the_device",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.04s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PARENT_REPLACED",
+   "killed": true,
+   "mutant": "E55_held_directories_verified_without_the_device",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.31s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNTOUCHED_NO...AINER_STARTED' == 'NOT_TO_BE_USED_AGAIN'",
+   "killed": true,
+   "mutant": "E04_unstarted_rehearsal_not_labelled_as_spent",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 24 passed, 12 deselected in 1.35s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('RETURNED' == 'DID_NOT_RETURN'",
+   "killed": true,
+   "mutant": "E05_state_of_the_run_always_returned",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 29 passed, 12 deselected in 1.33s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...E_USED_AGAIN') == ('METADATA_ON...ADY_VERIFIED')",
+   "killed": true,
+   "mutant": "E06_readback_for_the_compiled_epoch",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.50s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [(['image', '...one, 8, True)] == [(['image', '...li', 8, True)]",
+   "killed": true,
+   "mutant": "E07_second_listing_with_roots_own_configuration",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 12 deselected in 0.53s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [(['image', '.../docker-cli')] == [(['image', '....docker-cli')]",
+   "killed": true,
+   "mutant": "E56_second_listing_of_a_rehearsal_under_the_directory_of_the_unit",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.35s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "E57_new_containers_told_by_name",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 86 passed, 12 deselected in 9.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'status': 'C...fore': 1, ...} == {'status': 'C...fore': 1, ...}",
+   "killed": true,
+   "mutant": "E08_new_containers_compared_by_count",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 47 passed, 12 deselected in 1.93s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (1 == 1 and None == 'GO_EXPIRED')",
+   "killed": true,
+   "mutant": "E09_configuration_directory_not_verified_after_the_run",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 31 passed, 12 deselected in 1.21s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'SCRIPT_OUTPUT_NOT_ONE_LINE')",
+   "killed": true,
+   "mutant": "E10_run_that_did_not_return_judged_by_what_is_on_disk",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 29 passed, 12 deselected in 1.20s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_output_beyond_the_limit_and_an_expiry_during_the_run_are_uncertain",
+   "killed": true,
+   "mutant": "E11_unverified_run_settled_as_done",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 31 passed, 12 deselected in 1.42s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'CATALOG_READBACK_UNAVAILABLE')",
+   "killed": true,
+   "mutant": "E12_unverified_run_settled_as_nothing_changed",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 31 passed, 12 deselected in 1.57s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('CATALOG_READY_VERIFIED' == 'CATALOG_READY_VERIFIED'",
+   "killed": true,
+   "mutant": "E13_verified_run_left_uncertain",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 12 deselected in 0.54s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('UNTOUCHED_NO...AINER_STARTED' == 'NOT_TO_BE_USED_AGAIN'",
+   "killed": true,
+   "mutant": "E14_unverified_root_not_labelled_as_spent",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 29 passed, 12 deselected in 1.52s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "E15_listing_failure_after_the_run_ignored",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 49 passed, 12 deselected in 2.11s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "E16_new_container_ignored",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 47 passed, 12 deselected in 2.11s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "E17_unavailable_configuration_readback_ignored",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 49 passed, 12 deselected in 2.30s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('METADATA_ONLY_REQUIRES_REVIEW', None)",
+   "killed": true,
+   "mutant": "E18_content_in_the_configuration_directory_ignored",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 49 passed, 12 deselected in 2.41s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('CATALOG_READY_VERIFIED' == 'CATALOG_VERI...WITH_FINDINGS'",
+   "killed": true,
+   "mutant": "E19_findings_beside_a_verified_catalog_called_verified",
+   "returncode": 1,
+   "seconds": 3.0,
+   "summary": "1 failed, 47 passed, 12 deselected in 2.34s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'IMAGE_ABSENT_OR_UNREADABLE')",
+   "killed": true,
+   "mutant": "E20_partial_called_a_refusal",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 14 passed, 12 deselected in 1.27s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'COMMAND_NOT_STARTED')",
+   "killed": true,
+   "mutant": "E21_clean_refusal_called_a_partial",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 27 passed, 12 deselected in 1.81s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'READ': 3, '..., 'EFFECT': 1} == {'READ': 3, '..., 'EFFECT': 1}",
+   "killed": true,
+   "mutant": "E22_objects_left_without_the_files_of_the_container",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 12 deselected in 0.50s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'READ': 3, '..., 'EFFECT': 1} == {'READ': 3, '..., 'EFFECT': 1}",
+   "killed": true,
+   "mutant": "E23_modified_real_root_not_said",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 12 deselected in 0.49s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_catalog_init.py::test_rehearsal_creates_a_throwaway_root_runs_the_same_command_on_it_and_only_reads_the_real_root",
+   "killed": true,
+   "mutant": "E24_rehearsal_said_to_modify_an_existing_object",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.57s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f10_a_real_run_that_finds_the_directory_of_the_unit_changed_by_its_reads_is_never_a_refusal",
+   "killed": true,
+   "mutant": "E58_modified_directory_of_the_unit_not_said",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 73 passed, 12 deselected in 6.85s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DOCKER_CONFIG_DIRECTORY_NOT_READ_AFTER_THE_READS' in ('DOCKER_CONFIG_DIRECTORY_NOT_EMPTY_AFTER_THE_READS', 'DOCKER_CONFIG_DIRECTORY_NOT_READ_AFTER_THE_READS') and False in (True, None))",
+   "killed": true,
+   "mutant": "E59_unknown_state_of_the_directory_of_the_unit_reported_as_unmodified",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 75 passed, 12 deselected in 6.84s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f10_what_docker_left_in_its_directory_is_counted_as_left_by_the_run[REAL]",
+   "killed": true,
+   "mutant": "E60_unknown_modification_outranks_a_known_one",
+   "returncode": 1,
+   "seconds": 8.7,
+   "summary": "1 failed, 78 passed, 12 deselected in 7.95s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DOCKER_CONFIG_DIRECTORY_NOT_READ_AFTER_THE_READS' in ('DOCKER_CONFIG_DIRECTORY_NOT_EMPTY_AFTER_THE_READS', 'DOCKER_CONFIG_DIRECTORY_NOT_READ_AFTER_THE_READS') and False in (True, None))",
+   "killed": true,
+   "mutant": "E61_unknown_modification_reported_as_none_happened",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 75 passed, 12 deselected in 7.04s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f10_a_real_run_that_finds_the_directory_of_the_unit_changed_by_its_reads_is_never_a_refusal",
+   "killed": true,
+   "mutant": "E62_what_docker_left_before_the_container_not_counted",
+   "returncode": 1,
+   "seconds": 7.7,
+   "summary": "1 failed, 73 passed, 12 deselected in 6.98s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f10_what_docker_left_in_its_directory_is_counted_as_left_by_the_run[REAL]",
+   "killed": true,
+   "mutant": "E63_what_docker_left_after_the_container_not_counted",
+   "returncode": 1,
+   "seconds": 8.8,
+   "summary": "1 failed, 78 passed, 12 deselected in 8.14s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f10_a_real_run_that_finds_the_directory_of_the_unit_changed_by_its_reads_is_never_a_refusal",
+   "killed": true,
+   "mutant": "E64_entries_docker_left_not_among_the_objects_left",
+   "returncode": 1,
+   "seconds": 7.6,
+   "summary": "1 failed, 73 passed, 12 deselected in 6.85s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f10_a_directory_that_cannot_be_counted_after_a_failed_read_is_unknown_and_not_empty_by_assumption[REAL]",
+   "killed": true,
+   "mutant": "E65_unknown_count_of_what_docker_left_reported_as_none_left",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 76 passed, 12 deselected in 7.97s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...FFECTS', None) == ('METADATA_ON...ECTS', 'REAL')",
+   "killed": true,
+   "mutant": "E25_receipt_without_the_mode",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 12 deselected in 0.39s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'state': 'RE...econds': None} == {'state': 'RE... 'seconds': 0}",
+   "killed": true,
+   "mutant": "E26_seconds_of_the_run_not_measured",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 12 deselected in 0.47s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'path': '/va...s_run': False} == {'path': '/va...s_run': False}",
+   "killed": true,
+   "mutant": "E27_identity_of_the_root_not_in_the_receipt",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 12 deselected in 0.55s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('dir', 0, 0,..., 801, 2, ...) == ('dir', 0, 0,..., 801, 2, ...)",
+   "killed": true,
+   "mutant": "E28_descriptors_left_open",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 12 deselected in 0.49s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'state': 'NO...seconds': 0.0} == {'state': 'NO...seconds': 0.0}",
+   "killed": true,
+   "mutant": "E29_not_started_run_reported_without_its_code",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 25 passed, 12 deselected in 1.37s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['RECEIPT_REDUCED_TO_MINIMUM'] == ['OBSERVED_ROWS_DROPPED']",
+   "killed": true,
+   "mutant": "E30_reduction_keeps_the_rows",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 57 passed, 12 deselected in 3.31s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestReal::test_dry_gate_stops_before_anything_is_observed",
+   "killed": true,
+   "mutant": "G01_no_gate_before_the_first_observation",
+   "returncode": 1,
+   "seconds": 23.4,
+   "summary": "1 failed, 236 passed, 12 deselected in 22.77s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PARENT_REPLACED",
+   "killed": true,
+   "mutant": "K24_last_look_at_the_first_held_directory_only",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.45s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PARENT_REPLACED",
+   "killed": true,
+   "mutant": "K25_last_look_skips_the_configuration_directory",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 21 passed, 12 deselected in 1.41s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "W01_configuration_directory_walked_without_the_device",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.04s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: the rows as this run read them",
+   "killed": true,
+   "mutant": "W02_rows_of_the_configuration_directory_not_reported",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 12 deselected in 0.50s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "W03_real_root_of_the_rehearsal_walked_without_the_device",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 13 passed, 12 deselected in 1.21s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'docker_conf...eference': []} == {'docker_conf...id': 0, ...}]}",
+   "killed": true,
+   "mutant": "W04_rows_of_the_real_root_not_reported_by_the_rehearsal",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.50s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "W05_parent_of_the_throwaway_walked_without_the_device",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 17 passed, 12 deselected in 1.20s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'docker_conf...id': 0, ...}]} == {'docker_conf...id': 0, ...}]}",
+   "killed": true,
+   "mutant": "W06_rows_of_the_parent_not_reported",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.51s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "W07_journal_root_walked_without_the_device",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 13 passed, 12 deselected in 0.99s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: the rows as this run read them",
+   "killed": true,
+   "mutant": "W08_rows_of_the_journal_root_not_reported",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 12 deselected in 0.41s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('dir', 0, 0,..., 801, 2, ...) == ('dir', 0, 0,..., 801, 2, ...)",
+   "killed": true,
+   "mutant": "W10_parent_of_the_throwaway_not_held_for_the_last_look",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.41s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('dir', 0, 0,..., 801, 2, ...) == ('dir', 0, 0,..., 801, 2, ...)",
+   "killed": true,
+   "mutant": "W09_real_root_of_the_rehearsal_not_held_for_the_last_look",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.47s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['RECEIPT_REDUCED_TO_MINIMUM'] == ['OBSERVED_RO...ROWS_DROPPED']",
+   "killed": true,
+   "mutant": "E31_reduction_keeps_the_container_rows",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 57 passed, 12 deselected in 3.38s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == '2026-10-02T17:00:00+00:00')",
+   "killed": true,
+   "mutant": "E32_receipt_without_the_instant_of_the_observation",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 12 deselected in 0.44s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: the rows as this run read them",
+   "killed": true,
+   "mutant": "E33_receipt_without_the_rows_as_read",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 12 deselected in 0.37s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == {'docker_config_entries': 0, 'journal_root_entries': 0, 'image': {'id_as_signed': True, 'revision_as_signed': True}, 'containers': 8, ...}",
+   "killed": true,
+   "mutant": "E34_receipt_without_the_precheck",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 12 deselected in 0.43s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == {'READ': 3, 'CONTAINER': 0, 'EFFECT': 1})",
+   "killed": true,
+   "mutant": "E35_receipt_without_the_command_counts",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 12 deselected in 0.43s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-02T17:00:00+00:00' == '2026-10-02T17:00:00+00:00'",
+   "killed": true,
+   "mutant": "E36_receipt_without_the_clock",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 12 deselected in 0.45s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (160, None, T...True, None, 0) == (160, 'edf31a...True, None, 0)",
+   "killed": true,
+   "mutant": "L15_hash_of_the_printed_line_not_reported",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 12 deselected in 0.39s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (0, 'edf31a75...True, None, 0) == (160, 'edf31a...True, None, 0)",
+   "killed": true,
+   "mutant": "L16_size_of_the_printed_line_not_reported",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 12 deselected in 0.52s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (160, 'edf31a...e, None, None) == (160, 'edf31a...True, None, 0)",
+   "killed": true,
+   "mutant": "L17_exit_status_not_reported_with_the_line",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 12 deselected in 0.50s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...ECTS', 'REAL') == ('METADATA_ON...ECTS', 'REAL')",
+   "killed": true,
+   "mutant": "E37_script_given_to_the_container_is_not_the_pinned_one",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 12 deselected in 0.46s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...E_USED_AGAIN') == ('METADATA_ON...ADY_VERIFIED')",
+   "killed": true,
+   "mutant": "E38_directory_of_the_rehearsal_created_beside_the_real_root",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 1 passed, 12 deselected in 0.46s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'PRECHECK_FAILED')",
+   "killed": true,
+   "mutant": "K26_failing_system_call_of_the_precheck_not_told_apart",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 16 passed, 12 deselected in 1.41s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('READBACK_FAILED' == 'READBACK_OS_ERROR'",
+   "killed": true,
+   "mutant": "B20_failing_system_call_of_the_readback_not_told_apart",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 42 passed, 12 deselected in 2.03s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PARTIAL_METADATA_REQUIRES_REVIEW', 'CATALOG_READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "B21_readback_reported_complete_after_a_failure",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 31 passed, 12 deselected in 1.40s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f9_the_epoch_of_a_real_request_is_exactly_the_constant",
+   "killed": true,
+   "mutant": "V11_real_epoch_accepted_by_its_prefix",
+   "returncode": 1,
+   "seconds": 10.2,
+   "summary": "1 failed, 83 passed, 12 deselected in 9.57s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f9_what_is_not_known_is_not_reported_as_zero_or_false[REAL]",
+   "killed": true,
+   "mutant": "V12_unknown_number_of_objects_left_reported_as_a_number",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 88 passed, 12 deselected in 9.68s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f9_what_is_not_known_is_not_reported_as_zero_or_false[REAL]",
+   "killed": true,
+   "mutant": "V13_unknown_modification_reported_as_false",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 88 passed, 12 deselected in 9.77s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('7e4315917005...0c0f786a5425d' == '026482861689...5caab9c293307'",
+   "killed": true,
+   "mutant": "V14_expected_hash_is_the_observed_one",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 90 passed, 12 deselected in 9.85s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_EXPIRED' == 'GO_EXPIRED'",
+   "killed": true,
+   "mutant": "V15_root_unchanged_false_for_any_refusal",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 91 passed, 12 deselected in 9.76s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f9_the_boundaries_of_the_three_grammars",
+   "killed": true,
+   "mutant": "V16_container_path_of_65_characters",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 84 passed, 12 deselected in 9.57s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('CATALOG_READBACK_UNAVAILABLE' == 'CATALOG_READBACK_MISMATCH'",
+   "killed": true,
+   "mutant": "V17_entry_limit_off_by_one",
+   "returncode": 1,
+   "seconds": 10.4,
+   "summary": "1 failed, 85 passed, 12 deselected in 9.75s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f9_the_boundaries_of_the_three_grammars",
+   "killed": true,
+   "mutant": "V18_throwaway_label_of_41_characters",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 84 passed, 12 deselected in 6.26s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f9_the_boundaries_of_the_three_grammars",
+   "killed": true,
+   "mutant": "V19_rehearsal_epoch_of_81_characters",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 84 passed, 12 deselected in 6.08s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_review_findings.py::test_f9_documents_that_allow_an_activation_are_refused_and_no_receipt_claims_one[REAL]",
+   "killed": true,
+   "mutant": "V20_activation_allowed",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 93 passed, 12 deselected in 6.02s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: after the expiry nothing more is read from the root: not even its names",
+   "killed": true,
+   "mutant": "V21_readback_without_its_first_gate",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 31 passed, 12 deselected in 1.01s",
+   "tests": [
+    "test_catalog_init.py",
+    "test_review_findings.py",
+    "test_review_purity.py",
+    "test_native.py",
+    "test_real_script.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

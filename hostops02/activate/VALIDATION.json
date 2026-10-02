@@ -1,0 +1,573 @@
+{
+ "assembly": {
+  "activation_allowed": false,
+  "check": "BUILD_EQUAL",
+  "dates": [
+   "2026-10-05"
+  ],
+  "dispatcher_sha256": "de41057f377c06d3345fe011472b5fa591ec46b3b7671fc91db906258a31e221",
+  "final_payload_unbound_bytes": 206335,
+  "final_payload_unbound_sha256": "37b685d52ff16d4d5b6ef4fb70cf012e46078b91f88da1e210de481493a47986",
+  "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "operation_part_sha256": "f55eb984466310050bd73a56997a4c03d2e45548fefc7a4ecaef8d590abf2d71",
+  "scope_sha256": "0f6b1e458bf93b7210a15fb7f4556fe9666f5ca9e104b06703a20a00568193e8",
+  "source_bytes": 139580,
+  "source_sha256": "cc05438954f2ba49d5f3bd1b8ef515b3b4601f2cc53436a36460fb3406f85c44",
+  "spec_sha256": "f2fc1f08abf02affff0f6ba8daf1f7aeb6a94b150123a819359c241ac77c6fe2",
+  "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "unbound_request_bytes": 10992,
+  "writes_allowed": true
+ },
+ "core": {
+  "CORE_SHA256SUMS": "c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f",
+  "generation": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "seal": "SEAL_OK"
+ },
+ "host": {
+  "contacted": false
+ },
+ "linux_job": {
+  "run": false,
+  "shapes_self_test_on_the_emulation": {
+   "returncode": 0
+  },
+  "why": "no Linux and no docker offline"
+ },
+ "mutation": {
+  "MUTATION_INHERITED.json": {
+   "by_part": {
+    "core": {
+     "killed": 133,
+     "run": 157,
+     "survivors": [
+      "I_E01_gate_not_called_before_a_mutating_call",
+      "I_E12_descend_without_nofollow",
+      "I_E13_descend_enters_a_symlink_component",
+      "I_E14_file_change_during_read_ignored",
+      "I_E17_noatime_not_required",
+      "I_W32_native_identity_reports_root_unconditionally",
+      "I_T07_walk_does_not_compare_the_lstat_with_the_descriptor",
+      "I_T08_clean_ignores_uncertain_calls",
+      "I_T09_escape_with_a_pending_call_not_looked_at",
+      "I_T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held",
+      "I_K03_request_activation_flag_must_be_false_as_in_hostops01",
+      "I_K09_authority_activation_flag_must_be_false",
+      "I_K12_go_activation_flag_must_be_false",
+      "I_K14_one_required_evidence_operation_is_enough",
+      "I_K15_epoch_ends_one_day_earlier",
+      "I_K16_epoch_goes_on_one_more_day",
+      "I_K18_weekend_writes_reach_the_first_session_day",
+      "I_K21_session_writes_start_on_sunday",
+      "I_K22_epoch_writes_include_friday_the_second",
+      "I_K23_read_class_stops_before_the_last_day",
+      "I_K25_document_limit_argument_ignored",
+      "I_K27_escape_of_a_switching_source_says_false",
+      "I_K28_minimum_receipt_loses_the_core_hash",
+      "I_K29_timing_raises_when_a_clock_fails"
+     ]
+    },
+    "dispatcher": {
+     "killed": 11,
+     "run": 11,
+     "survivors": []
+    },
+    "docker": {
+     "killed": 32,
+     "run": 69,
+     "survivors": [
+      "I_D05_container_running_flag_type_unchecked",
+      "I_D06_container_image_id_shape_unchecked",
+      "I_D07_container_target_grammar_unchecked",
+      "I_D11_container_list_not_sorted",
+      "I_D13_environment_name_grammar_unchecked",
+      "I_D14_environment_expectation_may_be_empty_or_long",
+      "I_D17_environment_of_a_container_asked_by_name",
+      "I_D19_mount_path_grammar_unchecked",
+      "I_D20_mount_path_not_a_clean_path",
+      "I_D22_mount_read_only_flag_type_unchecked",
+      "I_D23_read_only_bind_written_as_read_write",
+      "I_D24_every_bind_read_only",
+      "I_D25_container_row_takes_a_writable_bind",
+      "I_D26_image_may_be_a_reference",
+      "I_D27_two_binds_on_one_target",
+      "I_D28_number_of_binds_unbounded",
+      "I_D29_run_command_words_unchecked",
+      "I_D30_run_command_may_begin_with_an_option",
+      "I_D31_run_arguments_for_any_row",
+      "I_D32_container_name_grammar_unchecked",
+      "I_D33_container_run_starts_an_effect_row_uncounted",
+      "I_D34_container_run_raises_for_a_timeout",
+      "I_D35_container_run_calls_a_run_that_never_started_started",
+      "I_D36_several_lines_accepted_as_one",
+      "I_D43_compose_file_paths_unchecked",
+      "I_D47_render_through_any_row",
+      "I_D52_recreate_through_any_row",
+      "I_D60_compose_service_grammar_unchecked",
+      "I_D61_container_with_a_network",
+      "I_D61_container_that_may_pull",
+      "I_D61_container_that_stays",
+      "I_D61_container_with_a_writable_root",
+      "I_D61_container_with_capabilities",
+      "I_D61_container_without_standard_input",
+      "I_D61_container_as_another_user",
+      "I_D61_container_with_new_privileges",
+      "I_D61_container_without_an_init_process"
+     ]
+    },
+    "files": {
+     "killed": 36,
+     "run": 68,
+     "survivors": [
+      "I_A_M10a_parent_not_verified_before_mkdir",
+      "I_A_M10b_directory_not_verified_before_temporary",
+      "I_P19_created_name_identity_not_checked",
+      "I_P20_created_emptiness_not_checked",
+      "I_I03_temporary_removed_without_identity_proof",
+      "I_I19_short_write_accepted",
+      "I_I40_own_temporary_left_after_a_lost_race",
+      "I_W04_native_fsync_is_a_noop_in_install",
+      "I_W15_created_file_device_not_compared_with_the_directory",
+      "I_I47_temporary_not_looked_at_again_before_the_link",
+      "I_I48_temporary_with_a_second_link_accepted_before_the_link",
+      "I_I51_removal_errno_overwrites_the_errno_of_the_failure",
+      "I_T03_created_file_link_count_not_checked",
+      "I_T06_link_count_after_the_removal_of_the_temporary_not_checked",
+      "I_F01_directory_mode_unchecked_before_the_mkdir",
+      "I_F02_directory_path_not_tied_to_the_pinned_parent",
+      "I_F03_file_mode_unchecked_before_the_creation",
+      "I_F04_file_size_unbounded",
+      "I_F05_empty_file_accepted",
+      "I_F06_file_name_unchecked",
+      "I_F07_go_prefix_unchecked",
+      "I_F08_name_grammar_unchecked",
+      "I_F09_path_need_not_lie_in_the_pinned_parent",
+      "I_F13_created_directory_mode_compared_with_a_constant",
+      "I_F14_created_file_mode_not_compared",
+      "I_F16_readback_does_not_compare_the_identity",
+      "I_F17_readback_does_not_compare_the_owner",
+      "I_F18_readback_does_not_compare_the_mode",
+      "I_F19_readback_does_not_compare_the_link_count",
+      "I_F22_directory_readback_ignores_the_resolved_path",
+      "I_F23_directory_readback_ignores_owner_and_mode",
+      "I_F26_file_request_accepts_any_mode"
+     ]
+    },
+    "launcher": {
+     "killed": 4,
+     "run": 4,
+     "survivors": []
+    },
+    "lock": {
+     "killed": 17,
+     "run": 25,
+     "survivors": [
+      "I_L08_wait_arguments_unchecked",
+      "I_L14_lock_file_swap_between_lstat_and_open_unnoticed",
+      "I_L16_descriptor_left_open_when_the_lock_file_was_replaced",
+      "I_L19_vanished_lock_file_still_said_to_be_named",
+      "I_L22_probe_takes_the_lock_exclusively",
+      "I_L23_probe_blocks",
+      "I_L24_probe_keeps_the_lock",
+      "I_L25_probe_calls_any_error_busy"
+     ]
+    },
+    "parents": {
+     "killed": 11,
+     "run": 15,
+     "survivors": [
+      "I_P03_sticky_bit_does_not_excuse",
+      "I_P04_group_writable_counted_as_world_writable",
+      "I_P06_setgid_refused_even_when_nothing_is_created_there",
+      "I_P15_signature_without_owner_and_mode"
+     ]
+    },
+    "runner": {
+     "killed": 17,
+     "run": 55,
+     "survivors": [
+      "I_N01_command_environment_inherited",
+      "I_N02_docker_config_never_passed",
+      "I_R01_working_directory_inherited",
+      "I_R02_standard_input_never_closed",
+      "I_R03_standard_input_bytes_dropped",
+      "I_R04_only_the_first_block_of_standard_input_is_written",
+      "I_R05_process_that_cannot_be_created_is_an_ordinary_refusal",
+      "I_R44_expiry_before_the_process_exists_is_an_ordinary_refusal",
+      "I_R06_process_that_cannot_be_created_raises_the_os_error",
+      "I_R07_output_limit_of_the_call_ignored",
+      "I_R08_output_limit_removed",
+      "I_R09_time_limit_of_the_call_ignored",
+      "I_R10_budget_ignored_by_the_time_limit",
+      "I_R11_variables_never_passed",
+      "I_R12_timed_out_process_left_running",
+      "I_R45_only_the_process_itself_is_killed_not_its_group",
+      "I_R46_command_stays_in_the_session_and_group_of_the_run",
+      "I_R47_process_that_already_ended_is_not_a_reason_to_kill_what_it_left",
+      "I_R13_effect_row_startable_without_being_counted",
+      "I_R14_effect_row_startable_in_a_reading_source",
+      "I_R48_container_row_startable_directly",
+      "I_R49_row_with_a_template_at_call_time_startable_directly",
+      "I_R50_any_helper_starts_any_row",
+      "I_R17_budget_rule_for_effects_only_not_for_container_runs",
+      "I_R18_budget_rule_strict_inequality",
+      "I_R20_standard_input_scope_of_the_row_unchecked",
+      "I_R21_standard_input_size_and_type_unchecked",
+      "I_R22_any_variable_may_be_added_to_the_environment",
+      "I_R23_variable_values_unchecked",
+      "I_R24_docker_config_value_unchecked",
+      "I_R25_arguments_unchecked",
+      "I_R26_a_row_without_arguments_takes_arguments",
+      "I_R29_class_output_limit_not_passed_to_the_runner",
+      "I_R32_effect_accepts_any_row",
+      "I_R36_effect_that_returned_settled_as_done_without_a_readback",
+      "I_R39_effects_budget_accepts_read_rows",
+      "I_R42_run_class_shorter",
+      "I_R43_tool_started_again_after_two_timeouts"
+     ]
+    },
+    "this_operation_part": {
+     "killed": 78,
+     "run": 78,
+     "survivors": []
+    }
+   },
+   "complete_run": false,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 339,
+    "redundant_survivors": 0,
+    "single": 482,
+    "survivors": 143
+   },
+   "errors": [],
+   "killed_by_the_time_limit": [
+    "I_L04_wait_not_bounded_by_the_number_of_attempts"
+   ],
+   "meaning": "a survivor here is a guarantee of the core that this operation's own tests do not exercise; the core's own record kills it",
+   "not_applicable_to_this_build": 55,
+   "origin": {
+    "GENERATED": 0,
+    "INHERITED": 482,
+    "OWN": 0
+   },
+   "pins_are_the_bytes_of_this_directory": true,
+   "pins_that_differ": [],
+   "present": true,
+   "python": "Python 3.9.6",
+   "sha256": "40fdfb157fbe8ebf2bddc3a01e11e35b3660c973a4390abe8a58c59c4aa8df6f",
+   "survivors": [
+    "I_A_M10a_parent_not_verified_before_mkdir",
+    "I_A_M10b_directory_not_verified_before_temporary",
+    "I_E01_gate_not_called_before_a_mutating_call",
+    "I_E12_descend_without_nofollow",
+    "I_E13_descend_enters_a_symlink_component",
+    "I_E14_file_change_during_read_ignored",
+    "I_E17_noatime_not_required",
+    "I_P19_created_name_identity_not_checked",
+    "I_P20_created_emptiness_not_checked",
+    "I_I03_temporary_removed_without_identity_proof",
+    "I_I19_short_write_accepted",
+    "I_I40_own_temporary_left_after_a_lost_race",
+    "I_N01_command_environment_inherited",
+    "I_N02_docker_config_never_passed",
+    "I_W32_native_identity_reports_root_unconditionally",
+    "I_W04_native_fsync_is_a_noop_in_install",
+    "I_W15_created_file_device_not_compared_with_the_directory",
+    "I_I47_temporary_not_looked_at_again_before_the_link",
+    "I_I48_temporary_with_a_second_link_accepted_before_the_link",
+    "I_I51_removal_errno_overwrites_the_errno_of_the_failure",
+    "I_T03_created_file_link_count_not_checked",
+    "I_T06_link_count_after_the_removal_of_the_temporary_not_checked",
+    "I_T07_walk_does_not_compare_the_lstat_with_the_descriptor",
+    "I_T08_clean_ignores_uncertain_calls",
+    "I_T09_escape_with_a_pending_call_not_looked_at",
+    "I_T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held",
+    "I_K03_request_activation_flag_must_be_false_as_in_hostops01",
+    "I_K09_authority_activation_flag_must_be_false",
+    "I_K12_go_activation_flag_must_be_false",
+    "I_K14_one_required_evidence_operation_is_enough",
+    "I_K15_epoch_ends_one_day_earlier",
+    "I_K16_epoch_goes_on_one_more_day",
+    "I_K18_weekend_writes_reach_the_first_session_day",
+    "I_K21_session_writes_start_on_sunday",
+    "I_K22_epoch_writes_include_friday_the_second",
+    "I_K23_read_class_stops_before_the_last_day",
+    "I_K25_document_limit_argument_ignored",
+    "I_K27_escape_of_a_switching_source_says_false",
+    "I_K28_minimum_receipt_loses_the_core_hash",
+    "I_K29_timing_raises_when_a_clock_fails",
+    "I_R01_working_directory_inherited",
+    "I_R02_standard_input_never_closed",
+    "I_R03_standard_input_bytes_dropped",
+    "I_R04_only_the_first_block_of_standard_input_is_written",
+    "I_R05_process_that_cannot_be_created_is_an_ordinary_refusal",
+    "I_R44_expiry_before_the_process_exists_is_an_ordinary_refusal",
+    "I_R06_process_that_cannot_be_created_raises_the_os_error",
+    "I_R07_output_limit_of_the_call_ignored",
+    "I_R08_output_limit_removed",
+    "I_R09_time_limit_of_the_call_ignored",
+    "I_R10_budget_ignored_by_the_time_limit",
+    "I_R11_variables_never_passed",
+    "I_R12_timed_out_process_left_running",
+    "I_R45_only_the_process_itself_is_killed_not_its_group",
+    "I_R46_command_stays_in_the_session_and_group_of_the_run",
+    "I_R47_process_that_already_ended_is_not_a_reason_to_kill_what_it_left",
+    "I_R13_effect_row_startable_without_being_counted",
+    "I_R14_effect_row_startable_in_a_reading_source",
+    "I_R48_container_row_startable_directly",
+    "I_R49_row_with_a_template_at_call_time_startable_directly",
+    "I_R50_any_helper_starts_any_row",
+    "I_R17_budget_rule_for_effects_only_not_for_container_runs",
+    "I_R18_budget_rule_strict_inequality",
+    "I_R20_standard_input_scope_of_the_row_unchecked",
+    "I_R21_standard_input_size_and_type_unchecked",
+    "I_R22_any_variable_may_be_added_to_the_environment",
+    "I_R23_variable_values_unchecked",
+    "I_R24_docker_config_value_unchecked",
+    "I_R25_arguments_unchecked",
+    "I_R26_a_row_without_arguments_takes_arguments",
+    "I_R29_class_output_limit_not_passed_to_the_runner",
+    "I_R32_effect_accepts_any_row",
+    "I_R36_effect_that_returned_settled_as_done_without_a_readback",
+    "I_R39_effects_budget_accepts_read_rows",
+    "I_R42_run_class_shorter",
+    "I_R43_tool_started_again_after_two_timeouts",
+    "I_D05_container_running_flag_type_unchecked",
+    "I_D06_container_image_id_shape_unchecked",
+    "I_D07_container_target_grammar_unchecked",
+    "I_D11_container_list_not_sorted",
+    "I_D13_environment_name_grammar_unchecked",
+    "I_D14_environment_expectation_may_be_empty_or_long",
+    "I_D17_environment_of_a_container_asked_by_name",
+    "I_D19_mount_path_grammar_unchecked",
+    "I_D20_mount_path_not_a_clean_path",
+    "I_D22_mount_read_only_flag_type_unchecked",
+    "I_D23_read_only_bind_written_as_read_write",
+    "I_D24_every_bind_read_only",
+    "I_D25_container_row_takes_a_writable_bind",
+    "I_D26_image_may_be_a_reference",
+    "I_D27_two_binds_on_one_target",
+    "I_D28_number_of_binds_unbounded",
+    "I_D29_run_command_words_unchecked",
+    "I_D30_run_command_may_begin_with_an_option",
+    "I_D31_run_arguments_for_any_row",
+    "I_D32_container_name_grammar_unchecked",
+    "I_D33_container_run_starts_an_effect_row_uncounted",
+    "I_D34_container_run_raises_for_a_timeout",
+    "I_D35_container_run_calls_a_run_that_never_started_started",
+    "I_D36_several_lines_accepted_as_one",
+    "I_D43_compose_file_paths_unchecked",
+    "I_D47_render_through_any_row",
+    "I_D52_recreate_through_any_row",
+    "I_D60_compose_service_grammar_unchecked",
+    "I_D61_container_with_a_network",
+    "I_D61_container_that_may_pull",
+    "I_D61_container_that_stays",
+    "I_D61_container_with_a_writable_root",
+    "I_D61_container_with_capabilities",
+    "I_D61_container_without_standard_input",
+    "I_D61_container_as_another_user",
+    "I_D61_container_with_new_privileges",
+    "I_D61_container_without_an_init_process",
+    "I_P03_sticky_bit_does_not_excuse",
+    "I_P04_group_writable_counted_as_world_writable",
+    "I_P06_setgid_refused_even_when_nothing_is_created_there",
+    "I_P15_signature_without_owner_and_mode",
+    "I_F01_directory_mode_unchecked_before_the_mkdir",
+    "I_F02_directory_path_not_tied_to_the_pinned_parent",
+    "I_F03_file_mode_unchecked_before_the_creation",
+    "I_F04_file_size_unbounded",
+    "I_F05_empty_file_accepted",
+    "I_F06_file_name_unchecked",
+    "I_F07_go_prefix_unchecked",
+    "I_F08_name_grammar_unchecked",
+    "I_F09_path_need_not_lie_in_the_pinned_parent",
+    "I_F13_created_directory_mode_compared_with_a_constant",
+    "I_F14_created_file_mode_not_compared",
+    "I_F16_readback_does_not_compare_the_identity",
+    "I_F17_readback_does_not_compare_the_owner",
+    "I_F18_readback_does_not_compare_the_mode",
+    "I_F19_readback_does_not_compare_the_link_count",
+    "I_F22_directory_readback_ignores_the_resolved_path",
+    "I_F23_directory_readback_ignores_owner_and_mode",
+    "I_F26_file_request_accepts_any_mode",
+    "I_L08_wait_arguments_unchecked",
+    "I_L14_lock_file_swap_between_lstat_and_open_unnoticed",
+    "I_L16_descriptor_left_open_when_the_lock_file_was_replaced",
+    "I_L19_vanished_lock_file_still_said_to_be_named",
+    "I_L22_probe_takes_the_lock_exclusively",
+    "I_L23_probe_blocks",
+    "I_L24_probe_keeps_the_lock",
+    "I_L25_probe_calls_any_error_busy"
+   ]
+  },
+  "MUTATION_RUN.json": {
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 470,
+    "redundant_survivors": 0,
+    "single": 470,
+    "survivors": 0
+   },
+   "errors": [],
+   "killed_by_the_time_limit": [],
+   "origin": {
+    "GENERATED": 111,
+    "OWN": 359
+   },
+   "pins_are_the_bytes_of_this_directory": true,
+   "pins_that_differ": [],
+   "present": true,
+   "python": "Python 3.9.6",
+   "sha256": "889bbbba568ff384b166a81273ab6185ad2ab3ef67b18a961407abaac46abd8a",
+   "survivors": []
+  },
+  "MUTATION_RUN.py312.json": {
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 470,
+    "redundant_survivors": 0,
+    "single": 470,
+    "survivors": 0
+   },
+   "errors": [],
+   "killed_by_the_time_limit": [],
+   "origin": {
+    "GENERATED": 111,
+    "OWN": 359
+   },
+   "pins_are_the_bytes_of_this_directory": true,
+   "pins_that_differ": [],
+   "present": true,
+   "python": "Python 3.12.14",
+   "sha256": "f26a9e5944d7803cc7701e2a5f407b19b9d707cbd45eeec350fb47779dac6b18",
+   "survivors": []
+  },
+  "anchors": "MUTANTS 470 COMBOS 0 ANCHORS_OK"
+ },
+ "operation": "GO_WRITE_HOSTOPS02_ACTIVATE_01",
+ "reviewed_by_anyone_but_the_author": false,
+ "schema": "HOSTOPS02_ACTIVATE_VALIDATION_V1",
+ "taken_at_utc": "2026-10-02T21:29:08Z",
+ "tests": {
+  "with_the_locations_given": {
+   "locations": [
+    "HOSTOPS02_TEST_ACTIVATION_28",
+    "HOSTOPS02_TEST_RELEASE_REPOSITORY"
+   ],
+   "python_a": {
+    "by_file": {
+     "test_activate.py": {
+      "passed": 10,
+      "returncode": 0
+     },
+     "test_budget.py": {
+      "passed": 10,
+      "returncode": 0
+     },
+     "test_conformance.py": {
+      "passed": 121,
+      "returncode": 0
+     },
+     "test_crash_points.py": {
+      "passed": 5,
+      "returncode": 0
+     },
+     "test_effects.py": {
+      "passed": 79,
+      "returncode": 0
+     },
+     "test_linux_root.py": {
+      "passed": 3,
+      "returncode": 0
+     },
+     "test_native_calls.py": {
+      "passed": 4,
+      "returncode": 0
+     },
+     "test_plan.py": {
+      "passed": 136,
+      "returncode": 0
+     },
+     "test_precheck.py": {
+      "passed": 230,
+      "returncode": 0
+     },
+     "test_static_sources.py": {
+      "passed": 7,
+      "returncode": 0
+     }
+    },
+    "returncode": 0,
+    "total": {
+     "passed": 605
+    },
+    "version": "Python 3.9.6"
+   },
+   "python_b": {
+    "by_file": {
+     "test_activate.py": {
+      "passed": 10,
+      "returncode": 0
+     },
+     "test_budget.py": {
+      "passed": 10,
+      "returncode": 0
+     },
+     "test_conformance.py": {
+      "passed": 121,
+      "returncode": 0
+     },
+     "test_crash_points.py": {
+      "passed": 5,
+      "returncode": 0
+     },
+     "test_effects.py": {
+      "passed": 79,
+      "returncode": 0
+     },
+     "test_linux_root.py": {
+      "passed": 3,
+      "returncode": 0
+     },
+     "test_native_calls.py": {
+      "passed": 4,
+      "returncode": 0
+     },
+     "test_plan.py": {
+      "passed": 136,
+      "returncode": 0
+     },
+     "test_precheck.py": {
+      "passed": 230,
+      "returncode": 0
+     },
+     "test_static_sources.py": {
+      "passed": 7,
+      "returncode": 0
+     }
+    },
+    "returncode": 0,
+    "total": {
+     "passed": 605
+    },
+    "version": "Python 3.12.14"
+   }
+  },
+  "without_them": {
+   "python_a": {
+    "passed": 599,
+    "skipped": 6
+   },
+   "python_b": {
+    "passed": 599,
+    "skipped": 6
+   }
+  }
+ }
+}

@@ -1,0 +1,30 @@
+# K6a (activate) in the Linux job of the core. This is NOT a workflow of its own: it is what the workflow of the core
+# (hostops02/core/linux_root/WORKFLOW.yml.txt, byte for byte, on a throwaway branch) needs for this operation.
+# NOT RUN by its author.
+#
+# 1. In the job's env, name the operation (its build is checked and its suite runs as real root and as the user):
+#       OPERATIONS: "../activate"            # with the other tier 0 operations: "../catalog_init ../install_release ../epoch_readback ../activate"
+#
+# 2. After the step "suites as root and as user, the command shapes", add:
+      - name: K6a activate on the real engine (exit 0 only when every shape ran and every expectation is met)
+        if: always()
+        working-directory: hostops02/activate
+        run: sh linux_root/run.sh
+#
+# 3. In the artifact step, add the output of this operation to `path`:
+#           hostops02/activate/linux_root/SHAPES.activate.linux-root.json
+#    and to the report step, so that the job log carries its hash and content:
+#           run: /usr/bin/python3 -I -B linux_root/report.py && /usr/bin/python3 -I -B linux_root/report.py ../activate/linux_root/SHAPES.activate.linux-root.json
+#
+# What a run that exits 0 closes for K6a: section 8 of DESIGN.md, items UA-1 to UA-6, UA-8, UA-9, UA-11 and UA-12 on
+# a GitHub runner's engine, compose version and filesystem. UA-5 is closed only as far as the worker of the shapes is
+# stopped like the production worker (python as PID 1, no handler, no init, no stop_grace_period): the expectation
+# requires the recreate to have waited the engine's whole stop timeout, and recreate.milliseconds of the complete
+# shape is the figure to hold against 30 s.
+# UA-7 is OBSERVED, not closed: the last shape interrupts a recreate of a third service inside its stop and records
+# what was listed during the stop, right after the kill of the process group and 12 s later (which order the
+# runner's compose makes its calls in, whether the engine finishes the stop without the client, what is left). An
+# exit 0 says that look fell inside the stop and shows one of the two known orders; what it shows goes into
+# DESIGN.md section 6 by hand. K6a's own recreate is never interrupted on an engine by this job.
+# Nothing here closes any of them for the production host (another engine version, another compose plugin, another
+# image): the Sunday dry run (K11 PRE) reads the same render with the same core helper on that host.

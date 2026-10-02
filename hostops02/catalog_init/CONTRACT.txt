@@ -1,0 +1,347 @@
+HOSTOPS02 / K2a - CATALOG INITIALISATION OF THE BAR JOURNAL (SUPERVISOR OPERATION 4b) - STDIN / ONCE CANDIDATE
+
+Operation built
+  GO_WRITE_HOSTOPS02_CATALOG_INIT_01     build/catalog_init.py     writes: modes REAL and REHEARSAL, the same bytes
+
+1. STATUS
+
+Executable code candidate, unsigned and UNBOUND. Built offline from local files only. No host was contacted, no key
+or credential file was read, no docker was run, no prepare/resume was performed outside private synthetic tests. No
+operational GO exists, was created, carried forward or inferred. In every template the windows, the date, the host
+binding, owner, decision, effects, success criterion, target, key and known-hosts references, command pin, claim root
+and every observed identity are null; status is UNBOUND; execution_authorized is false. build/FINAL_PAYLOAD.UNBOUND.py,
+run under "python3 -I -B -", prints one refusal and exits 1 before touching anything. The Linux job has not run.
+Binding is a later, human-signed step and is not part of this candidate.
+
+This is the SECOND build. The first (seal b27983113e3ab78b8dddc33dba1f10db8a2f201affbd0780278adc40779d2a95, payload
+source e6c637898e5a997ea8f693a46be3507b746aa41591661b1b6d94d33fa07438cc) was reviewed twice on 2026-10-02 and is kept
+beside this directory as catalog_init.pre-repair-b2798311. The thirteen findings and what each changed are in DESIGN.md
+section 13. The bytes of this second build have been read by nobody but their author: they need their own review
+before any signature is asked for.
+
+  frozen core (not modified by this operation)   generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6
+                                                 seal (CORE_SHA256SUMS) c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f
+  source build/catalog_init.py                   d584aa93380513a4eca37a877eca93d78a899dd56a86d9075f977bd56fff5d15   (119374 bytes)
+  build/FINAL_PAYLOAD.UNBOUND.py                 669454bd6ce3d72287f7dfc5cf136121471ba19fbf05cf21ba3825eaf82b438c   (176219 bytes)
+  signed scope (SCOPE_SHA256)                    c06a705f5ccdf9360e301ec45a6920ece3b175a691afa52a9881022127048c21
+  op.py / spec.py                                1028141555c45175ed63ea703d1503f59642752d0376c9dfbd3ba09325a21985 / 8ffbb20eef70866b83d1350ad123fa9353b3a8a7af340cfcca48dbe48002b7be
+  dispatcher, launcher, transport                byte for byte those of the first build (9b6f3eac..., ac4085e4..., 5900efbf...)
+  frozen against                                 the release dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858: supervisor README
+                                                 644c6211c7351de1dfd17d880842deaf4d5e5b34ea63d23a274c5f4e463461c5, its
+                                                 catalog script 715d7a660e7a2c4dd5c11287063726cc971156dd6fefc2365c431c9aee0f4bb7
+Every hash above was taken by command at sealing and is repeated in build/ASSEMBLY.json and SHA256SUMS; where this
+text and those files differ, the files prevail.
+
+2. WHAT IS IN THIS DIRECTORY
+
+  DESIGN.md          the design: effects in order, every refusal, crash points, budget, what is proved and unproved,
+                     and (section 13) the reviews and what each finding changed
+  CONTRACT.txt       this file: the specification, the binding steps, what a receipt means for the gates
+  spec.py  op.py     the two files the author wrote; everything in build/ is a function of them and of the frozen core
+  build/             written by <core>/assemble.py, never edited: catalog_init.py (the ONE payload source),
+                     dispatch_once.py, launcher_stdin.py, transport_once.py, REQUEST|AUTHORITY|GO|DISPATCH|
+                     PUBLICATION_PROOF.UNBOUND.json, FINAL_PAYLOAD.UNBOUND.py, the two delta files, ASSEMBLY.json
+  tests/             conftest.py, k2a.py (fixtures and the model of the container), test_conformance.py (the family's
+                     suite, once per mode), test_catalog_init.py, test_review_findings.py (one block per finding of
+                     the reviews), test_review_purity.py (the reviewer's own hostile cases, adapted), test_native.py
+                     (real system calls, a real process behind docker), test_real_script.py (the pinned script against
+                     the modules of the release), test_static_pins.py (text pins against the release), test_linux_root.py
+  mutation/          mutate.py (the core's, three tables changed), mutants.py, MUTATION_RUN.json, MUTATION_RUN.py312.json
+  linux_root/        run_catalog.sh, catalog_shape.py: the operation's own shape for the throwaway Linux runner (NOT RUN)
+  seal.py  SHA256SUMS
+  work/              NOT part of the candidate and not sealed: an extraction of the release's files for the tests
+  review-*/          NOT part of the candidate and not sealed: what the reviewers of the first build wrote
+
+3. SPECIFICATION
+
+3.1 What it does. One attached container of the signed image ID with the argv of the supervisor README (lines 336 to
+339 at dd4ec4bb), word for word:
+    docker run --rm -i --pull never --init --user 0:0 --network none --read-only --cap-drop ALL
+      --security-opt no-new-privileges --mount type=bind,source=<journal root>,target=<container path>
+      <image ID> python -I -B - <container path> <epoch>
+with DOCKER_CONFIG=<an empty docker CLI configuration directory, see 3.2>, no HOME, PATH=/usr/bin:/bin, working
+directory "/", standard error discarded, the pinned script (1040 bytes carried in the source) on standard input, at
+most 40 seconds and 65,536 bytes of output. The container creates maintenance.lock and epoch.json (0600) in the
+journal root and prints one JSON line. Before it: docker image inspect by ID and docker ps -a, under the same
+DOCKER_CONFIG. After it: docker ps -a again. Four docker commands in three shapes, no other process, no shell, no
+systemctl.
+
+3.2 Modes (signed in the request; the success outcome follows the mode and the GO carries it).
+  REAL        the journal root that operation 2 created, signed row by row from "/" with its identity, root:root 0700,
+              on its parent's device, EMPTY; a leaf of /var/lib/c3po-bar that is not /var/lib/c3po-bar/supervisor.
+              DOCKER_CONFIG is the unit's own directory, /etc/c3po-bar/docker-cli, signed row by row, root:root 0700,
+              empty. Epoch: the constant of the source, R2D2-V2-SHADOW-2026-10-05
+              (c3po/backend/app/r2d2_v2_epoch_assembler.py line 9 at dd4ec4bb); a request with another string is
+              refused. This process creates nothing. Success: CATALOG_READY_VERIFIED.
+  REHEARSAL   two throwaway directories this run creates in /var/lib (one mkdir 0700 each, by descriptor, proved,
+              fsynced): the journal root /var/lib/c3po-bar-rehearsal-<label> and, before it, the directory given to
+              docker as DOCKER_CONFIG, /var/lib/c3po-bar-rehearsal-<label>.docker-cli. The signed parent is /var/lib
+              and no other directory; it must be root-owned, not setgid, and on the device of the real journal root.
+              The real journal root and the unit's configuration directory are walked read-only and must be as signed
+              and empty; NO docker command of a rehearsal runs under the unit's directory. Epoch: a signed
+              R2D2-V2-DIAG-... string. Success: REHEARSAL_CATALOG_READY_VERIFIED. The two directories and the two
+              files stay; nothing of this family removes them.
+  The layout floor. The three paths above are constants of the source and part of the signed scope
+  (scope.layout): a request bound to any other directory is refused from its bytes, whoever signed its rows.
+
+3.3 Authentication. The family's, unchanged (core generation above): four pins, canonical documents, exact key sets,
+operation and schema names, executor uid 0, writes_allowed true and activation_allowed false in the three documents,
+one owner, one host binding, transport binding, claim root, request.date in ('2026-10-02','2026-10-03','2026-10-04')
+with all six instants on that UTC day (it ends Sunday 20:59:59 BRT), gate span at most 900 s, the 60 s deadline, plan
+binding, scope hash, evidence naming GO_READONLY_HOSTOPS_PRECHECK_01 and GO_WRITE_SUPERVISOR_READER_PROVISION_01,
+then the plan, the literal effects, the constant scope statement and the success criterion of the mode. The dispatcher
+runs the same authenticate() locally before any claim.
+
+3.4 Plan refusals (from the bytes, before any claim), among others: MODE_INVALID, EVIDENCE_BOOT_UNBOUND,
+SCRIPT_NOT_THE_PINNED_HASH, IMAGE_REVISION_UNBOUND, CONTAINER_JOURNAL_ROOT_INVALID (not exactly one new top-level
+directory, or one of the README's twenty), CHAIN_ROW_INVALID, CHAIN_ROW_UNSAFE (a component not root-owned or writable
+by group or other), DOCKER_CONFIG_NOT_PRIVATE, DOCKER_CONFIG_IS_A_MOUNT_POINT,
+DOCKER_CONFIG_NOT_THE_DIRECTORY_OF_THE_UNIT, MODE_MEMBERS_INVALID, JOURNAL_ROOT_NOT_PRIVATE,
+JOURNAL_ROOT_IS_A_MOUNT_POINT, JOURNAL_ROOT_NOT_A_LEAF_OF_THE_PRIVATE_PARENT, JOURNAL_ROOT_IS_THE_STATE_ROOT,
+EPOCH_NOT_THE_COMPILED_CONSTANT, PARENT_SETGID, THROWAWAY_PARENT_NOT_THE_FIXED_ONE, THROWAWAY_NAME_INVALID,
+REFERENCE_ROOT_NOT_PRIVATE, REFERENCE_ROOT_IS_A_MOUNT_POINT, REFERENCE_ROOT_NOT_A_LEAF_OF_THE_PRIVATE_PARENT,
+REFERENCE_ROOT_IS_THE_STATE_ROOT, REHEARSAL_NOT_ON_THE_FILESYSTEM_OF_THE_REAL_ROOT, EPOCH_NOT_A_DIAGNOSTIC_ONE,
+IMAGE_ID, MOUNT_INVALID, RUN_COMMAND_INVALID. The codes of the family's authentication (PIN_MISMATCH, DOCUMENT_*,
+JSON_INVALID, *_KEYS, *_UNBOUND, DATE_*, WINDOW_*, SCOPE_MISMATCH, EFFECTS_BINDING, GO_CRITERION and the rest) come
+before them.
+
+3.5 Refusals of the run (exit 1, REFUSED_NOTHING_CHANGED_NO_CONTAINER_STARTED). In a receipt that perform() produced
+root_verdict is UNTOUCHED_NO_CONTAINER_STARTED: nothing was created, no container was started, the root is usable
+under a new request. The receipts of the core's own envelope (phases AUTHENTICATION and BEFORE_ANY_EFFECT) carry no
+root_verdict and no mode: status and outcome decide.
+  Both modes, found on the file system before any docker command, among others: EXECUTOR_IDENTITY,
+  EVIDENCE_FROM_EARLIER_BOOT, BOOT_ID_INVALID, NOATIME_UNAVAILABLE, PARENT_MISSING, PARENT_SYMLINK_COMPONENT,
+  PARENT_NOT_DIRECTORY, PARENT_UNREADABLE, PARENT_CHANGED_DURING_WALK, PARENT_IDENTITY_MISMATCH,
+  DOCKER_CONFIG_DIRECTORY_NOT_EMPTY, ENTRY_LIMIT, GO_EXPIRED, CLOCK_REVERSED, PRECHECK_OS_ERROR, PRECHECK_FAILED,
+  BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT (less than 44 s left in REAL after its reads, 46 s in REHEARSAL before its
+  first directory).
+  REAL only: JOURNAL_ROOT_NOT_EMPTY; then, from its two docker reads and the last look, which are part of the
+  precheck: IMAGE_ABSENT_OR_UNREADABLE, IMAGE_ID_MISMATCH, IMAGE_REVISION_MISMATCH, IMAGE_METADATA_INVALID,
+  JSON_INVALID, DOCUMENT_SIZE, DOCUMENT_TYPE, CONTAINER_LISTING_FAILED, CONTAINER_LIST_INVALID,
+  BINARY_UNAVAILABLE_OR_UNSAFE, COMMAND_TIMEOUT, COMMAND_OUTPUT_LIMIT, COMMAND_NOT_STARTED and the other COMMAND_*
+  refusals of the runner, PARENT_REPLACED and JOURNAL_ROOT_NOT_EMPTY at the last look; and, when the container could
+  not be started at all, COMMAND_NOT_STARTED and COMMAND_NOT_STARTED_BUDGET. EACH of these is a refusal only because
+  the unit's configuration directory was counted again after the reads and found empty
+  (precheck.docker_config_entries_after_the_reads is 0), or because no docker command had been started. Otherwise 3.6.
+  REHEARSAL only: REFERENCE_ROOT_NOT_EMPTY, DESTINATION_PRESENT (either of its two paths exists, or its absence could
+  not be established), BINARY_UNAVAILABLE_OR_UNSAFE; and the refusals of its FIRST mkdir
+  (DESTINATION_APPEARED_AFTER_PRECHECK, FILESYSTEM_READ_ONLY, FILESYSTEM_FULL, FILESYSTEM_ACCESS_DENIED,
+  FILESYSTEM_ERROR). A rehearsal starts no docker command before that directory exists, so nothing a docker read finds
+  is a refusal of a rehearsal.
+
+3.6 What is never a refusal. Exit 0 requires all of: the CLI returned 0; one JSON line with exactly the six keys,
+CATALOG_READY, created true, the signed epoch, entries ["epoch.json","maintenance.lock"], device and inode equal to
+the root's as this process reads them on the host; the root, read through the descriptor held since before the run,
+holds exactly those two names, each a regular file, 0:0, 0600, one link, on the root's device; epoch.json equals byte
+for byte the canonical JSON {"device":D,"epoch":E,"inode":I,"schema":"MASSIVE_SESSION_ROOT_V1"} with the host's D and
+I; the root is still the same directory at its path with the same owner and mode; no container is listed that was not
+listed before (by ID); the directory docker was given is still empty. Otherwise exit 2, PARTIAL_SEE_ROOT_VERDICT,
+with the code and root_verdict of DESIGN.md section 4:
+  NOT_TO_BE_USED_AGAIN            COMMAND_TIMEOUT COMMAND_OUTPUT_LIMIT GO_EXPIRED COMMAND_FAILED
+                                  ENGINE_COULD_NOT_RUN_THE_CONTAINER SCRIPT_OUTPUT_NOT_ONE_LINE SCRIPT_REFUSED
+                                  SCRIPT_FAILED SCRIPT_LINE_NOT_AS_SIGNED CATALOG_IDENTITY_NOT_THE_HOSTS
+                                  CATALOG_READBACK_UNAVAILABLE CATALOG_READBACK_MISMATCH.
+                                  In REHEARSAL also everything after its first mkdir succeeded: the findings of its
+                                  docker reads and of its last look (the codes of REAL's precheck from
+                                  IMAGE_ABSENT_OR_UNREADABLE on, READS_OS_ERROR, READS_FAILED,
+                                  DOCKER_CONFIG_DIRECTORY_NOT_EMPTY_AFTER_THE_READS,
+                                  DOCKER_CONFIG_DIRECTORY_NOT_READ_AFTER_THE_READS), CREATED_*, FSYNC_FAILED, the
+                                  refusals of its second mkdir, COMMAND_NOT_STARTED*. The verdict is then about the
+                                  throwaway name: production is as it was.
+  CATALOG_VERIFIED_WITH_FINDINGS  ENGINE_STATUS_AFTER_A_VERIFIED_CATALOG (docker's own status 125, 126 or 127 beside
+                                  the signed line and a verified readback) CONTAINER_LISTING_UNAVAILABLE_AFTER_RUN
+                                  CONTAINER_PRESENT_THAT_WAS_NOT_THERE_BEFORE DOCKER_CONFIG_READBACK_UNAVAILABLE
+                                  DOCKER_CONFIG_DIRECTORY_NOT_EMPTY_AFTER_RUN
+  UNTOUCHED_NO_CONTAINER_STARTED  REAL only, phase PRECHECK: DOCKER_CONFIG_DIRECTORY_NOT_EMPTY_AFTER_THE_READS,
+                                  DOCKER_CONFIG_DIRECTORY_NOT_READ_AFTER_THE_READS. No container was started and the
+                                  journal root is untouched, but the unit's configuration directory holds an entry
+                                  it did not hold before this run's docker reads, or could not be counted after
+                                  them. precheck.first_finding carries the code those reads or the last look ended
+                                  in, if any.
+An escape from the run after the container was issued: exit 2, PARTIAL_STATE_UNKNOWN_ROOT_NOT_TO_BE_USED_AGAIN (the
+core's envelope: no root_verdict, no mode). A run that returned is never settled as "nothing changed", even with an
+empty root: README line 386 applies its rule to refusals that touched nothing as well.
+
+3.7 What never happens. No removal of anything. No overwrite, chmod, chown or rename. No second run on a root: a
+root that holds any entry is refused before docker is started. No --name and no option the README does not write.
+No network, token, manifest, state root or configuration directory in the container. No retry, no wait, no poll.
+No docker command of a rehearsal under the unit's configuration directory. maintenance.lock is never opened; of
+epoch.json only the size and the hash leave; names other than the two are counted, never printed. Of a refusal of the
+script the receipt keeps its code only when it is a token of the grammar [A-Z][A-Z0-9_]{0,79} (the application's own
+codes are; a text that happens to be such a token would be kept as well), and otherwise NOT_A_CONSTANT_CODE with the
+size and the hash of the line; the container holds no secret, no environment file and no network.
+A timeout stops the docker CLI and its process group, not the container (the core's and the plan's decision): the
+receipt says whether a container is listed that was not there before, and nothing of this family removes one. A
+container that was started ends by itself within seconds (the script's only wait cannot occur on an empty root) and
+--rm removes it. A CLI stopped between create and start leaves a container in state "created" that never runs and is
+never removed by --rm: it does not hold the security reboot, it is listed in containers.rows, and its removal is a
+separate authorisation.
+
+4. WHERE EACH BOUND VALUE COMES FROM
+
+From the OP_PRECHECK receipt taken in the boot of the write (GO_READONLY_HOSTOPS_PRECHECK_01), copied row by row:
+  chain VAR_LIB ("/", "/var", "/var/lib")     -> the first rows of journal_chain (REAL) and of reference_chain; in
+                                                 REHEARSAL the WHOLE journal_chain (the parent is /var/lib, fixed)
+  chain ETC ("/", "/etc")                     -> the first rows of docker_config_chain
+  boot.boot_id_sha256                         -> evidence_boot_id_sha256
+  image.id                                    -> image_id (the ID read AFTER the deploy; README line 281)
+  its metadata_sha256                         -> request.evidence
+From the OP_PROVISION receipt (GO_WRITE_SUPERVISOR_READER_PROVISION_01), the ledger row of each created directory
+(observed device, inode, uid, gid, mode), state CREATED_DURABLE:
+  /var/lib/c3po-bar, /var/lib/c3po-bar/<leaf> -> the last two rows of journal_chain (REAL) / reference_chain; the
+                                                 leaf is the row of key SUP_JOURNAL
+  /etc/c3po-bar, /etc/c3po-bar/docker-cli     -> the last two rows of docker_config_chain (key SUP_DOCKER_CLI)
+  the retention tag's image ID                -> must equal image_id (compared by command)
+  its metadata_sha256                         -> request.evidence
+From the source, by command: script_sha256 (CATALOG_SCRIPT_SHA256) and, in REAL, epoch (EPOCH_COMPILED).
+Decided by the signatories on the sheet, not observed: the container path of the journal pair, in REHEARSAL the name
+of the throwaway and the diagnostic epoch string, the image revision the pinned image must carry, windows, owner,
+target and key references, claim root; and the owner's line that 4b runs before the signed release with the epoch of
+the compiled constant (README line 140 names the signed release body as the only source). No longer on the sheet:
+the host paths. They are the source's constants.
+
+5. BINDING PROCEDURE (each step by command; nothing typed from memory)
+
+  0. HARD GATES, before any signature is asked for: `shasum -a 256 -c SHA256SUMS` here and `shasum -a 256 -c
+     CORE_SHA256SUMS` in the core; `python3 -B <core>/assemble.py --check <this directory>` prints BUILD_EQUAL; the
+     Linux job has run and exited 0 for the core, for this operation's suite as root and as user, and for
+     linux_root/run_catalog.sh with every expectation true, its output file attached; the co-auditor has accepted
+     THESE bytes by hash (the acceptance of the first build does not carry over).
+  1. Receipts on record as in section 4, each with its hash, from the SAME boot. For REAL: the rehearsal receipt of
+     these same bytes is on record with outcome REHEARSAL_CATALOG_READY_VERIFIED, and in it
+     precheck.docker_config_entries_after_the_reads and docker_config.entries_after are 0 (K2A-U2 closed on the host).
+     HARD GATE of the A9 dispatch (order, clause 23; the bytes do not look at this, DESIGN.md section 10 item 9): a
+     grid read of this boot, taken minutes before the dispatch, shows the maintenance pin present and either no
+     reboot pending or the owner's own order by name that it stays pending. No such read, no dispatch.
+  2. Fill the plan from section 4. Compare by command: script_sha256 with the SHA-256 of the README lines between
+     the two catalog-init-script markers of the release; EPOCH_COMPILED with the EPOCH line of
+     r2d2_v2_epoch_assembler.py of the release; the provision's tag image ID with image_id; journal_chain[-1] (REAL)
+     and reference_chain[-1] (REHEARSAL) with the provisioning ledger row of key SUP_JOURNAL, and
+     docker_config_chain[-1] with the row of key SUP_DOCKER_CLI; in REHEARSAL the device of the last row of
+     reference_chain with the device of the last row of journal_chain. The source refuses a path below its floor;
+     these comparisons are what tells that the identities (device, inode) are the ledger's.
+  3. request: status BOUND, date, windows, host binding, executor_uid 0, both evidence entries; canonical bytes; hash.
+  4. effects: compute once with the source's effects_of(plan) offline and READ it: mode, journal_root.path and
+     is_the_real_journal_root, container.docker_config_variable (the unit's directory in REAL and ONLY in REAL),
+     docker_config.given_to_docker, in REHEARSAL rehearsal_docker_config and creates.by_this_process (two paths in
+     /var/lib), container.docker_arguments against README lines 336 to 339 word for word, the bind, epoch and
+     epoch_source, creates, success_outcome. It is what the owner and the GO sign.
+  5. authority (owner, SIGNED, APPROVED, request and payload hashes, the effects) -> hash -> GO (SIGNED, GO, three
+     hashes, the effects, transport_binding with the four runtime pins and the command pin, claim_root_identity, the
+     constant scope_statement, success_criterion = success_of(plan): the template carries null because it follows the
+     mode).
+  6. Six instants non-null, written as datetime.isoformat() writes them in UTC, all on request.date, gate span at
+     most 900 s; config window inside both; latest_start = not_after - 80 s. Not in HH:05-07, HH:10-25, HH:35-37.
+  7. Final payload with launcher_stdin.build; config with its pins and the paths of the five bound blobs (null in the
+     template); publication proof.
+  8. Dry validation: the source's authenticate() on the bound bytes with the target uid injected, and perform() with
+     a gate that raises: nothing may be touched (tests do this with a host object that fails on any use).
+  9. Publish the hashes of the final payload and of the config. Prepare -> publication -> resume, once.
+A REAL request is never bound from a rehearsal's documents: other mode, other path, other epoch, other success
+criterion, other hashes.
+
+6. WHAT A RECEIPT MEANS FOR THE GATES
+
+  KNOWN_COMPLETE, mode REAL, outcome CATALOG_READY_VERIFIED
+      Operation 4b is done on that root. It is the receipt the activation gate asks for ("Catalog (from operation
+      4b)", README line 575) and the condition of the unit installation in the plan (A9 before B1). The readback of
+      operation 4 (hostops01 OP_READBACK) signs catalog{expected INITIALISED, receipt_sha256, device, inode} from it:
+      receipt_sha256 = this receipt's metadata_sha256; device and inode = script_line.device and script_line.inode
+      (in a complete receipt equal to journal_root.device and journal_root.inode). The epoch of the receipt
+      (effects.epoch) is compared by command with the "epoch" field of the release bytes once the release is signed.
+  KNOWN_COMPLETE, mode REHEARSAL, outcome REHEARSAL_CATALOG_READY_VERIFIED
+      The same bytes, argv, script, image and engine created and verified a catalog on the filesystem of the real
+      root; the docker CLI of the host left nothing in the directory it was given, across its four commands; the real
+      root and the unit's configuration directory were as REAL requires them at that instant, and no docker command
+      ran under the unit's directory. It allows the REAL request to be dispatched. It is never the 4b receipt and no
+      gate may cite it as such: its mode, path, epoch and outcome say so.
+  KNOWN_REFUSAL (exit 1)
+      Nothing was created and no container was started; where docker reads ran (REAL), the directory they were given
+      was counted empty afterwards. The signature is spent; the root is untouched and usable under a new request with
+      a new signature. One limit, the frozen core's: a run interrupted by something that is not an ordinary failure
+      (an interrupt signal that Python turns into an exception) is filed by the core as a refusal of phase
+      BEFORE_ANY_EFFECT without that count. It is exact once the rehearsal has shown that the CLI writes nothing.
+  KNOWN_PARTIAL (exit 2): read root_verdict.
+      NOT_TO_BE_USED_AGAIN: the README's rule. REAL: a new leaf under a new authorisation (hostops01 provision, group
+      JOURNAL_LEAF) and a new 4b request on it, two signatures, with the journal pair of every later operation
+      changed. REHEARSAL: a finding; production is untouched; another rehearsal needs another throwaway name;
+      `directories` says which of the two throwaway directories exist.
+      CATALOG_VERIFIED_WITH_FINDINGS: the root holds the verified catalog; the run is still not complete. Whether the
+      next operation may follow is a written reading of the signatories after a read-only look at the containers
+      and at the configuration directory; the gate readback reads the catalog again in any case. With the code
+      ENGINE_STATUS_AFTER_A_VERIFIED_CATALOG the finding is docker's own exit status (run.returncode) beside a
+      verified catalog: the README's "--rm can surface a clean exit as 125".
+      UNTOUCHED_NO_CONTAINER_STARTED (REAL, phase PRECHECK, the two DOCKER_CONFIG_DIRECTORY_..._AFTER_THE_READS
+      codes): the journal root is untouched and usable. The unit's configuration directory is not: until it is empty
+      again every run of these bytes refuses at its first look, and the gate readback reports DOCKER_CONFIG_NOT_EMPTY.
+      Emptying it is a removal, which no payload of either family performs: a separate authorisation and new bytes.
+      The rehearsal exists so that this receipt cannot be the first news of a CLI that writes.
+      No root_verdict (outcome PARTIAL_STATE_UNKNOWN_ROOT_NOT_TO_BE_USED_AGAIN, or a receipt reduced to its minimum):
+      as NOT_TO_BE_USED_AGAIN, and a read-only look records what is there.
+  Reading a failed run: DESIGN.md section 4, "Reading a failed run" (125 with no line; 126 and 127; a refusal of the
+      script whose code is NOT_A_CONSTANT_CODE, matched offline by the hash of the line).
+  UNCERTAIN (no receipt, or one the dispatcher cannot accept)
+      REAL: the root is treated as NOT_TO_BE_USED_AGAIN: without a receipt a run that never started cannot be told
+      from one that started. A read-only look records what is there (DESIGN.md section 5).
+  A container listed in containers.rows that is still there afterwards: while it RUNS it holds the automatic security
+  reboot (README line 508); in state "created" it holds nothing and stays (3.7). It is removed only under a separate
+  authorisation; no operation of this family removes one.
+
+7. PROVEN, REAL ON THE WORKSTATION, EMULATED, UNPROVEN
+
+Proven on the host by earlier receipts (not by these bytes): the launcher and transport; the walk by dir_fd with
+O_NOFOLLOW|O_NOATIME; docker image inspect with this template; docker ps -a --no-trunc with this template.
+Real on the workstation (macOS, an ordinary user reported as root, a marker bit for O_NOATIME): the whole run in
+both modes with the source's own Native and a real process behind docker that executes the PINNED SCRIPT against the
+application modules of the release in the real directory the bind names: real mkdir and fsync (two and four in a
+rehearsal), a listing of the held descriptor after another process wrote, O_NOFOLLOW on a real symbolic link, real
+modes, the exact argv, standard input and environment the engine is given, DOCKER_CONFIG among it (tests/test_native.py);
+the script against the release's modules, compared with the model the emulated tests use, and the reader path of the
+release accepting exactly what the readback verifies (tests/test_real_script.py).
+Emulated only: the Docker CLI and engine, device numbers, uid 0, every errno injection and process death, and a CLI
+that writes into its configuration directory.
+UNPROVEN, never executed on this host (DESIGN.md section 9): K2A-U1 the attached run with the README argv; K2A-U2
+the docker commands under an empty DOCKER_CONFIG and that the CLI writes nothing into it; K2A-U3 device and inode of
+the bound directory equal in the container and on the host; K2A-U4 the script inside the production image within
+40 s; K2A-U5 no container listed once the CLI of a --rm run returned; K2A-U6 the readback's system calls as root on
+ext4; K2A-U7 what a timeout leaves. linux_root/run_catalog.sh closes U1, U2 (for the client version of the runner),
+U3, U5, U6 on a throwaway runner, at the real paths of the layout, with an image built on the release's base by
+digest that carries the release's modules; the rehearsal on the host closes U1 to U6 for the production image and
+the host's CLI, U2 under a directory of its own; U7 is not closed.
+
+8. REPRODUCE (offline; nothing here contacts a host)
+
+  cd <this directory, a sibling of the frozen core>
+  shasum -a 256 -c SHA256SUMS                                       # or: /usr/bin/python3 -B seal.py check
+  /usr/bin/python3 -B ../core/assemble.py --check .                 # BUILD_EQUAL
+  /usr/bin/python3 -B -m pytest -p no:cacheprovider -q tests        # also with the 3.12 interpreter
+  /usr/bin/python3 -B mutation/mutate.py check                      # every anchor exactly once
+  /usr/bin/python3 -B mutation/mutate.py run                        # copies under ../work/mut-k2a-*
+  /usr/bin/python3 -B linux_root/catalog_shape.py --self-test       # the shape on the emulation
+The comparisons with the files of the release (tests/test_static_pins.py, test_real_script.py, the "release" cases of
+test_native.py, the Dockerfile case of test_review_findings.py) run when a tree of dd4ec4bb is at hand:
+HOSTOPS02_TEST_RELEASE_TREE, or work/release made with
+`git archive dd4ec4bb c3po/backend/app c3po/backend/Dockerfile c3po/deployment/massive-supervisor | tar -x -C work/release`,
+or a checkout of the release that holds this directory. Without one they are skipped and say so.
+
+9. TESTS AND MUTATION (the author's runs after the repair; clock by command at sealing: 2026-10-02T20:18:39Z)
+
+  tests      386 on /usr/bin/python3 3.9.6 and on 3.12.14, none failed, none skipped with a tree of the release at
+             hand: conformance 242 (the family's 121, once per mode; the REHEARSAL class replaces the one test that
+             compares the outcome with COMPLETE_OUTCOME by the same assertions with its own outcome), catalog_init 59,
+             review_findings 39, review_purity 23, native 9, real script 4, static pins 7, linux_root 3. Without a
+             tree of the release 377 pass and 9 are skipped (real script 4, the two "release" cases of native, two
+             static pins, the Dockerfile case), also from a copy of this directory at another path.
+  mutation   304 single mutants of the operation's own part, none combined, none redundant. On both
+             interpreters: 304 killed, 0 survivors, 0 errors, none by the time limit. Records:
+             mutation/MUTATION_RUN.json
+             f6c738439cb9326e69a31531fda38c0bb341139c6cc3b24cadee2eded3e3205c
+             and mutation/MUTATION_RUN.py312.json
+             bf49f35719aec63685abbe34361a03123ae347a50781031f0b192def2de97be4
+             The reviewer's own 28 mutants (13 of which survived the first build's tests), applied by the author to
+             the repaired source: 28 killed on both interpreters. Zero survivors of THESE two lists: the repair, its
+             tests and its mutants have one author, and the family's history is that a reviewer's own mutants find
+             more. It did here.
+  not run    linux_root/run_catalog.sh and the real-engine half of linux_root/catalog_shape.py (no Linux, no docker).
+             run_catalog.sh was changed by the repair (it now creates and removes the layout at its real paths on the
+             throwaway runner, and builds on the release's base by digest); only `sh -n` and a test of its text ran.
