@@ -1,0 +1,276 @@
+{
+  "name": "c3po",
+  "networks": {
+    "c3po_internal": {
+      "name": "c3po_c3po_internal",
+      "internal": true
+    },
+    "db_loopback": {
+      "name": "c3po_db_loopback"
+    },
+    "legacy_proxy": {
+      "name": "chief-of-staff-digital_default",
+      "external": true
+    }
+  },
+  "services": {
+    "api": {
+      "environment": {
+        "C3PO_BUILD_SHA": "development",
+        "C3PO_MAINTENANCE_GATE_DIR": "/run/c3po-maintenance"
+      },
+      "image": "c3po/backend:production",
+      "networks": {
+        "c3po_internal": null,
+        "legacy_proxy": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/home/runner/work/repo/repo/runtime/security/maintenance",
+          "target": "/run/c3po-maintenance",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "/home/runner/work/repo/repo",
+          "target": "/legacy",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "volume",
+          "source": "c3po_one_pagers",
+          "target": "/app/generated-one-pagers",
+          "volume": {}
+        },
+        {
+          "type": "volume",
+          "source": "c3po_day_d_data",
+          "target": "/app/day-d-data",
+          "volume": {}
+        }
+      ]
+    },
+    "db": {
+      "image": "c3po/database:production",
+      "networks": {
+        "c3po_internal": null,
+        "db_loopback": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "type": "volume",
+          "source": "c3po_postgres",
+          "target": "/var/lib/postgresql/data",
+          "volume": {}
+        }
+      ]
+    },
+    "investor-relations-worker": {
+      "command": [
+        "python",
+        "-m",
+        "app.ir_worker"
+      ],
+      "environment": {
+        "C3PO_BUILD_SHA": "development",
+        "C3PO_MAINTENANCE_GATE_DIR": "/run/c3po-maintenance"
+      },
+      "image": "c3po/backend:production",
+      "networks": {
+        "c3po_internal": null,
+        "legacy_proxy": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/home/runner/work/repo/repo/runtime/security/maintenance",
+          "target": "/run/c3po-maintenance",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "volume",
+          "source": "c3po_one_pagers",
+          "target": "/app/generated-one-pagers",
+          "volume": {}
+        }
+      ]
+    },
+    "r2d2-shadow-candidate-worker": {
+      "command": [
+        "python",
+        "-m",
+        "app.r2d2_shadow_candidate_worker"
+      ],
+      "environment": {
+        "C3PO_BUILD_SHA": "development",
+        "C3PO_MAINTENANCE_GATE_DIR": "/run/c3po-maintenance"
+      },
+      "image": "c3po/backend:production",
+      "networks": {
+        "c3po_internal": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/home/runner/work/repo/repo/runtime/security/maintenance",
+          "target": "/run/c3po-maintenance",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "/home/runner/work/repo/repo",
+          "target": "/legacy",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "volume",
+          "source": "c3po_day_d_data",
+          "target": "/app/day-d-data",
+          "volume": {}
+        }
+      ]
+    },
+    "r2d2-worker": {
+      "command": [
+        "python",
+        "-m",
+        "app.r2d2_worker"
+      ],
+      "environment": {
+        "C3PO_BUILD_SHA": "development",
+        "C3PO_MAINTENANCE_GATE_DIR": "/run/c3po-maintenance",
+        "C3PO_SERVICE_NAME": "r2d2-worker"
+      },
+      "image": "c3po/backend:production",
+      "networks": {
+        "c3po_internal": null,
+        "legacy_proxy": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/home/runner/work/repo/repo/runtime/security/maintenance",
+          "target": "/run/c3po-maintenance",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "volume",
+          "source": "c3po_day_d_data",
+          "target": "/app/day-d-data",
+          "volume": {}
+        },
+        {
+          "type": "bind",
+          "source": "/srv/example-capacity-tree",
+          "target": "/c3po-capacity",
+          "read_only": true,
+          "bind": {}
+        }
+      ]
+    },
+    "server-usage-worker": {
+      "command": [
+        "python",
+        "-m",
+        "app.server_usage_worker"
+      ],
+      "environment": {
+        "C3PO_BUILD_SHA": "development",
+        "C3PO_MAINTENANCE_GATE_DIR": "/run/c3po-maintenance"
+      },
+      "image": "c3po/backend:production",
+      "networks": {
+        "c3po_internal": null,
+        "legacy_proxy": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/home/runner/work/repo/repo/runtime/security/maintenance",
+          "target": "/run/c3po-maintenance",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "/proc/stat",
+          "target": "/host/proc/stat",
+          "read_only": true,
+          "bind": {}
+        },
+        {
+          "type": "bind",
+          "source": "/opt/chief-of-staff-digital",
+          "target": "/host/disk",
+          "read_only": true,
+          "bind": {}
+        }
+      ]
+    },
+    "valuation-worker": {
+      "command": [
+        "python",
+        "-m",
+        "app.valuation_worker"
+      ],
+      "environment": {
+        "C3PO_BUILD_SHA": "development",
+        "C3PO_MAINTENANCE_GATE_DIR": "/run/c3po-maintenance"
+      },
+      "image": "c3po/backend:production",
+      "networks": {
+        "c3po_internal": null,
+        "legacy_proxy": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/home/runner/work/repo/repo/runtime/security/maintenance",
+          "target": "/run/c3po-maintenance",
+          "read_only": true,
+          "bind": {}
+        }
+      ]
+    },
+    "web": {
+      "image": "c3po/web:production",
+      "networks": {
+        "c3po_internal": null,
+        "legacy_proxy": {
+          "aliases": [
+            "c3po-web"
+          ]
+        }
+      },
+      "restart": "unless-stopped"
+    }
+  },
+  "volumes": {
+    "c3po_capacity_unprovisioned": {
+      "name": "c3po_c3po_capacity_unprovisioned"
+    },
+    "c3po_day_d_data": {
+      "name": "c3po_c3po_day_d_data"
+    },
+    "c3po_one_pagers": {
+      "name": "c3po_c3po_one_pagers"
+    },
+    "c3po_postgres": {
+      "name": "c3po_c3po_postgres"
+    }
+  }
+}

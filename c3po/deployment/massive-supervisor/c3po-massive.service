@@ -1,30 +1,36 @@
 [Unit]
 Description=Bounded daily Massive minute producer
 Wants=network-online.target
-After=network-online.target
+Requires=docker.service
+After=network-online.target docker.service
+RequiresMountsFor=@HOST_JOURNAL_ROOT@ @HOST_STATE_ROOT@ @HOST_CONFIG_DIR@
 StartLimitIntervalSec=8h
 StartLimitBurst=6
 
 [Service]
 Type=exec
-User=c3po-bar
-Group=c3po-bar
-WorkingDirectory=/opt/c3po-bar/current
-Environment=PYTHONPATH=/opt/c3po-bar/current/backend
-Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/opt/c3po-bar/venv/bin/python -B -m app.r2d2_v2_massive_supervisor --journal-root /var/lib/c3po-bar/journal --manifest-directory /etc/c3po-bar/manifests --token-file /etc/c3po-bar/token --state-root /var/lib/c3po-bar/supervisor
+Environment=DOCKER_CONFIG=@HOST_CONFIG_DIR@/docker-cli
+ExecStartPre=-/usr/bin/docker rm c3po-massive
+ExecStartPre=/usr/bin/docker image inspect --format {{.Id}} @IMAGE_ID@
+ExecStart=/usr/bin/docker run --rm --init --restart no --name c3po-massive --pull never \
+  --user 0:0 --workdir /app --network @NETWORK@ \
+  --read-only --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
+  --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 --stop-timeout 25 \
+  --mount type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@ \
+  --mount type=bind,source=@HOST_STATE_ROOT@,target=/var/lib/c3po-bar/supervisor \
+  --mount type=bind,source=@HOST_CONFIG_DIR@,target=/etc/c3po-bar,readonly \
+  @IMAGE_ID@ \
+  python -B -m app.r2d2_v2_massive_supervisor --journal-root @CONTAINER_JOURNAL_ROOT@ --manifest-directory /etc/c3po-bar/manifests --token-file /etc/c3po-bar/token --state-root /var/lib/c3po-bar/supervisor
+ExecStop=-/usr/bin/docker stop -t 25 c3po-massive
+ExecStopPost=-/usr/bin/docker stop -t 25 c3po-massive
 Restart=on-failure
 RestartSec=1s
 RestartPreventExitStatus=78
+TimeoutStartSec=60s
 TimeoutStopSec=30s
 KillMode=control-group
 UMask=0077
 NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadOnlyPaths=/etc/c3po-bar /opt/c3po-bar
-ReadWritePaths=/var/lib/c3po-bar/journal /var/lib/c3po-bar/supervisor
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=c3po-massive

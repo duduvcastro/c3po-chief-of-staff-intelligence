@@ -3,12 +3,20 @@ import hashlib
 from datetime import date,timedelta
 from typing import Any,Callable,cast
 from .r2d2_v2_epoch_assembler import DELEGABLE,DOCUMENT_ORDER_SHA,digest,stamp,is_sha
-from .r2d2_v2_store import ShadowIntegrityError
-from .r2d2_v2_document_format import normalize_document
+from .r2d2_v2_store import ShadowIntegrityError,digest as store_digest
+from .r2d2_v2_document_format import normalize_document,act_b_template_shas
 
 
 def need(ok,code):
     if not ok:raise ShadowIntegrityError(code)
+
+
+def one_digest_namespace(value,code):
+    # The store digest escapes everything outside printable ASCII (DEL included) and the
+    # assembler digest does not; the contract and GO layers compare one against the other.
+    try:same=store_digest(value)==digest(value)
+    except UnicodeError:same=False
+    need(same,code)
 
 
 def scope(record,epoch,first,day):
@@ -88,14 +96,26 @@ class DocumentAuthority:
             need(template['epoch']==epoch and template['first_session']==first and type(template['phases']) is list
                  and template['phases'] and len(template['phases'])==len(set(template['phases'])),'TEMPLATE_SET_SCOPE')
             need(set(template['authorized_sessions'])<=set(body['authorized_sessions']),'TEMPLATE_SET_DAYS')
+        by_day=act_b_template_shas(body)
+        if 'template_shas' in body:
+            # Day-exclusive: a mapped digest may only belong to entries scoped to that one session.
+            for d,sha in by_day.items():
+                entries=[t for t in body['templates'] if t['sha']==sha]
+                need(entries and all(t['authorized_sessions']==[d] for t in entries),'TEMPLATE_MAP_SET')
         return body
+
+    def check_binding(self,document,now):
+        c=document['contract'];identity=c['assembler_plan']['proposal']['identity']
+        one_digest_namespace(c['template'],'DOCUMENT_BINDING_DIGEST_NAMESPACE');one_digest_namespace(c['order'],'DOCUMENT_BINDING_DIGEST_NAMESPACE')
+        act=self.act_b(now,epoch=document['epoch'],first=identity['first_session'],day=document['day'])
+        need(c['template']['day']==document['day'],'DOCUMENT_TEMPLATE_DAY')
+        template_sha=act_b_template_shas(act)[document['day']]
+        need(act['order_sha']==digest(c['order']) and template_sha==digest(c['template']) and act['policy_sha']==digest(c['policy']),'DOCUMENT_BINDING')
+        need(act['capacity']==550 and act['cut_rule']==c['template']['rule'],'DOCUMENT_CAPACITY_RULE')
 
     def verify_binding(self,document,now):
         try:
-            c=document['contract'];identity=c['assembler_plan']['proposal']['identity']
-            act=self.act_b(now,epoch=document['epoch'],first=identity['first_session'],day=document['day'])
-            need(act['order_sha']==digest(c['order']) and act['template_sha']==digest(c['template']) and act['policy_sha']==digest(c['policy']),'DOCUMENT_BINDING')
-            need(act['capacity']==550 and act['cut_rule']==c['template']['rule'],'DOCUMENT_CAPACITY_RULE')
+            self.check_binding(document,now)
             return True
         except Exception:return False
 

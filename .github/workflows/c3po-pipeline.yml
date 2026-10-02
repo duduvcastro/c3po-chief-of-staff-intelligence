@@ -271,6 +271,144 @@ jobs:
             /legacy/c3po/backend/tests/test_r2d2_exit_policy_truth.py \
             | tee "$RUNNER_TEMP/backend-runtime/pytest.log"
 
+      - name: Exercise the Massive supervisor unit against the backend image
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation)
+        working-directory: ${{ github.workspace }}
+        # Renders ExecStartPre and ExecStart from the repository unit template and runs
+        # them on a real engine with no network, no token and no manifest: the image
+        # check must print the pinned ID, and the supervisor must refuse with 78 before
+        # any claim. Outside the session window the refusal is SUPERVISOR_SESSION/WINDOW;
+        # inside it the missing dated manifest refuses first. The run uses --init, so
+        # the engine must provide docker-init.
+        # Every guard is explicit (`|| exit 1`); nothing here relies on `set -e`.
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/backend-runtime"
+          mkdir -p "$out" || exit 1
+          [ -x /usr/bin/docker ] || { echo "docker is not at /usr/bin/docker" >&2; exit 1; }
+          id="$(docker image inspect --format '{{.Id}}' c3po/backend:pr-validation)" || exit 1
+          [[ "$id" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "unexpected image id: $id" >&2; exit 1; }
+          base="$(sudo mktemp -d)" || exit 1
+          [[ "$base" == /* && "$base" != *@* ]] || exit 1
+          sudo install -d -m 0700 -o 0 -g 0 "$base/data/journal" "$base/state" "$base/etc" \
+            "$base/etc/manifests" "$base/etc/docker-cli" || exit 1
+          init="$(docker info --format '{{.InitBinary}}')" || exit 1
+          [ -n "$init" ] || { echo "the engine reports no init binary" >&2; exit 1; }
+          echo "engine init binary: $init"
+          python3 - "$id" "$base" "$out" <<'PY' || exit 1
+          import re, shlex, sys
+          image, base, out = sys.argv[1:]
+          unit = open("c3po/deployment/massive-supervisor/c3po-massive.service", encoding="utf-8").read()
+          joined = unit.replace("\\\n", " ").splitlines()
+          lines = [line for line in joined if line.startswith("ExecStart=")]
+          checks = [line for line in joined if line.startswith("ExecStartPre=/")]
+          values = {
+              "@IMAGE_ID@": image,
+              "@HOST_JOURNAL_ROOT@": base + "/data/journal",
+              "@CONTAINER_JOURNAL_ROOT@": "/app/day-d-data/r2d2-v2-massive-epoch03",
+              "@HOST_STATE_ROOT@": base + "/state",
+              "@HOST_CONFIG_DIR@": base + "/etc",
+              "@NETWORK@": "none",
+          }
+          if len(lines) != 1 or set(re.findall(r"@[A-Z_]+@", unit)) != set(values):
+              sys.exit("unit template no longer matches the six documented substitutions")
+          if len(checks) != 1:
+              sys.exit("unit template no longer has exactly one mandatory ExecStartPre")
+          def render(command):
+              for name, value in values.items():
+                  command = command.replace(name, value)
+              if "@" in command:
+                  sys.exit("a placeholder survived the render")
+              return shlex.split(command)
+          argv = render(lines[0][len("ExecStart="):])
+          check = render(checks[0][len("ExecStartPre="):])
+          if argv[:2] != ["/usr/bin/docker", "run"] or argv.count(image) != 1 or "--init" not in argv:
+              sys.exit("rendered ExecStart is not a docker run --init of the pinned image id")
+          if check != ["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", image]:
+              sys.exit("rendered ExecStartPre is not the image check of the pinned image id")
+          for name, value in (("supervisor-argv.bin", argv), ("supervisor-check-argv.bin", check)):
+              with open(out + "/" + name, "w", encoding="utf-8") as output:
+                  output.write("\0".join(value) + "\0")
+          PY
+          mapfile -d '' -t argv < "$out/supervisor-argv.bin" || exit 1
+          mapfile -d '' -t check < "$out/supervisor-check-argv.bin" || exit 1
+          [ "${#argv[@]}" -ge 30 ] || { echo "rendered ExecStart is too short" >&2; exit 1; }
+          [ "${#check[@]}" -eq 6 ] || { echo "rendered ExecStartPre has the wrong length" >&2; exit 1; }
+          printf '%q ' "${argv[@]}" > "$out/supervisor-command.txt" || exit 1
+          seen="$(sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${check[@]}")" || { echo "the rendered image check failed" >&2; exit 1; }
+          [ "$seen" = "$id" ] || { echo "the rendered image check printed $seen, expected $id" >&2; exit 1; }
+          absent="sha256:$(printf '%064d' 0)" || exit 1
+          if sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${check[@]:0:5}" "$absent" > /dev/null 2>&1; then
+            echo "the image check accepted an image id that does not exist" >&2; exit 1
+          fi
+          rc=0
+          sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${argv[@]}" \
+            > "$out/supervisor-stdout.log" 2> "$out/supervisor-stderr.log" || rc=$?
+          cat "$out/supervisor-stdout.log" || exit 1
+          cat "$out/supervisor-stderr.log" >&2 || exit 1
+          echo "supervisor exit status: $rc" | tee "$out/supervisor-exit.txt" || exit 1
+          [ "$rc" -eq 78 ] || { echo "expected the terminal refusal 78, got $rc" >&2; exit 1; }
+          python3 - "$out/supervisor-stdout.log" <<'PY' || exit 1
+          import json, sys
+          lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+          if len(lines) != 1:
+              sys.exit("expected exactly one stdout line, got %d" % len(lines))
+          event = json.loads(lines[0])
+          expected = {"status": "DATA_GAP", "reason": "SUPERVISOR_REFUSED", "provider_connected": False, "restart_allowed": False}
+          codes = {"SUPERVISOR_SESSION", "SUPERVISOR_WINDOW", "SUPERVISOR_FILE_UNAVAILABLE"}
+          if any(event.get(key) != value for key, value in expected.items()) or event.get("code") not in codes:
+              sys.exit("unexpected refusal receipt")
+          PY
+          left="$(sudo find "$base/state" "$base/data/journal" -mindepth 1)" || exit 1
+          [ -z "$left" ] || { echo "refusal left a claim or a journal object" >&2; exit 1; }
+          containers="$(docker ps -a --filter 'name=^c3po-massive$' -q)" || exit 1
+          [ -z "$containers" ] || { echo "leftover c3po-massive container" >&2; exit 1; }
+
+      - name: Render the compose capacity mount on a real engine
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation)
+        working-directory: ${{ github.workspace }}
+        # `docker compose config` loads, interpolates and validates the project with the
+        # command form the deploy uses. The empty root .env stands in for the host file
+        # (Compose needs it for --env-file and for env_file) and is removed again. Three
+        # host states are rendered: variable unset, variable empty, variable set to an
+        # example path; a bare word must be refused. With a path the placeholder volume
+        # is unused, and Compose leaves unused top-level volumes out of the render: the
+        # checker requires the declaration only for the placeholder states.
+        # This proves the render only. `config` creates nothing, so the step cannot show
+        # what `up` creates on a host (the placeholder volume, a bind source): that is
+        # first measured by the read-back after the deploy. It proves nothing about the
+        # capacity tree, the capacity settings or the planner either.
+        # Every guard is explicit (`|| exit 1`); nothing here relies on `set -e`.
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/backend-runtime"
+          check=c3po/deployment/capacity-mount/check_compose_render.py
+          var=C3PO_R2D2_V2_CAPACITY_MOUNT_SOURCE
+          example=/srv/example-capacity-tree
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          mkdir -p "$out" || exit 1
+          [ ! -e .env ] || { echo "unexpected .env in the workspace" >&2; exit 1; }
+          trap 'rm -f .env' EXIT
+          : > .env || exit 1
+          docker compose version | tee "$out/compose-version.txt" || exit 1
+          env -u "$var" "${compose[@]}" config --format json > "$out/compose-capacity-unset.json" || exit 1
+          env "$var=" "${compose[@]}" config --format json > "$out/compose-capacity-empty.json" || exit 1
+          env "$var=$example" "${compose[@]}" config --format json > "$out/compose-capacity-bind.json" || exit 1
+          python3 "$check" placeholder "$out/compose-capacity-unset.json" || exit 1
+          python3 "$check" placeholder "$out/compose-capacity-empty.json" || exit 1
+          python3 "$check" "bind=$example" "$out/compose-capacity-bind.json" || exit 1
+          if env "$var=not-a-path" "${compose[@]}" config --quiet 2> "$out/compose-capacity-bare-word.err"; then
+            echo "a bare word was accepted as the capacity mount source" >&2
+            exit 1
+          fi
+          cat "$out/compose-capacity-bare-word.err" || exit 1
+
       - name: Publish backend runtime check
         if: >-
           always() &&
