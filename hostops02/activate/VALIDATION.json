@@ -19,7 +19,7 @@
   "writes_allowed": true
  },
  "core": {
-  "CORE_SHA256SUMS": "c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f",
+  "CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
   "generation": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
   "seal": "SEAL_OK"
  },
@@ -255,7 +255,7 @@
    "pins_that_differ": [],
    "present": true,
    "python": "Python 3.9.6",
-   "sha256": "40fdfb157fbe8ebf2bddc3a01e11e35b3660c973a4390abe8a58c59c4aa8df6f",
+   "sha256": "458edbbf0660cc884195073d76a383826c35849a057b22d96895d49fc74a22dc",
    "survivors": [
     "I_A_M10a_parent_not_verified_before_mkdir",
     "I_A_M10b_directory_not_verified_before_temporary",
@@ -422,7 +422,7 @@
    "pins_that_differ": [],
    "present": true,
    "python": "Python 3.9.6",
-   "sha256": "889bbbba568ff384b166a81273ab6185ad2ab3ef67b18a961407abaac46abd8a",
+   "sha256": "abeb16b54e0ae9d51fac8fc37d812623f4eb9411617e6e614e9b829675459f85",
    "survivors": []
   },
   "MUTATION_RUN.py312.json": {
@@ -445,7 +445,7 @@
    "pins_that_differ": [],
    "present": true,
    "python": "Python 3.12.14",
-   "sha256": "f26a9e5944d7803cc7701e2a5f407b19b9d707cbd45eeec350fb47779dac6b18",
+   "sha256": "14470d2650b52a664517cff5ee91a650d8fc87b027fcac2c118d995d411d8c2e",
    "survivors": []
   },
   "anchors": "MUTANTS 470 COMBOS 0 ANCHORS_OK"
@@ -453,7 +453,7 @@
  "operation": "GO_WRITE_HOSTOPS02_ACTIVATE_01",
  "reviewed_by_anyone_but_the_author": false,
  "schema": "HOSTOPS02_ACTIVATE_VALIDATION_V1",
- "taken_at_utc": "2026-10-02T21:29:08Z",
+ "taken_at_utc": "2026-10-02T23:49:47Z",
  "tests": {
   "with_the_locations_given": {
    "locations": [

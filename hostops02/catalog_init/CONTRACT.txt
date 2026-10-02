@@ -20,7 +20,7 @@ section 13. The bytes of this second build have been read by nobody but their au
 before any signature is asked for.
 
   frozen core (not modified by this operation)   generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6
-                                                 seal (CORE_SHA256SUMS) c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f
+                                                 seal (CORE_SHA256SUMS) 73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1
   source build/catalog_init.py                   d584aa93380513a4eca37a877eca93d78a899dd56a86d9075f977bd56fff5d15   (119374 bytes)
   build/FINAL_PAYLOAD.UNBOUND.py                 669454bd6ce3d72287f7dfc5cf136121471ba19fbf05cf21ba3825eaf82b438c   (176219 bytes)
   signed scope (SCOPE_SHA256)                    c06a705f5ccdf9360e301ec45a6920ece3b175a691afa52a9881022127048c21
@@ -335,9 +335,12 @@ or a checkout of the release that holds this directory. Without one they are ski
   mutation   304 single mutants of the operation's own part, none combined, none redundant. On both
              interpreters: 304 killed, 0 survivors, 0 errors, none by the time limit. Records:
              mutation/MUTATION_RUN.json
-             f6c738439cb9326e69a31531fda38c0bb341139c6cc3b24cadee2eded3e3205c
+             28a5b388999873f081651aa09b061052354716aa5faca1a31916e06737f6c7fb
              and mutation/MUTATION_RUN.py312.json
-             bf49f35719aec63685abbe34361a03123ae347a50781031f0b192def2de97be4
+             95abba076c9d119cfe76dd3e10f74920c1cc280dbb2d058b9a8e72eaa313a96e
+             Both records re-run (clock by command after the runs: 2026-10-02T23:16:15Z) against the core
+             resealed after a test-only change (core/tests/test_docker.py, found by the Linux job run
+             37073034731; generation and every payload byte unchanged): the same 304 mutants, the same verdicts.
              The reviewer's own 28 mutants (13 of which survived the first build's tests), applied by the author to
              the repaired source: 28 killed on both interpreters. Zero survivors of THESE two lists: the repair, its
              tests and its mutants have one author, and the family's history is that a reviewer's own mutants find

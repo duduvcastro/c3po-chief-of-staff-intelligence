@@ -96,8 +96,8 @@ def test_native_complete_run_makes_exactly_these_system_calls(tree,tmp_path):
 
 def test_native_refusals_on_real_links_fifos_and_hard_links(tree):
     data=tree/hostemu.DATA[1:];release=tree/k6a.RELEASE_DIRECTORY[1:];deploy=tree/hostemu.DEPLOY[1:]
-    def refused(code):
-        before=snapshot(tree);receipt=run(tree)
+    def refused(code,signed=None):
+        before=snapshot(tree);receipt=run(tree,change=None if signed is None else lambda fields:fields.update(signed))
         assert (receipt['status'],receipt['code'],receipt['phase_reached'])==('REFUSED',code,'PRECHECK'),receipt['code']
         assert snapshot(tree)==before and receipt['mutating_calls']['issued']==0 and not [entry for entry in receipt['_calls'] if entry['call'] in ('mkdir','link','unlink')]
         assert not [entry for entry in receipt['_engine'].commands if 'up' in entry['argv']]
@@ -118,8 +118,11 @@ def test_native_refusals_on_real_links_fifos_and_hard_links(tree):
     os.symlink('kept.env',env);refused('ENV_FILE_NOT_REGULAR');os.unlink(env);os.rename(deploy/'kept.env',env)
     # the lock file: a link
     lock=tree/LOCK[1:];os.rename(lock,str(lock)+'.kept');os.symlink('deployment.lock.kept',lock);refused('LOCK_FILE_NOT_REGULAR');os.unlink(lock);os.rename(str(lock)+'.kept',lock)
-    # a symbolic link in a signed chain
-    os.rename(data,tree/'mnt/real');os.symlink('real',data);refused('PARENT_SYMLINK_COMPONENT');os.unlink(data);os.rename(tree/'mnt/real',data)
+    # a symbolic link in a signed chain: the rows are signed while the data root is a directory, and the link takes its
+    # place afterwards. Rows read from the link itself would carry the link's own mode (0777 on Linux, whatever the
+    # umask), which the plan refuses before any walk (CHAIN_ROW_WORLD_WRITABLE): another case, test_plan.py's
+    signed=native_engine.fields(tree)
+    os.rename(data,tree/'mnt/real');os.symlink('real',data);refused('PARENT_SYMLINK_COMPONENT',signed);os.unlink(data);os.rename(tree/'mnt/real',data)
     # the pin
     os.unlink(data/'.r2d2-v2-pinned');refused('MAINTENANCE_PIN_ABSENT');(data/'.r2d2-v2-pinned').write_bytes(b'')
     # a reboot marker

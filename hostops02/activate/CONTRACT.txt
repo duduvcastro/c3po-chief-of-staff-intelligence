@@ -3,7 +3,7 @@ HOSTOPS02 - K6a - ACTIVATE - STDIN / ONCE CANDIDATE
 Operation built
   GO_WRITE_HOSTOPS02_ACTIVATE_01      build/activate.py      writes: one directory, two files, one recreate of r2d2-worker
 Assembled from the frozen core of HOSTOPS02, generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6
-(CORE_SHA256SUMS c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f), parts core, runner, docker, parents,
+(CORE_SHA256SUMS 73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1), parts core, runner, docker, parents,
 files, lock. DESIGN.md gives the reasons, the file:line of every precedent, the crash points and the open decisions;
 this file is the specification, the binding steps, and what the receipt means for the gates.
 

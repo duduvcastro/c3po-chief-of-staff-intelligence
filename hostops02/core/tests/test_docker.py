@@ -12,13 +12,15 @@ import hostemu
 W=lambda:f.load(demos.WRITE).m
 R=lambda:f.load(demos.READ).m
 refusal=f.refusal
-def setup(m,remaining=lambda:60.0):
+# Not named setup: pytest before 8 (its nose support, pytest 7.4 of Ubuntu 24.04 included) takes a module-level
+# callable named setup for setup_module and calls it with the module, once, before the first test of the file.
+def wired(m,remaining=lambda:60.0):
     host=f.wire(types.SimpleNamespace(m=m),hostemu.world());return m.Commands(host,remaining),host
 COMPOSE=(hostemu.PROJECT,hostemu.ENV_FILE,[hostemu.COMPOSE_FILE])
 
 # ---------------------------------------------------------------- image and container metadata
 def test_image_facts_by_id_and_by_reference_and_what_is_never_requested():
-    m=W();c,host=setup(m)
+    m=W();c,host=wired(m)
     facts=m.image_facts(c,hostemu.BACKEND)
     assert facts=={'id':hostemu.BACKEND,'repo_tags':['c3po/backend:production'],'repo_tag_count':1,'repo_tags_all_valid':True,
                    'reference_among_repo_tags':False,'revision_label':hostemu.REVISION}
@@ -33,7 +35,7 @@ def test_image_facts_by_id_and_by_reference_and_what_is_never_requested():
     host.docker.images[1]['Id']=hostemu.WEB;host.docker.images[1]['RepoTags']='c3po/web:production';assert refusal(lambda:m.image_facts(c,hostemu.WEB))=='IMAGE_METADATA_INVALID'
 
 def test_container_facts_by_name_and_by_id_validate_every_member():
-    m=W();c,host=setup(m);raw=host.docker.container(hostemu.WORKER)
+    m=W();c,host=wired(m);raw=host.docker.container(hostemu.WORKER)
     row=m.container_facts(c,hostemu.WORKER)
     assert row=={'name':'/'+hostemu.WORKER,'id':raw['Id'],'image_id':hostemu.BACKEND,'image_reference':'c3po/backend:production','running':True,'state':'running',
                  'started_at':raw['State']['StartedAt'],'host_pid':raw['State']['Pid'],'restarts':0,'health':None}
@@ -62,7 +64,7 @@ def test_container_facts_by_name_and_by_id_validate_every_member():
     assert (m.container_facts(c,hostemu.WORKER)['state'],m.container_facts(c,hostemu.WORKER)['restarts'])==('restarting',7)
 
 def test_container_list_is_every_container_sorted_and_a_failed_listing_is_never_an_empty_list():
-    m=W();c,host=setup(m);rows=m.container_list(c)
+    m=W();c,host=wired(m);rows=m.container_list(c)
     assert [row['id'] for row in rows]==sorted(item['Id'] for item in host.docker.containers) and {row['name'] for row in rows}=={'c3po-%s-1'%name for name in hostemu.SERVICES}
     assert all(set(row)=={'id','name','state'} and row['state']=='running' for row in rows)
     host.docker.containers.append(hostemu.container('stray',hostemu.BACKEND,'c3po/backend:production',[],running=False))
@@ -74,7 +76,7 @@ def test_container_list_is_every_container_sorted_and_a_failed_listing_is_never_
     host.docker.containers=[hostemu.container('c%d'%index,hostemu.BACKEND,'x',[]) for index in range(129)];assert refusal(lambda:m.container_list(c))=='CONTAINER_LIST_INVALID'
 
 def test_container_environment_reports_presence_and_equality_as_booleans_and_no_value():
-    m=W();c,host=setup(m);worker=host.docker.container(hostemu.WORKER);worker['Config']['Env']+=['EMPTY=','PATHLIKE=/a/b:c@d+e=f']
+    m=W();c,host=wired(m);worker=host.docker.container(hostemu.WORKER);worker['Config']['Env']+=['EMPTY=','PATHLIKE=/a/b:c@d+e=f']
     expected={'C3PO_BUILD_SHA':hostemu.REVISION,'C3PO_SERVICE_NAME':'api','ABSENT_KEY':'x','EMPTY':'','PATHLIKE':'/a/b:c@d+e=f','C3PO_DATABASE_URL':'wrong'}
     values=m.container_environment(c,worker['Id'],expected)
     assert values=={'C3PO_BUILD_SHA':{'present':True,'equal':True},'C3PO_SERVICE_NAME':{'present':True,'equal':False},'ABSENT_KEY':{'present':False,'equal':False},
@@ -132,7 +134,7 @@ def test_run_arguments_refuse_a_tag_a_writable_bind_in_a_container_row_and_anyth
     for row in ('image','render','container_list'):assert refusal(lambda:m.run_arguments(row,hostemu.BACKEND,[MOUNT],['python']))=='COMMAND_KIND'
 
 def test_container_run_passes_the_bytes_and_returns_the_result_without_raising():
-    m=R();c,host=setup(m);host.docker.on_run=demos.reading_container
+    m=R();c,host=wired(m);host.docker.on_run=demos.reading_container
     result=m.container_run(c,'verify',hostemu.BACKEND,[MOUNT],['python','-I','-B','-'],demos.READ_SCRIPT,docker_config='/etc/c3po-bar/docker-cli')
     assert result['started'] and result['returned'] and result['returncode']==0 and result['code'] is None
     assert m.single_line(result['output'])=={'entries':sorted(host.tree.get(hostemu.DATA).children),'status':'LISTED'}
@@ -148,17 +150,17 @@ def test_container_run_passes_the_bytes_and_returns_the_result_without_raising()
     host.hang={('run','--rm')};result=m.container_run(c,'verify',hostemu.BACKEND,[MOUNT],['python'],b'x')
     assert result=={'started':True,'returned':False,'returncode':None,'output':b'','code':'COMMAND_TIMEOUT'}
     # no budget for the whole class: not started at all
-    c2,host2=setup(m,lambda:23.9);result=m.container_run(c2,'verify',hostemu.BACKEND,[MOUNT],['python'],b'x')
+    c2,host2=wired(m,lambda:23.9);result=m.container_run(c2,'verify',hostemu.BACKEND,[MOUNT],['python'],b'x')
     assert result=={'started':False,'returned':False,'returncode':None,'output':b'','code':'COMMAND_NOT_STARTED_BUDGET'} and host2.commands==[]
-    w=W();cw,_=setup(w);assert refusal(lambda:w.container_run(cw,'script',hostemu.BACKEND,[],['python'],b'x'))=='COMMAND_KIND'
+    w=W();cw,_=wired(w);assert refusal(lambda:w.container_run(cw,'script',hostemu.BACKEND,[],['python'],b'x'))=='COMMAND_KIND'
 
 def test_container_effect_is_counted_and_a_container_row_cannot_be_used_as_an_effect():
-    w=W();c,host=setup(w);host.docker.on_run=lambda call:(call.write('/selftest/made',b'x') or 0,b'{"ok":true}\n');state=w.Effects()
+    w=W();c,host=wired(w);host.docker.on_run=lambda call:(call.write('/selftest/made',b'x') or 0,b'{"ok":true}\n');state=w.Effects()
     result=w.container_effect(state,c,'script',hostemu.BACKEND,[dict(MOUNT,read_only=False)],['python','-I','-B','-'],b'script')
     assert result['returned'] and result['returncode']==0 and w.single_line(result['output'])=={'ok':True} and state.pending
     assert host.tree.get(hostemu.DATA+'/made') is not None and len(host.effect_commands())==1 and c.started['EFFECT']==1
     state.done();assert state.counts()=={'issued':1,'succeeded':1,'failed_nothing_changed':0,'uncertain':0}
-    r=R();cr,_=setup(r);assert refusal(lambda:r.container_effect(r.Effects(),cr,'verify',hostemu.BACKEND,[MOUNT],['python'],b'x'))=='COMMAND_KIND'
+    r=R();cr,_=wired(r);assert refusal(lambda:r.container_effect(r.Effects(),cr,'verify',hostemu.BACKEND,[MOUNT],['python'],b'x'))=='COMMAND_KIND'
 
 def test_single_line_is_exactly_one_json_object_on_one_line():
     m=W();assert m.single_line(b'{"a":1}\n')=={'a':1}
@@ -181,7 +183,7 @@ def test_compose_arguments_always_name_the_project_the_environment_file_and_ever
         assert refusal(lambda:m.compose_arguments(hostemu.PROJECT,env_file,files))=='COMPOSE_FILES',(env_file,files)
 
 def test_compose_render_with_the_override_on_standard_input_and_the_build_revision_as_a_variable():
-    m=W();c,host=setup(m);rendered=m.compose_render(c,'render',*COMPOSE,hostemu.REVISION,override=demos.override())
+    m=W();c,host=wired(m);rendered=m.compose_render(c,'render',*COMPOSE,hostemu.REVISION,override=demos.override())
     service=m.compose_service(rendered,'r2d2-worker')
     assert service['image']=='c3po/backend:production' and service['environment']['C3PO_BUILD_SHA']==hostemu.REVISION
     assert all(service['environment'][key]==value for key,value in demos.KEYS.items())
@@ -197,7 +199,7 @@ def test_compose_render_with_the_override_on_standard_input_and_the_build_revisi
     assert m.compose_service({'services':{'x':{'image':'i','environment':{'A':None,'B':'b'}}}},'x')['environment']=={'A':None,'B':'b'}
 
 def test_compose_render_from_files_and_its_refusals():
-    m=W();c,host=setup(m);host.tree.add(hostemu.DATA+'/o.json',kind='file',content=demos.override(),dev=hostemu.DATA_DEVICE)
+    m=W();c,host=wired(m);host.tree.add(hostemu.DATA+'/o.json',kind='file',content=demos.override(),dev=hostemu.DATA_DEVICE)
     rendered=m.compose_render(c,'render_files',hostemu.PROJECT,hostemu.ENV_FILE,[hostemu.COMPOSE_FILE,hostemu.DATA+'/o.json'],hostemu.REVISION)
     assert m.compose_service(rendered,'r2d2-worker')['environment']['C3PO_R2D2_V2_LIVE_POLICY_SHA']=='5'*64 and host.commands[-1]['stdin'] is None
     # the row and the way it is used must agree: a row that takes standard input needs the override, and the reverse
@@ -212,7 +214,7 @@ def test_compose_render_from_files_and_its_refusals():
     host.docker.compose.config_output=b'{"services":{},"pad":"'+b'x'*200000+b'"}';assert m.compose_render(c,'render_files',*COMPOSE,hostemu.REVISION)['services']=={}
 
 def test_compose_up_recreates_only_the_named_service_with_the_same_file_list_and_is_counted():
-    m=W();c,host=setup(m);host.tree.add(hostemu.DATA+'/o.json',kind='file',content=demos.override(),dev=hostemu.DATA_DEVICE);state=m.Effects()
+    m=W();c,host=wired(m);host.tree.add(hostemu.DATA+'/o.json',kind='file',content=demos.override(),dev=hostemu.DATA_DEVICE);state=m.Effects()
     before={item['Name']:item['Id'] for item in host.docker.containers};files=[hostemu.COMPOSE_FILE,hostemu.DATA+'/o.json']
     result=m.compose_up(state,c,'recreate',hostemu.PROJECT,hostemu.ENV_FILE,files,hostemu.REVISION)
     assert result=={'started':True,'returned':True,'returncode':0,'output':b'','code':None} and state.pending
@@ -229,6 +231,6 @@ def test_compose_up_recreates_only_the_named_service_with_the_same_file_list_and
 def test_compose_up_without_the_build_revision_would_render_development_which_is_why_it_is_always_passed():
     """compose.yml interpolates C3PO_BUILD_SHA with the default "development": the recreate of 2026-09-28 exported the
     revision, and a recreate without it would start a worker whose release verification fails."""
-    m=W();c,host=setup(m);code,out=host.docker.run(['compose']+m.compose_arguments(*COMPOSE)+['config','--format','json'])
+    m=W();c,host=wired(m);code,out=host.docker.run(['compose']+m.compose_arguments(*COMPOSE)+['config','--format','json'])
     assert json.loads(out)['services']['r2d2-worker']['environment']['C3PO_BUILD_SHA']=='development'
     assert m.compose_service(m.compose_render(c,'render_files',*COMPOSE,hostemu.REVISION),'r2d2-worker')['environment']['C3PO_BUILD_SHA']==hostemu.REVISION
