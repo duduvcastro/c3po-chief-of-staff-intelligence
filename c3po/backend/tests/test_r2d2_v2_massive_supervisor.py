@@ -24,6 +24,24 @@ EPOCH='R2D2-V2-CONTAINER-LAYOUT'
 # The catalog-init script of the README (operation 4b), pinned here as a literal: the README states its own hash,
 # so the two could otherwise change together unnoticed.
 CATALOG_INIT_SHA256='715d7a660e7a2c4dd5c11287063726cc971156dd6fefc2365c431c9aee0f4bb7'
+# The two journal placements of the README, with its own example pairs (host path, container path). A is outside
+# the data volume, expected on the host's root filesystem (the receipt did not read that); B is a leaf of the data volume.
+PLACEMENTS={'A':('/var/lib/c3po-bar/journal','/c3po-bar-journal'),
+    'B':('/mnt/day-d-data/r2d2-v2-massive-epoch03','/app/day-d-data/r2d2-v2-massive-epoch03')}
+DATA_VOLUME=Path('/mnt/day-d-data');DATA_TARGET=Path('/app/day-d-data');DEPLOY_TREE=Path('/opt/chief-of-staff-digital')
+HOST_STATE_ROOT=Path('/var/lib/c3po-bar/supervisor');HOST_CONFIG_DIR=Path('/etc/c3po-bar')
+# The unit's own container targets: the state root, the configuration directory and the tmpfs.
+FIXED_TARGETS=(Path('/var/lib/c3po-bar/supervisor'),Path('/etc/c3po-bar'),Path('/tmp'))
+# Read-only host receipt the README attributes its host facts to. Nothing here was measured by a test.
+RECEIPT_OPERATION='GO_READONLY_SUPERVISOR_HOSTFACTS_01'
+RECEIPT_STDOUT_SHA256='47abfa0a93d1ffbd7b90fd72a3e414a9c54ce3debda8e70ae679d45be36e528b'
+RECEIPT_DATA_VOLUME_AVAILABLE=54070542336;RECEIPT_ROOT_FILESYSTEM_AVAILABLE=595212316672
+# Top-level directories the image or the runtime provides: under placement A the container journal root is one new
+# top-level directory, none of these. The README's own list is read from the document and compared with this one.
+PROVIDED_TOP_LEVEL=frozenset('app bin boot dev etc home lib lib64 media mnt opt proc root run sbin srv sys tmp usr var'.split())
+# The owner's decision record for placement A in this epoch, as the README cites it. Not hashed by any test.
+DECISION_RECORD='DUDU_DECISION_BAR_JOURNAL_ON_MAIN_DISK.json'
+DECISION_SHA256='76dcff838b5bb9feb54bbc3ee3f4de0567012571bcc6469d5c2b3cf326df64a0'
 
 
 def unit_text():return (UNIT_ROOT/'c3po-massive.service').read_text()
@@ -284,15 +302,51 @@ def test_unit_forbids_unsafe_container_options():
     assert limit is not None and stops==['25','25'] and grace==25<int(limit.group(1))==30
 
 
-def test_rendered_unit_paths_match_backend_data_mount(monkeypatch):
-    from app.config import Settings
-    values={'@IMAGE_ID@':'sha256:'+'a'*64,'@HOST_JOURNAL_ROOT@':'/mnt/day-d-data/r2d2-v2-massive-epoch03',
-        '@CONTAINER_JOURNAL_ROOT@':'/app/day-d-data/r2d2-v2-massive-epoch03','@HOST_STATE_ROOT@':'/var/lib/c3po-bar/supervisor',
-        '@HOST_CONFIG_DIR@':'/etc/c3po-bar','@NETWORK@':'bridge'}
+def overlaps(one,other):return one==other or one in other.parents or other in one.parents
+
+
+def within(path,tree):return path==tree or tree in path.parents
+
+
+def placement_refusal(placement,host,container,*,state=HOST_STATE_ROOT,config=HOST_CONFIG_DIR):
+    """The refusals of the README's "Substitution grammar" that follow from the paths alone.
+
+    A reading of the prose, not the installer (which is not in this repository). "The journal root is a mount
+    point" and "the values differ from the signed ones" need the host and the authorisation; they are not here."""
+    host,container,state,config=(Path(value) for value in (host,container,state,config))
+    if any(overlaps(host,other) for other in (state,config)):return 'HOST_JOURNAL_OVERLAPS_PRIVATE_ROOT'
+    if any(overlaps(container,other) for other in FIXED_TARGETS):return 'CONTAINER_JOURNAL_OVERLAPS_FIXED_TARGET'
+    if any(within(other,DATA_VOLUME) for other in (state,config)):return 'PRIVATE_ROOT_INSIDE_DATA_VOLUME'
+    if placement=='A':
+        if within(host,DATA_VOLUME):return 'A_HOST_JOURNAL_INSIDE_DATA_VOLUME'
+        if within(host,DEPLOY_TREE):return 'A_HOST_JOURNAL_INSIDE_DEPLOY_TREE'
+        # Exactly one component below "/", and not a directory the image or the runtime provides (/app among them).
+        if len(container.parts)!=2:return 'A_CONTAINER_JOURNAL_NOT_TOP_LEVEL'
+        if container.name in PROVIDED_TOP_LEVEL:return 'A_CONTAINER_JOURNAL_PROVIDED_DIRECTORY'
+        return None
+    if placement=='B':
+        if host.parent!=DATA_VOLUME:return 'B_HOST_JOURNAL_NOT_A_LEAF_OF_DATA_VOLUME'
+        if container!=DATA_TARGET/host.name:return 'B_CONTAINER_JOURNAL_NOT_THE_SAME_LEAF'
+        return None
+    return 'PLACEMENT_UNKNOWN'
+
+
+def rendered_unit(host_journal,container_journal):
+    values={'@IMAGE_ID@':'sha256:'+'a'*64,'@HOST_JOURNAL_ROOT@':host_journal,'@CONTAINER_JOURNAL_ROOT@':container_journal,
+        '@HOST_STATE_ROOT@':str(HOST_STATE_ROOT),'@HOST_CONFIG_DIR@':str(HOST_CONFIG_DIR),'@NETWORK@':'bridge'}
     assert set(values)==PLACEHOLDERS
     unit=unit_text()
     for name,value in values.items():unit=unit.replace(name,value)
     assert '@' not in unit
+    return unit,values
+
+
+@pytest.mark.parametrize('placement',sorted(PLACEMENTS))
+def test_rendered_unit_paths_match_the_signed_placement(monkeypatch,placement):
+    from app.config import Settings
+    unit,values=rendered_unit(*PLACEMENTS[placement])
+    assert placement_refusal(placement,*PLACEMENTS[placement]) is None
+    assert 'RequiresMountsFor='+' '.join((PLACEMENTS[placement][0],str(HOST_STATE_ROOT),str(HOST_CONFIG_DIR))) in unit.splitlines()
     options,tail=run_options(exec_start(unit),values['@IMAGE_ID@'])
     arguments=dict(zip(tail[4::2],tail[5::2]));mounts={}
     for name,value in options:
@@ -303,39 +357,129 @@ def test_rendered_unit_paths_match_backend_data_mount(monkeypatch):
     journal=Path(arguments['--journal-root']);state_root=Path(arguments['--state-root'])
     assert set(mounts)=={str(journal),str(state_root),'/etc/c3po-bar'}
     assert Path(arguments['--manifest-directory']).parent==Path(arguments['--token-file']).parent==Path('/etc/c3po-bar')
-    # Same leaf below the data mount on both sides: host /mnt/day-d-data/<leaf> is /app/day-d-data/<leaf>.
     host_journal=Path(mounts[str(journal)])
-    assert journal.parent==Path('/app/day-d-data') and host_journal.name==journal.name and host_journal.parent==Path('/mnt/day-d-data')
     compose=(UNIT_ROOT.parents[1]/'compose.yml').read_text()
     worker=re.search(r'^  r2d2-worker:\n((?:    .*\n|\n)+)',compose,re.M)
-    assert worker is not None and re.search(r'^      - \S+:/app/day-d-data$',worker.group(1),re.M)
+    assert worker is not None and re.search(r'^      - \S+:'+re.escape(str(DATA_TARGET))+'$',worker.group(1),re.M)
+    dockerfile=(UNIT_ROOT.parents[1]/'backend'/'Dockerfile').read_text()
+    if placement=='A':
+        # Outside the data volume and outside the image's tree: next to the state root on the host, directly below
+        # "/" in the container. No compose service is given either path, so every consumer binds it explicitly.
+        assert host_journal.parent==HOST_STATE_ROOT.parent==Path('/var/lib/c3po-bar') and not within(host_journal,DATA_VOLUME)
+        assert journal.parent==Path('/') and not within(journal,Path('/app')) and not within(journal,DATA_TARGET)
+        assert str(host_journal.parent) not in compose and str(journal) not in compose
+        # The image creates neither the journal target nor the unit's two fixed targets: all three are mount points
+        # the runtime adds under --read-only.
+        assert re.search(r'^WORKDIR /app$',dockerfile,re.M) and not any(str(value) in dockerfile for value in (journal,*FIXED_TARGETS[:2]))
+    else:
+        # Same leaf below the data mount on both sides: host /mnt/day-d-data/<leaf> is /app/day-d-data/<leaf>.
+        assert journal.parent==DATA_TARGET and host_journal.name==journal.name and host_journal.parent==DATA_VOLUME
     # r2d2-worker is NOT the journal reader (it runs app.r2d2_worker); it only shows how the backend image mounts the
     # data volume and that neither compose nor the image selects a user. The reader's launcher must match both.
     assert re.search(r'^    command: \["python", "-m", "app\.r2d2_worker"\]$',worker.group(1),re.M)
     assert 'r2d2_v2_shadow_worker' not in compose
     assert not re.search(r'^    user:',worker.group(1),re.M)
-    assert not re.search(r'^\s*USER\b',(UNIT_ROOT.parents[1]/'backend'/'Dockerfile').read_text(),re.M)
+    assert not re.search(r'^\s*USER\b',dockerfile,re.M)
     assert state_root!=journal and journal not in state_root.parents and state_root not in journal.parents
     for target in (str(state_root),'/etc/c3po-bar'):
-        assert host_journal.parent not in Path(mounts[target]).parents and Path(mounts[target])!=host_journal.parent
+        assert not within(Path(mounts[target]),DATA_VOLUME) and not overlaps(Path(mounts[target]),host_journal)
     monkeypatch.setenv('C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR',str(journal))
     assert Settings().r2d2_v2_massive_journal_dir==journal
 
 
+def test_placement_refusals_follow_the_readme_grammar():
+    readme=(UNIT_ROOT/'README.md').read_text();a_host,a_container=PLACEMENTS['A'];b_host,b_container=PLACEMENTS['B']
+    path=re.compile(r'^/[A-Za-z0-9._/-]+$')
+    assert all(path.match(value) and not value.endswith('/') and not {'','.','..'}&set(value.split('/')[1:])
+        for pair in PLACEMENTS.values() for value in pair)
+    cases={('A',a_host,a_container):None,('B',b_host,b_container):None,
+        # A pair of one placement presented as the other.
+        ('A',b_host,a_container):'A_HOST_JOURNAL_INSIDE_DATA_VOLUME',('A',str(DATA_VOLUME),a_container):'A_HOST_JOURNAL_INSIDE_DATA_VOLUME',
+        ('A',a_host,b_container):'A_CONTAINER_JOURNAL_NOT_TOP_LEVEL',('A',a_host,'/app'):'A_CONTAINER_JOURNAL_PROVIDED_DIRECTORY',
+        # Placement A: one new top-level directory. Deeper paths, and system trees the overlap rule does not reach.
+        ('A',a_host,'/app/journal'):'A_CONTAINER_JOURNAL_NOT_TOP_LEVEL',('A',a_host,'/usr/journal'):'A_CONTAINER_JOURNAL_NOT_TOP_LEVEL',
+        ('A',a_host,'/srv/c3po-bar-journal'):'A_CONTAINER_JOURNAL_NOT_TOP_LEVEL',('A',a_host,a_container+'/nested'):'A_CONTAINER_JOURNAL_NOT_TOP_LEVEL',
+        ('A',a_host,'/run/c3po/journal'):'A_CONTAINER_JOURNAL_NOT_TOP_LEVEL',
+        **{('A',a_host,'/'+name):'A_CONTAINER_JOURNAL_PROVIDED_DIRECTORY' for name in ('usr','lib','lib64','bin','sbin','proc','sys','dev','run',
+            'boot','home','media','mnt','opt','root','srv')},
+        ('A',a_host,'/c3po-bar-journal-2'):None,
+        ('A',str(DEPLOY_TREE/'runtime'/'journal'),a_container):'A_HOST_JOURNAL_INSIDE_DEPLOY_TREE',
+        ('B',a_host,b_container):'B_HOST_JOURNAL_NOT_A_LEAF_OF_DATA_VOLUME',
+        ('B',str(DATA_VOLUME/'nested'/'leaf'),str(DATA_TARGET/'leaf')):'B_HOST_JOURNAL_NOT_A_LEAF_OF_DATA_VOLUME',
+        ('B',b_host,str(DATA_TARGET/'another-leaf')):'B_CONTAINER_JOURNAL_NOT_THE_SAME_LEAF',('B',b_host,a_container):'B_CONTAINER_JOURNAL_NOT_THE_SAME_LEAF',
+        # Every placement: the journal root against the state root, the configuration directory and the unit's targets.
+        ('A',str(HOST_STATE_ROOT),a_container):'HOST_JOURNAL_OVERLAPS_PRIVATE_ROOT',('A',str(HOST_STATE_ROOT.parent),a_container):'HOST_JOURNAL_OVERLAPS_PRIVATE_ROOT',
+        ('A',str(HOST_STATE_ROOT/'journal'),a_container):'HOST_JOURNAL_OVERLAPS_PRIVATE_ROOT',('B',str(HOST_CONFIG_DIR/'journal'),b_container):'HOST_JOURNAL_OVERLAPS_PRIVATE_ROOT',
+        ('A',a_host,'/var/lib/c3po-bar'):'CONTAINER_JOURNAL_OVERLAPS_FIXED_TARGET',('A',a_host,'/etc/c3po-bar/journal'):'CONTAINER_JOURNAL_OVERLAPS_FIXED_TARGET',
+        ('A',a_host,'/tmp/journal'):'CONTAINER_JOURNAL_OVERLAPS_FIXED_TARGET',('B',b_host,'/var'):'CONTAINER_JOURNAL_OVERLAPS_FIXED_TARGET'}
+    assert {case:placement_refusal(*case) for case in cases}==cases
+    assert placement_refusal('A',a_host,a_container,state=DATA_VOLUME/'state')==placement_refusal('B',b_host,b_container,
+        config=DATA_VOLUME/'etc')=='PRIVATE_ROOT_INSIDE_DATA_VOLUME'
+    assert placement_refusal('C',a_host,a_container)=='PLACEMENT_UNKNOWN'
+    # Placement A's container path: every provided top-level directory is refused (three of them already by the
+    # overlap with the unit's own targets), nothing below "/" but one component passes, and the example does.
+    caught_earlier={'etc','tmp','var'}
+    assert {name:placement_refusal('A',a_host,'/'+name) for name in sorted(PROVIDED_TOP_LEVEL)}=={name:'CONTAINER_JOURNAL_OVERLAPS_FIXED_TARGET'
+        if name in caught_earlier else 'A_CONTAINER_JOURNAL_PROVIDED_DIRECTORY' for name in sorted(PROVIDED_TOP_LEVEL)}
+    assert all(placement_refusal('A',a_host,'/'+name+'/journal') is not None for name in sorted(PROVIDED_TOP_LEVEL))
+    assert Path(a_container).parts==('/',a_container[1:]) and a_container[1:] not in PROVIDED_TOP_LEVEL and placement_refusal('A',a_host,a_container) is None
+    listed=re.findall(r'The installer refuses at least these top-level directories: ((?:`/[a-z0-9]+`(?:, )?)+)\. The list is a floor; the rule is the sentence before it\.',readme)
+    assert len(listed)==1 and listed[0].split(', ')==['`/'+name+'`' for name in sorted(PROVIDED_TOP_LEVEL)]
+    assert PROVIDED_TOP_LEVEL>={'app','bin','boot','dev','etc','home','lib','lib64','media','mnt','opt','proc','root','run','sbin','srv','sys','tmp','usr','var'}
+    # The sibling layout of placement A is not an overlap: journal and state root share only their private parent.
+    assert Path(a_host).parent==HOST_STATE_ROOT.parent and not overlaps(Path(a_host),HOST_STATE_ROOT)
+    # The prose those refusals read.
+    assert all(value in readme for value in (
+        '**the placement and the pair (`@HOST_JOURNAL_ROOT@`, `@CONTAINER_JOURNAL_ROOT@`) are signed in the authorisation**',
+        '- **in every placement**, a host journal root that is a filesystem root (a mount point); a host journal root that equals, '
+        'contains or is contained in the state root or the configuration directory; a container journal root that equals, contains '
+        'or is contained in one of the unit\'s two fixed targets, `/var/lib/c3po-bar/supervisor` and `/etc/c3po-bar`, or its tmpfs '
+        '`/tmp`; and a state root or a configuration directory inside the data volume;',
+        '- **under placement A**, a host journal root that is the data volume or lies inside it; a host journal root inside the deploy tree',
+        'and a container journal root that is not **exactly one new top-level directory**: it must be `/<name>`, a single component '
+        'directly below `/` and nothing deeper, and `<name>` must not be a directory, or any other entry, that the image or the runtime '
+        'provides at `/`. The installer refuses at least these top-level directories: `/app`, `/bin`, `/boot`, `/dev`, `/etc`, `/home`, '
+        '`/lib`, `/lib64`, `/media`, `/mnt`, `/opt`, `/proc`, `/root`, `/run`, `/sbin`, `/srv`, `/sys`, `/tmp`, `/usr`, `/var`. The list is '
+        'a floor; the rule is the sentence before it. So `/app` and everything inside it are refused, and so are `/usr`, `/lib`, `/bin`, '
+        '`/proc`, `/sys`, `/dev`, `/run` and every path below them, which the character grammar and the overlap rule of the previous item '
+        'would let through;',
+        '- **under placement B**, a host journal root that is not directly inside the data volume, and a `@CONTAINER_JOURNAL_ROOT@` '
+        'that is not `/app/day-d-data/<leaf>` with the same `<leaf>` as `@HOST_JOURNAL_ROOT@`.',
+        'So under placement A the container journal root is one new top-level directory, `/<name>`, outside `/app`, the image\'s own tree, '
+        'and outside every other tree the image or the runtime provides; under placement B it is `/app/day-d-data/<leaf>`. The example of '
+        'placement A, `'+a_container+'`, satisfies that rule.'))
+    # The looser rule this replaces let /usr, /lib, /proc and the like through.
+    assert not any(value in readme for value in ('and a container journal root that is `/app` or lies inside it;',
+        'So the container journal root is an absolute path outside `/app`'))
+    # The first draft's absolute coupling of the journal root to the data volume is gone.
+    assert 'when the journal root is not directly inside the data volume, or when' not in readme
+    # The deploy tree and how a deploy treats it, as the pipeline has them.
+    pipeline=(UNIT_ROOT.parents[2]/'.github'/'workflows'/'c3po-pipeline.yml').read_text()
+    assert '          APP_DIR='+str(DEPLOY_TREE)+'\n' in pipeline and '          rsync -a --delete \\\n' in pipeline
+    assert '"$RELEASE_DIR/" "$APP_DIR/"' in pipeline and '`rsync -a --delete`' in readme
+
+
 @pytest.fixture
 def container(tmp_path,calendar,monkeypatch):
-    """Container layout on temporary directories: data(0755)/journal(0700), sibling state, etc/{manifests,token}."""
+    """Container layout on temporary directories: data(0755)/journal(0700), sibling state, etc/{manifests,token}.
+
+    That is placement B. With placement='A' the journal is outside the data directory, next to the state root below
+    one private parent (private(0700)/{journal,state}), and the data directory is created only to show it stays empty."""
     from app import r2d2_v2_massive_producer as producer
     from app.r2d2_v2_massive_producer import run_session
     monkeypatch.setattr(producer,'MIN_SESSION_FREE_BYTES',1)
     previous=os.umask(0o022);day=MINUTE.date().isoformat()
     def private(path,text):
         with os.fdopen(os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600),'w') as output:output.write(text)
-    def layout(name,*,owner_uid=None,nested_state=False):
+    def layout(name,*,owner_uid=None,nested_state=False,placement='B'):
         base=tmp_path.resolve()/name;base.mkdir(mode=0o700)
         tree=SimpleNamespace(data=base/'data',journal=base/'data'/'journal',etc=base/'etc',manifests=base/'etc'/'manifests',
             token=base/'etc'/'token',state=base/'data'/'journal'/'state' if nested_state else base/'state',day=day)
         tree.data.mkdir(mode=0o755)
+        if placement=='A':
+            assert not nested_state
+            tree.private=base/'private';tree.journal=tree.private/'journal';tree.state=tree.private/'state'
+            tree.private.mkdir(mode=0o700)
         for path in (tree.journal,tree.state,tree.etc,tree.manifests):path.mkdir(mode=0o700)
         private(tree.manifests/(day+'.json'),json.dumps({'epoch':EPOCH,'session':day,'symbols':['AAPL'],
             'owner_uid':os.geteuid() if owner_uid is None else owner_uid}))
@@ -400,6 +544,86 @@ def test_container_layout_writer_and_reader_agree(container):
     assert sorted(os.listdir(tree.journal))==['epoch.json','maintenance.lock','producer.lock','session_date='+tree.day]
     assert stat.S_IMODE(os.stat(tree.data).st_mode)==0o755 and stat.S_IMODE(root.st_mode)==0o700
     assert all(stat.S_IMODE(os.lstat(tree.state/name).st_mode)==0o600 for name in os.listdir(tree.state))
+
+
+def test_placement_a_leaves_the_data_directory_untouched_and_measures_free_space_on_the_journal_root(container,monkeypatch):
+    from app import r2d2_v2_massive_producer as producer
+    layout,produce=container;tree=layout('outside',placement='A')
+    identity=lambda path:(os.stat(path).st_dev,os.stat(path).st_ino)
+    measured=[];forced=[None];real=os.fstatvfs
+    def fstatvfs(fd):
+        info=os.fstat(fd);capacity=real(fd) if forced[0] is None else SimpleNamespace(f_bavail=forced[0],f_frsize=1)
+        measured.append(((info.st_dev,info.st_ino),capacity.f_bavail*capacity.f_frsize))
+        return capacity
+    monkeypatch.setattr(os,'fstatvfs',fstatvfs)
+    assert not within(tree.journal,tree.data) and not overlaps(tree.journal,tree.state) and tree.journal.parent==tree.state.parent
+    code,notices,connects=produce(tree)
+    assert code==0 and len(connects)==1 and notices[-1]['status']=='STOPPED'
+    # Writer and reader agree on a journal that no data mount reaches, and the data directory stays empty.
+    source=reader(tree.journal);result=poll(source)
+    assert source.journals.ready_sessions()==(tree.day,) and result['diagnostics']==[] and result['events']
+    assert list(tree.data.iterdir())==[] and sorted(path.name for path in tree.private.iterdir())==['journal','state']
+    assert sorted(os.listdir(tree.journal))==['epoch.json','maintenance.lock','producer.lock','session_date='+tree.day]
+    # The floor is read on the descriptor of the journal root itself (f_bavail x f_frsize), and every later
+    # measurement is on a directory inside it: never on the data directory, the state root or the configuration.
+    inside={identity(os.path.join(parent,name)) for parent,directories,_ in os.walk(tree.journal) for name in ['.']+directories}
+    assert measured[0][0]==identity(tree.journal) and {seen for seen,_ in measured}<=inside
+    assert not inside&{identity(path) for path in (tree.data,tree.state,tree.etc,tree.private)}
+    started=[notice for notice in notices if notice['status']=='RETAINED_BUDGET_START']
+    assert len(started)==1 and started[0]['storage']['free_bytes']==measured[0][1]
+    # One byte below the real floor on that filesystem: exit 1 with no connection, the claim spent, and only the
+    # producer lock in an otherwise empty journal root.
+    low=layout('outside-low',placement='A');del measured[:]
+    monkeypatch.setattr(producer,'MIN_SESSION_FREE_BYTES',50*1024**3);forced[0]=53687091200-1
+    code,notices,connects=produce(low)
+    assert code==1 and connects==[] and measured==[(identity(low.journal),53687091199)]
+    gaps=[notice for notice in notices if notice['status']=='DATA_GAP']
+    assert len(gaps)==1 and gaps[0]['reason']=='MASSIVE_SERVICE_LOW_DISK' and gaps[0]['provider_connected'] is False
+    assert gaps[0]['storage']['free_bytes']==53687091199
+    assert notices[-1]=={'status':'FAILED','session':low.day,'reason':'SUPERVISOR_PRODUCER_FAILURE','code':'MASSIVE_SERVICE_LOW_DISK'}
+    assert sorted(os.listdir(low.journal))==['producer.lock'] and list(low.data.iterdir())==[]
+    assert claims(low)==[low.day+'.attempt-1.json']
+
+
+def test_ancestors_of_the_journal_root_are_checked_for_links_and_access_not_for_owner_or_mode(container):
+    from app.r2d2_v2_massive_sessions import SessionJournalRoot
+    from app.r2d2_v2_sources import _open_directory
+    from app.r2d2_v2_store import ShadowIntegrityError
+    layout,produce=container;root=os.geteuid()==0
+    # Owner: unless the tests run as uid 0, some ancestor of every temporary tree ("/" at least) belongs to another
+    # uid, and every other test of this file already passes below it.
+    tree=layout('owner')
+    assert root or [path for path in tree.journal.parents if os.stat(path).st_uid!=os.geteuid()]
+    # Mode: a parent that group and others may write, and a parent the process itself may not write, change nothing.
+    for mode in (0o777,0o555):
+        tree=layout('parent-%o'%mode);tree.data.chmod(mode)
+        try:
+            code,notices,connects=produce(tree)
+            assert code==0 and len(connects)==1 and stat.S_IMODE(os.stat(tree.data).st_mode)==mode
+            assert poll(reader(tree.journal))['diagnostics']==[]
+        finally:tree.data.chmod(0o755)
+    # A symbolic link among the ancestors is refused by every opener, although it leads to the same sound directory.
+    tree=layout('linked');alias=tree.data.parent/'alias';alias.symlink_to(tree.data);linked=alias/'journal'
+    SessionJournalRoot(tree.journal,EPOCH,create=True)
+    assert os.stat(linked).st_ino==os.stat(tree.journal).st_ino
+    for refused in (lambda:_open_directory(linked),lambda:SessionJournalRoot(linked,EPOCH),lambda:SessionJournalRoot(linked,EPOCH,create=True)):
+        with pytest.raises(OSError):refused()
+    with pytest.raises(ShadowIntegrityError,match='^MASSIVE_SESSION_ROOT_UNVERIFIED$'):reader(linked)
+    through=SimpleNamespace(**vars(tree));through.journal=linked
+    code,notices,connects=produce(through)
+    assert code==1 and connects==[] and claims(tree)==[tree.day+'.attempt-1.json']
+    assert notices[-1]=={'status':'FAILED','session':tree.day,'reason':'SUPERVISOR_PRODUCER_FAILURE','code':'MASSIVE_SERVICE_FAILURE'}
+    assert sorted(os.listdir(tree.journal))==['epoch.json','maintenance.lock'] and poll(reader(tree.journal))['diagnostics']==[]
+    # An ancestor the process cannot read, or cannot search, fails the walk itself. uid 0 overrides permission bits
+    # unless its capabilities are dropped (the unit drops them all), so this part needs a process that is not uid 0.
+    if not root:
+        for mode in (0o300,0o600):
+            tree.data.chmod(mode)
+            try:
+                with pytest.raises(PermissionError):_open_directory(tree.journal)
+                with pytest.raises(ShadowIntegrityError,match='^MASSIVE_SESSION_ROOT_UNVERIFIED$'):reader(tree.journal)
+            finally:tree.data.chmod(0o755)
+        assert poll(reader(tree.journal))['diagnostics']==[]
 
 
 def test_reader_guards_stay_strict_for_container_layout(container,monkeypatch):
@@ -516,12 +740,24 @@ def test_readme_catalog_init_script_runs_against_the_real_catalog(container,monk
     # empty docker CLI configuration directory as the unit, set as a prefix of that one command.
     command=re.search(r'^DOCKER_CONFIG=\S+ docker run --rm -i .*?< catalog-init\.py$',readme,re.S|re.M)
     assert command is not None and len(re.findall(r'^(?:\S+ )?docker run --rm -i ',readme,re.M))==1
-    argv=shlex.split(command.group(0).replace('\\\n',' ').replace('<HOST_JOURNAL_ROOT>','/h').replace('<CONTAINER_JOURNAL_ROOT>','/c')
-        .replace('<IMAGE_ID>','IMAGE').replace('< catalog-init.py',''))
-    assert 'Environment='+argv[0].replace('<HOST_CONFIG_DIR>','@HOST_CONFIG_DIR@') in unit_text().splitlines()
-    assert argv[1:]==['docker','run','--rm','-i','--pull','never','--init','--user','0:0','--network','none','--read-only',
-        '--cap-drop','ALL','--security-opt','no-new-privileges','--mount','type=bind,source=/h,target=/c',
-        'IMAGE','python','-I','-B','-','/c','$epoch']
+    # The journal mount is a parameter of the command. It is rendered here with each placement's pair, the top-level
+    # container path of placement A included, and must be the unit's own journal mount for the same pair.
+    assert command.group(0).count('<HOST_JOURNAL_ROOT>')==1 and command.group(0).count('<CONTAINER_JOURNAL_ROOT>')==2
+    assert not any(value in command.group(0) for value in ('/app','day-d-data','/var/lib','/mnt'))
+    for placement,(host,target) in sorted(PLACEMENTS.items()):
+        argv=shlex.split(command.group(0).replace('\\\n',' ').replace('<HOST_JOURNAL_ROOT>',host).replace('<CONTAINER_JOURNAL_ROOT>',target)
+            .replace('<IMAGE_ID>','IMAGE').replace('< catalog-init.py',''))
+        assert 'Environment='+argv[0].replace('<HOST_CONFIG_DIR>','@HOST_CONFIG_DIR@') in unit_text().splitlines()
+        assert argv[1:]==['docker','run','--rm','-i','--pull','never','--init','--user','0:0','--network','none','--read-only',
+            '--cap-drop','ALL','--security-opt','no-new-privileges','--mount','type=bind,source='+host+',target='+target,
+            'IMAGE','python','-I','-B','-',target,'$epoch']
+        options,tail=run_options(exec_start(rendered_unit(host,target)[0]),'sha256:'+'a'*64)
+        assert [value for name,value in options if name=='--mount'][0]==argv[argv.index('--mount')+1]
+        assert tail[tail.index('--journal-root')+1]==argv[-2]==target
+    assert ('under placement A `/var/lib/c3po-bar/journal` and `/c3po-bar-journal`, so the mount reads '
+        '`type=bind,source=/var/lib/c3po-bar/journal,target=/c3po-bar-journal` and the script\'s first argument is `/c3po-bar-journal`') in readme
+    # The script names no journal path: it takes the root from its first argument and adds only the image's /app.
+    assert 'day-d-data' not in script and 'c3po-bar' not in script and "sys.path.insert(0, '/app')" in script and 'root, epoch = sys.argv[1:]' in script
 
 
 def test_readme_names_the_operations_in_order_and_the_substitution_grammar(monkeypatch):
@@ -554,12 +790,18 @@ def test_readme_names_the_operations_in_order_and_the_substitution_grammar(monke
         'bounds the two precondition commands and the launch of the docker CLI together',
         '4 readback → 4b catalog initialisation → 5 activation','under a second in these runs',
         'under one second for a full 4096-event page','No test of that file can hang'))
-    # A replacement leaf also moves the reader's journal directory. The name written here is the one the settings read.
+    # A replacement directory always moves the bind source; it moves the reader's journal directory too whenever the
+    # container path changes (always under placement B). The name written here is the one the settings read, and it
+    # takes a path outside /app as readily as a leaf of the data mount.
     from app.config import Settings
     variable='C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR'
-    monkeypatch.setenv(variable,'/app/day-d-data/another-leaf')
-    assert Settings().r2d2_v2_massive_journal_dir==Path('/app/day-d-data/another-leaf')
+    for value in (PLACEMENTS['A'][1],'/app/day-d-data/another-leaf'):
+        monkeypatch.setenv(variable,value)
+        assert Settings().r2d2_v2_massive_journal_dir==Path(value)
     assert readme.count("the reader's `"+variable+"`, which must equal the new `@CONTAINER_JOURNAL_ROOT@`")==2
+    assert all(value in readme for value in ('A replacement directory always changes `@HOST_JOURNAL_ROOT@`, and with it the bind source of '
+        'every consumer outside this directory','under placement A the signed container path may stay as it is',
+        'whenever the container path changes (always under placement B, where it carries the leaf)'))
     assert '`'+variable+'` equal to `@CONTAINER_JOURNAL_ROOT@`, **explicitly**' in readme
     # Creating that leaf and running 4b on it are two authorisations.
     assert all(value in readme for value in ('a new directory and **two** further authorisations, not one',
@@ -569,6 +811,201 @@ def test_readme_names_the_operations_in_order_and_the_substitution_grammar(monke
         'one GO each','python -m app.r2d2_v2_shadow_worker','**No compose service launches that module.**',
         'MASSIVE_SESSION_ROOT_UNVERIFIED','MASSIVE_MAINTENANCE_BUSY','c3po/backend:massive-supervisor-'))
     assert all(name in readme for name in PLACEHOLDERS)
+
+
+def cited(module,first,last=None):
+    """Lines first..last (1-based, inclusive) of an app module, as the README cites them."""
+    lines=(UNIT_ROOT.parents[1]/'backend'/'app'/(module+'.py')).read_text().splitlines()
+    return '\n'.join(lines[first-1:last or first])
+
+
+def test_readme_describes_both_journal_placements_and_what_is_checked_above_the_root():
+    from app.r2d2_v2_epoch_assembler import EPOCH as signed_epoch
+    readme=(UNIT_ROOT/'README.md').read_text();(a_host,a_container),(b_host,b_container)=PLACEMENTS['A'],PLACEMENTS['B']
+    assert ('```\nplacement A: outside the data volume, expected on the host\'s root filesystem\n'
+        'host      '+a_host+'                  (next to /var/lib/c3po-bar/supervisor)\n'
+        'container '+a_container+'                          (producer --journal-root; reader journal directory)\n\n'
+        'placement B: directly inside the data volume\n'
+        'host      <C3PO_DAY_D_DATA_MOUNT_SOURCE>/<leaf>      (for example '+b_host+')\n'
+        'container /app/day-d-data/<leaf>                     (producer --journal-root; reader journal directory)\n```\n') in readme
+    # The epoch named in the document is the one the code assembles; placement A is the owner's decision for it.
+    assert signed_epoch=='R2D2-V2-SHADOW-2026-10-05'
+    assert ('**Epoch `'+signed_epoch+'` uses placement A, by decision of the owner.** The decision is on record as `'+DECISION_RECORD
+        +'`, SHA-256 `'+DECISION_SHA256+'` (name and hash as relayed for this revision; the record\'s bytes prevail).') in readme
+    assert readme.count(DECISION_RECORD)==readme.count(DECISION_SHA256)==1 and DECISION_SHA256!=RECEIPT_STDOUT_SHA256
+    assert all(value in readme for value in ('ORDEM_EPOCA_03, revision 2','and that **nothing is deleted or moved**',
+        'on a filesystem **chosen in the authorisation**','The placement and the pair (host path, container path) are signed in the authorisation',
+        '| `@HOST_JOURNAL_ROOT@` | 2 | Host path of the dedicated journal root, in the placement signed in the authorisation. | `'+a_host+'` |',
+        '| `@CONTAINER_JOURNAL_ROOT@` | 2 | The same directory as seen inside every container that is given it. | `'+a_container+'` |',
+        'The two journal examples are those of placement A. Under placement B they would be `'+b_host+'` and `'+b_container+'`.',
+        # What placement A implies.
+        '**Placement A: outside the data volume.**','- **No compose service sees the journal.**',
+        '- **Every consumer bind-mounts it explicitly, at the same container path.**','- **The container path is outside `/app`**',
+        '- **The free-space floor is measured on the root filesystem**','Under placement A **the data volume is not touched at all**',
+        '  | placement A: `'+a_host+'` = `@HOST_JOURNAL_ROOT@` | `root:root` | 0700 | empty; created new below `/var/lib/c3po-bar`, expected on the root filesystem (read back below) |',
+        '  | placement B: `<data volume>/<leaf>` = `@HOST_JOURNAL_ROOT@` | `root:root` | 0700 | empty; created new inside the data mount |',
+        '| placement A: `'+a_host+'` | as above |','| placement B: `<data volume>/<leaf>` | as above |',
+        '  - **placement A:** by an **explicit bind** of the journal root, `type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@`',
+        'Mounting the data volume at `/app/day-d-data` does **not** provide the journal',
+        '  - **placement B:** mounting the data volume at `/app/day-d-data` is enough, because the journal root is a leaf of it;',
+        '**every other container that builds the V2 collector**','**has not been run on any engine**',
+        # What placement B implies, and what the code does and does not check above the journal root.
+        '**Placement B: directly inside the data volume.**','- **The data volume root\'s owner and mode are recorded, not changed.**',
+        'it is **not** root-owned','**The owner and the mode bits of an ancestor are not examined.**',
+        'does **not** make the producer or the reader refuse a `root:root` 0700 journal root below it',
+        'each ancestor must grant it read and search through its ordinary bits',
+        '**Not exercised anywhere:** uid 0 without capabilities below an ancestor owned by uid 1000'))
+    # The bind every consumer uses is the unit's own journal mount.
+    assert '--mount type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@ ' in unit_text()
+    # The first draft's absolutes: the journal root is no longer said to be in the data volume, nor reachable through
+    # the compose services' data mount, without naming the placement.
+    assert not any(value in readme for value in ('The journal root lives inside the existing data volume',
+        'Host path of the dedicated journal root, inside the data volume.','which is the data volume. Below it',
+        'mounting the data volume at `/app/day-d-data` satisfies this','only the new journal leaf',
+        'All objects are `root:root`.','its ancestors are checked only for symbolic links.'))
+    # Each citation of the ancestor walk and of the owner checks names lines that hold what the text says.
+    walk=cited('r2d2_v2_sources',161,173);private=cited('r2d2_v2_sources',155,158)
+    assert walk.startswith('def _open_directory(root: Path) -> int:') and walk.count('_private_directory(fd)')==1
+    assert 'for part in root.parts[1:]:\n            new = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)' in walk
+    # The privacy check comes after the loop, on the last descriptor only; nothing in the walk reads an owner.
+    assert walk.index('_private_directory(fd)')>walk.index('fd = new') and 'st_uid' not in walk and 'st_uid' not in private
+    assert private.startswith('def _private_directory(fd: int) -> None:') and 'SOURCE_DIRECTORY_NOT_PRIVATE' in private
+    for module,first,last,text in (('r2d2_v2_massive_maintenance',21,23,'MASSIVE_MAINTENANCE_ROOT'),
+            ('r2d2_v2_massive_producer',124,126,'MASSIVE_PRODUCER_ROOT_UNSAFE'),('r2d2_v2_massive_sessions',195,196,'MASSIVE_SESSION_ROOT_OWNER')):
+        assert text in cited(module,first,last) and 'st_uid' in cited(module,first,last) and 'os.fstat(directory)' in cited(module,first,last)
+        assert '`'+module+'.py` lines %d–%d'%(first,last) in readme
+    assert 'any(p.is_symlink() for p in (root, *root.parents))' in cited('r2d2_v2_massive_journal',53)
+    spool=cited('r2d2_v2_massive_spool',62,72)
+    assert 'os.mkdir(part, mode=0o700, dir_fd=fd)' in spool and 'except FileExistsError:' in spool and 'os.O_NOFOLLOW, dir_fd=fd)' in spool
+    worker=cited('r2d2_v2_shadow_worker',55,70)
+    assert worker.startswith('def _with_massive_source(settings, source, release):')
+    assert 'SessionJournalRoot(settings.r2d2_v2_massive_journal_dir, release.epoch)' in worker
+    assert all(value in readme for value in ('(`_open_directory`, `r2d2_v2_sources.py` lines 161–173)','`_private_directory` (lines 155–158',
+        '(`MassiveJournal.open_reader`, `r2d2_v2_massive_journal.py` line 53)','(`MassiveSpool._open_root`, `r2d2_v2_massive_spool.py` lines 62–72)',
+        '(`_with_massive_source`, `r2d2_v2_shadow_worker.py` lines 55–70)'))
+
+
+def test_readme_reads_the_free_space_gate_on_the_journal_filesystem_and_attributes_host_facts_to_the_receipt():
+    from app import r2d2_v2_massive_producer as producer
+    readme=(UNIT_ROOT/'README.md').read_text()
+    floor=producer.MIN_SESSION_FREE_BYTES;session=producer.MAX_SESSION_EVIDENCE_BYTES+producer.MAX_SESSION_INDEX_BYTES;five=floor+5*session
+    data=RECEIPT_DATA_VOLUME_AVAILABLE;root=RECEIPT_ROOT_FILESYSTEM_AVAILABLE
+    assert (floor,session,five)==(53687091200,603979776,56706990080)
+    # The gate is read on the journal root, with the producer's own arithmetic.
+    assert ('4. Free space **on the journal root\'s filesystem**, read on the journal root itself (`df -B1 --output=avail <HOST_JOURNAL_ROOT>`), '
+        'is at least **%d bytes (the 50 GiB floor) plus %d bytes (576 MiB) for each session that will be retained before space is next '
+        'freed, plus the expected growth of every other writer on that filesystem over the same period**. For five sessions and no other '
+        'growth that is %d bytes.'%(floor,session,five)) in readme
+    assert cited('r2d2_v2_massive_producer',61,62)=="    capacity=os.fstatvfs(directory)\n    usage['free_bytes']=capacity.f_bavail*capacity.f_frsize"
+    assert cited('r2d2_v2_massive_producer',301)=='    with _producer_directory(root) as directory:'
+    assert cited('r2d2_v2_massive_producer',304)=='            before=_storage_usage(directory,sessions=True)'
+    assert "usage['free_bytes']<MIN_SESSION_FREE_BYTES" in cited('r2d2_v2_massive_producer',103)
+    assert "before['free_bytes']<MIN_SESSION_FREE_BYTES" in cited('r2d2_v2_massive_producer',307)
+    assert all(value in readme for value in ('`os.fstatvfs` on the descriptor of the journal directory, free bytes `f_bavail × f_frsize` '
+        '(`_storage_usage`, `r2d2_v2_massive_producer.py` lines 61–62; the descriptor is the journal root opened at line 301 and measured at line 304)',
+        'measured with `fstatvfs` on **the journal root\'s own filesystem**, whichever that is',
+        'Under placement A they are the writers of the root filesystem','Under placement B they are the writers of the data volume.',
+        'the producer stops when the **root filesystem** falls below 50 GiB','(`r2d2_v2_massive_producer.py` lines 103 and 307)',
+        '9. The placement: the journal root is at the signed host path, on the filesystem the authorisation names, and is not a mount point'))
+    assert not any(value in readme for value in ('--output=avail <data volume>','every other writer on the data volume over the same period',
+        'The data volume had about 50.4 GiB free on 2026-10-01'))
+    # The figures of both filesystems, each derived here from the receipt's two readings and the code's constants.
+    assert 0<data-floor<session and data<five<root
+    assert all(value in readme for value in (
+        '     | Filesystem | Bytes available | Against the floor (%d) | Against five sessions (%d) |'%(floor,five),
+        '     | data volume (placement B) | %d | %d above: less than one session (%d) | **%d short** |'%(data,data-floor,session,five-data),
+        '     | root filesystem `/` (placement A, only if the journal root\'s mount point is `/`) | %d | %d above | %d above |'%(root,root-floor,root-five),
+        'the data volume is %d bytes above the producer\'s floor, less than one session\'s own budget, while the root filesystem has %d '
+        'bytes available'%(data-floor,root),'%d bytes available, %d above the floor, less than one session\'s own budget'%(data,data-floor),
+        'with **%d bytes available**;'%data,'- the host\'s root filesystem: **%d bytes available**;'%root))
+    assert (data-floor,five-data,root-floor,root-five)==(383451136,2636447744,541525225472,538505326592)
+    # The second figure is the receipt's reading of "/". That placement A's journal root is on that filesystem is the
+    # expectation, not a receipt fact: the document says so where the placement is introduced and where the figure is used.
+    assert all(value in readme for value in (
+        'bytes available (see "Activation gate"). **That figure is the receipt\'s reading of `/`, not of the journal root**, which did not exist '
+        'yet: that `/var/lib` is on the root filesystem is the expectation, not a receipt fact, and the figure applies to placement A only if '
+        'the readback shows that the mount point of the journal root is `/` (operation 1 reads which filesystem it would be on; operations 2 '
+        'and 4 read its mount point back once it exists).',
+        '**That `/var/lib` is on the host\'s root filesystem is the expectation, not a receipt fact**: the receipt of 2026-10-02 measured the '
+        'bytes available on `/` and the absence of `/var/lib/c3po-bar`, and did not read which filesystem `/var/lib` belongs to. Operation 1 '
+        'reads which filesystem the journal root would be on; operations 2 and 4 read back its mount point once it exists. Wherever this document says "the root filesystem" for placement A, or uses the '
+        'receipt\'s figure for it, that holds only if the readback shows that mount point to be `/`.',
+        'The second row is the receipt\'s reading of `/`: the receipt did not read which filesystem `/var/lib` belongs to, so that row applies '
+        'to placement A only if the readback shows that the mount point of the journal root is `/`.',
+        '(for placement A the filesystem that holds `/var/lib`, expected to be the root filesystem; for placement B the data volume',
+        '- **The free-space floor is measured on the root filesystem**, if that is where the readback finds the journal root',
+        'Under placement A that is expected to be the host\'s root filesystem (the readback decides); under placement B, the data volume.',
+        '| as above | Expected on the root filesystem (operations 2 and 4 read its mount point back), created by operation 2'))
+    # Stated as settled, these were not receipt facts.
+    assert not any(value in readme for value in ('The host path is a new directory on the host\'s root filesystem',
+        'placement A: outside the data volume, on the host\'s root filesystem','| root filesystem (placement A) |',
+        'created new below `/var/lib/c3po-bar`, on the root filesystem |','| as above | On the root filesystem, created',
+        'Under placement A that is the host\'s root filesystem;','(the root filesystem for placement A;'))
+    # Attribution: one receipt, named once with its hash, and no host fact stated without it.
+    block=re.search(r'^\*\*The receipt of 2026-10-02\.\*\* .*?^The receipt did \*\*not\*\* observe [^\n]*$',readme,re.S|re.M)
+    assert block is not None and readme.count(RECEIPT_STDOUT_SHA256)==block.group(0).count(RECEIPT_STDOUT_SHA256)==1
+    assert ('is on record as operation `'+RECEIPT_OPERATION+'`, receipt stdout SHA-256 `'+RECEIPT_STDOUT_SHA256+'`') in block.group(0)
+    assert all(value in block.group(0) for value in ('A second read-only reading, on 2026-10-02 UTC',
+        '**the author of this document measured nothing on the host**',
+        '- Docker server 29.5.3, with the containerd snapshotter; no user-namespace remapping; not rootless;',
+        '- the `docker-init` executable at `/usr/libexec/docker/docker-init`;','- systemd 255;',
+        '- the data volume: the bind source of `/app/day-d-data`, a filesystem of its own, whose root directory is owned by uid 1000, gid 1000, mode 0755',
+        '- nothing of the supervisor provisioned, as on 2026-10-01.',
+        'The receipt did **not** observe the unit under systemd, a container start with `--init`, or any item of the rehearsal.'))
+    assert all(value in block.group(0) for value in ('Nor did it read **which filesystem `/var/lib` belongs to**: it measured the bytes available '
+        'on `/` and found no `/var/lib/c3po-bar`.','is therefore an expectation, not a fact of the receipt'))
+    facts=('29.5.3','/usr/libexec/docker/docker-init','systemd 255',str(data),str(root),'containerd snapshotter')
+    outside=readme.replace(block.group(0),'')
+    stated=[line for line in outside.splitlines() if any(fact in line for fact in facts) and not line.startswith('     | ')]
+    assert len(stated)>=7 and all('he receipt of 2026-10-02' in line for line in stated)
+    assert 'from the receipt of 2026-10-02 (operation `'+RECEIPT_OPERATION+'`), not measured by this document\'s author on the host:' in outside
+    # What the receipt did not observe keeps its wording, and the readback is not replaced by it.
+    assert all(value in readme for value in ('None of it has been observed on the production host.',
+        'A container start with `--init` on the host was not observed.','That the daemon starts a container with it was **not observed**',
+        'They do not replace the readback: operation 4 reads each of them again.',
+        'The gate is met by the readback of operation 4, on the journal root that operation 2 created, not by this table.'))
+    assert 'Which path the daemon resolves was not established' not in readme
+    # The smoke's journal target is still the shape of placement B, and the document says so instead of claiming more.
+    pipeline=(UNIT_ROOT.parents[2]/'.github'/'workflows'/'c3po-pipeline.yml').read_text()
+    assert '"@CONTAINER_JOURNAL_ROOT@": "'+PLACEMENTS['B'][1]+'",' in pipeline and PLACEMENTS['A'][1] not in pipeline
+    assert all(value in readme for value in ('The smoke renders `@CONTAINER_JOURNAL_ROOT@` as `'+PLACEMENTS['B'][1]+'`, the shape of placement B',
+        'Not proven anywhere yet: a journal mount target directly below `/` under `--read-only` (placement A\'s container path)',
+        '**The pipeline smoke still renders a container journal root of placement B\'s shape**'))
+
+
+def test_readme_states_what_placement_a_changes_and_never_requires_the_data_volume():
+    readme=(UNIT_ROOT/'README.md').read_text()
+    # The first draft's statements that held for the data volume only, in the words it used.
+    assert not any(value in readme for value in ('The journal root must be inside the data volume.','must be inside the data volume',
+        '`RequiresMountsFor` is inert if systemd has no mount unit for the data volume','A change of the data disk\'s device number',
+        'from the other root containers that mount the whole data volume read-write (api, r2d2-worker, shadow-candidate)'))
+    # What takes their place: each of the three bullets says what holds under placement A and what under placement B.
+    assert all(value in readme for value in (
+        'Under placement B those containers include the compose services that mount the whole data volume read-write (`api`, `r2d2-worker`, '
+        '`r2d2-shadow-candidate-worker`). Under placement A no compose service mounts the journal root, so the containers that can reach it are '
+        'the ones given the explicit bind; host root and anyone with Docker access still can. The token and the claims stay outside the data '
+        'volume in both placements for the same reason.',
+        '- `RequiresMountsFor` names the journal root, the state root and the configuration directory. Under placement A all three are expected '
+        'to be on the root filesystem, which is always mounted; if the readback confirms it, the line adds no real condition *(documented systemd '
+        'behaviour, not observed)*. In either case the unit does not depend on the data volume at all under placement A. Under placement B it is '
+        'inert if systemd has no mount unit for the data volume.',
+        '- A change of the device number of the journal root\'s filesystem across a reboot makes both sides refuse the root, because the catalog '
+        'binds device and inode; there is no in-code recovery. Under placement A that filesystem is expected to be the host\'s root filesystem, '
+        'under placement B it is the data disk. Whether either number is stable across reboots of this host was not observed.'))
+    # "Never a mount point" is about the host path: in a container the journal root is always a bind-mount target.
+    assert ('**On the host** it is never a filesystem root (a mount point); that is a statement about the host path only, because in every '
+        'container the journal root is the target of a bind mount and so a mount point there. It neither contains nor is contained in the '
+        'state root or the configuration directory.') in readme
+    assert 'Never a filesystem root on the host; nothing else may be placed inside it.' in readme
+    assert not any(value in readme for value in ('It is never a filesystem root (a mount point), and','Never a filesystem root; nothing else'))
+    # /app is the image's tree; /app/day-d-data is a mount target below it, not something the image holds.
+    assert ('- **The container path is outside `/app`**: one new top-level directory, for example `'+PLACEMENTS['A'][1]+'`, under the rule of '
+        '"Substitution grammar" (a single component below `/` that is not a directory the image or the runtime provides). `/app` is the '
+        'image\'s own tree, and `/app/day-d-data` below it is where the compose services, and a reader that also needs the data volume, mount '
+        'that volume.') in readme
+    assert 'holds `/app/day-d-data`' not in readme
+    dockerfile=(UNIT_ROOT.parents[1]/'backend'/'Dockerfile').read_text()
+    assert re.search(r'^WORKDIR /app$',dockerfile,re.M) and 'day-d-data' not in dockerfile
 
 
 def test_pipeline_exercises_rendered_unit_on_a_real_engine():
