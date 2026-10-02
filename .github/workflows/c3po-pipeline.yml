@@ -409,6 +409,425 @@ jobs:
           fi
           cat "$out/compose-capacity-bare-word.err" || exit 1
 
+      - name: Exercise the reader unit refusal against the backend image
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation)
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 5
+        # Renders the reader unit template (ExecCondition, ExecStartPre, ExecStart, ExecStop)
+        # and runs the image check and the start on a real engine with no network and no
+        # database: throwaway root-owned 0700 directories, the launcher bound read-only, and
+        # the three environment files with both collection flags off. The launcher must end
+        # in 78 with exactly one REFUSED line: READER_SESSION or READER_WINDOW outside the
+        # session windows of the epoch, READER_DISABLED inside one. A second start with
+        # another launcher hash in pins.env must end in READER_LAUNCHER_PIN: the pin file
+        # reaches the process, and the launcher hashes the bytes it was mounted with.
+        # The step reads nothing private: the database line of the smoke carries no value.
+        # Every guard is explicit; nothing here relies on `set -e`.
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/backend-runtime"
+          mkdir -p "$out" || exit 1
+          show() {
+            local item
+            for item in "$out"/reader-refusal-*.txt "$out"/reader-refusal-*.log; do
+              [ -f "$item" ] || continue
+              echo "----- $item"; cat "$item"; echo
+            done
+          }
+          fail() { echo "$1" >&2; show >&2; exit 1; }
+          launcher=c3po/deployment/reader/reader_launcher.py
+          [ -x /usr/bin/docker ] || fail "docker is not at /usr/bin/docker"
+          [ -f "$launcher" ] || fail "the reader launcher is not in the checkout"
+          id="$(docker image inspect --format '{{.Id}}' c3po/backend:pr-validation)" || fail "the validation image is absent"
+          [[ "$id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "unexpected image id: $id"
+          pin="$(sha256sum "$launcher" | cut -d ' ' -f 1)" || fail "the launcher could not be hashed"
+          [[ "$pin" =~ ^[0-9a-f]{64}$ ]] || fail "unexpected launcher hash"
+          echo "$pin" > "$out/reader-refusal-launcher-sha256.txt" || fail "the launcher hash could not be recorded"
+          stage="$(mktemp -d)" || fail "no staging directory"
+          base="$(sudo mktemp -d)" || fail "no throwaway directory"
+          [[ "$base" == /* && "$base" != *@* ]] || fail "unusable throwaway directory"
+          sudo install -d -m 0700 -o 0 -g 0 "$base/data" "$base/capacity" "$base/etc" \
+            "$base/etc/docker-cli" "$base/etc/launcher" || fail "the throwaway directories could not be created"
+          python3 - "$id" "$base" "$out" "$stage" reader-refusal "$pin" false <<'PY' || fail "the reader unit could not be rendered"
+          import re, shlex, sys
+          image, base, out, stage, prefix, pin, flag = sys.argv[1:]
+          if re.fullmatch(r"[0-9a-f]{64}", pin) is None or flag not in ("true", "false"):
+              sys.exit("unexpected launcher hash or flag value")
+          unit = open("c3po/deployment/reader/c3po-reader.service", encoding="utf-8").read()
+          joined = unit.replace("\\\n", " ").splitlines()
+          values = {
+              "@IMAGE_ID@": image,
+              "@HOST_DATA_ROOT@": base + "/data",
+              "@HOST_CAPACITY_ROOT@": base + "/capacity",
+              "@HOST_CONFIG_DIR@": base + "/etc",
+              "@NETWORK@": "none",
+          }
+          if set(re.findall(r"@[A-Z_]+@", unit)) != set(values):
+              sys.exit("unit template no longer matches the five documented substitutions")
+          def rendered(key, lead, count):
+              # Lines of one key whose command starts with `lead`; the optional-failure dash is not part of the command.
+              found = [line[len(key) + 1:].lstrip("-") for line in joined if line.startswith(key + "=" + lead)]
+              if len(found) != count:
+                  sys.exit("unit template no longer has %d %s line(s) starting with '%s'" % (count, key, lead))
+              result = []
+              for command in found:
+                  for name, value in values.items():
+                      command = command.replace(name, value)
+                  if "@" in command:
+                      sys.exit("a placeholder survived the render")
+                  result.append(shlex.split(command))
+              return result
+          argv, = rendered("ExecStart", "/", 1)
+          check, = rendered("ExecStartPre", "/", 1)
+          stop, = rendered("ExecStop", "-/", 1)
+          files = [base + "/etc/" + name + ".env" for name in ("secret", "pins", "activation")]
+          if argv[:2] != ["/usr/bin/docker", "run"] or argv.count(image) != 1 or "--init" not in argv:
+              sys.exit("rendered ExecStart is not a docker run --init of the pinned image id")
+          if argv[argv.index(image):] != [image, "python", "-I", "-B", "/c3po-reader/reader_launcher.py"]:
+              sys.exit("rendered ExecStart does not end in the launcher command")
+          if [argv[at + 1] for at, value in enumerate(argv) if value == "--env-file"] != files:
+              sys.exit("rendered ExecStart does not read exactly the three environment files")
+          if rendered("ExecCondition", "/", 3) != [["/usr/bin/test", "-f", path] for path in files]:
+              sys.exit("rendered ExecCondition lines do not name the three environment files")
+          if check != ["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", image]:
+              sys.exit("rendered ExecStartPre is not the image check of the pinned image id")
+          if stop != ["/usr/bin/docker", "stop", "-t", "25", "c3po-reader"]:
+              sys.exit("rendered ExecStop is not the stop of the reader container")
+          for name, value in (("argv", argv), ("check-argv", check), ("stop-argv", stop)):
+              with open(out + "/" + prefix + "-" + name + ".bin", "w", encoding="utf-8") as output:
+                  output.write("\0".join(value) + "\0")
+          # Synthetic, non-private values in the documented order of pins.env.
+          zero = "0" * 64
+          pins = [
+              "C3PO_BUILD_SHA=" + zero[:40],
+              "C3PO_R2D2_V2_SHADOW_RELEASE_FILE=/app/day-d-data/smoke/release.json",
+              "C3PO_R2D2_V2_SHADOW_RELEASE_SHA=" + zero,
+              "C3PO_R2D2_V2_SHADOW_SOURCE_DIR=/app/day-d-data/smoke/source",
+              "C3PO_R2D2_MICROSTRUCTURE_RAW_DIR=/app/day-d-data/provider=eodhd/microstructure/raw",
+              "C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=/app/day-d-data/smoke/journal",
+              "C3PO_R2D2_V2_CAPACITY_REQUIRED=true",
+              "C3PO_R2D2_V2_CAPACITY_VETO_MODE=DISPATCH_AND_DERIVATION_ONLY",
+              "C3PO_R2D2_V2_CAPACITY_CONFIG_FILE=/c3po-capacity/config/smoke.json",
+              "C3PO_R2D2_V2_CAPACITY_CONFIG_SHA=" + zero,
+              "C3PO_R2D2_V2_SHADOW_POLL_SECONDS=1.0",
+          ]
+          def pinned(value):
+              return "\n".join(pins + ["C3PO_READER_LAUNCHER_SHA256=" + value]) + "\n"
+          database = "C3PO_DATABASE_URL=\n"
+          flags = "".join("C3PO_R2D2_V2_%s_ENABLED=%s\n" % (name, flag) for name in ("SHADOW", "MASSIVE_BARS"))
+          for name, body in (("secret", database), ("pins", pinned(pin)), ("pins-other", pinned(zero)), ("activation", flags)):
+              with open(stage + "/" + name + ".env", "x", encoding="utf-8") as output:
+                  output.write(body)
+          PY
+          mapfile -d '' -t argv < "$out/reader-refusal-argv.bin" || fail "the rendered ExecStart could not be read"
+          mapfile -d '' -t check < "$out/reader-refusal-check-argv.bin" || fail "the rendered ExecStartPre could not be read"
+          [ "${#argv[@]}" -ge 40 ] || fail "rendered ExecStart is too short"
+          [ "${#check[@]}" -eq 6 ] || fail "rendered ExecStartPre has the wrong length"
+          printf '%q ' "${argv[@]}" > "$out/reader-refusal-command.txt" || fail "the rendered command could not be recorded"
+          sudo install -m 0600 -o 0 -g 0 "$launcher" "$base/etc/launcher/reader_launcher.py" || fail "the launcher could not be placed"
+          for name in secret pins activation; do
+            sudo install -m 0600 -o 0 -g 0 "$stage/$name.env" "$base/etc/$name.env" || fail "$name.env could not be placed"
+            sudo /usr/bin/test -f "$base/etc/$name.env" || fail "the rendered condition on $name.env does not hold"
+          done
+          seen="$(sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${check[@]}")" || fail "the rendered image check failed"
+          [ "$seen" = "$id" ] || fail "the rendered image check printed $seen, expected $id"
+          refusal() {
+            # $1 names the run, the rest are the codes it may end in.
+            local name="$1" rc=0
+            shift
+            sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${argv[@]}" \
+              > "$out/reader-refusal-$name-stdout.log" 2> "$out/reader-refusal-$name-stderr.log" || rc=$?
+            echo "reader exit status ($name): $rc" > "$out/reader-refusal-$name-exit.txt" || return 1
+            [ "$rc" -eq 78 ] || { echo "expected the terminal refusal 78, got $rc" >&2; return 1; }
+            python3 - "$out/reader-refusal-$name-stdout.log" "$@" <<'PY' || return 1
+          import json, sys
+          lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+          if len(lines) != 1:
+              sys.exit("expected exactly one stdout line, got %d" % len(lines))
+          event = json.loads(lines[0])
+          if set(event) != {"status", "code", "restart_allowed", "session", "at"}:
+              sys.exit("unexpected fields in the refusal notice")
+          if event["status"] != "REFUSED" or event["restart_allowed"] is not False or event["code"] not in sys.argv[2:]:
+              sys.exit("unexpected refusal notice")
+          print("refusal code: " + event["code"])
+          PY
+            cat "$out/reader-refusal-$name-stdout.log" "$out/reader-refusal-$name-exit.txt" || return 1
+          }
+          refusal flags-off READER_SESSION READER_WINDOW READER_DISABLED || fail "the reader did not refuse as documented"
+          sudo install -m 0600 -o 0 -g 0 "$stage/pins-other.env" "$base/etc/pins.env" || fail "pins.env could not be replaced"
+          refusal other-pin READER_LAUNCHER_PIN || fail "another launcher hash in pins.env was not refused"
+          left="$(sudo find "$base/data" "$base/capacity" -mindepth 1)" || fail "the mount sources could not be listed"
+          [ -z "$left" ] || fail "the refusal left an object in a mount source"
+          containers="$(docker ps -a --filter 'name=^c3po-reader$' -q)" || fail "the containers could not be listed"
+          [ -z "$containers" ] || fail "leftover c3po-reader container"
+
+      - name: Exercise the reader stop against the backend image
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation)
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 5
+        # Runs the rendered ExecStart of the reader unit on a real engine with one change:
+        # the command is a driver that calls the launcher's own main() with its two test
+        # seams, a clock frozen one hour before the open of the first session in the image
+        # and a sleeping stand-in instead of the worker. Both flags are on (the constant
+        # bytes of activation.env); no worker, no network and no database are involved.
+        # Once the stand-in is visible in the container, the rendered ExecStop (docker stop)
+        # must end the start with exit 0, a STARTING and a STOPPED notice with the child
+        # ended by SIGTERM and not killed, no container and no stand-in process left.
+        # What it does not exercise: the worker itself, systemd, and the launcher's own
+        # clock and phases (the refusal step above runs the unmodified command).
+        # Every guard is explicit; nothing here relies on `set -e`.
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/backend-runtime"
+          mkdir -p "$out" || exit 1
+          show() {
+            local item
+            for item in "$out"/reader-stop-*.txt "$out"/reader-stop-*.log; do
+              [ -f "$item" ] || continue
+              echo "----- $item"; cat "$item"; echo
+            done
+          }
+          fail() {
+            echo "$1" >&2; show >&2
+            docker rm --force c3po-reader > /dev/null 2>&1 || true
+            exit 1
+          }
+          launcher=c3po/deployment/reader/reader_launcher.py
+          marker=c3po-reader-stand-in-worker
+          [ -x /usr/bin/docker ] || fail "docker is not at /usr/bin/docker"
+          [ -f "$launcher" ] || fail "the reader launcher is not in the checkout"
+          command -v pgrep > /dev/null || fail "pgrep is not available"
+          id="$(docker image inspect --format '{{.Id}}' c3po/backend:pr-validation)" || fail "the validation image is absent"
+          [[ "$id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "unexpected image id: $id"
+          pin="$(sha256sum "$launcher" | cut -d ' ' -f 1)" || fail "the launcher could not be hashed"
+          [[ "$pin" =~ ^[0-9a-f]{64}$ ]] || fail "unexpected launcher hash"
+          stage="$(mktemp -d)" || fail "no staging directory"
+          base="$(sudo mktemp -d)" || fail "no throwaway directory"
+          [[ "$base" == /* && "$base" != *@* ]] || fail "unusable throwaway directory"
+          sudo install -d -m 0700 -o 0 -g 0 "$base/data" "$base/capacity" "$base/etc" \
+            "$base/etc/docker-cli" "$base/etc/launcher" || fail "the throwaway directories could not be created"
+          python3 - "$id" "$base" "$out" "$stage" reader-stop "$pin" true <<'PY' || fail "the reader unit could not be rendered"
+          import re, shlex, sys
+          image, base, out, stage, prefix, pin, flag = sys.argv[1:]
+          if re.fullmatch(r"[0-9a-f]{64}", pin) is None or flag not in ("true", "false"):
+              sys.exit("unexpected launcher hash or flag value")
+          unit = open("c3po/deployment/reader/c3po-reader.service", encoding="utf-8").read()
+          joined = unit.replace("\\\n", " ").splitlines()
+          values = {
+              "@IMAGE_ID@": image,
+              "@HOST_DATA_ROOT@": base + "/data",
+              "@HOST_CAPACITY_ROOT@": base + "/capacity",
+              "@HOST_CONFIG_DIR@": base + "/etc",
+              "@NETWORK@": "none",
+          }
+          if set(re.findall(r"@[A-Z_]+@", unit)) != set(values):
+              sys.exit("unit template no longer matches the five documented substitutions")
+          def rendered(key, lead, count):
+              # Lines of one key whose command starts with `lead`; the optional-failure dash is not part of the command.
+              found = [line[len(key) + 1:].lstrip("-") for line in joined if line.startswith(key + "=" + lead)]
+              if len(found) != count:
+                  sys.exit("unit template no longer has %d %s line(s) starting with '%s'" % (count, key, lead))
+              result = []
+              for command in found:
+                  for name, value in values.items():
+                      command = command.replace(name, value)
+                  if "@" in command:
+                      sys.exit("a placeholder survived the render")
+                  result.append(shlex.split(command))
+              return result
+          argv, = rendered("ExecStart", "/", 1)
+          check, = rendered("ExecStartPre", "/", 1)
+          stop, = rendered("ExecStop", "-/", 1)
+          files = [base + "/etc/" + name + ".env" for name in ("secret", "pins", "activation")]
+          if argv[:2] != ["/usr/bin/docker", "run"] or argv.count(image) != 1 or "--init" not in argv:
+              sys.exit("rendered ExecStart is not a docker run --init of the pinned image id")
+          if argv[argv.index(image):] != [image, "python", "-I", "-B", "/c3po-reader/reader_launcher.py"]:
+              sys.exit("rendered ExecStart does not end in the launcher command")
+          if [argv[at + 1] for at, value in enumerate(argv) if value == "--env-file"] != files:
+              sys.exit("rendered ExecStart does not read exactly the three environment files")
+          if rendered("ExecCondition", "/", 3) != [["/usr/bin/test", "-f", path] for path in files]:
+              sys.exit("rendered ExecCondition lines do not name the three environment files")
+          if check != ["/usr/bin/docker", "image", "inspect", "--format", "{{.Id}}", image]:
+              sys.exit("rendered ExecStartPre is not the image check of the pinned image id")
+          if stop != ["/usr/bin/docker", "stop", "-t", "25", "c3po-reader"]:
+              sys.exit("rendered ExecStop is not the stop of the reader container")
+          for name, value in (("argv", argv), ("check-argv", check), ("stop-argv", stop)):
+              with open(out + "/" + prefix + "-" + name + ".bin", "w", encoding="utf-8") as output:
+                  output.write("\0".join(value) + "\0")
+          # Synthetic, non-private values in the documented order of pins.env.
+          zero = "0" * 64
+          pins = [
+              "C3PO_BUILD_SHA=" + zero[:40],
+              "C3PO_R2D2_V2_SHADOW_RELEASE_FILE=/app/day-d-data/smoke/release.json",
+              "C3PO_R2D2_V2_SHADOW_RELEASE_SHA=" + zero,
+              "C3PO_R2D2_V2_SHADOW_SOURCE_DIR=/app/day-d-data/smoke/source",
+              "C3PO_R2D2_MICROSTRUCTURE_RAW_DIR=/app/day-d-data/provider=eodhd/microstructure/raw",
+              "C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR=/app/day-d-data/smoke/journal",
+              "C3PO_R2D2_V2_CAPACITY_REQUIRED=true",
+              "C3PO_R2D2_V2_CAPACITY_VETO_MODE=DISPATCH_AND_DERIVATION_ONLY",
+              "C3PO_R2D2_V2_CAPACITY_CONFIG_FILE=/c3po-capacity/config/smoke.json",
+              "C3PO_R2D2_V2_CAPACITY_CONFIG_SHA=" + zero,
+              "C3PO_R2D2_V2_SHADOW_POLL_SECONDS=1.0",
+          ]
+          def pinned(value):
+              return "\n".join(pins + ["C3PO_READER_LAUNCHER_SHA256=" + value]) + "\n"
+          database = "C3PO_DATABASE_URL=\n"
+          flags = "".join("C3PO_R2D2_V2_%s_ENABLED=%s\n" % (name, flag) for name in ("SHADOW", "MASSIVE_BARS"))
+          for name, body in (("secret", database), ("pins", pinned(pin)), ("pins-other", pinned(zero)), ("activation", flags)):
+              with open(stage + "/" + name + ".env", "x", encoding="utf-8") as output:
+                  output.write(body)
+          PY
+          cat > "$stage/stop_driver.py" <<'PY' || fail "the driver could not be written"
+          import importlib.util, os, sys
+          from datetime import date, timedelta
+          here = os.path.dirname(os.path.abspath(__file__))
+          spec = importlib.util.spec_from_file_location("c3po_reader_launcher", os.path.join(here, "reader_launcher.py"))
+          launcher = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(launcher)
+          sys.path.insert(0, launcher.APP_ROOT)
+          from app.r2d2_v2_calendar import ShadowCalendar
+          from app.r2d2_v2_epoch_assembler import SESSIONS
+          # One hour before the open of the first session: inside the pre-open phase, for as long as the smoke runs.
+          frozen = ShadowCalendar().details(date.fromisoformat(sorted(SESSIONS)[0]))["open"] - timedelta(hours=1)
+          stand_in = [sys.executable, "-I", "-B", "-c", "import time; time.sleep(3600)", "c3po-reader-stand-in-worker"]
+          raise SystemExit(launcher.main([], utcnow=lambda: frozen, child_argv=stand_in))
+          PY
+          mapfile -d '' -t argv < "$out/reader-stop-argv.bin" || fail "the rendered ExecStart could not be read"
+          mapfile -d '' -t stop < "$out/reader-stop-stop-argv.bin" || fail "the rendered ExecStop could not be read"
+          [ "${#argv[@]}" -ge 40 ] || fail "rendered ExecStart is too short"
+          [ "${#stop[@]}" -eq 5 ] || fail "rendered ExecStop has the wrong length"
+          last=$(( ${#argv[@]} - 1 ))
+          [ "${argv[$last]}" = /c3po-reader/reader_launcher.py ] || fail "rendered ExecStart does not end in the launcher"
+          argv[$last]=/c3po-reader/stop_driver.py
+          printf '%q ' "${argv[@]}" > "$out/reader-stop-command.txt" || fail "the command could not be recorded"
+          sudo install -m 0600 -o 0 -g 0 "$launcher" "$base/etc/launcher/reader_launcher.py" || fail "the launcher could not be placed"
+          sudo install -m 0600 -o 0 -g 0 "$stage/stop_driver.py" "$base/etc/launcher/stop_driver.py" || fail "the driver could not be placed"
+          for name in secret pins activation; do
+            sudo install -m 0600 -o 0 -g 0 "$stage/$name.env" "$base/etc/$name.env" || fail "$name.env could not be placed"
+          done
+          sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${argv[@]}" \
+            > "$out/reader-stop-stdout.log" 2> "$out/reader-stop-stderr.log" &
+          runner=$!
+          running=0
+          for _ in $(seq 1 120); do
+            if docker top c3po-reader > "$out/reader-stop-top.txt" 2> /dev/null \
+              && [ "$(grep -c -- "$marker" "$out/reader-stop-top.txt")" -eq 1 ]; then
+              running=1
+              break
+            fi
+            sudo kill -0 "$runner" 2> /dev/null || break
+            sleep 0.5
+          done
+          [ "$running" -eq 1 ] || fail "the stand-in child never appeared in the container"
+          init="$(docker inspect --format '{{.HostConfig.Init}}' c3po-reader)" || fail "the container could not be inspected"
+          [ "$init" = true ] || fail "the container does not run under docker-init"
+          started=$SECONDS
+          sudo env "DOCKER_CONFIG=$base/etc/docker-cli" "${stop[@]}" > "$out/reader-stop-docker-stop.log" 2>&1 \
+            || fail "the rendered ExecStop failed"
+          rc=0
+          wait "$runner" || rc=$?
+          elapsed=$(( SECONDS - started ))
+          echo "reader exit status after docker stop: $rc, after ${elapsed}s" > "$out/reader-stop-exit.txt" \
+            || fail "the exit status could not be recorded"
+          cat "$out/reader-stop-stdout.log" "$out/reader-stop-exit.txt" || fail "the notices could not be read"
+          [ "$rc" -eq 0 ] || fail "expected exit 0 after docker stop, got $rc"
+          [ "$elapsed" -lt 20 ] || fail "the stop took ${elapsed}s: the child was not ended by SIGTERM"
+          python3 - "$out/reader-stop-stdout.log" "$pin" <<'PY' || fail "unexpected notices"
+          import json, sys
+          path, pin = sys.argv[1:]
+          events = [json.loads(line) for line in open(path, encoding="utf-8").read().splitlines()]
+          if [event.get("status") for event in events] != ["STARTING", "STOPPED"]:
+              sys.exit("expected one STARTING and one STOPPED notice, got %d line(s)" % len(events))
+          starting, stopped = events
+          # Every value below reached the process through pins.env, and the notice exists only
+          # because activation.env set both flags. Nothing here shows that secret.env was read.
+          pins = {"phase": "PRE_OPEN", "build_sha": "0" * 40, "release_sha": "0" * 64, "capacity_config_sha": "0" * 64,
+                  "capacity_required": True, "launcher_sha256": pin, "launcher_pinned": True}
+          if any(starting.get(name) != value for name, value in pins.items()):
+              sys.exit("the STARTING notice does not carry the pins of the environment files")
+          ended = {"reason": "SIGNAL", "phase": "PRE_OPEN", "child_signal": "SIGTERM", "child_exit": None, "killed": False,
+                   "status_lines": 0, "status_withheld": 0, "dropped_lines": 0}
+          if any(stopped.get(name, "absent") != value for name, value in ended.items()):
+              sys.exit("the STOPPED notice does not show a child ended by SIGTERM")
+          PY
+          containers="$(docker ps -a --filter 'name=^c3po-reader$' -q)" || fail "the containers could not be listed"
+          [ -z "$containers" ] || fail "leftover c3po-reader container"
+          if pgrep -f -- "$marker" > "$out/reader-stop-left.txt"; then
+            fail "the stand-in child is still running"
+          fi
+          left="$(sudo find "$base/data" "$base/capacity" -mindepth 1)" || fail "the mount sources could not be listed"
+          [ -z "$left" ] || fail "the run left an object in a mount source"
+
+      - name: Exercise the manifest writer off path against the backend image
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation)
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 5
+        # Feeds the capacity-day manifest writer on standard input to `python -I -B -` in a
+        # container of the validation image, with the option set its document prescribes for
+        # the dispatch, no network, only the writable bind of the manifest directory, and the
+        # shadow flag off. The script must find the application of the image, print exactly
+        # one receipt line with REFUSED / MANIFEST_SHADOW_OFF, print nothing on standard
+        # error, end in 3, and leave the manifest directory empty and no container.
+        # Nothing private is read: the smoke has no database, no release and no capacity tree.
+        # Every guard is explicit; nothing here relies on `set -e`.
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/backend-runtime"
+          mkdir -p "$out" || exit 1
+          show() {
+            local item
+            for item in "$out"/writer-off-*.txt "$out"/writer-off-*.log; do
+              [ -f "$item" ] || continue
+              echo "----- $item"; cat "$item"; echo
+            done
+          }
+          fail() { echo "$1" >&2; show >&2; exit 1; }
+          script=c3po/deployment/capacity-day/manifest_writer.py
+          [ -x /usr/bin/docker ] || fail "docker is not at /usr/bin/docker"
+          [ -f "$script" ] || fail "the manifest writer is not in the checkout"
+          id="$(docker image inspect --format '{{.Id}}' c3po/backend:pr-validation)" || fail "the validation image is absent"
+          [[ "$id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "unexpected image id: $id"
+          sha256sum "$script" | cut -d ' ' -f 1 > "$out/writer-off-script-sha256.txt" || fail "the script could not be hashed"
+          base="$(sudo mktemp -d)" || fail "no throwaway directory"
+          [[ "$base" == /* && "$base" != *,* ]] || fail "unusable throwaway directory"
+          sudo install -d -m 0700 -o 0 -g 0 "$base/manifests" "$base/docker-cli" || fail "the throwaway directories could not be created"
+          argv=(/usr/bin/docker run --rm -i --name c3po-capacity-day-smoke --pull never --init
+            --user 0:0 --network none --read-only --cap-drop ALL --security-opt no-new-privileges
+            --mount "type=bind,source=$base/manifests,target=/etc/c3po-bar/manifests"
+            --env C3PO_R2D2_V2_SHADOW_ENABLED=false
+            "$id" python -I -B - --day 2026-10-05 --manifest-directory /etc/c3po-bar/manifests)
+          printf '%q ' "${argv[@]}" > "$out/writer-off-command.txt" || fail "the command could not be recorded"
+          rc=0
+          sudo env "DOCKER_CONFIG=$base/docker-cli" "${argv[@]}" < "$script" \
+            > "$out/writer-off-stdout.log" 2> "$out/writer-off-stderr.log" || rc=$?
+          echo "manifest writer exit status: $rc" > "$out/writer-off-exit.txt" || fail "the exit status could not be recorded"
+          cat "$out/writer-off-stdout.log" "$out/writer-off-exit.txt" || fail "the receipt could not be read"
+          [ "$rc" -eq 3 ] || fail "expected the refusal status 3, got $rc"
+          [ ! -s "$out/writer-off-stderr.log" ] || fail "the writer printed on standard error"
+          python3 - "$out/writer-off-stdout.log" <<'PY' || fail "unexpected receipt"
+          import json, sys
+          text = open(sys.argv[1], encoding="utf-8").read()
+          if text.count("\n") != 1 or not text.endswith("\n"):
+              sys.exit("expected exactly one stdout line")
+          expected = {"schema": "R2D2_V2_BAR_MANIFEST_WRITER_RECEIPT_V1", "status": "REFUSED", "code": "MANIFEST_SHADOW_OFF",
+                      "session": "2026-10-05", "mode": "PUBLISH"}
+          if json.loads(text) != expected:
+              sys.exit("the receipt is not the documented off refusal")
+          PY
+          left="$(sudo find "$base/manifests" -mindepth 1)" || fail "the manifest directory could not be listed"
+          [ -z "$left" ] || fail "the off path wrote into the manifest directory"
+          containers="$(docker ps -a --filter 'name=^c3po-capacity-day-smoke$' -q)" || fail "the containers could not be listed"
+          [ -z "$containers" ] || fail "leftover c3po-capacity-day-smoke container"
+
       - name: Publish backend runtime check
         if: >-
           always() &&

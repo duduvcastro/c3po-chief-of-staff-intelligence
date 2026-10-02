@@ -2,7 +2,7 @@
 
 Offline candidate. Nothing here has been installed, mounted, dispatched or run on a host or in a container.
 
-**Unverified on the host.** Every Docker and host behaviour described in this document comes from documentation, from the code and from offline tests. None of it has been observed on the production host or on any Docker engine. Statements marked *(unverified)* are the ones a reviewer could not support from the repository at all. "Not verified" near the end lists them together.
+**Unverified on the host.** Every Docker and host behaviour described in this document comes from documentation, from the code and from offline tests. None of it has been observed on the production host or on any Docker engine. The pipeline has one step for `manifest_writer.py`, described under "Not verified"; it had not run when this revision was written, and it runs on the CI runner, not on the host. Statements marked *(unverified)* are the ones a reviewer could not support from the repository at all. "Not verified" near the end lists them together.
 
 This directory holds deployment scripts. They are **not part of the pinned implementation package**: nothing under `c3po/backend/app` changes because of them and `implementation_package_sha` does not move. Each script is pinned by SHA-256 in the authorisation of the run that uses it, and it only imports and calls the packaged code of the deployed image.
 
@@ -339,6 +339,10 @@ Nothing in this list was observed; each item is a host or engine fact, or a meas
 - A `--preflight` in the dispatch layout with `--manifest-directory`: not scheduled anywhere in this repository.
 - A stop while parked, a kill inside the view, and what `--rm` leaves behind.
 - The host payload itself, its envelope, its transport limit against a 15-minute parked container, and its receipts: not in this repository.
+
+**Pipeline step (written, not yet run).** `Exercise the manifest writer off path against the backend image`, in `.github/workflows/c3po-pipeline.yml`, feeds this script on standard input to `python -I -B -` in a container of the validation image on the runner's Docker: `--rm -i --init --pull never --user 0:0 --network none --read-only --cap-drop ALL --security-opt no-new-privileges`, the image by ID, one writable bind at `/etc/c3po-bar/manifests`, and `C3PO_R2D2_V2_SHADOW_ENABLED=false`. It requires exit 3, exactly one line with `REFUSED` and `MANIFEST_SHADOW_OFF`, nothing on standard error, an empty manifest directory and no container left. It runs on pull requests and remediation dispatches only and needs no secret. It had not run when this revision was written: until a pipeline run of this revision is recorded, the list above stands unchanged.
+
+A pass covers the first item of that list only as far as the off refusal goes, and only on the CI runner: the isolated interpreter reading the script from standard input, the application found at `/app`, the packaged modules that `packaged()` imports loading under that option set, the nested mount target, and exit 3 through `docker-init` and `--rm`. It builds no context: no release, no capacity config, no database, no GO, no view, no write. `test_r2d2_v2_deployment_pipeline_smokes.py` pins the step and feeds the real output of the script, run offline with the step's own arguments, to the step's own receipt check; it runs no docker command.
 
 ## Offline verification
 
