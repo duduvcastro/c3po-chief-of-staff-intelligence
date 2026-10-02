@@ -216,7 +216,10 @@ def epoch_inputs(pins, roots=None):
             'pins_env': {'path': '/etc/c3po-reader/pins.env', 'sha256': h('pins-env')},
             'secret_env_path': '/etc/c3po-reader/secret.env', 'docker_config': '/etc/c3po-reader/docker-cli',
             'manifest_directory': '/etc/c3po-bar/manifests',
+            # The dispatch layout of README.md: data volume, the producer's journal root at its own top-level
+            # container path (read-only, outside the data volume), capacity tree, and the one writable bind.
             'mounts': [{'source': '/mnt/day-d-data', 'target': '/app/day-d-data', 'readonly': True},
+                       {'source': '/var/lib/c3po-bar/journal', 'target': '/c3po-journal', 'readonly': True},
                        {'source': '/srv/c3po-capacity', 'target': parent, 'readonly': True},
                        {'source': '/etc/c3po-bar/manifests', 'target': '/etc/c3po-bar/manifests',
                         'readonly': False}]}}
@@ -587,6 +590,7 @@ MALFORMED_EPOCH = [
     (('dispatch', 'authority_sha256'), None, 'DOCUMENTS_INPUT_DISPATCH_AUTHORITY_SHA256'),
     (('dispatch', 'writer_sha256'), KeyError, 'DOCUMENTS_INPUT_DISPATCH'),
     (('dispatch', 'mounts', 0, 'readonly'), False, 'DOCUMENTS_DISPATCH_WRITABLE_MOUNT'),
+    (('dispatch', 'mounts', 1, 'readonly'), False, 'DOCUMENTS_DISPATCH_WRITABLE_MOUNT'),      # a writable journal bind
     (('dispatch', 'manifest_directory'), '/etc/c3po-bar', 'DOCUMENTS_DISPATCH_WRITABLE_MOUNT'),
 ]
 
@@ -1211,6 +1215,7 @@ REQUEST_CHANGES = {
     'writer_argv names': lambda r: r['writer_argv'].extend(['ZZQA', 'ZZQB']),
     'writer_argv other directory': lambda r: r['writer_argv'].__setitem__(3, '/etc/c3po-bar'),
     'a second writable mount': lambda r: r['mounts'][0].update(readonly=False),
+    'a writable journal mount': lambda r: r['mounts'][1].update(readonly=False),
     'network of the host': lambda r: r.update(network='host'),
     'image by name': lambda r: r.update(image_id='c3po/backend:production'),
     'documentary view': lambda r: r['documentary'].update(veto_view_sha256=h('another view')),
@@ -1331,6 +1336,18 @@ def test_what_verify_cannot_tell_is_named_in_its_line(tmp_path, chain):
     assert (code, answer['status']) == (0, 'VERIFIED')
     assert answer['sha256sums_sha256'] != line['sha256sums_sha256']
     assert answer['capacity_config_sha256'] != line['capacity_config_sha256']
+    # The journal bind is such a host fact: the tool never sees the journal directory (a line of pins.env, of which
+    # it has the hash), so a REQUEST without the bind, or with it under the data volume, is not refused here.
+    for name, change in (('journal-absent', lambda r: r['mounts'].pop(1)),
+                         ('journal-leaf', lambda r: r['mounts'][1].update(target='/app/day-d-data/journal'))):
+        line, out, summary = rebuilt(world, tmp_path, name)
+        request = json.loads((out / summary['roles']['request']).read_bytes())
+        assert [(mount['target'], mount['readonly']) for mount in request['mounts']][:2] == [
+            ('/app/day-d-data', True), ('/c3po-journal', True)] and len(request['mounts']) == 4
+        change_json(out, summary['roles']['request'], change)
+        carry(out, summary)
+        code, answer = run('verify', '--directory', out, '--chain-directory', world.chain_directory)
+        assert (code, answer['status'], answer['inputs']) == (0, 'VERIFIED', 'NOT_COMPARED')
 
 
 def test_without_the_chain_the_records_must_still_agree_with_the_go(tmp_path, chain):
@@ -1714,7 +1731,7 @@ def test_readme_states_the_open_decisions_the_commands_and_what_is_unverified():
     assert len(MALFORMED_EPOCH) + len(MALFORMED_SESSION) > 80 and 'more than eighty malformed values' in text
     for count, cases, phrase in ((13, REUSED, 'thirteen pairs'), (16, FREE_FORM, 'Sixteen shapes'),
                                  (6, PLAN_FIELDS, 'six changes of plan fields'),
-                                 (42, REQUEST_CHANGES, 'forty-two changes of the REQUEST'),
+                                 (43, REQUEST_CHANGES, 'forty-three changes of the REQUEST'),
                                  (14, GO_CHANGES, 'fourteen of the dispatch GO'),
                                  (16, SUMMARY_CHANGES, 'sixteen changes of `SUMMARY.json`')):
         assert len(cases) == count and phrase in text

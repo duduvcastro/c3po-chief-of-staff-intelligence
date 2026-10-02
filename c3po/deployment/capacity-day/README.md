@@ -100,17 +100,28 @@ Because the script is outside the package, a defect found after the package is f
 
 ## What the host payload must provide
 
-The container is the reader's container with one more bind. Same image ID, same uid, same network.
+The container is the reader's container without the launcher bind and with one writable bind more. Same image ID, same uid, same network, and the reader's three read-only binds of data, journal and capacity, each written exactly as in the installed reader unit.
 
-**Mounts — exactly three:**
+**Mounts — exactly four:**
 
 | Host | Container | Mode | Why |
 | --- | --- | --- | --- |
-| the data volume | `/app/day-d-data` | **read-only** | the release file and the journal catalog, both read by the collector that `--prepare-first` builds. The source directories that collector names are not read by this run |
+| the data volume | `/app/day-d-data` | **read-only** | the release file, read by the collector that `--prepare-first` builds. The source directories that collector names are not read by this run. **The journal is not in it** |
+| the producer's journal root: `@HOST_JOURNAL_ROOT@` of the installed producer unit, a directory of the host's root filesystem (proposed `/var/lib/c3po-bar/journal`) | the producer unit's `@CONTAINER_JOURNAL_ROOT@`, a child of `/` (for example `/c3po-journal`) | **read-only** | the journal catalog, opened by the collector that `--prepare-first` builds: `epoch.json`, and `maintenance.lock` opened read-only for a shared lock. The same line as the journal bind of the reader unit |
 | the capacity tree | `/c3po-capacity` | **read-only** | capacity config, the documents, payload and go roots. The root identities pinned in the config hash the device and inode of every path component, so the target must be this top-level path |
 | `/etc/c3po-bar/manifests` | `/etc/c3po-bar/manifests` | **read-write** | the only writable path |
 
-**Never mount `/etc/c3po-bar` itself.** That directory holds the provider token. With only `manifests` bound, the token is not visible in the container at all. The tests cannot prove what a host payload mounts; the payload's own readback must show the three mounts and nothing else.
+**Never mount `/etc/c3po-bar` itself.** That directory holds the provider token. With only `manifests` bound, the token is not visible in the container at all. The tests cannot prove what a host payload mounts; the payload's own readback must show the four mounts and nothing else.
+
+**The journal bind.** By the owner's decision of 2026-10-02 the producer's journal root is no longer a leaf of the data volume: it is a directory of the host's root filesystem, bound in the producer, in the reader and here at one top-level container path (`../reader/README.md`, "Journal root", has the reasons and the ownership note). For this dispatch that means:
+
+- **Parameters.** Source and target are the two journal values of the installed producer unit, read from it and compared as text with the journal bind of the installed reader unit and with the GO; they are never typed again. The bind carries `readonly`. A dispatch that mounts only the data volume has no directory at the path `pins.env` names, and `--prepare-first`, with or without `--preflight`, ends in `MASSIVE_SESSION_ROOT_UNVERIFIED` before anything is committed (a repository test removes the catalog, and then the directory, and gets that code both times).
+- **Effective filesystem.** The payload reads `findmnt -n -o TARGET,SOURCE,FSTYPE --target <host journal root>` and `stat -c %d <host journal root>`: they are the ones its GO names, and the device number differs from the data volume's. The catalog binds the device and inode of its own root (`epoch.json`), so a copy of the journal in another directory or on another filesystem is refused by the collector as well. A different root that holds its own catalog of the same epoch is not, which is why the source is compared with the installed units.
+- **Ownership and isolation.** The journal root is `root:root` 0700 and this container is uid 0 with no capability: it reads the producer's private files as their owner, and with a read-only bind it can create or change nothing there. The manifest directory stays the only writable path.
+- **The overlap guard is unchanged.** `--manifest-directory` is compared with the journal directory by path components (`MANIFEST_DIRECTORY_OVERLAP`): `/etc/c3po-bar/manifests` and a journal root that is a child of `/` share only `/`, which is no overlap; a manifest directory equal to the journal root, inside it or around it is refused. A repository test runs the guard with top-level journal paths.
+- **Not this run's concern:** the free-space floor of the journal's filesystem. This run writes nothing there; the floor is measured at the producer's activation gate and at the reader's activation.
+
+None of it was observed on a host or an engine *(unverified)*.
 
 Use `--mount type=bind`, never `-v` (a missing source must be an error, not a new root-owned directory), with `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`, `--user 0:0`, `--init`, `--rm`, `--pull never`, the image by ID. Nothing else needs to be writable: the script creates no temporary outside the manifest directory. Whether Docker creates the nested mount target `/etc/c3po-bar/manifests` under a read-only root filesystem was proven for the supervisor's layout on the CI runner only *(unverified on the host)*.
 
@@ -123,6 +134,8 @@ Use `--mount type=bind`, never `-v` (a missing source must be an error, not a ne
 | `C3PO_R2D2_V2_SHADOW_SOURCE_DIR`, `C3PO_R2D2_MICROSTRUCTURE_RAW_DIR`, `C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR` | the reader's `pins.env` | `--prepare-first` (the collector) |
 | `C3PO_R2D2_V2_SHADOW_ENABLED=true`, `C3PO_R2D2_V2_MASSIVE_BARS_ENABLED=true` | inline `--env` of the dispatch | every mode / `--prepare-first` |
 | `C3PO_R2D2_V2_CAPACITY_CONFIG_FILE`, `C3PO_R2D2_V2_CAPACITY_CONFIG_SHA` | inline `--env` of the dispatch: **the window's own config** | every mode |
+
+`C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR` of `pins.env` is the producer unit's `@CONTAINER_JOURNAL_ROOT@`, the target of the journal bind above, and not a path under `/app/day-d-data`. The dispatch passes the reader's `pins.env` unchanged and has no journal variable of its own.
 
 `pins.env` carries the reader's static capacity config; the dispatch overrides both capacity variables inline with the config of its window. That an inline `--env` wins over `--env-file` is Docker's documented behaviour *(unverified)*. The receipt proves which one was loaded: `capacity_config_sha256` on the line must equal the hash of the window's config, and `--preflight` prints it without committing anything.
 
@@ -192,7 +205,7 @@ Builds the same context a dispatch builds and validates everything that needs ne
 - **Clock:** "the day is today" and "before the cutoff" are reported as booleans, not enforced, so it can run hours before the first window.
 - **Prints:** one line, `PREFLIGHT_OK`, with the pins it loaded (`release_sha256`, `capacity_config_sha256`, `package_sha256`, `build_sha`, `capacity_veto_mode`, `massive_bars_enabled`), a `checks` object of booleans and counts, the two GO windows and the cutoff. No binding hash, no manifest hash, no count.
 
-`--manifest-directory` is optional here so that the run can use the reader unit's layout, which does not mount that directory. Such a run says `directory_checked` false and proves nothing about the writable bind. **Before the primary window of the first session, one `--preflight` has to run in the dispatch's own layout** — the three mounts, with `--manifest-directory` — because nothing else exercises that bind before the dispatch itself. Without it the first check of the directory is step 6 of the primary dispatch: still before the wait and before any commit, but inside the window. Scheduling that run is the host payload's side and is not in this repository.
+`--manifest-directory` is optional here so that the run can use the reader unit's layout, which does not mount that directory. Such a run says `directory_checked` false and proves nothing about the writable bind. **Before the primary window of the first session, one `--preflight` has to run in the dispatch's own layout** — the four mounts, with `--manifest-directory` and `--prepare-first` — because nothing else exercises the writable bind before the dispatch itself, nor the journal bind in this layout. Without it the first check of the directory is step 6 of the primary dispatch: still before the wait and before any commit, but inside the window. Scheduling that run is the host payload's side and is not in this repository.
 
 ## Windows per session
 
@@ -326,7 +339,7 @@ A publish run that finds the file already there (`ALREADY_PUBLISHED_VERIFIED`, w
 Nothing in this list was observed; each item is a host or engine fact, or a measurement nobody has taken.
 
 - The script in a container at all: `python -I -B -` in the image, imports under `--read-only --cap-drop ALL`, the application found at `/app`, exit status through `docker-init` and `--rm`.
-- The three mounts on the host; the nested mount target under a read-only root filesystem; that the token directory is invisible with only `manifests` bound; that device and inode of a bind mount equal the host's.
+- The four mounts on the host; the journal root of the host's root filesystem bound read-only at a child of `/`, and the catalog opened through it (a shared lock on a file opened read-only, on a read-only mount); the nested mount target under a read-only root filesystem; that the token directory is invisible with only `manifests` bound; that device and inode of a bind mount equal the host's.
 - The capacity tree at `/c3po-capacity` giving the root identities pinned in the config (it depends on device and inode numbers that only the host has).
 - Inline `--env` overriding `--env-file`.
 - The database: a real PostgreSQL round trip, `prepare-capacity-day` against the real epoch row, behaviour when the connection fails between the commit and the read back. The tests use the package's in-memory store.
@@ -340,7 +353,7 @@ Nothing in this list was observed; each item is a host or engine fact, or a meas
 - A stop while parked, a kill inside the view, and what `--rm` leaves behind.
 - The host payload itself, its envelope, its transport limit against a 15-minute parked container, and its receipts: not in this repository.
 
-**Pipeline step (written, not yet run).** `Exercise the manifest writer off path against the backend image`, in `.github/workflows/c3po-pipeline.yml`, feeds this script on standard input to `python -I -B -` in a container of the validation image on the runner's Docker: `--rm -i --init --pull never --user 0:0 --network none --read-only --cap-drop ALL --security-opt no-new-privileges`, the image by ID, one writable bind at `/etc/c3po-bar/manifests`, and `C3PO_R2D2_V2_SHADOW_ENABLED=false`. It requires exit 3, exactly one line with `REFUSED` and `MANIFEST_SHADOW_OFF`, nothing on standard error, an empty manifest directory and no container left. It runs on pull requests and remediation dispatches only and needs no secret. It had not run when this revision was written: until a pipeline run of this revision is recorded, the list above stands unchanged.
+**Pipeline step (written, not yet run).** `Exercise the manifest writer off path against the backend image`, in `.github/workflows/c3po-pipeline.yml`, feeds this script on standard input to `python -I -B -` in a container of the validation image on the runner's Docker: `--rm -i --init --pull never --user 0:0 --network none --read-only --cap-drop ALL --security-opt no-new-privileges`, the image by ID, one writable bind at `/etc/c3po-bar/manifests`, and `C3PO_R2D2_V2_SHADOW_ENABLED=false`. It has none of the three read-only binds of the dispatch — no data volume, no journal root, no capacity tree — because the off path opens nothing. It requires exit 3, exactly one line with `REFUSED` and `MANIFEST_SHADOW_OFF`, nothing on standard error, an empty manifest directory and no container left. It runs on pull requests and remediation dispatches only and needs no secret. It had not run when this revision was written: until a pipeline run of this revision is recorded, the list above stands unchanged.
 
 A pass covers the first item of that list only as far as the off refusal goes, and only on the CI runner: the isolated interpreter reading the script from standard input, the application found at `/app`, the packaged modules that `packaged()` imports loading under that option set, the nested mount target, and exit 3 through `docker-init` and `--rm`. It builds no context: no release, no capacity config, no database, no GO, no view, no write. `test_r2d2_v2_deployment_pipeline_smokes.py` pins the step and feeds the real output of the script, run offline with the step's own arguments, to the step's own receipt check; it runs no docker command.
 

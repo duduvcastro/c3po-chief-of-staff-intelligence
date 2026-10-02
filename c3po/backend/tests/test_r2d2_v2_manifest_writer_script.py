@@ -359,6 +359,52 @@ def test_the_readme_pins_the_script_hash_and_names_every_code():
     assert 'the leaf must be 0700' not in readme
 
 
+def test_the_readme_gives_the_dispatch_the_journal_bind_of_the_units_read_only():
+    """The journal root is its own read-only bind at the producer unit's container path, no longer a leaf of the
+    data volume. The document can only state it: what a host payload mounts is not in this repository."""
+    import re
+    readme = (DEPLOYMENT / 'README.md').read_text()
+    section = readme.split('\n## What the host payload must provide\n')[1].split('\n## ')[0]
+    table = [row for row in section.splitlines() if row.startswith('| ') and '**read-' in row]
+    assert '**Mounts — exactly four:**' in section and len(table) == 4
+    modes = [re.search(r'\*\*(read-only|read-write)\*\*', row).group(1) for row in table]
+    assert modes == ['read-only', 'read-only', 'read-only', 'read-write']
+    data, journal, capacity, manifests = table
+    assert '`/app/day-d-data`' in data and '**The journal is not in it**' in data and 'journal catalog' not in data
+    assert all(phrase in journal for phrase in ('`@HOST_JOURNAL_ROOT@` of the installed producer unit',
+        "the producer unit's `@CONTAINER_JOURNAL_ROOT@`, a child of `/`", 'the journal catalog', '`maintenance.lock`'))
+    assert '/app/day-d-data' not in journal and '`/c3po-capacity`' in capacity and '`/etc/c3po-bar/manifests`' in manifests
+    for phrase in ("the payload's own readback must show the four mounts and nothing else", '**The journal bind.**',
+                   '**Parameters.**', '**Effective filesystem.**', '**Ownership and isolation.**',
+                   '**The overlap guard is unchanged.**', '`findmnt -n -o TARGET,SOURCE,FSTYPE --target <host journal root>`',
+                   'the device number differs from the data volume\'s', '`MASSIVE_SESSION_ROOT_UNVERIFIED`',
+                   "`C3PO_R2D2_V2_MASSIVE_JOURNAL_DIR` of `pins.env` is the producer unit's `@CONTAINER_JOURNAL_ROOT@`",
+                   'not a path under `/app/day-d-data`', '*(unverified)*'):
+        assert phrase in section, phrase
+    assert 'exactly three' not in readme and 'the three mounts' not in readme.replace('the three mounts of', '')
+    assert 'The four mounts on the host' in readme
+    # The unit both sides copy: the reader's journal bind is the producer's line, read-only.
+    reader = (DEPLOYMENT.parent / 'reader' / 'c3po-reader.service').read_text()
+    producer = (DEPLOYMENT.parent / 'massive-supervisor' / 'c3po-massive.service').read_text()
+    line = '  --mount type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@'
+    assert line + ' \\\n' in producer and line + ',readonly \\\n' in reader
+
+
+@pytest.mark.parametrize('journal', ['/c3po-journal', '/c3po-journal/', '/x'])
+def test_the_overlap_guard_holds_for_a_journal_root_that_is_a_child_of_the_root(journal):
+    """The guard compares path components. With the journal at a top-level container path it shares only '/'
+    with the manifest directory, which is no overlap; equal, inside and around are still refused."""
+    protected = ('/c3po-capacity/config', '/app/day-d-data/private', journal, '/app/day-d-data/source',
+                 '/app/day-d-data/provider=eodhd/microstructure/raw', '/c3po-capacity/documents')
+    root = journal.rstrip('/')
+    for allowed in ('/etc/c3po-bar/manifests', root + '-manifests', '/etc' + root, '/app/day-d-data/manifests'):
+        writer._outside(Path(allowed), protected)
+    for refused in (root, root + '/', root + '/manifests', root + '/session_date=2026-10-05', '/'):
+        with pytest.raises(Exception) as caught:
+            writer._outside(Path(refused), protected)
+        assert caught.value.args == ('MANIFEST_DIRECTORY_OVERLAP',), refused
+
+
 def _isolated(arguments, *, text=None, path=None, cwd):
     environment = {key: value for key, value in os.environ.items() if not key.startswith('C3PO_R2D2_V2')}
     command = [sys.executable, '-I', '-B', '-' if path is None else str(path), *arguments]
@@ -1643,6 +1689,15 @@ def test_real_collector_refusals_commit_nothing(calendar, tmp_path, monkeypatch,
     assert (code, receipt['code']) == (3, 'MASSIVE_SESSION_ROOT_UNVERIFIED')
     assert set(receipt) == {'schema', 'status', 'code', 'session', 'mode'}
     assert store.read(EPOCH) is None and entries(world) == []
+    # A dispatch without the journal bind has no directory at all at the path the settings name: the same refusal,
+    # in the pre-flight and in the publishing run, with nothing committed.
+    (deployment.base / 'journal').rename(deployment.base / 'journal-not-bound')
+    assert not (deployment.base / 'journal').exists()
+    for extra in (['--preflight'], []):
+        receipt, code, _ = deployment.main(capsys, *extra, *arguments)
+        assert (code, receipt['code']) == (3, 'MASSIVE_SESSION_ROOT_UNVERIFIED')
+        assert set(receipt) == {'schema', 'status', 'code', 'session', 'mode'}
+        assert store.read(EPOCH) is None and entries(world) == []
 
 
 def test_database_failure_text_never_reaches_the_output(calendar, tmp_path, monkeypatch, capsys):
