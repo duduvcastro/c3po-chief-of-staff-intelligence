@@ -777,6 +777,7 @@ button { cursor: pointer; }
 .realtime-footnote { min-height: 39px; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #e1d5af; border-radius: var(--radius); color: #6e6450; background: #fcfaf3; font-size: 9px; }
 .realtime-footnote svg { color: var(--green); }
 .realtime-footnote small { margin-left: auto; color: #8e877a; font-size: 9px; }
+.realtime-source-note { margin: 0; padding: 0 13px; color: var(--muted); font-size: 10px; font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; }
 .realtime-loading { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .realtime-loading div { height: 395px; border: 1px solid #dde0e3; border-radius: var(--radius); background: linear-gradient(90deg, #f2f3f3 25%, #faf9f5 50%, #f2f3f3 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
 .realtime-loading-compact { grid-template-columns: 1fr; }
