@@ -163,6 +163,10 @@ services:
     volumes:
       - ../runtime/security/maintenance:/run/c3po-maintenance:ro
       - ${C3PO_DAY_D_DATA_MOUNT_SOURCE:-c3po_day_d_data}:/app/day-d-data
+      # Capacity tree: read-only, top-level target. Unset keeps an empty placeholder volume, so a host
+      # that is not provisioned deploys as before. The mount alone enables nothing: capacity stays off
+      # until the host .env sets the capacity settings. Set a host path only after the tree exists.
+      - ${C3PO_R2D2_V2_CAPACITY_MOUNT_SOURCE:-c3po_capacity_unprovisioned}:/c3po-capacity:ro
     depends_on:
       db:
         condition: service_healthy
@@ -224,6 +228,7 @@ volumes:
   c3po_postgres:
   c3po_one_pagers:
   c3po_day_d_data:
+  c3po_capacity_unprovisioned:
 
 networks:
   c3po_internal:

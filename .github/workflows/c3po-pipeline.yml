@@ -367,6 +367,48 @@ jobs:
           containers="$(docker ps -a --filter 'name=^c3po-massive$' -q)" || exit 1
           [ -z "$containers" ] || { echo "leftover c3po-massive container" >&2; exit 1; }
 
+      - name: Render the compose capacity mount on a real engine
+        if: >-
+          github.event_name == 'pull_request' ||
+          (github.event_name == 'workflow_dispatch' && inputs.remediation)
+        working-directory: ${{ github.workspace }}
+        # `docker compose config` loads, interpolates and validates the project with the
+        # command form the deploy uses; it starts nothing and creates no volume or host
+        # path. The empty root .env stands in for the host file (Compose needs it for
+        # --env-file and for env_file) and is removed again. Three host states are
+        # rendered: variable unset, variable empty, variable set to an example path; a
+        # bare word must be refused. This proves the render only: nothing about the
+        # capacity tree, the capacity settings or the planner.
+        # Every guard is explicit (`|| exit 1`); nothing here relies on `set -e`.
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/backend-runtime"
+          check=c3po/deployment/capacity-mount/check_compose_render.py
+          var=C3PO_R2D2_V2_CAPACITY_MOUNT_SOURCE
+          example=/srv/example-capacity-tree
+          compose=(docker compose --env-file .env -f c3po/compose.yml)
+          mkdir -p "$out" || exit 1
+          [ ! -e .env ] || { echo "unexpected .env in the workspace" >&2; exit 1; }
+          [ ! -e "$example" ] || { echo "the example bind source already exists" >&2; exit 1; }
+          trap 'rm -f .env' EXIT
+          : > .env || exit 1
+          docker compose version | tee "$out/compose-version.txt" || exit 1
+          env -u "$var" "${compose[@]}" config --format json > "$out/compose-capacity-unset.json" || exit 1
+          env "$var=" "${compose[@]}" config --format json > "$out/compose-capacity-empty.json" || exit 1
+          env "$var=$example" "${compose[@]}" config --format json > "$out/compose-capacity-bind.json" || exit 1
+          python3 "$check" placeholder "$out/compose-capacity-unset.json" || exit 1
+          python3 "$check" placeholder "$out/compose-capacity-empty.json" || exit 1
+          python3 "$check" "bind=$example" "$out/compose-capacity-bind.json" || exit 1
+          if env "$var=not-a-path" "${compose[@]}" config --quiet 2> "$out/compose-capacity-bare-word.err"; then
+            echo "a bare word was accepted as the capacity mount source" >&2
+            exit 1
+          fi
+          cat "$out/compose-capacity-bare-word.err"
+          [ ! -e "$example" ] || { echo "the render created the bind source" >&2; exit 1; }
+          left="$(docker volume ls -q --filter name=c3po_capacity_unprovisioned)" || exit 1
+          [ -z "$left" ] || { echo "the render created the placeholder volume" >&2; exit 1; }
+
       - name: Publish backend runtime check
         if: >-
           always() &&
