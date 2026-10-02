@@ -373,12 +373,16 @@ jobs:
           (github.event_name == 'workflow_dispatch' && inputs.remediation)
         working-directory: ${{ github.workspace }}
         # `docker compose config` loads, interpolates and validates the project with the
-        # command form the deploy uses; it starts nothing and creates no volume or host
-        # path. The empty root .env stands in for the host file (Compose needs it for
-        # --env-file and for env_file) and is removed again. Three host states are
-        # rendered: variable unset, variable empty, variable set to an example path; a
-        # bare word must be refused. This proves the render only: nothing about the
-        # capacity tree, the capacity settings or the planner.
+        # command form the deploy uses. The empty root .env stands in for the host file
+        # (Compose needs it for --env-file and for env_file) and is removed again. Three
+        # host states are rendered: variable unset, variable empty, variable set to an
+        # example path; a bare word must be refused. With a path the placeholder volume
+        # is unused, and Compose leaves unused top-level volumes out of the render: the
+        # checker requires the declaration only for the placeholder states.
+        # This proves the render only. `config` creates nothing, so the step cannot show
+        # what `up` creates on a host (the placeholder volume, a bind source): that is
+        # first measured by the read-back after the deploy. It proves nothing about the
+        # capacity tree, the capacity settings or the planner either.
         # Every guard is explicit (`|| exit 1`); nothing here relies on `set -e`.
         shell: bash
         run: |
@@ -390,7 +394,6 @@ jobs:
           compose=(docker compose --env-file .env -f c3po/compose.yml)
           mkdir -p "$out" || exit 1
           [ ! -e .env ] || { echo "unexpected .env in the workspace" >&2; exit 1; }
-          [ ! -e "$example" ] || { echo "the example bind source already exists" >&2; exit 1; }
           trap 'rm -f .env' EXIT
           : > .env || exit 1
           docker compose version | tee "$out/compose-version.txt" || exit 1
@@ -404,10 +407,7 @@ jobs:
             echo "a bare word was accepted as the capacity mount source" >&2
             exit 1
           fi
-          cat "$out/compose-capacity-bare-word.err"
-          [ ! -e "$example" ] || { echo "the render created the bind source" >&2; exit 1; }
-          left="$(docker volume ls -q --filter name=c3po_capacity_unprovisioned)" || exit 1
-          [ -z "$left" ] || { echo "the render created the placeholder volume" >&2; exit 1; }
+          cat "$out/compose-capacity-bare-word.err" || exit 1
 
       - name: Publish backend runtime check
         if: >-

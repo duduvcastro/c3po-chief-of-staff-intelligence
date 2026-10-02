@@ -9,6 +9,12 @@ Exit 0 when r2d2-worker, and only r2d2-worker, carries the expected read-only mo
 host the render also carries every value of the .env file, so pipe it in and never display it.
 This checks what Compose resolved. It says nothing about the capacity tree, the settings or the
 planner.
+
+The placeholder volume declaration is required only when the placeholder is expected. Compose drops
+every top-level volume that no service uses from the render (unless `--all-resources` is given), so
+a bind render normally has no such declaration; when it is there, it must carry the right name.
+Asserted fields are strict (`type`, `source`, `target`, `read_only`, the project `name`, the volume
+`name`); every other key of the render (`bind`, `volume`, ...) is ignored.
 """
 import json
 import sys
@@ -28,7 +34,10 @@ def check(render, expect):
         return ["render has no services"]
     found = []
     for name, service in services.items():
-        for volume in (service or {}).get("volumes") or []:
+        if not isinstance(service, dict):
+            errors.append(f"{name}: service is not a mapping")
+            continue
+        for volume in service.get("volumes") or []:
             if not isinstance(volume, dict):
                 errors.append(f"{name}: volume is not in the resolved long form")
             elif volume.get("target") == TARGET:
@@ -43,15 +52,25 @@ def check(render, expect):
         errors.append(f"{SERVICE} mounts changed: {targets}")
     if render.get("name") != PROJECT:
         errors.append(f"project name is not {PROJECT}")
-    declared = (render.get("volumes") or {}).get(PLACEHOLDER)
-    if not isinstance(declared, dict) or declared.get("name") != f"{PROJECT}_{PLACEHOLDER}":
-        errors.append(f"placeholder volume is not declared as {PROJECT}_{PLACEHOLDER}")
+    declared = render.get("volumes")
+    if declared is None:
+        declared = {}  # Compose omits the key when no top-level volume is left in the render
+    if not isinstance(declared, dict):
+        errors.append("top-level volumes is not a mapping")
+        declared = {}
+    placeholder = declared.get(PLACEHOLDER)
+    named = isinstance(placeholder, dict) and placeholder.get("name") == f"{PROJECT}_{PLACEHOLDER}"
     if expect == "placeholder":
         if (mount.get("type"), mount.get("source")) != ("volume", PLACEHOLDER):
             errors.append(f"expected the placeholder volume, got {mount.get('type')} {mount.get('source')!r}")
+        if not named:
+            errors.append(f"placeholder volume is not declared as {PROJECT}_{PLACEHOLDER}")
     elif expect.startswith("bind=/"):
         if (mount.get("type"), mount.get("source")) != ("bind", expect[len("bind="):]):
             errors.append(f"expected a bind of {expect[len('bind='):]!r}, got {mount.get('type')} {mount.get('source')!r}")
+        # Unused here, so absent from a default render; present only under --all-resources.
+        if PLACEHOLDER in declared and not named:
+            errors.append(f"placeholder volume is declared, but not as {PROJECT}_{PLACEHOLDER}")
     else:
         errors.append("expectation must be `placeholder` or `bind=<absolute path>`")
     return errors
