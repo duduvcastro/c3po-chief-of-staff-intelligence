@@ -1,0 +1,12 @@
+[Unit]
+Description=Start approved Massive session before XNYS open
+
+[Timer]
+OnBootSec=30s
+OnCalendar=Mon..Fri *-*-* 09:29:00 America/New_York
+Persistent=false
+AccuracySec=1s
+Unit=c3po-massive.service
+
+[Install]
+WantedBy=timers.target
