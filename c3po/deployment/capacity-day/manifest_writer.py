@@ -21,9 +21,11 @@ One invocation, for one session date:
                      clock nor the veto view. Never waits, prepares, writes or reads the view.
 
 The file is created by private temporary + fsync + link() + unlink, mode 0600, and is never
-overwritten, truncated or deleted. The one write that needs no bar_manifest GO is the
-removal of the second name left by a publication interrupted between link() and unlink():
-it changes no content.
+overwritten, truncated or deleted. The temporary is created (empty) before anything is
+committed, so a directory that cannot take a new file refuses with nothing committed. The
+one write that needs no bar_manifest GO is the removal of the second name left by a
+publication interrupted between link() and unlink(), and only after the bytes under the
+final name were found equal to the manifest of the committed binding.
 
 The list of symbols is written only to that file. Standard output carries exactly one JSON
 line with counts, hashes, clocks and constant codes. A refusal code always holds an
@@ -38,6 +40,8 @@ immediately before link() against the plan frozen in the committed binding.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+import copy
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 import hashlib
@@ -52,7 +56,7 @@ import stat
 import sys
 import time
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 import warnings
 
 # Where the image keeps the application. The only path this script adds to sys.path
@@ -69,6 +73,7 @@ VIEW_GRACE_SECONDS = 5.0                     # a view emitted in-window may lag 
 # States of a view file that is still being delivered; retried only inside the grace.
 VIEW_NOT_YET = frozenset({'VETO_HASH_MISMATCH', 'ROOT_FILE_POLICY', 'ROOT_FILE_CHANGED'})
 EXIT_OK, EXIT_UNVERIFIED, EXIT_REFUSED = 0, 1, 3
+GO_MODES = ('INDIVIDUAL', 'DELEGATED_ACT_B')  # --require-go-mode
 GO_FIELDS = frozenset({'decision', 'epoch', 'first_session', 'day', 'phase', 'proposal_sha', 'signed_order_sha',
                        'template_sha', 'mode', 'not_before', 'not_after', 'automatic_retry', 'authority_receipts'})
 # A code always holds an underscore; the symbol grammar ([A-Z0-9][A-Z0-9.-]{0,19}) has none.
@@ -121,13 +126,14 @@ class Context:
     verify_binding: Callable[[dict], bool]          # Act B chain for a binding document
     verify_go: Callable[[dict, dict], bool]         # documentary GO + publication + veto view
     verify_chain: Callable[[str], None]             # Act A/B chain for the day; raises a code
-    check_go: Callable[[dict], None]                # pinned records behind a GO, without the view
+    check_go: Callable[[dict, dict], None]          # (GO, plan): every document behind a GO, without the view
     read_go: Callable[[str, str], dict]             # (day, phase) -> the 13-field GO
     read_payload: Callable[[str], dict]             # day -> {'contract', 'causal'}
     view_pinned: Callable[[str], bool]              # the capacity config pins a view for the day
     veto_bounds: Callable[[str], tuple[datetime, datetime]]   # pinned view: observed_at, valid_until
     prepare: Callable[[str], dict] | None = None    # only with --prepare-first
     pins: dict = field(default_factory=dict)        # non-secret identifiers echoed in the receipt
+    protected: tuple = ()                           # configured roots the manifest directory must not touch
 
 
 def _code(error: BaseException) -> str | None:
@@ -210,6 +216,27 @@ def go_records(authority: Any, go: dict) -> None:
                  'MANIFEST_GO_RECORD')
 
     _coded(check, 'MANIFEST_GO_RECORD', missing='MANIFEST_GO_RECORD_MISSING')
+
+
+def _no_view(now: datetime) -> dict:
+    """Stand-in for the veto view in static_documents ONLY. No gate uses it."""
+    return {'status': 'VERIFIED', 'observed_at': now.isoformat(),
+            'valid_until': (now + timedelta(seconds=10)).isoformat(), 'owner_veto': False, 'revoked_shas': []}
+
+
+def static_documents(authority: Any, go: dict, plan: dict) -> None:
+    """Would the documents behind this GO pass the packaged verify_go? Without clock or view.
+
+    The packaged verify_go itself, on a copy of the authority whose veto view is a stand-in
+    open at the GO's own not_before. It covers what needs neither the clock nor the real
+    view: the Act A and Act B chains, the order hash, the template's membership and scope,
+    the GO record's scope, role and binding, the publication record and the notice. The
+    result is discarded: nothing is prepared, written or published on it (see _gate, which
+    asks the real authority with the real view).
+    """
+    blind = copy.copy(authority)
+    blind.revocation_reader = _no_view
+    need(blind.verify_go(go, plan, packaged().stamp(go['not_before'])) is True, 'MANIFEST_GO_DOCUMENTS')
 
 
 def manifest_bytes(manifest: Any, *, day: str, epoch: str) -> bytes:
@@ -314,29 +341,72 @@ def _gate(ctx: Context, go: dict, plan: dict, *, clock, cutoff: datetime) -> dic
     return result
 
 
-def _temporaries(directory: int, name: str, *, repair: bool) -> tuple[int, int, bool]:
-    """Leftover temporaries: (foreign ones left alone, second names removed, second name still there)."""
+def _outside(target: Path, protected: tuple) -> None:
+    """The manifest directory is no configured root, holds none and lies inside none."""
+    here = os.path.normpath(str(target))
+    for root in protected:
+        if root and os.path.isabs(str(root)):
+            there = os.path.normpath(str(root))
+            need(os.path.commonpath([here, there]) not in (here, there), 'MANIFEST_DIRECTORY_OVERLAP')
+
+
+def _writable(directory: int) -> None:
+    """Could this process create a file here? Asked without writing, before anything is committed."""
+    need(os.access('.', os.W_OK | os.X_OK, dir_fd=directory), 'MANIFEST_DIRECTORY_NOT_WRITABLE')
+    volume = os.fstatvfs(directory)
+    blocks = volume.f_bfree if os.geteuid() == 0 else volume.f_bavail
+    need(not volume.f_flag & os.ST_RDONLY and (volume.f_blocks == 0 or blocks > 0)
+         and (volume.f_files == 0 or volume.f_ffree > 0), 'MANIFEST_DIRECTORY_NOT_WRITABLE')
+
+
+def _temporaries(directory: int, name: str) -> tuple[int, list[str]]:
+    """Leftover temporaries, read only: (foreign ones, second names of the published inode)."""
     try:
         final = os.stat(name, dir_fd=directory, follow_symlinks=False)
     except FileNotFoundError:
         final = None
-    stale, repaired, interrupted = 0, 0, False
+    stale, second = 0, []
     for entry in sorted(os.listdir(directory)):
         if re.match(_TEMPORARY % re.escape(name), entry) is None:
             continue
         info = os.stat(entry, dir_fd=directory, follow_symlinks=False)
-        same = (final is not None and stat.S_ISREG(info.st_mode)
-                and (info.st_dev, info.st_ino) == (final.st_dev, final.st_ino))
-        if not same:
-            stale += 1
-        elif repair:
-            # Second name of the already published inode: removing it changes no content.
-            os.unlink(entry, dir_fd=directory)
-            os.fsync(directory)
-            repaired += 1
+        if (final is not None and stat.S_ISREG(info.st_mode)
+                and (info.st_dev, info.st_ino) == (final.st_dev, final.st_ino)):
+            second.append(entry)
         else:
-            interrupted = True
-    return stale, repaired, interrupted
+            stale += 1
+    return stale, second
+
+
+def _repair(directory: int, name: str, second: list[str], data: bytes) -> int:
+    """Complete an interrupted publication, and nothing else.
+
+    The extra name is removed only when the file under the final name is a private regular
+    file of this uid with exactly two links, the other one being that temporary, and its
+    bytes ARE the manifest of the committed binding. Any other two-link file is left exactly
+    as it is and refused: removing a name would turn a file the supervisor refuses into one
+    it accepts.
+    """
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    try:
+        info = os.fstat(fd)
+        need(len(second) == 1 and stat.S_ISREG(info.st_mode) and info.st_nlink == 2
+             and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o600,
+             'MANIFEST_PUBLICATION_INTERRUPTED')
+        other = os.stat(second[0], dir_fd=directory, follow_symlinks=False)
+        need((other.st_dev, other.st_ino) == (info.st_dev, info.st_ino), 'MANIFEST_PUBLICATION_INTERRUPTED')
+        raw = b''
+        while len(raw) <= len(data):
+            chunk = os.read(fd, len(data) + 1 - len(raw))
+            if not chunk:
+                break
+            raw += chunk
+        need(raw == data, 'MANIFEST_CONFLICT')
+    finally:
+        os.close(fd)
+    os.unlink(second[0], dir_fd=directory)          # changes no content: the link count goes from 2 to 1
+    os.fsync(directory)
+    return 1
 
 
 def _existing(target: Path, directory: int, name: str) -> bytes | None:
@@ -350,35 +420,45 @@ def _existing(target: Path, directory: int, name: str) -> bytes | None:
         raise Refused('MANIFEST_EXISTING_UNVERIFIED') from None
 
 
-def _publish(directory: int, name: str, data: bytes, *, before_link: Callable[[], Any],
-             linked: Callable[[], None]) -> bool:
-    """Exclusive, all-or-nothing publication. False means another writer won the name."""
+@contextmanager
+def _reserved(directory: int, name: str) -> Iterator[tuple[str, int]]:
+    """The private temporary, created exclusively and empty BEFORE anything is committed.
+
+    A directory that cannot take a new file fails here, with no binding committed by this
+    run. Whatever happens next, the temporary name is removed on the way out.
+    """
     temporary = '.' + name + '.' + secrets.token_hex(8) + '.tmp'
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
     try:
         try:
             os.fchmod(fd, 0o600)
-            view = memoryview(data)
-            while view:
-                count = os.write(fd, view)
-                need(count > 0, 'MANIFEST_WRITE_FAILED')
-                view = view[count:]
-            os.fsync(fd)
-            info = os.fstat(fd)
-            need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == os.geteuid()
-                 and stat.S_IMODE(info.st_mode) == 0o600 and info.st_size == len(data), 'MANIFEST_WRITE_FAILED')
+            yield temporary, fd
         finally:
             os.close(fd)
-        before_link()                               # authority is rechecked after the last slow step
-        try:
-            os.link(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
-        except FileExistsError:
-            return False
-        linked()
-        return True
     finally:
         os.unlink(temporary, dir_fd=directory)
         os.fsync(directory)
+
+
+def _publish(directory: int, name: str, temporary: str, fd: int, data: bytes, *,
+             before_link: Callable[[], Any], linked: Callable[[], None]) -> bool:
+    """Exclusive, all-or-nothing publication from the reserved temporary. False: another writer won the name."""
+    view = memoryview(data)
+    while view:
+        count = os.write(fd, view)
+        need(count > 0, 'MANIFEST_WRITE_FAILED')
+        view = view[count:]
+    os.fsync(fd)
+    info = os.fstat(fd)
+    need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == os.geteuid()
+         and stat.S_IMODE(info.st_mode) == 0o600 and info.st_size == len(data), 'MANIFEST_WRITE_FAILED')
+    before_link()                                   # authority is rechecked after the last slow step
+    try:
+        os.link(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
+    except FileExistsError:
+        return False
+    linked()
+    return True
 
 
 def _verified(receipt: dict, directory: int, name: str, *, day: str, existing: bytes, data: bytes, binding: Any,
@@ -390,6 +470,10 @@ def _verified(receipt: dict, directory: int, name: str, *, day: str, existing: b
     info = os.stat(name, dir_fd=directory, follow_symlinks=False)
     need(info.st_nlink == 1 and stat.S_IMODE(info.st_mode) == 0o600 and info.st_uid == os.geteuid(),
          'MANIFEST_READBACK_FAILED')
+    if status == 'ALREADY_PUBLISHED_VERIFIED':
+        # A publish run that did not create the name itself: the run that did may have died
+        # before its directory fsync. Changes nothing; --verify-only never comes here.
+        os.fsync(directory)
     receipt.update(binding_sha256=binding.sha, symbol_count=count, manifest_sha256=hashlib.sha256(data).hexdigest())
     receipt['file'] = {'uid': info.st_uid, 'gid': info.st_gid, 'mode': '%04o' % stat.S_IMODE(info.st_mode),
                        'nlink': info.st_nlink, 'device': info.st_dev, 'inode': info.st_ino,
@@ -403,7 +487,8 @@ def _window(go: dict) -> dict:
 
 
 def _preflight(ctx: Context, receipt: dict, *, day: str, directory: Path | None, expect_sha: str | None,
-               view_opens_at: datetime | None, today: bool, now: datetime, cutoff: datetime) -> int:
+               view_opens_at: datetime | None, today: bool, now: datetime, cutoff: datetime,
+               require_go_mode: str | None) -> int:
     """Context only: no wait, no prepare, no write, no veto view."""
     row = ctx.read_state()
     persisted = _persisted(row, day)
@@ -424,26 +509,29 @@ def _preflight(ctx: Context, receipt: dict, *, day: str, directory: Path | None,
         contract = _restore(ctx, persisted).document['contract']
         checks['binding_restored'] = True
     plans[PHASE] = contract['consumer_plans'][PHASE]
-    windows, files = {}, []
+    windows, files = {}, {}
     for phase, plan in sorted(plans.items()):
-        files.append(ctx.read_go(day, phase))
-        before, after = static_go(files[-1], plan, day=day, phase=phase)
+        files[phase] = ctx.read_go(day, phase)
+        before, after = static_go(files[phase], plan, day=day, phase=phase)
         need(view_opens_at is None or before <= view_opens_at < after, 'MANIFEST_GO_WINDOW_VIEW')
-        windows[phase] = _window(files[-1])
-    for file in files:
-        ctx.check_go(file)
+        windows[phase] = _window(files[phase])
+    need(require_go_mode is None or files[PHASE]['mode'] == require_go_mode, 'MANIFEST_GO_MODE')
+    for phase, file in files.items():
+        ctx.check_go(file, plans[phase])
     need(view_opens_at is None or view_opens_at < cutoff, 'MANIFEST_CUTOFF_PASSED')
     checks['go_files_valid'] = sorted(windows)
     if directory is not None:
         target = Path(directory)
         need(target.is_absolute(), 'MANIFEST_DIRECTORY_INVALID')
+        _outside(target, ctx.protected)
         handle = packaged().open_directory(target)   # private leaf, no symbolic link in any component
         try:
             need(os.fstat(handle).st_uid == os.geteuid(), 'MANIFEST_DIRECTORY_OWNER')
-            stale, _, interrupted = _temporaries(handle, day + '.json', repair=False)
-            present = interrupted or _existing(target, handle, day + '.json') is not None
-            checks.update(directory_checked=True, stale_temporaries=stale, publication_interrupted=interrupted,
-                          manifest_present=present)
+            _writable(handle)                        # asked, not tried: this mode writes nothing
+            stale, second = _temporaries(handle, day + '.json')
+            present = bool(second) or _existing(target, handle, day + '.json') is not None
+            checks.update(directory_checked=True, directory_writable=True, stale_temporaries=stale,
+                          publication_interrupted=bool(second), manifest_present=present)
         finally:
             os.close(handle)
     receipt.update(checks=checks, windows=windows, status='PREFLIGHT_OK')
@@ -452,8 +540,8 @@ def _preflight(ctx: Context, receipt: dict, *, day: str, directory: Path | None,
 
 def run(ctx: Context, receipt: dict, *, day: str, directory: Path | None = None, verify_only: bool = False,
         preflight: bool = False, expect_sha: str | None = None, view_opens_at: datetime | None = None,
-        max_wait: int = 0, clock: Callable[[], datetime], sleep: Callable[[float], None] = time.sleep,
-        monotonic: Callable[[], float] = time.monotonic) -> int:
+        max_wait: int = 0, require_go_mode: str | None = None, clock: Callable[[], datetime],
+        sleep: Callable[[float], None] = time.sleep, monotonic: Callable[[], float] = time.monotonic) -> int:
     app = packaged()
     receipt.update(epoch=ctx.release.epoch, owner_uid=os.geteuid(), **ctx.pins)
     parsed = date.fromisoformat(day)
@@ -464,11 +552,13 @@ def run(ctx: Context, receipt: dict, *, day: str, directory: Path | None = None,
     today = now.astimezone(app.NEW_YORK).date() == parsed
     if preflight:
         return _preflight(ctx, receipt, day=day, directory=directory, expect_sha=expect_sha,
-                          view_opens_at=view_opens_at, today=today, now=now, cutoff=cutoff)
+                          view_opens_at=view_opens_at, today=today, now=now, cutoff=cutoff,
+                          require_go_mode=require_go_mode)
 
     # ---- pre-flight: everything below runs before prepare, and most of it before the wait ----
     need(directory is not None and Path(directory).is_absolute(), 'MANIFEST_DIRECTORY_INVALID')
     target, name = Path(directory), day + '.json'
+    _outside(target, ctx.protected)
     if not verify_only:
         need(today, 'MANIFEST_DAY_NOT_TODAY')
         # From the cutoff on, a publishing run does nothing at all: no repair, no publication.
@@ -480,13 +570,16 @@ def run(ctx: Context, receipt: dict, *, day: str, directory: Path | None = None,
     handle = app.open_directory(target)             # private leaf, no symbolic link in any component
     try:
         need(os.fstat(handle).st_uid == os.geteuid(), 'MANIFEST_DIRECTORY_OWNER')
-        # Only the publication of a committed binding is completed, and never by a readback.
-        repair = persisted is not None and not verify_only
-        stale, repaired, interrupted = _temporaries(handle, name, repair=repair)
-        receipt.update(stale_temporaries=stale, repaired_temporaries=repaired)
-        need(not interrupted, 'MANIFEST_PUBLICATION_INTERRUPTED' if persisted is not None or verify_only
+        if not verify_only:
+            _writable(handle)                       # before the wait, and long before the commit
+        stale, second = _temporaries(handle, name)  # read only
+        receipt.update(stale_temporaries=stale, repaired_temporaries=0)
+        # Only the publication of a committed binding is completed (below, once its bytes are
+        # known), and never by a readback.
+        need(not second or (persisted is not None and not verify_only),
+             'MANIFEST_PUBLICATION_INTERRUPTED' if persisted is not None or verify_only
              else 'MANIFEST_EXISTING_WITHOUT_BINDING')
-        existing = _existing(target, handle, name)
+        existing = None if second else _existing(target, handle, name)
 
         if verify_only:
             need(persisted is not None, 'MANIFEST_PREPARE_MISSING')
@@ -504,12 +597,17 @@ def run(ctx: Context, receipt: dict, *, day: str, directory: Path | None = None,
             # A manifest can only come from a committed binding: a file without one is foreign.
             need(existing is None, 'MANIFEST_EXISTING_WITHOUT_BINDING')
             contract = _payload_contract(ctx, day)
-            files.append(ctx.read_go(day, ADMISSION))
-            windows.append(static_go(files[0], contract['assembler_plan'], day=day, phase=ADMISSION))
+            files.append((ctx.read_go(day, ADMISSION), contract['assembler_plan']))
+            windows.append(static_go(files[0][0], files[0][1], day=day, phase=ADMISSION))
         else:
             receipt['prepare_status'] = 'PRECOMMITTED'
             binding = _restore(ctx, persisted)
             data, count = _manifest(ctx, binding, row, day, clock)
+            if second:
+                # The one write that needs no bar_manifest GO, and only now: the binding is
+                # restored and _repair compares the file's bytes with its manifest first.
+                receipt['repaired_temporaries'] = _repair(handle, name, second, data)
+                existing = _existing(target, handle, name)
             if existing is not None:                # nothing to publish: no GO, no view, no wait
                 return _verified(receipt, handle, name, day=day, existing=existing, data=data, binding=binding,
                                  count=count, status='ALREADY_PUBLISHED_VERIFIED')
@@ -517,10 +615,11 @@ def run(ctx: Context, receipt: dict, *, day: str, directory: Path | None = None,
         plan = contract['consumer_plans'][PHASE]
         go = ctx.read_go(day, PHASE)
         windows.append(static_go(go, plan, day=day, phase=PHASE))
-        for file in files + [go]:
-            ctx.check_go(file)
+        need(require_go_mode is None or go['mode'] == require_go_mode, 'MANIFEST_GO_MODE')
         ctx.verify_chain(day)
         need(ctx.view_pinned(day), 'CAPACITY_VETO_DAY_UNBOUND')
+        for file, proposal in files + [(go, plan)]:
+            ctx.check_go(file, proposal)
         need(view_opens_at is None or all(before <= view_opens_at < after for before, after in windows),
              'MANIFEST_GO_WINDOW_VIEW')
 
@@ -535,28 +634,35 @@ def run(ctx: Context, receipt: dict, *, day: str, directory: Path | None = None,
         checked = _gate(ctx, go, plan, clock=clock, cutoff=cutoff)
         receipt.update(go_sha256=checked['go_sha'], go_mode=go['mode'], template_sha256=go['template_sha'],
                        window=_window(go))
-        if persisted is None:
-            prepared = ctx.prepare(day)             # prepare-capacity-day, through the packaged code
-            need(type(prepared) is dict and prepared.get('status') in ('COMMITTED', 'ALREADY_COMMITTED')
-                 and app.is_sha(prepared.get('sha')), 'MANIFEST_PREPARE_FAILED')
-            receipt['prepare_status'] = prepared['status']
-            row = ctx.read_state()
-            persisted = _persisted(row, day)
-            need(persisted is not None and persisted.get('sha') == prepared['sha'], 'MANIFEST_PREPARE_UNCONFIRMED')
-            binding = _restore(ctx, persisted)
-            receipt['binding_sha256'] = binding.sha
-            need(expect_sha is None or binding.sha == expect_sha, 'MANIFEST_BINDING_SHA_MISMATCH')
-            need(binding.document['contract'] == contract, 'MANIFEST_CONTRACT_DIVERGED')
-            plan = binding.document['contract']['consumer_plans'][PHASE]
-            data, count = _manifest(ctx, binding, row, day, clock)
-        receipt.update(binding_sha256=binding.sha, symbol_count=count, manifest_sha256=hashlib.sha256(data).hexdigest())
 
         def linked() -> None:
             # The name exists from here on. Until the readback it is not reported as verified.
             receipt.update(status='PUBLISHED_UNVERIFIED', published_at=clock().isoformat())
 
-        won = _publish(handle, name, data, before_link=lambda: _gate(ctx, go, plan, clock=clock, cutoff=cutoff),
-                       linked=linked)
+        # The temporary exists before prepare: a directory that refuses a new file stops the
+        # run here, with nothing committed.
+        with _reserved(handle, name) as (temporary, fd):
+            if persisted is None:
+                # From this line on the binding may be committed, whatever prepare returns or raises.
+                receipt['prepare_status'] = 'ATTEMPTED'
+                prepared = ctx.prepare(day)         # prepare-capacity-day, through the packaged code
+                need(type(prepared) is dict and prepared.get('status') in ('COMMITTED', 'ALREADY_COMMITTED')
+                     and app.is_sha(prepared.get('sha')), 'MANIFEST_PREPARE_FAILED')
+                receipt['prepare_status'] = prepared['status']
+                row = ctx.read_state()
+                persisted = _persisted(row, day)
+                need(persisted is not None and persisted.get('sha') == prepared['sha'],
+                     'MANIFEST_PREPARE_UNCONFIRMED')
+                binding = _restore(ctx, persisted)
+                receipt['binding_sha256'] = binding.sha
+                need(expect_sha is None or binding.sha == expect_sha, 'MANIFEST_BINDING_SHA_MISMATCH')
+                need(binding.document['contract'] == contract, 'MANIFEST_CONTRACT_DIVERGED')
+                plan = binding.document['contract']['consumer_plans'][PHASE]
+                data, count = _manifest(ctx, binding, row, day, clock)
+            receipt.update(binding_sha256=binding.sha, symbol_count=count,
+                           manifest_sha256=hashlib.sha256(data).hexdigest())
+            won = _publish(handle, name, temporary, fd, data, linked=linked,
+                           before_link=lambda: _gate(ctx, go, plan, clock=clock, cutoff=cutoff))
         existing = _existing(target, handle, name)
         need(existing is not None, 'MANIFEST_READBACK_FAILED')
         return _verified(receipt, handle, name, day=day, existing=existing, data=data, binding=binding, count=count,
@@ -586,7 +692,8 @@ def _session_day(day: Any) -> str | None:
 
 def execute(build: Callable[[], Context], *, day: Any, directory: Any = None, prepare_first: bool = False,
             verify_only: bool = False, preflight: bool = False, expect_sha: Any = None, view_opens_at: Any = None,
-            max_wait: Any = 0, clock: Callable[[], datetime], sleep: Callable[[float], None] = time.sleep,
+            max_wait: Any = 0, require_go_mode: Any = None, clock: Callable[[], datetime],
+            sleep: Callable[[float], None] = time.sleep,
             monotonic: Callable[[], float] = time.monotonic) -> tuple[dict, int]:
     """One receipt and one exit code. The arguments are checked before anything is built."""
     mode = 'PREFLIGHT' if preflight else 'VERIFY_ONLY' if verify_only else 'PUBLISH'
@@ -597,13 +704,15 @@ def execute(build: Callable[[], Context], *, day: Any, directory: Any = None, pr
         need(not (preflight and verify_only), 'MANIFEST_ARGUMENTS_INVALID')
         need(type(max_wait) is int and 0 <= max_wait <= MAX_WAIT_SECONDS, 'MANIFEST_ARGUMENTS_INVALID')
         need(expect_sha is None or (type(expect_sha) is str and _SHA.match(expect_sha)), 'MANIFEST_ARGUMENTS_INVALID')
+        need(require_go_mode is None or require_go_mode in GO_MODES, 'MANIFEST_ARGUMENTS_INVALID')
         opens = _instant(view_opens_at)
-        # --verify-only is a readback: it never prepares and never waits.
-        need(not verify_only or (not prepare_first and opens is None and max_wait == 0), 'MANIFEST_ARGUMENTS_INVALID')
+        # --verify-only is a readback: it never prepares, never waits and reads no GO.
+        need(not verify_only or (not prepare_first and opens is None and max_wait == 0 and require_go_mode is None),
+             'MANIFEST_ARGUMENTS_INVALID')
         need(preflight or directory is not None, 'MANIFEST_ARGUMENTS_INVALID')
         code = run(build(), receipt, day=day, directory=directory, verify_only=verify_only, preflight=preflight,
-                   expect_sha=expect_sha, view_opens_at=opens, max_wait=max_wait, clock=clock, sleep=sleep,
-                   monotonic=monotonic)
+                   expect_sha=expect_sha, view_opens_at=opens, max_wait=max_wait, require_go_mode=require_go_mode,
+                   clock=clock, sleep=sleep, monotonic=monotonic)
     except Exception as error:
         receipt['code'], code = refusal(error)
         if receipt.get('status') != 'PUBLISHED_UNVERIFIED':
@@ -649,6 +758,20 @@ def context(settings: Any, *, now: datetime, prepare_first: bool, clock: Callabl
         _coded(lambda: authority.act_b(clock(), epoch=release.epoch, first=release.first_session.isoformat(),
                                        day=day), 'MANIFEST_CHAIN_UNVERIFIED')
 
+    def check_go(go: dict, plan: dict) -> None:
+        go_records(authority, go)                   # precise codes first
+        static_documents(authority, go, plan)       # then everything verify_go asks, minus the view
+
+    # Every directory the settings and the capacity config name. The manifest directory must
+    # be none of them, hold none of them and lie inside none of them.
+    restore = config.body.get('restore_revocation')
+    protected = [os.path.dirname(str(getattr(settings, 'r2d2_v2_capacity_config_file', '') or '')),
+                 os.path.dirname(str(getattr(settings, 'r2d2_v2_shadow_release_file', '') or '')),
+                 *(str(getattr(settings, name, '') or '') for name in (
+                     'r2d2_v2_massive_journal_dir', 'r2d2_v2_shadow_source_dir', 'r2d2_microstructure_raw_dir')),
+                 *(pin['path'] for pin in config.body['roots'].values()),
+                 *([restore['root']['path']] if type(restore) is dict else [])]
+
     def read_go(day: str, phase: str) -> dict:
         def load() -> dict:
             body = config.roots['go'].json('session=' + day + '.' + phase + '.json')
@@ -676,8 +799,8 @@ def context(settings: Any, *, now: datetime, prepare_first: bool, clock: Callabl
     return Context(release=release, calendar=calendar, read_state=lambda: store.read(release.epoch),
                    verify_binding=lambda document: authority.verify_binding(document, clock()),
                    verify_go=lambda go, plan: authority.verify_go(go, plan, clock()),
-                   verify_chain=verify_chain, check_go=lambda go: go_records(authority, go), read_go=read_go,
-                   read_payload=read_payload, view_pinned=view_pinned, veto_bounds=veto_bounds, prepare=prepare,
+                   verify_chain=verify_chain, check_go=check_go, read_go=read_go, read_payload=read_payload,
+                   view_pinned=view_pinned, veto_bounds=veto_bounds, prepare=prepare, protected=tuple(protected),
                    pins={'release_sha256': release.receipt_sha, 'capacity_config_sha256': config.sha,
                          'package_sha256': release.implementation_package_sha, 'build_sha': settings.build_sha,
                          'capacity_veto_mode': config.veto_mode,
@@ -699,8 +822,8 @@ def main(argv: list[str] | None = None, *, clock: Callable[[], datetime] = _utcn
                      'session': None, 'mode': None}
     code = EXIT_REFUSED
     try:
-        parser = _Parser(prog='manifest_writer', allow_abbrev=False,
-                         description='Capacity day: admission commit and the dated bar manifest')
+        # No help action: -h is a wrong argument like any other, one JSON line and exit 3.
+        parser = _Parser(prog='manifest_writer', allow_abbrev=False, add_help=False)
         parser.add_argument('--day', required=True, help='Session date, YYYY-MM-DD (New York)')
         parser.add_argument('--manifest-directory', type=Path, help='Required unless --preflight')
         parser.add_argument('--prepare-first', action='store_true',
@@ -712,6 +835,8 @@ def main(argv: list[str] | None = None, *, clock: Callable[[], datetime] = _utcn
         parser.add_argument('--view-opens-at', help='observed_at of the pinned veto view, ISO 8601 with offset')
         parser.add_argument('--max-wait-seconds', type=int, default=0,
                             help='Longest parking before --view-opens-at (0-%d)' % MAX_WAIT_SECONDS)
+        parser.add_argument('--require-go-mode', choices=GO_MODES,
+                            help='Refuse a bar_manifest GO of another mode, before the wait')
         args = parser.parse_args(argv)
 
         def build() -> Context:
@@ -722,8 +847,9 @@ def main(argv: list[str] | None = None, *, clock: Callable[[], datetime] = _utcn
         receipt, code = execute(build, day=args.day, directory=args.manifest_directory,
                                 prepare_first=args.prepare_first, verify_only=args.verify_only,
                                 preflight=args.preflight, expect_sha=args.expect_binding_sha,
-                                view_opens_at=args.view_opens_at, max_wait=args.max_wait_seconds, clock=clock,
-                                sleep=sleep, monotonic=monotonic)
+                                view_opens_at=args.view_opens_at, max_wait=args.max_wait_seconds,
+                                require_go_mode=args.require_go_mode, clock=clock, sleep=sleep,
+                                monotonic=monotonic)
     except Refused:
         pass                                        # the argument refusal prepared above
     sys.stdout.write(json.dumps(receipt, sort_keys=True, separators=(',', ':'), allow_nan=False) + '\n')

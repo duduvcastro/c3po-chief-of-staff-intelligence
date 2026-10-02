@@ -180,6 +180,7 @@ class World:
         self.directory.mkdir(mode=0o700)
         self.sleeps, self.prepared, self.view_reads, self.gates = [], [], [], []
         self.row_present, self.view_is_pinned, self.view_appears_at = True, True, None
+        self.protected = ()
         self.payload = {'contract': self.contract, 'causal': self.causal}
 
     go = property(lambda self: self.gos['bar_manifest'],
@@ -259,13 +260,18 @@ class World:
         self.gates.append(self.now)
         return self.authority.verify_go(go, proposal, self.clock())
 
+    def check_go(self, go, proposal):
+        """What the script's own context() wires: the records, then the documents without the view."""
+        writer.go_records(self.authority, go)
+        writer.static_documents(self.authority, go, proposal)
+
     def context(self, *, prepare=None):
         return writer.Context(
             release=self.release, calendar=self.calendar,
             read_state=lambda: {'state': self.state} if self.row_present else None,
             verify_binding=lambda doc: self.authority.verify_binding(doc, self.clock()), verify_go=self.verify_go,
             verify_chain=lambda day: self.authority.act_b(self.clock(), epoch=EPOCH, first=FIRST_SESSION, day=day),
-            check_go=lambda go: writer.go_records(self.authority, go), read_go=self.read_go,
+            check_go=self.check_go, read_go=self.read_go, protected=self.protected,
             read_payload=lambda day: json.loads(json.dumps(self.payload)),
             view_pinned=lambda day: day == self.day and self.view_is_pinned, veto_bounds=self.veto_bounds,
             prepare=prepare,
@@ -342,8 +348,15 @@ def test_the_readme_pins_the_script_hash_and_names_every_code():
     assert len(codes) > 50 and not [name for name in sorted(codes | statuses) if '`' + name + '`' not in readme]
     assert all("'" + name + "'" in text for name in statuses)
     for phrase in ('/app/day-d-data', '/c3po-capacity', '**Never mount `/etc/c3po-bar` itself.**', '## Open decisions',
-                   '## Not verified', '**read-only**', '| D4 |', '| D6 |', '| D11 |', '| D1 |', '| D3 |'):
+                   '## Not verified', '**read-only**', '| D4 |', '| D6 |', '| D11 |', '| D1 |', '| D3 |',
+                   '`ATTEMPTED`', '`--require-go-mode MODE`', '### Attempts', '### After the commit',
+                   '**Failed attempts are not recorded by the writer.**', '**That invocation is not a fourth attempt**',
+                   '**terminal for the day**', '**its bytes are those manifest bytes**',
+                   'one `--preflight` has to run in the dispatch\'s own layout'):
         assert phrase in readme
+    # What the document may no longer say: both were true of an earlier revision only.
+    assert 'Everything that can refuse is checked before anything is committed' not in readme
+    assert 'the leaf must be 0700' not in readme
 
 
 def _isolated(arguments, *, text=None, path=None, cwd):
@@ -361,6 +374,15 @@ def test_stdin_run_in_isolated_mode_adds_the_application_root_itself(tmp_path):
     assert json.loads(done.stdout) == {'schema': writer.RECEIPT_SCHEMA, 'status': 'REFUSED',
                                        'code': 'MANIFEST_SHADOW_OFF', 'session': D1, 'mode': 'PUBLISH'}
     assert os.listdir(tmp_path) == []
+
+
+@pytest.mark.parametrize('arguments', [['--help'], ['-h'], ['--day', D1, '--help']])
+def test_help_in_isolated_mode_is_a_refusal_line_and_not_exit_0(tmp_path, arguments):
+    text = SCRIPT.read_text().replace(ROOT_LINE, 'APPLICATION_ROOT = ' + repr(str(BACKEND)))
+    done = _isolated(arguments, text=text, cwd=tmp_path)
+    assert (done.returncode, done.stderr) == (3, '') and done.stdout.count('\n') == 1
+    assert json.loads(done.stdout) == {'schema': writer.RECEIPT_SCHEMA, 'status': 'REFUSED',
+                                       'code': 'MANIFEST_ARGUMENTS_INVALID', 'session': None, 'mode': None}
 
 
 def test_file_run_without_the_application_is_one_constant_line(tmp_path):
@@ -1166,8 +1188,8 @@ def test_preflight_writes_and_commits_nothing(calendar, tmp_path):
     assert receipt['checks'] == {
         'state_row_present': True, 'binding_committed': False, 'act_b_chain_verified': True,
         'veto_view_pinned': True, 'day_is_today': True, 'before_cutoff': True, 'payload_contract_valid': True,
-        'go_files_valid': ['admission', 'bar_manifest'], 'directory_checked': True, 'stale_temporaries': 0,
-        'publication_interrupted': False, 'manifest_present': False}
+        'go_files_valid': ['admission', 'bar_manifest'], 'directory_checked': True, 'directory_writable': True,
+        'stale_temporaries': 0, 'publication_interrupted': False, 'manifest_present': False}
     assert receipt['windows'] == {phase: {'not_before': world.gos[phase]['not_before'],
                                           'not_after': world.gos[phase]['not_after']} for phase in world.gos}
     assert (receipt['release_sha256'], receipt['capacity_config_sha256']) == (RELEASE.receipt_sha, '5' * 64)
@@ -1287,6 +1309,10 @@ def test_main_prints_one_line_and_refuses_while_off(monkeypatch, capsys, tmp_pat
 
 
 @pytest.mark.parametrize('arguments', [[], ['--day'], ['--day', D1, '--max-wait-seconds', 'ZZQA'],
+                                       ['-h'], ['--help'], ['--day', D1, '--help'],
+                                       ['--day', D1, '--manifest-directory', '/x', '-h'],
+                                       ['--day', D1, '--manifest-directory', '/x', '--require-go-mode', 'ZZQA'],
+                                       ['--day', D1, '--manifest-directory', '/x', '--require-go-mode'],
                                        ['--day', D1, '--unknown', 'ZZQA'], ['--day', D1],
                                        ['--day', D1, '--manifest-directory', '/x', '--verify'],
                                        ['--day', D1, '--manifest-dir', '/x'],
@@ -1363,7 +1389,8 @@ def _stubbed_settings(world, base, monkeypatch, **delivery):
         r2d2_v2_shadow_enabled=True, r2d2_v2_capacity_required=True,
         database_url='postgresql://synthetic:' + SECRET + '@db.invalid/synthetic',
         r2d2_v2_capacity_config_file=path, r2d2_v2_capacity_config_sha=sha,
-        r2d2_v2_capacity_veto_mode='DISPATCH_AND_DERIVATION_ONLY', r2d2_v2_shadow_release_file='/unused',
+        r2d2_v2_capacity_veto_mode='DISPATCH_AND_DERIVATION_ONLY',
+        r2d2_v2_shadow_release_file='/unused/release.json',
         r2d2_v2_shadow_release_sha=RELEASE.receipt_sha, build_sha=BUILD)
 
 
@@ -1484,7 +1511,8 @@ def certified_release(base, calendar):
                                  'receipt_sha': hashlib.sha256(('synthetic consent ' + party).encode()).hexdigest(),
                                  **bindings} for party in ('CODEX', 'FABLE', 'DUDU')]
     raw = store_canonical(body)
-    path = base / 'release.json'
+    (base / 'release').mkdir(mode=0o700)
+    path = base / 'release' / 'release.json'
     _private(path, raw)
     sha = hashlib.sha256(raw).hexdigest()
     return path, sha, Release.verify(raw, sha, now=at(D1, 9, 0), build_sha=BUILD, calendar=calendar)
@@ -1502,7 +1530,7 @@ class Deployment:
     the test clock), the release/Act A/Act B/GO documents and the symbols (synthetic).
     """
 
-    def __init__(self, calendar, tmp_path, monkeypatch, **world_options):
+    def __init__(self, calendar, tmp_path, monkeypatch, before_delivery=None, **world_options):
         from app import config, database, r2d2_v2_capacity_bootstrap, r2d2_v2_shadow_worker, r2d2_v2_store
         from app.config import Settings
         from app.r2d2_v2_massive_sessions import SessionJournalRoot
@@ -1514,6 +1542,8 @@ class Deployment:
         world.authority.revocation_reader = None                   # only the pinned view file may answer
         (base / 'journal').mkdir(mode=0o700)
         SessionJournalRoot(base / 'journal', EPOCH, create=True)
+        if before_delivery is not None:
+            before_delivery(world)                                 # an authoring defect, delivered consistently
         config_path, config_sha, _ = deliver(world, base)
         self.store = MemoryShadowStore()
         self.connections = []
@@ -1668,3 +1698,464 @@ def test_symbols_and_secret_never_appear_in_any_output(calendar, tmp_path, monke
     assert 'db.invalid' not in output.out and str(world.directory) not in output.out
     symbols = set(world.document['monitored_symbols'])
     assert symbols and all(name in SENTINELS for name in symbols)   # the sentinels are what would have leaked
+
+
+# ---- nothing is committed unless the directory can take the file ---------------------------
+
+def _not_root():
+    if os.geteuid() == 0:
+        pytest.skip('the mode bits do not stop uid 0 here')
+
+
+def test_unwritable_directory_is_refused_before_the_wait_and_never_commits(calendar, tmp_path):
+    """Mode 0500 stands in for a read-only bind: private, owned, searchable, not writable."""
+    _not_root()
+    world = World(calendar, tmp_path, committed=False)
+    world.directory.chmod(0o500)
+    try:
+        world.now = at(D1, 9, 5)
+        receipt, code = preflight(world, directory=world.directory)
+        assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_DIRECTORY_NOT_WRITABLE')
+        receipt, code = preflight(world)                           # without the directory it cannot know
+        assert (code, receipt['checks']['directory_checked']) == (0, False)
+        assert 'directory_writable' not in receipt['checks']
+        for minute in (30, 40, 50):                                # primary and two contingencies
+            world.observed, world.until = at(D1, 12, minute), at(D1, 12, minute, 10)
+            world.now = world.observed - timedelta(seconds=30)
+            receipt, code = world.run(prepare=forbidden, view_opens_at=world.observed, max_wait=900)
+            assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_DIRECTORY_NOT_WRITABLE')
+            assert 'prepare_status' not in receipt and 'waited_seconds' not in receipt
+        assert not world.sleeps and not world.view_reads and not world.gates
+        assert 'daily_capacity' not in world.state and entries(world) == []
+    finally:
+        world.directory.chmod(0o700)
+
+
+def test_unwritable_directory_through_the_real_collector_commits_nothing(calendar, tmp_path, monkeypatch, capsys):
+    _not_root()
+    deployment = Deployment(calendar, tmp_path, monkeypatch)
+    world, store = deployment.world, deployment.store
+    arguments = ['--prepare-first', '--manifest-directory', str(world.directory), '--view-opens-at',
+                 world.observed.isoformat(), '--max-wait-seconds', '900']
+    world.directory.chmod(0o500)
+    try:
+        world.now = at(D1, 9, 5)
+        receipt, code, _ = deployment.main(capsys, '--preflight', *arguments)
+        assert (code, receipt['code']) == (3, 'MANIFEST_DIRECTORY_NOT_WRITABLE')
+        world.now = at(D1, 12, 35)
+        receipt, code, _ = deployment.main(capsys, *arguments)
+        assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_DIRECTORY_NOT_WRITABLE')
+        assert store.read(EPOCH) is None and not world.sleeps
+    finally:
+        world.directory.chmod(0o700)
+    assert entries(world) == []
+    receipt, code, _ = deployment.main(capsys, *arguments)         # the same dispatch once the bind is writable
+    assert (code, receipt['status'], receipt['prepare_status']) == (0, 'PUBLISHED_VERIFIED', 'COMMITTED')
+
+
+@pytest.mark.parametrize('volume', [
+    {'f_flag': os.ST_RDONLY},                                      # read-only filesystem or bind
+    {'f_bavail': 0, 'f_bfree': 0},                                 # no free block
+    {'f_ffree': 0},                                                # no free inode
+], ids=['read-only', 'no-blocks', 'no-inodes'])
+def test_read_only_or_full_filesystem_is_refused_before_prepare(calendar, tmp_path, monkeypatch, volume):
+    world = World(calendar, tmp_path, committed=False)
+    answer = {'f_flag': 0, 'f_blocks': 1000, 'f_bavail': 10, 'f_bfree': 10, 'f_files': 1000, 'f_ffree': 10, **volume}
+    monkeypatch.setattr(os, 'fstatvfs', lambda _fd: SimpleNamespace(**answer))
+    receipt, code = world.run(prepare=forbidden)
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_DIRECTORY_NOT_WRITABLE')
+    assert 'daily_capacity' not in world.state and entries(world) == [] and not world.gates
+    world.now = at(D1, 9, 5)
+    receipt, code = preflight(world, directory=world.directory)
+    assert (code, receipt['code']) == (3, 'MANIFEST_DIRECTORY_NOT_WRITABLE')
+    monkeypatch.undo()
+    world.now = at(D1, 12, 45, 2)
+    receipt, code = world.run(prepare=world.commit)
+    assert (code, receipt['status']) == (0, 'PUBLISHED_VERIFIED')
+
+
+def test_a_filesystem_that_reports_no_counters_is_not_called_full(calendar, tmp_path, monkeypatch):
+    world = World(calendar, tmp_path)
+    monkeypatch.setattr(os, 'fstatvfs', lambda _fd: SimpleNamespace(f_flag=0, f_blocks=0, f_bavail=0, f_bfree=0,
+                                                                    f_files=0, f_ffree=0))
+    receipt, code = world.run()
+    assert (code, receipt['status']) == (0, 'PUBLISHED_VERIFIED')
+
+
+def test_verify_only_reads_a_directory_it_could_not_write(calendar, tmp_path, monkeypatch):
+    world = World(calendar, tmp_path)
+    world.path.write_bytes(world.expected())
+    world.path.chmod(0o600)
+    monkeypatch.setattr(os, 'access', forbidden)
+    monkeypatch.setattr(os, 'fstatvfs', forbidden)
+    receipt, code = world.run(verify_only=True)
+    assert (code, receipt['status']) == (0, 'MATCH_VERIFIED')
+
+
+def test_a_directory_that_refuses_a_new_file_stops_the_run_before_prepare(calendar, tmp_path, monkeypatch):
+    """Whatever the non-writing check missed: the temporary is created before prepare is called."""
+    world = World(calendar, tmp_path, committed=False)
+    real = os.open
+
+    def refusing(path, flags, *args, **kwargs):
+        if flags & os.O_CREAT:
+            raise PermissionError(13, 'synthetic ZZQA')
+        return real(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, 'open', refusing)
+    receipt, code = world.run(prepare=forbidden)
+    monkeypatch.undo()
+    assert (code, receipt['status'], receipt['code']) == (1, 'UNVERIFIED', 'MANIFEST_FILE_UNAVAILABLE')
+    assert world.gates and 'go_sha256' in receipt              # it got as far as the first gate, and no further
+    assert 'prepare_status' not in receipt and not any(key in receipt for key in HASHED)
+    assert 'daily_capacity' not in world.state and entries(world) == [] and clean(line(receipt))
+
+
+def test_the_temporary_exists_and_is_empty_when_prepare_is_called(calendar, tmp_path):
+    world = World(calendar, tmp_path, committed=False)
+    seen = []
+
+    def prepare(day):
+        names = entries(world)
+        seen.append([(os.stat(world.directory / name).st_size, os.stat(world.directory / name).st_mode & 0o7777)
+                     for name in names])
+        assert len(names) == 1 and names[0].startswith('.' + D1 + '.json.') and names[0].endswith('.tmp')
+        return world.commit(day)
+
+    receipt, code = world.run(prepare=prepare)
+    assert (code, receipt['status']) == (0, 'PUBLISHED_VERIFIED') and seen == [[(0, 0o600)]]
+    assert entries(world) == [D1 + '.json'] and world.path.read_bytes() == world.expected()
+
+
+def test_a_refusal_after_the_temporary_was_created_leaves_no_temporary(calendar, tmp_path):
+    world = World(calendar, tmp_path, committed=False)
+
+    def prepare(_day):
+        raise ValueError('CAPACITY_GO_REFUSED')                    # a packaged refusal: nothing committed
+
+    receipt, code = world.run(prepare=prepare)
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'CAPACITY_GO_REFUSED')
+    assert receipt['prepare_status'] == 'ATTEMPTED' and entries(world) == []
+
+
+# ---- what prepare_status says when prepare did not return cleanly ---------------------------
+
+def test_prepare_that_commits_and_then_raises_is_reported_as_attempted(calendar, tmp_path):
+    world = World(calendar, tmp_path, committed=False)
+
+    def prepare(day):
+        world.commit(day)                                          # the transaction is committed
+        raise type('OperationalError', (Exception,), {'__module__': 'psycopg.errors'})(SECRET)
+
+    receipt, code = world.run(prepare=prepare)
+    assert (code, receipt['status'], receipt['code']) == (1, 'UNVERIFIED', 'MANIFEST_DATABASE_UNAVAILABLE')
+    assert receipt['prepare_status'] == 'ATTEMPTED' and 'daily_capacity' in world.state
+    assert not any(key in receipt for key in HASHED) and entries(world) == [] and clean(line(receipt))
+    receipt, code = world.run(prepare=forbidden)                   # the same view is still open
+    assert (code, receipt['status'], receipt['prepare_status']) == (0, 'PUBLISHED_VERIFIED', 'PRECOMMITTED')
+
+
+def test_prepare_that_returns_something_unexpected_is_reported_as_attempted(calendar, tmp_path):
+    world = World(calendar, tmp_path, committed=False)
+    receipt, code = world.run(prepare=lambda _day: {'status': 'ZZQA', 'sha': 'f' * 64})
+    assert (code, receipt['code'], receipt['prepare_status']) == (3, 'MANIFEST_PREPARE_FAILED', 'ATTEMPTED')
+    assert entries(world) == [] and clean(line(receipt))
+
+
+# ---- a day with an empty list --------------------------------------------------------------
+
+def test_empty_list_day_is_refused_the_same_way_in_every_window_and_by_the_readback(calendar, tmp_path):
+    world = World(calendar, tmp_path, symbols=[], open_symbol=None, committed=False)
+    receipt, code = world.run(prepare=world.commit)
+    assert (code, receipt['code'], receipt['prepare_status']) == (3, 'MANIFEST_SYMBOLS_EMPTY', 'COMMITTED')
+    world.observed, world.until, world.now = at(D1, 13, 0), at(D1, 13, 0, 10), at(D1, 12, 50)
+    receipt, code = world.run(prepare=forbidden, view_opens_at=world.observed, max_wait=900)
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_SYMBOLS_EMPTY')
+    assert receipt['prepare_status'] == 'PRECOMMITTED' and not world.sleeps and 'waited_seconds' not in receipt
+    receipt, code = world.run(verify_only=True)
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_SYMBOLS_EMPTY')
+    assert entries(world) == []
+
+
+# ---- the repair only completes a publication of the committed binding ----------------------
+
+def _two_names(world, raw, mode=0o600):
+    world.path.write_bytes(raw)
+    world.path.chmod(mode)
+    leftover = world.directory / ('.' + world.day + '.json.0123456789abcdef.tmp')
+    os.link(world.path, leftover)
+    return leftover
+
+
+def _untouched(world, leftover, links=2):
+    from app import r2d2_v2_massive_supervisor as service
+    assert leftover.exists() and world.path.stat().st_nlink == links
+    with pytest.raises(ValueError, match='SUPERVISOR_PRIVATE_FILE'):       # the supervisor still refuses it
+        service.private_bytes(world.path, 65536)
+
+
+def _no_authority(world):
+    context = world.context(prepare=forbidden)
+    context.veto_bounds = context.verify_go = context.read_go = context.check_go = forbidden
+    return writer.execute(lambda: context, day=world.day, directory=world.directory, prepare_first=True,
+                          clock=world.clock, sleep=forbidden)
+
+
+def test_foreign_two_link_file_is_never_repaired(calendar, tmp_path):
+    """Other bytes under the final name plus a temporary name: removing the name would make the
+    supervisor accept a manifest that is not the binding's."""
+    world = World(calendar, tmp_path)
+    foreign = store_canonical({'epoch': EPOCH, 'session': D1, 'owner_uid': os.geteuid(), 'symbols': ['ZZQA']})
+    leftover = _two_names(world, foreign)
+    before = entries(world)
+    world.now = at(D1, 13, 10)
+    receipt, code = _no_authority(world)
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_CONFLICT')
+    assert receipt['repaired_temporaries'] == 0 and entries(world) == before
+    assert world.path.read_bytes() == foreign and not any(key in receipt for key in HASHED)
+    _untouched(world, leftover)
+
+
+@pytest.mark.parametrize('damage,expected', [
+    (lambda w: w.state['daily_capacity'][D1]['document']['monitored_symbols'].append('ZZQEXTRA'),
+     'CAPACITY_RESTORE_HASH'),
+    (lambda w: _tamper_document(w, 'B_DUDU'), 'CAPACITY_AUTHORITY_UNVERIFIED'),
+], ids=['tampered binding', 'broken Act B chain'])
+def test_nothing_is_repaired_when_the_binding_cannot_be_restored(calendar, tmp_path, damage, expected):
+    world = World(calendar, tmp_path)
+    leftover = _two_names(world, world.expected())
+    damage(world)
+    world.now = at(D1, 13, 10)
+    receipt, code = world.run()
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', expected)
+    assert receipt['repaired_temporaries'] == 0
+    _untouched(world, leftover)
+
+
+@pytest.mark.parametrize('shape', ['mode', 'third link', 'two temporaries', 'longer'])
+def test_only_the_exact_shape_of_an_interrupted_publication_is_repaired(calendar, tmp_path, shape):
+    world = World(calendar, tmp_path)
+    leftover = _two_names(world, world.expected() + (b' ' if shape == 'longer' else b''),
+                          mode=0o640 if shape == 'mode' else 0o600)
+    links = 2
+    if shape == 'third link':
+        os.link(world.path, world.directory / 'second-name')
+        links = 3
+    if shape == 'two temporaries':
+        os.link(world.path, world.directory / ('.' + D1 + '.json.fedcba9876543210.tmp'))
+        links = 3
+    before = entries(world)
+    world.now = at(D1, 13, 10)
+    receipt, code = _no_authority(world)
+    assert (code, receipt['status']) == (3, 'REFUSED')
+    assert receipt['code'] == ('MANIFEST_CONFLICT' if shape == 'longer' else 'MANIFEST_PUBLICATION_INTERRUPTED')
+    assert receipt['repaired_temporaries'] == 0 and entries(world) == before
+    _untouched(world, leftover, links)
+
+
+def test_repair_compares_the_bytes_before_it_removes_the_name(calendar, tmp_path, monkeypatch):
+    world = World(calendar, tmp_path)
+    _two_names(world, world.expected())
+    order, real_read, real_unlink = [], os.read, os.unlink
+    monkeypatch.setattr(os, 'read', lambda *a: (order.append('read'), real_read(*a))[1])
+    monkeypatch.setattr(os, 'unlink', lambda *a, **k: (order.append('unlink'), real_unlink(*a, **k))[1])
+    world.now = at(D1, 13, 10)
+    receipt, code = _no_authority(world)
+    monkeypatch.undo()
+    assert (code, receipt['status'], receipt['repaired_temporaries']) == (0, 'ALREADY_PUBLISHED_VERIFIED', 1)
+    assert order.count('unlink') == 1 and 'read' in order[:order.index('unlink')]
+    assert entries(world) == [D1 + '.json'] and world.path.stat().st_nlink == 1
+
+
+# ---- a name this run did not create is made durable before it is called verified ------------
+
+def test_already_published_fsyncs_the_directory_and_the_readback_does_not(calendar, tmp_path, monkeypatch):
+    import stat as stat_module
+    world = World(calendar, tmp_path)
+    world.path.write_bytes(world.expected())                       # left by a run killed before its directory fsync
+    world.path.chmod(0o600)
+    synced, real = [], os.fsync
+    monkeypatch.setattr(os, 'fsync', lambda fd: (synced.append(stat_module.S_ISDIR(os.fstat(fd).st_mode)), real(fd))[1])
+    receipt, code = world.run(verify_only=True)
+    assert (code, receipt['status']) == (0, 'MATCH_VERIFIED') and synced == []
+    world.now = at(D1, 13, 10)
+    receipt, code = _no_authority(world)
+    assert (code, receipt['status'], receipt['repaired_temporaries']) == (0, 'ALREADY_PUBLISHED_VERIFIED', 0)
+    assert synced == [True]
+
+
+# ---- the manifest directory is none of the configured roots ---------------------------------
+
+@pytest.mark.parametrize('relation', ['equal', 'inside', 'contains'])
+def test_manifest_directory_that_touches_a_configured_root_is_refused(calendar, tmp_path, relation):
+    world = World(calendar, tmp_path, committed=False)
+    world.protected = {'equal': (str(world.directory),), 'inside': ('', 'relative', str(world.directory.parent)),
+                       'contains': (str(world.directory / 'go'),)}[relation]
+    receipt, code = world.run(prepare=forbidden)
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_DIRECTORY_OVERLAP')
+    assert 'stale_temporaries' not in receipt and 'daily_capacity' not in world.state and entries(world) == []
+    world.now = at(D1, 9, 5)
+    receipt, code = preflight(world, directory=world.directory)
+    assert (code, receipt['code']) == (3, 'MANIFEST_DIRECTORY_OVERLAP')
+    world.path.write_bytes(world.expected())
+    receipt, code = world.run(verify_only=True)
+    assert (code, receipt['code']) == (3, 'MANIFEST_DIRECTORY_OVERLAP')
+    world.protected = ('', 'relative', str(world.directory) + '-sibling', str(world.directory.parent / 'go'))
+    world.path.unlink()
+    world.now = at(D1, 12, 45, 2)
+    receipt, code = world.run(prepare=world.commit)                # siblings and unusable entries do not refuse
+    assert (code, receipt['status']) == (0, 'PUBLISHED_VERIFIED')
+
+
+@pytest.mark.parametrize('target', ['documents', 'go', 'payload', 'config', 'journal', 'release', 'absent-source',
+                                    'absent-raw', '.', 'documents/below'])
+def test_real_wiring_never_publishes_into_or_around_a_configured_root(calendar, tmp_path, monkeypatch, capsys, target):
+    deployment = Deployment(calendar, tmp_path, monkeypatch)
+    world, store = deployment.world, deployment.store
+    directory = Path(os.path.normpath(deployment.base / target))
+    directory.mkdir(mode=0o700, exist_ok=True)
+    before = sorted(os.listdir(directory))
+    world.now = at(D1, 12, 45, 2)
+    receipt, code, _ = deployment.main(capsys, '--prepare-first', '--manifest-directory', str(directory))
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_DIRECTORY_OVERLAP')
+    assert store.read(EPOCH) is None and sorted(os.listdir(directory)) == before
+    world.now = at(D1, 9, 5)
+    receipt, code, _ = deployment.main(capsys, '--preflight', '--prepare-first', '--manifest-directory', str(directory))
+    assert (code, receipt['code']) == (3, 'MANIFEST_DIRECTORY_OVERLAP')
+
+
+# ---- the documents behind a GO are verified in full before the wait -------------------------
+
+def _go_record(world, **changes):
+    go = world.gos['bar_manifest']
+    record = {'go_sha': digest(go), 'template_sha': go['template_sha'], 'decision': 'GO', 'role': 'FABLE',
+              'epoch': EPOCH, 'first_session': FIRST_SESSION, 'day': world.day, 'phase': 'bar_manifest',
+              'published_at': go['authority_receipts']['published_at'], **changes}
+    world.put('GO:bar_manifest', document('GO', record))
+
+
+def _wrong_act_b_sha(world):
+    world.gos['bar_manifest']['authority_receipts']['signed_act_b_sha'] = 'f' * 64
+    _go_record(world)
+
+
+def _publication_of_another_day(world):
+    go = world.gos['bar_manifest']
+    world.put('PUBLICATION:bar_manifest', document('PUBLICATION', {
+        'role': 'FABLE', 'template_sha': go['template_sha'], 'phase': 'bar_manifest', 'day': D2,
+        'published_at': go['authority_receipts']['published_at'], 'epoch': EPOCH, 'first_session': FIRST_SESSION}))
+    go['authority_receipts']['publication_receipt_sha'] = world.pins['PUBLICATION:bar_manifest']['sha256']
+    _go_record(world)
+
+
+def _template_outside_act_b(world):
+    world.put('TEMPLATE', document('TEMPLATE', {**entry(world.day), 'phases': ['admission', 'bar_manifest']}))
+
+
+def _admission_record_of_another_day(world):
+    go = world.gos['admission']
+    world.put('GO:admission', document('GO', {
+        'go_sha': digest(go), 'template_sha': go['template_sha'], 'decision': 'GO', 'role': 'FABLE', 'epoch': EPOCH,
+        'first_session': FIRST_SESSION, 'day': D2, 'phase': 'admission'}))
+
+
+# Authoring defects that need neither clock nor view. Every pin and hash is consistent.
+DOCUMENT_DEFECTS = [
+    ('wrong signed_act_b_sha', _wrong_act_b_sha),
+    ('publication record of another day', _publication_of_another_day),
+    ('GO record of another day', lambda w: _go_record(w, day=D2)),
+    ('GO record with the owner role', lambda w: _go_record(w, role='DUDU')),
+    ('template record outside the Act B set', _template_outside_act_b),
+    ('admission GO record of another day', _admission_record_of_another_day),
+]
+
+
+@pytest.mark.parametrize('label,defect', DOCUMENT_DEFECTS, ids=[case[0] for case in DOCUMENT_DEFECTS])
+def test_documentary_defects_are_refused_by_the_preflight_and_before_the_wait(calendar, tmp_path, label, defect):
+    world = World(calendar, tmp_path, committed=False)
+    defect(world)
+    world.now = at(D1, 9, 5)
+    receipt, code = preflight(world, view_opens_at=world.observed, max_wait=900)
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_GO_DOCUMENTS')
+    world.now = at(D1, 12, 35)                                     # ten minutes before the view
+    receipt, code = world.run(prepare=forbidden, view_opens_at=world.observed, max_wait=900)
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_GO_DOCUMENTS')
+    assert not world.sleeps and not world.view_reads and not world.gates and 'waited_seconds' not in receipt
+    assert 'daily_capacity' not in world.state and entries(world) == [] and clean(line(receipt))
+
+
+@pytest.mark.parametrize('label,defect', DOCUMENT_DEFECTS[:5], ids=[case[0] for case in DOCUMENT_DEFECTS[:5]])
+def test_documentary_defects_on_the_real_wiring(calendar, tmp_path, monkeypatch, capsys, label, defect):
+    """The same through main(), the real CapacityConfig and its ConfigAuthority, and the real collector."""
+    deployment = Deployment(calendar, tmp_path, monkeypatch, before_delivery=defect)
+    world = deployment.world
+    arguments = ['--prepare-first', '--manifest-directory', str(world.directory), '--view-opens-at',
+                 world.observed.isoformat(), '--max-wait-seconds', '900']
+    world.now = at(D1, 9, 5)
+    receipt, code, _ = deployment.main(capsys, '--preflight', *arguments)
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_GO_DOCUMENTS')
+    world.now = at(D1, 12, 35)
+    receipt, code, _ = deployment.main(capsys, *arguments)
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_GO_DOCUMENTS')
+    assert 'waited_seconds' not in receipt and 'view' not in receipt and not world.sleeps
+    assert deployment.store.read(EPOCH) is None and entries(world) == []
+
+
+def test_static_documents_never_stands_in_for_the_veto_view(calendar, tmp_path):
+    """It accepts a vetoed GO (it has no view); the gate asks the real authority and refuses."""
+    import ast
+    world = World(calendar, tmp_path, veto=True)
+    plan_ = world.contract['consumer_plans']['bar_manifest']
+    reader = world.authority.revocation_reader
+    assert writer.static_documents(world.authority, world.go, plan_) is None
+    assert world.authority.revocation_reader is reader             # the real authority keeps its own view
+    assert world.authority.verify_go(world.go, plan_, world.clock()) is False
+    with pytest.raises(ValueError, match='AUTHORITY_UNVERIFIED_OR_VETOED'):
+        writer._gate(world.context(), world.go, plan_, clock=world.clock, cutoff=at(D1, 13, 20))
+    tree = ast.parse(SCRIPT.read_text())
+    functions = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+
+    def names(function):
+        return ({inner.id for inner in ast.walk(function) if isinstance(inner, ast.Name)}
+                | {inner.attr for inner in ast.walk(function) if isinstance(inner, ast.Attribute)})
+
+    assert {name for name, node in functions.items() if '_no_view' in names(node)} == {'static_documents'}
+    assert {name for name, node in functions.items() if 'static_documents' in names(node)} == {'check_go', 'context'}
+    for gate in ('_gate', '_publish', '_reserved', '_repair', '_verified'):
+        assert not {'check_go', 'static_documents', 'static_go', 'go_records'} & names(functions[gate])
+    assert 'verify_go' in names(functions['_gate'])
+
+
+# ---- the mode of the bar_manifest GO can be required ----------------------------------------
+
+def test_required_go_mode_is_enforced_before_the_wait(calendar, tmp_path):
+    world = World(calendar, tmp_path, committed=False, mode='INDIVIDUAL')
+    world.now = at(D1, 12, 44, 30)
+    receipt, code = world.run(prepare=forbidden, view_opens_at=world.observed, max_wait=900,
+                              require_go_mode='DELEGATED_ACT_B')
+    assert (code, receipt['status'], receipt['code']) == (3, 'REFUSED', 'MANIFEST_GO_MODE')
+    assert not world.sleeps and not world.gates and 'daily_capacity' not in world.state and entries(world) == []
+    world.now = at(D1, 9, 5)
+    receipt, code = preflight(world, require_go_mode='DELEGATED_ACT_B')
+    assert (code, receipt['code']) == (3, 'MANIFEST_GO_MODE')
+    receipt, code = preflight(world, require_go_mode='INDIVIDUAL')
+    assert (code, receipt['status']) == (0, 'PREFLIGHT_OK')
+    world.now = at(D1, 12, 45, 2)
+    for value in ('individual', 'ZZQA', '', 1):
+        receipt, code = world.run(prepare=forbidden, require_go_mode=value)
+        assert (code, receipt['code']) == (3, 'MANIFEST_ARGUMENTS_INVALID')
+    receipt, code = world.run(verify_only=True, require_go_mode='INDIVIDUAL')     # a readback reads no GO
+    assert (code, receipt['code']) == (3, 'MANIFEST_ARGUMENTS_INVALID')
+    receipt, code = world.run(prepare=world.commit, require_go_mode='INDIVIDUAL')
+    assert (code, receipt['status'], receipt['go_mode']) == (0, 'PUBLISHED_VERIFIED', 'INDIVIDUAL')
+
+
+def test_required_go_mode_through_main(calendar, tmp_path, monkeypatch, capsys):
+    deployment = Deployment(calendar, tmp_path, monkeypatch)       # the delivered bar_manifest GO is delegated
+    world = deployment.world
+    arguments = ['--prepare-first', '--manifest-directory', str(world.directory)]
+    world.now = at(D1, 12, 45, 2)
+    receipt, code, _ = deployment.main(capsys, *arguments, '--require-go-mode', 'INDIVIDUAL')
+    assert (code, receipt['code']) == (3, 'MANIFEST_GO_MODE') and deployment.store.read(EPOCH) is None
+    receipt, code, _ = deployment.main(capsys, *arguments, '--require-go-mode', 'DELEGATED_ACT_B')
+    assert (code, receipt['status'], receipt['go_mode']) == (0, 'PUBLISHED_VERIFIED', 'DELEGATED_ACT_B')
