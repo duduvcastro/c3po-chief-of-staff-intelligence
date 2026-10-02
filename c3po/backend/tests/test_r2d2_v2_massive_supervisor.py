@@ -25,7 +25,7 @@ EPOCH='R2D2-V2-CONTAINER-LAYOUT'
 # so the two could otherwise change together unnoticed.
 CATALOG_INIT_SHA256='715d7a660e7a2c4dd5c11287063726cc971156dd6fefc2365c431c9aee0f4bb7'
 # The two journal placements of the README, with its own example pairs (host path, container path). A is outside
-# the data volume, expected on the host's root filesystem (the receipt did not read that); B is a leaf of the data volume.
+# the data volume, below /var/lib, which the receipt read on the host's root filesystem; B is a leaf of the data volume.
 PLACEMENTS={'A':('/var/lib/c3po-bar/journal','/c3po-bar-journal'),
     'B':('/mnt/day-d-data/r2d2-v2-massive-epoch03','/app/day-d-data/r2d2-v2-massive-epoch03')}
 DATA_VOLUME=Path('/mnt/day-d-data');DATA_TARGET=Path('/app/day-d-data');DEPLOY_TREE=Path('/opt/chief-of-staff-digital')
@@ -822,7 +822,7 @@ def cited(module,first,last=None):
 def test_readme_describes_both_journal_placements_and_what_is_checked_above_the_root():
     from app.r2d2_v2_epoch_assembler import EPOCH as signed_epoch
     readme=(UNIT_ROOT/'README.md').read_text();(a_host,a_container),(b_host,b_container)=PLACEMENTS['A'],PLACEMENTS['B']
-    assert ('```\nplacement A: outside the data volume, expected on the host\'s root filesystem\n'
+    assert ('```\nplacement A: outside the data volume, below /var/lib (on the host\'s root filesystem in the receipt of 2026-10-02)\n'
         'host      '+a_host+'                  (next to /var/lib/c3po-bar/supervisor)\n'
         'container '+a_container+'                          (producer --journal-root; reader journal directory)\n\n'
         'placement B: directly inside the data volume\n'
@@ -842,7 +842,7 @@ def test_readme_describes_both_journal_placements_and_what_is_checked_above_the_
         '**Placement A: outside the data volume.**','- **No compose service sees the journal.**',
         '- **Every consumer bind-mounts it explicitly, at the same container path.**','- **The container path is outside `/app`**',
         '- **The free-space floor is measured on the root filesystem**','Under placement A **the data volume is not touched at all**',
-        '  | placement A: `'+a_host+'` = `@HOST_JOURNAL_ROOT@` | `root:root` | 0700 | empty; created new below `/var/lib/c3po-bar`, expected on the root filesystem (read back below) |',
+        '  | placement A: `'+a_host+'` = `@HOST_JOURNAL_ROOT@` | `root:root` | 0700 | empty; created new below `/var/lib/c3po-bar`, on the filesystem of `/var/lib`, the root filesystem in the receipt of 2026-10-02 (read back below) |',
         '  | placement B: `<data volume>/<leaf>` = `@HOST_JOURNAL_ROOT@` | `root:root` | 0700 | empty; created new inside the data mount |',
         '| placement A: `'+a_host+'` | as above |','| placement B: `<data volume>/<leaf>` | as above |',
         '  - **placement A:** by an **explicit bind** of the journal root, `type=bind,source=@HOST_JOURNAL_ROOT@,target=@CONTAINER_JOURNAL_ROOT@`',
@@ -914,29 +914,57 @@ def test_readme_reads_the_free_space_gate_on_the_journal_filesystem_and_attribut
     assert all(value in readme for value in (
         '     | Filesystem | Bytes available | Against the floor (%d) | Against five sessions (%d) |'%(floor,five),
         '     | data volume (placement B) | %d | %d above: less than one session (%d) | **%d short** |'%(data,data-floor,session,five-data),
-        '     | root filesystem `/` (placement A, only if the journal root\'s mount point is `/`) | %d | %d above | %d above |'%(root,root-floor,root-five),
+        '     | root filesystem, read at `/` and at `/var/lib` (placement A, as long as the readback shows the journal root on it) | %d | %d above | %d above |'%(root,root-floor,root-five),
         'the data volume is %d bytes above the producer\'s floor, less than one session\'s own budget, while the root filesystem has %d '
         'bytes available'%(data-floor,root),'%d bytes available, %d above the floor, less than one session\'s own budget'%(data,data-floor),
-        'with **%d bytes available**;'%data,'- the host\'s root filesystem: **%d bytes available**;'%root))
+        'with **%d bytes available**;'%data,
+        '- the host\'s root filesystem, read at `/` and at `/var/lib`: the same device number and the same free-space figures at both, with '
+        '**%d bytes available**;'%root))
     assert (data-floor,five-data,root-floor,root-five)==(383451136,2636447744,541525225472,538505326592)
-    # The second figure is the receipt's reading of "/". That placement A's journal root is on that filesystem is the
-    # expectation, not a receipt fact: the document says so where the placement is introduced and where the figure is used.
+    # The receipt read "/" and "/var/lib": the same device number and the same free-space figures, so /var/lib was on the
+    # root filesystem then. The document says that where the placement is introduced and where the figure is used.
     assert all(value in readme for value in (
-        'bytes available (see "Activation gate"). **That figure is the receipt\'s reading of `/`, not of the journal root**, which did not exist '
-        'yet: that `/var/lib` is on the root filesystem is the expectation, not a receipt fact, and the figure applies to placement A only if '
-        'the readback shows that the mount point of the journal root is `/` (operation 1 reads which filesystem it would be on; operations 2 '
-        'and 4 read its mount point back once it exists).',
-        '**That `/var/lib` is on the host\'s root filesystem is the expectation, not a receipt fact**: the receipt of 2026-10-02 measured the '
-        'bytes available on `/` and the absence of `/var/lib/c3po-bar`, and did not read which filesystem `/var/lib` belongs to. Operation 1 '
-        'reads which filesystem the journal root would be on; operations 2 and 4 read back its mount point once it exists. Wherever this document says "the root filesystem" for placement A, or uses the '
-        'receipt\'s figure for it, that holds only if the readback shows that mount point to be `/`.',
-        'The second row is the receipt\'s reading of `/`: the receipt did not read which filesystem `/var/lib` belongs to, so that row applies '
-        'to placement A only if the readback shows that the mount point of the journal root is `/`.',
-        '(for placement A the filesystem that holds `/var/lib`, expected to be the root filesystem; for placement B the data volume',
-        '- **The free-space floor is measured on the root filesystem**, if that is where the readback finds the journal root',
-        'Under placement A that is expected to be the host\'s root filesystem (the readback decides); under placement B, the data volume.',
-        '| as above | Expected on the root filesystem (operations 2 and 4 read its mount point back), created by operation 2'))
-    # Stated as settled, these were not receipt facts.
+        'bytes available (see "Activation gate"). **The receipt read that figure at `/` and at `/var/lib`, with the same device number and '
+        'the same free-space figures**, so `/var/lib` was on the root filesystem when the receipt was taken. What it could not read is the '
+        'journal root itself, which did not exist yet, or whether anything changes between the receipt and provisioning: the figure applies '
+        'to placement A as long as the readback shows the journal root on the same filesystem as `/` (operation 1 reads which filesystem it '
+        'would be on; operations 2 and 4 read its mount point back once it exists).',
+        '**`/var/lib` was on the host\'s root filesystem when the receipt of 2026-10-02 was taken**: the receipt read `/` and `/var/lib` and '
+        'found the same device number and the same free-space figures at both (a device number cannot show a bind mount of that same '
+        'filesystem). What the receipt could not read is the journal root itself and its parent `/var/lib/c3po-bar`, which did not exist then, '
+        'and whether anything changes between the receipt and provisioning. So operation 1 reads which filesystem the journal root would be on, '
+        'and operations 2 and 4 read back its mount point once it exists. Wherever this document says "the root filesystem" for placement A, or '
+        'uses the receipt\'s figure for it, that holds as long as that readback shows the journal root on the same filesystem as `/`.',
+        'The second row is what the receipt read at `/` and at `/var/lib`, with the same device number and the same free-space figures at both, '
+        'so `/var/lib` was on the root filesystem that day. The receipt could not read the journal root, which did not exist, so that row '
+        'applies to placement A as long as the readback shows the journal root on the same filesystem as `/`.',
+        '(for placement A the filesystem that holds `/var/lib`, which was the root filesystem in the receipt of 2026-10-02; for placement B the '
+        'data volume',
+        '- **The free-space floor is measured on the root filesystem**, where the receipt of 2026-10-02 found `/var/lib` and where the readback '
+        'has to find the journal root: the producer measures the filesystem of the journal root, whichever it is',
+        'Under placement A that is the filesystem of `/var/lib`, the host\'s root filesystem in the receipt of 2026-10-02 (the readback of the '
+        'journal root decides); under placement B, the data volume.',
+        '| as above | Below `/var/lib`, which the receipt of 2026-10-02 read on the root filesystem (operations 2 and 4 read the journal '
+        'root\'s mount point back), created by operation 2'))
+    # The readbacks stay as they were: what the receipt could not read (the journal root, absent then) is read once it exists.
+    assert all(value in readme for value in (
+        'which filesystem each candidate journal root would be on and the bytes available on it (for placement A',
+        'the filesystem the journal root is on (mount point and device, as `df --output=target,source <HOST_JOURNAL_ROOT>` prints them), '
+        'which must be the one the authorisation names, and that the journal root is not itself a mount point;',
+        '  - the filesystem the journal root is on (mount point and device), and that the journal root is not a mount point;',
+        'the journal root on the host\'s root filesystem and the free-space reading taken there'))
+    # The false statement of an earlier revision cannot come back: the receipt did read which filesystem /var/lib was on, so
+    # that is a receipt fact and not an expectation. No device number or inode is published either.
+    lowered=readme.lower()
+    assert not any(value in lowered for value in ('did not read which filesystem','which filesystem `/var/lib` belongs to',
+        'not a receipt fact','not a fact of the receipt','is the expectation','is therefore an expectation',
+        'expected on the root filesystem','expected on the host\'s root filesystem','expected to be the root filesystem',
+        'expected to be the host\'s root filesystem','expected to be on the root filesystem','expected to be on the host\'s root filesystem',
+        'only if the readback shows','only if the journal root\'s mount point is','if that is where the readback finds the journal root',
+        'the receipt\'s reading of `/`, not of the journal root','the second row is the receipt\'s reading of `/`:'))
+    assert readme.count('the same device number')==5 and re.search(r'(?:device|inode)(?: number)?\W{0,3}\d',readme) is None
+    # The journal root itself did not exist at the receipt: its filesystem is never stated without the receipt's reading
+    # of /var/lib or the readback beside it.
     assert not any(value in readme for value in ('The host path is a new directory on the host\'s root filesystem',
         'placement A: outside the data volume, on the host\'s root filesystem','| root filesystem (placement A) |',
         'created new below `/var/lib/c3po-bar`, on the root filesystem |','| as above | On the root filesystem, created',
@@ -946,14 +974,20 @@ def test_readme_reads_the_free_space_gate_on_the_journal_filesystem_and_attribut
     assert block is not None and readme.count(RECEIPT_STDOUT_SHA256)==block.group(0).count(RECEIPT_STDOUT_SHA256)==1
     assert ('is on record as operation `'+RECEIPT_OPERATION+'`, receipt stdout SHA-256 `'+RECEIPT_STDOUT_SHA256+'`') in block.group(0)
     assert all(value in block.group(0) for value in ('A second read-only reading, on 2026-10-02 UTC',
-        '**the author of this document measured nothing on the host**',
+        '**the author of this document measured nothing on the host**. For this revision the receipt bytes were hashed by command, which '
+        'gave the SHA-256 above, and every fact and figure attributed to the receipt here was checked against those bytes; the receipt '
+        'bytes still prevail over anything here that differs from them. The receipt read:',
         '- Docker server 29.5.3, with the containerd snapshotter; no user-namespace remapping; not rootless;',
         '- the `docker-init` executable at `/usr/libexec/docker/docker-init`;','- systemd 255;',
         '- the data volume: the bind source of `/app/day-d-data`, a filesystem of its own, whose root directory is owned by uid 1000, gid 1000, mode 0755',
         '- nothing of the supervisor provisioned, as on 2026-10-01.',
         'The receipt did **not** observe the unit under systemd, a container start with `--init`, or any item of the rehearsal.'))
-    assert all(value in block.group(0) for value in ('Nor did it read **which filesystem `/var/lib` belongs to**: it measured the bytes available '
-        'on `/` and found no `/var/lib/c3po-bar`.','is therefore an expectation, not a fact of the receipt'))
+    assert all(value in block.group(0) for value in ('Nor could it read the journal root of placement A or its parent `/var/lib/c3po-bar`, which '
+        'did not exist then, or whether anything changes between the receipt and provisioning. What it did read is that **`/var/lib` was on '
+        'the root filesystem**: `/` and `/var/lib` had the same device number and the same free-space figures. A device number cannot show a '
+        'bind mount of that same filesystem, and the journal root is created later, so its mount point is still read back once it exists '
+        '(see "Journal placement").',))
+    assert not any(value in readme for value in ('did not hash the receipt','as its content was relayed for this revision'))
     facts=('29.5.3','/usr/libexec/docker/docker-init','systemd 255',str(data),str(root),'containerd snapshotter')
     outside=readme.replace(block.group(0),'')
     stated=[line for line in outside.splitlines() if any(fact in line for fact in facts) and not line.startswith('     | ')]
@@ -985,13 +1019,16 @@ def test_readme_states_what_placement_a_changes_and_never_requires_the_data_volu
         '`r2d2-shadow-candidate-worker`). Under placement A no compose service mounts the journal root, so the containers that can reach it are '
         'the ones given the explicit bind; host root and anyone with Docker access still can. The token and the claims stay outside the data '
         'volume in both placements for the same reason.',
-        '- `RequiresMountsFor` names the journal root, the state root and the configuration directory. Under placement A all three are expected '
-        'to be on the root filesystem, which is always mounted; if the readback confirms it, the line adds no real condition *(documented systemd '
-        'behaviour, not observed)*. In either case the unit does not depend on the data volume at all under placement A. Under placement B it is '
-        'inert if systemd has no mount unit for the data volume.',
+        '- `RequiresMountsFor` names the journal root, the state root and the configuration directory. Under placement A the journal root and '
+        'the state root are below `/var/lib`, which the receipt of 2026-10-02 read on the root filesystem; the configuration directory is below '
+        '`/etc`, for which this document cites no reading and which is expected on that filesystem too. The root filesystem is always mounted, '
+        'so if the readback confirms all three there, the line adds no real condition *(documented systemd behaviour, not observed)*. In '
+        'either case the unit does not depend on the data volume at all under placement A. Under placement B it is inert if systemd has no '
+        'mount unit for the data volume.',
         '- A change of the device number of the journal root\'s filesystem across a reboot makes both sides refuse the root, because the catalog '
-        'binds device and inode; there is no in-code recovery. Under placement A that filesystem is expected to be the host\'s root filesystem, '
-        'under placement B it is the data disk. Whether either number is stable across reboots of this host was not observed.'))
+        'binds device and inode; there is no in-code recovery. Under placement A that filesystem is the one that holds `/var/lib`, the host\'s '
+        'root filesystem in the receipt of 2026-10-02; under placement B it is the data disk. Whether either number is stable across reboots '
+        'of this host was not observed.'))
     # "Never a mount point" is about the host path: in a container the journal root is always a bind-mount target.
     assert ('**On the host** it is never a filesystem root (a mount point); that is a statement about the host path only, because in every '
         'container the journal root is the target of a bind mount and so a mount point there. It neither contains nor is contained in the '
