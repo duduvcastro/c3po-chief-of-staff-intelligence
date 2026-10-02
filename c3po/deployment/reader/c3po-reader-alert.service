@@ -1,0 +1,10 @@
+[Unit]
+Description=Record that the V2 shadow reader unit entered the failed state
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/bin/sh -c 'umask 077 && set -C && /usr/bin/systemctl show c3po-reader.service --property=Result,ExecMainCode,ExecMainStatus,NRestarts > /var/lib/c3po-reader/failed.`/usr/bin/date -u +%%Y%%m%%dT%%H%%M%%SZ`'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=c3po-reader-alert
