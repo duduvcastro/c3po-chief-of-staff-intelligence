@@ -81,13 +81,12 @@ class TlsStub:
     def set_mode(self,mode):
         self.mode=mode
         if mode=='closed':
-            if self.listener is not None:
-                self.listener.close();self.listener=None
+            self.stop_listener()
             return
         if self.listener is None:
             listener=socket.socket(socket.AF_INET,socket.SOCK_STREAM);listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
             listener.bind((self.address,self.port));listener.listen(8);listener.settimeout(0.2);self.listener=listener
-            thread=threading.Thread(target=self.serve,args=(listener,));thread.daemon=True;thread.start()
+            thread=threading.Thread(target=self.serve,args=(listener,));thread.daemon=True;thread.start();self.thread=thread
     def serve(self,listener):
         while not self.stopped and self.listener is listener:
             try:connection,_=listener.accept()
@@ -112,7 +111,15 @@ class TlsStub:
             except Exception:
                 try:connection.close()
                 except OSError:pass
+    def stop_listener(self):
+        # On Linux close() does not wake a thread blocked in accept(), and the kernel keeps the socket listening until
+        # that call returns: shut the listener down first and wait for the serving thread, so 'closed' is refused.
+        listener,self.listener=self.listener,None
+        if listener is None:return
+        try:listener.shutdown(socket.SHUT_RDWR)
+        except OSError:pass
+        listener.close()
+        thread=getattr(self,'thread',None)
+        if thread is not None:thread.join(2)
     def close(self):
-        self.stopped=True
-        if self.listener is not None:
-            self.listener.close();self.listener=None
+        self.stopped=True;self.stop_listener()
