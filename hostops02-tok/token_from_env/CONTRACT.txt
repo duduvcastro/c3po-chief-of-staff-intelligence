@@ -1,4 +1,4 @@
-HOSTOPS02 / TOKEN_FROM_ENV - THE SUPERVISOR'S PROVIDER TOKEN PLACED FROM THE DEPLOY ENVIRONMENT FILE - STDIN / ONCE CANDIDATE, REVISION 3
+HOSTOPS02 / TOKEN_FROM_ENV - THE SUPERVISOR'S PROVIDER TOKEN PLACED FROM THE DEPLOY ENVIRONMENT FILE - STDIN / ONCE CANDIDATE, REVISION 3a
 
 Operation built
   GO_WRITE_HOSTOPS02_TOKEN_FROM_ENV_01     build/token_from_env.py     writes one file: /etc/c3po-bar/token
@@ -13,7 +13,7 @@ execution_authorized is false. build/FINAL_PAYLOAD.UNBOUND.py, run under "python
 (REQUEST_OR_EXECUTOR_UNBOUND) and exits 1 before touching anything. The Linux job ran once, on revision 2 (run
 37150103273, section 12): every suite passed and the compose agreement held, and every shape on the real filesystem was
 refused at PRECHECK (DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY: the runner's /opt is not what the program requires
-above a deploy directory). It has not run on revision 2c nor on revision 3.
+above a deploy directory). It has not run on revision 2c, revision 3 nor revision 3a.
 
 Revision 3 (section 13) answers the co-auditor's review of revision 2c (comment 5973246540: NO-GO on D9 only; D3, D6,
 D10 and D11 accepted). It closes D9 by a mechanism: before the deploy directory, the environment file or anything else
@@ -24,6 +24,11 @@ for this family alone (../core, hostops02-tok/core: the frozen core 73fb546b wit
 of the assembler that lets the core, and never an operation part, load the C library for it). Every other operation of
 the tier keeps the core 73fb546b, unchanged. The program changed (op.py, spec.py, build/), so every hash below is new.
 
+Revision 3a (section 14) answers the security review and the conformance review of revision 3 (both GO, no BLOCKER and
+no MAJOR; seal 422145d10e62176c02e9c126b18b4f957bfa57b752e7638ac593036da08fd5dd, commit 9ccf0c82). The program is
+revision 3's, byte for byte (op.py, spec.py, build/, the core of this family: every hash of section 1 is unchanged);
+the dump proof, run.sh, two tests and this text changed, and so SHA256SUMS and the mutation records (they pin tests/).
+
 Revision 2 answers the security review and the conformance review of revision 1 (seal 91ccd6b1..., source 01b0ffee...,
 commit 0f306b7e on ops/hostops02-token-proof); section 11 maps every finding to what changed, or why it did not. It
 needs the co-auditor's review by hash, the Linux-as-root proof and the co-auditor's check of the bound set before any
@@ -31,7 +36,7 @@ signature is asked for (owner decision DUDU_DECISION_TOKEN_BY_PROGRAM, sha256
 739b49641a894000f805dc90b64eac5cdd8c4cbb9825c9dc93dd3e5e8067fcb0).
 
 Revision 2c (section 12) changed the proof environment only, never the program: linux_root/run.sh made the runner's
-/opt root:root 0755, as the production host has it, before the shapes (seal
+/opt root:root 0755, the layout the program accepts above a deploy directory, before the shapes (seal
 acbc436a6432d0121bb433960a2c6b048050d7fdb7c100b8be4ebf8dbecdaddf, commit 0452cd99 on ops/hostops02-token-proof; its
 program was revision 2's, seal df0a754a42ab2b17985a4bf8e3b6e3e86070973eeb857c2afc09d625dfb1d18b, source 35c049c2...,
 final payload 0cc9c77f..., on the core 73fb546b). Revision 3 keeps that step of run.sh.
@@ -152,7 +157,7 @@ An exception that escapes (the death of the process) is PARTIAL_STATE_UNKNOWN_TO
 3.8 What never happens. No process; no environment of a process read (os.environ is not named); no docker, systemctl or
 shell; no network; no overwrite, rename, chmod, chown, truncate; no removal of anything but the token file this run
 created (3.7: a declared exception to rule 4 of the core, signed in the scope as exceptions_to_the_core); no second
-attempt; no activation; no core dump of the process once anything is opened (3.10).
+attempt; no activation; no core dump of the process from before anything is opened (3.10: the first step).
 
 3.9 Receipt (DESIGN.md section 7). Listed codes, booleans and identity rows only: the signed rows of /etc/c3po-bar, the
 device and inode of the token file created; never the value, a digest of it, its length or a line count, never a byte
@@ -176,6 +181,16 @@ kernels) returns before it formats the core name from kernel.core_pattern when t
 so no pipe helper (the host's crash collector) is started and no core file is created. RLIMIT_CORE is not relied on.
 The attribute stays 0 until the process ends (only an exec or a change of credentials resets it; the source does
 neither).
+Two failures refuse under another code (revision 3a, from the security review of revision 3), both before anything of
+the host is looked at: the source imports ctypes at its top (the core part), so an interpreter without _ctypes or libffi
+cannot load the source at all, and the launcher refuses it as STDIN_EXECUTION_REFUSED (exit 1), with no receipt of the
+source and so no "process" member; and errno is not read or reported (use_errno=True is set, never read), so a refusal
+PROCESS_DUMPABLE_NOT_DISABLED on the host does not say whether prctl failed with EINVAL, was missing or answered 1. In
+every case nothing was read or changed. The assembler's rule on ctypes is about names (as every forbidden name of the
+core is): a part could still reach the core's module through an attribute such as dumps_disabled.__globals__. This
+operation part does not, and a test says so (test_static_the_operation_part_reaches_nothing_by_reflection: no dunder or
+private attribute, no import, none of getattr, vars, globals, eval, exec, compile, __import__ and the like, no string
+with "__"); the rule of the core is not widened (section 14).
 
 4. WHERE EACH BOUND VALUE COMES FROM (the binder copies; nothing is typed from memory)
 
@@ -234,6 +249,10 @@ precheck of the new boot.
 
 9. TESTS AND MUTATION (runs of the author, 2026-10-03; clock by command)
 
+  revision 3a: 343 tests on Python 3.9.6 and on 3.12.14 (SyntaxWarning as error), none failed, none skipped (with a tree
+  of the release at hand); 2 of them new in revision 3a (the dump proof's file case judged by every new file of its
+  cores directory; the operation part reaching nothing by reflection, a static test the mutation deselects); mutation
+  run again on both (the records pin tests/), the same 221 mutants, all killed, 0 survivors, 0 errors
   revision 3: 341 tests on Python 3.9.6 and on 3.12.14 (SyntaxWarning as error), none failed, none skipped (with a tree
   of the release at hand); 7 of them new in revision 3 (the first call on every path, the executor refused after it,
   the refusal when the process cannot be made non-dumpable, the C library that fails or reads back 1, the dump proof's
@@ -298,7 +317,9 @@ precheck of the new boot.
 11. ANSWERS TO THE REVIEWS OF REVISION 1
 
   Security review (verdict GO; two Low hardening items, two Low proof or operational items, five Info items):
-    1 Low   core dumps                 NOT CHANGED in code, with evidence: core/assemble.py lint, IMPORTS_OF and
+    1 Low   core dumps                 (superseded: closed by a mechanism in revision 3, 3.10 and section 13; kept
+                                       below as written for revision 2)
+                                       NOT CHANGED in code, with evidence: core/assemble.py lint, IMPORTS_OF and
                                        OPERATION_IMPORTS (only base64 beyond the parts; `resource` is refused) and the
                                        os-member rule (open flags only); the remote command is the core's. Recorded as
                                        residual risk D9 and DESIGN.md sections 8 and 10.
@@ -357,8 +378,9 @@ precheck of the new boot.
   Why. That code comes from one rule only (deploy_chain: validate_chain with the deploy directory as the open root):
   a component ABOVE the deploy directory that is not owned by uid 0 or is writable by group or other (row_root_safe).
   Above /opt/hostops02-token-ci there are only "/" and /opt; the GitHub-hosted image leaves /opt writable by every user
-  for its tool cache (run 37150103273 printed no mode; revision 2c prints both as found). On the production host the deploy directory is /opt/chief-of-staff-digital below a standard /opt,
-  root:root 0755, which the rule accepts (DESIGN.md section 3). The program was right, and is not changed.
+  for its tool cache (run 37150103273 printed no mode; revision 2c prints both as found). On the production host the deploy directory is /opt/chief-of-staff-digital below an /opt
+  assumed standard, root:root 0755, which the rule accepts (DESIGN.md section 3); no receipt records it (section 14).
+  The program was right, and is not changed.
   What changed. linux_root/run.sh only: before the shapes, and only with HOSTOPS_THROWAWAY_RUNNER=yes (stage 0 already
   refuses anything else), it prints uid, gid and octal mode of / and /opt as found, makes /opt alone root:root 0755
   (chown 0:0, chmod 0755; not recursive; "/" is never changed; not set back, the runner is discarded), prints them
@@ -428,3 +450,48 @@ precheck of the new boot.
   first step). Not changed by it: copies of the value in the memory of the process until it ends; swap, kdump and root's
   access to /proc/<pid>/mem, which are not core dumps of this process; an audit record of a crash (pid, signal) may
   still be written, with nothing of the memory.
+
+14. REVISION 3a: ANSWERS TO THE REVIEWS OF REVISION 3 (seal 422145d1..., commit 9ccf0c82)
+
+  Both reviews: GO, no BLOCKER and no MAJOR, conditional on the green Linux job of the bytes and the co-auditor's review
+  by hash. The program is not changed: op.py, spec.py, build/ (source bcb72d40..., final payload dace5c4f..., scope
+  0291c142...) and the core of this family (35475b2f..., generation 32c44cf8...) are revision 3's bytes.
+  Security review:
+    1 MINOR the ctypes rule is by name    NOT CHANGED in the core, with a test in this operation: the rule of the core
+                                          is lexical like every forbidden name of the frozen core (subprocess or open
+                                          would be reachable the same way), so widening it here would reopen the core of
+                                          this family (a new seal, generation and mutation record) beyond the one
+                                          function the decision asked for; the operation part is sealed and reviewed by
+                                          hash, and test_static_the_operation_part_reaches_nothing_by_reflection fails
+                                          on any dunder or private attribute, import, reflective builtin or "__" string
+                                          in op.py (the reviewer's probe through dumps_disabled.__globals__ included).
+    2 MINOR the dump proof's file name    FIXED: the file pattern is <directory>/cores/core.%p (with %p the kernel adds
+                                          no ".<pid>", whatever kernel.core_uses_pid is), and a file case is judged by
+                                          every file that appears in cores/ during it (new_cores): a dumpable child
+                                          must leave one with the canary, a protected child none at all; the report
+                                          shows kernel.core_uses_pid and each case's core_files. Test:
+                                          test_dump_proof_judges_a_file_case_by_every_new_file_of_cores_not_by_one_name.
+    3 MINOR other codes for two failures  DOCUMENTED (3.10): no ctypes in the interpreter refuses as
+                                          STDIN_EXECUTION_REFUSED without a "process" member; errno is not reported.
+                                          Not changed in the core, for the reason of 1; both refuse with nothing done.
+    4 MINOR stale wording                 FIXED: 3.8 says "from before anything is opened"; section 11 row 1 says it
+                                          was superseded by 3.10.
+    5 MINOR declared residuals            NOT CHANGED: copies in memory, swap, kdump and root's access to the memory of
+                                          a process are outside D9 (D9, 3.10, DESIGN.md section 8), as the review says.
+  Conformance review:
+    1 MINOR /opt of the production host   FIXED in the text: no receipt records the owner or mode of the production
+                                          /opt (the co-auditor's comment 5973246540; only "/" is recorded: uid 0, gid
+                                          0, 0755), and nothing here infers it from the runner. It is assumed standard
+                                          (root:root 0755). If it is owned by another uid or writable by group or
+                                          other, the run refuses at PRECHECK with
+                                          DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY, nothing changed: an OPEN
+                                          POINT OF AVAILABILITY, not of safety, for the signatories (a read-only stat of
+                                          /opt in a later readback would close it; this candidate asks for none).
+                                          Changed: this file (1, 12, 14), DESIGN.md, run.sh and proof/README.txt.
+    2 MINOR stage 3a ran before stage 3   FIXED: run.sh runs stage 3a after stage 3 (the shapes) and before stage 4,
+                                          and its header lists them in that order; neither stage depends on the other.
+    INFO 1-3                              no change (the binder's literal path, the revision 2c tree left in
+                                          hostops02/ and refused by the binder, the 3.12 rehearsal of the driver only).
+  What changed: linux_root/dump_proof.py, linux_root/run.sh, tests/test_linux_root.py, tests/test_token_from_env.py,
+  CONTRACT.txt, DESIGN.md; so SHA256SUMS and mutation/MUTATION_RUN*.json (run again: they pin tests/). Not changed:
+  op.py, spec.py, build/, seal.py, mutation/mutants.py, mutation/mutate.py, linux_root/token_shape.py, the core.

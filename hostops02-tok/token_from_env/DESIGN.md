@@ -1,4 +1,4 @@
-# HOSTOPS02 — token placement from the deploy environment file (`token_from_env`), revision 3
+# HOSTOPS02 — token placement from the deploy environment file (`token_from_env`), revision 3a
 
 Offline work only. Nothing here was run on the host, pushed, or bound. Every hash named here was taken by command; where
 this text and `build/ASSEMBLY.json`, `SHA256SUMS` or the mutation records differ, the files prevail. Revision 2 answers
@@ -13,11 +13,20 @@ before the deploy directory, the environment file or anything else is opened, ma
 for this family alone (`../core` = `hostops02-tok/core`, CORE.md section 14); the other operations of the tier keep the
 frozen core `73fb546b…`, unchanged. Every hash of the program is new (CONTRACT.txt section 1).
 
+**Revision 3a** answers the security and conformance reviews of revision 3 (both GO, no BLOCKER and no MAJOR;
+CONTRACT.txt section 14). The program is revision 3's, byte for byte. The dump proof judges a file case by every file
+that appears in its `cores/` directory (the pattern says `%p`, so `kernel.core_uses_pid` changes no name); `run.sh`
+runs stage 3a after stage 3; a test says the operation part reaches nothing by reflection (no dunder attribute, no
+`getattr` and the like: the assembler's rule on `ctypes` is about names); and the text no longer says what the
+production `/opt` is: no receipt records it (only `/`), it is assumed standard, and if it is not the run refuses with
+`DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY`, nothing changed — an open point of availability, not of safety.
+
 **Revision 2c** changed the Linux proof environment only (CONTRACT.txt section 12; seal `acbc436a…`). The first Linux run
 of revision 2 (run 37150103273) refused every real-filesystem shape at PRECHECK with
 `DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY`: the runner's `/opt`, above the fake deploy tree, is not what section 3
 requires (the image leaves it writable by every user). `linux_root/run.sh` shows `/` and `/opt` as found, makes `/opt`
-root:root 0755 as on the production host, and runs the shapes only when both then meet the rule (kept in revision 3).
+root:root 0755, the layout the rule accepts (the production `/opt` is recorded by no receipt: revision 3a), and runs the
+shapes only when both then meet the rule (kept in revision 3).
 
 | What | Value |
 |---|---|
@@ -292,6 +301,11 @@ belongs to the process's memory, stays 0 until the process ends (only an exec or
 the source does neither), and is not a change of the host (it is not counted as a mutating call: a later refusal is
 still a refusal). The operation part cannot do this itself (it names no module but its parts'): the core does it, and
 the assembler of this family's core lets the core part, and never an operation part, name `ctypes`, for exactly that call.
+That rule is about names, like every forbidden name of the core; that this operation part reaches nothing by reflection
+(no dunder attribute, no `getattr`, `globals`, `eval` and the like) is a test of its own (revision 3a). Two failures
+refuse under another code, with nothing read or changed: an interpreter without `_ctypes` cannot load the source (the
+core part imports `ctypes` at its top), and the launcher refuses it as `STDIN_EXECUTION_REFUSED`, with no `process`
+member; and `errno` is not reported, so `PROCESS_DUMPABLE_NOT_DISABLED` does not say why `prctl` failed.
 
 **What remains.** None from a core dump once the attribute is 0: no dump is produced, so nothing a dump would have held
 (the heap, the registers) leaves; before it, nothing of `.env` is in the process (it is the first step). An audit record
@@ -332,17 +346,21 @@ host has it; a kernel crash dump of the whole machine (kdump); root's own access
   the mutants of the core's `dumps_disabled()` as this source carries it (target `core`); the equivalent replacements
   left out are named in `mutation/mutants.py`.
 - `linux_root/run.sh` (throwaway GitHub runner, as root; never run by the author): the core's suite and this one as root
-  and as the user; stage 3a, `linux_root/dump_proof.py` (revision 3): `kernel.core_pattern` shown, set to a pipe into a
-  test collector and then to an absolute file path, `RLIMIT_CORE` unlimited; a dumpable child interpreter killed by
-  SIGQUIT and by SIGSEGV is dumped (the collector or the file receives its memory, a fake canary in it, and its parent
-  sees the signal and the core-dumped flag), the same child after the source's own `Native().not_dumpable()` dies by the
-  same signals and nothing is dumped; the runner's `core_pattern` put back and shown again; then `/` and `/opt` shown as found, `/opt` made root:root 0755 as the production host has it (revision
-  2c: the runner's own `/opt` is refused by section 3's rule, run 37150103273) and shown again, the shapes running only
+  and as the user; then `/` and `/opt` shown as found, `/opt` made root:root 0755, the layout section 3's rule accepts
+  (revision 2c: the runner's own `/opt` is refused by that rule, run 37150103273; the production `/opt` is recorded by no
+  receipt) and shown again, the shapes running only
   when both meet the rule, then `token_shape.py` on the real filesystem (the complete run, the access time of the environment
   file unchanged — only the kernel's `O_NOATIME` explains it —, the kernel's dumpable attribute of that process 1 before
   its first run and 0 after it, a second run refused, a token of another length giving the
   same receipt, a full tmpfs on `/etc/c3po-bar` at the write with the file withdrawn by identity, six refusals including
-  a real second hard link and the name in another value, the literal fake value), then `--compose-agreement`, now a
+  a real second hard link and the name in another value, the literal fake value); then stage 3a,
+  `linux_root/dump_proof.py` (revision 3; after stage 3 since revision 3a): `kernel.core_pattern` shown, set to a pipe
+  into a test collector and then to an absolute file path (`core.%p`), `RLIMIT_CORE` unlimited; a dumpable child
+  interpreter killed by SIGQUIT and by SIGSEGV is dumped (the collector receives its memory, or a file appears in the
+  directory of the cores, a fake canary in it, and its parent sees the signal and the core-dumped flag), the same child
+  after the source's own `Native().not_dumpable()` dies by the same signals and nothing is dumped (no byte to the
+  collector, no file at all in that directory); the runner's `core_pattern` put back and shown again; then
+  `--compose-agreement`, now a
   **required** stage: every listed file and the first 500 generated files the parser accepts (seed 20261003), each given
   to the runner's `docker compose config`; for each accepted file the value the backend would take (the first of its two
   names present), each of the two names, and no other name equal to one of them for a case-insensitive reader. It fails

@@ -6,7 +6,9 @@ For each kernel.core_pattern this script sets in turn,
   pipe   "|/usr/bin/python3 -I -B <directory>/collector.py %P %s": a small collector that reads everything the kernel
          sends on its standard input and writes a marker with the count of the bytes it received and whether a fake
          canary was among them;
-  file   "<directory>/cores/core.%P": an absolute file path;
+  file   "<directory>/cores/core.%p": an absolute file path (%p, so the kernel adds no ".<pid>" of its own whatever
+         kernel.core_uses_pid says; and a case is judged by every file that appears in cores/ during it, not by one
+         exact name: a dumpable child must leave one, with the canary in it, a protected child none at all);
 and for SIGQUIT and SIGSEGV, a child interpreter (/usr/bin/python3 -I -B, RLIMIT_CORE unlimited, a FAKE canary held in
 its memory as the bytes of .env would be) kills itself with the signal:
   dumpable   as it starts (the kernel holds 1): the collector receives the dump, with the canary in it (the file holds
@@ -40,6 +42,7 @@ HERE=os.path.dirname(os.path.abspath(__file__))
 SOURCE=os.path.join(os.path.dirname(HERE),'build','token_from_env.py')
 SCHEMA='HOSTOPS02_TOKEN_FROM_ENV_LINUX_ROOT_DUMP_PROOF_V1'
 PATTERN='/proc/sys/kernel/core_pattern'
+USES_PID='/proc/sys/kernel/core_uses_pid'          # shown only: with %p in the pattern it changes no name
 PYTHON='/usr/bin/python3'
 SIGNALS=('SIGQUIT','SIGSEGV')
 MODES=('pipe','file')
@@ -81,6 +84,11 @@ def read_pattern():
 def write_pattern(raw):
     with open(PATTERN,'wb') as handle:handle.write(raw)
 
+def new_cores(cores,before):
+    """The files that appeared in cores/ since the listing before (a review of revision 3: one exact name would miss a
+    core named core.<pid>.<pid> when kernel.core_uses_pid is 1; any new file counts, whatever its name)."""
+    return sorted(name for name in os.listdir(cores) if name not in before)
+
 def holds_canary(path):
     """Whether a core file holds the canary, read in blocks (a core of an interpreter is some tens of megabytes)."""
     found=False;tail=b'';wanted=canary()
@@ -94,6 +102,7 @@ def holds_canary(path):
 def one(directory,mode,protected,name):
     """One child: started, killed by its own signal, reaped; then what reached the collector or the file."""
     report=os.path.join(directory,'child.%s.%s.%s.json'%(mode,'protected' if protected else 'dumpable',name))
+    cores=os.path.join(directory,'cores');before=set(os.listdir(cores))
     pid=os.fork()
     if pid==0:
         try:os.execv(PYTHON,[PYTHON,'-I','-B','-c',CHILD,'protected' if protected else 'dumpable',name,report,SOURCE])
@@ -114,12 +123,12 @@ def one(directory,mode,protected,name):
             row.update(dump_received=True,dump_bytes=found['bytes'],canary_in_the_dump=found['canary_found'],collector_signal=found['signal'])
         else:row.update(dump_received=False,dump_bytes=None,canary_in_the_dump=None,collector_signal=None)
     else:
-        core=os.path.join(directory,'cores','core.%d'%pid)
         if not protected:
             until=time.monotonic()+WAIT_FOR_A_DUMP
-            while not os.path.exists(core) and time.monotonic()<until:time.sleep(0.1)
+            while not new_cores(cores,before) and time.monotonic()<until:time.sleep(0.1)
         else:time.sleep(WAIT_FOR_NOTHING)
-        if os.path.exists(core):row.update(dump_received=True,dump_bytes=os.path.getsize(core),canary_in_the_dump=holds_canary(core),collector_signal=None)
+        found=[os.path.join(cores,core) for core in new_cores(cores,before)];row.update(core_files=[os.path.basename(core) for core in found])
+        if found:row.update(dump_received=True,dump_bytes=sum(os.path.getsize(core) for core in found),canary_in_the_dump=any(holds_canary(core) for core in found),collector_signal=None)
         else:row.update(dump_received=False,dump_bytes=None,canary_in_the_dump=None,collector_signal=None)
     return row
 
@@ -128,7 +137,7 @@ def collect(directory):
     os.chmod(directory,0o700);os.mkdir(os.path.join(directory,'cores'),0o700)
     with open(os.path.join(directory,'collector.py'),'w') as handle:handle.write(COLLECTOR)
     os.chmod(os.path.join(directory,'collector.py'),0o755)
-    patterns={'pipe':'|%s -I -B %s %%P %%s'%(PYTHON,os.path.join(directory,'collector.py')),'file':os.path.join(directory,'cores','core.%P')}
+    patterns={'pipe':'|%s -I -B %s %%P %%s'%(PYTHON,os.path.join(directory,'collector.py')),'file':os.path.join(directory,'cores','core.%p')}
     out={'patterns_set':{}}
     for mode in MODES:
         write_pattern(patterns[mode].encode());out['patterns_set'][mode]=read_pattern().rstrip(b'\n')==patterns[mode].encode()
@@ -163,7 +172,7 @@ def expectations(out):
 def labels():return ['%s %s %s'%(mode,kind,name) for mode in MODES for kind in ('dumpable','protected') for name in SIGNALS]
 def report(out):
     checks=expectations(out);cases=[name for name in labels() if name in out]
-    return {'schema':SCHEMA,'core_pattern_before':out.get('before'),'core_pattern_after':out.get('after'),'restored':out.get('restored'),
+    return {'schema':SCHEMA,'core_pattern_before':out.get('before'),'core_pattern_after':out.get('after'),'restored':out.get('restored'),'core_uses_pid':out.get('core_uses_pid'),
             'note':'kernel.core_pattern of this throwaway runner, not of the production host','patterns_set':out.get('patterns_set'),'error':out.get('error'),
             'cases':{name:out[name] for name in cases},'expectations':checks,
             'all_cases_ran':len(cases)==8 and all(out[name].get('ok') for name in cases),'all_expectations_met':all(checks.values())}
@@ -177,13 +186,16 @@ def main(arguments):
     if not os.path.isfile(SOURCE):
         print('REFUSED: build/token_from_env.py is not beside this script',file=sys.stderr);return 1
     before=read_pattern();directory=tempfile.mkdtemp(prefix='hostops02-dump-proof-');out={}
+    try:
+        with open(USES_PID,'rb') as handle:uses_pid=handle.read().decode('ascii','replace').strip()
+    except OSError:uses_pid=None
     try:out=collect(directory)
     except Exception as error:out={'error':type(error).__name__}             # every case not run is said: all_cases_ran is false
     finally:
         try:write_pattern(before)
         finally:
             after=read_pattern()
-            out.update(before=before.decode('utf-8','replace').rstrip('\n'),after=after.decode('utf-8','replace').rstrip('\n'),restored=after==before)
+            out.update(before=before.decode('utf-8','replace').rstrip('\n'),after=after.decode('utf-8','replace').rstrip('\n'),restored=after==before,core_uses_pid=uses_pid)
             shutil.rmtree(directory,ignore_errors=True)
     result=report(out)
     print(json.dumps(result,indent=1,sort_keys=True));return 0 if result['all_cases_ran'] and result['all_expectations_met'] else 3 if result['all_cases_ran'] else 2

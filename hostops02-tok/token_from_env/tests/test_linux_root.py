@@ -3,7 +3,7 @@ filesystem as root is coherent with the source (every shape is made, every expec
 emulation), an expectation is false when its shape is missing or differs, and the script refuses to run anywhere but on
 a throwaway runner. Nothing here proves a real filesystem. Revision 3: linux_root/dump_proof.py, the same way: its
 collector counts what it is given and finds the canary across blocks, its expectations hold only for the rows they
-require, and it refuses to run anywhere but on a throwaway runner as root. Nothing here proves what a kernel dumps."""
+require, a file case is judged by every file that appears in cores/ (revision 3a), and it refuses to run anywhere but on a throwaway runner as root. Nothing here proves what a kernel dumps."""
 import importlib.util
 import json
 import os
@@ -140,6 +140,17 @@ def test_dump_proof_collector_counts_the_bytes_and_finds_the_canary_across_block
     core.write_bytes(b'a'*(3<<20));assert shape.holds_canary(str(core)) is False
     assert shape.SOURCE==str(tok.DIRECTORY/'build'/'token_from_env.py') and 'Native().not_dumpable()' in shape.CHILD and "'RLIMIT_CORE'" not in shape.CHILD
     assert 'resource.setrlimit(resource.RLIMIT_CORE,(resource.RLIM_INFINITY,resource.RLIM_INFINITY))' in shape.CHILD
+
+def test_dump_proof_judges_a_file_case_by_every_new_file_of_cores_not_by_one_name(tmp_path):
+    """A review of revision 3: with kernel.core_uses_pid 1 and no %p in the pattern, the kernel names the file
+    core.<pid>.<pid>; the pattern says %p, and any file that appears in cores/ during a case counts."""
+    shape=module(DUMPS,'_hostops02_dump_proof');cores=Path(str(tmp_path)).resolve()
+    (cores/'core.101').write_bytes(b'a');before=set(os.listdir(str(cores)))
+    assert shape.new_cores(str(cores),before)==[]
+    (cores/'core.202.202').write_bytes(b'b');(cores/'anything').write_bytes(b'c')
+    assert shape.new_cores(str(cores),before)==['anything','core.202.202']
+    source=DUMPS.read_text();assert "'cores','core.%p')" in source and "'core.%P'" not in source and "'core.%d'%pid" not in source
+    assert 'new_cores(cores,before)' in source and source.count('before=set(os.listdir(cores))')==1
 
 def test_dump_proof_refuses_to_run_outside_a_throwaway_runner_as_root():
     module(DUMPS,'_hostops02_dump_proof')

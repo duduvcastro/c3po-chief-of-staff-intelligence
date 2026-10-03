@@ -21,14 +21,18 @@ WHAT THE BRANCH IS
   Revision 2 (the second commit of the branch) replaces hostops02/token_from_env with the answers to the security and
   conformance reviews of revision 1 (its CONTRACT.txt, section 11). Revision 2c (the third commit) changes the proof
   environment only, after the first job of revision 2 (run 37150103273) refused every real-filesystem shape at PRECHECK
-  with DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY: linux_root/run.sh makes the runner's /opt root:root 0755, as the
-  production host has it, before the shapes (CONTRACT.txt section 12). Revision 3 (the fourth commit) answers the
+  with DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY: linux_root/run.sh makes the runner's /opt root:root 0755, the
+  layout the program accepts above a deploy directory, before the shapes (CONTRACT.txt section 12). Revision 3 (the fourth commit) answers the
   co-auditor's NO-GO on D9 (a crash could forward the whole .env through the host's pipe to its crash collector): the
   first step of the run makes the process non-dumpable (prctl PR_SET_DUMPABLE 0, read back 0) or refuses with nothing
   changed (its CONTRACT.txt, sections 3.10 and 13). That function is the core's, so the token placement moves to
   hostops02-tok/ with its own core (hostops02-tok/core: the frozen core with that function, the assembler rule that lets
   the core alone load the C library for it, and their tests); hostops02/core and the five other operations are the same
-  bytes as before. The hashes of the seals and of the payloads are in SEALS.expected.json (written by command). Nothing here was run on Linux or on the host by the author. No file of this
+  bytes as before. Revision 3a (the fifth commit) answers the two reviews of revision 3 without changing the program
+  (its CONTRACT.txt, section 14): the dump proof judges a file case by every file of its cores directory, run.sh runs
+  stage 3a after stage 3, a test of the operation part, and the text no longer says what the production /opt is (no
+  receipt records it; if it is not root-owned without write for group or other, the run refuses with nothing changed).
+  The hashes of the seals and of the payloads are in SEALS.expected.json (written by command). Nothing here was run on Linux or on the host by the author. No file of this
   branch is a request, an authority or a GO: every document in a build/ directory is UNBOUND. Every token in the branch is
   fake.
 
@@ -51,16 +55,9 @@ THE JOB (ubuntu-24.04, GitHub-hosted, HOSTOPS_THROWAWAY_RUNNER=yes; every step a
           (with the kernel's own dumpable attribute read by its native child before and after its run) as REAL root
           (uid 0, the kernel's O_NOATIME, Linux errno values, ext4) and as the runner's user, under the distribution's
           pytest for /usr/bin/python3;
-       c. linux_root/dump_proof.py as root (stage 3a): kernel.core_pattern of the runner shown; set to a pipe into a
-          test collector (an absolute path script writing a marker with the bytes it received), then to an absolute
-          file path; RLIMIT_CORE unlimited; a dumpable child interpreter killed by SIGQUIT and by SIGSEGV is dumped (the
-          collector or the file receives its memory, a fake canary in it; its parent sees the signal and the
-          core-dumped flag); the same child after the source's own Native().not_dumpable() dies by the same signals and
-          nothing is dumped; the runner's core_pattern put back (the script, and the stage again if needed) and shown
-          before and after. It is the runner's, not the production host's. Five expectations;
-       d. first, / and /opt as found (uid, gid, octal mode), then /opt alone made root:root 0755 (chown 0:0, chmod
+       c. first, / and /opt as found (uid, gid, octal mode), then /opt alone made root:root 0755 (chown 0:0, chmod
           0755; the GitHub-hosted image leaves it writable by every user, and the program refuses a deploy directory
-          below such a component by design; the production /opt is root:root 0755) and both shown again: the shapes
+          below such a component by design; no receipt records the production /opt) and both shown again: the shapes
           run only when both are then owned by uid 0 and not writable by group or other. Then
           linux_root/token_shape.py as root, with the operation's own run() and unmodified Native on the real
           filesystem: it creates /etc/c3po-bar (root:root 0700, the two children of operation 2) and a FAKE deploy tree
@@ -75,6 +72,14 @@ THE JOB (ubuntu-24.04, GitHub-hosted, HOSTOPS_THROWAWAY_RUNNER=yes; every step a
           value FAKE-TOKEN-FOR-TESTS-0001. Every receipt is scanned for every substring of four characters
           or more of the token. The dumpable attribute of that process as the kernel holds it, before its first run (1)
           and after it (0), and every receipt's process.dumpable_disabled true. Eight expectations;
+       d. linux_root/dump_proof.py as root (stage 3a, after the shapes since revision 3a): kernel.core_pattern of the
+          runner shown; set to a pipe into a test collector (an absolute path script writing a marker with the bytes it
+          received), then to an absolute file path (core.%p; every file that appears in the directory of the cores
+          counts); RLIMIT_CORE unlimited; a dumpable child interpreter killed by SIGQUIT and by SIGSEGV is dumped (the
+          collector or the file receives its memory, a fake canary in it; its parent sees the signal and the
+          core-dumped flag); the same child after the source's own Native().not_dumpable() dies by the same signals and
+          nothing is dumped; the runner's core_pattern put back (the script, and the stage again if needed) and shown
+          before and after. It is the runner's, not the production host's. Five expectations;
        e. linux_root/token_shape.py --compose-agreement as the runner's user, a required stage: every listed
           environment file of tests/envfiles.py and the first 500 generated files (seed 20261003) the parser accepts,
           each given to the runner's `docker compose config` for a service of a throwaway project (nothing pulled,

@@ -733,3 +733,16 @@ def test_static_the_operation_part_reads_no_environment_and_starts_nothing():
                                                                                       'names','umask','mkdir','create','write','fsync','link','unlink'])
     assert own.count('host.not_dumpable()')==1 and 'ctypes' not in own
     assert 'runner' not in f.assembler().load_spec(tok.DIRECTORY).PARTS and not hasattr(m,'COMMANDS')
+
+def test_static_the_operation_part_reaches_nothing_by_reflection():
+    """A review of revision 3: the assembler's rule on ctypes (and on every forbidden name) is about the names a source
+    writes, so a part could still reach the core's ctypes through an attribute such as dumps_disabled.__globals__. This
+    part does not: no dunder or private attribute, no import, and none of the builtins that reach an object by a name
+    built at run time."""
+    import ast
+    tree=ast.parse((tok.DIRECTORY/'op.py').read_text())
+    assert not [node.attr for node in ast.walk(tree) if isinstance(node,ast.Attribute) and node.attr.startswith('_')]
+    assert not [node for node in ast.walk(tree) if isinstance(node,(ast.Import,ast.ImportFrom))]
+    reflective={'getattr','setattr','delattr','vars','globals','locals','dir','eval','exec','compile','__import__','__builtins__','breakpoint','super','object'}
+    assert not {node.id for node in ast.walk(tree) if isinstance(node,ast.Name)}&reflective
+    assert not [node for node in ast.walk(tree) if isinstance(node,ast.Constant) and type(node.value) is str and '__' in node.value]
