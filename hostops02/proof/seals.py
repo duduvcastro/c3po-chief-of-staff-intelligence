@@ -3,14 +3,17 @@
   /usr/bin/python3 -I -B proof/seals.py        (from anywhere; it works on the directory above its own)
 
 For the frozen core, for each of the four tier 0 operations (catalog_init, install_release, epoch_readback,
-activate), for C3 (tls_probe) and for the token placement (token_from_env), in this order:
+activate), for C3 (tls_probe), and for the core of the token placement and the token placement itself (since revision
+3 of token_from_env, ../hostops02-tok/core and ../hostops02-tok/token_from_env: a revision of the frozen core made for
+that operation alone, and the operation assembled from it), in this order:
   - the seal file (CORE_SHA256SUMS or SHA256SUMS) has the SHA-256 that SEALS.expected.json records (written by
     command when this branch was made; it is what the verification of each operation named);
   - every file the seal lists is present with the listed hash, or is one of the files WITHHELD.json names for that
     directory with that same hash (a file that could not be made public; the seal file itself is unchanged);
   - no file is present that the seal does not list, except the seal file and what the Linux job writes;
-  - for an operation: build/ is what the frozen core assembles (assemble.py --check: BUILD_EQUAL), ASSEMBLY.json
-    names this core generation, and the payload hashes are the recorded ones;
+  - for an operation: build/ is what its core assembles (assemble.py --check: BUILD_EQUAL; the frozen core, or for the
+    token placement its own core), ASSEMBLY.json names that core's generation, and the payload hashes are the recorded
+    ones;
   - the directory's own seal.py check, where it has one and nothing of it is withheld.
 Then the files of proof/ against PROOF_SHA256SUMS, and the workflow file against proof/WORKFLOW.yml.txt.
 Prints one line per check and writes proof/out/SEALS.json. Exit 0 only when every check holds; 3 when the only checks
@@ -27,7 +30,13 @@ HERE=os.path.dirname(os.path.abspath(__file__))
 FAMILY=os.path.dirname(HERE)
 REPOSITORY=os.path.dirname(FAMILY)
 WORKFLOW=os.path.join(REPOSITORY,'.github','workflows','hostops02-linux-root.yml')
-ORDER=('core','catalog_init','install_release','epoch_readback','activate','tls_probe','token_from_env')
+ORDER=('core','catalog_init','install_release','epoch_readback','activate','tls_probe','token_core','token_from_env')
+# Where a sealed directory lies when it is not hostops02/<name>, and the core an operation is assembled from when it is not
+# hostops02/core: the token placement (revision 3) and its own core, in hostops02-tok/ beside hostops02/.
+PLACE={'token_core':os.path.join('..','hostops02-tok','core'),'token_from_env':os.path.join('..','hostops02-tok','token_from_env')}
+CORE_OF={'token_from_env':'token_core'}
+CORES=('core','token_core')
+def directory_of(name):return os.path.normpath(os.path.join(FAMILY,PLACE.get(name,name)))
 # what the Linux job writes into the sealed directories while it runs
 OUTPUT=re.compile(r'linux_root/(TESTS\.[^/]*\.xml|SHAPES\.[^/]*\.json|CATALOG_SHAPE\.[^/]*\.json)')
 SKIPPED_PARTS=('__pycache__','.pytest_cache','_tmp')
@@ -61,7 +70,7 @@ def command(arguments,cwd):
 
 def directory_checks(name,expected,withheld):
     """[(check, True or False, detail)] of one sealed directory."""
-    directory=os.path.join(FAMILY,name);seal_name=expected['seal_file'];seal=os.path.join(directory,seal_name);rows=[]
+    directory=directory_of(name);seal_name=expected['seal_file'];seal=os.path.join(directory,seal_name);rows=[]
     def check(label,ok,detail=''):rows.append((name+': '+label,bool(ok),detail))
     if not os.path.isfile(seal):
         check('the seal file is present',False,seal_name);return rows
@@ -77,15 +86,16 @@ def directory_checks(name,expected,withheld):
     check('every present file has the listed hash',not differing,', '.join(differing[:6]))
     extra=sorted(item for item in present(directory,seal_name) if item not in listed)
     check(UNLISTED,not extra,', '.join(extra[:6]))
-    if name=='core':
+    if name in CORES:
         code,out=command(['/usr/bin/python3','-B','assemble.py','--core'],directory)
         check('the core generation is the recorded one',code==0 and out==expected['generation_sha256']==sha(os.path.join(directory,'assemble.py')),out[:80])
     else:
-        code,out=command(['/usr/bin/python3','-B',os.path.join(FAMILY,'core','assemble.py'),'--check',directory],directory)
-        check('build/ is what the frozen core assembles',code==0 and out=='BUILD_EQUAL',out[:120])
+        core=directory_of(CORE_OF.get(name,'core'))
+        code,out=command(['/usr/bin/python3','-B',os.path.join(core,'assemble.py'),'--check',directory],directory)
+        check('build/ is what its core assembles (%s)'%CORE_OF.get(name,'core'),code==0 and out=='BUILD_EQUAL',out[:120])
         with open(os.path.join(directory,'build','ASSEMBLY.json'),'rb') as handle:assembly=json.loads(handle.read())
         source=os.path.join(directory,'build',assembly['module']+'.py');final=os.path.join(directory,'build','FINAL_PAYLOAD.UNBOUND.py')
-        check('the assembly names this core generation',assembly['core_sha256']==sha(os.path.join(FAMILY,'core','assemble.py')))
+        check('the assembly names this core generation',assembly['core_sha256']==sha(os.path.join(core,'assemble.py')))
         check('the payload source is the recorded one',sha(source)==assembly['source_sha256']==expected['payload_source_sha256'],sha(source))
         check('the unbound final payload is the recorded one',sha(final)==assembly['final_payload_sha256']==expected['final_payload_unbound_sha256'],sha(final))
     if os.path.isfile(os.path.join(directory,'seal.py')) and not withheld:
@@ -114,8 +124,8 @@ def main():
     for name in ORDER:rows+=directory_checks(name,expected[name],withheld.get(name,{}))
     rows+=proof_checks()
     for label,ok,detail in rows:print('%s  %s%s'%('ok  ' if ok else 'FAIL',label,' ['+detail+']' if detail else ''))
-    result={'schema':'HOSTOPS02_PROOF_SEALS_V1','seals':{name:{'seal_sha256':sha(os.path.join(FAMILY,name,expected[name]['seal_file'])),'files':expected[name]['files'],
-                                                               'withheld':sorted(withheld.get(name,{}))} for name in ORDER if os.path.isfile(os.path.join(FAMILY,name,expected[name]['seal_file']))},
+    result={'schema':'HOSTOPS02_PROOF_SEALS_V1','seals':{name:{'seal_sha256':sha(os.path.join(directory_of(name),expected[name]['seal_file'])),'files':expected[name]['files'],
+                                                               'withheld':sorted(withheld.get(name,{}))} for name in ORDER if os.path.isfile(os.path.join(directory_of(name),expected[name]['seal_file']))},
             'proof_seal_sha256':sha(os.path.join(HERE,'PROOF_SHA256SUMS')) if os.path.isfile(os.path.join(HERE,'PROOF_SHA256SUMS')) else None,
             'workflow_sha256':sha(WORKFLOW) if os.path.isfile(WORKFLOW) else None,
             'checks':[{'check':label,'holds':ok} for label,ok,_ in rows],'every_check_holds':all(ok for _,ok,_ in rows)}

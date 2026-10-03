@@ -1,15 +1,20 @@
-# HOSTOPS02, the token placement (token_from_env, GO_WRITE_HOSTOPS02_TOKEN_FROM_ENV_01) on its frozen core: the core's
-# suite and the operation's suite on Linux as real root and as an ordinary user, the operation's own shapes as root on
-# the real filesystem of the runner (the layout of supervisor operation 2 and a FAKE deploy tree, created and removed by
-# the step; a small tmpfs on /etc/c3po-bar for the full-filesystem shape), and what the runner's docker compose makes of
-# the environment files the parser accepts (config only, as the runner's user: nothing is pulled, created or started).
+# HOSTOPS02, the token placement (token_from_env, GO_WRITE_HOSTOPS02_TOKEN_FROM_ENV_01, revision 3) on its own core (a
+# revision of the frozen core made for it alone: the process made non-dumpable): that core's suite and the operation's
+# suite on Linux as real root and as an ordinary user; what the kernel dumps of a crash, before and after the source's
+# protection (kernel.core_pattern set for a while to a pipe into a test collector and to a file path, then put back);
+# the operation's own shapes as root on the real filesystem of the runner (the layout of supervisor operation 2 and a FAKE
+# deploy tree, created and removed by the step; a small tmpfs on /etc/c3po-bar for the full-filesystem shape), and what
+# the runner's docker compose makes of the environment files the parser accepts (config only, as the runner's user:
+# nothing is pulled, created or started).
 #
 # For a THROWAWAY branch that never merges and carries no other workflow. The job runs on a GitHub-hosted runner that is
 # discarded afterwards; nothing here contacts the production host or any provider, and no network is needed by any shape.
 # No secret is used: every token of the branch is fake; the GitHub token is read-only and is not kept in the checkout.
-# The branch is the release (dd4ec4bb) plus hostops02/ and this file: hostops02/core with its seal (CORE_SHA256SUMS), the
-# six operations beside it, each with its seal (SHA256SUMS), and hostops02/proof (what the jobs add, with
-# PROOF_SHA256SUMS). This file is hostops02/proof/WORKFLOW.yml.txt, byte for byte (proof/seals.py compares).
+# The branch is the release (dd4ec4bb) plus hostops02/, hostops02-tok/ and this file: hostops02/core with its seal
+# (CORE_SHA256SUMS) and the five operations of the tier beside it, each with its seal (SHA256SUMS); hostops02-tok/core,
+# the token placement's own core (CORE_SHA256SUMS), and hostops02-tok/token_from_env beside it (SHA256SUMS); and
+# hostops02/proof (what the jobs add, with PROOF_SHA256SUMS). This file is hostops02/proof/WORKFLOW.yml.txt, byte for
+# byte (proof/seals.py compares).
 #
 # The tier 0 operations and C3 were proved by the jobs of their own branches (ops/hostops02-linux-root-proof, run
 # 37080926250; ops/hostops02-tls-probe-proof); their bytes are unchanged here and only their seals are checked. Every
@@ -40,21 +45,21 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - name: every seal (core, six operations, proof) and that every build is the assembly of the frozen core
+      - name: every seal (the core, five operations, the token's core and the token placement, proof) and that every build is the assembly of its core
         run: /usr/bin/python3 -I -B proof/seals.py
       - name: public-safety scan of hostops02/ and of this workflow
         if: always()
         run: /usr/bin/python3 -I -B proof/public_safety.py
-      - name: token_from_env - the suites as root and as user, the shapes as root on the real filesystem, the agreement with compose
+      - name: token_from_env - the suites as root and as user, the dump proof and the shapes as root, the agreement with compose
         if: always()
-        working-directory: hostops02/token_from_env
+        working-directory: hostops02-tok/token_from_env
         run: sh linux_root/run.sh
       - name: sha256 and content of the output files
         if: always()
-        working-directory: hostops02/core
+        working-directory: hostops02-tok/core
         run: |
-          /usr/bin/python3 -I -B linux_root/report.py ../token_from_env/linux_root/TESTS.core.linux-root.xml ../token_from_env/linux_root/TESTS.core.linux-user.xml ../token_from_env/linux_root/TESTS.token_from_env.linux-root.xml ../token_from_env/linux_root/TESTS.token_from_env.linux-user.xml ../token_from_env/linux_root/SHAPES.token_from_env.linux-root.json ../token_from_env/linux_root/SHAPES.token_from_env.compose.json ../proof/out/SEALS.json
-          sha256sum "$GITHUB_WORKSPACE/.github/workflows/hostops02-linux-root.yml" CORE_SHA256SUMS ../token_from_env/SHA256SUMS ../proof/PROOF_SHA256SUMS
+          /usr/bin/python3 -I -B linux_root/report.py ../token_from_env/linux_root/TESTS.core.linux-root.xml ../token_from_env/linux_root/TESTS.core.linux-user.xml ../token_from_env/linux_root/TESTS.token_from_env.linux-root.xml ../token_from_env/linux_root/TESTS.token_from_env.linux-user.xml ../token_from_env/linux_root/SHAPES.token_from_env.dumps.json ../token_from_env/linux_root/SHAPES.token_from_env.linux-root.json ../token_from_env/linux_root/SHAPES.token_from_env.compose.json ../../hostops02/proof/out/SEALS.json
+          sha256sum "$GITHUB_WORKSPACE/.github/workflows/hostops02-linux-root.yml" CORE_SHA256SUMS ../token_from_env/SHA256SUMS ../../hostops02/core/CORE_SHA256SUMS ../../hostops02/proof/PROOF_SHA256SUMS
       - name: the output files as one artifact
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -63,6 +68,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
           path: |
-            hostops02/token_from_env/linux_root/TESTS.*.xml
-            hostops02/token_from_env/linux_root/SHAPES.*.json
+            hostops02-tok/token_from_env/linux_root/TESTS.*.xml
+            hostops02-tok/token_from_env/linux_root/SHAPES.*.json
             hostops02/proof/out/*

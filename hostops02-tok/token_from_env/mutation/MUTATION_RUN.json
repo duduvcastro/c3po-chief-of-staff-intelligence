@@ -1,0 +1,2923 @@
+{
+ "complete_run": true,
+ "core_generation_sha256": "32c44cf80e6d53e860745e52792cc917c15ccaae448aee7ba68b6aca76d3c644",
+ "core_seal_sha256": "35475b2fb5f347aade26e32044fb66bb0080687ed7f4f9634617737b6d86d375",
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 221,
+  "redundant_survivors": 0,
+  "single": 221,
+  "survivors": 0
+ },
+ "errors": [],
+ "operation_sha256": {
+  "build/ASSEMBLY.json": "2a46e103ace215b666dcd75bdf117a1265ace4dead9139bca1cb51edf1d6451e",
+  "build/AUTHORITY.UNBOUND.json": "903ae0158bffe8c2f95b4bf40c123e542c63091f1eda20bc20acc1ef6a9cb018",
+  "build/DISPATCH.UNBOUND.json": "0b83d7c51f1f60006d20ffdb79c9623a2fbe80fefc852575e2588e47b111bb30",
+  "build/DISPATCH_SCOPE_DELTA.diff": "92f12afe10dc42b4f837d3ac9e40b65b56c7442091dbd313aae1ff5295d2f922",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "dace5c4f6dd339effe09ae8417405df71b3b137e05076a81b280cf4a4db5048f",
+  "build/GO.UNBOUND.json": "ae72313ffdf9b77bc88a39d885dea70951990f003e50d1a697d56f8ff0cf3422",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "8d7f8dd4bae763d094ffe366474150804a5000b608f85197135e86d6e9826be2",
+  "build/REQUEST.UNBOUND.json": "cc6a96ffbb4099abcfe3fcb086e772aa26a9da893af43e1db35b2aa96598495f",
+  "build/dispatch_once.py": "bac5e841c2d895f48ab90b4b356af45e430d1db53ac5630bdcda60af1569b1c9",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/token_from_env.py": "bcb72d405a1807de5d7c21ac4f762b48adf6163dc26b12c8c9136a2bb7010b6e",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "bdf122c2284a4926092564434646fe56e3d50fd2319f10db9690542c42a58fe4",
+  "mutation/mutate.py": "8be9ebedd2c9e90d00f1d89c42b4543cfcd388e70e2e8ec45ad040e8808b0461",
+  "op.py": "d097deefde42e868e884f9ccea5d4ac4e629f3f5ba658959d9d027b7795f0a03",
+  "spec.py": "42ff748a878c3ac4a6ecf98e17e1e63eb4a879da6bd0cbdfb874f25fe0ef6311",
+  "tests/conftest.py": "1367b43f01c67b6c3977727595937b9984514280b7c9c73a69d4dd4795a75646",
+  "tests/envfiles.py": "c3855631fdc55b0644f7812dc5921a853034d90bc7508b2271ef2c315ce77bf6",
+  "tests/native_child.py": "d627556f96c018ec0d55d3a4e16946a166d23efc45d0636de783aca7b6751474",
+  "tests/test_conformance.py": "16b3ed088ae1a4e88cacf13d1365851f4048aba62dd428c091a9dde7ead42e7d",
+  "tests/test_linux_root.py": "62f44fdf996a0ec81a5e4efffb5ab2569d61aef06a124bc35204afc21e5dde9b",
+  "tests/test_native.py": "b2ab4c4365ac7261ce3cc0c21c64ad8c6cec82da2bd1cda6456d7bde48455504",
+  "tests/test_static_pins.py": "6eca81cf9932b77fb004bf8b1ebefc477122e1c3832112ad1cccdbb5172626bb",
+  "tests/test_token_from_env.py": "0034857202df1b60466cf62adb8bc79b9d7a11006d88398b158c53e08f998f1f",
+  "tests/tok.py": "a38f8cf500ac6e3b7ef0f79c1624eab69298dcd35d0717f20e424ff34564e75f"
+ },
+ "python": "Python 3.9.6",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "release_tree_at_hand": true,
+ "results": [
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_plan_is_refused_before_the_claim",
+   "killed": true,
+   "mutant": "C01_the_day_before_is_a_token_day",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 188 passed, 6 deselected in 1.05s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "C02_sunday_is_not_a_token_day",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.06s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:667: AssertionError: assert 'DATE_NOT_IN_SCOPE' == 'WINDOW_NOT_ON_A_TOKEN_DAY'",
+   "killed": true,
+   "mutant": "C03_writes_any_day_of_the_epoch",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 188 passed, 6 deselected in 1.06s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:81: AssertionError: assert ('REFUSED', '...OT_ROOT_0700') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "C04_configuration_directory_0750",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 deselected in 0.26s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:83: AttributeError: 'NoneType' object has no attribute 'kind'",
+   "killed": true,
+   "mutant": "C05_another_name",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 deselected in 0.29s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:81: AssertionError: assert ('PARTIAL_MET...ATA_MISMATCH') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "C06_token_file_0640",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 6 deselected in 0.23s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:131: AssertionError: assert ('PARTIAL_META...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "C07_readback_limit_below_the_longest_value",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 passed, 6 deselected in 0.29s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:105: AssertionError: assert (1 == 1 and ('/etc/c3po-b...16777985, 384) == ('/etc/c3po-b...16780033, 384)",
+   "killed": true,
+   "mutant": "C08_create_without_o_excl",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 1 passed, 6 deselected in 0.31s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:105: AssertionError: assert (1 == 1 and ('/etc/c3po-b...16779777, 384) == ('/etc/c3po-b...16780033, 384)",
+   "killed": true,
+   "mutant": "C09_create_following_a_link",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 1 passed, 6 deselected in 0.34s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:105: AssertionError: assert (1 == 1 and ('/etc/c3po-b...n', 2817, 384) == ('/etc/c3po-b...16780033, 384)",
+   "killed": true,
+   "mutant": "C10_create_without_o_cloexec",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 1 passed, 6 deselected in 0.35s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:105: AssertionError: assert (1 == 1 and ('/etc/c3po-b...16781057, 384) == ('/etc/c3po-b...16780033, 384)",
+   "killed": true,
+   "mutant": "C11_create_truncating",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 1 passed, 6 deselected in 0.34s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:81: AssertionError: assert ('REFUSED', '..._FILE_ABSENT') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "C12_another_environment_file",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.32s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'ENV_FILE_TOO_LARGE')",
+   "killed": true,
+   "mutant": "C13_environment_file_bound_one_byte_more",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 29 passed, 6 deselected in 0.57s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:92: AssertionError: assert {'MASSIVE_API_TOKEN': True} == {'C3PO_MASSIV..._TOKEN': True}",
+   "killed": true,
+   "mutant": "C14_only_the_short_name",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.32s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:81: AssertionError: assert ('REFUSED', '...N_DEFINITION') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "C15_only_the_prefixed_name",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.31s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:161: AssertionError: assert None == 'ENV_TOKEN_VALUE_GRAMMAR'",
+   "killed": true,
+   "mutant": "C16_value_of_one_character",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.37s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_receipt_does_not_depend_on_the_token_value_or_length",
+   "killed": true,
+   "mutant": "C17_value_of_fifteen_characters",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.41s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_receipt_does_not_depend_on_the_token_value_or_length",
+   "killed": true,
+   "mutant": "C18_value_of_513_characters",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.41s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:161: AssertionError: assert None == 'ENV_TOKEN_VALUE_GRAMMAR'",
+   "killed": true,
+   "mutant": "C19_value_with_a_dollar",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.45s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:161: AssertionError: assert None == 'ENV_TOKEN_VALUE_GRAMMAR'",
+   "killed": true,
+   "mutant": "C20_value_with_a_space_and_a_hash",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.47s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:161: AssertionError: assert None == 'ENV_TOKEN_VALUE_GRAMMAR'",
+   "killed": true,
+   "mutant": "C21_value_of_any_byte_but_a_newline",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.48s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:161: AssertionError: assert None == 'ENV_TOKEN_VALUE_GRAMMAR'",
+   "killed": true,
+   "mutant": "C22_value_with_quotes",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.40s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_receipt_does_not_depend_on_the_token_value_or_length",
+   "killed": true,
+   "mutant": "C23_value_with_non_ascii",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.42s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "C24_less_than_the_allowance_left",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 51 passed, 6 deselected in 0.72s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_evidence_names_the_precheck_and_the_provisioning_of_operation_2",
+   "killed": true,
+   "mutant": "C25_provisioning_evidence_not_required",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 passed, 6 deselected in 0.34s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_evidence_names_the_precheck_and_the_provisioning_of_operation_2",
+   "killed": true,
+   "mutant": "C26_precheck_evidence_not_required",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 passed, 6 deselected in 0.34s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_effects_are_exactly_what_the_signers_must_see",
+   "killed": true,
+   "mutant": "C27_activation_allowed",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.10s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestConformance::test_window_boundaries_span_and_strict_utc",
+   "killed": true,
+   "mutant": "C28_gate_longer_than_a_write_may_have",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 304 passed, 6 deselected in 6.88s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_files_the_parser_accepts[every_other_form_of_other_names]",
+   "killed": true,
+   "mutant": "C29_comment_after_indentation_not_a_comment",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 83 passed, 6 deselected in 0.84s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_files_the_parser_accepts[every_other_form_of_other_names]",
+   "killed": true,
+   "mutant": "C30_blank_line_only_when_empty",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 83 passed, 6 deselected in 0.89s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_files_the_parser_accepts[every_other_form_of_other_names]",
+   "killed": true,
+   "mutant": "C31_names_without_dots_dashes_brackets",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 83 passed, 6 deselected in 0.89s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_files_the_parser_accepts[every_other_form_of_other_names]",
+   "killed": true,
+   "mutant": "C32_no_yaml_separator",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 83 passed, 6 deselected in 0.89s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_FILE_SYNTAX_UNSUPPORTED'",
+   "killed": true,
+   "mutant": "C33_a_name_without_a_value_accepted",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 102 passed, 6 deselected in 0.90s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:81: AssertionError: assert ('REFUSED', '...ON_NOT_PLAIN') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "C34_export_not_recognised",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.36s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert 'ENV_TOKEN_NA...IN_DEFINITION' == 'ENV_FILE_SYNTAX_UNSUPPORTED'",
+   "killed": true,
+   "mutant": "C35_anything_after_a_closing_quote",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 115 passed, 6 deselected in 0.92s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_files_the_parser_accepts[every_other_form_of_other_names]",
+   "killed": true,
+   "mutant": "C36_spaces_but_no_comment_after_a_closing_quote",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 83 passed, 6 deselected in 0.83s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION'",
+   "killed": true,
+   "mutant": "C37_the_name_looked_for_in_capitals",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 136 passed, 6 deselected in 0.97s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION'",
+   "killed": true,
+   "mutant": "C38_the_name_looked_for_without_its_middle",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 136 passed, 6 deselected in 0.98s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('ENV_TOKEN_VALUE_GRAMMAR', 'ENV_FILE_SYNTAX_UNSUPPORTED')",
+   "killed": true,
+   "mutant": "R01_carriage_return_accepted",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 44 passed, 6 deselected in 0.68s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_FILE_SYNTAX_UNSUPPORTED'",
+   "killed": true,
+   "mutant": "R02_nul_accepted",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 92 passed, 6 deselected in 0.93s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert 'ENV_TOKEN_ABSENT' == 'ENV_FILE_SYNTAX_UNSUPPORTED'",
+   "killed": true,
+   "mutant": "R03_line_outside_the_rules_ignored",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 93 passed, 6 deselected in 0.92s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_files_the_parser_refuses_with_a_constant_code[quoted_value_with_a_backslash_before_the_quote]",
+   "killed": true,
+   "mutant": "R04_value_end_not_judged",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 109 passed, 6 deselected in 0.92s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_files_the_parser_refuses_with_a_constant_code[quoted_value_with_two_backslashes_inside]",
+   "killed": true,
+   "mutant": "R05_a_quoted_value_may_hold_two_backslashes",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 114 passed, 6 deselected in 0.94s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_files_the_parser_refuses_with_a_constant_code[an_escaped_quote_followed_by_what_looks_like_a_comment]",
+   "killed": true,
+   "mutant": "R05b_a_backslash_may_stand_before_the_closing_quote",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 111 passed, 6 deselected in 0.94s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert 'ENV_TOKEN_NA...IN_DEFINITION' == 'ENV_FILE_SYNTAX_UNSUPPORTED'",
+   "killed": true,
+   "mutant": "R06_quoted_tail_not_judged",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 115 passed, 6 deselected in 0.89s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_FILE_SYNTAX_UNSUPPORTED'",
+   "killed": true,
+   "mutant": "R07_value_may_begin_with_a_vertical_tab",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 119 passed, 6 deselected in 0.87s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_FILE_SYNTAX_UNSUPPORTED'",
+   "killed": true,
+   "mutant": "R08_value_may_begin_with_a_form_feed",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 118 passed, 6 deselected in 0.91s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_FILE_SYNTAX_UNSUPPORTED'",
+   "killed": true,
+   "mutant": "R09_value_may_begin_with_any_byte",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 123 passed, 6 deselected in 0.92s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_files_the_parser_refuses_with_a_constant_code[single_quoted_value_with_a_backslash_before_the_quote]",
+   "killed": true,
+   "mutant": "R10_only_a_double_quote_opens_a_quoted_value",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 110 passed, 6 deselected in 0.89s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert 'ENV_TOKEN_NA...IN_DEFINITION' == 'ENV_TOKEN_DE...ION_NOT_PLAIN'",
+   "killed": true,
+   "mutant": "R11_names_compared_with_their_case",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 133 passed, 6 deselected in 0.90s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_DEFINITION_NOT_PLAIN'",
+   "killed": true,
+   "mutant": "R12_definition_may_be_indented",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 126 passed, 6 deselected in 0.92s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'ENV_TOKEN_DEFINITION_NOT_PLAIN')",
+   "killed": true,
+   "mutant": "R13_definition_may_be_exported",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 44 passed, 6 deselected in 0.65s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_DEFINITION_NOT_PLAIN'",
+   "killed": true,
+   "mutant": "R14_definition_may_be_spaced_before_the_sign",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 128 passed, 6 deselected in 0.91s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_DEFINITION_NOT_PLAIN'",
+   "killed": true,
+   "mutant": "R15_definition_may_use_a_colon",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 132 passed, 6 deselected in 0.89s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_DEFINITION_NOT_PLAIN'",
+   "killed": true,
+   "mutant": "R16_definition_may_be_spaced_after_the_sign",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 129 passed, 6 deselected in 0.90s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:83: AssertionError: assert (('file', 0, 0...rTeStSoNlY\\n') == ('file', 0, 0...rTeStSoNlY\\n')",
+   "killed": true,
+   "mutant": "R18_value_offset_includes_the_sign",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.33s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:127: AssertionError: assert {'C3PO_MASSIV...TOKEN': False} == {'C3PO_MASSIV..._TOKEN': True}",
+   "killed": true,
+   "mutant": "R19_only_the_last_definition_kept",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 passed, 6 deselected in 0.36s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": true,
+   "mutant": "R20_last_line_loses_its_last_byte",
+   "returncode": null,
+   "seconds": 240.0,
+   "summary": "TIME_LIMIT_240_SECONDS",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION'",
+   "killed": true,
+   "mutant": "R28_the_name_allowed_in_other_lines",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 136 passed, 6 deselected in 0.95s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION'",
+   "killed": true,
+   "mutant": "R29_the_kelvin_sign_not_read_as_k",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 141 passed, 6 deselected in 0.98s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION'",
+   "killed": true,
+   "mutant": "R30_other_lines_compared_with_their_case",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 136 passed, 6 deselected in 0.97s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION'",
+   "killed": true,
+   "mutant": "R31_only_the_name_of_another_line_searched",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 136 passed, 6 deselected in 0.93s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:161: AssertionError: assert 'ENV_FILE_SYNTAX_UNSUPPORTED' == 'ENV_TOKEN_VALUE_GRAMMAR'",
+   "killed": true,
+   "mutant": "R32_a_definition_judged_by_the_boundary_of_other_values",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.42s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_receipt_does_not_depend_on_the_token_value_or_length",
+   "killed": true,
+   "mutant": "R33_a_definition_also_searched_for_the_name",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.48s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('PRECHECK_FAILED', 'ENV_TOKEN_ABSENT')",
+   "killed": true,
+   "mutant": "R21_no_definition_is_an_empty_value",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 44 passed, 6 deselected in 0.68s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:162: AssertionError: assert None == 'ENV_TOKEN_DEFINITIONS_DISAGREE'",
+   "killed": true,
+   "mutant": "R22_definitions_not_compared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.44s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:602: AssertionError: assert b'FaKeToKeNfOrTeStSoNlY\\n' == 'ENV_TOKEN_DEFINITIONS_DISAGREE'",
+   "killed": true,
+   "mutant": "R23_only_the_first_two_compared",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 152 passed, 6 deselected in 0.95s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:161: AssertionError: assert None == 'ENV_TOKEN_VALUE_GRAMMAR'",
+   "killed": true,
+   "mutant": "R24_value_grammar_not_judged",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.39s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:161: AssertionError: assert None == 'ENV_TOKEN_VALUE_GRAMMAR'",
+   "killed": true,
+   "mutant": "R25_value_grammar_a_prefix_only",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.43s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:83: AssertionError: assert (('file', 0, 0...OrTeStSoNlY ') == ('file', 0, 0...rTeStSoNlY\\n')",
+   "killed": true,
+   "mutant": "R26_no_newline_after_the_value",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.30s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:117: AssertionError: assert (1 == 1 and <class 'bytearray'> is bytearray and {10, 70, 75, 78, 79, 83, ...} == {0}",
+   "killed": true,
+   "mutant": "R27_buffer_not_zeroed",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 2 passed, 6 deselected in 0.33s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:658: AssertionError: assert 'CONFIG_DIREC...NOT_ROOT_0700' == 'PARENT_SETGID'",
+   "killed": true,
+   "mutant": "P01_setgid_configuration_directory_accepted",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 188 passed, 6 deselected in 1.08s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_plan_is_refused_before_the_claim",
+   "killed": true,
+   "mutant": "P02_group_of_the_configuration_directory_unchecked",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 188 passed, 6 deselected in 1.02s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_plan_is_refused_before_the_claim",
+   "killed": true,
+   "mutant": "P03_mode_of_the_configuration_directory_unchecked",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 188 passed, 6 deselected in 1.07s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_plan_is_refused_before_the_claim",
+   "killed": true,
+   "mutant": "P04_deploy_directory_any_text",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 188 passed, 6 deselected in 1.10s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_plan_is_refused_before_the_claim",
+   "killed": true,
+   "mutant": "P05_deploy_directory_inside_the_configuration_directory",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 188 passed, 6 deselected in 1.09s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_plan_is_refused_before_the_claim",
+   "killed": true,
+   "mutant": "P06_deploy_directory_above_the_configuration_directory",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 188 passed, 6 deselected in 1.06s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_plan_is_refused_before_the_claim",
+   "killed": true,
+   "mutant": "P07_boot_unbound",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 188 passed, 6 deselected in 1.16s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_the_plan_is_refused_before_the_claim",
+   "killed": true,
+   "mutant": "P08_any_day_of_the_class",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 188 passed, 6 deselected in 1.14s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E01_effects_name_another_operation",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.08s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E02_effects_without_the_required_identity",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.08s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E03_effects_without_the_chain",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.07s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E04_effects_token_path",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.15s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E05_effects_token_expected_present",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.19s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E06_effects_token_mode",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.26s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E07_effects_token_links",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.17s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E08_effects_token_content",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.13s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E09_effects_token_size",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.15s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E10_effects_token_owner",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.16s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:281: AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "E11_effects_environment_path",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 43 passed, 6 deselected in 0.71s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E12_effects_deploy_directory",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.16s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E13_effects_keys",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.14s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E14_effects_grammar",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.26s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E15_effects_chain_said_signed",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.26s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E16_effects_token_days",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.16s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...6': None, ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E17_effects_boot",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.16s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E18_effects_say_objects_modified",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.16s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E19_effects_say_a_process",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.15s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E20_effects_say_activation",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.15s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "E21_effects_say_the_value_in_the_receipt",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.15s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'EXECUTOR_IDENTITY')",
+   "killed": true,
+   "mutant": "K01_executor_not_checked",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 32 passed, 6 deselected in 0.67s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:106: ValueError: 'umask' is not in list",
+   "killed": true,
+   "mutant": "K02_umask_not_set",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 1 passed, 6 deselected in 0.34s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:106: AssertionError: assert (1 < 44 and [('umask', 18)] == [('umask', 63)]",
+   "killed": true,
+   "mutant": "K03_umask_0022",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 1 passed, 6 deselected in 0.37s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'EVIDENCE_FROM_EARLIER_BOOT')",
+   "killed": true,
+   "mutant": "K04_boot_not_compared",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 51 passed, 6 deselected in 0.81s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:157: AssertionError: assert 'TOKEN_FILE_A...FTER_PRECHECK' == 'TOKEN_FILE_PRESENT'",
+   "killed": true,
+   "mutant": "K05_existing_token_not_refused",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.39s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:89: AssertionError: assert ({'seconds_lef...absent': None} == {'seconds_lef...absent': True}",
+   "killed": true,
+   "mutant": "K06_absence_not_reported",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.35s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT')",
+   "killed": true,
+   "mutant": "K07_budget_not_checked",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 51 passed, 6 deselected in 0.71s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:89: AssertionError: assert ({'seconds_lef...absent': True} == {'seconds_lef...absent': True}",
+   "killed": true,
+   "mutant": "K08_budget_not_reported",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.33s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('PARENT_REPLACED', 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "K09_configuration_directory_not_proved_again",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 50 passed, 6 deselected in 0.77s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('PRECHECK_FAILED', 'PRECHECK_OS_ERROR')",
+   "killed": true,
+   "mutant": "K10_failing_system_call_of_the_precheck_not_told_apart",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 33 passed, 6 deselected in 0.65s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:81: AssertionError: assert ('REFUSED', '...OY_DIRECTORY') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "K11_deploy_chain_walked_by_the_signed_rule_for_root",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.32s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'DEPLOY_CHAIN_WORLD_WRITABLE')",
+   "killed": true,
+   "mutant": "K12_deploy_chain_not_judged",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 17 passed, 6 deselected in 0.50s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('PRECHECK_OS_ERROR', 'DEPLOY_DIRECTORY_ABSENT')",
+   "killed": true,
+   "mutant": "K13_absent_deploy_directory_not_said",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 13 passed, 6 deselected in 0.50s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:93: AssertionError: assert {'no_componen...a_link': True} == {'no_componen...a_link': True}",
+   "killed": true,
+   "mutant": "K14_chain_fact_includes_the_deploy_directory",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.32s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:93: AssertionError: assert {'no_componen...a_link': True} == {'no_componen...a_link': True}",
+   "killed": true,
+   "mutant": "K15_chain_fact_of_writable_inverted",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.35s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:93: AssertionError: assert {'no_componen...a_link': None} == {'no_componen...a_link': True}",
+   "killed": true,
+   "mutant": "K16_walk_fact_not_set",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.36s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('UNLISTED_CODE', 'DEPLOY_CHAIN_SYMLINK')",
+   "killed": true,
+   "mutant": "K17_symlink_code_lost",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 14 passed, 6 deselected in 0.49s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('UNLISTED_CODE', 'DEPLOY_CHAIN_NOT_A_DIRECTORY')",
+   "killed": true,
+   "mutant": "K18_not_a_directory_code_lost",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 16 passed, 6 deselected in 0.49s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('UNLISTED_CODE', 'DEPLOY_CHAIN_CHANGED_DURING_WALK')",
+   "killed": true,
+   "mutant": "K22_changed_during_the_walk_code_lost",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 47 passed, 6 deselected in 0.72s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('UNLISTED_CODE', 'DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY')",
+   "killed": true,
+   "mutant": "K19_unsafe_row_code_lost",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 19 passed, 6 deselected in 0.48s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('UNLISTED_CODE', 'DEPLOY_CHAIN_WORLD_WRITABLE')",
+   "killed": true,
+   "mutant": "K20_world_writable_code_lost",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 17 passed, 6 deselected in 0.51s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:141: AssertionError: the environment file is not even read",
+   "killed": true,
+   "mutant": "K21_environment_file_read_before_the_token_is_looked_for",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 196 passed, 6 deselected in 1.19s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('PRECHECK_OS_ERROR', 'ENV_FILE_ABSENT')",
+   "killed": true,
+   "mutant": "N01_absent_file_not_said",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 21 passed, 6 deselected in 0.52s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('ENV_FILE_WORLD_WRITABLE', 'ENV_FILE_NOT_REGULAR')",
+   "killed": true,
+   "mutant": "N02_link_or_special_file_read",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 22 passed, 6 deselected in 0.53s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'ENV_FILE_WORLD_WRITABLE')",
+   "killed": true,
+   "mutant": "N03_world_writable_file_read",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 25 passed, 6 deselected in 0.51s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'ENV_FILE_WORLD_WRITABLE')",
+   "killed": true,
+   "mutant": "N04_group_writable_refused_in_place_of_world",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 25 passed, 6 deselected in 0.55s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'ENV_FILE_OWNER_UNEXPECTED')",
+   "killed": true,
+   "mutant": "N05_owner_not_checked",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 27 passed, 6 deselected in 0.55s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:262: AssertionError: ENV_FILE_OWNER_UNEXPECTED",
+   "killed": true,
+   "mutant": "N06_root_owner_refused",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 39 passed, 6 deselected in 0.67s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('PRECHECK_OS_ERROR', 'ENV_FILE_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "N07_vanished_while_read_not_said",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 46 passed, 6 deselected in 0.70s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('PRECHECK_OS_ERROR', 'ENV_FILE_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "N08_vanished_after_the_read_not_said",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 45 passed, 6 deselected in 0.68s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'ENV_FILE_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "N09_replaced_before_the_open_not_seen",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 46 passed, 6 deselected in 0.71s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'ENV_FILE_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "N10_replaced_after_the_read_not_seen",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 45 passed, 6 deselected in 0.72s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('UNLISTED_CODE', 'ENV_FILE_TOO_LARGE')",
+   "killed": true,
+   "mutant": "N11_size_code_lost",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 29 passed, 6 deselected in 0.53s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('UNLISTED_CODE', 'ENV_FILE_CHANGED_DURING_READ')",
+   "killed": true,
+   "mutant": "N12_changed_code_lost",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 45 passed, 6 deselected in 0.79s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('UNLISTED_CODE', 'ENV_FILE_NOT_REGULAR')",
+   "killed": true,
+   "mutant": "N13_regular_code_lost",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 46 passed, 6 deselected in 0.76s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:92: AssertionError: assert {'C3PO_MASSIV...TOKEN': False} == {'C3PO_MASSIV..._TOKEN': True}",
+   "killed": true,
+   "mutant": "N14_names_defined_reported_false",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.35s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_complete_run_places_the_token_and_reads_it_back",
+   "killed": true,
+   "mutant": "N15_syntax_fact_not_set",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.33s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_complete_run_places_the_token_and_reads_it_back",
+   "killed": true,
+   "mutant": "N16_agreement_fact_not_set",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.32s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_complete_run_places_the_token_and_reads_it_back",
+   "killed": true,
+   "mutant": "N17_read_fact_not_set",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.33s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'ENV_FILE_LINKED')",
+   "killed": true,
+   "mutant": "N18_a_second_link_read",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 28 passed, 6 deselected in 0.57s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_complete_run_places_the_token_and_reads_it_back",
+   "killed": true,
+   "mutant": "N19_link_fact_not_set",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.31s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_complete_run_places_the_token_and_reads_it_back",
+   "killed": true,
+   "mutant": "N20_readable_fact_inverted",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.33s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:265: AssertionError: assert True is ('env_file_group_writable' not in ('env_file_group_writable', 'env_file_0644'))",
+   "killed": true,
+   "mutant": "N21_readable_fact_of_other_only",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 37 passed, 6 deselected in 0.71s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_complete_run_places_the_token_and_reads_it_back",
+   "killed": true,
+   "mutant": "N22_readable_fact_after_the_refusals",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.34s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:561: AssertionError: assert ('REFUSED', '...', 'PRECHECK') == ('REFUSED', '...', 'PRECHECK')",
+   "killed": true,
+   "mutant": "L01_code_of_the_run_not_listed",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 75 passed, 6 deselected in 0.93s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:564: AssertionError: assert ('PARTIAL_MET...T_UNVERIFIED') == ('PARTIAL_MET...T_UNVERIFIED')",
+   "killed": true,
+   "mutant": "L02_codes_of_the_token_file_not_listed",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 75 passed, 6 deselected in 0.87s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:570: AssertionError: assert ('FILESYSTEM_...T_UNVERIFIED') == ('FILESYSTEM_...T_UNVERIFIED')",
+   "killed": true,
+   "mutant": "L03_withdrawal_code_not_listed",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 75 passed, 6 deselected in 0.92s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:157: AssertionError: assert 'UNLISTED_CODE' == 'TOKEN_FILE_PRESENT'",
+   "killed": true,
+   "mutant": "L04_a_code_missing_from_the_list",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.39s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:561: AssertionError: assert ('REFUSED', '...', 'PRECHECK') == ('REFUSED', '...', 'PRECHECK')",
+   "killed": true,
+   "mutant": "L05_every_text_listed",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 75 passed, 6 deselected in 0.88s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('FILESYSTEM_ERROR', 'TOKEN_FILE_APPEARED_AFTER_PRECHECK')",
+   "killed": true,
+   "mutant": "W01_existing_name_reported_as_a_filesystem_error",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 52 passed, 6 deselected in 0.74s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:374: AssertionError: assert (b'theirs' == b'theirs'",
+   "killed": true,
+   "mutant": "W02_refused_creation_not_said",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 52 passed, 6 deselected in 0.79s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:543: AssertionError: assert ('PARTIAL_MET...T_CREATED', 0) == ('PARTIAL_MET...ERTAIN', None)",
+   "killed": true,
+   "mutant": "W03_uncertain_creation_called_not_created",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 74 passed, 6 deselected in 0.97s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:411: AssertionError: assert ('TOKEN_NOT_PLACED' == 'TOKEN_WRITE_INCOMPLETE'",
+   "killed": true,
+   "mutant": "W04_write_that_wrote_nothing_accepted",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 59 passed, 6 deselected in 0.82s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:156: AssertionError: assert 'LEFT_UNVERIFIED' == 'WITHDRAWN'",
+   "killed": true,
+   "mutant": "W05_write_error_left_in_place",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 6 deselected in 0.42s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:416: AssertionError: assert (None == 'FSYNC_FAILED')",
+   "killed": true,
+   "mutant": "W06_failed_fsync_of_the_file_ignored",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 60 passed, 6 deselected in 0.83s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:428: AssertionError: assert ('READBACK_MISMATCH' == 'TOKEN_METADATA_MISMATCH'",
+   "killed": true,
+   "mutant": "W07_size_not_compared",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 65 passed, 6 deselected in 0.89s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:428: AssertionError: assert ('READBACK_MISMATCH' == 'TOKEN_METADATA_MISMATCH'",
+   "killed": true,
+   "mutant": "W08_metadata_not_compared",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 61 passed, 6 deselected in 0.83s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:419: AssertionError: assert (None == 'FSYNC_FAILED')",
+   "killed": true,
+   "mutant": "W09_failed_fsync_of_the_directory_ignored",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 60 passed, 6 deselected in 0.83s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:493: AssertionError: assert (None == 'PARENT_REPLACED')",
+   "killed": true,
+   "mutant": "W10_directory_not_proved_before_the_readback",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 70 passed, 6 deselected in 0.87s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:469: AssertionError: assert (None == 'READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "W11_readback_inode_not_compared",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 68 passed, 6 deselected in 0.83s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:463: AssertionError: assert (None == 'READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "W12_readback_bytes_not_compared",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 68 passed, 6 deselected in 0.91s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:474: AssertionError: assert (None == 'READBACK_MISMATCH')",
+   "killed": true,
+   "mutant": "W13_readback_metadata_not_compared",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 68 passed, 6 deselected in 0.89s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:515: AssertionError: open",
+   "killed": true,
+   "mutant": "W14_expiry_in_the_readback_withdraws",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 72 passed, 6 deselected in 0.88s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:478: AssertionError: assert ('READBACK_UNAVAILABLE' == 'READBACK_UNAVAILABLE'",
+   "killed": true,
+   "mutant": "W15_failed_readback_left_in_place",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 69 passed, 6 deselected in 0.89s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:540: AssertionError: assert ('TOKEN_PLACEMENT_FAILED' == 'TOKEN_PLACEMENT_FAILED'",
+   "killed": true,
+   "mutant": "W16_unexpected_failure_left_in_place",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 74 passed, 6 deselected in 0.87s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:469: AssertionError: assert ('READBACK_MISMATCH' == 'READBACK_MISMATCH'",
+   "killed": true,
+   "mutant": "W17_withdrawal_removes_whatever_has_the_name",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 68 passed, 6 deselected in 0.81s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:455: AssertionError: assert ('TOKEN_METADATA_MISMATCH' == 'TOKEN_METADATA_MISMATCH'",
+   "killed": true,
+   "mutant": "W18_withdrawal_removes_a_file_with_another_name",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 67 passed, 6 deselected in 0.79s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:400: AssertionError: assert (['create', 'write', 'unlink'] == ['create', 'write', 'unlink']",
+   "killed": true,
+   "mutant": "W19_withdrawal_without_its_fsync",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 55 passed, 6 deselected in 0.75s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:482: AssertionError: assert ('READBACK_UNAVAILABLE' == 'READBACK_UNAVAILABLE'",
+   "killed": true,
+   "mutant": "W20_failed_withdrawal_said_withdrawn",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 69 passed, 6 deselected in 0.81s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:548: AssertionError: assert (('LEFT_UNVERIFIED', None) == ('LEFT_UNVERI...AL_UNCERTAIN')",
+   "killed": true,
+   "mutant": "W21_uncertain_withdrawal_not_said",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 74 passed, 6 deselected in 0.78s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:529: AssertionError: assert ('WITHDRAWN',...e, True, True) == ('WITHDRAWN_N..., True, False)",
+   "killed": true,
+   "mutant": "W22_withdrawal_not_durable_called_durable",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 73 passed, 6 deselected in 0.76s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:397: AssertionError: assert ('WITHDRAWN',...e, None, True) == ('WITHDRAWN',...8, None, True)",
+   "killed": true,
+   "mutant": "W23_withdrawal_errno_of_the_cause_lost",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 55 passed, 6 deselected in 0.74s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:428: AssertionError: assert (None == 'TOKEN_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "W24_uid_fact_always_true",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 62 passed, 6 deselected in 0.79s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:428: AssertionError: assert (None == 'TOKEN_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "W25_gid_fact_always_true",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 61 passed, 6 deselected in 0.84s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:428: AssertionError: assert (None == 'TOKEN_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "W26_mode_fact_always_true",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 63 passed, 6 deselected in 0.85s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:447: AssertionError: ({'st_nlink': 0}, 'single_link')",
+   "killed": true,
+   "mutant": "W27_link_fact_always_true",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 66 passed, 6 deselected in 0.87s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:447: AssertionError: ({'st_size': 0}, 'size_within_1_4096')",
+   "killed": true,
+   "mutant": "W28_size_fact_always_true",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 66 passed, 6 deselected in 0.85s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:428: AssertionError: assert (None == 'TOKEN_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "W29_device_fact_always_true",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 64 passed, 6 deselected in 0.83s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:447: AssertionError: ({'st_mode': 4480}, 'regular')",
+   "killed": true,
+   "mutant": "W30_regular_fact_always_true",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 66 passed, 6 deselected in 0.86s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:428: AssertionError: assert (None == 'TOKEN_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "W31_supervisor_rules_without_the_mode",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 63 passed, 6 deselected in 0.98s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:428: AssertionError: assert (None == 'TOKEN_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "W32_group_not_part_of_the_verdict",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 61 passed, 6 deselected in 1.05s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:428: AssertionError: assert (None == 'TOKEN_METADATA_MISMATCH')",
+   "killed": true,
+   "mutant": "W33_device_not_part_of_the_verdict",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 64 passed, 6 deselected in 0.90s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_complete_run_places_the_token_and_reads_it_back",
+   "killed": true,
+   "mutant": "W34_identity_of_the_file_not_reported",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.43s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:84: AssertionError: assert ('PLACED_VERIFIED' == 'PLACED_VERIFIED'",
+   "killed": true,
+   "mutant": "W35_placed_without_its_code_cleared",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.32s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:84: AssertionError: assert ('PLACED_VERIFIED' == 'PLACED_VERIFIED'",
+   "killed": true,
+   "mutant": "W36_created_not_reported",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.36s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('TOKEN_FILE_APPEARED_AFTER_PRECHECK', 'TOKEN_FILE_APPEARED_AFTER_PRECHECK')",
+   "killed": true,
+   "mutant": "V01_a_refusal_after_a_failed_creation_called_partial",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 52 passed, 6 deselected in 0.75s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:88: AssertionError: assert ({'failed_noth...uncertain': 0} == {'failed_noth...uncertain': 0}",
+   "killed": true,
+   "mutant": "V02_objects_left_by_a_placed_file",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.34s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:456: AssertionError: assert ('TOKEN_NAME_N...HIS_RUNS_FILE' == 'TOKEN_NAME_N...HIS_RUNS_FILE'",
+   "killed": true,
+   "mutant": "V03_objects_left_by_a_file_left",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 67 passed, 6 deselected in 0.86s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:543: AssertionError: assert ('PARTIAL_MET...UNCERTAIN', 0) == ('PARTIAL_MET...ERTAIN', None)",
+   "killed": true,
+   "mutant": "V04_uncertain_creation_counted_as_nothing_left",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 74 passed, 6 deselected in 0.93s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:95: AssertionError: assert {'pinned': True, 'rows': []} == {'pinned': Tr...': 448, ...}]}",
+   "killed": true,
+   "mutant": "V05_receipt_without_the_rows_as_read",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.29s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_a_configuration_directory_that_is_not_the_signed_one_is_a_refusal",
+   "killed": true,
+   "mutant": "V06_receipt_says_pinned_always",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 49 passed, 6 deselected in 0.76s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:93: AssertionError: assert {'no_componen...a_link': None} == {'no_componen...a_link': True}",
+   "killed": true,
+   "mutant": "V07_receipt_without_the_chain_facts",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.32s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_complete_run_places_the_token_and_reads_it_back",
+   "killed": true,
+   "mutant": "V08_receipt_without_the_environment_facts",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.37s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:89: AssertionError: assert ({} == {'seconds_lef...absent': True}",
+   "killed": true,
+   "mutant": "V09_receipt_without_the_precheck",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.36s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_token_from_env.py::test_complete_run_places_the_token_and_reads_it_back",
+   "killed": true,
+   "mutant": "V10_receipt_says_objects_modified",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.34s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:90: AssertionError: assert (None == {'monotonic_elapsed_ms': 0, 'utc_end': '2026-10-03T17:00:00+00:00', 'utc_start': '2026-10-03T17:00:00+00:00'})",
+   "killed": true,
+   "mutant": "V11_receipt_without_the_clock",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.35s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:88: AssertionError: assert (None == {'failed_nothing_changed': 0, 'issued': 2, 'succeeded': 2, 'uncertain': 0})",
+   "killed": true,
+   "mutant": "V12_receipt_without_the_mutating_calls",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.37s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:398: AssertionError: assert (None is None and ('dir', 0, 0,..., 801, 2, ...) == ('dir', 0, 0,..., 801, 2, ...)",
+   "killed": true,
+   "mutant": "V13_readback_said_complete_after_a_stop",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 55 passed, 6 deselected in 0.81s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:117: AssertionError: assert (1 == 1 and <class 'bytearray'> is bytearray and {10, 70, 75, 78, 79, 83, ...} == {0}",
+   "killed": true,
+   "mutant": "V14_buffer_not_handed_to_the_zeroing",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 2 passed, 6 deselected in 0.35s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:724: AssertionError: assert (['RECEIPT_REDUCED_TO_MINIMUM'] == ['CONFIG_ROWS...CED_TO_COUNT']",
+   "killed": true,
+   "mutant": "V15_reduction_keeps_the_rows",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 192 passed, 6 deselected in 1.21s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:45: AssertionError: ['umask', 'open', 'open']",
+   "killed": true,
+   "mutant": "X01_process_not_made_non_dumpable",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.33s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'PROCESS_DUMPABLE_NOT_DISABLED')",
+   "killed": true,
+   "mutant": "X02_answer_of_the_host_not_checked",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 33 passed, 6 deselected in 0.65s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: (None, 'PROCESS_DUMPABLE_NOT_DISABLED')",
+   "killed": true,
+   "mutant": "X03_any_true_answer_taken",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 33 passed, 6 deselected in 0.61s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:44: AssertionError: assert ('PRECHECK' in ('AUTHENTICATION', 'BEFORE_ANY_EFFECT'))",
+   "killed": true,
+   "mutant": "X04_after_the_executor_check",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 32 passed, 6 deselected in 0.65s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:45: AssertionError: ['umask', 'open', 'open']",
+   "killed": true,
+   "mutant": "X05_after_the_walk_of_the_deploy_chain",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 deselected in 0.33s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:45: AssertionError: ['umask', 'open', 'open']",
+   "killed": true,
+   "mutant": "X06_after_the_read_of_the_environment_file",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.33s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:48: AssertionError: assert {'dumpable_disabled': False} == {'dumpable_disabled': True}",
+   "killed": true,
+   "mutant": "X07_fact_not_set_true",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 deselected in 0.44s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:247: AssertionError: assert ([('not_dumpable',)] == [('not_dumpable',)]",
+   "killed": true,
+   "mutant": "X08_fact_true_before_the_call",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 33 passed, 6 deselected in 0.78s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:247: AssertionError: assert ([('not_dumpable',)] == [('not_dumpable',)]",
+   "killed": true,
+   "mutant": "X09_receipt_says_disabled_always",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 33 passed, 6 deselected in 0.77s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:53: AssertionError: ('UNLISTED_CODE', 'PROCESS_DUMPABLE_NOT_DISABLED')",
+   "killed": true,
+   "mutant": "X10_code_missing_from_the_list",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 33 passed, 6 deselected in 0.78s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "X11_effects_without_the_process",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.65s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_token_from_env.py:673: AssertionError: assert {'activation'...2797c6a', ...} == {'activation'...2797c6a', ...}",
+   "killed": true,
+   "mutant": "X12_effects_say_dumpable",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 189 passed, 6 deselected in 1.58s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:75: AssertionError: assert ('REFUSED', '...NOT_DISABLED') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "Y01_prctl_set_not_made",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 193 passed, 6 deselected in 1.91s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:70: AssertionError: [('dlopen', None, {'use_errno': True}, None, [], None), ('prctl', None, None, 4, [0, 0, 0, 0], 0), ('umask', None, None, None, None, None)]",
+   "killed": true,
+   "mutant": "Y02_read_back_skipped",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 193 passed, 6 deselected in 1.90s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:75: AssertionError: assert ('REFUSED', '...NOT_DISABLED') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "Y03_read_back_before_the_set",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 193 passed, 6 deselected in 1.74s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:75: AssertionError: assert ('REFUSED', '...NOT_DISABLED') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "Y04_set_with_the_option_number_of_get",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 193 passed, 6 deselected in 1.72s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:70: AssertionError: [('dlopen', None, {'use_errno': True}, None, [], None), ('prctl', None, None, 4, [0, 0, 0, 0], 0), ('prctl', None, None, 4, [0, 0, 0, 0], 0)]",
+   "killed": true,
+   "mutant": "Y05_get_with_the_option_number_of_set",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 193 passed, 6 deselected in 1.65s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:75: AssertionError: assert ('REFUSED', '...NOT_DISABLED') == ('METADATA_ON...RIFIED', None)",
+   "killed": true,
+   "mutant": "Y06_attribute_set_to_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 193 passed, 6 deselected in 1.12s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:126: AssertionError: assert ('METADATA_ON...ne, 'EFFECTS') == ('REFUSED', '...', 'PRECHECK')",
+   "killed": true,
+   "mutant": "Y07_any_read_back_accepted",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 195 passed, 6 deselected in 1.14s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:126: AssertionError: assert ('METADATA_ON...ne, 'EFFECTS') == ('REFUSED', '...', 'PRECHECK')",
+   "killed": true,
+   "mutant": "Y08_failure_not_refused",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 195 passed, 6 deselected in 1.14s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "<copy>/tests/test_native.py:70: AssertionError: [('umask', None, None, None, None, None), ('open', None, None, None, None, None), ('open', None, None, None, None, None)]",
+   "killed": true,
+   "mutant": "Y09_native_says_disabled_without_a_call",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 193 passed, 6 deselected in 1.05s",
+   "tests": [
+    "test_token_from_env.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

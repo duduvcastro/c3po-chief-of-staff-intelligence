@@ -1,4 +1,4 @@
-"""Public-safety scan of what this branch adds to the release: hostops02/ and the one workflow file.
+"""Public-safety scan of what this branch adds to the release: hostops02/, hostops02-tok/ and the one workflow file.
 
   /usr/bin/python3 -I -B proof/public_safety.py
 
@@ -19,7 +19,7 @@ import sys
 HERE=os.path.dirname(os.path.abspath(__file__))
 FAMILY=os.path.dirname(HERE)
 REPOSITORY=os.path.dirname(FAMILY)
-ROOTS=(FAMILY,os.path.join(REPOSITORY,'.github','workflows'))
+ROOTS=(FAMILY,os.path.join(REPOSITORY,'hostops02-tok'),os.path.join(REPOSITORY,'.github','workflows'))
 SKIPPED_PARTS=('__pycache__','.pytest_cache')
 RESERVED=('.invalid','.example','.test','example.com','example.org','example.net','noreply.anthropic.com','users.noreply.github.com')
 CLASSES=(

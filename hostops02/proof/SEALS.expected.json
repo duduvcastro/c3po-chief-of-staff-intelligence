@@ -50,13 +50,19 @@
   "seal_file": "SHA256SUMS",
   "seal_sha256": "4cc6995dbd19e4fcd0a26ae7bfd4bc80cf9a042d76cc3d64ba6011f25771544b"
  },
+ "token_core": {
+  "files": 76,
+  "generation_sha256": "32c44cf80e6d53e860745e52792cc917c15ccaae448aee7ba68b6aca76d3c644",
+  "seal_file": "CORE_SHA256SUMS",
+  "seal_sha256": "35475b2fb5f347aade26e32044fb66bb0080687ed7f4f9634617737b6d86d375"
+ },
  "token_from_env": {
-  "files": 33,
-  "final_payload_unbound_sha256": "0cc9c77f75ca9699286d01405d473163915dc35993955a83048c3a2aa334d629",
+  "files": 34,
+  "final_payload_unbound_sha256": "dace5c4f6dd339effe09ae8417405df71b3b137e05076a81b280cf4a4db5048f",
   "operation": "GO_WRITE_HOSTOPS02_TOKEN_FROM_ENV_01",
-  "payload_source_sha256": "35c049c2d6d47e6eb9a6f2b308a68bba734b9b5c7a03c9635426f850b59de0d1",
-  "scope_sha256": "cbcc460a363bb45f0096c449b45aa1675b2422e5c47f78057dc73a025388c706",
+  "payload_source_sha256": "bcb72d405a1807de5d7c21ac4f762b48adf6163dc26b12c8c9136a2bb7010b6e",
+  "scope_sha256": "0291c142124deb7e6176750425b01deb6851850e5368f3d58c67a91e30215b97",
   "seal_file": "SHA256SUMS",
-  "seal_sha256": "acbc436a6432d0121bb433960a2c6b048050d7fdb7c100b8be4ebf8dbecdaddf"
+  "seal_sha256": "422145d10e62176c02e9c126b18b4f957bfa57b752e7638ac593036da08fd5dd"
  }
 }
