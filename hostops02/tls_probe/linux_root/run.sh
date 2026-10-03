@@ -1,8 +1,9 @@
 #!/bin/sh
 # C3 (the TLS probe) on a real engine, on Linux as real root. For a THROWAWAY GitHub-hosted ubuntu-24.04 runner only.
 # NEVER the production host and never a self-hosted runner: this builds two images, rewrites /etc/docker/daemon.json
-# (the "dns" of the engine) and restarts the Docker daemon twice, inserts and removes three iptables rules, runs
-# containers, and binds the ports 53 and 443 of the gateway of the network bridge for stand-in servers. It refuses
+# (the "dns" of the engine) and restarts the Docker daemon twice, inserts and removes six rules (three iptables, three
+# ip6tables), runs containers, and binds the ports 53 and 443 of the gateway of the network bridge for stand-in servers.
+# It refuses
 # unless GitHub says the runner is GitHub-hosted, and unless nothing of this family exists on the machine; it removes
 # only what this very run created, and puts daemon.json back as it found it.
 # NOT RUN by its author: no Linux and no docker were available offline. The structure of catalog_init's run_catalog.sh.
@@ -16,9 +17,13 @@
 #
 # The provider is never contacted. The probe's container resolves through a stand-in DNS server on the gateway of the
 # network bridge (the engine's "dns" points there) and reaches a stand-in TLS server on that gateway; before anything is
-# started, three rules reject every connection the network bridge would forward to port 443 or 53 of any other address,
-# and their counters are read at the end (they must be 0). The test authority made here is trusted by one TEST image
-# only (the release's base by digest, the authority appended to its default bundle); the sealed source is unchanged.
+# started, six rules (IPv4 and IPv6) reject every connection the network bridge would forward to port 443 or 53 of any
+# other address, and their counters are read at the end (they must be 0); a network bridge with IPv6 enabled is refused
+# outright. The test authority made here is trusted by one TEST image only (the release's base by digest, the authority
+# appended to its default bundle); the sealed source is unchanged.
+# The probes' docker CLI runs, as on the host, without DOCKER_CONFIG and without HOME: it takes root's configuration
+# directory. That directory is listed (names, types, sizes, modification times, modes; never a content) right before
+# and right after probe_shape.py, and must not change (C3-U4 for the runner's CLI).
 #
 # Output, always written: linux_root/SHAPES.tls_probe.linux-root.json (a stage that did not run leaves a file that says
 # NOT_RUN and why). Exit 0 only when every run was made, every expectation of probe_shape.py is met, nothing was
@@ -39,6 +44,7 @@ WORK=
 BUILT_TRUSTING=no
 BUILT_STOCK=no
 SAVED=no
+EXISTED=no
 GUARD=no
 GATEWAY=
 say() { printf '\n== %s\n' "$*"; }
@@ -51,20 +57,43 @@ wait_docker() {
     done
     return 0
 }
-guard() {   # guard -I|-D: the three rules on what the network bridge forwards (no other address on 443 or 53)
-    sudo -n iptables -w "$1" FORWARD -i docker0 -p tcp --dport 443 -m comment --comment hostops02-c3-guard -j REJECT --reject-with tcp-reset \
-        && sudo -n iptables -w "$1" FORWARD -i docker0 -p tcp --dport 53 -m comment --comment hostops02-c3-guard -j REJECT --reject-with tcp-reset \
-        && sudo -n iptables -w "$1" FORWARD -i docker0 -p udp --dport 53 -m comment --comment hostops02-c3-guard -j REJECT
+guard_rule() {   # guard_rule <iptables|ip6tables> -I|-D tcp|udp <port>
+    if [ "$3" = tcp ]; then
+        sudo -n "$1" -w "$2" FORWARD -i docker0 -p tcp --dport "$4" -m comment --comment hostops02-c3-guard -j REJECT --reject-with tcp-reset
+    else
+        sudo -n "$1" -w "$2" FORWARD -i docker0 -p udp --dport "$4" -m comment --comment hostops02-c3-guard -j REJECT
+    fi
+}
+guard_set() {   # the six rules on what the network bridge forwards (no other address on 443 or 53, IPv4 and IPv6); stops at the first failure
+    for tool in iptables ip6tables; do
+        guard_rule "$tool" -I tcp 443 && guard_rule "$tool" -I tcp 53 && guard_rule "$tool" -I udp 53 || return 1
+    done
+    return 0
+}
+guard_remove() {   # every rule, each tried whatever the others did
+    removed=0
+    for tool in iptables ip6tables; do
+        for rule in "tcp 443" "tcp 53" "udp 53"; do
+            # shellcheck disable=SC2086
+            guard_rule "$tool" -D $rule || removed=1
+        done
+    done
+    return "$removed"
+}
+docker_config_state() {   # one hash of root's docker configuration directory as listed (no content is read); empty when it cannot be listed
+    listing=$(sudo -n sh -c 'if [ -e /root/.docker ] || [ -L /root/.docker ]; then find /root/.docker -printf "%P %y %s %T@ %m\n" | LC_ALL=C sort; else echo ABSENT; fi' 2>/dev/null) || listing=
+    [ -n "$listing" ] || return 0
+    printf '%s\n' "$listing" | sha256sum | cut -d' ' -f1
 }
 restore() {
     if [ "$SAVED" = yes ]; then
-        if [ -s "$WORK/daemon.json.saved" ]; then sudo -n cp "$WORK/daemon.json.saved" "$DAEMON"; else sudo -n rm -f "$DAEMON"; fi
+        if [ "$EXISTED" = yes ]; then sudo -n cp "$WORK/daemon.json.saved" "$DAEMON" || failed "daemon.json could not be put back"; else sudo -n rm -f "$DAEMON"; fi
         sudo -n systemctl restart docker && wait_docker || failed "docker did not come back after daemon.json was put back"
         SAVED=no
     fi
 }
 cleanup() {
-    if [ "$GUARD" = yes ]; then guard -D || failed "the guard rules could not be removed"; GUARD=no; fi
+    if [ "$GUARD" = yes ]; then guard_remove || failed "a guard rule could not be removed (or was never set)"; GUARD=no; fi
     restore
     if [ "$BUILT_TRUSTING" = yes ]; then sudo -n docker image rm "$TRUSTING" > /dev/null 2>&1; BUILT_TRUSTING=no; fi
     if [ "$BUILT_STOCK" = yes ]; then sudo -n docker image rm "$STOCK" > /dev/null 2>&1; BUILT_STOCK=no; fi
@@ -88,6 +117,7 @@ sha256sum -c --quiet SHA256SUMS || refuse "the operation directory is not the se
 command -v openssl > /dev/null || refuse "no openssl program to make the test authority"
 sudo -n true || refuse "sudo -n is not available"
 sudo -n iptables -w -L FORWARD -n > /dev/null || refuse "iptables is not usable: the guard cannot be set, and no probe is started without it"
+sudo -n ip6tables -w -L FORWARD -n > /dev/null || refuse "ip6tables is not usable: the guard cannot be set, and no probe is started without it"
 trap cleanup EXIT
 trap 'exit 130' INT TERM HUP
 rm -f "$OUT"
@@ -174,10 +204,21 @@ if [ "$IMAGES" = yes ]; then
         [0-9]*.[0-9]*.[0-9]*.[0-9]*) printf 'gateway of the network bridge read\n' ;;
         *) GATEWAY=; failed "the gateway of the network bridge could not be read" ;;
     esac
+    IPV6=$(sudo -n docker network inspect bridge --format '{{.EnableIPv6}}' 2>/dev/null) || IPV6=
+    printf 'IPv6 on the network bridge: %s\n' "${IPV6:-unread}"
+    [ "$IPV6" = false ] || { failed "the network bridge has IPv6 enabled, or it could not be read: no probe is started"; GATEWAY=; }
 fi
 if [ -n "$GATEWAY" ]; then
-    if [ -f "$DAEMON" ]; then sudo -n cp "$DAEMON" "$WORK/daemon.json.saved" || failed "daemon.json could not be saved"; else : > "$WORK/daemon.json.saved"; fi
-    SAVED=yes
+    # daemon.json is changed only after it was saved; the saved copy is what restore() puts back
+    if [ -f "$DAEMON" ]; then
+        if sudo -n cp "$DAEMON" "$WORK/daemon.json.saved"; then EXISTED=yes; SAVED=yes; else failed "daemon.json could not be saved: it is not changed and no probe is started"; GATEWAY=; fi
+    elif [ -e "$DAEMON" ] || [ -L "$DAEMON" ]; then
+        failed "daemon.json is not a regular file: it is not changed and no probe is started"; GATEWAY=
+    else
+        EXISTED=no; SAVED=yes
+    fi
+fi
+if [ -n "$GATEWAY" ]; then
     if sudo -n /usr/bin/python3 -I -B - "$GATEWAY" <<'DAEMONJSON'
 import json,sys
 path='/etc/docker/daemon.json'
@@ -200,18 +241,28 @@ DAEMONJSON
     fi
 fi
 if [ -n "$GATEWAY" ]; then
-    say "the guard: what the network bridge forwards to port 443 or 53 of any address is rejected, and counted"
-    if guard -I; then GUARD=yes; else failed "the guard could not be set: no probe is started"; GATEWAY=; fi
+    say "the guard: what the network bridge forwards to port 443 or 53 of any address, IPv4 or IPv6, is rejected, and counted"
+    GUARD=yes
+    guard_set || { failed "the guard could not be set: no probe is started"; GATEWAY=; }
 fi
 if [ -n "$GATEWAY" ]; then
-    say "C3: six probes with the operation's own perform and Native, and the shape of its container"
+    say "C3: six probes with the operation's own perform and Native, the shape of its container and the alarm"
+    CONFIG_BEFORE=$(docker_config_state)
     sudo -n env HOSTOPS_THROWAWAY_RUNNER=yes RUNNER_ENVIRONMENT=github-hosted /usr/bin/python3 -I -B linux_root/probe_shape.py "$WORK" "$GATEWAY" > "$OUT"
     SHAPE=$?
+    CONFIG_AFTER=$(docker_config_state)
     [ "$SHAPE" = 0 ] || failed "probe_shape.py exit $SHAPE (2: a run was not made; 3: an expectation is not met)"
     sudo -n docker ps -a --format '{{.Names}} {{.State}}'
-    REJECTED=$(sudo -n iptables -w -L FORWARD -v -n -x | awk '/hostops02-c3-guard/ {sum += $1} END {print sum + 0}')
-    printf 'packets the guard rejected: %s\n' "$REJECTED"
-    [ "$REJECTED" = 0 ] || failed "a container of the network bridge tried to leave the runner on port 443 or 53"
+    if [ -n "$CONFIG_BEFORE" ] && [ "$CONFIG_BEFORE" = "$CONFIG_AFTER" ]; then
+        printf "root's docker configuration directory unchanged by the probes (C3-U4 for this CLI): yes\n"
+    else
+        printf "root's docker configuration directory unchanged by the probes (C3-U4 for this CLI): no\n"
+        failed "the docker CLI, run as the source runs it, changed root's configuration directory"
+    fi
+    REJECTED4=$(sudo -n iptables -w -L FORWARD -v -n -x | awk '/hostops02-c3-guard/ {sum += $1} END {print sum + 0}')
+    REJECTED6=$(sudo -n ip6tables -w -L FORWARD -v -n -x | awk '/hostops02-c3-guard/ {sum += $1} END {print sum + 0}')
+    printf 'packets the guard rejected: IPv4 %s, IPv6 %s\n' "${REJECTED4:-unread}" "${REJECTED6:-unread}"
+    [ "$REJECTED4" = 0 ] && [ "$REJECTED6" = 0 ] || failed "a container of the network bridge tried to leave the runner on port 443 or 53"
 fi
 [ -s "$OUT" ] || printf 'NOT_RUN: no images, no stand-in DNS or no guard\n' > "$OUT"
 

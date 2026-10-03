@@ -24,6 +24,11 @@ from datetime import datetime,timezone
 import family as f
 import hostemu
 
+# The emulated CLI of the frozen core parses the options its family writes and refuses any other (hostemu.RunCall). C3
+# adds one, --log-driver, with a value: the emulation is told so here, in the operation's own tests, without a byte of the
+# core changing. RunCall reads the module's tuple when it parses, so the value is then kept like --network's.
+if '--log-driver' not in hostemu.RUN_VALUES:hostemu.RUN_VALUES=tuple(hostemu.RUN_VALUES)+('--log-driver',)
+
 HERE=Path(__file__).resolve().parent
 DIRECTORY=HERE.parent
 TAG='c3po/backend:massive-supervisor-epoch03'        # what operation 2 created (the sheet's tag; any name of the grammar)
@@ -60,6 +65,8 @@ def model_line(kind='verified'):
     line=empty_line();dns,tcp,tls=line['dns'],line['tcp'],line['tls']
     if kind=='context':
         line['context']={'verify_mode_required':True,'check_hostname':False};line['status']='TLS_CONTEXT_NOT_VERIFYING';return line
+    if kind=='optional':                       # a context that checks the name but does not require a certificate
+        line['context']={'verify_mode_required':False,'check_hostname':True};line['status']='TLS_CONTEXT_NOT_VERIFYING';return line
     if kind=='failed':                         # an exception before the context existed: every member as the script began
         line['context']={'verify_mode_required':False,'check_hostname':False};line['status']='PROBE_FAILED';return line
     if kind in ('nxdomain','dns_timeout','dns_failed','no_address'):
@@ -88,7 +95,7 @@ def assert_probe_run(call,image=hostemu.BACKEND):
     assert call.flags==['--rm','-i','--init','--read-only'] and call.network=='bridge' and call.read_only_root
     assert call.name is not None and call.name.startswith('hostops02-tls-') and len(call.name)==30
     assert call.options=={'--pull':['never'],'--user':['0:0'],'--network':['bridge'],'--cap-drop':['ALL'],'--security-opt':['no-new-privileges'],
-                          '--name':[call.name]}
+                          '--log-driver':['none'],'--name':[call.name]}
     assert call.mounts==[] and call.environment=={} and call.image==image and call.command==['python','-I','-B','-']
 
 def container(call,kind='verified',returncode=0):
@@ -145,17 +152,32 @@ def certificates(directory):
     return {'ca':str(directory/'ca.pem'),'leaf':str(directory/'leaf.pem'),'leaf_key':str(directory/'leaf.key'),'other':str(directory/'other.pem'),
             'other_key':str(directory/'other.key'),'leaf_sha256':hashlib.sha256(der).hexdigest()}
 
+LOOPBACK={'ipv4':(socket.AF_INET,'127.0.0.1'),'ipv6':(socket.AF_INET6,'::1')}
+def ipv6_loopback():
+    """True when a socket can be bound to the IPv6 loopback of this machine."""
+    try:
+        probe=socket.socket(socket.AF_INET6,socket.SOCK_STREAM)
+        try:probe.bind(('::1',0));return True
+        finally:probe.close()
+    except OSError:return False
+
 class Server:
-    """A local TLS server on 127.0.0.1 for the real script. Modes: 'good' (the provider's leaf), 'other_name' (a leaf of
-    another name, same authority), 'hang' (accepts and never answers), 'garbage' (answers bytes that are not TLS).
-    Records each connection: the server name the client sent and how many application bytes arrived after the
-    handshake (read until the client closes)."""
-    def __init__(self,certs,mode='good'):
-        self.mode=mode;self.connections=[];self.listener=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        self.listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);self.listener.bind(('127.0.0.1',0));self.listener.listen(8)
+    """A local TLS server on the loopback (127.0.0.1, or ::1 with family='ipv6') for the real script. Modes: 'good' (the
+    provider's leaf), 'tls12' (the provider's leaf, TLS 1.2 only and one suite, ECDHE-ECDSA-AES128-GCM-SHA256: a
+    version and a cipher that differ from what a TLS 1.3 default negotiates), 'other_name' (a leaf of another name, same
+    authority), 'hang' (accepts and never answers), 'garbage' (answers bytes that are not TLS). Records each connection: the server name the client sent, whether the
+    handshake completed, the TLS version and cipher name the SERVER negotiated, and how many application bytes arrived
+    after the handshake (read until the client closes)."""
+    def __init__(self,certs,mode='good',family='ipv4'):
+        kind,address=LOOPBACK[family]
+        self.mode=mode;self.connections=[];self.listener=socket.socket(kind,socket.SOCK_STREAM)
+        self.listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);self.listener.bind((address,0));self.listener.listen(8)
         self.port=self.listener.getsockname()[1];self.stopped=False
         self.context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         name='other' if mode=='other_name' else 'leaf';self.context.load_cert_chain(certs[name],certs[name+'_key'])
+        if mode=='tls12':
+            if ssl.HAS_TLSv1_3:self.context.maximum_version=ssl.TLSVersion.TLSv1_2     # a library without TLS 1.3 offers 1.2 at most anyway
+            self.context.set_ciphers(TLS12_CIPHER)
         def sni(connection,server_name,context):self.current['server_name']=server_name
         self.context.sni_callback=sni;self.current={}
         self.thread=threading.Thread(target=self.serve);self.thread.daemon=True;self.thread.start()
@@ -163,7 +185,7 @@ class Server:
         while not self.stopped:
             try:connection,_=self.listener.accept()
             except OSError:return
-            self.current={'server_name':None,'handshake':False,'application_bytes':None};self.connections.append(self.current)
+            self.current={'server_name':None,'handshake':False,'application_bytes':None,'version':None,'cipher':None};self.connections.append(self.current)
             try:
                 if self.mode=='hang':
                     time.sleep(6);connection.close();continue
@@ -172,7 +194,7 @@ class Server:
                 connection.settimeout(5)
                 try:tls=self.context.wrap_socket(connection,server_side=True)
                 except (ssl.SSLError,OSError):connection.close();continue
-                self.current['handshake']=True;received=0
+                self.current.update(handshake=True,version=tls.version(),cipher=(tls.cipher() or (None,))[0]);received=0
                 try:
                     while True:
                         block=tls.recv(4096)
@@ -188,19 +210,25 @@ class Server:
         try:self.listener.close()
         except OSError:pass
 
-def closed_port():
-    """A port of 127.0.0.1 on which nothing listens (bound, then released)."""
-    probe=socket.socket(socket.AF_INET,socket.SOCK_STREAM);probe.bind(('127.0.0.1',0));port=probe.getsockname()[1];probe.close();return port
+TLS12_CIPHER='ECDHE-ECDSA-AES128-GCM-SHA256'
 
-PRELUDE='''import socket as _socket, ssl as _ssl, time as _time
-_ADDRESSES=%(addresses)r;_DNS=%(dns)r;_CA=%(ca)r;_VERIFYING=%(verifying)r
-_real_getaddrinfo=_socket.getaddrinfo
+def closed_port(family='ipv4'):
+    """A port of the loopback (127.0.0.1, or ::1) on which nothing listens (bound, then released)."""
+    kind,address=LOOPBACK[family]
+    probe=socket.socket(kind,socket.SOCK_STREAM);probe.bind((address,0));port=probe.getsockname()[1];probe.close();return port
+
+PRELUDE='''import socket as _socket, ssl as _ssl, time as _time, errno as _errno
+_ADDRESSES=%(addresses)r;_DNS=%(dns)r;_CA=%(ca)r;_VERIFYING=%(verifying)r;_VERIFY_MODE=%(verify_mode)r
+_SocketClass=_socket.socket
 def _getaddrinfo(host, port, *rest, **named):
     if (host, port) == (%(host)r, 443):
         if _DNS == 'nxdomain':raise _socket.gaierror(_socket.EAI_NONAME, 'test prelude')
         if _DNS == 'failed':raise _socket.gaierror(_socket.EAI_AGAIN, 'test prelude')
+        if _DNS == 'raise':raise RuntimeError('test prelude: a resolver error that is not a gaierror')
         if _DNS == 'hang':_time.sleep(%(hang)r)
-        return [(_socket.AF_INET6 if ':' in address else _socket.AF_INET, _socket.SOCK_STREAM, 6, '', (address, number) if ':' not in address else (address, number, 0, 0)) for address, number in _ADDRESSES]
+        family = rest[0] if rest else named.get('family', 0)
+        rows = [(_socket.AF_INET6 if ':' in address else _socket.AF_INET, _socket.SOCK_STREAM, 6, '', (address, number) if ':' not in address else (address, number, 0, 0)) for address, number in _ADDRESSES]
+        return [row for row in rows if family in (0, _socket.AF_UNSPEC) or row[0] == family]
     raise _socket.gaierror(_socket.EAI_NONAME, 'test prelude: no name but the provider on 443 resolves, and never through the network')
 _socket.getaddrinfo=_getaddrinfo
 _real_context=_ssl.create_default_context
@@ -208,35 +236,43 @@ def _context(*rest, **named):
     context=_real_context(*rest, **named)
     if _CA:context.load_verify_locations(cafile=_CA)
     if not _VERIFYING:context.check_hostname=False
+    if _VERIFY_MODE == 'optional':context.verify_mode=_ssl.CERT_OPTIONAL
     return context
 _ssl.create_default_context=_context
 if %(connect)r == 'slow':
-    _real_connect=_socket.socket.connect
+    _real_connect=_SocketClass.connect
     _first=[True]
     def _connect(self, address):
         if _first[0]:
             _first[0]=False
             _time.sleep(3.0)
         return _real_connect(self, address)
-    _socket.socket.connect=_connect
+    _SocketClass.connect=_connect
 if %(connect)r == 'hang':
     def _connect(self, address):
         limit=self.gettimeout()
         _time.sleep(30 if limit is None else limit)
         raise _socket.timeout('test prelude')
-    _socket.socket.connect=_connect
+    _SocketClass.connect=_connect
+if %(no_ipv6_socket)r:
+    def _socket_of(family=-1, *rest, **named):
+        if family == _socket.AF_INET6:raise OSError(_errno.EAFNOSUPPORT, 'test prelude: a kernel without IPv6')
+        return _SocketClass(family, *rest, **named)
+    _socket.socket=_socket_of
 if %(fail)r:
     def _broken(*rest, **named):raise RuntimeError('test prelude')
     _ssl.create_default_context=_broken
 '''
-def prelude(addresses,ca=None,dns='answer',verifying=True,hang=30,connect='normal',fail=False):
+def prelude(addresses,ca=None,dns='answer',verifying=True,hang=30,connect='normal',fail=False,verify_mode='required',no_ipv6_socket=False):
     """The test-only lines written in front of the pinned script: the provider's name answers the given (address,
-    port) pairs, and the context of the default verifying kind also trusts the throwaway authority. Test situations:
-    a resolver that hangs (dns='hang'), a connect that never completes within its timeout (connect='hang') or whose first
-    attempt takes three seconds (connect='slow'), a context
-    that does not check the name (verifying=False), an exception inside the script (fail=True)."""
+    port) pairs (only those of the family asked for, when one is), and the context of the default verifying kind also
+    trusts the throwaway authority. Test situations: a resolver that hangs (dns='hang') or fails with an error that is
+    not a gaierror (dns='raise'), a connect that never completes within its timeout (connect='hang') or whose first
+    attempt takes three seconds (connect='slow'), a context that does not check the name (verifying=False) or does not
+    require a certificate (verify_mode='optional'), a kernel without IPv6 sockets (no_ipv6_socket=True), an exception
+    inside the script (fail=True)."""
     return (PRELUDE%{'addresses':[list(item) for item in addresses],'dns':dns,'ca':ca,'verifying':verifying,'host':PROVIDER,'hang':hang,
-                     'connect':connect,'fail':fail}).encode()
+                     'connect':connect,'fail':fail,'verify_mode':verify_mode,'no_ipv6_socket':no_ipv6_socket}).encode()
 
 def run_script(stdin,timeout=40):
     """The bytes under `python -I -B -` in a child of the interpreter that runs the tests, as the container runs them."""

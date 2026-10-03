@@ -15,7 +15,8 @@
 # Run it AFTER the core's job step (core/linux_root/run.sh), which switches the engine to the containerd image store.
 # The sealed scripts of the operations stay the gates their contracts name; they use stand-in images. This script runs
 # the sealed shape scripts again, unchanged, with the image of the release, and adds two shapes of its own:
-#   1. the image: built, labelled with the revision, no pip in it (the pipeline's own smoke)
+#   1. the image: built, labelled with the revision, no pip in it (the pipeline's own smoke), and, for C3 (C3-U2 in
+#      part, with no network), the default verifying context of its python loads at least 100 authorities
 #   2. K2a  catalog_init/linux_root/catalog_shape.py: REHEARSAL, REAL, REAL again, with the pinned script of the README
 #   3. K11  epoch_readback/linux_root/shapes_k11.py: the engine shapes (its stand-in package bound over /app)
 #   4. K11  proof/release_verify_shape.py: Release.verify of the image's OWN application on synthetic release bytes
@@ -154,6 +155,15 @@ if [ -n "$IMAGE_ID" ]; then
     sudo -n docker run --rm --network none --entrypoint python "$REFERENCE" -B -c \
         'import importlib.util, sys; absent = importlib.util.find_spec("pip") is None; print("pip absent from the runtime image:", absent); sys.exit(0 if absent else 1)' \
         || failed "the runtime image is not the one the pipeline accepts (pip present, or python did not start)"
+    # C3 (tls_probe): the context its pinned script uses, ssl.create_default_context(), in this image, read-only and with
+    # no network. The number of authorities it loads; at least 100 (a bundle), else the probe of Sunday cannot verify.
+    CA_COUNT=$(sudo -n docker run --rm --network none --read-only --entrypoint python "$REFERENCE" -I -B -c \
+        'import ssl; print(ssl.create_default_context().cert_store_stats()["x509_ca"])' 2> /dev/null) || CA_COUNT=
+    printf 'ca_authorities_in_the_default_verifying_context %s\n' "${CA_COUNT:-unread}" | tee -a "$OUT/IMAGE.release-image.txt"
+    case "$CA_COUNT" in
+        ''|*[!0-9]*) failed "C3: the default verifying context of the image could not be read" ;;
+        *) [ "$CA_COUNT" -ge 100 ] || failed "C3: the default verifying context of the image loads fewer than 100 authorities" ;;
+    esac
 fi
 not_run "$OUT/IMAGE.release-image.txt" "the backend image was not built"
 

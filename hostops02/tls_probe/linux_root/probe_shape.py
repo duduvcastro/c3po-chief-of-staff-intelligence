@@ -11,11 +11,14 @@ default bundle at build time); a second image, the base as it is, does not trust
 in any way: it runs its pinned script with the default verifying context, and whether that context trusts the
 authority is a property of the image alone.
 
-What it shows, each as a boolean (the expectations below): the network bridge, no bind, --rm and no leftover (by the
-source's own listing, by `docker events` and by an inspect of the running container); the TLS path verified for the
-provider's name against the server's leaf; the refusals of verification (an authority the image does not trust, a
-certificate of another name); a refused port; a name that does not exist; a handshake never answered, bounded by the
-script's own seconds; and that no application byte reached the server.
+What it shows, each as a boolean (the expectations below): the network bridge, no bind, --rm, no log kept by the engine
+(--log-driver none, while the attached output still reaches the CLI) and no leftover (by the source's own listing, by
+`docker events` and by an inspect of the running container); the TLS path verified for the provider's name against the
+server's leaf, with the version and cipher the server negotiated; the refusals of verification (an authority the image
+does not trust, a certificate of another name); a refused port; a name that does not exist; a handshake never answered,
+bounded by the script's own seconds; that no application byte reached the server; and, with the source's row and
+helper and a snippet whose alarm fires after one second, that docker-init reports the child the alarm ended as status
+142 (PROBE_ALARM_STATUS) and that the engine removes the container.
 
 For a THROWAWAY GitHub-hosted ubuntu-24.04 runner, as root (run.sh prepares it). NEVER the production host. It refuses
 to run anywhere else: Linux, effective uid 0, HOSTOPS_THROWAWAY_RUNNER=yes and RUNNER_ENVIRONMENT=github-hosted are
@@ -56,6 +59,7 @@ import stubs
 SCHEMA='HOSTOPS02_TLS_PROBE_LINUX_ROOT_SHAPE_V1'
 DOCKER='/usr/bin/docker'
 SLEEPER=b'import time\ntime.sleep(5)\n'
+ALARM=b'import signal,time\nsignal.alarm(1)\ntime.sleep(5)\n'          # the probe script's own first statement, at one second
 # One probe per situation: which image, what the DNS stand-in answers, what the TLS stand-in does; and the verdict
 # the source must give.
 CASES=[('verified','trusting','answer','good',('METADATA_ONLY_REQUIRES_REVIEW','TLS_VERIFIED_TO_THE_PROVIDER_HOST',None)),
@@ -125,6 +129,15 @@ class Real:
         code,image_raw=self.docker('image','inspect','--format','{{json .Config.Env}}',image,timeout=8)
         code_after,listed=self.docker('ps','-a','--no-trunc','--format','{{.Names}}',timeout=8)
         return facts_of(found,json.loads(image_raw) if code==0 else None,name,image,result,listed.decode().split() if code_after==0 else None)
+    def alarm(self):
+        """The source's row and helper with a snippet whose alarm fires after one second: under --init, docker-init must
+        report the child the alarm ended as 128+14, the CLI must return that status, and the engine must remove the
+        container."""
+        m=self.m;commands=m.Commands(self.host(),lambda:55.0);name=m.CONTAINER_PREFIX+'a'*16;image=self.images['stock']['id']
+        started=time.monotonic();result=m.container_run(commands,m.RUN_ROW,image,[],m.PROBE_COMMAND,ALARM,container_name=name)
+        seconds=time.monotonic()-started
+        code,listed=self.docker('ps','-a','--no-trunc','--format','{{.Names}}',timeout=8)
+        return alarm_facts(m,result,seconds,name,listed.decode().split() if code==0 else None)
     def events(self,since,until,name):
         code,out=self.docker('events','--since',str(int(since)),'--until',str(int(until)+1),'--format','{{json .}}',timeout=20)
         return [json.loads(line) for line in out.decode().splitlines() if line.strip()] if code==0 else None
@@ -142,12 +155,20 @@ def facts_of(found,image_environment,name,image,result,listed):
             'no_capability':host_config.get('CapDrop') in (['ALL'],['all']) and not host_config.get('CapAdd') and host_config.get('Privileged') is False
                             and not host_config.get('Devices'),
             'no_new_privileges_and_an_init':host_config.get('SecurityOpt')==['no-new-privileges'] and host_config.get('Init') is True,
+            'no_log_kept_by_the_engine':(host_config.get('LogConfig') or {}).get('Type')=='none',
             'uid_0':config.get('User')=='0:0',
             'image_by_id_and_the_command':(found or {}).get('Image')==image and config.get('Cmd')==['python','-I','-B','-'],
             'no_variable_added_to_the_image_environment':image_environment is not None and config.get('Env')==image_environment,
             'standard_input_attached_once':config.get('OpenStdin') is True and config.get('StdinOnce') is True,
             'the_run_returned_zero':result.get('returned') is True and result.get('returncode')==0,
             'no_container_of_its_name_listed_after_the_run':listed is not None and name not in listed}
+
+def alarm_facts(m,result,seconds,name,listed):
+    return {'returned':result.get('returned') is True,
+            'status_is_128_plus_sigalrm_through_init':m.PROBE_ALARM_STATUS==142 and result.get('returncode')==m.PROBE_ALARM_STATUS,
+            'ended_by_the_alarm_not_by_the_limit_of_the_cli':0.5<=seconds<8,
+            'nothing_printed':result.get('output')==b'',
+            'no_container_of_its_name_listed_after':listed is not None and name not in listed}
 
 def event_facts(events,name):
     """From the engine's events of the verified probe: created, attached to bridge, started, ended 0, destroyed."""
@@ -177,6 +198,7 @@ def collect(engine):
         if label=='verified':out['events']=event_facts(engine.events(since,time.time(),receipt.get('container_name')),receipt.get('container_name'))
     engine.situation('answer','good')
     out['shape']=engine.shape()
+    out['alarm']=engine.alarm()
     return out
 
 def expectations(out,leaf_sha256):
@@ -185,6 +207,7 @@ def expectations(out,leaf_sha256):
     def probe(run):return run.get('probe') or {}
     def tls(run):return probe(run).get('tls') or {}
     def connections(label):return (server.get(label) or {}).get('connections') or []
+    def seen(label):return [{key:row.get(key) for key in ('mode','server_name','handshake','application_bytes')} for row in connections(label)]
     questions=[question for label in server for question in (server[label] or {}).get('questions') or []]
     every=[cases.get(label) or {} for label,_,_,_,_ in CASES]
     return {
@@ -192,7 +215,10 @@ def expectations(out,leaf_sha256):
         'every probe ends in the verdict of its situation':all(verdict(cases.get(label) or {})==expected for label,_,_,_,expected in CASES),
         'the verified probe names the leaf the server presented, for the provider name':tls(verified).get('leaf_sha256')==leaf_sha256 and tls(verified).get('verified') is True
             and tls(verified).get('version') in ('TLSv1.2','TLSv1.3'),
-        'the server saw the provider name and no application byte':connections('verified')==[{'mode':'good','server_name':'socket.massive.com','handshake':True,'application_bytes':0}],
+        'the server saw the provider name and no application byte':seen('verified')==[{'mode':'good','server_name':'socket.massive.com','handshake':True,'application_bytes':0}],
+        'the verified probe reports the TLS version and cipher the server negotiated':len(connections('verified'))==1
+            and connections('verified')[0].get('version') in ('TLSv1.2','TLSv1.3') and bool(connections('verified')[0].get('cipher'))
+            and (tls(verified).get('version'),tls(verified).get('cipher'))==(connections('verified')[0].get('version'),connections('verified')[0].get('cipher')),
         'an image without the test authority does not verify (unknown issuer)':tls(cases.get('image_without_the_test_authority') or {}).get('verify_code') in (19,20),
         'a certificate of another name does not verify (host name mismatch)':tls(cases.get('certificate_of_another_name') or {}).get('verify_code')==62,
         'no connection reaches a refused port and none follows a name that does not exist':'port_refused' in server and 'name_not_found' in server
@@ -204,12 +230,14 @@ def expectations(out,leaf_sha256):
         'every probe started exactly one container and read four times':all(run.get('commands_started')=={'READ':4,'CONTAINER':1,'EFFECT':0} for run in every),
         'the stand-in DNS was asked for the provider name only':bool(questions) and all(question['name']=='socket.massive.com' for question in questions),
         'the engine created, attached to bridge only, started, ended 0 and destroyed the verified probe':bool(out.get('events')) and all(out['events'].values()),
-        'the running container has the network bridge, no bind, --rm, a read-only root, no capability, uid 0, the image by ID':bool(out.get('shape')) and all(out['shape'].values()),
+        'the running container has the network bridge, no bind, --rm, no log kept by the engine, a read-only root, no capability, uid 0, the image by ID':
+            bool(out.get('shape')) and all(out['shape'].values()),
+        'the alarm of the script ends the container through docker-init with status 142, and the engine removes it':bool(out.get('alarm')) and all(out['alarm'].values()),
     }
 
 def report(out,leaf_sha256):
     checks=expectations(out,leaf_sha256);cases=out.get('cases') or {}
-    made=len(cases)==len(CASES) and all(run.get('ok') for run in cases.values()) and out.get('shape') is not None
+    made=len(cases)==len(CASES) and all(run.get('ok') for run in cases.values()) and out.get('shape') is not None and out.get('alarm') is not None
     return {'schema':SCHEMA,'runs':out,'expectations':checks,'all_runs_made':made,'all_expectations_met':all(checks.values())}
 
 
@@ -227,6 +255,8 @@ class Emulated:
     def situation(self,dns,tls):self.dns.mode=dns;self.tls.mode=tls
     def container(self,call):
         self.calls.append(call)
+        if call.stdin==ALARM:
+            time.sleep(1.0);return self.m.PROBE_ALARM_STATUS,b''
         if call.stdin!=self.m.script_bytes():return 0,b''
         c3.assert_probe_run(call,call.image);assert call.image in (self.images['trusting']['id'],self.images['stock']['id'])
         self.dns.questions.append({'name':'socket.massive.com','type':1,'mode':self.dns.mode})
@@ -234,10 +264,11 @@ class Emulated:
         if self.tls.mode=='closed':return 0,c3.line_bytes(c3.model_line('refused'))
         trusting=call.image==self.images['trusting']['id']
         if self.tls.mode=='hang':
-            self.tls.connections.append({'mode':'hang','server_name':None,'handshake':False,'application_bytes':None});time.sleep(4.05)
+            self.tls.connections.append({'mode':'hang','server_name':None,'handshake':False,'application_bytes':None,'version':None,'cipher':None});time.sleep(4.05)
             line=c3.model_line('hang');line['tls']['ms']=4002;line['total_ms']=4010;return 0,c3.line_bytes(line)
-        self.tls.connections.append({'mode':self.tls.mode,'server_name':'socket.massive.com','handshake':trusting and self.tls.mode=='good',
-                                     'application_bytes':0 if trusting and self.tls.mode=='good' else None})
+        good=trusting and self.tls.mode=='good'
+        self.tls.connections.append({'mode':self.tls.mode,'server_name':'socket.massive.com','handshake':good,'application_bytes':0 if good else None,
+                                     'version':'TLSv1.3' if good else None,'cipher':'TLS_AES_256_GCM_SHA384' if good else None})
         if not trusting:return 0,c3.line_bytes(c3.model_line('untrusted'))
         return 0,c3.line_bytes(c3.model_line('other_name' if self.tls.mode=='other_name' else 'verified'))
     def resolver(self):return {'name_servers_are_the_stand_in':True,'provider_name_resolves_to_the_stand_in_only':True}
@@ -246,12 +277,18 @@ class Emulated:
         result=m.container_run(commands,m.RUN_ROW,image,[],m.PROBE_COMMAND,SLEEPER,container_name=name);call=self.calls[-1]
         found={'Image':call.image,'HostConfig':{'NetworkMode':call.network,'Binds':None,'AutoRemove':'--rm' in call.flags,'ReadonlyRootfs':call.read_only_root,
                                                  'CapDrop':call.options.get('--cap-drop'),'CapAdd':None,'Privileged':False,'Devices':[],
-                                                 'SecurityOpt':call.options.get('--security-opt'),'Init':'--init' in call.flags},
+                                                 'SecurityOpt':call.options.get('--security-opt'),'Init':'--init' in call.flags,
+                                                 'LogConfig':{'Type':(call.options.get('--log-driver') or ['json-file'])[0],'Config':{}}},
                'Config':{'User':call.options['--user'][0],'Cmd':call.command,'Env':['PATH=/usr/local/bin:/usr/bin'],'OpenStdin':'-i' in call.flags,
                          'StdinOnce':'-i' in call.flags,'Volumes':None},
                'Mounts':[{'source':mount['source']} for mount in call.mounts],'NetworkSettings':{'Networks':{call.network:{}}}}
         listed=[row['name'] for row in m.container_list(commands)]
         return facts_of(found,['PATH=/usr/local/bin:/usr/bin'],name,image,result,listed)
+    def alarm(self):
+        m=self.m;commands=m.Commands(self._host,lambda:55.0);name=m.CONTAINER_PREFIX+'a'*16;image=self.images['stock']['id']
+        started=time.monotonic();result=m.container_run(commands,m.RUN_ROW,image,[],m.PROBE_COMMAND,ALARM,container_name=name)
+        seconds=time.monotonic()-started;listed=[row['name'] for row in m.container_list(commands)]
+        return alarm_facts(m,result,seconds,name,listed)
     def events(self,since,until,name):
         identifier='e'*64
         return [{'Type':'container','Action':action,'Actor':{'ID':identifier,'Attributes':dict({'name':name},**({'exitCode':'0'} if action=='die' else {}))}}

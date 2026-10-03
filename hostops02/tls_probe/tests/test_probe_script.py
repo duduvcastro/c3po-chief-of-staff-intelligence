@@ -4,7 +4,7 @@ of the pinned bytes: it answers the provider's name with the local server and ad
 default verifying context, nothing else. Each situation's line is compared, member for member, with the model the
 emulated tests use (tests/c3.model_line), and must meet the source's own grammar; the server says which name the
 client asked for and how many application bytes arrived after the handshake. Timings are checked against the
-script's bounds. Nothing here reaches the network: every address is 127.0.0.1."""
+script's bounds. Nothing here reaches the network: every address is a loopback one (127.0.0.1, or ::1)."""
 import json
 import os
 import signal
@@ -55,8 +55,10 @@ def test_verified_handshake_with_the_default_context_sends_the_name_and_nothing_
     try:row=line_of(*probe([('127.0.0.1',server.port)],certs['ca'])[:3])
     finally:server.close()
     assert row['tls']['leaf_sha256']==certs['leaf_sha256'],'the hash is the leaf the server presented'
+    assert len(server.connections)==1 and (row['tls']['version'],row['tls']['cipher'])==(server.connections[0]['version'],server.connections[0]['cipher']),\
+        'the version and the cipher are the ones the server negotiated'
     same_as_model(row,'verified')
-    assert len(server.connections)==1 and server.connections[0]=={'server_name':'socket.massive.com','handshake':True,'application_bytes':0}
+    assert {key:server.connections[0][key] for key in ('server_name','handshake','application_bytes')}=={'server_name':'socket.massive.com','handshake':True,'application_bytes':0}
 
 @needs_openssl
 def test_an_authority_the_default_store_does_not_know_is_not_verified(certs):
@@ -81,8 +83,56 @@ def test_a_refused_port_and_then_the_next_address(certs):
     finally:server.close()
     assert (row['status'],row['dns']['addresses'],row['dns']['ipv4'],row['tcp']['attempts'],row['tcp']['family'])==('TLS_VERIFIED',2,2,2,'ipv4')
     assert len(server.connections)==1 and server.connections[0]['application_bytes']==0
+    assert (row['tls']['version'],row['tls']['cipher'])==(server.connections[0]['version'],server.connections[0]['cipher'])
 
-@pytest.mark.parametrize('dns,kind',[('nxdomain','nxdomain'),('failed','dns_failed')])
+@needs_openssl
+def test_the_version_and_cipher_of_the_line_are_the_ones_negotiated_with_a_tls_1_2_server(certs):
+    """A server that offers TLS 1.2 and one suite only: the line says that version and that suite, as the server saw them
+    (not the TLS 1.3 names a default negotiation gives), and it is still a verified probe."""
+    server=c3.Server(certs,'tls12')
+    try:row=line_of(*probe([('127.0.0.1',server.port)],certs['ca'])[:3])
+    finally:server.close()
+    assert (row['status'],row['tls']['version'],row['tls']['cipher'])==('TLS_VERIFIED','TLSv1.2',c3.TLS12_CIPHER),row['tls']
+    assert (server.connections[0]['version'],server.connections[0]['cipher'])==('TLSv1.2',c3.TLS12_CIPHER)
+    assert row['tls']['leaf_sha256']==certs['leaf_sha256'] and server.connections[0]['application_bytes']==0
+
+@needs_openssl
+def test_the_same_address_answered_twice_is_counted_and_tried_once(certs):
+    server=c3.Server(certs,'good')
+    try:row=line_of(*probe([('127.0.0.1',server.port),('127.0.0.1',server.port)],certs['ca'])[:3])
+    finally:server.close()
+    assert (row['status'],row['dns']['addresses'],row['dns']['ipv4'],row['dns']['ipv6'],row['tcp']['attempts'])==('TLS_VERIFIED',1,1,0,1)
+    assert len(server.connections)==1
+
+@needs_openssl
+def test_both_families_are_asked_for_counted_and_tried_in_the_order_of_the_answer(certs):
+    """The resolver is asked for every family (the prelude answers only the family asked for, as a resolver does): an
+    IPv6 answer that does not connect, then the IPv4 one that does."""
+    server=c3.Server(certs,'good')
+    try:row=line_of(*probe([('::1',c3.closed_port()),('127.0.0.1',server.port)],certs['ca'])[:3])
+    finally:server.close()
+    assert (row['status'],row['dns']['addresses'],row['dns']['ipv4'],row['dns']['ipv6'],row['tcp']['attempts'],row['tcp']['family'])==('TLS_VERIFIED',2,1,1,2,'ipv4')
+
+@needs_openssl
+@pytest.mark.skipif(not c3.ipv6_loopback(),reason='no IPv6 loopback on this machine')
+def test_a_connection_over_ipv6_is_said_ipv6(certs):
+    server=c3.Server(certs,'good','ipv6')
+    try:row=line_of(*probe([('::1',server.port)],certs['ca'])[:3])
+    finally:server.close()
+    assert (row['status'],row['dns']['addresses'],row['dns']['ipv4'],row['dns']['ipv6'],row['tcp']['attempts'],row['tcp']['family'])==('TLS_VERIFIED',1,0,1,1,'ipv6')
+    assert row['tls']['leaf_sha256']==certs['leaf_sha256'] and server.connections[0]['server_name']=='socket.massive.com'
+
+@needs_openssl
+def test_a_kernel_without_ipv6_sockets_goes_on_to_the_next_address(certs):
+    """socket.socket(AF_INET6) itself fails (EAFNOSUPPORT): that attempt is TCP_UNREACHABLE and the next address is tried."""
+    server=c3.Server(certs,'good')
+    try:row=line_of(*probe([('::1',c3.closed_port()),('127.0.0.1',server.port)],certs['ca'],no_ipv6_socket=True)[:3])
+    finally:server.close()
+    assert (row['status'],row['dns']['ipv6'],row['tcp']['attempts'],row['tcp']['family'])==('TLS_VERIFIED',1,2,'ipv4') and len(server.connections)==1
+    row=line_of(*probe([('::1',c3.closed_port())],certs['ca'],no_ipv6_socket=True)[:3])
+    assert (row['status'],row['tcp']['attempts'],row['tcp']['code'])==('TCP_NOT_CONNECTED',1,'TCP_UNREACHABLE')
+
+@pytest.mark.parametrize('dns,kind',[('nxdomain','nxdomain'),('failed','dns_failed'),('raise','dns_failed')])
 def test_a_name_that_does_not_resolve(dns,kind):
     row=line_of(*probe([],None,dns)[:3]);same_as_model(row,kind)
 
@@ -115,6 +165,13 @@ def test_a_context_that_would_not_check_the_name_is_never_used(certs):
     try:row=line_of(*probe([('127.0.0.1',server.port)],certs['ca'],verifying=False)[:3])
     finally:server.close()
     same_as_model(row,'context');assert server.connections==[],'no connection is opened with a context that does not verify'
+
+@needs_openssl
+def test_a_context_that_does_not_require_a_certificate_is_never_used(certs):
+    server=c3.Server(certs,'good')
+    try:row=line_of(*probe([('127.0.0.1',server.port)],certs['ca'],verify_mode='optional')[:3])
+    finally:server.close()
+    same_as_model(row,'optional');assert server.connections==[],'no connection is opened with a context that does not require a certificate'
 
 def test_at_most_sixteen_addresses_are_counted_and_tried_within_the_connect_seconds():
     row=line_of(*probe([('127.0.0.1',c3.closed_port()+index) for index in range(17)])[:3])

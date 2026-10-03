@@ -105,15 +105,19 @@ def expected_effects(plan):
     return {'operation':'GO_READONLY_HOSTOPS02_TLS_PROBE_01',
             'container':{'image_id':plan['image_id'],'image_revision':plan['image_revision'],'retention_tag':plan['retention_tag'],
                          'docker_arguments':['run','--rm','-i','--pull','never','--init','--user','0:0','--network','bridge','--read-only','--cap-drop','ALL',
-                                             '--security-opt','no-new-privileges','--name','hostops02-tls-<first 16 hex of the GO sha256>',plan['image_id'],
-                                             'python','-I','-B','-'],
-                         'network':'bridge','binds':[],'environment_file':None,'docker_config_variable':None,'token':None,
+                                             '--security-opt','no-new-privileges','--log-driver','none','--name','hostops02-tls-<first 16 hex of the GO sha256>',
+                                             plan['image_id'],'python','-I','-B','-'],
+                         'network':'bridge','binds':[],'environment_file':None,'docker_config_variable':None,'token':None,'log_driver':'none',
                          'standard_input':{'sha256':K().m.PROBE_SCRIPT_SHA256,'bytes':len(K().m.PROBE_SCRIPT.encode())},
                          'time_limit_seconds':20,'alarm_seconds':14,'removed_by_the_engine':True},
             'provider':{'host':'socket.massive.com','port':443,
                         'source':'c3po/backend/app/r2d2_v2_massive_transport.py:99 (wss://socket.massive.com/stocks, wss default port 443) and '
                                  'c3po/deployment/massive-supervisor/README.md:580 at dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858',
-                        'connections':1,'tls_handshakes':1,'application_bytes':0,'http_request':False,'credential':False},
+                        'dns':'A and AAAA queries for socket.massive.com to the resolvers the engine gives the network bridge',
+                        'tcp_attempts_max':16,'connections_established_max':1,'tls_handshakes_max':1,
+                        'application_bytes':0,'http_request':False,'credential':False},
+            'signature':'individual, by the hash of its own request (A1 rev 2, section 4.2, row C3): a container run, not a read (A1 4.2), never run '
+                        'by the grid of reads of any authority, and never a listed read (sheet rev5, item 13: the TLS probe stays out)',
             'probe_seconds':{'dns':4,'connect':4,'handshake':4,'alarm':14},
             'band':{'day':'2026-10-04','not_before':'2026-10-04T11:45:00+00:00','not_after':'2026-10-04T12:30:00+00:00'},
             'success_outcome':'TLS_VERIFIED_TO_THE_PROVIDER_HOST','evidence_boot_id_sha256':plan['evidence_boot_id_sha256'],
@@ -131,7 +135,11 @@ def test_effects_are_literal_and_name_every_word_the_engine_gets():
 
 def test_the_row_is_the_prefix_of_the_core_with_the_network_bridge_and_nothing_else():
     m=K().m;row=m.COMMANDS[m.RUN_ROW]
-    assert row['argv']==m.PROBE_PREFIX==['bridge' if word=='none' else word for word in m.RUN_PREFIX] and row['argv']!=m.RUN_PREFIX
+    assert row['argv']==m.PROBE_PREFIX==['bridge' if word=='none' else word for word in m.RUN_PREFIX]+['--log-driver','none'] and row['argv']!=m.RUN_PREFIX
+    assert m.SCOPE['container']['log_driver']=='none' and m.SCOPE['signature']==m.SIGNATURE_REGIME==expected_effects(c3.fields())['signature']
+    assert m.SCOPE['script']['tcp_attempts_max']==m.MAX_ADDRESSES_COUNTED==16 and m.SCOPE['script']['connections_established_max']==1
+    assert 'a second established connection, a second handshake, or any attempt after a handshake' in m.SCOPE['never']
+    assert 'a log of the container output kept by the engine' in m.SCOPE['never']
     assert (row['kind'],row['class'],row['stdin'],row['tail'],row['tool'])==('CONTAINER','RUN_SHORT',True,[],'docker')
     assert m.COMMAND_CLASSES['RUN_SHORT']['seconds']==20 and m.effects_budget(m.RUN_ROW)==24
     assert set(m.COMMANDS)=={'image','container_list','probe'} and m.BINARIES=={'docker':['/usr/bin/docker','/usr/local/bin/docker']}
@@ -196,6 +204,8 @@ def test_complete_run_reads_four_times_runs_once_and_reports_only_counts_boolean
 
 def test_the_budget_before_the_container_is_its_class_and_the_reserve():
     m=K().m
+    docs,host=c3.case();budget=f.Budget(c3.NOW).attach(host).cost(1.2345,'run','--rm');receipt=run(docs,host,**budget.options())
+    assert receipt['outcome']==m.COMPLETE_OUTCOME and receipt['container']['seconds']==1.234,'the seconds of the run, to the millisecond'
     for cost,expected in ((18.0,('METADATA_ONLY_REQUIRES_REVIEW',None)),(18.01,('REFUSED','BUDGET_INSUFFICIENT_BEFORE_THE_CONTAINER'))):
         docs,host=c3.case();budget=f.Budget(c3.NOW).attach(host).cost(cost,'image','inspect')
         receipt=run(docs,host,**budget.options())
@@ -285,7 +295,7 @@ def test_a_container_the_engine_never_started_is_a_refusal_after_the_precheck():
                                       ('refused','TCP_REFUSED'),('tcp_timeout','TCP_TIMEOUT'),('unreachable','TCP_UNREACHABLE'),
                                       ('untrusted','TLS_CERTIFICATE_NOT_VERIFIED'),('other_name','TLS_CERTIFICATE_NOT_VERIFIED'),
                                       ('hang','TLS_HANDSHAKE_TIMEOUT'),('garbage','TLS_PROTOCOL_ERROR'),('reset','TLS_CONNECTION_ERROR'),
-                                      ('context','TLS_CONTEXT_NOT_VERIFYING'),('failed','PROBE_FAILED')])
+                                      ('context','TLS_CONTEXT_NOT_VERIFYING'),('optional','TLS_CONTEXT_NOT_VERIFYING'),('failed','PROBE_FAILED')])
 def test_a_valid_line_that_is_not_a_verified_tls_is_the_probes_own_answer(kind,code):
     docs,host=c3.case();host.docker.on_run=c3.answers(kind);receipt=run(docs,host)
     assert verdict(receipt)==('PARTIAL_METADATA_REQUIRES_REVIEW','PROBE_RAN_TLS_NOT_VERIFIED',code)
@@ -322,6 +332,7 @@ def test_a_verified_line_with_an_engine_status_or_something_left_is_a_finding_be
         for index in range(12):host.docker.containers.append(hostemu.container('crowd-%d'%index,hostemu.BACKEND,hostemu.BACKEND,[],running=True))
     host.docker.on_run=c3.answers('verified',before=crowd);receipt=run(docs,host)
     assert receipt['containers_after']['not_there_before']==12 and len(receipt['containers_after']['rows'])==8==K().m.MAX_NEW_CONTAINER_ROWS
+    assert (receipt['containers_after']['before'],receipt['containers_after']['after'])==(8,20)
 
 @pytest.mark.parametrize('returncode,output,code',[
     (125,b'','ENGINE_COULD_NOT_RUN_THE_CONTAINER'),(126,b'','ENGINE_COULD_NOT_RUN_THE_CONTAINER'),(127,b'x\n','ENGINE_COULD_NOT_RUN_THE_CONTAINER'),
@@ -329,6 +340,7 @@ def test_a_verified_line_with_an_engine_status_or_something_left_is_a_finding_be
     (0,c3.line_bytes(c3.model_line())*2,'PROBE_OUTPUT_NOT_ONE_LINE'),(0,c3.line_bytes(c3.model_line())[:-1],'PROBE_OUTPUT_NOT_ONE_LINE'),
     (0,b'[1]\n','PROBE_OUTPUT_NOT_ONE_LINE'),(0,b'{"a":1,"a":2}\n','PROBE_OUTPUT_NOT_ONE_LINE'),(0,b'{}\n','PROBE_LINE_NOT_AS_SPECIFIED'),
     (1,c3.line_bytes(c3.model_line()),'PROBE_EXIT_STATUS_NOT_ZERO'),(142,c3.line_bytes(c3.model_line()),'PROBE_EXIT_STATUS_NOT_ZERO'),
+    (-9,c3.line_bytes(c3.model_line()),'PROBE_EXIT_STATUS_NOT_ZERO'),
 ])
 def test_output_that_is_not_one_valid_line_leaves_the_result_unknown(returncode,output,code):
     docs,host=c3.case();host.docker.on_run=c3.answers(returncode=returncode,output=output);receipt=run(docs,host)
@@ -393,7 +405,7 @@ def test_both_versions_of_tls_the_default_context_allows_are_a_verified_probe():
 def test_the_members_of_each_status_must_agree_with_it():
     m=K().m
     for kind in ('verified','nxdomain','dns_timeout','dns_failed','no_address','refused','tcp_timeout','unreachable','untrusted','other_name','hang',
-                 'garbage','reset','context','failed'):
+                 'garbage','reset','context','optional','failed'):
         assert m.line_grammar(c3.model_line(kind)) is True,kind
     def changed(kind,*edits):
         line=c3.model_line(kind)
@@ -413,7 +425,9 @@ def test_the_members_of_each_status_must_agree_with_it():
            changed('hang',(('dns','code'),'DNS_TIMEOUT')),changed('context',(('context','check_hostname'),True)),changed('context',(('dns','answered'),True)),
            changed('context',(('dns','code'),'DNS_TIMEOUT')),changed('context',(('tls','code'),'TLS_PROTOCOL_ERROR')),changed('verified',(('dns','code'),'DNS_TIMEOUT')),
            changed('verified',(('dns','addresses'),0),(('dns','ipv4'),0)),changed('verified',(('tcp','family'),None)),changed('verified',(('context','check_hostname'),False)),
-           changed('dns_timeout',(('tls','verify_code'),20)),changed('dns_timeout',(('tcp','family'),'ipv4')),changed('verified',(('tcp','attempts'),0))]
+           changed('dns_timeout',(('tls','verify_code'),20)),changed('dns_timeout',(('tcp','family'),'ipv4')),changed('verified',(('tcp','attempts'),0)),
+           changed('refused',(('context','check_hostname'),False)),changed('refused',(('tcp','connected'),True)),changed('hang',(('tcp','connected'),False)),
+           changed('optional',(('dns','answered'),True)),changed('optional',(('context','verify_mode_required'),True))]
     for index,line in enumerate(wrong):assert m.line_grammar(line) is False,index
 
 def test_new_containers_are_told_by_id_and_the_probes_name_by_name():

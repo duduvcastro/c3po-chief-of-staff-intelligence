@@ -63,20 +63,26 @@ THE JOB (ubuntu-24.04, GitHub-hosted, HOSTOPS_THROWAWAY_RUNNER=yes; every step a
          - proof/release_compose_render.py: c3po/compose.yml of the release, rendered (config creates nothing) by the
            helpers of K11 and of K6a, and both sources' rule for the worker's data bind applied to it. K11-U6, UA-2,
            and UA-6/U6 for the real file;
-         - activate/linux_root/shapes.py again, the three services of the throwaway project running that image.
+         - activate/linux_root/shapes.py again, the three services of the throwaway project running that image;
+         - for C3 (C3-U2 in part, no network): the default verifying context of the image's python,
+           ssl.create_default_context(), loads at least 100 authorities (IMAGE.release-image.txt).
   8. tls_probe/linux_root/run.sh <checkout>                                                              (sealed)
-       C3 with the operation's own perform() and Native, its own argv (network bridge, --rm, no bind, the pinned script
-       on standard input), against stand-ins INSIDE the runner, never the provider: the engine's "dns" is set to the
+       C3 with the operation's own perform() and Native, its own argv (network bridge, --rm, --log-driver none, no bind,
+       the pinned script on standard input), against stand-ins INSIDE the runner, never the provider: the engine's "dns" is set to the
        gateway of the network bridge, where a stand-in DNS server answers socket.massive.com with that gateway and a
        stand-in TLS server listens on its port 443 with a leaf of a throwaway authority (made on the runner, keys never
        leave its temporary directory). Two images on the release's base by digest: one that trusts that authority
-       (TEST ONLY), one as the base is. Six probes: verified (the leaf hash, the server name, 0 application bytes), an
-       image that does not trust the authority (19 or 20), another name (62), a refused port, a name that does not
-       exist, a handshake never answered (bounded at 4 s); the running container inspected (bridge only, no bind or
-       mount, AutoRemove, read-only root, CapDrop ALL, init, 0:0, the image by ID); docker events of the verified probe
-       (create, connect to bridge, start, die 0, destroy). Three FORWARD rules reject what the network bridge would send
-       to port 443 or 53 anywhere; their counter must be 0. daemon.json is put back and the engine restarted.
-       C3-U3 and C3-U5 for the runner's engine; the source's TLS path end to end.
+       (TEST ONLY), one as the base is. Six probes: verified (the leaf hash, the server name, the TLS version and cipher
+       the stand-in negotiated, 0 application bytes, the attached output with no log driver), an image that does not
+       trust the authority (19 or 20), another name (62), a refused port, a name that does not exist, a handshake never
+       answered (bounded at 4 s); the running container inspected (bridge only, no bind or mount, AutoRemove, LogConfig
+       none, read-only root, CapDrop ALL, init, 0:0, the image by ID); a one-second alarm through the source's own row
+       (docker-init reports 142, no container left); docker events of the verified probe (create, connect to bridge,
+       start, die 0, destroy). Fifteen expectations. A bridge with IPv6 is refused; six FORWARD rules (IPv4 and IPv6)
+       reject what the network bridge would send to port 443 or 53 anywhere, and their counters must be 0; root's
+       docker configuration directory, listed before and after the probes (never read), must not change. daemon.json
+       is changed only after it was saved, and put back; the engine restarted. C3-U3, C3-U4 and C3-U5 for the runner's
+       engine and CLI; the source's TLS path end to end.
   9. core/linux_root/report.py: the SHA-256 of every output and its content (junit: counts and every failure, error
      and skip). The outputs are uploaded as one artifact.
 

@@ -36,8 +36,9 @@ def test_shape_self_test_makes_every_run_and_meets_every_expectation_on_the_emul
     assert done.returncode==0 and done.stderr==b'',done.stderr.decode()[-2000:]
     result=json.loads(done.stdout);assert result['schema']=='HOSTOPS02_TLS_PROBE_LINUX_ROOT_SHAPE_V1' and result['all_runs_made'] and result['all_expectations_met']
     assert sorted(result['runs']['cases'])==sorted(['verified','image_without_the_test_authority','certificate_of_another_name','port_refused',
-                                                     'name_not_found','handshake_never_answered']) and len(result['expectations'])==13
+                                                     'name_not_found','handshake_never_answered']) and len(result['expectations'])==15
     assert result['runs']['cases']['verified']['outcome']=='TLS_VERIFIED_TO_THE_PROVIDER_HOST'
+    assert result['runs']['shape']['no_log_kept_by_the_engine'] is True and all(result['runs']['alarm'].values()) and len(result['runs']['alarm'])==5
 
 def test_shape_expectations_are_false_without_runs_and_for_a_run_that_differs():
     present();shape=module('probe_shape')
@@ -48,7 +49,23 @@ def test_shape_expectations_are_false_without_runs_and_for_a_run_that_differs():
     key='the verified probe names the leaf the server presented, for the provider name'
     assert changed(lambda o:o['cases']['verified']['probe']['tls'].update(leaf_sha256='0'*63+'1'))[key] is False
     assert shape.expectations(out,'0'*63+'1')[key] is False
-    assert changed(lambda o:o['shape'].update(network_bridge_only=False))['the running container has the network bridge, no bind, --rm, a read-only root, no capability, uid 0, the image by ID'] is False
+    shape_key='the running container has the network bridge, no bind, --rm, no log kept by the engine, a read-only root, no capability, uid 0, the image by ID'
+    assert changed(lambda o:o['shape'].update(network_bridge_only=False))[shape_key] is False
+    assert changed(lambda o:o['shape'].update(no_log_kept_by_the_engine=False))[shape_key] is False
+    alarm_key='the alarm of the script ends the container through docker-init with status 142, and the engine removes it'
+    for member in ('returned','status_is_128_plus_sigalrm_through_init','ended_by_the_alarm_not_by_the_limit_of_the_cli','nothing_printed',
+                   'no_container_of_its_name_listed_after'):
+        assert changed(lambda o,member=member:o['alarm'].update({member:False}))[alarm_key] is False,member
+    assert changed(lambda o:o.update(alarm=None))[alarm_key] is False and shape.report(dict(out,alarm=None),c3.LEAF)['all_runs_made'] is False
+    m=c3.K().m
+    assert shape.alarm_facts(m,{'returned':True,'returncode':142,'output':b''},1.1,'n',['other'])=={key:True for key in shape.alarm_facts(m,{},0,'n',None)}
+    assert shape.alarm_facts(m,{'returned':True,'returncode':137,'output':b''},1.1,'n',[])['status_is_128_plus_sigalrm_through_init'] is False
+    assert shape.alarm_facts(m,{'returned':True,'returncode':142,'output':b''},20.0,'n',[])['ended_by_the_alarm_not_by_the_limit_of_the_cli'] is False
+    assert shape.alarm_facts(m,{'returned':True,'returncode':142,'output':b''},1.1,'n',['n'])['no_container_of_its_name_listed_after'] is False
+    version_key='the verified probe reports the TLS version and cipher the server negotiated'
+    assert changed(lambda o:o['cases']['verified']['probe']['tls'].update(cipher='TLS_AES_128_GCM_SHA256'))[version_key] is False
+    assert changed(lambda o:o['server']['verified']['connections'][0].update(version='TLSv1.2'))[version_key] is False
+    assert changed(lambda o:o['server']['verified']['connections'][0].update(version=None))[version_key] is False
     assert changed(lambda o:o['cases']['port_refused'].update(container_removed=False))['every probe ran under 20 s and left no container'] is False
     assert changed(lambda o:o['server']['verified']['connections'][0].update(application_bytes=1))['the server saw the provider name and no application byte'] is False
     assert changed(lambda o:o['server']['name_not_found']['questions'].append({'name':'other.example','type':1,'mode':'nxdomain'}))['the stand-in DNS was asked for the provider name only'] is False
@@ -117,11 +134,18 @@ def test_run_sh_is_valid_sh_guards_the_runner_and_puts_the_engine_back():
     present();text=(LINUX/'run.sh').read_text()
     assert subprocess.run(['sh','-n',str(LINUX/'run.sh')]).returncode==0
     for needle in ('[ "${RUNNER_ENVIRONMENT:-}" = github-hosted ]','[ "${HOSTOPS_THROWAWAY_RUNNER:-}" = yes ]','sha256sum -c --quiet SHA256SUMS',
-                   '../core/assemble.py --check .','trap cleanup EXIT','guard -I','guard -D','REJECTED','daemon.json.saved','probe_shape.py "$WORK" "$GATEWAY"'):
+                   '../core/assemble.py --check .','trap cleanup EXIT','guard_set','guard_remove','REJECTED4','REJECTED6','daemon.json.saved',
+                   'probe_shape.py "$WORK" "$GATEWAY"','for tool in iptables ip6tables; do','sudo -n ip6tables -w -L FORWARD -n',
+                   "--format '{{.EnableIPv6}}'",'[ "$IPV6" = false ]','CONFIG_BEFORE=$(docker_config_state)','CONFIG_AFTER=$(docker_config_state)',
+                   'if sudo -n cp "$DAEMON" "$WORK/daemon.json.saved"; then EXISTED=yes; SAVED=yes; else'):
         assert needle in text,needle
+    assert text.count('SAVED=yes')==2 and 'daemon.json could not be saved"; else' not in text,'SAVED only after the copy succeeded'
+    assert text.index('CONFIG_BEFORE=$(docker_config_state)')<text.index('probe_shape.py "$WORK"')<text.index('CONFIG_AFTER=$(docker_config_state)')
+    assert 'find /root/.docker -printf' in text and 'cat /root/.docker' not in text,'the directory is listed, never read'
     pins=dict(reversed(line.split('  ',1)) for line in text.split("<<'PINS'")[1].split('\n',1)[1].split('PINS\n')[0].strip().splitlines())
     assert pins==c3.RELEASE_FILES
     assert 'BASE=python:3.12-alpine3.24@sha256:b64631e04e4920160c50fbe8d8df828f7f35f06f425cb44aa09bca53e708a35a' in text
     assert not re.search(r'(?<![0-9.])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9.])',text),'no address is written: the gateway is read on the runner'
-    assert text.index('guard -I')<text.index('probe_shape.py "$WORK"')<text.index('REJECTED=')
+    assert text.index('guard_set ||')<text.index('probe_shape.py "$WORK"')<text.index('REJECTED4=')
+    assert text.index('[ "$IPV6" = false ]')<text.index('guard_set ||')
     assert 'set -e' not in text.split('\n# Nothing here relies')[0]

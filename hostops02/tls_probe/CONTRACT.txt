@@ -1,4 +1,4 @@
-HOSTOPS02 / C3 - TLS PROBE OF THE SUPERVISOR NETWORK (README REHEARSAL ITEM 2) - STDIN / ONCE CANDIDATE
+HOSTOPS02 / C3 - TLS PROBE OF THE SUPERVISOR NETWORK (README REHEARSAL ITEM 2) - STDIN / ONCE CANDIDATE, REVISION 2
 
 Operation built
   GO_READONLY_HOSTOPS02_TLS_PROBE_01     build/tls_probe.py     reads; one attached container on the network bridge
@@ -7,22 +7,26 @@ Operation built
 
 Executable code candidate, unsigned and UNBOUND. Built offline from local files only. No host was contacted, no key or
 credential file was read, no docker was run, no prepare/resume was performed outside private synthetic tests, and no
-test reaches the network: every connection of the tests goes to 127.0.0.1, and the test-only resolver refuses every
-name but the provider's (which it answers with 127.0.0.1). No operational GO exists, was created, carried forward or
+test reaches the network: every connection of the tests goes to the loopback (127.0.0.1, or ::1), the test-only
+resolver refuses every name but the provider's (which it answers with loopback addresses), and the stand-in of docker
+in tests/test_native.py refuses (exit 70) to run anything without that test-only prelude. No operational GO exists, was
+created, carried forward or
 inferred. In every template the windows, the date, the host binding, owner, decision, effects, success criterion,
 target, key and known-hosts references, command pin, claim root and every observed identity are null; status is
 UNBOUND; execution_authorized is false. build/FINAL_PAYLOAD.UNBOUND.py, run under "python3 -I -B -", prints one refusal
 and exits 1 before touching anything. The Linux job has not run. Binding is a later, human-signed step and is not part
-of this candidate. The bytes have been read by nobody but their author: they need the co-auditor's review by hash
-before any signature is asked for (A1 rev 2, section 4.2, row C3: "programa selado e revisto").
+of this candidate. Revision 1 (seal 4caae9849558f9f1e84c6a16309397c00172fd956dac1598ff3b5e4c06530c9a, source 1f83ea83...)
+was read by a security review and a conformance review of the author's side; this revision answers both (section 12).
+These bytes still need the co-auditor's review by hash before any signature is asked for (A1 rev 2, section 4.2, row
+C3: "programa selado e revisto").
 
   frozen core (not modified by this operation)   generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6
                                                  seal (CORE_SHA256SUMS) 73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1
-  source build/tls_probe.py                      1f83ea83c79a877ac9d1cfc208f5a2f701f5d71d9605505148c484d41536bad1   (94840 bytes)
-  build/FINAL_PAYLOAD.UNBOUND.py                 b528e59430b62b656b29321a30de1a4870a962fe384f87b11f9da8bf7cefdce5   (142555 bytes)
-  signed scope (SCOPE_SHA256)                    089a97e5b2748c826af3cd67d7a57dd346a1814979b9737904c5357f33136a82
-  op.py / spec.py                                fd1d54edd82d6331bdaf896d060c3fe87de6da1a58283dbd7a7e781c3ec26c17 / 0438b5962360f61811c4e5f6b3e38668a1572ab0a31b45d9ee4efdf439a665ae
-  the pinned probe script (PROBE_SCRIPT)         d625d84f41bdf91396211025afbb80afa0a42e960bc1a19cb9e95428c0619566   (5746 bytes, carried in op.py)
+  source build/tls_probe.py                      8d52e132f73c2aeaa65835787f2a8c5552aae91663b5e1138faecef615ca308d   (98065 bytes)
+  build/FINAL_PAYLOAD.UNBOUND.py                 91019da164d2e9ec605a949d4fdd2a645840e8b60b099ec2a0a91664da1032da   (149883 bytes)
+  signed scope (SCOPE_SHA256)                    f3c7b7247a9209ba165cdeca698887fd5e3448f82da20cd14e7796be54363905
+  op.py / spec.py                                47e46d77f2cbc224a8fd682c088cbb59330b991b6450e0446021e606b2842442 / 0438b5962360f61811c4e5f6b3e38668a1572ab0a31b45d9ee4efdf439a665ae
+  the pinned probe script (PROBE_SCRIPT)         8748e274e5a9e7687bc31cd1acc40529a77fcb138ce2b0a555a838ef7a085c2f   (5914 bytes, carried in op.py)
   dispatcher, launcher, transport                10bdb8b4f70c3eb802d21eaa01d1f299ff74f42c62ab6a7316a331488f77956e, ac4085e4... (HOSTOPS01's
                                                  launcher, byte for byte), 5900efbf... (byte for byte)
   frozen against                                 the release dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858: supervisor README
@@ -50,24 +54,29 @@ text and those files differ, the files prevail.
                      test_probe_script.py (the REAL pinned script in a real child interpreter against a local TLS server),
                      test_native.py (the source's own Native, real system calls, a real program behind docker that runs
                      the real script), test_static_pins.py (text pins against the release), test_linux_root.py
-  mutation/          mutate.py (the core's, three tables changed), mutants.py, MUTATION_RUN.json, MUTATION_RUN.py312.json
+  mutation/          mutate.py (the core's, three tables changed), mutants.py (the author's and the reviewer's), MUTATION_RUN.json,
+                     MUTATION_RUN.py312.json
   linux_root/        run.sh, probe_shape.py, stubs.py: the operation's own shape for the throwaway Linux runner (NOT RUN)
   seal.py  SHA256SUMS
+  drafts/            NOT sealed: the binder's parameters draft, the text of the owner's question, the notes for the binder
   work/              NOT part of the candidate and not sealed: an extraction of the release's files for the tests, the
-                     mutation copies and logs, the author's prototype
+                     mutation copies and logs, the author's prototype, the computation of the dispatch minutes
 
 3. SPECIFICATION
 
 3.1 What it does. Rehearsal item 2 of the supervisor README at dd4ec4bb (line 580): "A TLS connection to
 socket.massive.com:443 succeeds from @NETWORK@, without a token", for the network the owner's sheet chose for the unit
-(FOLHA_SABADO_0900.rev5, line 7: bridge). One attached container of the signed image ID:
+(FOLHA_SABADO_0900.rev5, item 7: bridge). One attached container of the signed image ID:
     docker run --rm -i --pull never --init --user 0:0 --network bridge --read-only --cap-drop ALL
-      --security-opt no-new-privileges --name hostops02-tls-<first 16 hex of the GO sha256>
+      --security-opt no-new-privileges --log-driver none --name hostops02-tls-<first 16 hex of the GO sha256>
       <image ID> python -I -B -
 with the fixed environment of the core (PATH=/usr/bin:/bin LANG=C LC_ALL=C, no HOME, no DOCKER_CONFIG), working
-directory "/", standard error discarded, the pinned probe script (5746 bytes carried in the source) on standard input,
+directory "/", standard error discarded, the pinned probe script (5914 bytes carried in the source) on standard input,
 at most 20 seconds (class RUN_SHORT) and 65,536 bytes of output. It is the core's RUN_PREFIX (the README's catalog argv)
-with one word changed, none -> bridge, and --name. No bind, no --mount, no -e, no --env-file, no token, no file of
+with one word changed, none -> bridge, one option added at its end, --log-driver none (the engine keeps no log of the
+container's output, whatever the host's default log driver: json-file and local would remove it with the container,
+journald and syslog would keep it on the host, gelf, fluentd, awslogs and splunk would ship it elsewhere; the attached
+output still reaches the CLI), and --name. No bind, no --mount, no -e, no --env-file, no token, no file of
 /etc/c3po-bar. Before it: docker image inspect by the signed ID, docker image inspect by the signed retention tag,
 docker ps -a. After it: docker ps -a again. Five docker commands in three shapes, no other process, no shell, no
 systemctl. Nothing on the filesystem of the host is created, changed or removed by this process.
@@ -80,15 +89,24 @@ connects with socket.create_connection and wraps the socket with ssl.create_defa
 socket.massive.com (websockets sync/client.py, read in version 15.0.1): the probe does the same three steps with the
 same trust store of the image, and nothing after them.
 
-The probe script (PROBE_SCRIPT, sha256 d625d84f..., read it in op.py): its first statement arms a 14 s alarm; it takes
+The probe script (PROBE_SCRIPT, sha256 8748e274..., read it in op.py): its first statement arms a 14 s alarm; it takes
 ssl.create_default_context() and refuses to go on unless the context requires a certificate and checks the host name
-(status TLS_CONTEXT_NOT_VERIFYING); resolves socket.massive.com:443 in a thread joined for at most 4 s (DNS); counts
-the distinct IPv4 and IPv6 answers (at most 16); connects to them in order within 4 s in total (TCP); makes ONE TLS
-handshake with server name socket.massive.com, bounded by 4 s (TLS); on success takes the TLS version, the cipher name
+(status TLS_CONTEXT_NOT_VERIFYING); resolves socket.massive.com:443 (every family) in a thread joined for at most 4 s
+(DNS); counts the distinct IPv4 and IPv6 answers (at most 16); tries them in order within 4 s in total until one TCP
+connection is established, as socket.create_connection does (TCP; an attempt whose socket cannot even be made, a
+kernel without IPv6 for example, is TCP_UNREACHABLE and the next address is tried); makes ONE TLS handshake on that
+connection with server name socket.massive.com, bounded by 4 s (TLS); on success takes the TLS version, the cipher name
 and the SHA-256 of the leaf certificate's DER; closes the socket; prints ONE JSON line and ends with os._exit(0). It
 calls no send, no write but the line on standard output, no read after the handshake, no unwrap (no close_notify), no
 HTTP. Every outcome is a constant status and a constant code; no text of an exception, no address and no name of the
 certificate leaves it.
+
+What leaves the host, said in the signed effects (provider: dns, tcp_attempts_max 16, connections_established_max 1,
+tls_handshakes_max 1) and in the owner's question: A and AAAA queries for socket.massive.com to the resolvers the
+engine gives the network bridge (musl, the C library of the image, adds no search domain to a name with two dots
+unless the resolver configuration sets ndots above 2); TCP connection attempts to port 443 of the addresses of the
+answer, in order, at most 16 within 4 s, of which at most one is established; one TLS handshake on that connection.
+Nothing else.
 
 HTTP request: NONE, by decision. The README's item asks only for the TLS connection; the A1 row C3 says "sem token; nao
 envia nada" and "abre uma conexao TLS com o provedor e fecha". An unauthenticated HTTP request would put application
@@ -153,10 +171,14 @@ run complete, no container of the probe's name and no container that was not lis
                                    PROBE_OUTPUT_NOT_ONE_LINE, PROBE_LINE_NOT_AS_SPECIFIED, PROBE_EXIT_STATUS_NOT_ZERO.
 An escape from the run after it started: exit 2, PARTIAL_STATE_UNKNOWN_CONTAINER_MAY_REMAIN (the core's envelope).
 
-3.7 What never happens. No bind or mount; no environment file or variable to the container; no token, manifest or path
-of /etc/c3po-bar; no HTTP request, no application byte, no second connection, no retry, no wait, no poll; no docker
-exec, no shell, no systemctl, no pull; no network but bridge; no --privileged, device or capability; no removal of any
-container; no write on the host's filesystem; no address in the receipt. A timeout stops the docker CLI and its
+3.7 What never happens. No bind or mount; no environment file, no variable given to the container by this process (the
+CLI reads root's own configuration, which this process never reads; if it names proxies, the CLI derives proxy
+variables for the container from it, and the script reads no variable and opens its socket directly); no token,
+manifest or path of /etc/c3po-bar; no HTTP request, no application byte, no second established connection, no second
+handshake, no attempt after the handshake, no wait, no poll (the attempts over the addresses of the answer, at most 16
+within 4 s, are the only repetition, and the first that connects is the one connection); no log of the output kept by
+the engine; no docker exec, no shell, no systemctl, no pull; no network but bridge; no --privileged, device or
+capability; no removal of any container; no write on the host's filesystem; no address in the receipt. A timeout stops the docker CLI and its
 process group, not the container (the core's decision): the script's alarm (14 s) ends the container's process before
 the CLI's limit (20 s), --rm removes it, and the receipt says whether a container of its name is listed. A CLI stopped
 between create and start leaves a container in state "created" that never runs and is never removed by --rm; its name
@@ -202,8 +224,10 @@ network, the argv, the script (all constants of the source and of its signed sco
   0. HARD GATES, before any signature is asked for: `shasum -a 256 -c SHA256SUMS` here and `shasum -a 256 -c
      CORE_SHA256SUMS` in the core; `python3 -B <core>/assemble.py --check <this directory>` prints BUILD_EQUAL; the
      co-auditor has accepted THESE bytes by hash; the Linux job has run and exited 0 for the core, for this operation's
-     suite as root and as user, and for linux_root/run.sh with every expectation true and 0 packets rejected by its
-     guard (its output file attached).
+     suite as root and as user, and for linux_root/run.sh with every expectation true (15, among them the alarm through
+     docker-init and no log kept by the engine), 0 packets rejected by its IPv4 and IPv6 guard and root's docker
+     configuration directory unchanged (its output file attached), and proof/release_image.sh has found the default
+     verifying context of the release image loaded with at least 100 authorities.
   1. Receipts on record as in section 4, each with its hash, from the SAME boot: the precheck (complete) and the
      provisioning (complete, with the tag created and verified). The bound set of the binder also needs this operation
      taught to it (the binder is not edited here: see the parameters draft beside this candidate and section 10).
@@ -213,15 +237,28 @@ network, the argv, the script (all constants of the source and of its signed sco
      host binding, executor_uid 0, both evidence entries; canonical bytes; hash.
   4. effects: compute once with the source's effects_of(plan) offline and READ it: container.docker_arguments (the argv
      of 3.1 word for word, the name as the template), network bridge, binds [], environment_file null,
-     docker_config_variable null, token null, standard_input (the script's hash and size), provider host and port with
-     their source, connections 1, tls_handshakes 1, application_bytes 0, http_request false, credential false, the band,
-     writes 0, removes [], containers_run 1, success_outcome. It is what the owner and the GO sign.
+     docker_config_variable null, token null, log_driver none, standard_input (the script's hash and size), provider
+     host and port with their source, dns (A and AAAA queries for the provider name to the resolvers of the network
+     bridge), tcp_attempts_max 16, connections_established_max 1, tls_handshakes_max 1, application_bytes 0,
+     http_request false, credential false, signature (individual by hash; never a read of a grid; never listed), the
+     band, writes 0, removes [], containers_run 1, success_outcome. It is what the owner and the GO sign.
   5. authority (owner, SIGNED, APPROVED, request and payload hashes, the effects, the band) -> hash -> GO (SIGNED, GO,
      three hashes, the effects, the short window, transport_binding with the four runtime pins and the command pin,
      claim_root_identity, the constant scope_statement, success_criterion TLS_VERIFIED_TO_THE_PROVIDER_HOST).
   6. Six instants non-null, written as datetime.isoformat() writes them in UTC, all on 2026-10-04, the GO's window at
      most 900 s inside the band; latest_start = not_after - 80 s. The dispatch is not in HH:05-07, HH:10-25, HH:35-37
-     (A1 section 3): inside the band that leaves 11:45-12:04, 12:08-12:09 and 12:26-12:30 UTC.
+     (A1 section 3), and the binder accepts a gate only when at least 3 whole minutes outside those lie between its
+     start and its latest start (bind_once.py MIN_USABLE_MINUTES, minutes_allowed, applied with the operation's row
+     'minutes': True). Computed by command with the binder's own functions (work/c3fix/gates.py, not sealed): a gate may
+     START from 11:45:00 to 12:04:40 (its dispatch minutes are then 11:45-12:04:59 and, for a gate that reaches them,
+     12:08:00-12:09:59), or from 12:14:20 to 12:26:40 (dispatch only 12:26:00-12:28:40, latest start 12:28:40). A gate
+     that starts at 12:05:00-12:14:00 is refused (GATE_WINDOW_ONLY_IN_MINUTES_TO_AVOID). The draft gate is 11:47-12:02
+     (latest start 12:00:40, 14 usable minutes). Fallbacks, each a new bound set with a new signature: 12:00:00-12:06:20
+     (latest start 12:05:00, dispatch 12:00-12:04:59); otherwise 12:24:00-12:30:00 (latest start 12:28:40, dispatch
+     12:26:00-12:28:40).
+  6a. Nothing else is sent to the host between the prepare of C3 and its receipt: any container created meanwhile (the
+     Sunday reserve of the catalog, previsto 09:00 BRT, or anything else) is CONTAINER_PRESENT_THAT_WAS_NOT_THERE_BEFORE
+     and turns a verified probe into TLS_VERIFIED_WITH_FINDINGS.
   7. Final payload with launcher_stdin.build; config with its pins and the paths of the five bound blobs; publication
      proof.
   8. Dry validation: authenticate() on the bound bytes with the target uid injected, and perform() with a gate that
@@ -267,15 +304,25 @@ handshake has its own 4 s), a server that is not TLS, a context that does not ch
 an exception (PROBE_FAILED), and the alarm (SIGALRM at 14 s); the whole run with the source's own Native, the real
 runner and a real program behind docker that runs the real script (argv, standard input by hash, the fixed
 environment, "/"; tests/test_native.py).
+Real on the workstation since revision 2: both families asked for and tried in order (an IPv6 answer that does not
+connect, then IPv4), a connection over IPv6 (::1), the same address answered twice (counted and tried once), a kernel
+without IPv6 sockets (EAFNOSUPPORT: the next address), a context that does not require a certificate (no connection),
+a resolver error that is not a gaierror (DNS_FAILED), and the TLS version and cipher of the line equal to the ones the
+server negotiated.
 Emulated only: the Docker CLI and engine, the network bridge, the engine's DNS, the image's trust store, uid 0, every
 errno injection and process death.
 UNPROVEN, never executed on this host (DESIGN.md section 9): C3-U1 the network bridge reaches the provider (egress, the
-engine's DNS); C3-U2 the image's trust store verifies the provider's chain; C3-U3 the argv on the host's engine (--init
-and --network bridge under the containerd store, --rm removal, the alarm through docker-init as 142); C3-U4 the docker
-CLI without DOCKER_CONFIG and without HOME writes nothing; C3-U5 the run's duration on the host; C3-U6 what a CLI killed
-at 20 s leaves. linux_root/run.sh closes C3-U3 (for the runner's engine), C3-U5 (for the runner) and the TLS path of the
-source end to end against stand-ins in the runner (never the provider). Only the run on the host closes C3-U1 and C3-U2:
-that is what this operation is for.
+engine's DNS); C3-U2 the image's trust store verifies the provider's chain; C3-U3 the argv on the host's engine (--init,
+--network bridge and --log-driver none under the containerd store, the attached output with no log driver, --rm
+removal, the alarm through docker-init as 142); C3-U4 the docker CLI without DOCKER_CONFIG and without HOME writes
+nothing; C3-U5 the run's duration on the host; C3-U6 what a CLI killed at 20 s leaves. linux_root/run.sh closes C3-U3
+(for the runner's engine: the six probes through perform(), the inspect of the running container, its events, and
+the alarm of a one-second snippet through the source's own row, which must end with 142 and leave no container), C3-U4
+(for the runner's CLI: root's docker configuration directory, listed before and after the probes, unchanged), C3-U5
+(for the runner) and the TLS path of the source end to end against stand-ins in the runner (never the provider);
+proof/release_image.sh shows a part of C3-U2 without any network: the default verifying context of the release image
+built from the checkout loads at least 100 authorities. Only the run on the host closes C3-U1 and C3-U2: that is what
+this operation is for.
 
 8. REPRODUCE (offline; nothing here contacts a host or the network)
 
@@ -297,10 +344,11 @@ or a checkout of the release that holds this directory. Without one they are ski
              unchanged except its date-scope test, replaced by one that asserts the same literal class at the dispatcher
              and the narrower band at the source and through the dispatcher (no claim); the four sibling operations of
              tier 0, when they lie beside the core, are added to the operations whose documents this one must refuse.
-  mutation   mutants of the operation's own part: constants, the plan's refusals, each member of the effects, each
-             clause of the grammar of the line, each branch of the verdict, each refusal of the precheck, each member of
-             the receipt, and the pinned script (a mutant of the script replaces the constant together with its hash and
-             size, so only a test that runs or reads the script can kill it). Records: mutation/MUTATION_RUN.json
+  mutation   mutants of the operation's own part: constants, the plan's refusals, each member of the effects, the
+             scope's never list, each clause of the grammar of the line, each branch of the verdict, each refusal of the
+             precheck, each member of the receipt, and the pinned script (a mutant of the script replaces the constant
+             together with its hash and size, so only a test that runs or reads the script can kill it); and the
+             reviewer's own mutants of revision 1. Records: mutation/MUTATION_RUN.json
              (/usr/bin/python3 3.9.6) and mutation/MUTATION_RUN.py312.json (3.12.14); counts in section 11.
   not run    linux_root/run.sh and the real-engine half of linux_root/probe_shape.py (no Linux, no docker). Only `sh -n`,
              a test of its text, the stand-ins on 127.0.0.1 and the shape's self-test ran.
@@ -316,28 +364,106 @@ or a checkout of the release that holds this directory. Without one they are ski
   D4 Success requires TLSv1.2 or TLSv1.3 (Python's default floor). A provider that answered only an older version is a
      PROBE_LINE_NOT_AS_SPECIFIED, not a verified probe.
   D5 The class name: GO_READONLY (3.1 and DESIGN.md section 1). It changes nothing of the A1's signature regime: C3
-     stays under the owner's individual signature by hash.
+     stays under the owner's individual signature by hash. Since revision 2 the bytes say so themselves: SCOPE and the
+     effects carry 'signature' (individual by the hash of its own request, A1 4.2 C3; not a read; never run by a grid
+     of reads; never a listed read, sheet rev5 item 13). The co-auditor is asked to accept D5 explicitly, given A1 4.2
+     ("não é leitura") and sheet item 13 ("a sonda TLS fica fora").
   D6 The binder (bind_once.py) does not know this operation yet; the parameters draft and the owner's question are
      prepared beside this candidate and the binder's extension is a separate piece of work with its own review.
   D7 The Linux proof trusts its throwaway authority through a TEST image only. Whether the production image's own
      bundle trusts the provider's chain is known only from the run on the host (C3-U2).
+  D8 --log-driver none (revision 2): the output of the container is never kept by the engine, whatever the host's
+     default log driver (not on record in any receipt). It is one option more than the core's prefix; the Linux job
+     shows that the attached output still reaches the CLI (the verified case) and that the running container's
+     LogConfig.Type is none.
+  D9 The binder must be taught this operation before any signature (drafts/NOTES_BINDER_C3.md, items a to f): the
+     row with 'minutes': True, the review gate keyed on the A1 enumeration and not on writes_allowed, the Linux job
+     record, the PROVISION evidence of E1 and no other, and E3's dispatch gate on this receipt. The owner's question
+     says only what the binder enforces once that extension exists and is reviewed.
 
-11. RUNS OF THE AUTHOR (clock by command after the runs: 2026-10-03T12:39:18Z)
+11. RUNS OF THE AUTHOR, REVISION 2 (clock by command after the runs: 2026-10-03T13:37:02Z)
 
-  tests      295 on /usr/bin/python3 3.9.6 (LibreSSL 2.8.3) and on 3.12.14 (OpenSSL 3.5.7), none failed, none skipped,
-             with a tree of the release at hand and the openssl program (LibreSSL 3.3.6): conformance 121 (the family's,
-             one replaced), tls_probe 144, probe_script 17, native 3, static pins 4, linux_root 6. Without a tree of the
-             release the four static pins skip; without the openssl program the tests that need the throwaway
-             authority skip and say so.
-  mutation   268 single mutants of the operation's own part (51 constants, 17 of the plan, 33 effects, 61 of the
-             grammar of the line, 11 of the line kept and its code, 15 of the verdict, 29 of the precheck and the run,
-             16 of the receipt, 35 of the pinned script), none combined, none redundant. On both interpreters: 268
-             killed, 0 survivors, 0 errors, none by the time limit. Records:
-             mutation/MUTATION_RUN.json        654f200d6356aab1bba768887e2c2d8e45ca5c21e6a93019e3af9424acd939c6
-             mutation/MUTATION_RUN.py312.json  4109bacab4938b10ef5a5517e2f8535a87557948954c0f409e3e564824b85f5a
-             The first run on 3.9 had three survivors, each answered by a test before the records above: the script
-             compared before the claim (V11: the refusal must come from AUTHENTICATION), a count of addresses above 16
-             made of both families (G16), and the handshake's own timeout after a slow first address (S27). One mutant
-             of the first list was removed as equivalent: a bound on TCP attempts that the bound on addresses implies.
-             Zero survivors of THIS list, written by the author of the bytes: the family's history is that a reviewer's
-             own mutants find more.
+  tests      305 on /usr/bin/python3 3.9.6 (LibreSSL 2.8.3) and on 3.12.14 (OpenSSL 3.5.7), none failed, none skipped,
+             with a tree of the release at hand, the openssl program (LibreSSL 3.3.6) and an IPv6 loopback: conformance
+             121 (the family's, one replaced), tls_probe 146, probe_script 24, native 4, static pins 4, linux_root 6.
+             Without a tree of the release the four static pins skip; without the openssl program the tests that need
+             the throwaway authority skip; without an IPv6 loopback the one test of a connection over IPv6 skips; each
+             says so.
+  mutation   318 single mutants of the operation's own part, none combined: 54 constants, 17 of the plan, 37 of the
+             effects, 2 of the scope's never list, 61 of the grammar of the line, 11 of the line kept and its code, 15 of
+             the verdict, 29 of the precheck and the run, 16 of the receipt, 36 of the pinned script, and 40 of the
+             reviewer's own list (X-prefix; X33, X28 and X39 not carried: section 12, C4). On both interpreters: 318
+             killed, 0 survivors, 0 errors. Records:
+             mutation/MUTATION_RUN.json        8fa3b2b58afab1950a4d338e9951995f0c2f3f4b9f5ae15a1696e1af0222dbf2
+             mutation/MUTATION_RUN.py312.json  36db48880660bf419feb108304e3755980b2103e36dcdaab2823870bd13913b1
+             The first complete run of this list on 3.12 left two survivors that the 3.9 run killed, X30 and X31 (the
+             script reporting a constant TLSv1.3 or TLS_AES_256_GCM_SHA384): with OpenSSL 3.5 the default negotiation
+             gives exactly those names. Answered by a test against a TLS 1.2-only server with one suite
+             (ECDHE-ECDSA-AES128-GCM-SHA256) before the records above. The family's history stands: a reviewer's own
+             mutants found more than the author's list (14 survivors of 43 on revision 1).
+
+12. REVISION 2: EVERY FINDING OF THE TWO REVIEWS OF REVISION 1, AND WHAT WAS DONE
+
+Security review (S) and conformance review (C) of revision 1 (seal 4caae984..., source 1f83ea83...). Every change
+below is in these bytes; the drafts/ files (outside the seal) carry the binder's side.
+
+  S1 MEDIUM  The effects and the owner's text said one connection; the script mirrors socket.create_connection (up to
+             16 attempts within 4 s) and the DNS queries leave the host too. FIXED: the script is unchanged in
+             behaviour; effects.provider now says dns, tcp_attempts_max 16, connections_established_max 1,
+             tls_handshakes_max 1 (connections and tls_handshakes are gone); SCOPE.never says "a second established
+             connection, a second handshake, or any attempt after a handshake"; the statement and side_effects say what
+             leaves the host; the script's own comment says the same; the owner's question says it in Portuguese.
+  S2 LOW     The container's output went to the host's default log driver. FIXED: --log-driver none at the end of
+             PROBE_PREFIX (effects container.log_driver, SCOPE.container.log_driver, SCOPE.never); the emulation of the
+             core is told about the option in tests/c3.py only; the Linux job inspects LogConfig.Type and shows the
+             attached output still arrives (D8).
+  S3 LOW     The bytes did not say that C3 is never a listed read. FIXED: SIGNATURE_REGIME in SCOPE['signature'] and in
+             the effects; the owner's question repeats it; the name stays the core's (D5).
+  S4 LOW     The binder notes missed three changes. FIXED in drafts/NOTES_BINDER_C3.md (items a, c, d; with C1).
+  S5 LOW     The Linux guard covered IPv4 only. FIXED: run.sh refuses a bridge with EnableIPv6 not false, and the guard is
+             six rules (iptables and ip6tables), both counters must be 0.
+  S6 LOW     run.sh could delete daemon.json after a failed copy. FIXED: SAVED (and EXISTED) are set only after the copy
+             succeeded; daemon.json is not changed otherwise; restore puts back an existing file, removes a created one.
+  S7 INFO    Full container IDs of new containers in the receipt. NOT CHANGED: an engine ID is neither a secret nor an
+             address, it is what a read-only look after a finding needs, and C3 already keeps less than K2a, whose rows
+             also carry the container's name (catalog_init/op.py line 446).
+  S8 INFO    Loose cipher grammar. NOT CHANGED: the value comes from OpenSSL only and the grammar admits
+             [A-Z0-9][A-Z0-9_-]{0,63}; an allowlist would turn a real verified handshake with an unlisted suite into an
+             unknown result on the one morning the probe can run (DESIGN.md section 10).
+  S9 INFO    Root's docker configuration may give proxy variables to the container. FIXED in words (side_effects,
+             SCOPE.never "by this process", 3.7) and observed on the runner: run.sh lists /root/.docker before and after
+             the probes (never a content) and requires it unchanged (C3-U4 for the runner's CLI).
+  S10 INFO   Known leftovers (a container created and never started; a late container up to about 14 s). Already in
+             3.7 and C3-U6; unchanged.
+  C1 MEDIUM  The class READONLY drops binder gates the A1 requires for C3. FIXED in drafts/NOTES_BINDER_C3.md: (a) the
+             row with 'minutes': True, (b) CODEX_REVIEW_OF_THE_BOUND_SET keyed on the A1 enumeration, not on
+             writes_allowed, (c) release_tree removed from the parameters draft, (d) LINUX_JOB_RECORD_REQUIRED for C3,
+             (e) PROVISION evidence = E1's receipt with retention_tag.state CREATED_VERIFIED and its image_id equal to
+             plan.image_id, (f) E3's dispatch gate on this receipt or the owner's waiver (D9). The owner's question is
+             true only once that extension exists and is reviewed; the binder itself is not edited here.
+  C2 MEDIUM  The Linux proof claimed the alarm through docker-init without a shape that reached it. FIXED:
+             probe_shape.py runs the source's own row and helper with a snippet whose signal.alarm(1) fires, and
+             expects returned, status PROBE_ALARM_STATUS (142), the end by the alarm and not by the CLI's limit, nothing
+             printed, and no container of its name (Real and Emulated; tests/test_linux_root.py).
+  C3 MED-LOW A test could reach the provider if the code regressed. FIXED: the stand-in of docker in test_native.py exits
+             70 for any run without the test prelude (a test shows it), and the name-taken test gives a prelude that
+             points at a closed loopback port.
+  C4 LOW     The reviewer's 43 mutants left 14 survivors. FIXED: tests for each (the TLS version and cipher equal to the
+             ones the server negotiated, including a TLS 1.2-only server so that a TLS 1.3 constant cannot pass; a
+             negative exit status; IPv6 asked for, counted and tried; a duplicated answer; a connection over IPv6; a
+             context that does not require a certificate; a resolver error that is not a gaierror; the three grammar
+             clauses; the seconds to the millisecond; containers_after.before). The reviewer's mutants are now part of
+             mutation/mutants.py (X-prefix) except X33 (equivalent), X28 (the same change as G04) and X39 (the same bytes
+             as S13).
+  C5 LOW     The socket was made outside the try: a kernel without IPv6 ended the whole probe. FIXED in the script (the
+             socket is made inside the try; the failure is TCP_UNREACHABLE and the next address is tried; mutant S36
+             and a real-script test with EAFNOSUPPORT).
+  C6 LOW     The fallback dispatch minutes were misstated. FIXED: section 5 step 6, DESIGN.md section 2 and the notes,
+             computed by command with the binder's own functions.
+  C7 LOW     The owner's question omitted the DNS query. FIXED (with S1).
+  C8 INFO    DOCKER_CONFIG, HTTP and dates: no change needed.
+  C9 INFO    The run is sensitive to other containers. FIXED in words: section 5 step 6a, the notes and the owner's
+             question (nothing else is sent between C3's prepare and its receipt).
+  C10 INFO   The Linux proof never touched the release image's CA bundle. FIXED in the proof branch (not in these
+             bytes): proof/release_image.sh counts the authorities the default verifying context of the release image
+             loads, with no network, and requires at least 100.

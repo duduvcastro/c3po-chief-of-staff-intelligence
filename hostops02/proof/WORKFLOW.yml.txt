@@ -15,8 +15,10 @@
 # linux_root/run.sh last, because it changes the engine's DNS for its own duration (it puts it back).
 #
 # The C3 step never contacts the provider: its probes resolve through a stand-in DNS server on the gateway of the
-# network bridge and reach a stand-in TLS server there, with a throwaway authority trusted by a TEST image only; three
-# rules reject whatever the network bridge would forward to port 443 or 53, and their counter must stay at 0.
+# network bridge and reach a stand-in TLS server there, with a throwaway authority trusted by a TEST image only; six
+# rules (three iptables, three ip6tables; a bridge with IPv6 is refused) reject whatever the network bridge would
+# forward to port 443 or 53, and their counters must stay at 0. Root's docker configuration directory must not change
+# across the probes.
 # Every step after the checkout runs whatever the earlier ones did, so one run shows everything; the job is green only
 # when every step is.
 #

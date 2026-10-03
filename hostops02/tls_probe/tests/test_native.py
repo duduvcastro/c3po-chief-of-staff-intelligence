@@ -7,8 +7,9 @@ What stands for docker is a program at <tree>/usr/bin/docker. It answers the two
 CLI would, logs every argv, the hash of its standard input, its environment and its working directory, and for `run`
 executes the bytes it got on standard input with a real `python -I -B -`: the pinned script, against a local TLS server
 on 127.0.0.1 with a throwaway authority. Only that stand-in writes the test-only prelude in front of the bytes it
-received (tests/c3.py): the source gives the pinned bytes alone, which the log proves by their hash. No docker, no
-container, no host, no network."""
+received (tests/c3.py): the source gives the pinned bytes alone, which the log proves by their hash. The stand-in refuses
+(exit 70) to run anything without that prelude, so that a regression that starts the container where a test expects
+none can never send the pinned script to the provider. No docker, no container, no host, no network."""
 import json
 import os
 from pathlib import Path
@@ -35,6 +36,7 @@ elif arguments[:4]==['ps','-a','--no-trunc','--format'] and len(arguments)==5:
     for row in LISTED:print(json.dumps(row))
 elif arguments[:1]==['run']:
     assert arguments[arguments.index(IMAGE)+1:]==['python','-I','-B','-']
+    if 'test prelude' not in PRELUDE:raise SystemExit(70)      # never the pinned script alone: it would resolve and reach the provider
     done=subprocess.run([sys.executable,'-I','-B','-'],input=PRELUDE.encode()+data,stdout=subprocess.PIPE,env={'PATH':'/usr/bin:/bin'})
     sys.stdout.buffer.write(done.stdout);sys.stdout.flush();raise SystemExit(done.returncode)
 else:raise SystemExit(64)
@@ -95,8 +97,18 @@ def test_native_run_with_a_real_engine_stand_in_and_the_real_script_verifies_tls
     for call in docker:
         assert call['cwd']=='/' and call['environment']=={'PATH':'/usr/bin:/bin','LANG':'C','LC_ALL':'C'},call['environment']
         assert call['stdin_sha256'] is None or call is run_call
-    assert server.connections==[{'server_name':'socket.massive.com','handshake':True,'application_bytes':0}]
+    assert server.connections==[{'server_name':'socket.massive.com','handshake':True,'application_bytes':0,
+                                 'version':receipt['probe']['tls']['version'],'cipher':receipt['probe']['tls']['cipher']}]
+    assert receipt['probe']['tls']['version'] in m.TLS_VERSIONS and receipt['probe']['tls']['cipher']
     assert_read_only(calls)
+
+def test_the_stand_in_of_docker_runs_nothing_without_the_test_prelude(tree,monkeypatch):
+    """The guard of the stand-in itself: with no prelude, `run` exits 70 and no script is started (the receipt is then the
+    source's verdict on a run that printed nothing)."""
+    engine(tree,b'');docs,receipt,calls,docker=run(tree,monkeypatch)
+    assert [call['argv'][:1] for call in docker]==[['image'],['image'],['ps'],['run'],['ps']]
+    assert (receipt['status'],receipt['outcome'],receipt['code'])==('PARTIAL_METADATA_REQUIRES_REVIEW','PARTIAL_PROBE_RESULT_UNKNOWN','PROBE_OUTPUT_NOT_ONE_LINE')
+    assert receipt['probe']['returncode']==70 and receipt['probe']['bytes']==0
 
 def test_native_run_reports_what_the_real_script_says_when_tls_is_not_verified(tree,certs,monkeypatch):
     server=c3.Server(certs,'other_name')
@@ -109,7 +121,7 @@ def test_native_run_reports_what_the_real_script_says_when_tls_is_not_verified(t
 
 def test_native_run_finds_the_name_of_this_go_taken_and_starts_nothing(tree,certs,monkeypatch):
     k=c3.K();docs=f.Docs(k,c3.fields(image_id=IMAGE,image_revision=c3.RELEASE,evidence_boot_id_sha256=f.sha(BOOT.strip())),now=c3.NOW)
-    engine(tree,b'',listed=(ANOTHER,{'id':'8'*64,'name':'hostops02-tls-'+docs.go16(),'state':'created'}))
+    engine(tree,c3.prelude([('127.0.0.1',c3.closed_port())]),listed=(ANOTHER,{'id':'8'*64,'name':'hostops02-tls-'+docs.go16(),'state':'created'}))
     docs,receipt,calls,docker=run(tree,monkeypatch)
     assert (receipt['status'],receipt['code'])==('REFUSED','CONTAINER_NAME_TAKEN') and [call['argv'][:1] for call in docker]==[['image'],['image'],['ps']]
     assert_read_only(calls)

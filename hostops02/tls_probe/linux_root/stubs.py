@@ -3,7 +3,8 @@ one address of the runner, and a TLS server on that address with a certificate o
 that the probe's container, started with the source's own argv on the network bridge, reaches a server INSIDE the
 runner and never the provider. Both bind the address they are given (the gateway of the network bridge on the
 runner) and record what they saw: the DNS server each question (name and type), the TLS server each connection (the
-server name the client sent, whether the handshake completed, the application bytes that arrived after it).
+server name the client sent, whether the handshake completed, the TLS version and cipher name the server negotiated, the
+application bytes that arrived after it).
 
 DnsStub modes: 'answer' (the provider's name has one A record, the given address; AAAA has none), 'nxdomain' (the
 provider's name does not exist). Every other name does not exist in both modes.
@@ -92,14 +93,15 @@ class TlsStub:
             try:connection,_=listener.accept()
             except socket.timeout:continue
             except OSError:return
-            self.current={'mode':self.mode,'server_name':None,'handshake':False,'application_bytes':None};self.connections.append(self.current)
+            self.current={'mode':self.mode,'server_name':None,'handshake':False,'application_bytes':None,'version':None,'cipher':None}
+            self.connections.append(self.current)
             try:
                 if self.mode=='hang':
                     time.sleep(8);connection.close();continue
                 connection.settimeout(5)
                 try:tls=self.contexts['other' if self.mode=='other_name' else 'leaf'].wrap_socket(connection,server_side=True)
                 except (ssl.SSLError,OSError):connection.close();continue
-                self.current['handshake']=True;received=0
+                self.current.update(handshake=True,version=tls.version(),cipher=(tls.cipher() or (None,))[0]);received=0
                 try:
                     while True:
                         block=tls.recv(4096)

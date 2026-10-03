@@ -48,15 +48,19 @@ add('C20_command_without_isolation',"PROBE_COMMAND=['python','-I','-B','-']","PR
 add('C21_command_writes_bytecode',"PROBE_COMMAND=['python','-I','-B','-']","PROBE_COMMAND=['python','-I','-']")
 add('C22_network_host',"PROBE_NETWORK='bridge'","PROBE_NETWORK='host'")
 add('C23_network_none',"PROBE_NETWORK='bridge'","PROBE_NETWORK='none'")
-PREFIX="PROBE_PREFIX=['run','--rm','-i','--pull','never','--init','--user','0:0','--network',PROBE_NETWORK,'--read-only','--cap-drop','ALL',\n              '--security-opt','no-new-privileges']"
+PREFIX="PROBE_PREFIX=['run','--rm','-i','--pull','never','--init','--user','0:0','--network',PROBE_NETWORK,'--read-only','--cap-drop','ALL',\n              '--security-opt','no-new-privileges','--log-driver',PROBE_LOG_DRIVER]"
 add('C24_prefix_without_rm',PREFIX,PREFIX.replace("'run','--rm',","'run',"))
 add('C25_prefix_pulls_missing',PREFIX,PREFIX.replace("'--pull','never'","'--pull','missing'"))
 add('C26_prefix_without_init',PREFIX,PREFIX.replace("'--init',",""))
 add('C27_prefix_as_another_user',PREFIX,PREFIX.replace("'0:0'","'1000:1000'"))
 add('C28_prefix_writable_root',PREFIX,PREFIX.replace("'--read-only',",""))
 add('C29_prefix_keeps_capabilities',PREFIX,PREFIX.replace("'--cap-drop','ALL',\n              ","\n              "))
-add('C30_prefix_without_no_new_privileges',PREFIX,PREFIX.replace(",\n              '--security-opt','no-new-privileges']","]"))
+add('C30_prefix_without_no_new_privileges',PREFIX,PREFIX.replace("\n              '--security-opt','no-new-privileges',","\n              "))
 add('C31_prefix_without_standard_input',PREFIX,PREFIX.replace("'--rm','-i',","'--rm',"))
+add('C52_prefix_without_the_log_driver',PREFIX,PREFIX.replace(",'--log-driver',PROBE_LOG_DRIVER]","]"))
+add('C53_log_driver_of_the_host',"PROBE_LOG_DRIVER='none'","PROBE_LOG_DRIVER='json-file'")
+add('C54_signature_regime_said_a_listed_read',"'(A1 4.2), never run by the grid of reads of any authority, and never a listed read (sheet rev5, item 13: '",
+    "'(A1 4.2), run by the grid of reads of the authority, and a listed read (sheet rev5, item 13: '")
 SECONDS="PROBE_SECONDS={'dns':4,'connect':4,'handshake':4,'alarm':14}"
 add('C32_seconds_of_dns_not_the_scripts',SECONDS,SECONDS.replace("'dns':4","'dns':5"))
 add('C33_seconds_of_connect_not_the_scripts',SECONDS,SECONDS.replace("'connect':4","'connect':5"))
@@ -117,12 +121,20 @@ add('E12_effects_standard_input_unsaid',"                         'standard_inpu
 add('E13_effects_time_limit_unsaid',"'time_limit_seconds':COMMAND_CLASSES[COMMANDS[RUN_ROW]['class']]['seconds'],","'time_limit_seconds':None,")
 add('E14_effects_alarm_unsaid',"'alarm_seconds':PROBE_SECONDS['alarm'],","'alarm_seconds':None,")
 add('E15_effects_removal_unsaid',"                         'removed_by_the_engine':True},","                         'removed_by_the_engine':None},")
-PROVIDER="            'provider':{'host':PROVIDER_HOST,'port':PROVIDER_PORT,'source':PROVIDER_SOURCE,'connections':1,'tls_handshakes':1,"
+PROVIDER="            'provider':{'host':PROVIDER_HOST,'port':PROVIDER_PORT,'source':PROVIDER_SOURCE,\n"
 add('E16_effects_provider_host_unsaid',PROVIDER,PROVIDER.replace("'host':PROVIDER_HOST","'host':None"))
 add('E17_effects_provider_port_unsaid',PROVIDER,PROVIDER.replace("'port':PROVIDER_PORT","'port':None"))
 add('E18_effects_provider_source_unsaid',PROVIDER,PROVIDER.replace("'source':PROVIDER_SOURCE","'source':None"))
-add('E19_effects_two_connections',PROVIDER,PROVIDER.replace("'connections':1","'connections':2"))
-add('E20_effects_handshakes_unsaid',PROVIDER,PROVIDER.replace("'tls_handshakes':1","'tls_handshakes':None"))
+ATTEMPTS="                        'tcp_attempts_max':MAX_ADDRESSES_COUNTED,'connections_established_max':1,'tls_handshakes_max':1,\n                        'application_bytes'"
+add('E19_effects_two_connections',ATTEMPTS,ATTEMPTS.replace("'connections_established_max':1","'connections_established_max':2"))
+add('E20_effects_handshakes_unsaid',ATTEMPTS,ATTEMPTS.replace("'tls_handshakes_max':1","'tls_handshakes_max':None"))
+add('E34_effects_one_attempt_said',ATTEMPTS,ATTEMPTS.replace("'tcp_attempts_max':MAX_ADDRESSES_COUNTED","'tcp_attempts_max':1"))
+add('E35_effects_dns_unsaid',"                        'dns':'A and AAAA queries for '+PROVIDER_HOST+' to the resolvers the engine gives the network bridge',\n","")
+add('E36_effects_signature_unsaid',"            'signature':SIGNATURE_REGIME,\n            'probe_seconds'","            'signature':None,\n            'probe_seconds'")
+add('E37_effects_log_driver_unsaid',"                         'log_driver':PROBE_LOG_DRIVER,\n","")
+add('N01_scope_never_says_one_connection_again',"                'a second established connection, a second handshake, or any attempt after a handshake','docker exec',",
+    "                'a second connection or a retry','docker exec',")
+add('N02_scope_never_omits_the_log',"                'a log of the container output kept by the engine','the removal of any container'","                'the removal of any container'")
 SENDS="                        'application_bytes':0,'http_request':False,'credential':False},"
 add('E21_effects_application_bytes_unsaid',SENDS,SENDS.replace("'application_bytes':0","'application_bytes':None"))
 add('E22_effects_http_request_said',SENDS,SENDS.replace("'http_request':False","'http_request':True"))
@@ -309,7 +321,7 @@ script('S22_script_sends_close_notify',"    tls.close()\n    finish('TLS_VERIFIE
 script('S23_script_ipv6_counted_as_ipv4',"line['dns']['ipv6'] = len([item for item in addresses if item[0] == socket.AF_INET6])","line['dns']['ipv6'] = len([item for item in addresses if item[0] == socket.AF_INET])")
 script('S24_script_every_address_counted',"    addresses = addresses[:MAX_ADDRESSES]\n","")
 script('S25_script_no_time_to_connect',"    deadline = began + CONNECT_SECONDS\n","    deadline = began\n")
-script('S26_script_connect_without_timeout',"        candidate.settimeout(left)\n","")
+script('S26_script_connect_without_timeout',"            candidate.settimeout(left)\n","")
 script('S27_script_handshake_without_its_timeout',"    connection.settimeout(HANDSHAKE_SECONDS)\n","")
 script('S28_script_waits_for_the_resolver',"    worker.join(DNS_SECONDS)\n","    worker.join()\n")
 script('S29_script_exception_escapes',"except Exception:\n    finish('PROBE_FAILED')\n","except Exception:\n    raise\n")
@@ -319,3 +331,54 @@ script('S32_script_refused_tries_stop',"        else:\n            connection = 
 script('S33_script_no_address_said_answered',"        line['dns']['code'] = 'DNS_NO_ADDRESS'\n        finish('DNS_NOT_ANSWERED')","        line['dns']['code'] = 'DNS_NO_ADDRESS'\n        finish('TCP_NOT_CONNECTED')")
 script('S34_script_handshake_on_connect',"server_hostname=HOST, do_handshake_on_connect=False)\n        tls.do_handshake()","server_hostname=HOST, do_handshake_on_connect=False)")
 script('S35_script_family_unsaid',"            line['tcp']['family'] = 'ipv4' if family == socket.AF_INET else 'ipv6'\n","")
+script('S36_script_socket_made_outside_the_try',
+       "        candidate = None\n        try:\n            candidate = socket.socket(family, socket.SOCK_STREAM)\n            candidate.settimeout(left)\n            candidate.connect(address)\n",
+       "        candidate = socket.socket(family, socket.SOCK_STREAM)\n        candidate.settimeout(left)\n        try:\n            candidate.connect(address)\n")
+
+# ---------------------------------------------------------------- the reviewer's own mutants (conformance review of 2026-10-03), kept
+# Their list, run against the candidate before this revision, left 14 survivors; each is answered by a test of this
+# revision. Not carried: X33 (the TCP code when no attempt was made at all: unreachable, the first attempt always
+# happens before the 4 s deadline), equivalent; X28, the same change as G04 (the type of the port unchecked); X39, the
+# same bytes as S13 (the name check claimed).
+add('X01_negative_returncode_accepted',"if result['returncode']!=0 and not engine:","if result['returncode']>0 and not engine:")
+add('X02_engine_127_not_engine',"engine=result['returncode'] in RUN_ENGINE_STATUSES","engine=result['returncode'] in (125,126)")
+add('X03_empty_output_hashed',"'sha256':sha(output) if output else None","'sha256':sha(output)")
+add('X04_container_seconds_rounded_to_int',"seconds=round(ended-started,3)","seconds=round(ended-started)")
+add('X05_after_count_is_before',"'after':len(listing),","'after':len(before),")
+add('X06_before_count_in_after_is_listing',"'before':len(before),'after':len(listing)","'before':len(listing),'after':len(listing)")
+add('X07_not_started_phase_precheck',"result['code'] or 'COMMAND_NOT_STARTED','CONTAINER_NOT_STARTED')","result['code'] or 'COMMAND_NOT_STARTED','PRECHECK')")
+add('X08_budget_strict',"need(gate()>=effects_budget(RUN_ROW),","need(gate()>effects_budget(RUN_ROW),")
+add('X09_identity_after_boot',"        need(tuple(host.identity())==(0,0),'EXECUTOR_IDENTITY')\n        need(boot_id_sha256(host,gate)==plan['evidence_boot_id_sha256'],'EVIDENCE_FROM_EARLIER_BOOT')\n",
+    "        need(boot_id_sha256(host,gate)==plan['evidence_boot_id_sha256'],'EVIDENCE_FROM_EARLIER_BOOT')\n        need(tuple(host.identity())==(0,0),'EXECUTOR_IDENTITY')\n")
+add('X10_tag_read_before_image',"        try:image=image_facts(commands,plan['image_id'])\n","        image_facts(commands,plan['retention_tag'])\n        try:image=image_facts(commands,plan['image_id'])\n")
+add('X11_verified_without_answered',"return (verifying and answered and connected and tls['handshake'] and tls['verified']","return (verifying and connected and tls['handshake'] and tls['verified']")
+add('X12_verified_without_connected',"return (verifying and answered and connected and tls['handshake'] and tls['verified']","return (verifying and answered and tls['handshake'] and tls['verified']")
+add('X13_verified_without_handshake',"return (verifying and answered and connected and tls['handshake'] and tls['verified']","return (verifying and answered and connected and tls['verified']")
+add('X14_verified_without_cipher',"and tls['cipher'] is not None and tls['leaf_sha256'] is not None and tls['code'] is None","and tls['leaf_sha256'] is not None and tls['code'] is None")
+add('X15_verified_with_a_verify_code',"and tls['code'] is None and tls['verify_code'] is None)\n","and tls['code'] is None)\n")
+add('X16_dns_failure_without_verifying',"if status=='DNS_NOT_ANSWERED':return verifying and not dns['answered']","if status=='DNS_NOT_ANSWERED':return not dns['answered']")
+add('X17_dns_failure_though_answered',"if status=='DNS_NOT_ANSWERED':return verifying and not dns['answered']","if status=='DNS_NOT_ANSWERED':return verifying")
+add('X18_dns_failure_with_tls_touched',"dns['code'] is not None and nothing_after_dns and untouched_tls","dns['code'] is not None and nothing_after_dns")
+add('X19_tcp_failure_without_verifying',"        return verifying and answered and not tcp['connected'] and tcp['family'] is None","        return answered and not tcp['connected'] and tcp['family'] is None")
+add('X20_tcp_failure_without_answer',"        return verifying and answered and not tcp['connected'] and tcp['family'] is None","        return verifying and not tcp['connected'] and tcp['family'] is None")
+add('X21_tcp_failure_though_connected',"        return verifying and answered and not tcp['connected'] and tcp['family'] is None","        return verifying and answered and tcp['family'] is None")
+add('X22_tcp_failure_with_a_family',"        return verifying and answered and not tcp['connected'] and tcp['family'] is None","        return verifying and answered and not tcp['connected']")
+add('X23_not_verified_without_verifying',"if status=='TLS_NOT_VERIFIED':return verifying and answered and connected and no_handshake","if status=='TLS_NOT_VERIFIED':return answered and connected and no_handshake")
+add('X24_not_verified_without_connection',"if status=='TLS_NOT_VERIFIED':return verifying and answered and connected and no_handshake","if status=='TLS_NOT_VERIFIED':return verifying and answered and no_handshake")
+add('X25_handshake_failure_without_connection',"        return (verifying and answered and connected and no_handshake and tls['code'] in TLS_CODES","        return (verifying and answered and no_handshake and tls['code'] in TLS_CODES")
+add('X26_handshake_failure_without_a_code',"no_handshake and tls['code'] in TLS_CODES and tls['code']!='TLS_CERTIFICATE_NOT_VERIFIED'","no_handshake and tls['code']!='TLS_CERTIFICATE_NOT_VERIFIED'")
+add('X27_context_status_with_tcp',"if status=='TLS_CONTEXT_NOT_VERIFYING':return not verifying and not dns['answered'] and dns['code'] is None and nothing_after_dns and untouched_tls",
+    "if status=='TLS_CONTEXT_NOT_VERIFYING':return not verifying and not dns['answered'] and dns['code'] is None and untouched_tls")
+script('X29_script_no_dedupe',"if family in (socket.AF_INET, socket.AF_INET6) and (family, address) not in addresses:","if family in (socket.AF_INET, socket.AF_INET6):")
+script('X30_script_version_constant',"version=tls.version(),","version='TLSv1.3',")
+script('X31_script_cipher_constant',"cipher=cipher[0] if cipher else None,","cipher='TLS_AES_256_GCM_SHA384',")
+script('X32_script_ipv4_only',"socket.getaddrinfo(HOST, PORT, 0, socket.SOCK_STREAM, socket.IPPROTO_TCP)","socket.getaddrinfo(HOST, PORT, socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)")
+script('X34_script_attempt_counted_once',"        line['tcp']['attempts'] += 1\n","        line['tcp']['attempts'] = 1\n")
+script('X35_script_family_always_ipv4',"line['tcp']['family'] = 'ipv4' if family == socket.AF_INET else 'ipv6'","line['tcp']['family'] = 'ipv4'")
+script('X36_script_dns_ms_not_measured',"    line['dns']['ms'] = elapsed(began)\n","    line['dns']['ms'] = 0\n")
+script('X37_script_tls_ms_on_success_unset',"    line['tls']['ms'] = elapsed(began)\n    leaf","    leaf")
+script('X38_script_verify_code_any',"line['tls']['verify_code'] = number if type(number) is int and 0 <= number <= 1000 else None","line['tls']['verify_code'] = 7")
+script('X40_script_verify_mode_unread',"{'verify_mode_required': context.verify_mode == ssl.CERT_REQUIRED,","{'verify_mode_required': True,")
+script('X41_script_close_before_hash',"    leaf = tls.getpeercert(binary_form=True)\n","    leaf = b'x'\n")
+script('X42_script_unknown_dns_error_said_not_found',"        except Exception:\n            found['code'] = 'DNS_FAILED'","        except Exception:\n            found['code'] = 'DNS_NAME_NOT_RESOLVED'")
+script('X43_script_eai_again_said_not_found',"found['code'] = 'DNS_NAME_NOT_RESOLVED' if error.errno in NOT_FOUND else 'DNS_FAILED'","found['code'] = 'DNS_NAME_NOT_RESOLVED'")

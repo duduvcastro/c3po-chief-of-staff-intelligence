@@ -51,11 +51,21 @@ PROVIDER_SOURCE=('c3po/backend/app/r2d2_v2_massive_transport.py:99 (wss://socket
 CONTAINER_PREFIX='hostops02-tls-'
 PROBE_COMMAND=['python','-I','-B','-']
 PROBE_NETWORK='bridge'
-# The core's RUN_PREFIX (the README's catalog argv) with one word changed: the network is bridge, the network of the
-# owner's sheet (line 7) for the unit, instead of none. Same options, nothing added: removed on exit, standard input
-# attached, never a pull, an init process, uid 0, read-only root filesystem, no capability, no new privilege.
+# The core's RUN_PREFIX (the README's catalog argv) with one word changed, the network is bridge (the network of the
+# owner's sheet, line 7, for the unit) instead of none, and one option added at its end: --log-driver none, so that the
+# engine keeps no log of the container's output whatever the host's default log driver is (json-file and local would
+# remove it with the container; journald or syslog would keep it on the host; gelf, fluentd, awslogs or splunk would
+# ship it to another host); the attached output still reaches the CLI. Otherwise the same options: removed on exit,
+# standard input attached, never a pull, an init process, uid 0, read-only root filesystem, no capability, no new
+# privilege.
+PROBE_LOG_DRIVER='none'
 PROBE_PREFIX=['run','--rm','-i','--pull','never','--init','--user','0:0','--network',PROBE_NETWORK,'--read-only','--cap-drop','ALL',
-              '--security-opt','no-new-privileges']
+              '--security-opt','no-new-privileges','--log-driver',PROBE_LOG_DRIVER]
+# The signature regime, said in the signed scope and effects: the class READ is the core's naming rule (no write), never
+# a reading of any grid.
+SIGNATURE_REGIME=('individual, by the hash of its own request (A1 rev 2, section 4.2, row C3): a container run, not a read '
+                  '(A1 4.2), never run by the grid of reads of any authority, and never a listed read (sheet rev5, item 13: '
+                  'the TLS probe stays out)')
 # Seconds of the script (constants of its text, compared by a test): each step bounded, the whole ended by the
 # kernel at ALARM, before the 20 s of the class RUN_SHORT at which the docker CLI is killed.
 PROBE_SECONDS={'dns':4,'connect':4,'handshake':4,'alarm':14}
@@ -65,9 +75,10 @@ PROBE_ALARM_STATUS=142                        # 128 + SIGALRM, as docker-init re
 PROBE_SCRIPT=r'''import signal
 signal.alarm(14)
 import hashlib, json, os, socket, ssl, sys, threading, time
-# HOSTOPS02 C3, the TLS probe of supervisor rehearsal item 2. It resolves the provider host, opens ONE TCP connection
-# and makes ONE TLS handshake with the default verifying context, then closes. It sends no application byte, no HTTP
-# request and no credential, and it prints one JSON line of counts, booleans, constant codes, a hash and timings.
+# HOSTOPS02 C3, the TLS probe of supervisor rehearsal item 2. It resolves the provider host, tries the addresses of the
+# answer in order (at most 16, within 4 s in total) until ONE TCP connection is established, makes ONE TLS handshake on
+# it with the default verifying context, then closes. It sends no application byte, no HTTP request and no credential,
+# and it prints one JSON line of counts, booleans, constant codes, a hash and timings.
 HOST = 'socket.massive.com'
 PORT = 443
 DNS_SECONDS = 4.0
@@ -146,9 +157,10 @@ def probe():
         if left <= 0:
             break
         line['tcp']['attempts'] += 1
-        candidate = socket.socket(family, socket.SOCK_STREAM)
-        candidate.settimeout(left)
+        candidate = None
         try:
+            candidate = socket.socket(family, socket.SOCK_STREAM)
+            candidate.settimeout(left)
             candidate.connect(address)
         except socket.timeout:
             code = 'TCP_TIMEOUT'
@@ -160,7 +172,8 @@ def probe():
             connection = candidate
             line['tcp']['family'] = 'ipv4' if family == socket.AF_INET else 'ipv6'
             break
-        candidate.close()
+        if candidate is not None:
+            candidate.close()
     line['tcp']['ms'] = elapsed(began)
     if connection is None:
         line['tcp']['code'] = code or 'TCP_TIMEOUT'
@@ -203,8 +216,8 @@ try:
 except Exception:
     finish('PROBE_FAILED')
 '''
-PROBE_SCRIPT_SHA256='d625d84f41bdf91396211025afbb80afa0a42e960bc1a19cb9e95428c0619566'
-PROBE_SCRIPT_BYTES=5746
+PROBE_SCRIPT_SHA256='8748e274e5a9e7687bc31cd1acc40529a77fcb138ce2b0a555a838ef7a085c2f'
+PROBE_SCRIPT_BYTES=5914
 # The one line the script prints, member by member. A line is copied into the receipt only after every member was
 # checked against this grammar and the members agree with its status; otherwise only its size and hash are kept.
 LINE_SCHEMA='HOSTOPS02_TLS_PROBE_LINE_V1'
@@ -233,13 +246,17 @@ SCOPE_STATEMENT=('Rehearsal item 2 of the supervisor README at dd4ec4bb: a TLS c
                  'bridge, without a token, before the supervisor units are installed. Starts one attached container of the signed image '
                  'ID (the production backend image by its local ID, with the release revision label and the signed retention tag) on the '
                  'network bridge: removed on exit, never a pull, an init process, uid 0, read-only root filesystem, no capability, no bind, '
-                 'no environment file, no DOCKER_CONFIG and no token. Its standard input is the probe script whose SHA-256 is pinned in '
-                 'this source: it resolves socket.massive.com, opens one TCP connection to port 443 and makes one TLS handshake with the '
-                 'default verifying context for that host name, then closes; it sends no application byte and no HTTP request. The '
-                 'receipt holds counts, booleans, constant codes, the SHA-256 of the leaf certificate, the TLS version and cipher names '
-                 'and timings, never an address. Nothing on the filesystem of the host is created, changed or removed; no unit is '
-                 'touched; no container is removed by this process; a timeout stops the docker CLI, not the container. Success is one '
-                 'outcome: TLS verified to the provider host and the container gone.')
+                 'no environment file, no DOCKER_CONFIG, no token, and no log of its output kept by the engine (--log-driver none). Its '
+                 'standard input is the probe script whose SHA-256 is pinned in this source: it asks the resolvers the engine gives the '
+                 'network bridge for socket.massive.com (A and AAAA), tries the addresses of the answer in order (at most 16, within 4 s '
+                 'in total) until one TCP connection to port 443 is established, makes one TLS handshake on it with the default '
+                 'verifying context for that host name, then closes; it sends no application byte and no HTTP request. What leaves the '
+                 'host is those DNS queries, those TCP attempts and that one handshake. The receipt holds counts, booleans, constant '
+                 'codes, the SHA-256 of the leaf certificate, the TLS version and cipher names and timings, never an address. Nothing on '
+                 'the filesystem of the host is created, changed or removed; no unit is touched; no container is removed by this '
+                 'process; a timeout stops the docker CLI, not the container. Its class is READ by the naming rule of the core (it '
+                 'writes nothing); its signature is individual by the hash of its request, never a read of any grid and never a listed '
+                 'read. Success is one outcome: TLS verified to the provider host and the container gone.')
 SCOPE={'operation':OPERATION,'dates':list(DATES),'statement':SCOPE_STATEMENT,'core_sha256':CORE_SHA256,
        'writes_allowed':WRITES_ALLOWED,'activation_allowed':ACTIVATION_ALLOWED,
        'binaries':BINARIES,'commands':COMMANDS,'command_classes':COMMAND_CLASSES,'command_environment':COMMAND_ENVIRONMENT,
@@ -248,31 +265,42 @@ SCOPE={'operation':OPERATION,'dates':list(DATES),'statement':SCOPE_STATEMENT,'co
                'source':'A1 rev 2 (909573aa7431c5340711716fa0702e2d3dde58cbbe10b9b68da0fcca109e95ba), section 4.2, row C3'},
        'provider':{'host':PROVIDER_HOST,'port':PROVIDER_PORT,'source':PROVIDER_SOURCE},
        'container':{'prefix':PROBE_PREFIX,'name':CONTAINER_PREFIX+'<first 16 hex of the GO sha256>','command':PROBE_COMMAND,
-                    'network':PROBE_NETWORK,'binds':[],'environment_file':None,'docker_config':None,'token':None},
+                    'network':PROBE_NETWORK,'binds':[],'environment_file':None,'docker_config':None,'token':None,'log_driver':PROBE_LOG_DRIVER},
+       'signature':SIGNATURE_REGIME,
        'script':{'sha256':PROBE_SCRIPT_SHA256,'bytes':PROBE_SCRIPT_BYTES,'carried_in_this_source':True,'seconds':PROBE_SECONDS,
                  'exit_status_of_its_alarm':PROBE_ALARM_STATUS,'context':'ssl.create_default_context(), server name '+PROVIDER_HOST,
-                 'sends':'the TCP and TLS handshake only; no application byte, no HTTP request, no credential'},
+                 'tcp_attempts_max':MAX_ADDRESSES_COUNTED,'connections_established_max':1,'tls_handshakes_max':1,
+                 'sends':'DNS queries for the provider name, TCP connection attempts, and the TLS handshake on the one connection '
+                         'established; no application byte, no HTTP request, no credential'},
        'line':{'schema':LINE_SCHEMA,'statuses':list(LINE_STATUSES),'dns_codes':list(DNS_CODES),'tcp_codes':list(TCP_CODES),
                'tls_codes':list(TLS_CODES),'tls_versions':list(TLS_VERSIONS),'cipher':CIPHER_NAME},
        'image':{'revision':RELEASE_REVISION,'retention_tag':RETENTION_TAG},
        'evidence_operations_required':list(EVIDENCE_OPERATIONS),
        'file_contents_read':[BOOT_ID_PATH],
        'side_effects':['one attached docker run --rm: the engine creates a container named '+CONTAINER_PREFIX+'<first 16 hex of the GO sha256>, '
-                       'attaches it to the network bridge and removes it when its process ends; it writes the output of the container to its log '
-                       'driver, removed with the container',
-                       'the container asks the DNS servers the engine gives the network bridge for socket.massive.com, opens one TCP connection '
-                       'to port 443 of one of the answers and makes one TLS handshake (ClientHello with the server name socket.massive.com): '
-                       'the provider sees a connection without any credential from the public address of the host',
+                       'attaches it to the network bridge and removes it when its process ends; with --log-driver none the engine keeps no log '
+                       'of the container output, which reaches only the attached docker CLI',
+                       'the container asks the DNS servers the engine gives the network bridge for socket.massive.com (A and AAAA queries; the '
+                       'C library of the image, musl, adds no search domain to a name with two dots unless the resolver configuration sets '
+                       'ndots above 2), tries the addresses of the answer in order, at most 16 within 4 s in total, until one TCP connection '
+                       'to port 443 is established (an attempt that fails ends refused, unreachable or timed out, with no connection), and '
+                       'makes one TLS handshake on that connection (ClientHello with the server name socket.massive.com): the provider sees '
+                       'at most one established connection and one handshake, without any credential, from the public address of the host; '
+                       'what leaves the host is those DNS queries, those attempts and that handshake',
                        'the script arms a 14 s alarm as its first statement, so its process ends by itself before the 20 s limit of the docker '
                        'CLI; a run whose CLI is killed first may leave the container to the engine until its process ends, and the receipt says '
                        'whether one of that name is listed; a container created and never started stays in the state created, and no source '
                        'of this family removes a container',
                        'the docker CLI runs with the fixed environment of the core and no DOCKER_CONFIG: it reads the configuration of root, as '
-                       'the precheck of this family did'],
-       'never':['a bind or mount of any host path','an environment file or a variable given to the container','the token or any path of '
-                '/etc/c3po-bar','an HTTP request or any application byte to the provider','a second connection or a retry','docker exec',
+                       'the precheck of this family did, and this process never reads it; if that configuration names proxies, the CLI '
+                       'itself gives the container the proxy variables it derives from them, which the script never reads (it opens its '
+                       'socket directly and reads no variable)'],
+       'never':['a bind or mount of any host path','an environment file, or any variable given to the container by this process',
+                'the token or any path of /etc/c3po-bar','an HTTP request or any application byte to the provider',
+                'a second established connection, a second handshake, or any attempt after a handshake','docker exec',
                 'a shell','systemctl','a pull','a network other than bridge','--privileged, a device or a capability',
-                'the removal of any container','any write on the filesystem of the host','an address in the receipt'],
+                'a log of the container output kept by the engine','the removal of any container','any write on the filesystem of the host',
+                'an address in the receipt'],
        'limits':{'max_seconds':MAX_SECONDS,'max_gate_span_seconds':MAX_GATE_SPAN_SECONDS,'receipt_bytes':RECEIPT_LIMIT,
                  'addresses_counted':MAX_ADDRESSES_COUNTED,'line_milliseconds':MAX_LINE_MILLISECONDS,'new_container_rows':MAX_NEW_CONTAINER_ROWS}}
 SCOPE_SHA256=sha(canonical(SCOPE))
@@ -315,11 +343,15 @@ def effects_of(plan):
             'container':{'image_id':plan['image_id'],'image_revision':plan['image_revision'],'retention_tag':plan['retention_tag'],
                          'docker_arguments':PROBE_PREFIX+['--name',CONTAINER_PREFIX+'<first 16 hex of the GO sha256>',plan['image_id']]+PROBE_COMMAND,
                          'network':PROBE_NETWORK,'binds':[],'environment_file':None,'docker_config_variable':None,'token':None,
+                         'log_driver':PROBE_LOG_DRIVER,
                          'standard_input':{'sha256':PROBE_SCRIPT_SHA256,'bytes':PROBE_SCRIPT_BYTES},
                          'time_limit_seconds':COMMAND_CLASSES[COMMANDS[RUN_ROW]['class']]['seconds'],'alarm_seconds':PROBE_SECONDS['alarm'],
                          'removed_by_the_engine':True},
-            'provider':{'host':PROVIDER_HOST,'port':PROVIDER_PORT,'source':PROVIDER_SOURCE,'connections':1,'tls_handshakes':1,
+            'provider':{'host':PROVIDER_HOST,'port':PROVIDER_PORT,'source':PROVIDER_SOURCE,
+                        'dns':'A and AAAA queries for '+PROVIDER_HOST+' to the resolvers the engine gives the network bridge',
+                        'tcp_attempts_max':MAX_ADDRESSES_COUNTED,'connections_established_max':1,'tls_handshakes_max':1,
                         'application_bytes':0,'http_request':False,'credential':False},
+            'signature':SIGNATURE_REGIME,
             'probe_seconds':PROBE_SECONDS,
             'band':{'day':PROBE_DAY,'not_before':PROBE_BAND[0],'not_after':PROBE_BAND[1]},
             'success_outcome':success_of(plan),'evidence_boot_id_sha256':plan['evidence_boot_id_sha256'],

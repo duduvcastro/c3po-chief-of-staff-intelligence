@@ -37,7 +37,7 @@ def test_static_build_names_this_core_and_these_two_files():
     assert report['core_sha256']==a.core_sha256()=='4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6'
     assert report['operation_part_sha256']==f.sha((c3.DIRECTORY/'op.py').read_bytes()) and report['spec_sha256']==f.sha((c3.DIRECTORY/'spec.py').read_bytes())
     assert report['operation']=='GO_READONLY_HOSTOPS02_TLS_PROBE_01' and report['writes_allowed'] is False and report['parts']==['core','runner','docker']
-    assert k.m.PROBE_SCRIPT_SHA256=='d625d84f41bdf91396211025afbb80afa0a42e960bc1a19cb9e95428c0619566' and k.m.PROBE_SCRIPT_BYTES==5746
+    assert k.m.PROBE_SCRIPT_SHA256=='8748e274e5a9e7687bc31cd1acc40529a77fcb138ce2b0a555a838ef7a085c2f' and k.m.PROBE_SCRIPT_BYTES==5914
 
 def test_static_unbound_request_carries_no_window_no_day_and_no_value_of_the_host():
     k=c3.K();request=json.loads((k.dir/'REQUEST.UNBOUND.json').read_bytes())
