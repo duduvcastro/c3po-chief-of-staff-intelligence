@@ -1,44 +1,37 @@
-# HOSTOPS02, the four tier 0 once payloads (catalog_init K2a, install_release K10, epoch_readback K11, activate K6a) and
-# C3 (tls_probe, the TLS probe of the supervisor network) on their frozen core: the suites on Linux as real root and as an
-# ordinary user, and the command shapes on a real engine under the containerd image store, with stand-in images and with
-# the backend image built from this checkout.
+# HOSTOPS02, the token placement (token_from_env, GO_WRITE_HOSTOPS02_TOKEN_FROM_ENV_01) on its frozen core: the core's
+# suite and the operation's suite on Linux as real root and as an ordinary user, the operation's own shapes as root on
+# the real filesystem of the runner (the layout of supervisor operation 2 and a FAKE deploy tree, created and removed by
+# the step; a small tmpfs on /etc/c3po-bar for the full-filesystem shape), and what the runner's docker compose makes of
+# the environment files the parser accepts (config only, as the runner's user: nothing is pulled, created or started).
 #
 # For a THROWAWAY branch that never merges and carries no other workflow. The job runs on a GitHub-hosted runner that is
-# discarded afterwards; nothing here contacts the production host. No secret is used; the token is read-only and is not
-# kept in the checkout. The branch is the release (dd4ec4bb) plus hostops02/ and this file: hostops02/core with its seal
-# (CORE_SHA256SUMS), the five operations beside it, each with its seal (SHA256SUMS), and hostops02/proof (what this job
-# adds, with PROOF_SHA256SUMS). This file is hostops02/proof/WORKFLOW.yml.txt, byte for byte (proof/seals.py compares).
+# discarded afterwards; nothing here contacts the production host or any provider, and no network is needed by any shape.
+# No secret is used: every token of the branch is fake; the GitHub token is read-only and is not kept in the checkout.
+# The branch is the release (dd4ec4bb) plus hostops02/ and this file: hostops02/core with its seal (CORE_SHA256SUMS), the
+# six operations beside it, each with its seal (SHA256SUMS), and hostops02/proof (what the jobs add, with
+# PROOF_SHA256SUMS). This file is hostops02/proof/WORKFLOW.yml.txt, byte for byte (proof/seals.py compares).
 #
-# It is the workflow of the frozen core (hostops02/core/linux_root/WORKFLOW.yml.txt) with: OPERATIONS named; the steps
-# the operations ask for (catalog_init: linux_root/run_catalog.sh; install_release: binding/linux_proof.py; activate:
-# linux_root/WORKFLOW.steps.txt); the seals and the public-safety scan first; proof/release_image.sh; and tls_probe's
-# linux_root/run.sh last, because it changes the engine's DNS for its own duration (it puts it back).
+# The tier 0 operations and C3 were proved by the jobs of their own branches (ops/hostops02-linux-root-proof, run
+# 37080926250; ops/hostops02-tls-probe-proof); their bytes are unchanged here and only their seals are checked. Every
+# step after the checkout runs whatever the earlier ones did, so one run shows everything; the job is green only when
+# every step is.
 #
-# The C3 step never contacts the provider: its probes resolve through a stand-in DNS server on the gateway of the
-# network bridge and reach a stand-in TLS server there, with a throwaway authority trusted by a TEST image only; six
-# rules (three iptables, three ip6tables; a bridge with IPv6 is refused) reject whatever the network bridge would
-# forward to port 443 or 53, and their counters must stay at 0. Root's docker configuration directory must not change
-# across the probes.
-# Every step after the checkout runs whatever the earlier ones did, so one run shows everything; the job is green only
-# when every step is.
-#
-# The two actions are pinned by commit, the same two the HOSTOPS01 job used (checkout v6.1.0, upload-artifact v4.6.2).
-name: hostops02-linux-root-proof
+# The two actions are pinned by commit, the same two the earlier jobs used (checkout v6.1.0, upload-artifact v4.6.2).
+name: hostops02-token-proof
 on:
   push:
-    branches: [ops/hostops02-tls-probe-proof]
+    branches: [ops/hostops02-token-proof]
 permissions:
   contents: read
 concurrency:
-  group: hostops02-tls-probe-proof
+  group: hostops02-token-proof
   cancel-in-progress: false
 jobs:
   linux-root:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       HOSTOPS_THROWAWAY_RUNNER: "yes"
-      OPERATIONS: "../catalog_init ../install_release ../epoch_readback ../activate ../tls_probe"
     defaults:
       run:
         working-directory: hostops02
@@ -47,57 +40,29 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - name: every seal (core, five operations, proof) and that every build is the assembly of the frozen core
+      - name: every seal (core, six operations, proof) and that every build is the assembly of the frozen core
         run: /usr/bin/python3 -I -B proof/seals.py
       - name: public-safety scan of hostops02/ and of this workflow
         if: always()
         run: /usr/bin/python3 -I -B proof/public_safety.py
-      - name: core and the five suites as root and as user, the core's command shapes (exit 0 only when everything holds)
+      - name: token_from_env - the suites as root and as user, the shapes as root on the real filesystem, the agreement with compose
         if: always()
-        working-directory: hostops02/core
-        run: sh linux_root/run.sh $OPERATIONS
-      - name: K2a catalog_init on the real engine with the pinned script (REHEARSAL, REAL, REAL again)
-        if: always()
-        working-directory: hostops02/catalog_init
-        run: sh linux_root/run_catalog.sh "$GITHUB_WORKSPACE"
-      - name: K10 install_release, the gate of its binding on the two junit files of this run (LINUX_PROOF_ACCEPTED)
-        if: always()
-        working-directory: hostops02/install_release
-        run: |
-          status=0
-          mkdir -p ../proof/out
-          /usr/bin/python3 -B binding/linux_proof.py ../core/linux_root/TESTS.install_release.linux-root.xml ../core/linux_root/TESTS.install_release.linux-user.xml > ../proof/out/LINUX_PROOF.install_release.json || status=$?
-          cat ../proof/out/LINUX_PROOF.install_release.json
-          exit "$status"
-      - name: K6a activate on the real engine (exit 0 only when every shape ran and every expectation is met)
-        if: always()
-        working-directory: hostops02/activate
+        working-directory: hostops02/token_from_env
         run: sh linux_root/run.sh
-      - name: the image of the release built from this checkout, and K2a, K11 and K6a with it
-        if: always()
-        run: sh proof/release_image.sh "$GITHUB_WORKSPACE"
-      - name: C3 tls_probe on the real engine, network bridge, against stand-ins in the runner (never the provider)
-        if: always()
-        working-directory: hostops02/tls_probe
-        run: sh linux_root/run.sh "$GITHUB_WORKSPACE"
       - name: sha256 and content of the output files
         if: always()
         working-directory: hostops02/core
         run: |
-          /usr/bin/python3 -I -B linux_root/report.py
-          /usr/bin/python3 -I -B linux_root/report.py ../catalog_init/linux_root/CATALOG_SHAPE.linux-root.json ../activate/linux_root/SHAPES.activate.linux-root.json ../proof/out/SEALS.json ../proof/out/LINUX_PROOF.install_release.json ../proof/out/IMAGE.release-image.txt ../proof/out/CATALOG_SHAPE.release-image.linux-root.json ../proof/out/SHAPES.k11.release-image.linux-root.json ../proof/out/RELEASE_VERIFY.release-image.linux-root.json ../proof/out/COMPOSE_RENDER.release.linux-root.json ../proof/out/SHAPES.activate.release-image.linux-root.json ../tls_probe/linux_root/SHAPES.tls_probe.linux-root.json
-          sha256sum "$GITHUB_WORKSPACE/.github/workflows/hostops02-linux-root.yml" CORE_SHA256SUMS ../catalog_init/SHA256SUMS ../install_release/SHA256SUMS ../epoch_readback/SHA256SUMS ../activate/SHA256SUMS ../tls_probe/SHA256SUMS ../proof/PROOF_SHA256SUMS
+          /usr/bin/python3 -I -B linux_root/report.py ../token_from_env/linux_root/TESTS.core.linux-root.xml ../token_from_env/linux_root/TESTS.core.linux-user.xml ../token_from_env/linux_root/TESTS.token_from_env.linux-root.xml ../token_from_env/linux_root/TESTS.token_from_env.linux-user.xml ../token_from_env/linux_root/SHAPES.token_from_env.linux-root.json ../token_from_env/linux_root/SHAPES.token_from_env.compose.json ../proof/out/SEALS.json
+          sha256sum "$GITHUB_WORKSPACE/.github/workflows/hostops02-linux-root.yml" CORE_SHA256SUMS ../token_from_env/SHA256SUMS ../proof/PROOF_SHA256SUMS
       - name: the output files as one artifact
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: hostops02-linux-root
+          name: hostops02-token-proof
           if-no-files-found: warn
           retention-days: 30
           path: |
-            hostops02/core/linux_root/TESTS.*.xml
-            hostops02/core/linux_root/SHAPES.linux-root.json
-            hostops02/catalog_init/linux_root/CATALOG_SHAPE.linux-root.json
-            hostops02/activate/linux_root/SHAPES.activate.linux-root.json
-            hostops02/tls_probe/linux_root/SHAPES.tls_probe.linux-root.json
+            hostops02/token_from_env/linux_root/TESTS.*.xml
+            hostops02/token_from_env/linux_root/SHAPES.*.json
             hostops02/proof/out/*

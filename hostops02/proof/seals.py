@@ -3,7 +3,7 @@
   /usr/bin/python3 -I -B proof/seals.py        (from anywhere; it works on the directory above its own)
 
 For the frozen core, for each of the four tier 0 operations (catalog_init, install_release, epoch_readback,
-activate) and for C3 (tls_probe), in this order:
+activate), for C3 (tls_probe) and for the token placement (token_from_env), in this order:
   - the seal file (CORE_SHA256SUMS or SHA256SUMS) has the SHA-256 that SEALS.expected.json records (written by
     command when this branch was made; it is what the verification of each operation named);
   - every file the seal lists is present with the listed hash, or is one of the files WITHHELD.json names for that
@@ -27,7 +27,7 @@ HERE=os.path.dirname(os.path.abspath(__file__))
 FAMILY=os.path.dirname(HERE)
 REPOSITORY=os.path.dirname(FAMILY)
 WORKFLOW=os.path.join(REPOSITORY,'.github','workflows','hostops02-linux-root.yml')
-ORDER=('core','catalog_init','install_release','epoch_readback','activate','tls_probe')
+ORDER=('core','catalog_init','install_release','epoch_readback','activate','tls_probe','token_from_env')
 # what the Linux job writes into the sealed directories while it runs
 OUTPUT=re.compile(r'linux_root/(TESTS\..*\.xml|SHAPES\..*\.json|CATALOG_SHAPE\..*\.json)')
 SKIPPED_PARTS=('__pycache__','.pytest_cache','_tmp')
