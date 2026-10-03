@@ -1,4 +1,5 @@
-HOSTOPS02 — Linux-as-root proof of the four tier 0 once payloads. A THROWAWAY branch: it never merges.
+HOSTOPS02 — Linux-as-root proof of the four tier 0 once payloads and of C3 (the TLS probe). A THROWAWAY branch: it never
+merges.
 
 WHAT THE BRANCH IS
   The release (main at dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858), with every other workflow removed, plus:
@@ -7,6 +8,7 @@ WHAT THE BRANCH IS
     hostops02/install_release  K10  GO_WRITE_HOSTOPS02_INSTALL_RELEASE_01     sealed (SHA256SUMS)
     hostops02/epoch_readback   K11  GO_READONLY_HOSTOPS02_EPOCH_READBACK_01   sealed (SHA256SUMS; one file withheld, below)
     hostops02/activate         K6a  GO_WRITE_HOSTOPS02_ACTIVATE_01            sealed (SHA256SUMS)
+    hostops02/tls_probe        C3   GO_READONLY_HOSTOPS02_TLS_PROBE_01        sealed (SHA256SUMS)
     hostops02/proof            what this job adds, sealed (PROOF_SHA256SUMS)
     .github/workflows/hostops02-linux-root.yml   the one workflow (= proof/WORKFLOW.yml.txt, byte for byte)
   Nothing under c3po/ differs from the release: proof/release_image.sh compares the tree of c3po/ with the release's
@@ -26,8 +28,8 @@ THE JOB (ubuntu-24.04, GitHub-hosted, HOSTOPS_THROWAWAY_RUNNER=yes; every step a
        each directory's own seal.py check; proof/ against its seal; the workflow file against its copy.
   2. proof/public_safety.py
        hostops02/ and the workflow hold no workstation path, no key material or token of a known form, no address.
-  3. core/linux_root/run.sh ../catalog_init ../install_release ../epoch_readback ../activate        (sealed)
-       The core's suite and the four operations' suites as REAL root (uid 0, the kernel's O_NOATIME, Linux errno
+  3. core/linux_root/run.sh ../catalog_init ../install_release ../epoch_readback ../activate ../tls_probe   (sealed)
+       The core's suite and the five operations' suites as REAL root (uid 0, the kernel's O_NOATIME, Linux errno
        values, ext4) and as the runner's user, under the distribution's pytest for /usr/bin/python3 3.12; the
        engine switched to the containerd image store; the core's seven shapes with the demonstration sources' own
        tables, runner and Native: attached `docker run` with the fixed prefix (read-only bind, read-write bind,
@@ -62,13 +64,27 @@ THE JOB (ubuntu-24.04, GitHub-hosted, HOSTOPS_THROWAWAY_RUNNER=yes; every step a
            helpers of K11 and of K6a, and both sources' rule for the worker's data bind applied to it. K11-U6, UA-2,
            and UA-6/U6 for the real file;
          - activate/linux_root/shapes.py again, the three services of the throwaway project running that image.
-  8. core/linux_root/report.py: the SHA-256 of every output and its content (junit: counts and every failure, error
+  8. tls_probe/linux_root/run.sh <checkout>                                                              (sealed)
+       C3 with the operation's own perform() and Native, its own argv (network bridge, --rm, no bind, the pinned script
+       on standard input), against stand-ins INSIDE the runner, never the provider: the engine's "dns" is set to the
+       gateway of the network bridge, where a stand-in DNS server answers socket.massive.com with that gateway and a
+       stand-in TLS server listens on its port 443 with a leaf of a throwaway authority (made on the runner, keys never
+       leave its temporary directory). Two images on the release's base by digest: one that trusts that authority
+       (TEST ONLY), one as the base is. Six probes: verified (the leaf hash, the server name, 0 application bytes), an
+       image that does not trust the authority (19 or 20), another name (62), a refused port, a name that does not
+       exist, a handshake never answered (bounded at 4 s); the running container inspected (bridge only, no bind or
+       mount, AutoRemove, read-only root, CapDrop ALL, init, 0:0, the image by ID); docker events of the verified probe
+       (create, connect to bridge, start, die 0, destroy). Three FORWARD rules reject what the network bridge would send
+       to port 443 or 53 anywhere; their counter must be 0. daemon.json is put back and the engine restarted.
+       C3-U3 and C3-U5 for the runner's engine; the source's TLS path end to end.
+  9. core/linux_root/report.py: the SHA-256 of every output and its content (junit: counts and every failure, error
      and skip). The outputs are uploaded as one artifact.
 
 OUTPUTS
   hostops02/core/linux_root/TESTS.linux-{root,user}.xml, TESTS.<operation>.linux-{root,user}.xml, SHAPES.linux-root.json
   hostops02/catalog_init/linux_root/CATALOG_SHAPE.linux-root.json
   hostops02/activate/linux_root/SHAPES.activate.linux-root.json
+  hostops02/tls_probe/linux_root/SHAPES.tls_probe.linux-root.json
   hostops02/proof/out/SEALS.json  LINUX_PROOF.install_release.json  IMAGE.release-image.txt
       CATALOG_SHAPE.release-image.linux-root.json  SHAPES.k11.release-image.linux-root.json
       RELEASE_VERIFY.release-image.linux-root.json  COMPOSE_RENDER.release.linux-root.json
@@ -89,6 +105,10 @@ WHAT A GREEN JOB DOES NOT PROVE
     dry run (K11 PRE) and Monday's readback (K11 POST).
   - The dispatcher, launcher and transport against a real ssh and a real sudo: their suites run here, a dispatch does not.
   - CORE U8 (the Python 3.7 syntax level): the runner has 3.12, as the host.
+  - C3-U1 and C3-U2: that the network bridge of the HOST reaches socket.massive.com:443 (egress, the engine's DNS) and
+    that the production image's own trust store verifies the provider's chain. The job never contacts the provider and
+    trusts its throwaway authority through a test image only: only the run on the host (A1 4.2, C3) shows these.
+  - C3-U4: the host's docker CLI without DOCKER_CONFIG and HOME writes nothing.
 
 PUBLIC SAFETY
   proof/public_safety.py runs in the job: the classes a pattern can name without naming a private value. Before the

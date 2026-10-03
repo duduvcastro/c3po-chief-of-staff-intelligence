@@ -1,0 +1,3801 @@
+{
+ "complete_run": true,
+ "core_generation_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+ "core_seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 268,
+  "redundant_survivors": 0,
+  "single": 268,
+  "survivors": 0
+ },
+ "errors": [],
+ "operation_sha256": {
+  "build/ASSEMBLY.json": "1820e006838176269fb4f20cdc0080089882746ca0769e1e9e6aef7ccf465d3c",
+  "build/AUTHORITY.UNBOUND.json": "b85d2c15c8aecb258bb235ea48caa2d2897c9773663bd8fd57036ed23f29f7d2",
+  "build/DISPATCH.UNBOUND.json": "e0e05d8648f423971e6c91a9a1c25bfbcee9dced81b5d2ba80fc0cf8caee08fb",
+  "build/DISPATCH_SCOPE_DELTA.diff": "a3e7b6870075eb2212b07ee2d045ab660549a090692183fb07ff2f97d7b46dc6",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "b528e59430b62b656b29321a30de1a4870a962fe384f87b11f9da8bf7cefdce5",
+  "build/GO.UNBOUND.json": "863e4b0db9e5856362b85f523ec47bf1f996a0c052907260016d28bb43289351",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "faf8d41d8fd2141c0d56961e980aa048d490b2fc7b1ba117b640bf16f29e2070",
+  "build/REQUEST.UNBOUND.json": "21eddeb0472c0ba3404253f38ee88e106bbadb9846334696f305430d347eba60",
+  "build/dispatch_once.py": "10bdb8b4f70c3eb802d21eaa01d1f299ff74f42c62ab6a7316a331488f77956e",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/tls_probe.py": "1f83ea83c79a877ac9d1cfc208f5a2f701f5d71d9605505148c484d41536bad1",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "3a8d5ce0dcac8ebaf0d4007e75fb256af8435ed7632d25e0c3871a8038b50383",
+  "mutation/mutate.py": "513547ef6ca840ef78d8310775f7b5d639804443a46b7ba73ea9ee00c1bbd998",
+  "op.py": "fd1d54edd82d6331bdaf896d060c3fe87de6da1a58283dbd7a7e781c3ec26c17",
+  "spec.py": "0438b5962360f61811c4e5f6b3e38668a1572ab0a31b45d9ee4efdf439a665ae",
+  "tests/c3.py": "753f4c635b8040c133c3bbdd3d3eb5e5756402651b326ff1f0576cea1b34a669",
+  "tests/conftest.py": "aef59d679c804573dcb77ff27d6b4bbb57455d8b905939a41298c21aa2e69fda",
+  "tests/test_conformance.py": "3fbf057a4c2774cb16f65bdb0023b11d4c25563840d306d896d883ba90f54d52",
+  "tests/test_linux_root.py": "8489b36f20eef41235978c6853084bc032d4d852a04f52dd3dce7f0e5d96c594",
+  "tests/test_native.py": "347ded47798db1ae79230ea59716e2fcfb3075e43cca702d3da5af12f2f5e5d3",
+  "tests/test_probe_script.py": "43babdbeba5513d9d5e418236d7e58507c396d03f5c29bdc483813c9f5a9a50d",
+  "tests/test_static_pins.py": "a024d29d608168ea491cf696480ced30814e5e3c72394ac99e00592f75b84819",
+  "tests/test_tls_probe.py": "3cfbe6e689f775fa71c1701c20ec9236e6f223e2385efeb73a272107973a9fd6"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "release_tree_at_hand": true,
+ "results": [
+  {
+   "first_failure": "E   AssertionError: assert ('READONLY_SCOPE' == 'EVIDENCE_BOOT_UNBOUND'",
+   "killed": true,
+   "mutant": "C01_writes_allowed",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.17s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (False is False and True is False)",
+   "killed": true,
+   "mutant": "C02_activation_allowed",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 27 passed, 5 deselected in 0.41s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('GO_READONLY...PRECHECK_01',) == ('GO_READONLY...PROVISION_01')",
+   "killed": true,
+   "mutant": "C03_provisioning_evidence_not_required",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 25 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('GO_WRITE_SU...ROVISION_01',) == ('GO_READONLY...PROVISION_01')",
+   "killed": true,
+   "mutant": "C04_precheck_evidence_not_required",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 25 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_a_window_of_the_band_longer_than_the_gate_is_signed_and_the_gate_is_the_short_window",
+   "killed": true,
+   "mutant": "C05_gate_of_a_read_3600_s",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_a_window_of_the_band_longer_than_the_gate_is_signed_and_the_gate_is_the_short_window",
+   "killed": true,
+   "mutant": "C06_gate_of_901_s",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PROBE_DAY_NOT_IN_SCOPE' == 'EVIDENCE_BOOT_UNBOUND'",
+   "killed": true,
+   "mutant": "C07_probe_day_is_saturday",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.17s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_the_window_is_validated_on_its_own_and_before_the_members",
+   "killed": true,
+   "mutant": "C08_band_opens_a_minute_early",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_the_window_is_validated_on_its_own_and_before_the_members",
+   "killed": true,
+   "mutant": "C09_band_closes_a_minute_late",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_the_window_is_validated_on_its_own_and_before_the_members",
+   "killed": true,
+   "mutant": "C10_band_is_the_whole_day",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "C11_success_outcome_renamed",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'IMAGE_REVISI...T_THE_RELEASE' == 'RETENTION_TAG_INVALID'",
+   "killed": true,
+   "mutant": "C12_release_revision_is_another",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 10 passed, 5 deselected in 0.32s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[retention_tag-c3po/web:massive-supervisor-epoch03-RETENTION_TAG_INVALID]",
+   "killed": true,
+   "mutant": "C13_retention_tag_of_any_repository",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 12 passed, 5 deselected in 0.36s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[retention_tag-c3po/backend:production-RETENTION_TAG_INVALID]",
+   "killed": true,
+   "mutant": "C14_retention_tag_of_any_name",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 11 passed, 5 deselected in 0.33s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[retention_tag-c3po/backend:massive-supervisor-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-RETENTION_TAG_INVALID]",
+   "killed": true,
+   "mutant": "C15_retention_tag_label_41",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 14 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_the_members_accept_exactly_their_grammar_at_its_edges",
+   "killed": true,
+   "mutant": "C16_retention_tag_label_may_start_with_a_dot",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 22 passed, 5 deselected in 0.47s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C17_provider_host_is_the_rest_api",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.35s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C18_provider_port_8443",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C19_container_prefix_of_k11",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C20_command_without_isolation",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C21_command_writes_bytecode",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C22_network_host",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C23_network_none",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'COMMAND_KIND' == 'IMAGE_ID'",
+   "killed": true,
+   "mutant": "C24_prefix_without_rm",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 18 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C25_prefix_pulls_missing",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C26_prefix_without_init",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.38s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C27_prefix_as_another_user",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C28_prefix_writable_root",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.42s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C29_prefix_keeps_capabilities",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.41s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C30_prefix_without_no_new_privileges",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.42s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C31_prefix_without_standard_input",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "C32_seconds_of_dns_not_the_scripts",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "C33_seconds_of_connect_not_the_scripts",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "C34_seconds_of_handshake_not_the_scripts",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "C35_seconds_of_the_alarm_not_the_scripts",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.47s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (137 == (128 + 14))",
+   "killed": true,
+   "mutant": "C36_alarm_status_is_kill",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.47s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C37_line_schema_v2",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "C38_line_keys_without_total",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'version'), 'TLSv1.1')",
+   "killed": true,
+   "mutant": "C39_tls_1_1_accepted",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 103 passed, 5 deselected in 0.74s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert False is True",
+   "killed": true,
+   "mutant": "C40_tls_1_2_refused",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 137 passed, 5 deselected in 0.89s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'cipher'), 'aes')",
+   "killed": true,
+   "mutant": "C41_cipher_of_any_case",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 105 passed, 5 deselected in 0.80s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'cipher'), 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')",
+   "killed": true,
+   "mutant": "C42_cipher_of_65",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 107 passed, 5 deselected in 0.81s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 16 == 17",
+   "killed": true,
+   "mutant": "C43_seventeen_addresses",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('total_ms',), 60001)",
+   "killed": true,
+   "mutant": "C44_line_milliseconds_unbounded",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 81 passed, 5 deselected in 0.70s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "C45_verify_code_unbounded",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 122 passed, 5 deselected in 0.81s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (12 == 12 and 12 == 8)",
+   "killed": true,
+   "mutant": "C46_every_new_container_row_printed",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.60s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "C47_run_of_the_long_class",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...AS_SPECIFIED') == ('PARTIAL_MET...'DNS_TIMEOUT')",
+   "killed": true,
+   "mutant": "C48_dns_code_timeout_unknown",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 43 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...AS_SPECIFIED') == ('PARTIAL_MET...'TCP_REFUSED')",
+   "killed": true,
+   "mutant": "C49_tcp_code_refused_unknown",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 46 passed, 5 deselected in 0.53s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...AS_SPECIFIED') == ('PARTIAL_MET...HAKE_TIMEOUT')",
+   "killed": true,
+   "mutant": "C50_tls_code_timeout_unknown",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 51 passed, 5 deselected in 0.65s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...AS_SPECIFIED') == ('PARTIAL_MET...PROBE_FAILED')",
+   "killed": true,
+   "mutant": "C51_status_probe_failed_unknown",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 55 passed, 5 deselected in 0.63s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('2026-10-03T11:45:00+00:00', '2026-10-03T11:50:00+00:00')",
+   "killed": true,
+   "mutant": "V01_another_day_accepted",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_the_window_is_validated_on_its_own_and_before_the_members",
+   "killed": true,
+   "mutant": "V02_band_start_unchecked",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.53s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_the_window_is_validated_on_its_own_and_before_the_members",
+   "killed": true,
+   "mutant": "V03_band_end_unchecked",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_the_window_is_validated_on_its_own_and_before_the_members",
+   "killed": true,
+   "mutant": "V04_band_start_strict",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_the_window_is_validated_on_its_own_and_before_the_members",
+   "killed": true,
+   "mutant": "V05_band_end_strict",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_the_window_is_validated_on_its_own_and_before_the_members",
+   "killed": true,
+   "mutant": "V06_window_end_not_read",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.36s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'RETENTION_TAG_INVALID' == 'PROBE_DAY_NOT_IN_SCOPE'",
+   "killed": true,
+   "mutant": "V07_window_not_validated",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[evidence_boot_id_sha256-None-EVIDENCE_BOOT_UNBOUND]",
+   "killed": true,
+   "mutant": "V08_members_not_validated",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.18s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[evidence_boot_id_sha256-None-EVIDENCE_BOOT_UNBOUND]",
+   "killed": true,
+   "mutant": "V09_boot_unchecked",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.17s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[script_sha256-None-SCRIPT_NOT_THE_PINNED_HASH]",
+   "killed": true,
+   "mutant": "V10_signed_script_hash_unchecked",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.20s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('REFUSED', '...E_ANY_EFFECT') == ('REFUSED', '...THENTICATION')",
+   "killed": true,
+   "mutant": "V11_script_not_checked_before_the_claim",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 29 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[image_revision-None-IMAGE_REVISION_NOT_THE_RELEASE]",
+   "killed": true,
+   "mutant": "V12_revision_unchecked",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.30s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[image_revision-dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e85-IMAGE_REVISION_NOT_THE_RELEASE]",
+   "killed": true,
+   "mutant": "V13_revision_by_prefix",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 9 passed, 5 deselected in 0.30s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[retention_tag-None-RETENTION_TAG_INVALID]",
+   "killed": true,
+   "mutant": "V14_tag_unchecked",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 10 passed, 5 deselected in 0.31s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_every_member_of_the_plan_is_refused_from_its_bytes_before_any_claim[image_id-None-IMAGE_ID]",
+   "killed": true,
+   "mutant": "V15_image_unchecked",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 18 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_a_script_that_is_not_the_pinned_one_is_never_given",
+   "killed": true,
+   "mutant": "V16_script_compared_by_size_only",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 29 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET..., 'CONTAINER') == ('REFUSED', '...THENTICATION')",
+   "killed": true,
+   "mutant": "V17_script_not_compared",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 29 passed, 5 deselected in 0.43s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E01_effects_without_the_image",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.41s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E02_effects_without_the_revision",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E03_effects_without_the_tag",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E04_effects_argv_without_the_name",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E05_effects_argv_without_the_command",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E06_effects_argv_with_the_core_prefix",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.51s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E07_effects_network_none",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E08_effects_binds_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.47s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E09_effects_environment_file_said",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E10_effects_docker_config_said",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.43s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E11_effects_token_said",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.42s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E12_effects_standard_input_unsaid",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.38s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E13_effects_time_limit_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.42s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E14_effects_alarm_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E15_effects_removal_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.51s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E16_effects_provider_host_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E17_effects_provider_port_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E18_effects_provider_source_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E19_effects_two_connections",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E20_effects_handshakes_unsaid",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E21_effects_application_bytes_unsaid",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E22_effects_http_request_said",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E23_effects_credential_said",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E24_effects_seconds_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E25_effects_band_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E26_effects_band_end_is_its_start",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.51s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E27_effects_success_unsaid",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E28_effects_boot_unsaid",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E29_effects_writes_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E30_effects_removes_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.41s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E31_effects_activation_said",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.39s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 2, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E32_effects_two_containers",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'..._run': 1, ...} == {'operation':...rm': 14}, ...}",
+   "killed": true,
+   "mutant": "E33_effects_operation_unsaid",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.41s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('extra',), 1)",
+   "killed": true,
+   "mutant": "G01_any_key_set",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 83 passed, 5 deselected in 0.75s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('schema',), 'HOSTOPS02_TLS_PROBE_LINE_V2')",
+   "killed": true,
+   "mutant": "G02_schema_unchecked",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 71 passed, 5 deselected in 0.65s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('host',), 'api.massive.com')",
+   "killed": true,
+   "mutant": "G03_host_unchecked",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 72 passed, 5 deselected in 0.68s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('port',), 443.0)",
+   "killed": true,
+   "mutant": "G04_port_type_unchecked",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 74 passed, 5 deselected in 0.68s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('port',), 444)",
+   "killed": true,
+   "mutant": "G05_port_unchecked",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 73 passed, 5 deselected in 0.68s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('application_bytes_sent',), 1)",
+   "killed": true,
+   "mutant": "G06_application_bytes_unchecked",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 76 passed, 5 deselected in 0.66s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('application_bytes_sent',), False)",
+   "killed": true,
+   "mutant": "G07_application_bytes_type_unchecked",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 77 passed, 5 deselected in 0.67s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('status',), 'OK')",
+   "killed": true,
+   "mutant": "G08_status_unchecked",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 78 passed, 5 deselected in 0.62s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('total_ms',), 60001)",
+   "killed": true,
+   "mutant": "G09_total_unbounded",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 81 passed, 5 deselected in 0.67s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('total_ms',), -1)",
+   "killed": true,
+   "mutant": "G10_total_any_type",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 80 passed, 5 deselected in 0.70s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('context', 'other'), True)",
+   "killed": true,
+   "mutant": "G11_context_keys_unchecked",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 87 passed, 5 deselected in 0.73s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('context', 'verify_mode_required'), 1)",
+   "killed": true,
+   "mutant": "G12_context_flags_unchecked",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 86 passed, 5 deselected in 0.73s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('context',), None)",
+   "killed": true,
+   "mutant": "G13_context_type_unchecked",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 84 passed, 5 deselected in 0.78s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G14_dns_keys_unchecked",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 134 passed, 5 deselected in 0.91s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G15_dns_answered_any_type",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 123 passed, 5 deselected in 0.85s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G16_dns_addresses_unbounded",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 121 passed, 5 deselected in 0.77s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('dns', 'ipv4'), True)",
+   "killed": true,
+   "mutant": "G17_dns_ipv4_any",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 91 passed, 5 deselected in 0.66s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('dns', 'addresses'), 2)",
+   "killed": true,
+   "mutant": "G18_dns_families_need_not_add_up",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 90 passed, 5 deselected in 0.69s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G19_dns_code_any",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 124 passed, 5 deselected in 0.84s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('dns', 'ms'), -5)",
+   "killed": true,
+   "mutant": "G20_dns_ms_any",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 93 passed, 5 deselected in 0.74s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G21_tcp_keys_unchecked",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 135 passed, 5 deselected in 0.89s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tcp', 'attempts'), 2)",
+   "killed": true,
+   "mutant": "G23_tcp_attempts_above_the_addresses",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 96 passed, 5 deselected in 0.73s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tcp', 'family'), 'ipx')",
+   "killed": true,
+   "mutant": "G24_tcp_family_any",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 98 passed, 5 deselected in 0.71s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G25_tcp_code_any",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 125 passed, 5 deselected in 0.80s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G26_tcp_connected_any_type",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 126 passed, 5 deselected in 0.80s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'other'), 1)",
+   "killed": true,
+   "mutant": "G27_tls_keys_unchecked",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 117 passed, 5 deselected in 0.76s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'version'), 'TLSv1.1')",
+   "killed": true,
+   "mutant": "G28_tls_version_any",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 103 passed, 5 deselected in 0.83s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'cipher'), 'aes')",
+   "killed": true,
+   "mutant": "G29_tls_cipher_any",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 105 passed, 5 deselected in 0.77s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'leaf_sha256'), '0000000000000000000000000000000000000000000000000000000000000000')",
+   "killed": true,
+   "mutant": "G30_tls_leaf_any",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 108 passed, 5 deselected in 0.86s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G31_tls_verify_code_any",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 122 passed, 5 deselected in 0.90s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G32_tls_code_any",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 128 passed, 5 deselected in 0.89s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'ms'), 60001)",
+   "killed": true,
+   "mutant": "G33_tls_ms_any",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 116 passed, 5 deselected in 0.83s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G34_tls_flags_any_type",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 131 passed, 5 deselected in 0.85s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'ms'), 60001)",
+   "killed": true,
+   "mutant": "G35_milliseconds_unbounded",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 116 passed, 5 deselected in 0.78s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G36_code_any_text",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 124 passed, 5 deselected in 0.85s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('context', 'verify_mode_required'), 1)",
+   "killed": true,
+   "mutant": "G37_flag_any_value",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 86 passed, 5 deselected in 0.76s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...AS_SPECIFIED') == ('PARTIAL_MET...OT_VERIFYING')",
+   "killed": true,
+   "mutant": "G38_verifying_one_flag",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 54 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G39_nothing_after_dns_with_attempts",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 132 passed, 5 deselected in 0.87s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 5",
+   "killed": true,
+   "mutant": "G40_nothing_after_dns_with_a_code",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.87s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 14",
+   "killed": true,
+   "mutant": "G41_no_handshake_with_a_version",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.85s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 13",
+   "killed": true,
+   "mutant": "G42_no_handshake_with_a_leaf",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.86s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 9",
+   "killed": true,
+   "mutant": "G43_untouched_tls_with_a_verify_code",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.89s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G44_answered_without_an_address",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 133 passed, 5 deselected in 0.88s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tcp', 'family'), None)",
+   "killed": true,
+   "mutant": "G45_connected_without_a_family",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 99 passed, 5 deselected in 0.74s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tcp', 'code'), 'TCP_REFUSED')",
+   "killed": true,
+   "mutant": "G46_connected_with_a_code",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 100 passed, 5 deselected in 0.76s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('context', 'check_hostname'), False)",
+   "killed": true,
+   "mutant": "G47_verified_without_a_verifying_context",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 85 passed, 5 deselected in 0.69s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'verified'), False)",
+   "killed": true,
+   "mutant": "G48_verified_without_the_verified_flag",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 114 passed, 5 deselected in 0.80s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'version'), None)",
+   "killed": true,
+   "mutant": "G49_verified_without_a_version",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 104 passed, 5 deselected in 0.72s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'leaf_sha256'), None)",
+   "killed": true,
+   "mutant": "G50_verified_without_a_leaf",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 110 passed, 5 deselected in 0.79s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (('tls', 'code'), 'TLS_PROTOCOL_ERROR')",
+   "killed": true,
+   "mutant": "G51_verified_with_a_code",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 113 passed, 5 deselected in 0.81s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 0",
+   "killed": true,
+   "mutant": "G52_dns_failure_without_its_code",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.90s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert True is False",
+   "killed": true,
+   "mutant": "G53_dns_failure_then_a_connection",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 132 passed, 5 deselected in 0.92s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 6",
+   "killed": true,
+   "mutant": "G54_tcp_failure_without_its_code",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.93s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 9",
+   "killed": true,
+   "mutant": "G55_tcp_failure_then_a_handshake",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.89s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 11",
+   "killed": true,
+   "mutant": "G56_not_verified_with_another_code",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.84s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 13",
+   "killed": true,
+   "mutant": "G57_not_verified_after_a_handshake",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.84s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 19",
+   "killed": true,
+   "mutant": "G58_handshake_failure_with_the_verification_code",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.86s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 21",
+   "killed": true,
+   "mutant": "G59_handshake_failure_with_a_verify_code",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.86s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 23",
+   "killed": true,
+   "mutant": "G60_context_status_with_a_verifying_context",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.92s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 24",
+   "killed": true,
+   "mutant": "G61_context_status_after_a_resolution",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 138 passed, 5 deselected in 0.90s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...AS_SPECIFIED') == ('PARTIAL_MET...PROBE_FAILED')",
+   "killed": true,
+   "mutant": "G62_failed_status_never_valid",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 55 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...TATE_UNKNOWN') == ('PARTIAL_MET...AS_SPECIFIED')",
+   "killed": true,
+   "mutant": "P01_line_kept_without_its_grammar",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 68 passed, 5 deselected in 0.64s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'returncode'...e': True, ...} == {'returncode'...e': True, ...}",
+   "killed": true,
+   "mutant": "P02_bytes_unsaid",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'returncode'...e': True, ...} == {'returncode'...e': True, ...}",
+   "killed": true,
+   "mutant": "P03_hash_unsaid",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'returncode'...e': True, ...} == {'returncode'...e': True, ...}",
+   "killed": true,
+   "mutant": "P04_returncode_unsaid",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.51s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'returncode'...': False, ...} == {'returncode'...e': True, ...}",
+   "killed": true,
+   "mutant": "P05_one_line_unsaid",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.51s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'returncode'...e': True, ...} == {'returncode'...e': True, ...}",
+   "killed": true,
+   "mutant": "P06_tls_member_not_copied",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'returncode'...e': True, ...} == {'returncode'...e': True, ...}",
+   "killed": true,
+   "mutant": "P07_dns_member_not_copied",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.51s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'returncode'...e': True, ...} == {'returncode'...e': True, ...}",
+   "killed": true,
+   "mutant": "P08_total_not_copied",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...NOT_ANSWERED') == ('PARTIAL_MET...NOT_RESOLVED')",
+   "killed": true,
+   "mutant": "P09_code_is_the_status",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 42 passed, 5 deselected in 0.55s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...NOT_VERIFIED') == ('PARTIAL_MET...NOT_VERIFIED')",
+   "killed": true,
+   "mutant": "P10_code_ignores_the_tls_step",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 49 passed, 5 deselected in 0.57s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'returncode'...e': True, ...} == {'returncode'...e': True, ...}",
+   "killed": true,
+   "mutant": "P11_context_not_copied",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...TATE_UNKNOWN') == ('PARTIAL_MET...MAND_TIMEOUT')",
+   "killed": true,
+   "mutant": "R01_run_that_did_not_return_complete",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 140 passed, 5 deselected in 0.93s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...MMAND_FAILED') == ('PARTIAL_MET...MAND_TIMEOUT')",
+   "killed": true,
+   "mutant": "R02_run_that_did_not_return_without_its_code",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 140 passed, 5 deselected in 0.93s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...TUS_NOT_ZERO') == ('PARTIAL_MET...RIFIED_PROBE')",
+   "killed": true,
+   "mutant": "R03_engine_statuses_ignored",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.55s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...NOT_ONE_LINE') == ('PARTIAL_MET...HE_CONTAINER')",
+   "killed": true,
+   "mutant": "R04_engine_status_of_an_invalid_line_unsaid",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 57 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...NOT_ONE_LINE') == ('PARTIAL_MET...BY_ITS_ALARM')",
+   "killed": true,
+   "mutant": "R05_alarm_unsaid",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 60 passed, 5 deselected in 0.63s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...AS_SPECIFIED') == ('PARTIAL_MET...NOT_ONE_LINE')",
+   "killed": true,
+   "mutant": "R06_not_one_line_unsaid",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 61 passed, 5 deselected in 0.67s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...HE_CONTAINER') == ('PARTIAL_MET...HE_CONTAINER')",
+   "killed": true,
+   "mutant": "R07_invalid_line_is_a_verdict",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 57 passed, 5 deselected in 0.65s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...R_HOST', None) == ('PARTIAL_MET...TUS_NOT_ZERO')",
+   "killed": true,
+   "mutant": "R08_exit_status_ignored",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 69 passed, 5 deselected in 0.73s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...R_HOST', None) == ('PARTIAL_MET...NOT_RESOLVED')",
+   "killed": true,
+   "mutant": "R09_not_verified_is_success",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 42 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...NOT_RESOLVED') == ('PARTIAL_MET...NOT_RESOLVED')",
+   "killed": true,
+   "mutant": "R10_not_verified_is_unknown",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 42 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...R_HOST', None) == ('PARTIAL_MET...RIFIED_PROBE')",
+   "killed": true,
+   "mutant": "R11_engine_status_after_a_verified_line_ignored",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.51s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...R_HOST', None) == ('PARTIAL_MET...LE_AFTER_RUN')",
+   "killed": true,
+   "mutant": "R12_listing_unavailable_ignored",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.55s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...THERE_BEFORE') == ('PARTIAL_MET...STILL_LISTED')",
+   "killed": true,
+   "mutant": "R13_container_of_the_probe_ignored",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.56s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...R_HOST', None) == ('PARTIAL_MET...THERE_BEFORE')",
+   "killed": true,
+   "mutant": "R14_new_container_ignored",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.64s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...STILL_LISTED') == ('PARTIAL_MET...STILL_LISTED')",
+   "killed": true,
+   "mutant": "R15_finding_is_unknown",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.67s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "K01_executor_unchecked",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 32 passed, 5 deselected in 0.53s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "K02_boot_unchecked",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 33 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "K03_image_id_unchecked",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 34 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "K04_image_revision_unchecked",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 34 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_FAILED",
+   "killed": true,
+   "mutant": "K05_absent_image_unnamed",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 34 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'REFUSED_NO_CONTAINER_STARTED' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "K06_tag_not_read",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "K07_tag_id_unchecked",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 35 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "K08_tag_membership_unchecked",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 35 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_FAILED",
+   "killed": true,
+   "mutant": "K09_absent_tag_unnamed",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 35 passed, 5 deselected in 0.53s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_FAILED",
+   "killed": true,
+   "mutant": "K10_failed_listing_unnamed",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 36 passed, 5 deselected in 0.55s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ENGINE_COULD_NOT_RUN_THE_CONTAINER",
+   "killed": true,
+   "mutant": "K11_name_taken_ignored",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 36 passed, 5 deselected in 0.53s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 18.01",
+   "killed": true,
+   "mutant": "K12_budget_unchecked",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 31 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 18.01",
+   "killed": true,
+   "mutant": "K13_budget_without_the_reserve",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 31 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_FAILED",
+   "killed": true,
+   "mutant": "K14_failing_system_call_not_told_apart",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 38 passed, 5 deselected in 0.54s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 18.01",
+   "killed": true,
+   "mutant": "K15_refusal_after_the_precheck_is_partial",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 31 passed, 5 deselected in 0.42s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "K16_no_name_given",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'PARTIAL_PROBE_RESULT_UNKNOWN' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "K17_script_not_given",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET..._NOT_STARTED') == ('REFUSED', '..._NOT_STARTED')",
+   "killed": true,
+   "mutant": "K18_container_not_started_is_partial",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 41 passed, 5 deselected in 0.55s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('RETURNED' == 'DID_NOT_RETURN'",
+   "killed": true,
+   "mutant": "K19_run_that_did_not_return_said_returned",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 140 passed, 5 deselected in 1.03s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DID_NOT_RETURN' == 'DID_NOT_RETURN'",
+   "killed": true,
+   "mutant": "K20_line_read_from_a_run_that_did_not_return",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 140 passed, 5 deselected in 0.99s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'TLS_VERIFIED_WITH_FINDINGS' == 'TLS_VERIFIED...PROVIDER_HOST'",
+   "killed": true,
+   "mutant": "K21_listing_after_not_made",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 24 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...R_HOST', None) == ('PARTIAL_MET...THERE_BEFORE')",
+   "killed": true,
+   "mutant": "K22_new_rows_by_name",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 139 passed, 5 deselected in 1.00s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...THERE_BEFORE') == ('PARTIAL_MET...STILL_LISTED')",
+   "killed": true,
+   "mutant": "K23_name_present_unsaid",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.61s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'status': 'C...fter': 8, ...} == {'status': 'C...fter': 8, ...}",
+   "killed": true,
+   "mutant": "K24_rows_said_of_every_container",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['run', '--rm...'--init', ...] == ['run', '--rm...'--init', ...]",
+   "killed": true,
+   "mutant": "K25_name_of_the_go_is_another",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ENGINE_COULD_NOT_RUN_THE_CONTAINER",
+   "killed": true,
+   "mutant": "K26_name_free_said_true",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 36 passed, 5 deselected in 0.51s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (<class 'NoneType'> is float or None == 0)",
+   "killed": true,
+   "mutant": "K27_seconds_unsaid",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.54s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...R_HOST', None) == ('PARTIAL_MET...LE_AFTER_RUN')",
+   "killed": true,
+   "mutant": "K28_listing_unavailable_said_complete",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.72s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestConformance::test_dry_gate_stops_before_anything_is_observed",
+   "killed": true,
+   "mutant": "K29_first_gate_after_the_first_look",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 247 passed, 5 deselected in 2.71s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_a_valid_line_that_is_not_a_verified_tls_is_the_probes_own_answer[nxdomain-DNS_NAME_NOT_RESOLVED]",
+   "killed": true,
+   "mutant": "F01_verified_said_of_any_line",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 42 passed, 5 deselected in 0.63s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_a_verified_line_with_an_engine_status_or_something_left_is_a_finding_beside_it",
+   "killed": true,
+   "mutant": "F02_removed_said_of_an_unavailable_listing",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.66s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_a_verified_line_with_an_engine_status_or_something_left_is_a_finding_beside_it",
+   "killed": true,
+   "mutant": "F03_removed_ignores_new_containers",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 56 passed, 5 deselected in 0.65s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_new_containers_are_told_by_id_and_the_probes_name_by_name",
+   "killed": true,
+   "mutant": "F04_removed_ignores_the_name",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 139 passed, 5 deselected in 1.00s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == {'image': {'id_as_signed': True, 'revision_as_signed': True}, 'retention_tag': {'resolves_to_the_signed_image': True}, 'containers_before': 8, 'name_free': True}",
+   "killed": true,
+   "mutant": "F05_receipt_without_the_precheck",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: 'NoneType' object is not subscriptable",
+   "killed": true,
+   "mutant": "F06_receipt_without_the_container",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.51s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == {'returncode': 0, 'bytes': 568, 'sha256': '2d0570f800f221c2e07b497555f5c68c42480e93e016f86bd5b7257d59f41049', 'one_json_line': True, ...}",
+   "killed": true,
+   "mutant": "F07_receipt_without_the_probe",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.55s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert None == {'status': 'COMPLETE', 'code': None, 'before': 8, 'after': 8, ...}",
+   "killed": true,
+   "mutant": "F08_receipt_without_the_listing_after",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.54s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_complete_run_reads_four_times_runs_once_and_reports_only_counts_booleans_codes_hashes_and_timings",
+   "killed": true,
+   "mutant": "F09_receipt_writes_unsaid",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_executor_must_be_root_before_anything - ...",
+   "killed": true,
+   "mutant": "F10_receipt_containers_run_fixed",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 32 passed, 5 deselected in 0.56s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...', None, None) == ('METADATA_ON..., 'CONTAINER')",
+   "killed": true,
+   "mutant": "F11_receipt_phase_unsaid",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == {'READ': 4, 'CONTAINER': 1, 'EFFECT': 0})",
+   "killed": true,
+   "mutant": "F12_receipt_without_the_command_counts",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == {'operation': 'GO_READONLY_HOSTOPS02_TLS_PROBE_01', 'container': {'image_id': 'sha256:fbfbfbfbfbfbfbfbfbfbfbfbfbfbfbfb...eabc90bf6443e858', 'connections': 1, ...}, 'probe_seconds': {'dns': 4, 'connect': 4, 'handshake': 4, 'alarm': 14}, ...})",
+   "killed": true,
+   "mutant": "F13_receipt_without_the_effects",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'image': Non...e_free': True} == {'image': {'i...e_free': True}",
+   "killed": true,
+   "mutant": "F14_precheck_image_unsaid",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'image': {'i...e_free': True} == {'image': {'i...e_free': True}",
+   "killed": true,
+   "mutant": "F15_precheck_tag_unsaid",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.60s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'image': {'i...e_free': True} == {'image': {'i...e_free': True}",
+   "killed": true,
+   "mutant": "F16_precheck_count_unsaid",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 30 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('api.massive.com' == 'socket.massive.com'",
+   "killed": true,
+   "mutant": "S01_script_host_is_another",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.55s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('socket.massive.com' == 'socket.massive.com'",
+   "killed": true,
+   "mutant": "S02_script_port_8443",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.56s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_script_constants_agree_with_the_source_and_the_alarm_comes_first",
+   "killed": true,
+   "mutant": "S03_script_dns_seconds_5",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_script_constants_agree_with_the_source_and_the_alarm_comes_first",
+   "killed": true,
+   "mutant": "S04_script_connect_seconds_8",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_script_constants_agree_with_the_source_and_the_alarm_comes_first",
+   "killed": true,
+   "mutant": "S05_script_handshake_seconds_9",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.45s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 1 == 16",
+   "killed": true,
+   "mutant": "S06_script_one_address",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.49s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'Expr(value=C...keywords=[]))' == 'Expr(value=C...keywords=[]))'",
+   "killed": true,
+   "mutant": "S07_script_alarm_30",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.54s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_tls_probe.py::test_script_constants_agree_with_the_source_and_the_alarm_comes_first",
+   "killed": true,
+   "mutant": "S08_script_without_alarm",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.56s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'application_bytes_sent': 0, 'context': {'check_hostname': False, 'verify_mode_required': True}, 'dns': {'addresses': 1, 'answered': True, 'code': None, 'ipv4': 1, ...}, 'host': 'socket.massive.com', ...}",
+   "killed": true,
+   "mutant": "S09_script_without_the_context_check",
+   "returncode": 1,
+   "seconds": 15.7,
+   "summary": "1 failed, 273 passed, 5 deselected in 15.19s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'schema': 'READONLY_HOSTOPS02_TLS_PROBE_RECEIPT_V1', 'operation': 'GO_READONLY_HOSTOPS02_TLS_PROBE_01', 'status': 'PARTIAL_METADATA_REQUIRES_REVIEW', 'outcome': 'PROBE_RAN_TLS_NOT_VERIFIED', ...}",
+   "killed": true,
+   "mutant": "S10_script_without_server_name",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 260 passed, 5 deselected in 4.68s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('create_default_context' in {'SSLContext', 'Thread', '_exit', 'alarm', 'append', 'cipher', ...})",
+   "killed": true,
+   "mutant": "S11_script_context_without_the_default_store",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.56s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_native.py::test_native_run_reports_what_the_real_script_says_when_tls_is_not_verified",
+   "killed": true,
+   "mutant": "S12_script_verify_code_unsaid",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 261 passed, 5 deselected in 6.01s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('dns', 0)",
+   "killed": true,
+   "mutant": "S13_script_claims_the_name_check",
+   "returncode": 1,
+   "seconds": 16.3,
+   "summary": "1 failed, 273 passed, 5 deselected in 15.64s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'schema': 'READONLY_HOSTOPS02_TLS_PROBE_RECEIPT_V1', 'operation': 'GO_READONLY_HOSTOPS02_TLS_PROBE_01', 'status': 'PARTIAL_METADATA_REQUIRES_REVIEW', 'outcome': 'PARTIAL_PROBE_RESULT_UNKNOWN', ...}",
+   "killed": true,
+   "mutant": "S14_script_verified_false",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 260 passed, 5 deselected in 4.73s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('e3b0c44298fc...5991b7852b855' == '48d4c0e0aa67...fed0f755b0619'",
+   "killed": true,
+   "mutant": "S15_script_leaf_of_nothing",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 260 passed, 5 deselected in 4.88s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ({'application_bytes_sent': 0, 'context': {'check_hostname': True, 'verify_mode_required': True}, 'dns': {'addresses':...1', 'host': 'socket.massive.com', 'port': 443, 'context': {'verify_mode_required': True, 'check_hostname': True}, ...})",
+   "killed": true,
+   "mutant": "S16_script_dns_codes_swapped",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 267 passed, 5 deselected in 7.25s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ({'application_bytes_sent': 0, 'context': {'check_hostname': True, 'verify_mode_required': True}, 'dns': {'addresses':...1', 'host': 'socket.massive.com', 'port': 443, 'context': {'verify_mode_required': True, 'check_hostname': True}, ...})",
+   "killed": true,
+   "mutant": "S17_script_refusal_said_unreachable",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 266 passed, 5 deselected in 7.08s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ({'application_bytes_sent': 0, 'context': {'check_hostname': True, 'verify_mode_required': True}, 'dns': {'addresses':...1', 'host': 'socket.massive.com', 'port': 443, 'context': {'verify_mode_required': True, 'check_hostname': True}, ...})",
+   "killed": true,
+   "mutant": "S18_script_handshake_timeout_said_protocol",
+   "returncode": 1,
+   "seconds": 13.1,
+   "summary": "1 failed, 271 passed, 5 deselected in 12.76s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ({'application_bytes_sent': 0, 'context': {'check_hostname': True, 'verify_mode_required': True}, 'dns': {'addresses':...1', 'host': 'socket.massive.com', 'port': 443, 'context': {'verify_mode_required': True, 'check_hostname': True}, ...})",
+   "killed": true,
+   "mutant": "S19_script_protocol_error_said_connection",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 272 passed, 5 deselected in 12.99s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'application_bytes_sent': 0, 'context': {'check_hostname': True, 'verify_mode_required': True}, 'dns': {'addresses': 0, 'answered': False, 'code': 'DNS_TIMEOUT', 'ipv4': 0, ...}, 'host': 'socket.massive.com', ...}",
+   "killed": true,
+   "mutant": "S20_script_dns_timeout_status",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 270 passed, 5 deselected in 8.95s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: the script sends and reads nothing after the handshake",
+   "killed": true,
+   "mutant": "S21_script_sends_a_request",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.43s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: the script sends and reads nothing after the handshake",
+   "killed": true,
+   "mutant": "S22_script_sends_close_notify",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.35s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'schema': 'READONLY_HOSTOPS02_TLS_PROBE_RECEIPT_V1', 'operation': 'GO_READONLY_HOSTOPS02_TLS_PROBE_01', 'status': 'PARTIAL_METADATA_REQUIRES_REVIEW', 'outcome': 'PARTIAL_PROBE_RESULT_UNKNOWN', ...}",
+   "killed": true,
+   "mutant": "S23_script_ipv6_counted_as_ipv4",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 260 passed, 5 deselected in 3.08s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'application_bytes_sent': 0, 'context': {'check_hostname': True, 'verify_mode_required': True}, 'dns': {'addresses': 17, 'answered': True, 'code': None, 'ipv4': 17, ...}, 'host': 'socket.massive.com', ...}",
+   "killed": true,
+   "mutant": "S24_script_every_address_counted",
+   "returncode": 1,
+   "seconds": 13.0,
+   "summary": "1 failed, 274 passed, 5 deselected in 12.43s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'schema': 'READONLY_HOSTOPS02_TLS_PROBE_RECEIPT_V1', 'operation': 'GO_READONLY_HOSTOPS02_TLS_PROBE_01', 'status': 'PARTIAL_METADATA_REQUIRES_REVIEW', 'outcome': 'PROBE_RAN_TLS_NOT_VERIFIED', ...}",
+   "killed": true,
+   "mutant": "S25_script_no_time_to_connect",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 260 passed, 5 deselected in 3.13s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (-14, b'', b'')",
+   "killed": true,
+   "mutant": "S26_script_connect_without_timeout",
+   "returncode": 1,
+   "seconds": 26.2,
+   "summary": "1 failed, 275 passed, 5 deselected in 25.90s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (3010, 993)",
+   "killed": true,
+   "mutant": "S27_script_handshake_without_its_timeout",
+   "returncode": 1,
+   "seconds": 20.3,
+   "summary": "1 failed, 276 passed, 5 deselected in 19.96s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (-14, b'', b'')",
+   "killed": true,
+   "mutant": "S28_script_waits_for_the_resolver",
+   "returncode": 1,
+   "seconds": 18.3,
+   "summary": "1 failed, 270 passed, 5 deselected in 17.85s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (1, b'', b'Traceback (most recent call last):",
+   "killed": true,
+   "mutant": "S29_script_exception_escapes",
+   "returncode": 1,
+   "seconds": 23.7,
+   "summary": "1 failed, 278 passed, 5 deselected in 23.29s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'schema': 'READONLY_HOSTOPS02_TLS_PROBE_RECEIPT_V1', 'operation': 'GO_READONLY_HOSTOPS02_TLS_PROBE_01', 'status': 'PARTIAL_METADATA_REQUIRES_REVIEW', 'outcome': 'PARTIAL_PROBE_RESULT_UNKNOWN', ...}",
+   "killed": true,
+   "mutant": "S30_script_exits_1",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 260 passed, 5 deselected in 2.74s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: compact, sorted, one line",
+   "killed": true,
+   "mutant": "S31_script_line_unsorted",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 263 passed, 5 deselected in 3.45s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('tls', 0)",
+   "killed": true,
+   "mutant": "S32_script_refused_tries_stop",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 266 passed, 5 deselected in 3.70s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'application_bytes_sent': 0, 'context': {'check_hostname': True, 'verify_mode_required': True}, 'dns': {'addresses': 0, 'answered': False, 'code': 'DNS_NO_ADDRESS', 'ipv4': 0, ...}, 'host': 'socket.massive.com', ...}",
+   "killed": true,
+   "mutant": "S33_script_no_address_said_answered",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 269 passed, 5 deselected in 3.75s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('create_default_context' in {'Thread', '_exit', 'alarm', 'append', 'cipher', 'close', ...} and 'wrap_socket' in {'Thread', '_exit', 'alarm', 'append', 'cipher', 'close', ...} and 'do_handshake' in {'Thread', '_exit', 'alarm', 'append', 'cipher', 'close', ...})",
+   "killed": true,
+   "mutant": "S34_script_handshake_on_connect",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 28 passed, 5 deselected in 0.26s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'schema': 'READONLY_HOSTOPS02_TLS_PROBE_RECEIPT_V1', 'operation': 'GO_READONLY_HOSTOPS02_TLS_PROBE_01', 'status': 'PARTIAL_METADATA_REQUIRES_REVIEW', 'outcome': 'PARTIAL_PROBE_RESULT_UNKNOWN', ...}",
+   "killed": true,
+   "mutant": "S35_script_family_unsaid",
+   "returncode": 1,
+   "seconds": 2.6,
+   "summary": "1 failed, 260 passed, 5 deselected in 2.27s",
+   "tests": [
+    "test_tls_probe.py",
+    "test_conformance.py",
+    "test_native.py",
+    "test_probe_script.py"
+   ]
+  }
+ ],
+ "survivors": []
+}
