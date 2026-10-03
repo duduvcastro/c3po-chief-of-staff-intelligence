@@ -1,9 +1,16 @@
-# HOSTOPS02 — token placement from the deploy environment file (`token_from_env`), revision 2
+# HOSTOPS02 — token placement from the deploy environment file (`token_from_env`), revision 2c
 
 Offline work only. Nothing here was run on the host, pushed, or bound. Every hash named here was taken by command; where
 this text and `build/ASSEMBLY.json`, `SHA256SUMS` or the mutation records differ, the files prevail. Revision 2 answers
 the security review and the conformance review of revision 1 (seal `91ccd6b1…`, commit `0f306b7e`); CONTRACT.txt
 section 11 maps every finding to what changed or why it did not.
+
+**Revision 2c** changes the Linux proof environment only (CONTRACT.txt section 12). The first Linux run of revision 2
+(run 37150103273) refused every real-filesystem shape at PRECHECK with `DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY`:
+the runner's `/opt`, above the fake deploy tree, is not what section 3 requires (the image leaves it writable by every
+user). `linux_root/run.sh` now shows `/` and `/opt` as found, makes `/opt` root:root 0755 as on the production host, and
+runs the shapes only when both then meet the rule. The program (op.py, spec.py, build/, the scope), the tests and the
+mutation records are the bytes of revision 2 (seal `df0a754a…`).
 
 | What | Value |
 |---|---|
@@ -284,7 +291,9 @@ closing it is a core revision (a part that sets the limit before the payload run
 - Mutation: every mutant of the operation part killed on Python 3.9.6 and 3.12.14 (`mutation/`); the equivalent
   replacements left out are named in `mutation/mutants.py`.
 - `linux_root/run.sh` (throwaway GitHub runner, as root; never run by the author): the core's suite and this one as root
-  and as the user, then `token_shape.py` on the real filesystem (the complete run, the access time of the environment
+  and as the user, then `/` and `/opt` shown as found, `/opt` made root:root 0755 as the production host has it (revision
+  2c: the runner's own `/opt` is refused by section 3's rule, run 37150103273) and shown again, the shapes running only
+  when both meet the rule, then `token_shape.py` on the real filesystem (the complete run, the access time of the environment
   file unchanged — only the kernel's `O_NOATIME` explains it —, a second run refused, a token of another length giving the
   same receipt, a full tmpfs on `/etc/c3po-bar` at the write with the file withdrawn by identity, six refusals including
   a real second hard link and the name in another value, the literal fake value), then `--compose-agreement`, now a

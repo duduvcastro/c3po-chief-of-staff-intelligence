@@ -1,5 +1,5 @@
-HOSTOPS02 — Linux-as-root proof of the token placement (token_from_env, revision 2), beside the four tier 0 once payloads
-and C3.
+HOSTOPS02 — Linux-as-root proof of the token placement (token_from_env, revision 2c), beside the four tier 0 once
+payloads and C3.
 A THROWAWAY branch: it never merges.
 
 WHAT THE BRANCH IS
@@ -17,7 +17,11 @@ WHAT THE BRANCH IS
   (the new directory in ORDER; the outputs of the Linux job matched without "/", [^/]*), SEALS.expected.json, this file,
   WORKFLOW.yml.txt and PROOF_SHA256SUMS. No byte of the core, of the five earlier operations or of c3po/ changed.
   Revision 2 (the second commit of the branch) replaces hostops02/token_from_env with the answers to the security and
-  conformance reviews of revision 1 (its CONTRACT.txt, section 11). The hashes of the seals and of the payloads are in
+  conformance reviews of revision 1 (its CONTRACT.txt, section 11). Revision 2c (the third commit) changes the proof
+  environment only, after the first job of revision 2 (run 37150103273) refused every real-filesystem shape at PRECHECK
+  with DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY: linux_root/run.sh makes the runner's /opt root:root 0755, as the
+  production host has it, before the shapes (CONTRACT.txt section 12); the source, the final payload, the scope, the
+  tests and the mutation records are those of revision 2. The hashes of the seals and of the payloads are in
   SEALS.expected.json (written by command). Nothing here was run on Linux or on the host by the author. No file of this
   branch is a request, an authority or a GO: every document in a build/ directory is UNBOUND. Every token in the branch is
   fake.
@@ -37,7 +41,11 @@ THE JOB (ubuntu-24.04, GitHub-hosted, HOSTOPS_THROWAWAY_RUNNER=yes; every step a
        a. the seal of the operation and of the core, and build/ is what the frozen core assembles;
        b. the core's suite and the operation's suite as REAL root (uid 0, the kernel's O_NOATIME, Linux errno values,
           ext4) and as the runner's user, under the distribution's pytest for /usr/bin/python3;
-       c. linux_root/token_shape.py as root, with the operation's own run() and unmodified Native on the real
+       c. first, / and /opt as found (uid, gid, octal mode), then /opt alone made root:root 0755 (chown 0:0, chmod
+          0755; the GitHub-hosted image leaves it writable by every user, and the program refuses a deploy directory
+          below such a component by design; the production /opt is root:root 0755) and both shown again: the shapes
+          run only when both are then owned by uid 0 and not writable by group or other. Then
+          linux_root/token_shape.py as root, with the operation's own run() and unmodified Native on the real
           filesystem: it creates /etc/c3po-bar (root:root 0700, the two children of operation 2) and a FAKE deploy tree
           /opt/hostops02-token-ci (the runner's user, 0755; .env 0600 with fake lines and a fake token), refusing if
           either exists, and removes them at the end. Shapes: the complete run (the file root:root 0600, one link, the
@@ -56,7 +64,8 @@ THE JOB (ubuntu-24.04, GitHub-hosted, HOSTOPS_THROWAWAY_RUNNER=yes; every step a
           present), each of the two names, and no other name a case-insensitive reader would take for one of them,
           against the parser. It fails on any disagreement, on a listed accepted file compose refuses, and when
           docker compose is not there. For the refused files, what compose would have given is recorded, not judged;
-       e. the seals again; nothing of /etc/c3po-bar, of the fake deploy tree or of the tmpfs is left.
+       e. the seals again; nothing of /etc/c3po-bar, of the fake deploy tree or of the tmpfs is left (/opt stays
+          root:root 0755: the runner is discarded).
   4. core/linux_root/report.py: the SHA-256 of every output and its content (junit: counts and every failure, error
      and skip). The outputs are uploaded as one artifact.
 

@@ -1,4 +1,4 @@
-HOSTOPS02 / TOKEN_FROM_ENV - THE SUPERVISOR'S PROVIDER TOKEN PLACED FROM THE DEPLOY ENVIRONMENT FILE - STDIN / ONCE CANDIDATE, REVISION 2
+HOSTOPS02 / TOKEN_FROM_ENV - THE SUPERVISOR'S PROVIDER TOKEN PLACED FROM THE DEPLOY ENVIRONMENT FILE - STDIN / ONCE CANDIDATE, REVISION 2c
 
 Operation built
   GO_WRITE_HOSTOPS02_TOKEN_FROM_ENV_01     build/token_from_env.py     writes one file: /etc/c3po-bar/token
@@ -10,13 +10,21 @@ credential file was read, no docker was run, and no test reaches the network. Ev
 every template the windows, the date, the host binding, owner, decision, effects, success criterion, target, key and
 known-hosts references, command pin, claim root and every observed identity are null; status is UNBOUND;
 execution_authorized is false. build/FINAL_PAYLOAD.UNBOUND.py, run under "python3 -I -B -", prints one refusal
-(REQUEST_OR_EXECUTOR_UNBOUND) and exits 1 before touching anything. The Linux job has not run.
+(REQUEST_OR_EXECUTOR_UNBOUND) and exits 1 before touching anything. The Linux job ran once, on revision 2 (run
+37150103273, section 12): every suite passed and the compose agreement held, and every shape on the real filesystem was
+refused at PRECHECK (DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY: the runner's /opt is not what the program requires
+above a deploy directory). It has not run on revision 2c.
 
 Revision 2 answers the security review and the conformance review of revision 1 (seal 91ccd6b1..., source 01b0ffee...,
 commit 0f306b7e on ops/hostops02-token-proof); section 11 maps every finding to what changed, or why it did not. It
 needs the co-auditor's review by hash, the Linux-as-root proof and the co-auditor's check of the bound set before any
 signature is asked for (owner decision DUDU_DECISION_TOKEN_BY_PROGRAM, sha256
 739b49641a894000f805dc90b64eac5cdd8c4cbb9825c9dc93dd3e5e8067fcb0).
+
+Revision 2c (section 12) changes the proof environment only, never the program: linux_root/run.sh makes the runner's
+/opt root:root 0755, as the production host has it, before the shapes. op.py, spec.py, every file of build/ (the source
+and the final payload hashes below), the scope and every test are the bytes of revision 2 (seal
+df0a754a42ab2b17985a4bf8e3b6e3e86070973eeb857c2afc09d625dfb1d18b, commit 6a0ddf82 on ops/hostops02-token-proof).
 
   frozen core (not modified by this operation)   generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6
                                                  seal (CORE_SHA256SUMS) 73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1
@@ -47,7 +55,8 @@ files differ, the files prevail.
                      under an audit hook), test_static_pins.py (text pins against the release, the list of receipt
                      codes), test_linux_root.py
   mutation/          mutate.py (the core's, three tables changed), mutants.py, MUTATION_RUN.json, MUTATION_RUN.py312.json
-  linux_root/        run.sh, token_shape.py: the operation's own proof for a throwaway Linux runner (NOT RUN)
+  linux_root/        run.sh, token_shape.py: the operation's own proof for a throwaway Linux runner (run once on
+                     revision 2, run 37150103273; not run on revision 2c)
   seal.py  SHA256SUMS
 
 3. SPECIFICATION
@@ -192,6 +201,10 @@ precheck of the new boot.
   mutation: 200 mutants, 200 killed, 0 survivors, 0 errors, on both interpreters (mutation/MUTATION_RUN.json,
   mutation/MUTATION_RUN.py312.json, made against the sealed bytes)
   linux_root/token_shape.py --self-test: every shape made, the 7 expectations met (the emulation only)
+  revision 2c, again (2026-10-03, after the edit of run.sh): the same 334 tests on both interpreters, none failed, none
+  skipped; mutation 200/200 killed on both, each record equal to the sealed one of revision 2 but for the timings (the
+  sealed records are those of revision 2: every file they pin is unchanged; the records of the re-run are in work/,
+  unsealed); the self-test as above
 
 10. OPEN DECISIONS (for the signatories; none is decided by these bytes beyond what they say)
 
@@ -286,3 +299,27 @@ precheck of the new boot.
    11 INFO  .env mtime in the receipt  NOT TAKEN: the receipt holds listed codes, booleans and identity rows only (the
                                        brief); an instant of the .env is a new kind of member. Left to the co-auditor.
   The conformance reviewer disclosed one read-only `git ls-remote` against GitHub during the review (nothing written).
+
+12. REVISION 2c: THE PROOF ENVIRONMENT, AFTER THE FIRST LINUX RUN (run 37150103273 on revision 2)
+
+  What the run showed. Stages 1, 2 and 4 passed: the seals and BUILD_EQUAL; the core's suite (548 passed as root, 551 as
+  the runner's user), this suite (333 passed and 1 skipped as root, 334 as the user); the compose agreement on every
+  accepted file. Stage 3 failed: token_shape.py exit 3. Every real-filesystem run (complete, again, other value and
+  length, full filesystem, the literal fake value and the six refusals) was REFUSED_NOTHING_CHANGED at PRECHECK with
+  DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY, no mutating call issued, the token file NOT_ATTEMPTED and absent.
+  Why. That code comes from one rule only (deploy_chain: validate_chain with the deploy directory as the open root):
+  a component ABOVE the deploy directory that is not owned by uid 0 or is writable by group or other (row_root_safe).
+  Above /opt/hostops02-token-ci there are only "/" and /opt; the GitHub-hosted image leaves /opt writable by every user
+  for its tool cache (run 37150103273 printed no mode; revision 2c prints both as found). On the production host the deploy directory is /opt/chief-of-staff-digital below a standard /opt,
+  root:root 0755, which the rule accepts (DESIGN.md section 3). The program was right, and is not changed.
+  What changed. linux_root/run.sh only: before the shapes, and only with HOSTOPS_THROWAWAY_RUNNER=yes (stage 0 already
+  refuses anything else), it prints uid, gid and octal mode of / and /opt as found, makes /opt alone root:root 0755
+  (chown 0:0, chmod 0755; not recursive; "/" is never changed; not set back, the runner is discarded), prints them
+  again, and runs the shapes only when both are then owned by uid 0 and not writable by group or other; otherwise the
+  stage fails and the shapes file says NOT_RUN. The world-writable deploy directory stays one of the refusal shapes; an
+  unsafe /opt stays refused in the suites (opt_group_writable and opt_not_root_owned on the emulated host, /opt at 0775
+  with real system calls). No shape was added for /opt at 0777: it would change token_shape.py and the expectations of
+  the tests the mutation records pin, for a refusal run 37150103273 itself showed on a real Linux filesystem.
+  What did not change. op.py, spec.py, build/ (source 35c049c2..., final payload 0cc9c77f..., scope cbcc460a...),
+  seal.py, tests/, mutation/ (the records of revision 2), linux_root/token_shape.py. Changed: linux_root/run.sh,
+  CONTRACT.txt, DESIGN.md, and so SHA256SUMS.
