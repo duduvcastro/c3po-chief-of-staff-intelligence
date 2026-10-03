@@ -9,6 +9,7 @@ import re
 
 import pytest
 
+import envfiles
 import family as f
 import hostemu
 import tok
@@ -71,7 +72,7 @@ def test_complete_run_places_the_token_and_reads_it_back():
     assert receipt['clock']=={'utc_start':tok.NOW.isoformat(),'utc_end':tok.NOW.isoformat(),'monotonic_elapsed_ms':0} and receipt['observed_at']==tok.NOW.isoformat()
     assert all(value is True for key,value in receipt['environment_file'].items() if key!='names_defined')
     assert receipt['environment_file']['names_defined']=={'C3PO_MASSIVE_API_TOKEN':False,'MASSIVE_API_TOKEN':True}
-    assert receipt['deploy_chain']=={'walked_without_following_a_link':True,'root_owned_and_closed_above_the_deploy_directory':True,
+    assert receipt['deploy_chain']=={'walked_without_following_a_link':True,'root_owned_and_not_group_or_other_writable_above_the_deploy_directory':True,
                                      'no_component_world_writable_without_sticky':True}
     assert receipt['config_directory']=={'rows':tok.fields(host)['config_chain'],'pinned':True}
     assert receipt['pre_existing_objects_modified'] is False and receipt['activation_performed'] is False and receipt['secret_bytes_in_receipt'] is False
@@ -135,7 +136,9 @@ def test_the_receipt_does_not_depend_on_the_token_value_or_length():
     assert same(tok.env_with(),tok.env_with(token=tok.LONGER))['status']==M().COMPLETE_STATUS
     assert same(tok.env_with(),tok.env_with(token=tok.LONGER),hook=lambda:once(failing('write',tok.TOKEN_PATH,OSError(errno.ENOSPC,'full'))))['token_file']['state']=='WITHDRAWN'
     assert same(tok.env_with(),tok.env_with(token=tok.LONGER),prepare=lambda host:host.tree.add(tok.TOKEN_PATH,kind='file',mode=0o600,content=b'x'))['code']=='TOKEN_FILE_PRESENT'
-    for one,other in (('x'*15,'x'*3),('x'*513,'x'*600),('"'+tok.TOKEN+'"','"'+tok.LONGER+'"'),(tok.TOKEN+' ',tok.LONGER+' '),(tok.TOKEN+'$X',tok.LONGER+'$X'),('','x')):
+    for one,other in (('x'*15,'x'*3),('x'*513,'x'*600),('"'+tok.TOKEN+'"','"'+tok.LONGER+'"'),(tok.TOKEN+' ',tok.LONGER+' '),(tok.TOKEN+'$X',tok.LONGER+'$X'),('','x'),
+                      ('"'+tok.TOKEN,'\x0b'+tok.LONGER),('\u00e9'+tok.TOKEN,"'"+tok.LONGER),(tok.TOKEN+' MASSIVE_API_TOKEN=x',tok.LONGER+'"'),
+                      ('#'+tok.TOKEN,'"'+tok.LONGER+'" OTHER=x')):
         assert same(tok.env_with(token=one),tok.env_with(token=other))['code']=='ENV_TOKEN_VALUE_GRAMMAR'
     assert same(tok.env_with(after=b'C3PO_MASSIVE_API_TOKEN=FaKeOtHeRvAlUeFoRtEsTs\n'),tok.env_with(token=tok.LONGER,after=b'C3PO_MASSIVE_API_TOKEN=FaKeOtHeRvAlUeFoRtEsTsXy\n'))['code']=='ENV_TOKEN_DEFINITIONS_DISAGREE'
 
@@ -168,8 +171,8 @@ REFUSALS=[
     ('deploy_directory_is_a_file',replace(tok.DEPLOY,kind='file',mode=0o644),'DEPLOY_CHAIN_NOT_A_DIRECTORY'),
     ('deploy_directory_world_writable',set_mode(tok.DEPLOY,0o777),'DEPLOY_CHAIN_WORLD_WRITABLE'),
     ('deploy_directory_world_writable_setgid',set_mode(tok.DEPLOY,0o2777),'DEPLOY_CHAIN_WORLD_WRITABLE'),
-    ('opt_group_writable',set_mode('/opt',0o775),'DEPLOY_CHAIN_NOT_ROOT_OWNED_ABOVE_THE_DEPLOY_DIRECTORY'),
-    ('opt_not_root_owned',set_mode('/opt',0o755,uid=1000),'DEPLOY_CHAIN_NOT_ROOT_OWNED_ABOVE_THE_DEPLOY_DIRECTORY'),
+    ('opt_group_writable',set_mode('/opt',0o775),'DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY'),
+    ('opt_not_root_owned',set_mode('/opt',0o755,uid=1000),'DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY'),
     ('env_file_absent',lambda host:host.tree.remove(tok.ENV_FILE),'ENV_FILE_ABSENT'),
     ('env_file_is_a_link',replace(tok.ENV_FILE,kind='symlink',mode=0o777,target='/etc/hostname'),'ENV_FILE_NOT_REGULAR'),
     ('env_file_is_a_fifo',replace(tok.ENV_FILE,kind='fifo',mode=0o600,uid=1000,gid=1000),'ENV_FILE_NOT_REGULAR'),
@@ -177,6 +180,7 @@ REFUSALS=[
     ('env_file_world_writable',env_mode(0o602),'ENV_FILE_WORLD_WRITABLE'),
     ('env_file_world_writable_and_readable',env_mode(0o666),'ENV_FILE_WORLD_WRITABLE'),
     ('env_file_of_another_owner',env_owner(1001),'ENV_FILE_OWNER_UNEXPECTED'),
+    ('env_file_with_a_second_link',lambda host:setattr(host.tree.get(tok.ENV_FILE),'nlink',2),'ENV_FILE_LINKED'),
     ('env_file_too_large',lambda host:host.tree.get(tok.ENV_FILE).content.extend(b'#'*(65536-len(host.tree.get(tok.ENV_FILE).content)+1)),'ENV_FILE_TOO_LARGE'),
     ('noatime_unavailable',lambda host:setattr(host,'noatime_available',False),'NOATIME_UNAVAILABLE'),
 ]
@@ -196,6 +200,17 @@ ACCEPTED=[('deploy_directory_world_writable_with_sticky',set_mode(tok.DEPLOY,0o1
 def test_states_the_rules_accept_complete(name,prepare):
     docs,host,before,receipt=run(prepare);assert receipt['status']==M().COMPLETE_STATUS,receipt['code']
     assert bytes(tok.token_node(host).content)==tok.TOKEN.encode()+b'\n'
+    # the exposure of the environment file as found is said, and never refuses
+    assert receipt['environment_file']['not_readable_by_group_or_other'] is (name not in ('env_file_group_writable','env_file_0644'))
+
+def test_the_facts_of_the_environment_file_up_to_a_refusal():
+    docs,host,before,receipt=run(lambda host:setattr(host.tree.get(tok.ENV_FILE),'nlink',2));facts=receipt['environment_file']
+    assert (facts['regular'],facts['not_readable_by_group_or_other'],facts['not_world_writable'],facts['single_link'],
+            facts['owner_root_or_the_deploy_directory_owner'])==(True,True,True,None,None)
+    docs,host,before,receipt=run(lambda host:setattr(host.tree.get(tok.ENV_FILE),'mode',0o646));facts=receipt['environment_file']
+    assert receipt['code']=='ENV_FILE_WORLD_WRITABLE' and (facts['not_readable_by_group_or_other'],facts['not_world_writable'],facts['single_link'])==(False,None,None)
+    docs,host,before,receipt=run(lambda host:setattr(host.tree.get(tok.ENV_FILE),'mode',0o640));facts=receipt['environment_file']
+    assert receipt['status']==M().COMPLETE_STATUS and facts['not_readable_by_group_or_other'] is False and facts['single_link'] is True
 
 def deeper(host):
     host.tree.add('/srv/a/b/deploy',uid=1000,gid=1000);host.tree.add('/srv/a/b/deploy/.env',kind='file',uid=1000,gid=1000,mode=0o600,content=tok.env_with())
@@ -204,8 +219,8 @@ def test_an_unwritable_or_deeper_deploy_chain_is_judged_as_read():
     docs,host,before,receipt=run(deeper,fields={'deploy_directory':'/srv/a/b/deploy'})
     assert receipt['status']==m.COMPLETE_STATUS and receipt['effects']['environment_file']['path']=='/srv/a/b/deploy/.env'
     docs,host,before,receipt=run(lambda host:(deeper(host),setattr(host.tree.get('/srv/a'),'mode',0o757)),fields={'deploy_directory':'/srv/a/b/deploy'})
-    refused(receipt,'DEPLOY_CHAIN_NOT_ROOT_OWNED_ABOVE_THE_DEPLOY_DIRECTORY');nothing_changed(host,before)
-    assert receipt['deploy_chain']=={'walked_without_following_a_link':True,'root_owned_and_closed_above_the_deploy_directory':False,
+    refused(receipt,'DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY');nothing_changed(host,before)
+    assert receipt['deploy_chain']=={'walked_without_following_a_link':True,'root_owned_and_not_group_or_other_writable_above_the_deploy_directory':False,
                                      'no_component_world_writable_without_sticky':False}
 
 def test_parse_refusals_through_the_run_change_nothing():
@@ -471,6 +486,30 @@ def test_an_unexpected_failure_after_the_creation_is_withdrawn_and_one_at_the_cr
     docs,host,before,receipt=run(hook=always(write_then_unlink));row=receipt['token_file']
     assert (row['state'],row['withdrawal_code'])==('LEFT_UNVERIFIED','TOKEN_WITHDRAWAL_UNCERTAIN') and receipt['mutating_calls']['uncertain']==1
 
+def test_a_code_the_source_did_not_write_never_reaches_the_receipt():
+    """The core's code_of() passes any text of the shape of a code. A refusal raised by the host with a text of that
+    shape (here a token in capitals) is reported as UNLISTED_CODE, in the code of the run, of the token file and of
+    its withdrawal."""
+    m=M();text='FAKECAPITALTOKENFORTESTSONLY'
+    def raising(call,path):
+        def act(host,name,detail):
+            if name==call and detail[0]==path:raise m.Refused(text)
+            return False
+        return act
+    docs,host,before,receipt=run(hook=once(raising('lstat',tok.TOKEN_PATH)))
+    assert (receipt['status'],receipt['code'],receipt['phase_reached'])==('REFUSED','UNLISTED_CODE','PRECHECK')
+    assert text not in json.dumps(receipt)
+    docs,host,before,receipt=run(hook=once(raising('write',tok.TOKEN_PATH)));row=receipt['token_file']
+    assert (receipt['status'],receipt['code'],row['code'],row['state'])==(m.PARTIAL_STATUS,'UNLISTED_CODE','UNLISTED_CODE','LEFT_UNVERIFIED')
+    assert text not in json.dumps(receipt)
+    def both(host,name,detail):
+        if name=='write' and detail[0]==tok.TOKEN_PATH:raise OSError(errno.ENOSPC,'full')
+        if name=='unlink':raise m.Refused(text)
+    docs,host,before,receipt=run(hook=always(both));row=receipt['token_file']
+    assert (receipt['code'],row['code'],row['withdrawal_code'],row['state'])==('FILESYSTEM_FULL','FILESYSTEM_FULL','UNLISTED_CODE','LEFT_UNVERIFIED')
+    assert text not in json.dumps(receipt)
+    assert m.listed(None) is None and m.listed('TOKEN_FILE_PRESENT')=='TOKEN_FILE_PRESENT' and m.listed(text)=='UNLISTED_CODE'
+
 def test_the_death_of_the_process_after_the_creation_is_never_a_refusal():
     m=M()
     def die(host,name,detail):
@@ -490,111 +529,40 @@ def parse(raw):
         return str(error)
     assert type(content) is bytearray;return bytes(content)
 
-T=tok.TOKEN.encode();L=tok.LITERAL.encode();GOOD=T+b'\n'
-ACCEPTED_FILES=[
-    ('plain',b'MASSIVE_API_TOKEN='+T+b'\n'),
-    ('no_final_newline',b'MASSIVE_API_TOKEN='+T),
-    ('the_literal_fake_value',None),
-    ('c3po_name',b'C3PO_MASSIVE_API_TOKEN='+T+b'\n'),
-    ('both_names_equal',b'MASSIVE_API_TOKEN='+T+b'\nC3PO_MASSIVE_API_TOKEN='+T+b'\n'),
-    ('twice_equal',b'MASSIVE_API_TOKEN='+T+b'\nX=1\nMASSIVE_API_TOKEN='+T+b'\n'),
-    ('every_other_form_of_other_names',b'# a comment\n\n  \t\n   # indented comment with \xc3\xa9 and \xe2\x80\x9cquotes\xe2\x80\x9d\n'
-        b'OTHER="quoted value # not a comment $NOT"\nOTHER2=\'single $x "y"\'\nexport OTHER3=1\nOTHER4: yaml style\n  OTHER5 = spaced  # comment\n'
-        b'INHERITED\nexport INHERITED2\nOTHER6=value with spaces # and a comment\nOTHER7=S\xc3\xa3o Paulo\nOTHER8=\nOTHER9="" \nOTHER.A-B[0]=x\n'
-        b'OTHER10="a" # c\nOTHER11=\'b\'\t\nexport\tOTHER12=1\nexport=1\nexportOTHER=1\nOTHER13=\'"\'\n'
-        b'MASSIVE_API_TOKEN='+T+b'\n#MASSIVE_API_TOKEN=commented-out-value\n  # MASSIVE_API_TOKEN=x\n'),
-    ('names_that_only_contain_the_name',b'MASSIVE_API_TOKEN_OLD=FaKeOlDvAlUeFoRtEsTs\nOLD_MASSIVE_API_TOKEN=x\nMASSIVE_API_TOKEN2=y\nMASSIVE.API.TOKEN=z\n'
-        b'MASSIVE_API_TOKEN='+T+b'\nC3PO_MASSIVE_API_TOKEN_X=w\n'),
-    ('sixteen_characters',None),('five_hundred_and_twelve_characters',None),('every_character_of_the_grammar',None),
-]
+T=envfiles.T;L=envfiles.L;GOOD=envfiles.GOOD
+ACCEPTED_FILES=envfiles.ACCEPTED_FILES
 @pytest.mark.parametrize('name,raw',ACCEPTED_FILES,ids=[row[0] for row in ACCEPTED_FILES])
 def test_files_the_parser_accepts(name,raw):
-    if name=='the_literal_fake_value':assert parse(b'MASSIVE_API_TOKEN='+L+b'\n')==L+b'\n';return
-    if name=='sixteen_characters':assert parse(b'MASSIVE_API_TOKEN='+b'Ab'*8)==b'Ab'*8+b'\n';return
-    if name=='five_hundred_and_twelve_characters':assert parse(b'MASSIVE_API_TOKEN='+b'Ab'*256+b'\n')==b'Ab'*256+b'\n';return
-    if name=='every_character_of_the_grammar':
-        value=b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/=-'
-        assert parse(b'C3PO_MASSIVE_API_TOKEN='+value+b'\n')==value+b'\n';return
-    assert parse(raw)==GOOD
+    assert parse(raw)==envfiles.value_of(name)+b'\n'
 
-REFUSED_FILES=[
-    # the file
-    ('carriage_return_line_ends',b'MASSIVE_API_TOKEN='+T+b'\r\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('carriage_return_elsewhere',b'A=1\r\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('nul_byte',b'A=\x00\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('byte_order_mark',b'\xef\xbb\xbfMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('no_break_space_before_a_name',b'\xc2\xa0A=1\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('vertical_tab_before_a_name',b'\x0bA=1\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('form_feed_line',b'\x0c\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('non_ascii_name',b'CAF\xc3\x89=1\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('name_with_a_space',b'FOO BAR=1\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('a_line_of_punctuation',b'!!!\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('a_quoted_line',b'"A=1"\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('quoted_value_over_two_lines_hiding_a_definition',b'MASSIVE_API_TOKEN='+T+b'\nOTHER="abc\nMASSIVE_API_TOKEN=FaKeHiDdEnVaLuEfOrTeStS\n"\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('single_quoted_value_over_two_lines',b"OTHER='abc\ndef'\nMASSIVE_API_TOKEN="+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('quoted_value_with_a_backslash',b'OTHER="a\\"b"\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('quoted_value_ending_in_a_backslash',b'OTHER="ab\\\\"\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('a_statement_after_a_closing_quote',b'OTHER="x" MASSIVE_API_TOKEN=FaKeHiDdEnVaLuEfOrTeStS\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('text_after_a_closing_quote',b"OTHER='x'y\nMASSIVE_API_TOKEN="+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('value_beginning_with_a_vertical_tab',b'OTHER=\x0b"a\nb"\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('value_beginning_with_a_form_feed',b'OTHER=\x0cx\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('unquoted_value_beginning_with_a_vertical_tab',b'OTHER=\x0bx\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('unclosed_quote_alone',b'OTHER="\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('unclosed_quote_with_a_comment_sign',b'OTHER=\'#x\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('value_beginning_with_a_no_break_space_and_a_quote',b'OTHER=\xc2\xa0"a\nMASSIVE_API_TOKEN=FaKeHiDdEnVaLuEfOrTeStS\n"\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    ('value_beginning_with_another_non_ascii_byte',b'OTHER=\xe3\x80\x80x\nMASSIVE_API_TOKEN='+T+b'\n','ENV_FILE_SYNTAX_UNSUPPORTED'),
-    # a definition that is not the plain form
-    ('export',b'export MASSIVE_API_TOKEN='+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('export_with_a_tab',b'export\tC3PO_MASSIVE_API_TOKEN='+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('leading_space',b' MASSIVE_API_TOKEN='+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('leading_tab',b'\tMASSIVE_API_TOKEN='+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('space_before_the_sign',b'MASSIVE_API_TOKEN ='+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('space_after_the_sign',b'MASSIVE_API_TOKEN= '+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('tab_after_the_sign',b'MASSIVE_API_TOKEN=\t'+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('colon',b'MASSIVE_API_TOKEN: '+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('colon_without_space',b'MASSIVE_API_TOKEN:'+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('lower_case',b'massive_api_token='+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('mixed_case',b'MASSIVE_API_TOKEN='+T+b'\nMassive_Api_Token='+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('lower_case_c3po',b'MASSIVE_API_TOKEN='+T+b'\nc3po_massive_api_token='+T+b'\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('taken_from_the_environment_of_compose',b'MASSIVE_API_TOKEN\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    ('export_taken_from_the_environment',b'MASSIVE_API_TOKEN='+T+b'\nexport C3PO_MASSIVE_API_TOKEN\n','ENV_TOKEN_DEFINITION_NOT_PLAIN'),
-    # no definition
-    ('empty_file',b'','ENV_TOKEN_ABSENT'),
-    ('only_other_names',b'C3PO_DB_PASSWORD=x\nEODHD_API_TOKEN=y\n','ENV_TOKEN_ABSENT'),
-    ('commented_out',b'# MASSIVE_API_TOKEN='+T+b'\n#C3PO_MASSIVE_API_TOKEN='+T+b'\n','ENV_TOKEN_ABSENT'),
-    # definitions that disagree
-    ('two_names_two_values',b'MASSIVE_API_TOKEN='+T+b'\nC3PO_MASSIVE_API_TOKEN=FaKeOtHeRvAlUeFoRtEsTs\n','ENV_TOKEN_DEFINITIONS_DISAGREE'),
-    ('one_name_twice_two_values',b'MASSIVE_API_TOKEN=FaKeOtHeRvAlUeFoRtEsTs\nMASSIVE_API_TOKEN='+T+b'\n','ENV_TOKEN_DEFINITIONS_DISAGREE'),
-    ('third_definition_disagrees',b'MASSIVE_API_TOKEN='+T+b'\nC3PO_MASSIVE_API_TOKEN='+T+b'\nMASSIVE_API_TOKEN=FaKeOtHeRvAlUeFoRtEsTs\n','ENV_TOKEN_DEFINITIONS_DISAGREE'),
-    ('one_value_a_prefix_of_the_other',b'MASSIVE_API_TOKEN='+T+b'\nC3PO_MASSIVE_API_TOKEN='+T+b'x\n','ENV_TOKEN_DEFINITIONS_DISAGREE'),
-    ('one_letter_of_another_case',b'MASSIVE_API_TOKEN='+T+b'\nC3PO_MASSIVE_API_TOKEN='+T.swapcase()+b'\n','ENV_TOKEN_DEFINITIONS_DISAGREE'),
-    ('an_empty_and_a_good_one',b'MASSIVE_API_TOKEN=\nC3PO_MASSIVE_API_TOKEN='+T+b'\n','ENV_TOKEN_DEFINITIONS_DISAGREE'),
-    # the value
-    ('empty_value',b'MASSIVE_API_TOKEN=\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('fifteen_characters',b'MASSIVE_API_TOKEN='+b'Ab'*7+b'A\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('five_hundred_and_thirteen_characters',b'MASSIVE_API_TOKEN='+b'Ab'*256+b'A\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('double_quoted',b'MASSIVE_API_TOKEN="'+T+b'"\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('single_quoted',b"MASSIVE_API_TOKEN='"+T+b"'\n",'ENV_TOKEN_VALUE_GRAMMAR'),
-    ('trailing_space',b'MASSIVE_API_TOKEN='+T+b' \n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('trailing_tab',b'MASSIVE_API_TOKEN='+T+b'\t\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('inline_comment',b'MASSIVE_API_TOKEN='+T+b' # the token\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_hash_inside',b'MASSIVE_API_TOKEN='+T+b'#x\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_variable',b'MASSIVE_API_TOKEN=$OTHER_VALUE_FOR_TESTS\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_braced_variable',b'MASSIVE_API_TOKEN='+T+b'${X}\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_backslash',b'MASSIVE_API_TOKEN='+T+b'\\n\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_space_inside',b'MASSIVE_API_TOKEN=FaKe ToKeNfOrTeStSoNlY\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_non_ascii_letter',b'MASSIVE_API_TOKEN='+T+b'\xc3\xa9\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_quote_inside',b'MASSIVE_API_TOKEN='+T+b'"x\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('an_at_sign',b'MASSIVE_API_TOKEN='+T+b'@x\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_comma',b'MASSIVE_API_TOKEN='+T+b',x\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_colon',b'MASSIVE_API_TOKEN='+T+b':x\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_semicolon',b'MASSIVE_API_TOKEN='+T+b';x\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('a_backtick',b'MASSIVE_API_TOKEN='+T+b'`x`\n','ENV_TOKEN_VALUE_GRAMMAR'),
-    ('the_literal_fake_value_quoted',b'MASSIVE_API_TOKEN="'+L+b'"\n','ENV_TOKEN_VALUE_GRAMMAR'),
-]
+REFUSED_FILES=envfiles.REFUSED_FILES
 @pytest.mark.parametrize('name,raw,code',REFUSED_FILES,ids=[row[0] for row in REFUSED_FILES])
 def test_files_the_parser_refuses_with_a_constant_code(name,raw,code):
     assert parse(raw)==code
+
+def test_the_fixture_lists_are_distinct_and_the_generated_files_are_what_they_say():
+    names=[row[0] for row in ACCEPTED_FILES+REFUSED_FILES];assert len(names)==len(set(names))
+    assert len({row[1] for row in ACCEPTED_FILES+REFUSED_FILES})==len(names)
+    first=envfiles.generated(20261003,300);assert first==envfiles.generated(20261003,300) and first!=envfiles.generated(20261004,300)
+    outcomes=[parse(raw) for _,raw,_ in first]
+    accepted=[value for value in outcomes if type(value) is bytes]
+    assert len(accepted)>=60 and all(value==GOOD for value in accepted)
+    assert set(outcomes)-{GOOD}=={'ENV_FILE_SYNTAX_UNSUPPORTED'}
+
+def test_the_value_of_a_definition_is_not_searched_for_the_name():
+    """The rule against the name elsewhere is for the lines of other names. The value of a definition is judged by
+    the grammar alone (which holds "_" and "="), so a value that happens to hold the name is the value."""
+    value=b'MASSIVE_API_TOKEN_'+T+b'=massive_api_token'
+    assert parse(b'MASSIVE_API_TOKEN='+value+b'\n')==value+b'\n'
+    assert parse(b'OTHER='+value+b'\nMASSIVE_API_TOKEN='+T+b'\n')=='ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION'
+
+def test_a_definition_is_judged_by_its_value_alone_with_one_code():
+    """Whatever a definition's value begins with, holds or is followed by, the only codes it can cause are the
+    grammar's and the disagreement's: the code says nothing of the value's first byte or of what it holds."""
+    for value in (b'"'+T,b"'"+T,b'"'+T+b'"',b'"'+T+b'" OTHER=x',b'\x0b'+T,b'\x0c'+T,b'\xc3\xa9'+T,b'\xc2\xa0'+T,b'\xe2\x84\xaa'+T,
+                  T+b'\\',b'\\\\'+T,T+b'\tMASSIVE_API_TOKEN=x',b'MASSIVE_API_TO\xe2\x84\xaaEN'+T,T+b' MASSIVE_API_TOKEN=x',b'',b'#'+T,b'$'+T):
+        assert parse(b'MASSIVE_API_TOKEN='+value+b'\n')=='ENV_TOKEN_VALUE_GRAMMAR',value
+        assert parse(b'MASSIVE_API_TOKEN='+T+b'\nC3PO_MASSIVE_API_TOKEN='+value+b'\n')=='ENV_TOKEN_DEFINITIONS_DISAGREE',value
 
 def test_the_first_line_outside_the_rules_decides_and_every_line_is_judged():
     assert parse(b'export MASSIVE_API_TOKEN='+T+b'\n\r\n')=='ENV_FILE_SYNTAX_UNSUPPORTED'          # the whole file first

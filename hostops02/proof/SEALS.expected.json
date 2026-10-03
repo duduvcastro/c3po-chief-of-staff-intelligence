@@ -51,12 +51,12 @@
   "seal_sha256": "4cc6995dbd19e4fcd0a26ae7bfd4bc80cf9a042d76cc3d64ba6011f25771544b"
  },
  "token_from_env": {
-  "files": 32,
-  "final_payload_unbound_sha256": "e660d3546475e07e8238af320c80b3f9f59cbb2d3acec37184c94531da974afa",
+  "files": 33,
+  "final_payload_unbound_sha256": "0cc9c77f75ca9699286d01405d473163915dc35993955a83048c3a2aa334d629",
   "operation": "GO_WRITE_HOSTOPS02_TOKEN_FROM_ENV_01",
-  "payload_source_sha256": "01b0ffee7ca1e76c2388498ef2c59ec081a74354b356b0d2b9fc659c6280a4fe",
-  "scope_sha256": "87c2daffef02599e9da1a64a010ea33477fb97dc793a70ebaed09389014f7111",
+  "payload_source_sha256": "35c049c2d6d47e6eb9a6f2b308a68bba734b9b5c7a03c9635426f850b59de0d1",
+  "scope_sha256": "cbcc460a363bb45f0096c449b45aa1675b2422e5c47f78057dc73a025388c706",
   "seal_file": "SHA256SUMS",
-  "seal_sha256": "91ccd6b1a13167f7796de847db0d9707a36290ffcaa9878a96ebf51369a19e0a"
+  "seal_sha256": "df0a754a42ab2b17985a4bf8e3b6e3e86070973eeb857c2afc09d625dfb1d18b"
  }
 }

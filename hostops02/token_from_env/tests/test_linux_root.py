@@ -41,14 +41,40 @@ def test_shape_expectations_are_false_without_shapes_and_for_a_shape_that_differ
     changed(lambda copy:copy['other_value_and_length']['receipt']['without_identity'].update(code='X'),'the receipt the same for a token of another value and length, the inode of the file aside')
     changed(lambda copy:copy['full_filesystem']['file'].update(exists=True),'a full filesystem at the write: the file of this run withdrawn by identity, nothing left')
     changed(lambda copy:copy['refusals_before_any_effect']['receipts']['quoted'].update(code='ENV_TOKEN_ABSENT'),
-            'a link at the environment file, a world-writable deploy directory, the export form and a quoted value refused before any effect')
+            'a link at the environment file, a world-writable deploy directory, the export form, a quoted value, the name elsewhere and a second link refused before any effect')
+    changed(lambda copy:copy['refusals_before_any_effect']['receipts']['second_link'].update(code='ENV_FILE_OWNER_UNEXPECTED'),
+            'a link at the environment file, a world-writable deploy directory, the export form, a quoted value, the name elsewhere and a second link refused before any effect')
     changed(lambda copy:copy['complete']['receipt'].update(leaks=['FaKe']),'no receipt holds four consecutive characters of a token, nor the literal fake value')
     changed(lambda copy:copy['literal_fake_value']['receipt'].update(literal_in_receipt=True),'no receipt holds four consecutive characters of a token, nor the literal fake value')
 
-def test_the_parser_value_used_for_the_compose_agreement_is_the_parsers():
-    shape=module();names=[name for name,_ in shape.AGREEMENT]
-    assert len(names)==len(set(names)) and all((type(shape.ours(raw)) is bytes)==(not name.startswith('refused_')) for name,raw in shape.AGREEMENT)
-    assert shape.ours(b'MASSIVE_API_TOKEN='+tok.TOKEN.encode()+b'\n')==tok.TOKEN.encode()
+def test_the_compose_corpus_is_every_listed_file_and_500_generated_files_the_parser_accepts():
+    shape=module();rows=shape.corpus();names=[name for name,_ in rows]
+    assert len(names)==len(set(names))
+    for name,raw in rows:assert (type(shape.ours(raw)[0]) is bytes)==(not name.startswith('refused_')),name
+    generated=[name for name in names if name.startswith('generated_')];assert len(generated)==shape.GENERATED==500
+    assert [name for name in names if not name.startswith(('generated_','refused_'))]==[name for name,_ in shape.envfiles.ACCEPTED_FILES]
+    assert len([name for name in names if name.startswith('refused_')])==len(shape.envfiles.REFUSED_FILES)
+    assert shape.ours(b'MASSIVE_API_TOKEN='+tok.TOKEN.encode()+b'\n')==(tok.TOKEN.encode(),['MASSIVE_API_TOKEN'])
+    assert shape.ours(b'MASSIVE_API_TOKEN='+tok.TOKEN.encode()+b'\nC3PO_MASSIVE_API_TOKEN='+tok.TOKEN.encode())==(tok.TOKEN.encode(),['C3PO_MASSIVE_API_TOKEN','MASSIVE_API_TOKEN'])
+    assert shape.ours(b'INHERITED\n')==('ENV_FILE_SYNTAX_UNSUPPORTED',None)
+
+def test_the_judgement_of_what_compose_gave():
+    """An accepted file agrees only when the backend's value is the parser's, each name the parser found is there with
+    that value and no other one is, and no other name is one of the two for a reader that ignores case."""
+    shape=module();T=tok.TOKEN;value=T.encode()
+    def agrees(environment,names=('MASSIVE_API_TOKEN',)):return shape.judge(environment,value,list(names))['agrees']
+    assert agrees({'MASSIVE_API_TOKEN':T,'OTHER':'x'})
+    assert agrees({'MASSIVE_API_TOKEN':T,'C3PO_MASSIVE_API_TOKEN':T},('C3PO_MASSIVE_API_TOKEN','MASSIVE_API_TOKEN'))
+    assert not agrees({'MASSIVE_API_TOKEN':T+'x'})                                     # another value
+    assert not agrees({})                                                              # nothing for the backend
+    assert not agrees({'MASSIVE_API_TOKEN':T,'C3PO_MASSIVE_API_TOKEN':'other'})        # the backend takes the prefixed name first
+    assert not agrees({'MASSIVE_API_TOKEN':T,'C3PO_MASSIVE_API_TOKEN':T})              # a name the parser did not find
+    assert not agrees({'MASSIVE_API_TOKEN':T},('C3PO_MASSIVE_API_TOKEN','MASSIVE_API_TOKEN'))
+    assert not agrees({'MASSIVE_API_TOKEN':T,'massive_api_token':'other'})             # a name of another case
+    assert not agrees({'MASSIVE_API_TOKEN':T,'MASSIVE_API_TOKEN':T})              # the Kelvin sign
+    row=shape.judge({'MASSIVE_API_TOKEN':T,'Massive_Api_Token':T},value,['MASSIVE_API_TOKEN'])
+    assert row['lookalike_names']==1 and row['backend']=='EQUAL_TO_THE_PARSER' and row['agrees'] is False
+    assert shape.record({'MASSIVE_API_TOKEN':'x'})=={'names':{'C3PO_MASSIVE_API_TOKEN':'ABSENT','MASSIVE_API_TOKEN':'ANOTHER_VALUE'},'lookalike_names':0}
 
 def test_shape_refuses_to_run_outside_a_throwaway_runner():
     module()

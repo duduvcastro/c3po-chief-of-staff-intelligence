@@ -21,7 +21,7 @@ HERE=Path(__file__).resolve().parent
 CORE=HERE.parent/'core'
 SKIPPED_DIRECTORIES=('work','drafts','__pycache__','.pytest_cache','_tmp')
 SKIPPED_FILES=('SHA256SUMS',)
-OUTPUT=re.compile(r'linux_root/(TESTS\..*\.xml|SHAPES\..*\.json)')     # what the Linux job writes
+OUTPUT=re.compile(r'linux_root/(TESTS\.[^/]*\.xml|SHAPES\.[^/]*\.json)')     # what the Linux job writes (no deeper path)
 REVIEW_PREFIX='review-'                   # a top-level directory of a review
 
 def sha(raw):return hashlib.sha256(raw).hexdigest()

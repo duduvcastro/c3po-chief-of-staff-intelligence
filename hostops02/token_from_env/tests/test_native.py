@@ -113,12 +113,23 @@ def test_links_are_refused(tree):
 def test_unsafe_modes_are_refused(tree):
     os.chmod(str(tree/'opt/deploy/.env'),0o606);refusal(tree,'ENV_FILE_WORLD_WRITABLE');os.chmod(str(tree/'opt/deploy/.env'),0o600)
     os.chmod(str(tree/'opt/deploy'),0o777);refusal(tree,'DEPLOY_CHAIN_WORLD_WRITABLE');os.chmod(str(tree/'opt/deploy'),0o755)
-    os.chmod(str(tree/'opt'),0o775);refusal(tree,'DEPLOY_CHAIN_NOT_ROOT_OWNED_ABOVE_THE_DEPLOY_DIRECTORY');os.chmod(str(tree/'opt'),0o755)
+    os.chmod(str(tree/'opt'),0o775);refusal(tree,'DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY');os.chmod(str(tree/'opt'),0o755)
     refusal(tree,'PARENT_IDENTITY_MISMATCH',after_signing=lambda:os.chmod(str(tree/'etc/c3po-bar'),0o750))
+
+def test_a_second_link_to_the_environment_file_is_refused_and_a_readable_one_is_said(tree):
+    os.link(str(tree/'opt/deploy/.env'),str(tree/'opt/deploy/env.second'))
+    receipt,record=refusal(tree,'ENV_FILE_LINKED')
+    assert receipt['environment_file']['single_link'] is None and not [entry for entry in record.of('open') if entry['path']==DEPLOY+'/.env']
+    os.unlink(str(tree/'opt/deploy/env.second'));os.chmod(str(tree/'opt/deploy/.env'),0o644)
+    m,receipt,record=run(tree)
+    assert receipt['status']==m.COMPLETE_STATUS and receipt['environment_file']['not_readable_by_group_or_other'] is False
+    assert receipt['environment_file']['single_link'] is True
 
 def test_a_file_outside_the_rules_is_refused(tree):
     write_env(tree,tok.BASE_ENV+b'export MASSIVE_API_TOKEN='+tok.TOKEN.encode()+b'\n');refusal(tree,'ENV_TOKEN_DEFINITION_NOT_PLAIN')
     write_env(tree,tok.BASE_ENV+b'MASSIVE_API_TOKEN="'+tok.TOKEN.encode()+b'"\n');refusal(tree,'ENV_TOKEN_VALUE_GRAMMAR')
+    write_env(tree,tok.env_with()+b'OTHER=${MASSIVE_API_TOKEN}\n');refusal(tree,'ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION')
+    write_env(tree,b'INHERITED\n'+tok.env_with());refusal(tree,'ENV_FILE_SYNTAX_UNSUPPORTED')
     write_env(tree,b'#\n'*32769);refusal(tree,'ENV_FILE_TOO_LARGE')
 
 @pytest.mark.parametrize('content,status,code',[(tok.env_with(),'METADATA_ONLY_REQUIRES_REVIEW',None),

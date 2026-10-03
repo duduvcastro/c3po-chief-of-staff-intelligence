@@ -3,21 +3,23 @@ value the deploy environment file of the host already holds (MASSIVE_API_TOKEN, 
 names the backend accepts). One source, one signed run, on 2026-10-03 or 2026-10-04 UTC only.
 
 It reads ONE file: <signed deploy directory>/.env, by a descriptor walk from "/" that never follows a link, after
-proving every component a directory, the components above the deploy directory root-owned and closed to group and
-other, none writable by any user without the sticky bit, and the file regular, not world-writable, owned by root or
-by the owner of the deploy directory and at most 65536 bytes. The file is parsed in memory under a strict subset of
-the dotenv grammar of docker compose; every definition of either name must be the plain form NAME=VALUE, all of them
-byte-equal, and the value must match a fixed grammar; anything else is a refusal with a constant code. It never reads
-an environment of a process, never runs docker or any other program, and starts no process.
+proving every component a directory, every component above the deploy directory root-owned and not writable by group
+or other, none writable by any user without the sticky bit, and the file regular, with one link, not world-writable,
+owned by root or by the owner of the deploy directory and at most 65536 bytes. The file is parsed in memory under a
+strict subset of the dotenv grammar of docker compose; every definition of either name must be the plain form
+NAME=VALUE, all of them byte-equal, no other line may hold the name in any case, and the value must match a fixed
+grammar; anything else is a refusal with a constant code. It never reads an environment of a process, never runs
+docker or any other program, and starts no process.
 
 Then, relative to the held descriptor of /etc/c3po-bar (identity signed from the receipt of supervisor operation 2,
 root:root 0700), ONE exclusive create of the name "token" (O_CREAT|O_EXCL|O_NOFOLLOW, 0600 under umask 0077), the
 value and one newline written, the file and the directory fsynced, and the file read back by descriptor: uid 0, gid
 0, mode 0600, one link, size within 1-4096, bytes equal to what was written (compared in memory only). Everything is
 looked at before the creation; a token file that exists is never touched (refusal). If a step after the creation
-fails, the file this run created is removed again, and only while its name still shows the inode this run holds.
-The receipt carries codes, booleans and identity rows only: never the value, a digest of it, its length or a line
-count. The caller authenticates exact request/authority/GO/source bytes first.
+fails, the file this run created is removed again, and only while its name still shows the inode this run holds (an
+exception to rule 4 of the core, declared in the signed scope). The receipt carries listed codes, booleans and
+identity rows only: never the value, a digest of it, its length or a line count. The caller authenticates exact
+request/authority/GO/source bytes first.
 No action on import.
 """
 
@@ -820,8 +822,10 @@ ESCAPED_OUTCOME='PARTIAL_STATE_UNKNOWN_TOKEN_FILE_MAY_EXIST'
 PLAN_KEYS=frozenset(('config_chain','deploy_directory','evidence_boot_id_sha256'))
 
 # ---- the constants of this operation. A request cannot move any of them: they are bytes of the signed source.
-# The days: the token must exist before the readback of Sunday 2026-10-04 09:50 BRT and before the first session.
-# The date class of the core (WRITE_WEEKEND) also holds 2026-10-02; this source narrows it to the two days below.
+# The days: the token must exist before the first session. The Sunday read L5 of the A1 (window from 2026-10-04 11:15
+# UTC, 08:15 BRT) reads its metadata, so the binding puts this run before that instant, on Saturday when it can
+# (CONTRACT section 4). That instant is not a refusal of the source (CONTRACT D10). The date class of the core
+# (WRITE_WEEKEND) also holds 2026-10-02; this source narrows it to the two days below.
 TOKEN_DAYS=('2026-10-03','2026-10-04')
 # Where the supervisor reads the token (README of c3po/deployment/massive-supervisor at dd4ec4bb, "Token procedure"),
 # and what it accepts there (r2d2_v2_massive_supervisor.py:38-55, private_bytes, and :114-115, the read): a regular
@@ -847,24 +851,57 @@ TOKEN_VALUE_GRAMMAR='[A-Za-z0-9._~+/=-]{16,512}'
 TOKEN_VALUE=TOKEN_VALUE_GRAMMAR.encode('ascii')
 # The lines of the environment file, as docker compose's dotenv parser delimits its statements. A file in which any
 # line is none of these is refused whole: a statement boundary that differs from compose's could hide a definition.
+# A statement must have "=" or ":": compose v2 takes a bare name from its own environment, and an older parser took
+# the next line as its value, so a bare name is a boundary on which parsers differ.
 ENV_LINE_BLANK=rb'[ \t]*'
 ENV_LINE_COMMENT=rb'[ \t]*#.*'
-ENV_LINE_STATEMENT=rb'([ \t]*)(export[ \t]+)?([A-Za-z0-9_.\[\]-]+)([ \t]*)(?:([=:])([ \t]*)(.*))?'
+ENV_LINE_STATEMENT=rb'([ \t]*)(export[ \t]+)?([A-Za-z0-9_.\[\]-]+)([ \t]*)([=:])([ \t]*)(.*)'
 ENV_QUOTED_TAIL=rb'[ \t]*(?:#.*)?'
+# Both names as a reader that compares names without regard to case sees them (pydantic-settings: str.lower()). No line
+# but a plain definition and comments may hold this, in any case: a parser that split a line where compose does not
+# would otherwise find a definition there. U+212A (the Kelvin sign) is the one character outside ASCII that
+# str.lower() turns into an ASCII letter ("k"), so it is read as "k".
+TOKEN_NAME_FOLDED=b'massive_api_token'
+KELVIN_SIGN=b'\xe2\x84\xaa'
 ENV_RULES=['the file holds no carriage return and no NUL byte',
            'every line is blank (spaces and tabs), a comment (# after spaces and tabs), or a statement: optional spaces and tabs, '
-           'optional "export" and spaces or tabs, a name of the characters A-Z a-z 0-9 _ . - [ ], optional spaces or tabs, and then '
-           'either nothing (a name taken from the environment of compose) or "=" or ":", optional spaces or tabs and a value',
-           'a value that begins with a quote ends on the same line at the next quote of the same kind, holds no backslash, and is '
-           'followed by nothing but spaces, tabs and an optional comment; a value that does not begin with a quote ends at the end '
-           'of its line and does not begin with a vertical tab, a form feed or a byte above 127',
+           'optional "export" and spaces or tabs, a name of the characters A-Z a-z 0-9 _ . - [ ], optional spaces or tabs, "=" or ":", '
+           'optional spaces or tabs and a value; a name without "=" or ":" (compose would take it from its own environment) is refused',
+           'a value of another name that begins with a quote ends on the same line at the next quote of the same kind, holds no two '
+           'consecutive backslashes and no backslash just before that quote, and is followed by nothing but spaces, tabs and an optional '
+           'comment; a value of another name that does not begin with a quote ends at the end of its line and does not begin with a '
+           'vertical tab, a form feed or a byte above 127',
            'a statement whose name equals MASSIVE_API_TOKEN or C3PO_MASSIVE_API_TOKEN without regard to case is a definition; every '
            'definition is exactly NAME=VALUE: the name in capitals, at the start of the line, no "export", "=" with no space on either side',
+           'no line but a definition and the comments holds massive_api_token in any case (the Kelvin sign read as k): not inside or '
+           'around another name, not in a value of another name',
            'at least one definition; every definition of both names byte-equal (compose keeps the last of a name, the backend the '
            'first of the two names present)',
            'the value matches '+TOKEN_VALUE_GRAMMAR+' to the end of its line (no quote, space, comment, "$" or backslash)']
 WRITE_ALLOWANCE_SECONDS=15                # what must be left of the budget before the creation (the writes take milliseconds)
 TOKEN_STATES=('NOT_ATTEMPTED','NOT_CREATED','CREATE_UNCERTAIN','WITHDRAWN','WITHDRAWN_NOT_DURABLE','LEFT_UNVERIFIED','PLACED_VERIFIED')
+# Every code a receipt of this source's run may carry (code, token_file.code, token_file.withdrawal_code). The core's
+# code_of() lets any text of the shape of a code through; here a code is a member of this list, and any other text is
+# replaced by UNLISTED_CODE before the receipt is sealed, so no text the run did not write itself can reach a receipt.
+RECEIPT_CODES=frozenset((
+    # the precheck: the executor, the boot, the configuration directory (the core's walk), the token name
+    'EXECUTOR_IDENTITY','NOATIME_UNAVAILABLE','BOOT_ID_INVALID','EVIDENCE_FROM_EARLIER_BOOT','PARENT_MISSING','PARENT_UNREADABLE',
+    'PARENT_SYMLINK_COMPONENT','PARENT_NOT_DIRECTORY','PARENT_CHANGED_DURING_WALK','PARENT_IDENTITY_MISMATCH','PARENT_REPLACED',
+    'TOKEN_FILE_PRESENT',
+    # the deploy chain and the environment file
+    'DEPLOY_DIRECTORY_ABSENT','DEPLOY_CHAIN_SYMLINK','DEPLOY_CHAIN_NOT_A_DIRECTORY','DEPLOY_CHAIN_CHANGED_DURING_WALK',
+    'DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY','DEPLOY_CHAIN_WORLD_WRITABLE','CHAIN_ROW_INVALID','PATH_INVALID',
+    'ENV_FILE_ABSENT','ENV_FILE_NOT_REGULAR','ENV_FILE_WORLD_WRITABLE','ENV_FILE_LINKED','ENV_FILE_OWNER_UNEXPECTED','ENV_FILE_TOO_LARGE',
+    'ENV_FILE_CHANGED_DURING_READ','ENV_FILE_SYNTAX_UNSUPPORTED','ENV_TOKEN_DEFINITION_NOT_PLAIN','ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION',
+    'ENV_TOKEN_ABSENT','ENV_TOKEN_DEFINITIONS_DISAGREE','ENV_TOKEN_VALUE_GRAMMAR',
+    # the last refusals before the creation, and the clock at any point
+    'BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT','GO_EXPIRED','CLOCK_REVERSED','PRECHECK_OS_ERROR','PRECHECK_FAILED',
+    # the creation, the readback, the withdrawal
+    'TOKEN_FILE_APPEARED_AFTER_PRECHECK','FILESYSTEM_READ_ONLY','FILESYSTEM_FULL','FILESYSTEM_ACCESS_DENIED','FILESYSTEM_ERROR',
+    'TOKEN_CREATE_UNCERTAIN','TOKEN_WRITE_INCOMPLETE','FSYNC_FAILED','TOKEN_METADATA_MISMATCH','TOKEN_STAT_FAILED','READBACK_MISMATCH',
+    'READBACK_UNAVAILABLE','TOKEN_PLACEMENT_FAILED','TOKEN_NOT_PLACED','TOKEN_NAME_NOT_THIS_RUNS_FILE','TOKEN_WITHDRAWAL_FAILED',
+    'TOKEN_WITHDRAWAL_UNCERTAIN'))
+UNLISTED_CODE='UNLISTED_CODE'
 
 SCOPE_STATEMENT=('Reads the environment file .env of the signed deploy directory once, in memory, and places the value it holds for '
                  'MASSIVE_API_TOKEN (or C3PO_MASSIVE_API_TOKEN; every definition byte-equal) as the provider token of the supervisor: '
@@ -885,10 +922,16 @@ SCOPE={'operation':OPERATION,'dates':list(DATES),'statement':SCOPE_STATEMENT,'co
                                   'with one link; never after the expiry of the GO or a replaced directory'},
        'config_directory':{'path':CONFIG_DIRECTORY,'uid':0,'gid':0,'mode_octal':'%04o'%CONFIG_DIRECTORY_MODE,'rows':'signed, from "/"'},
        'environment_file':{'name':ENV_FILE_NAME,'max_bytes':MAX_ENV_FILE_BYTES,'keys':list(TOKEN_KEYS),'value_grammar':TOKEN_VALUE_GRAMMAR,'rules':ENV_RULES,
-                           'chain':'walked from "/" without following a link and not signed: every component a directory, above the deploy directory '
-                                   'root-owned and closed to group and other, none writable by any user without the sticky bit',
-                           'file':'regular, not world-writable, owned by root or by the owner of the deploy directory, unchanged while read'},
+                           'chain':'walked from "/" without following a link and not signed: every component a directory, every component above '
+                                   'the deploy directory root-owned and not writable by group or other, no component writable by any user '
+                                   'without the sticky bit',
+                           'file':'regular, one link, not world-writable, owned by root or by the owner of the deploy directory, unchanged while read'},
+       'exceptions_to_the_core':['rule 4 (nothing is removed but the temporary of this run once its identity is proved): this source may '
+                                 'remove the final name '+TOKEN_PATH+', and only the file this run created, after a later step of this run '
+                                 'failed, while the name shows the inode this run holds with one link; never after the expiry of the GO, '
+                                 'never after the configuration directory was found replaced'],
        'receipt_never':['the value','a digest of the value','the length of the value','a line count','any byte of the environment file'],
+       'receipt_codes':sorted(RECEIPT_CODES),'receipt_code_otherwise':UNLISTED_CODE,
        'evidence_operations_required':list(EVIDENCE_OPERATIONS),
        'file_contents_read':[BOOT_ID_PATH,'<the signed deploy directory>/'+ENV_FILE_NAME+' (in memory)',TOKEN_PATH+' (the readback, in memory)'],
        'processes_started':0,
@@ -905,35 +948,48 @@ class Native(NativeRead,NativeFiles):
 
 # ---------------------------------------------------------------- the environment file, in memory
 def value_boundary(value):
-    """A value ends where compose's parser ends it: a quoted one at its closing quote, an unquoted one at the end of its
-    line. Only the forms whose end is certain are accepted."""
+    """A value of another name ends where every compose parser ends it: a quoted one at its closing quote, an unquoted
+    one at the end of its line. Only the forms whose end is the same in all of them are accepted. In a quoted value a
+    backslash before any other character is harmless (the closing quote is the first quote of its kind either way); two
+    backslashes, or one just before that quote, are where the escape rules of the old and the new parser differ."""
     if value[:1] in (b'"',b"'"):
         closing=value.find(value[:1],1)            # -1 when the quote is not closed on this line: the tail is then the
-        need(b'\\' not in value[1:closing] and re.fullmatch(ENV_QUOTED_TAIL,value[closing+1:]) is not None,'ENV_FILE_SYNTAX_UNSUPPORTED')   # whole value, refused
+        body=value[1:closing]                      # whole value, which the tail rule refuses
+        need(b'\\\\' not in body and body[-1:]!=b'\\' and re.fullmatch(ENV_QUOTED_TAIL,value[closing+1:]) is not None,'ENV_FILE_SYNTAX_UNSUPPORTED')
     else:
         need(value[:1] not in (b'\x0b',b'\x0c') and (not value or value[0]<0x80),'ENV_FILE_SYNTAX_UNSUPPORTED')
 
+def folded(line):
+    """A line of another name as a reader that compares names without regard to case sees it."""
+    return line.replace(KELVIN_SIGN,b'k').lower()
+
 def token_definitions(raw):
     """[(name, start, end)] of every definition of the two names, as offsets of the value in raw. Raises Refused with a
-    constant code for a file outside the accepted subset or a definition that is not the plain form. Nothing of the
-    bytes leaves this function but offsets."""
+    constant code for a file outside the accepted subset, a definition that is not the plain form, or the name anywhere
+    else. The lines are looked at through a view of raw: the line of a definition is never copied, its value is judged
+    only by token_content(), and nothing of the bytes leaves this function but offsets."""
     need(b'\r' not in raw and b'\x00' not in raw,'ENV_FILE_SYNTAX_UNSUPPORTED')
     names={key.encode('ascii'):key for key in TOKEN_KEYS}
-    found=[];position=0;size=len(raw)
-    while position<=size:
-        end=raw.find(b'\n',position)
-        if end<0:end=size
-        line=raw[position:end]
-        if re.fullmatch(ENV_LINE_BLANK,line) is None and re.fullmatch(ENV_LINE_COMMENT,line) is None:
-            match=re.fullmatch(ENV_LINE_STATEMENT,line)
-            need(match is not None,'ENV_FILE_SYNTAX_UNSUPPORTED')
-            lead,export,key,space,separator,gap,value=match.groups()
-            if separator is not None:value_boundary(value)
-            if key.upper() in names:
-                need(not lead and export is None and key in names and not space and separator==b'=' and not gap,'ENV_TOKEN_DEFINITION_NOT_PLAIN')
-                found.append((names[key],position+len(key)+1,end))
-        position=end+1
-    return found
+    found=[];position=0;size=len(raw);view=memoryview(raw)
+    try:
+        while position<=size:
+            end=raw.find(b'\n',position)
+            if end<0:end=size
+            line=view[position:end]
+            if re.fullmatch(ENV_LINE_BLANK,line) is None and re.fullmatch(ENV_LINE_COMMENT,line) is None:
+                match=re.fullmatch(ENV_LINE_STATEMENT,line)
+                need(match is not None,'ENV_FILE_SYNTAX_UNSUPPORTED')
+                lead,export,key,space,separator,gap=match.group(1,2,3,4,5,6)     # the value (group 7) is not copied out
+                if key.upper() in names:
+                    need(not lead and export is None and key in names and not space and separator==b'=' and not gap,'ENV_TOKEN_DEFINITION_NOT_PLAIN')
+                    found.append((names[key],position+match.start(7),end))
+                else:
+                    other=bytes(line)                  # a line of another name: it may hold another secret, and stays here
+                    value_boundary(other[match.start(7):])
+                    need(TOKEN_NAME_FOLDED not in folded(other),'ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION')
+            position=end+1
+        return found
+    finally:view.release()
 
 def token_content(raw,found):
     """The value every definition holds, and one newline, in a new bytearray (zeroed by the caller after use)."""
@@ -949,13 +1005,14 @@ def token_content(raw,found):
 
 def zero(buffer):
     """Best effort: the bytearray that held the value is overwritten in place. Immutable copies made by the interpreter
-    (the bytes read from the file) cannot be overwritten; they are only dropped."""
+    (the bytes read from the file and from the readback, the blocks read_regular() joined) cannot be overwritten; they
+    are only dropped, and the memory they leave is not cleared by the interpreter (DESIGN.md section 8)."""
     if type(buffer) is bytearray:
         for index in range(len(buffer)):buffer[index]=0
 
 
 def validate_plan(plan):
-    rows=validate_chain(plan['config_chain'],CONFIG_DIRECTORY,receives_entry=True)         # every row root-owned, closed to group and other
+    rows=validate_chain(plan['config_chain'],CONFIG_DIRECTORY,receives_entry=True)         # every row root-owned, not writable by group or other
     need((rows[-1]['gid'],rows[-1]['mode'])==(0,CONFIG_DIRECTORY_MODE),'CONFIG_DIRECTORY_NOT_ROOT_0700')
     deploy=plan['deploy_directory']
     need(clean_path(deploy),'DEPLOY_DIRECTORY_INVALID')
@@ -979,16 +1036,19 @@ def success_of(plan):return COMPLETE_OUTCOME
 
 # ---------------------------------------------------------------- the reads before the creation
 DEPLOY_CODES={'SYMLINK_COMPONENT':'DEPLOY_CHAIN_SYMLINK','COMPONENT_NOT_DIRECTORY':'DEPLOY_CHAIN_NOT_A_DIRECTORY','PATH_CHANGED':'DEPLOY_CHAIN_CHANGED_DURING_WALK',
-              'CHAIN_ROW_UNSAFE':'DEPLOY_CHAIN_NOT_ROOT_OWNED_ABOVE_THE_DEPLOY_DIRECTORY','CHAIN_ROW_WORLD_WRITABLE':'DEPLOY_CHAIN_WORLD_WRITABLE'}
+              'CHAIN_ROW_UNSAFE':'DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY','CHAIN_ROW_WORLD_WRITABLE':'DEPLOY_CHAIN_WORLD_WRITABLE'}
 ENV_CODES={'FILE_NOT_REGULAR':'ENV_FILE_NOT_REGULAR','FILE_TOO_LARGE':'ENV_FILE_TOO_LARGE','FILE_CHANGED_DURING_READ':'ENV_FILE_CHANGED_DURING_READ'}
 def renamed(error,table):return Refused(table.get(str(error),str(error)))
+def listed(code):return code if code is None or code in RECEIPT_CODES else UNLISTED_CODE
 
 def chain_facts():
-    return {'walked_without_following_a_link':None,'root_owned_and_closed_above_the_deploy_directory':None,'no_component_world_writable_without_sticky':None}
+    return {'walked_without_following_a_link':None,'root_owned_and_not_group_or_other_writable_above_the_deploy_directory':None,
+            'no_component_world_writable_without_sticky':None}
 def environment_facts():
-    return {'present':None,'regular':None,'not_world_writable':None,'owner_root_or_the_deploy_directory_owner':None,'within_the_size_bound':None,
-            'unchanged_during_read':None,'syntax_within_the_accepted_subset':None,'every_definition_plain':None,
-            'names_defined':{key:None for key in TOKEN_KEYS},'definitions_agree':None,'value_grammar_met':None}
+    return {'present':None,'regular':None,'not_readable_by_group_or_other':None,'not_world_writable':None,'single_link':None,
+            'owner_root_or_the_deploy_directory_owner':None,'within_the_size_bound':None,'unchanged_during_read':None,
+            'syntax_within_the_accepted_subset':None,'every_definition_plain':None,'names_defined':{key:None for key in TOKEN_KEYS},
+            'definitions_agree':None,'value_grammar_met':None}
 
 def deploy_chain(host,deploy,gate,facts):
     """The deploy directory, walked from "/" without following a link, and the rows as read judged by the family's rule
@@ -999,7 +1059,7 @@ def deploy_chain(host,deploy,gate,facts):
     except Refused as error:raise renamed(error,DEPLOY_CODES) from None
     try:
         facts['walked_without_following_a_link']=True
-        facts['root_owned_and_closed_above_the_deploy_directory']=all(row_root_safe(row) for row in observed[:-1])
+        facts['root_owned_and_not_group_or_other_writable_above_the_deploy_directory']=all(row_root_safe(row) for row in observed[:-1])
         facts['no_component_world_writable_without_sticky']=not any(world_writable_without_sticky(row) for row in observed)
         try:validate_chain(observed,deploy,open_root=deploy)
         except Refused as error:raise renamed(error,DEPLOY_CODES) from None
@@ -1014,7 +1074,9 @@ def environment_bytes(host,fd,owner,gate,facts):
     except FileNotFoundError:raise Refused('ENV_FILE_ABSENT') from None
     facts['present']=True
     need(stat.S_ISREG(named.st_mode),'ENV_FILE_NOT_REGULAR');facts['regular']=True
+    facts['not_readable_by_group_or_other']=not named.st_mode&0o044          # the exposure as found: said, never a refusal
     need(not named.st_mode&0o002,'ENV_FILE_WORLD_WRITABLE');facts['not_world_writable']=True
+    need(named.st_nlink==1,'ENV_FILE_LINKED');facts['single_link']=True      # no second name (a hard link) for these bytes
     need(named.st_uid in (0,owner),'ENV_FILE_OWNER_UNEXPECTED');facts['owner_root_or_the_deploy_directory_owner']=True
     try:raw,info=read_regular(host,ENV_FILE_NAME,fd,gate,MAX_ENV_FILE_BYTES)
     except FileNotFoundError:raise Refused('ENV_FILE_CHANGED_DURING_READ') from None
@@ -1154,7 +1216,8 @@ def perform(plan,gate,host,bound,clock,monotonic,state):
     config_rows=[];chain=chain_facts();environment=environment_facts();precheck={'token_file_absent':None,'seconds_left_before_the_creation':None}
     pinned=[];held=[];buffers=[];token=[token_row()]
     def finish(status,outcome,code,extra):
-        return seal(envelope(status,outcome,code,dict(bound,observed_at=begun.isoformat(),effects=effects_of(plan),
+        token[0].update(code=listed(token[0]['code']),withdrawal_code=listed(token[0]['withdrawal_code']))
+        return seal(envelope(status,outcome,listed(code),dict(bound,observed_at=begun.isoformat(),effects=effects_of(plan),
             clock=timing(begun,mark,clock,monotonic),mutating_calls=state.counts(),
             config_directory={'rows':config_rows,'pinned':bool(pinned)},deploy_chain=chain,environment_file=environment,precheck=precheck,
             token_file=token[0],objects_left_by_this_run=left_by_this_run(token[0]),pre_existing_objects_modified=False,**extra)))

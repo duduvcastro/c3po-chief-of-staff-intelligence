@@ -6,14 +6,17 @@ provider: every value is fake.
 Shapes: the complete run (the file as the supervisor needs it, the bytes, the environment file read without changing
 its access time, which only the kernel's O_NOATIME explains); the same run again (refused, the file unchanged); a token
 of another value and length (the receipt is the same, the inode of the file aside); a full filesystem at the write (a
-tmpfs of a few pages mounted on /etc/c3po-bar and filled: the file of this run is withdrawn by identity); and four
+tmpfs of a few pages mounted on /etc/c3po-bar and filled: the file of this run is withdrawn by identity); and six
 refusals before any effect (the environment file through a link, a world-writable deploy directory, the export form, a
-quoted value). Every receipt is scanned for every substring of four characters or more of the token.
+quoted value, the name in a value of another name, a second hard link to the environment file). Every receipt is scanned for every substring of four characters or more of the token.
 
-  --compose-agreement   (as the runner's user, no root) for each environment file the parser accepts, the value docker
-                        compose gives the service of a throwaway project (config only: nothing is pulled, created or
-                        started) compared with the parser's; for files the parser refuses, what compose would have
-                        given, for the record. When `docker compose` is not available it says so and exits 0.
+  --compose-agreement   (as the runner's user, no root) for every environment file of tests/envfiles.py and for the
+                        first 500 files of its generator (seed 20261003) that the parser accepts: what docker compose
+                        gives the service of a throwaway project (config only: nothing is pulled, created or started),
+                        compared with the parser for each accepted file (the value the backend would take, each of the
+                        two names, and no other name that a case-insensitive reader would take for one of them); for
+                        the refused files, what compose would have given, for the record. Exit 0 only when compose ran
+                        and every accepted file agrees; 2 when docker compose is not available (not shown); 3 otherwise.
   --self-test           the same collection on the emulated host of the core's tests (tests/hostemu.py): proves that
                         this script is coherent with the source, and nothing about a real filesystem.
 
@@ -41,6 +44,7 @@ import tempfile
 HERE=os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0,os.path.join(os.path.dirname(HERE),'tests'))
 import conftest                                    # noqa: F401 (puts the tests of the frozen core on the path)
+import envfiles
 import family as f
 import hostemu
 import tok
@@ -72,7 +76,7 @@ class Real:
         for name in ('manifests','docker-cli'):os.mkdir(CONFIG+'/'+name,0o700)
         os.mkdir(DEPLOY,0o755);os.chmod(DEPLOY,0o755);os.chown(DEPLOY,self.owner,self.owner);self.made.append((DEPLOY,os.lstat(DEPLOY).st_ino))
     def write_env(self,content,mode=0o600,link=False):
-        for name in ('.env','env.real'):
+        for name in ('.env','env.real','env.second'):
             if os.path.lexists(DEPLOY+'/'+name):os.unlink(DEPLOY+'/'+name)
         target=DEPLOY+('/env.real' if link else '/.env')
         fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
@@ -81,6 +85,7 @@ class Real:
         os.chown(target,self.owner,self.owner);os.chmod(target,mode)
         if link:os.symlink('env.real',DEPLOY+'/.env')
     def chmod_deploy(self,mode):os.chmod(DEPLOY,mode)
+    def second_link(self):os.link(DEPLOY+'/.env',DEPLOY+'/env.second')
     def remove_token(self):
         if os.path.lexists(TOKEN_PATH):os.unlink(TOKEN_PATH)
     def token(self,expected):
@@ -126,11 +131,13 @@ class Emulated:
         self.k,self.host=tok.world();self.host.tree.add(DEPLOY,uid=1001,gid=1001)
     def write_env(self,content,mode=0o600,link=False):
         tree=self.host.tree
-        for name in ('.env','env.real'):
+        for name in ('.env','env.real','env.second'):
             if tree.get(DEPLOY+'/'+name) is not None:tree.remove(DEPLOY+'/'+name)
         tree.add(DEPLOY+('/env.real' if link else '/.env'),kind='file',uid=1001,gid=1001,mode=mode,content=content)
         if link:tree.add(DEPLOY+'/.env',kind='symlink',mode=0o777,target='env.real')
     def chmod_deploy(self,mode):self.host.tree.get(DEPLOY).mode=mode
+    def second_link(self):
+        node=self.host.tree.get(DEPLOY+'/.env');self.host.tree.get(DEPLOY).children['env.second']=node;node.nlink+=1
     def remove_token(self):
         if self.host.tree.get(TOKEN_PATH) is not None:self.host.tree.remove(TOKEN_PATH)
     def token(self,expected):
@@ -190,6 +197,8 @@ def collect(backend):
             backend.write_env(env_file());backend.chmod_deploy(0o777);rows['world_writable']=summary(backend.run(),tok.TOKEN);backend.chmod_deploy(0o755)
             backend.write_env(env_file(line=b'export MASSIVE_API_TOKEN=%s\n'));rows['export']=summary(backend.run(),tok.TOKEN)
             backend.write_env(env_file(line=b'MASSIVE_API_TOKEN="%s"\n'));rows['quoted']=summary(backend.run(),tok.TOKEN)
+            backend.write_env(env_file(line=b'MASSIVE_API_TOKEN=%s\nOTHER=${MASSIVE_API_TOKEN}\n'));rows['name_elsewhere']=summary(backend.run(),tok.TOKEN)
+            backend.write_env(env_file());backend.second_link();rows['second_link']=summary(backend.run(),tok.TOKEN)
             return {'receipts':rows,'file':backend.token(tok.TOKEN)}
         shape('refusals_before_any_effect',refusals)
         def literal():
@@ -221,11 +230,12 @@ def expectations(out):
             ((full.get('receipt') or {}).get('status'),(full.get('receipt') or {}).get('code'),((full.get('receipt') or {}).get('token_file') or {}).get('state'),
              ((full.get('receipt') or {}).get('token_file') or {}).get('withdrawn'))==('PARTIAL_METADATA_REQUIRES_REVIEW','FILESYSTEM_FULL','WITHDRAWN',True)
             and (full.get('file') or {}).get('exists') is False),
-        'a link at the environment file, a world-writable deploy directory, the export form and a quoted value refused before any effect':codes=={
+        'a link at the environment file, a world-writable deploy directory, the export form, a quoted value, the name elsewhere and a second link refused before any effect':codes=={
             'link':('REFUSED','ENV_FILE_NOT_REGULAR','PRECHECK',0),'world_writable':('REFUSED','DEPLOY_CHAIN_WORLD_WRITABLE','PRECHECK',0),
-            'export':('REFUSED','ENV_TOKEN_DEFINITION_NOT_PLAIN','PRECHECK',0),'quoted':('REFUSED','ENV_TOKEN_VALUE_GRAMMAR','PRECHECK',0)}
+            'export':('REFUSED','ENV_TOKEN_DEFINITION_NOT_PLAIN','PRECHECK',0),'quoted':('REFUSED','ENV_TOKEN_VALUE_GRAMMAR','PRECHECK',0),
+            'name_elsewhere':('REFUSED','ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION','PRECHECK',0),'second_link':('REFUSED','ENV_FILE_LINKED','PRECHECK',0)}
             and (refusals.get('file') or {}).get('exists') is False,
-        'no receipt holds four consecutive characters of a token, nor the literal fake value':bool(receipts) and len(receipts)==9 and all(
+        'no receipt holds four consecutive characters of a token, nor the literal fake value':bool(receipts) and len(receipts)==11 and all(
             receipt.get('leaks')==[] and receipt.get('literal_in_receipt') is False for receipt in receipts),
     }
 
@@ -241,19 +251,46 @@ def report(out):
 # ---------------------------------------------------------------- what docker compose makes of the same files
 COMPOSE_FILE=b'services:\n  probe:\n    image: hostops02-token-ci-never-pulled\n    env_file:\n      - .env\n'
 T=tok.TOKEN.encode()
-AGREEMENT=[('plain',b'MASSIVE_API_TOKEN='+T+b'\n'),('no_final_newline',b'MASSIVE_API_TOKEN='+T),('other_lines_around',OTHER_LINES+b'MASSIVE_API_TOKEN='+T+b'\n# end\n'),
-           ('c3po_name',b'C3PO_MASSIVE_API_TOKEN='+T+b'\n'),('both_names',b'MASSIVE_API_TOKEN='+T+b'\nC3PO_MASSIVE_API_TOKEN='+T+b'\n'),
-           ('quoted_others',b'A="x # y"\nB=\'$z\'\nC="" \nMASSIVE_API_TOKEN='+T+b'\nD: e\nexport E=1\n'),
-           ('every_character_of_the_grammar',b'MASSIVE_API_TOKEN=ABCxyz0123456789._~+/=-\n'),
-           # refused by the parser: what compose makes of them is recorded, not judged
-           ('refused_export',b'export MASSIVE_API_TOKEN='+T+b'\n'),('refused_quoted',b'MASSIVE_API_TOKEN="'+T+b'"\n'),
-           ('refused_spaces',b'MASSIVE_API_TOKEN = '+T+b'\n'),('refused_after_a_quote',b'A="x" MASSIVE_API_TOKEN=FaKeHiDdEnVaLuEfOrTeStS\nMASSIVE_API_TOKEN='+T+b'\n'),
-           ('refused_inline_comment',b'MASSIVE_API_TOKEN='+T+b' # c\n'),('refused_two_lines',b'A="a\nMASSIVE_API_TOKEN=FaKeHiDdEnVaLuEfOrTeStS\n"\nMASSIVE_API_TOKEN='+T+b'\n')]
+NAMES=('C3PO_MASSIVE_API_TOKEN','MASSIVE_API_TOKEN')          # the backend's order: the first one present wins
+SEED=20261003
+GENERATED=500
+def corpus():
+    """[(name, file)]: every file of the lists, then the first GENERATED files of the generator the parser accepts."""
+    rows=[(name,raw) for name,raw in envfiles.ACCEPTED_FILES]+[('refused_'+name,raw) for name,raw,_ in envfiles.REFUSED_FILES]
+    taken=0
+    for name,raw,_ in envfiles.generated(SEED,40*GENERATED):
+        if taken==GENERATED:break
+        if type(ours(raw)[0]) is bytes:rows.append((name,raw));taken+=1
+    return rows
 
 def ours(raw):
+    """(value without the newline, names defined) the parser gives, or (its code, None)."""
     m=tok.K().m
-    try:return bytes(m.token_content(raw,m.token_definitions(raw)))[:-1]
-    except m.Refused as error:return str(error)
+    try:
+        found=m.token_definitions(raw);return bytes(m.token_content(raw,found))[:-1],sorted({name for name,_,_ in found})
+    except m.Refused as error:return str(error),None
+
+def judge(environment,value,names):
+    """What compose gave the service, against the parser: for an accepted file, the value the backend would take (the
+    first of its two names present), each name the parser found (and no other), and any other name a reader that
+    compares names without regard to case (str.lower(), as pydantic-settings) would take for one of them."""
+    def same(key):
+        found=environment.get(key)
+        if found is None:return 'ABSENT'
+        return 'EQUAL_TO_THE_PARSER' if found.encode('utf-8')==value else 'DIFFERENT_FROM_THE_PARSER'
+    backend=next((key for key in NAMES if key in environment),None)
+    lookalikes=sorted(key for key in environment if key not in NAMES and key.lower() in {name.lower() for name in NAMES})
+    row={'names':{key:same(key) for key in NAMES},'backend':same(backend) if backend else 'ABSENT','lookalike_names':len(lookalikes)}
+    row['agrees']=(row['backend']=='EQUAL_TO_THE_PARSER' and not lookalikes
+                   and all((row['names'][key]=='EQUAL_TO_THE_PARSER')==(key in names) and row['names'][key]!='DIFFERENT_FROM_THE_PARSER' for key in NAMES))
+    return row
+
+def record(environment):
+    """For a refused file: what compose would have given, for the record (never judged)."""
+    def seen(key):
+        found=environment.get(key)
+        return 'ABSENT' if found is None else 'EQUAL_TO_THE_TOKEN' if found.encode('utf-8')==T else 'ANOTHER_VALUE'
+    return {'names':{key:seen(key) for key in NAMES},'lookalike_names':len([key for key in environment if key not in NAMES and key.lower() in {name.lower() for name in NAMES}])}
 
 def compose_agreement():
     try:version=subprocess.run(['docker','compose','version','--short'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=60)
@@ -262,26 +299,27 @@ def compose_agreement():
         return {'schema':COMPOSE_SCHEMA,'available':False,'fixtures':{},'all_accepted_agree':None}
     fixtures={}
     with tempfile.TemporaryDirectory() as work:
-        for name,raw in AGREEMENT:
+        for name,raw in corpus():
             directory=os.path.join(work,name);os.mkdir(directory,0o700)
             with open(os.path.join(directory,'compose.yml'),'wb') as handle:handle.write(COMPOSE_FILE)
             with open(os.path.join(directory,'.env'),'wb') as handle:handle.write(raw)
             done=subprocess.run(['docker','compose','--project-name','hostops02tokenci','--project-directory',directory,'-f',os.path.join(directory,'compose.yml'),
                                  'config','--format','json'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=60,env={'PATH':'/usr/bin:/bin','HOME':work})
-            value=ours(raw);row={'parser':'ACCEPTED' if type(value) is bytes else value,'compose_returncode':done.returncode}
+            value,names=ours(raw)
+            row={'parser':'ACCEPTED' if names is not None else value,'compose_returncode':done.returncode}
             if done.returncode==0:
                 environment=(json.loads(done.stdout).get('services',{}).get('probe',{}) or {}).get('environment') or {}
-                def seen(key):
-                    found=environment.get(key)
-                    if found is None:return 'ABSENT'
-                    if type(value) is bytes:return 'EQUAL_TO_THE_PARSER' if found.encode()==value else 'DIFFERENT_FROM_THE_PARSER'
-                    return 'EQUAL_TO_THE_TOKEN' if found.encode()==T else 'ANOTHER_VALUE'
-                row['compose']={key:seen(key) for key in ('MASSIVE_API_TOKEN','C3PO_MASSIVE_API_TOKEN')}
+                row.update(judge(environment,value,names) if names is not None else record(environment))
             fixtures[name]=row
-    accepted=[row for row in fixtures.values() if row['parser']=='ACCEPTED']
-    agree=bool(accepted) and all(row.get('compose_returncode')==0 and 'DIFFERENT_FROM_THE_PARSER' not in row['compose'].values()
-                                 and 'EQUAL_TO_THE_PARSER' in row['compose'].values() for row in accepted)
-    return {'schema':COMPOSE_SCHEMA,'available':True,'compose_version':version.stdout.decode('ascii','replace').strip()[:40],'fixtures':fixtures,'all_accepted_agree':agree}
+    accepted={name:row for name,row in fixtures.items() if row['parser']=='ACCEPTED'}
+    listed=[name for name,_ in envfiles.ACCEPTED_FILES]
+    rejected=sorted(name for name,row in accepted.items() if row['compose_returncode']!=0)
+    disagreeing=sorted(name for name,row in accepted.items() if row['compose_returncode']==0 and not row['agrees'])
+    agree=(len(accepted)==len(listed)+GENERATED and not disagreeing and not [name for name in rejected if name in listed]
+           and all(name in accepted for name in listed))
+    return {'schema':COMPOSE_SCHEMA,'available':True,'compose_version':version.stdout.decode('ascii','replace').strip()[:40],'seed':SEED,
+            'accepted_files':len(accepted),'accepted_and_refused_by_compose':rejected,'accepted_and_disagreeing':disagreeing,
+            'fixtures':fixtures,'all_accepted_agree':agree}
 
 
 def main(arguments):
@@ -293,7 +331,7 @@ def main(arguments):
         if not throwaway:
             print('REFUSED: a throwaway GitHub-hosted Linux runner, with HOSTOPS_THROWAWAY_RUNNER=yes',file=sys.stderr);return 1
         result=compose_agreement();print(json.dumps(result,indent=1,sort_keys=True))
-        return 0 if result['all_accepted_agree'] in (True,None) else 3
+        return 0 if result['all_accepted_agree'] is True else 2 if not result['available'] else 3
     if len(arguments)!=1 or not arguments[0].isdigit():
         print(__doc__);return 1
     if not (throwaway and os.geteuid()==0):

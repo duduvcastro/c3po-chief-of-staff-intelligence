@@ -64,8 +64,30 @@ def test_static_scope_says_what_the_signers_must_see():
     m=tok.K().m;scope=json.loads(m.canonical(m.SCOPE))
     assert scope['token_days']==['2026-10-03','2026-10-04'] and scope['paths']['token_file']=='/etc/c3po-bar/token' and scope['processes_started']==0
     assert scope['receipt_never']==['the value','a digest of the value','the length of the value','a line count','any byte of the environment file']
-    assert scope['environment_file']['rules']==m.ENV_RULES and len(m.ENV_RULES)==6 and scope['environment_file']['keys']==list(m.TOKEN_KEYS)
+    assert scope['environment_file']['rules']==m.ENV_RULES and len(m.ENV_RULES)==7 and scope['environment_file']['keys']==list(m.TOKEN_KEYS)
+    assert 'not writable by group or other' in scope['environment_file']['chain'] and 'closed' not in scope['environment_file']['chain']
+    assert scope['environment_file']['file'].startswith('regular, one link, not world-writable')
+    assert len(scope['exceptions_to_the_core'])==1 and scope['exceptions_to_the_core'][0].startswith('rule 4 ') and '/etc/c3po-bar/token' in scope['exceptions_to_the_core'][0]
+    assert scope['receipt_codes']==sorted(m.RECEIPT_CODES) and scope['receipt_code_otherwise']=='UNLISTED_CODE'
     for word in ('a process','docker','the environment of a process or of a container','overwrite','a second attempt'):assert word in scope['never']
     for sentence in ('one exclusive create of /etc/c3po-bar/token (root:root 0600, one link, the value and one newline)','A file that exists at that name is never touched',
                      'while its name still shows the inode this run holds','On 2026-10-03 or 2026-10-04 UTC only','No process is started, no environment of a process',
                      'never carries the value, a digest of it, its length or a line count'):assert sentence in m.SCOPE_STATEMENT
+
+def test_static_the_list_of_receipt_codes_is_every_code_the_source_writes_and_nothing_else():
+    """Both ways, by text: every code-shaped literal of the operation part that is a code (not a schema, status, outcome,
+    phase, state or fact name) is listed; every listed code occurs as a literal in the built source (the operation part
+    or the core), so the list names nothing the run cannot write."""
+    import re
+    m=tok.K().m;own=(tok.DIRECTORY/'op.py').read_text();built=(tok.DIRECTORY/'build'/'token_from_env.py').read_text()
+    words=set(re.findall(r"'([A-Z][A-Z0-9_]{2,79})'",own))
+    not_codes={m.OPERATION,m.PHASE,m.REQUEST_SCHEMA,m.AUTHORITY_SCHEMA,m.GO_SCHEMA,m.RECEIPT_SCHEMA,m.PLAN_SCHEMA,m.DATE_CLASS,m.PROVISION_OPERATION,
+               m.COMPLETE_OUTCOME,m.PARTIAL_OUTCOME,m.REFUSED_OUTCOME,m.REDUCED_OUTCOME,m.ESCAPED_OUTCOME,m.UNLISTED_CODE,'C3PO_MASSIVE_API_TOKEN',
+               'MASSIVE_API_TOKEN','CONFIG_ROWS_REDUCED_TO_COUNT','PRECHECK','EFFECTS','COMPLETE','ABSENT','SYMLINK_COMPONENT','COMPONENT_NOT_DIRECTORY',
+               'PATH_CHANGED','CHAIN_ROW_UNSAFE','CHAIN_ROW_WORLD_WRITABLE','FILE_NOT_REGULAR','FILE_TOO_LARGE','FILE_CHANGED_DURING_READ',
+               # the plan's refusals: codes of the core's receipt of a refused authentication, never of perform()
+               'CONFIG_DIRECTORY_NOT_ROOT_0700','DEPLOY_DIRECTORY_INVALID','EVIDENCE_BOOT_UNBOUND','WINDOW_NOT_ON_A_TOKEN_DAY'}|set(m.TOKEN_STATES)
+    codes=words-not_codes
+    assert codes<=m.RECEIPT_CODES,sorted(codes-m.RECEIPT_CODES)
+    assert all("'%s'"%code in built for code in m.RECEIPT_CODES),sorted(code for code in m.RECEIPT_CODES if "'%s'"%code not in built)
+    assert set(m.DEPLOY_CODES.values())|set(m.ENV_CODES.values())|set(m.FILESYSTEM_CODES.values())|{'FILESYSTEM_ERROR'}<=m.RECEIPT_CODES

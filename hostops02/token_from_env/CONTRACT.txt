@@ -1,4 +1,4 @@
-HOSTOPS02 / TOKEN_FROM_ENV - THE SUPERVISOR'S PROVIDER TOKEN PLACED FROM THE DEPLOY ENVIRONMENT FILE - STDIN / ONCE CANDIDATE, REVISION 1
+HOSTOPS02 / TOKEN_FROM_ENV - THE SUPERVISOR'S PROVIDER TOKEN PLACED FROM THE DEPLOY ENVIRONMENT FILE - STDIN / ONCE CANDIDATE, REVISION 2
 
 Operation built
   GO_WRITE_HOSTOPS02_TOKEN_FROM_ENV_01     build/token_from_env.py     writes one file: /etc/c3po-bar/token
@@ -9,21 +9,24 @@ Executable code candidate, unsigned and UNBOUND. Built offline from local files 
 credential file was read, no docker was run, and no test reaches the network. Every token in this directory is fake. In
 every template the windows, the date, the host binding, owner, decision, effects, success criterion, target, key and
 known-hosts references, command pin, claim root and every observed identity are null; status is UNBOUND;
-execution_authorized is false. build/FINAL_PAYLOAD.UNBOUND.py, run under "python3 -I -B -", prints one refusal and exits 1
-before touching anything. The Linux job has not run. Nobody but its author has read these bytes: they need the
-co-auditor's review by hash, the Linux-as-root proof and the co-auditor's check of the bound set before any signature is
-asked for (owner decision DUDU_DECISION_TOKEN_BY_PROGRAM, sha256
+execution_authorized is false. build/FINAL_PAYLOAD.UNBOUND.py, run under "python3 -I -B -", prints one refusal
+(REQUEST_OR_EXECUTOR_UNBOUND) and exits 1 before touching anything. The Linux job has not run.
+
+Revision 2 answers the security review and the conformance review of revision 1 (seal 91ccd6b1..., source 01b0ffee...,
+commit 0f306b7e on ops/hostops02-token-proof); section 11 maps every finding to what changed, or why it did not. It
+needs the co-auditor's review by hash, the Linux-as-root proof and the co-auditor's check of the bound set before any
+signature is asked for (owner decision DUDU_DECISION_TOKEN_BY_PROGRAM, sha256
 739b49641a894000f805dc90b64eac5cdd8c4cbb9825c9dc93dd3e5e8067fcb0).
 
   frozen core (not modified by this operation)   generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6
                                                  seal (CORE_SHA256SUMS) 73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1
-  source build/token_from_env.py                 01b0ffee7ca1e76c2388498ef2c59ec081a74354b356b0d2b9fc659c6280a4fe   (80104 bytes)
-  build/FINAL_PAYLOAD.UNBOUND.py                 e660d3546475e07e8238af320c80b3f9f59cbb2d3acec37184c94531da974afa   (119659 bytes)
-  signed scope (SCOPE_SHA256)                    87c2daffef02599e9da1a64a010ea33477fb97dc793a70ebaed09389014f7111
-  op.py / spec.py                                5c6fbcc64f07fdcb2f346a3a3498122d51ffd3c6e98e3302b1cdf1c310ea7517 / a49b5e607d9f265fc49d65a92daa5af44134b9306b06004cc05db6f6fd61fa1d
-  dispatcher, launcher, transport                bac5e841c2d895f48ab90b4b356af45e430d1db53ac5630bdcda60af1569b1c9 (18 literal lines of the
-                                                 reviewed base, a writing source), ac4085e4... (HOSTOPS01's launcher, byte for byte),
-                                                 5900efbf... (byte for byte)
+  source build/token_from_env.py                 35c049c2d6d47e6eb9a6f2b308a68bba734b9b5c7a03c9635426f850b59de0d1   (86072 bytes)
+  build/FINAL_PAYLOAD.UNBOUND.py                 0cc9c77f75ca9699286d01405d473163915dc35993955a83048c3a2aa334d629   (130483 bytes)
+  signed scope (SCOPE_SHA256)                    cbcc460a363bb45f0096c449b45aa1675b2422e5c47f78057dc73a025388c706
+  op.py / spec.py                                00df65cec2ef2ff437bc4e26af47ae9d9d3818db8b59112748038904cbe978cc / a4869017903d7fd8f37273459d8db9f033178288c365b2046e65ba06f1da4a05
+  dispatcher, launcher, transport                bac5e841c2d895f48ab90b4b356af45e430d1db53ac5630bdcda60af1569b1c9 (unchanged from
+                                                 revision 1: 18 literal lines of the reviewed base, a writing source),
+                                                 ac4085e4... (HOSTOPS01's launcher, byte for byte), 5900efbf... (byte for byte)
   frozen against                                 the release dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858: supervisor README
                                                  644c6211c7351de1dfd17d880842deaf4d5e5b34ea63d23a274c5f4e463461c5, supervisor
                                                  215a25d38568287c16c894a0587037876e18fa4e1c9b739f65b881d4fa7aec24, config.py
@@ -35,12 +38,14 @@ files differ, the files prevail.
 2. WHAT IS IN THIS DIRECTORY
 
   DESIGN.md          the design: why, the parser and every decision in it, the creation, the withdrawal, the receipt
-  CONTRACT.txt       this file: the specification, the binding steps, what a receipt means
+  CONTRACT.txt       this file: the specification, the binding steps, what a receipt means, the answers to the reviews
   spec.py  op.py     the two files the author wrote; everything in build/ is a function of them and of the frozen core
   build/             written by <core>/assemble.py, never edited
-  tests/             conftest.py, tok.py (fixtures, the fake tokens, the scans), test_token_from_env.py, test_conformance.py
-                     (the family's suite, one test replaced), test_native.py and native_child.py (real system calls; a child
-                     interpreter under an audit hook), test_static_pins.py (text pins against the release), test_linux_root.py
+  tests/             conftest.py, tok.py (fixtures, the fake tokens, the scans), envfiles.py (the accepted and refused
+                     environment files and their generator), test_token_from_env.py, test_conformance.py (the family's
+                     suite, one test replaced), test_native.py and native_child.py (real system calls; a child interpreter
+                     under an audit hook), test_static_pins.py (text pins against the release, the list of receipt
+                     codes), test_linux_root.py
   mutation/          mutate.py (the core's, three tables changed), mutants.py, MUTATION_RUN.json, MUTATION_RUN.py312.json
   linux_root/        run.sh, token_shape.py: the operation's own proof for a throwaway Linux runner (NOT RUN)
   seal.py  SHA256SUMS
@@ -50,54 +55,63 @@ files differ, the files prevail.
 3.1 What it does. One run: everything is looked at; one exclusive create of /etc/c3po-bar/token relative to the held
 descriptor of the configuration directory (O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0600 under umask 0077); the value
 of the environment file and one newline written; fsync of the file; its metadata by descriptor; fsync of the directory;
-the readback (op.py:279-341). DESIGN.md sections 1, 5 and 6.
+the readback (op.py, place_token). DESIGN.md sections 1, 5 and 6.
 
 3.2 Days. The class WRITE_WEEKEND of the core (the dispatcher's literal: 2026-10-02, 03, 04), narrowed by the source to
-2026-10-03 and 2026-10-04 UTC (op.py:27, op.py:166). Gate at most 900 s.
+2026-10-03 and 2026-10-04 UTC (TOKEN_DAYS, validate_plan). Gate at most 900 s. The binding puts the window before the
+Sunday read L5 (section 4).
 
 3.3 Authentication. The family's, unchanged: four pins, canonical documents, exact key sets, the hash chain, owner, host
 binding, transport binding, claim root, date and windows, evidence naming GO_READONLY_HOSTOPS_PRECHECK_01 and
 GO_WRITE_SUPERVISOR_READER_PROVISION_01, scope, effects recomputed and compared, success criterion
 TOKEN_PLACED_METADATA_VERIFIED.
 
-3.4 Plan refusals (from the bytes, locally in the dispatcher before any claim; op.py:159-166), in this order:
+3.4 Plan refusals (from the bytes, locally in the dispatcher before any claim; validate_plan), in this order:
 CHAIN_ROW_INVALID / CHAIN_ROW_UNSAFE / PARENT_SETGID (the signed rows of /etc/c3po-bar), CONFIG_DIRECTORY_NOT_ROOT_0700,
 DEPLOY_DIRECTORY_INVALID (not a clean absolute path, "/", or containing or inside /etc/c3po-bar), EVIDENCE_BOOT_UNBOUND,
 WINDOW_NOT_ON_A_TOKEN_DAY.
 
-3.5 Refusals of the run (exit 1, REFUSED_NOTHING_CHANGED; no mutating call), in this order (op.py:365-386):
+3.5 Refusals of the run (exit 1, REFUSED_NOTHING_CHANGED; no mutating call), in this order (perform):
   EXECUTOR_IDENTITY                         effective uid and gid are not 0
-  EVIDENCE_FROM_EARLIER_BOOT                another boot than the evidence's
-  PARENT_MISSING / PARENT_SYMLINK_COMPONENT / PARENT_NOT_DIRECTORY / PARENT_CHANGED_DURING_WALK / PARENT_IDENTITY_MISMATCH
-                                            /etc/c3po-bar is not the signed directory (walk_pinned, the core)
+  EVIDENCE_FROM_EARLIER_BOOT                another boot than the evidence's (BOOT_ID_INVALID, NOATIME_UNAVAILABLE: the core)
+  PARENT_MISSING / PARENT_UNREADABLE / PARENT_SYMLINK_COMPONENT / PARENT_NOT_DIRECTORY / PARENT_CHANGED_DURING_WALK /
+  PARENT_IDENTITY_MISMATCH                  /etc/c3po-bar is not the signed directory (walk_pinned, the core)
   TOKEN_FILE_PRESENT                        anything at /etc/c3po-bar/token (file, link, directory); the environment file is
                                             then not even read
-  DEPLOY_DIRECTORY_ABSENT / DEPLOY_CHAIN_SYMLINK / DEPLOY_CHAIN_NOT_A_DIRECTORY / DEPLOY_CHAIN_CHANGED_DURING_WALK
-  DEPLOY_CHAIN_NOT_ROOT_OWNED_ABOVE_THE_DEPLOY_DIRECTORY / DEPLOY_CHAIN_WORLD_WRITABLE          (op.py:195-210)
-  ENV_FILE_ABSENT / ENV_FILE_NOT_REGULAR / ENV_FILE_WORLD_WRITABLE / ENV_FILE_OWNER_UNEXPECTED (not root, not the owner of
-  the deploy directory) / ENV_FILE_TOO_LARGE (above 65536 bytes) / ENV_FILE_CHANGED_DURING_READ      (op.py:212-230)
-  ENV_FILE_SYNTAX_UNSUPPORTED / ENV_TOKEN_DEFINITION_NOT_PLAIN / ENV_TOKEN_ABSENT / ENV_TOKEN_DEFINITIONS_DISAGREE /
-  ENV_TOKEN_VALUE_GRAMMAR                   the parser (op.py:109-150; section 3.6)
+  DEPLOY_DIRECTORY_ABSENT / DEPLOY_CHAIN_SYMLINK / DEPLOY_CHAIN_NOT_A_DIRECTORY / DEPLOY_CHAIN_CHANGED_DURING_WALK /
+  DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY (a component above it not root-owned, or writable by group or other) /
+  DEPLOY_CHAIN_WORLD_WRITABLE                (deploy_chain)
+  ENV_FILE_ABSENT / ENV_FILE_NOT_REGULAR / ENV_FILE_WORLD_WRITABLE / ENV_FILE_LINKED (more than one link) /
+  ENV_FILE_OWNER_UNEXPECTED (not root, not the owner of the deploy directory) / ENV_FILE_TOO_LARGE (above 65536 bytes) /
+  ENV_FILE_CHANGED_DURING_READ               (environment_bytes)
+  ENV_FILE_SYNTAX_UNSUPPORTED / ENV_TOKEN_DEFINITION_NOT_PLAIN / ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION /
+  ENV_TOKEN_ABSENT / ENV_TOKEN_DEFINITIONS_DISAGREE / ENV_TOKEN_VALUE_GRAMMAR    the parser (section 3.6)
   BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT   less than 15 s left
   PARENT_REPLACED                           /etc/c3po-bar proved again from "/" just before the creation
   TOKEN_FILE_APPEARED_AFTER_PRECHECK, FILESYSTEM_*   the exclusive create itself failed: nothing of this run exists
   PRECHECK_OS_ERROR / PRECHECK_FAILED / GO_EXPIRED / CLOCK_REVERSED   (constant codes; never exception text)
-No code says anything of the value: one code for every defect of the value, whatever it is.
+Every code of a receipt of the run (code, token_file.code, token_file.withdrawal_code) is a member of RECEIPT_CODES,
+signed in the scope as receipt_codes; any other text is replaced by UNLISTED_CODE. No code says anything of the value:
+one code for every defect of the value, whatever it is, begins with or holds.
 
-3.6 The parsing rules (op.py:52-67 and 109-150; DESIGN.md section 4 has the reasons):
-  a. no carriage return and no NUL byte anywhere in the file;                                                   op.py:122
+3.6 The parsing rules (ENV_RULES, token_definitions, value_boundary, token_content; DESIGN.md section 4 has the reasons):
+  a. no carriage return and no NUL byte anywhere in the file;
   b. every line blank (spaces, tabs), a comment ("#" after spaces and tabs), or a statement: [spaces/tabs]
-     ["export" spaces/tabs] NAME [spaces/tabs] then nothing, or "=" or ":" [spaces/tabs] VALUE, NAME of
-     A-Z a-z 0-9 _ . - [ ];                                                                                     op.py:52-54, 129-131
-  c. a VALUE that begins with a quote closes on the same line at the next quote of its kind, holds no backslash,
-     and is followed only by spaces, tabs and an optional comment;                                             op.py:112-114
-  d. an unquoted VALUE ends at the end of its line and does not begin with a vertical tab, a form feed or a
-     byte above 127;                                                                                            op.py:115-116
+     ["export" spaces/tabs] NAME [spaces/tabs] "=" or ":" [spaces/tabs] VALUE, NAME of A-Z a-z 0-9 _ . - [ ]; a name
+     without "=" or ":" is refused (revision 2);
+  c. a VALUE of another name that begins with a quote closes on the same line at the next quote of its kind, holds no
+     two consecutive backslashes and no backslash just before that quote (revision 2: other backslashes are accepted),
+     and is followed only by spaces, tabs and an optional comment;
+  d. an unquoted VALUE of another name ends at the end of its line and does not begin with a vertical tab, a form feed
+     or a byte above 127;
   e. a statement whose NAME is MASSIVE_API_TOKEN or C3PO_MASSIVE_API_TOKEN without regard to case is a definition,
-     and must be exactly NAME=VALUE (capitals, column 0, no export, no space around "=");                     op.py:134-136
-  f. at least one definition; all definitions byte-equal;                                                     op.py:142, 146
-  g. the VALUE matches [A-Za-z0-9._~+/=-]{16,512} to the end of its line;                                     op.py:48, 147
-  h. the token file holds the VALUE and one newline (17 to 513 bytes).                                         op.py:148
+     and must be exactly NAME=VALUE (capitals, column 0, no export, no space around "="); its VALUE is judged by g alone
+     (revision 2), not by c and d;
+  f. no line but a definition and the comments holds massive_api_token in any case, the Kelvin sign read as "k": not
+     inside or around another name, not in a value of another name (revision 2);
+  g. at least one definition; all definitions byte-equal;
+  h. the VALUE matches [A-Za-z0-9._~+/=-]{16,512} to the end of its line;
+  i. the token file holds the VALUE and one newline (17 to 513 bytes).
 
 3.7 After the creation nothing refuses unless nothing changed. Exit 0 requires: the create, every write, fsync of the
 file, the metadata (regular, uid 0, gid 0, 0600, one link, the size written, the device of the directory), fsync of the
@@ -105,19 +119,22 @@ directory, the directory proved again from "/", the readback (same inode, uid 0,
 1-4096, bytes equal). Otherwise PARTIAL (exit 2), with token_file.state:
   WITHDRAWN               the file this run created was removed (the name showed its inode with one link), directory fsynced
   WITHDRAWN_NOT_DURABLE   removed; the fsync of the directory after the removal failed
-  LEFT_UNVERIFIED         the file may hold anything: withdrawal not allowed (GO expired, directory replaced), not this
-                          run's file at the name (another inode or a second link), or the removal failed (withdrawal_code)
+  LEFT_UNVERIFIED         the file may hold anything: withdrawal not allowed (GO expired, clock reversed, directory
+                          replaced), not this run's file at the name (another inode or a second link), or the removal
+                          failed (withdrawal_code); with fsync_file false it may be EMPTY or partial
   CREATE_UNCERTAIN        the exclusive create did not return (objects_left_by_this_run null)
 An exception that escapes (the death of the process) is PARTIAL_STATE_UNKNOWN_TOKEN_FILE_MAY_EXIST.
 
 3.8 What never happens. No process; no environment of a process read (os.environ is not named); no docker, systemctl or
-shell; no network; no overwrite, rename, chmod, chown, truncate; no removal of anything but the token file this run created
-(3.7); no second attempt; no activation.
+shell; no network; no overwrite, rename, chmod, chown, truncate; no removal of anything but the token file this run
+created (3.7: a declared exception to rule 4 of the core, signed in the scope as exceptions_to_the_core); no second
+attempt; no activation.
 
-3.9 Receipt (DESIGN.md section 7). Codes, booleans and identity rows only: the signed rows of /etc/c3po-bar, the device
-and inode of the token file created; never the value, a digest of it, its length or a line count, never a byte or a row
-of the deploy tree or of the environment file. The receipt of a run does not depend on the token (tested: byte-identical
-receipts for two tokens of different lengths).
+3.9 Receipt (DESIGN.md section 7). Listed codes, booleans and identity rows only: the signed rows of /etc/c3po-bar, the
+device and inode of the token file created; never the value, a digest of it, its length or a line count, never a byte
+or a row of the deploy tree or of the environment file. environment_file.not_readable_by_group_or_other says whether
+the file was readable by group or other as found (it never refuses). The receipt of a run does not depend on the token
+(tested: byte-identical receipts for two tokens of different lengths and first bytes).
 
 4. WHERE EACH BOUND VALUE COMES FROM (the binder copies; nothing is typed from memory)
 
@@ -128,17 +145,20 @@ receipts for two tokens of different lengths).
   plan.evidence_boot_id_sha256 items.boot.boot_id_sha256 of the precheck receipt (L1) of the same boot
   request.evidence             the two receipts above, by their stdout SHA-256: GO_READONLY_HOSTOPS_PRECHECK_01 and
                                GO_WRITE_SUPERVISOR_READER_PROVISION_01
-  windows                      inside 2026-10-03 or 2026-10-04 UTC, at most 900 s, ending before the readback that needs
-                               the file (2026-10-04 12:50 UTC)
+  windows                      inside 2026-10-03 or 2026-10-04 UTC, at most 900 s, and ENDING NO LATER THAN
+                               2026-10-04T11:15:00Z: the window of the Sunday read L5 of the A1 (once-l5-20261004-a,
+                               bound, sent in any case) opens then, and it reads the token's metadata. 2026-10-03 UTC
+                               when it can: a refusal then still leaves Sunday morning for a corrected GO.
 A reboot after those receipts makes the run refuse (EVIDENCE_FROM_EARLIER_BOOT); the binding is then taken again from a
 precheck of the new boot.
 
 5. BINDING PROCEDURE (later, by the binder copy bind-tok; not part of this candidate)
 
   1. seal.py check (SEAL_OK) and <core>/assemble.py --check (BUILD_EQUAL); the Linux job green on these bytes;
-  2. the co-auditor's written review citing the source and final payload hashes above;
+  2. the co-auditor's written review citing the source and final payload hashes above, including D3, D6 and D9;
   3. the plan from section 4, each value copied by command from the receipts and compared by hash;
-  4. the request, authority and GO built by the binder and their hashes reviewed by the co-auditor;
+  4. the request, authority and GO built by the binder and their hashes reviewed by the co-auditor; the binder checks
+     the window against section 4 (it ends no later than 2026-10-04T11:15:00Z);
   5. the owner's individual signature on the request by hash; dispatch once; the receipt read for the gate (section 6).
 
 6. WHAT A RECEIPT MEANS FOR THE GATES
@@ -147,8 +167,13 @@ precheck of the new boot.
                                            environment file holds; the Sunday readback reads its metadata only
   exit 1, REFUSED_NOTHING_CHANGED          nothing changed; the code says what to fix; a new GO is needed
   exit 2, WITHDRAWN                        nothing of this run is left; a new GO is needed
-  exit 2, LEFT_UNVERIFIED / CREATE_UNCERTAIN  a file may hold anything at /etc/c3po-bar/token: it must not be used; its removal
-                                           is a decision of the owner (README: an abandoned token file is the owner's to remove)
+  exit 2, LEFT_UNVERIFIED / CREATE_UNCERTAIN  a file may hold anything at /etc/c3po-bar/token (with fsync_file false, maybe
+                                           nothing at all): it must not be used, and every later placement refuses while
+                                           it is there. Its removal is a decision of the owner (README line 205); since the
+                                           owner runs no manual step, it needs a removal operation of its own, to be
+                                           prepared before the run: remove /etc/c3po-bar/token only when its device and
+                                           inode equal this receipt's token_file.device/inode and it has one link,
+                                           never reading its content or size (not built here)
   exit 3, or no receipt                    unknown: read-only readback before anything else
 
 7. PROVEN, REAL ON THE WORKSTATION, EMULATED, UNPROVEN: DESIGN.md section 10.
@@ -163,20 +188,101 @@ precheck of the new boot.
 
 9. TESTS AND MUTATION (runs of the author, 2026-10-03; clock by command)
 
-  tests: 298 on Python 3.9.6 and on 3.12.14, none failed, none skipped (with a tree of the release at hand)
-  mutation: 182 mutants, 182 killed, 0 survivors, 0 errors, on both interpreters (mutation/MUTATION_RUN.json,
+  tests: 334 on Python 3.9.6 and on 3.12.14, none failed, none skipped (with a tree of the release at hand)
+  mutation: 200 mutants, 200 killed, 0 survivors, 0 errors, on both interpreters (mutation/MUTATION_RUN.json,
   mutation/MUTATION_RUN.py312.json, made against the sealed bytes)
+  linux_root/token_shape.py --self-test: every shape made, the 7 expectations met (the emulation only)
 
 10. OPEN DECISIONS (for the signatories; none is decided by these bytes beyond what they say)
 
   D1  The forms of the definition refused although compose would read them the same: "export NAME=VALUE" and a quoted
       VALUE. Refused here (DESIGN.md section 4). If the host's file uses one of them, the run refuses with
       ENV_TOKEN_DEFINITION_NOT_PLAIN or ENV_TOKEN_VALUE_GRAMMAR and nothing changes; accepting either is a new revision.
-  D2  The value floor of 16 characters (a guard against a placeholder). The provider's keys are 32 characters.
-  D3  The withdrawal (section 3.7): this candidate removes the file it created after a later failure, by identity. The
-      alternative is to leave it and say LEFT_UNVERIFIED always.
-  D4  ENV_FILE_OWNER_UNEXPECTED: the environment file must be owned by root or by the owner of the deploy directory.
+      The cost is availability: a host file with CRLF line ends, a quoted token or a comment after it refuses the GO.
+  D2  The value floor of 16 characters (a guard against a short placeholder; a long one such as
+      "your-massive-api-token-here" passes it). The provider's keys are 32 characters.
+  D3  The withdrawal (section 3.7): this candidate removes the file it created after a later failure, by identity. It is
+      a declared exception to rule 4 of the core (which allows only the temporary of a run to be removed), signed in the
+      scope; README line 205 gives the removal of an abandoned token file to the owner. Asked of the co-auditor: accept
+      the exception in writing, or choose the alternative (leave the file and say LEFT_UNVERIFIED always).
+  D4  ENV_FILE_OWNER_UNEXPECTED: the environment file must be owned by root or by the owner of the deploy directory
+      (CORE.md: the deploy tree and .env owned by uid 1000; the release's deploy pipeline rewrites .env as that user).
   D5  The source cannot show that the running containers hold the same value as the file (they read it at their last
-      recreate); asking docker would put the value in an argv. The file is what the next recreate uses.
-  D6  The departure from ORD:25 and from the README's token procedure is the owner's own decision (record above); the
-      co-auditor is asked for a written reading of it.
+      recreate); asking docker would put the value in an argv. The file is what the next recreate uses. Nothing before
+      Monday's first claim shows the key is valid for the provider's websocket stream (a REST-only or expired key fails
+      only after claim 1).
+  D6  The departures, all covered by the owner's decision record (which names the clause "not through the environment"
+      only) and each to be read in writing by the co-auditor and confirmed by the owner:
+        (a) the token is placed by a program, not by the README's manual recipe;
+        (b) the program reads the content of .env, and reads back the content of the token file it wrote, once each, in
+            memory, where ORD:25 says only the authorized process of the supervisor reads the content and the readback
+            reads metadata only (the receipt carries none of it);
+        (c) the first sentence of README line 207 ("This unit does not use it") stops being true; an erratum of the
+            README after the epoch.
+      It meets the clause it names: the file is read; no environment of a process, no docker inspect or exec.
+      The alternative to (b) for the token file: drop the byte comparison (same inode, metadata and size only); kept,
+      because the brief asks for it and it is the only proof that the bytes on disk are the bytes meant.
+  D7  WRITE_WEEKEND narrowed in the operation instead of a new date class in the core.
+  D8  The proof workflow runs only this operation's proof (the earlier operations were proved on their own branches and
+      only their seals are checked). The job uses the network once (apt-get install python3-pytest, as the core's
+      run.sh does) and docker compose as the runner's user for the agreement stage (config only); no shape needs either.
+  D9  A core file of a crash would hold every secret of .env (DESIGN.md section 8; the core pattern on the host is a
+      pipe). The frozen core forbids the operation part to set RLIMIT_CORE (no import of resource, no os member beyond
+      the open flags) and fixes the remote command. Residual; closing it is a core revision.
+  D10 The instant 2026-10-04T11:15:00Z (section 4) is a rule of the binding, not a refusal of the source: a window
+      after it, and before Monday, would still place a token Monday's first claim can use, and only the owner decides
+      such a run (with its own metadata readback before Monday).
+  D11 Two definitions with different values are refused, even the template line "MASSIVE_API_TOKEN=" left above a
+      filled one (compose keeps the last of a name; the backend the prefixed name first). Accepting it means deciding
+      which definition the backend uses; it is a new revision if the host's file has that form.
+
+11. ANSWERS TO THE REVIEWS OF REVISION 1
+
+  Security review (verdict GO; two Low hardening items, two Low proof or operational items, five Info items):
+    1 Low   core dumps                 NOT CHANGED in code, with evidence: core/assemble.py lint, IMPORTS_OF and
+                                       OPERATION_IMPORTS (only base64 beyond the parts; `resource` is refused) and the
+                                       os-member rule (open flags only); the remote command is the core's. Recorded as
+                                       residual risk D9 and DESIGN.md sections 8 and 10.
+    2 Low   scope wording              FIXED: "root-owned and not writable by group or other" in the scope, the header,
+                                       this file and DESIGN.md; the fact is now
+                                       root_owned_and_not_group_or_other_writable_above_the_deploy_directory and the code
+                                       DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY (it was ..._NOT_ROOT_OWNED_..., also
+                                       said of a root-owned group-writable directory).
+    3 Low   compose agreement thin     FIXED: every listed file and the first 500 generated files the parser accepts
+                                       (seed 20261003); fails on a different value, on a name of another case or the
+                                       Kelvin sign that a case-insensitive reader would take, on a listed accepted file
+                                       compose refuses. The host's compose version is in no receipt: unproven, DESIGN 10.
+    4 Low   empty file left            DOCUMENTED (option a): 3.7 and 6 say LEFT_UNVERIFIED with fsync_file false may be
+                                       empty; section 6 describes the removal operation to prepare. Option b (a removal
+                                       after expiry) would be a second departure from the family rule; not taken.
+    5 Info  copies in memory           FIXED in DESIGN.md 8; and two copies fewer: the parser reads lines through a view
+                                       and takes offsets from the match (the definition's line is never copied).
+    6 Info  codes by shape             FIXED: RECEIPT_CODES (signed in the scope), finish() maps code, token_file.code and
+                                       withdrawal_code; UNLISTED_CODE otherwise; tested at three points; static test both
+                                       ways.
+    7 Info  .env link count            FIXED: ENV_FILE_LINKED, fact single_link; emulated, real (os.link) and Linux tests.
+    8 Info  exposure fact              FIXED: environment_file.not_readable_by_group_or_other (reported, never refuses).
+    9 Info  D1-D8 notes                TAKEN into D1, D2, D5 and D8.
+  Conformance review (no blocking defect; four MEDIUM):
+    1 MEDIUM deadline                  FIXED in the documents: 2026-10-04T11:15:00Z (L5), Saturday preferred. The optional
+                                       code check is NOT taken: D10 says why.
+    2 MEDIUM withdrawal and rule 4     FIXED: DESIGN.md 6 calls it a declared exception; the scope signs it
+                                       (exceptions_to_the_core); D3 cites README line 205 and asks for written acceptance.
+    3 MEDIUM D6 incomplete             FIXED: D6 lists (a), (b), (c); the byte comparison is kept (D6 says why).
+    4 MEDIUM parsers other than v2     FIXED: (1) a name without "=" or ":" is refused; (2) the name in any case anywhere
+                                       but a plain definition or a comment is refused (ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_
+                                       DEFINITION), the Kelvin sign read as k. The reviewers' three-parser comparison now
+                                       finds no different value; a whitespace-ending parser can find NO value in some
+                                       accepted files (DESIGN.md 4).
+    5 LOW   plausible files refused    PARTLY: a backslash in a quoted value of another name is accepted unless doubled or
+                                       before the closing quote (both parsers agree on the end). Last-definition-wins is
+                                       NOT taken (D11).
+    6 LOW   .env link count            FIXED (security 7).
+    7 LOW   seal output pattern        FIXED: [^/]* in seal.py and in proof/seals.py.
+    8 LOW   missing compose passes     FIXED: run.sh fails without docker compose; token_shape.py exits 0 only when every
+                                       accepted file agrees (2 when compose is absent, 3 on a disagreement).
+    9 INFO  first byte distinguishable FIXED: a definition's value is judged by the grammar alone.
+   10 INFO  core dumps                 as security 1 (D9).
+   11 INFO  .env mtime in the receipt  NOT TAKEN: the receipt holds listed codes, booleans and identity rows only (the
+                                       brief); an instant of the .env is a new kind of member. Left to the co-auditor.
+  The conformance reviewer disclosed one read-only `git ls-remote` against GitHub during the review (nothing written).

@@ -2,9 +2,11 @@
 # The token placement on Linux as real root, on a real filesystem. For a THROWAWAY GitHub-hosted ubuntu-24.04 runner
 # only. NEVER the production host and never a self-hosted runner: this runs the suites as uid 0, CREATES /etc/c3po-bar
 # (the layout of supervisor operation 2) and a fake deploy tree in /opt, mounts a small tmpfs on /etc/c3po-bar for one
-# shape, and REMOVES all of it again. No network is needed by any shape, no docker command is run as root, and no value
-# of any provider is used: every token is fake. It refuses unless GitHub says the runner is GitHub-hosted, and unless
-# nothing of this family exists on the machine; it removes only what this very run created.
+# shape, and REMOVES all of it again. No shape needs the network, and no docker command is run as root; the job itself
+# uses the network once, to install python3-pytest from the distribution (apt-get, as the core's run.sh does), and runs
+# `docker compose config` as the runner's user in stage 4 (nothing pulled, created or started). No value of any
+# provider is used: every token is fake. It refuses unless GitHub says the runner is GitHub-hosted, and unless nothing
+# of this family exists on the machine; it removes only what this very run created.
 # NOT RUN by its author: no Linux and no root were available offline.
 #
 # usage: sh linux_root/run.sh      (from the operation directory hostops02/token_from_env)
@@ -12,8 +14,9 @@
 #   1. the seal of this directory and of the core, and build/ is what the frozen core assembles
 #   2. the core's suite and this operation's suite as REAL root and as the runner's user (junit files)
 #   3. linux_root/token_shape.py as root: the operation's own run() and Native on the real filesystem (SHAPES file)
-#   4. linux_root/token_shape.py --compose-agreement as the runner's user: what docker compose makes of the files the
-#      parser accepts (config only; nothing pulled, created or started); skipped, and said, without docker compose
+#   4. linux_root/token_shape.py --compose-agreement as the runner's user: what docker compose makes of every listed
+#      file and of 500 generated files the parser accepts (config only; nothing pulled, created or started); a
+#      required stage: without docker compose it fails
 #   5. the seals again
 # Output, always written, in linux_root/: TESTS.core.linux-{root,user}.xml TESTS.token_from_env.linux-{root,user}.xml
 # SHAPES.token_from_env.linux-root.json SHAPES.token_from_env.compose.json (a stage that did not run leaves a file that
@@ -97,9 +100,10 @@ if docker compose version > /dev/null 2>&1; then
     docker compose version
     HOSTOPS_THROWAWAY_RUNNER=yes RUNNER_ENVIRONMENT=github-hosted /usr/bin/python3 -I -B linux_root/token_shape.py --compose-agreement > "$OUT/SHAPES.token_from_env.compose.json"
     AGREEMENT=$?
-    [ "$AGREEMENT" = 0 ] || failed "token_shape.py --compose-agreement exit $AGREEMENT (3: compose gives another value than the parser for a file the parser accepts)"
+    [ "$AGREEMENT" = 0 ] || failed "token_shape.py --compose-agreement exit $AGREEMENT (2: compose did not run; 3: compose disagrees with the parser on a file the parser accepts, or refuses a listed one)"
 else
     printf 'NOT_RUN: docker compose is not available on this runner; the agreement with compose is not shown\n' > "$OUT/SHAPES.token_from_env.compose.json"
+    failed "docker compose is not available: the agreement with compose is a required stage"
 fi
 not_run "$OUT/SHAPES.token_from_env.compose.json" "token_shape.py --compose-agreement wrote nothing"
 

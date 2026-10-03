@@ -1,4 +1,5 @@
-HOSTOPS02 — Linux-as-root proof of the token placement (token_from_env), beside the four tier 0 once payloads and C3.
+HOSTOPS02 — Linux-as-root proof of the token placement (token_from_env, revision 2), beside the four tier 0 once payloads
+and C3.
 A THROWAWAY branch: it never merges.
 
 WHAT THE BRANCH IS
@@ -13,8 +14,10 @@ WHAT THE BRANCH IS
     hostops02/proof            what the jobs add, sealed (PROOF_SHA256SUMS)
     .github/workflows/hostops02-linux-root.yml   the one workflow (= proof/WORKFLOW.yml.txt, byte for byte)
   The branch starts from the C3 proof branch (febb51f) and adds hostops02/token_from_env; of proof/ it changes seals.py
-  (the new directory in ORDER), SEALS.expected.json, this file, WORKFLOW.yml.txt and PROOF_SHA256SUMS. No byte of the core,
-  of the five earlier operations or of c3po/ changed. The hashes of the seals and of the payloads are in
+  (the new directory in ORDER; the outputs of the Linux job matched without "/", [^/]*), SEALS.expected.json, this file,
+  WORKFLOW.yml.txt and PROOF_SHA256SUMS. No byte of the core, of the five earlier operations or of c3po/ changed.
+  Revision 2 (the second commit of the branch) replaces hostops02/token_from_env with the answers to the security and
+  conformance reviews of revision 1 (its CONTRACT.txt, section 11). The hashes of the seals and of the payloads are in
   SEALS.expected.json (written by command). Nothing here was run on Linux or on the host by the author. No file of this
   branch is a request, an authority or a GO: every document in a build/ directory is UNBOUND. Every token in the branch is
   fake.
@@ -41,13 +44,18 @@ THE JOB (ubuntu-24.04, GitHub-hosted, HOSTOPS_THROWAWAY_RUNNER=yes; every step a
           bytes; the access time of the environment file unchanged, which only the kernel's O_NOATIME explains); the run
           again (refused, the file as it was); a token of another value and length (the receipt the same, the inode of
           the file aside); a tmpfs of four pages mounted on /etc/c3po-bar and filled, so that the write fails with ENOSPC
-          (the file of this run withdrawn by identity, nothing left), then unmounted; four refusals before any effect
-          (the environment file through a link, a world-writable deploy directory, the export form, a quoted value); the
-          literal fake value FAKE-TOKEN-FOR-TESTS-0001. Every receipt is scanned for every substring of four characters
+          (the file of this run withdrawn by identity, nothing left), then unmounted; six refusals before any effect
+          (the environment file through a link, a world-writable deploy directory, the export form, a quoted value, the
+          name of the token in a value of another name, a second hard link to the environment file); the literal fake
+          value FAKE-TOKEN-FOR-TESTS-0001. Every receipt is scanned for every substring of four characters
           or more of the token. Seven expectations;
-       d. linux_root/token_shape.py --compose-agreement as the runner's user: for each environment file the parser
-          accepts, the value the runner's `docker compose config` gives a service of a throwaway project, compared with
-          the parser's; for the files the parser refuses, what compose would have given, recorded and not judged;
+       d. linux_root/token_shape.py --compose-agreement as the runner's user, a required stage: every listed
+          environment file of tests/envfiles.py and the first 500 generated files (seed 20261003) the parser accepts,
+          each given to the runner's `docker compose config` for a service of a throwaway project (nothing pulled,
+          created or started). For each accepted file: the value the backend would take (the first of its two names
+          present), each of the two names, and no other name a case-insensitive reader would take for one of them,
+          against the parser. It fails on any disagreement, on a listed accepted file compose refuses, and when
+          docker compose is not there. For the refused files, what compose would have given is recorded, not judged;
        e. the seals again; nothing of /etc/c3po-bar, of the fake deploy tree or of the tmpfs is left.
   4. core/linux_root/report.py: the SHA-256 of every output and its content (junit: counts and every failure, error
      and skip). The outputs are uploaded as one artifact.
@@ -59,7 +67,8 @@ OUTPUTS
 
 WHAT A GREEN JOB DOES NOT PROVE
   - Anything about the production host: its .env (its form, owner and mode, that it holds the key), its compose version
-    (the agreement is shown for the runner's), its root filesystem under /etc/c3po-bar.
+    (the agreement is shown for the runner's; older parsers only by offline ports, DESIGN.md section 4), its root
+    filesystem under /etc/c3po-bar.
   - That the value in the host's .env is the value the running containers hold (they read it at their last recreate).
   - The dispatcher, launcher and transport against a real ssh and a real sudo: their suites run here, a dispatch does not.
   - The earlier operations: their proofs are the jobs of their own branches; here only their seals are checked.

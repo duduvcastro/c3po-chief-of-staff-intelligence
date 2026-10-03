@@ -12,7 +12,11 @@ for a quoted value (an unclosed quote leaves the opening quote as the tail, whic
 `regular` and `size_within_1_4096` cannot be false in a run (the created file and the one read_regular returns are
 regular, and their sizes are 17 to 513 bytes by construction): each fact is reported because the README's readback names it; tests/test_token_from_env.py judges it, and the size fact, on the
 function itself), and a write loop that never advances (it would loop until the time
-limit of the harness)."""
+limit of the harness).
+
+Revision 2: R17 of revision 1 (separator!=b':' in place of separator==b'=') is left out: a statement now always has "="
+or ":", so the two conditions are the same. R05c (the body of a quoted value taken with its opening quote) is equivalent
+for the same kind of reason: the opening quote neither makes two backslashes nor ends the body."""
 MUTANTS=[]
 COMBOS={}
 REDUNDANT={}
@@ -50,37 +54,47 @@ add('C27_activation_allowed',"\nACTIVATION_ALLOWED=False\n","\nACTIVATION_ALLOWE
 add('C28_gate_longer_than_a_write_may_have',"MAX_GATE_SPAN_SECONDS=900","MAX_GATE_SPAN_SECONDS=901")
 add('C29_comment_after_indentation_not_a_comment',"ENV_LINE_COMMENT=rb'[ \\t]*#.*'","ENV_LINE_COMMENT=rb'#.*'")
 add('C30_blank_line_only_when_empty',"ENV_LINE_BLANK=rb'[ \\t]*'","ENV_LINE_BLANK=rb''")
-STATEMENT="ENV_LINE_STATEMENT=rb'([ \\t]*)(export[ \\t]+)?([A-Za-z0-9_.\\[\\]-]+)([ \\t]*)(?:([=:])([ \\t]*)(.*))?'"
+STATEMENT="ENV_LINE_STATEMENT=rb'([ \\t]*)(export[ \\t]+)?([A-Za-z0-9_.\\[\\]-]+)([ \\t]*)([=:])([ \\t]*)(.*)'"
 add('C31_names_without_dots_dashes_brackets',STATEMENT,STATEMENT.replace('[A-Za-z0-9_.\\[\\]-]+','[A-Za-z0-9_]+'))
 add('C32_no_yaml_separator',STATEMENT,STATEMENT.replace('([=:])','(=)'))
-add('C33_no_inherited_name',STATEMENT,STATEMENT.replace('(?:([=:])([ \\t]*)(.*))?','(?:([=:])([ \\t]*)(.*))'))
+add('C33_a_name_without_a_value_accepted',STATEMENT,STATEMENT.replace('([=:])([ \\t]*)(.*)','(?:([=:])([ \\t]*)(.*))?'))
 add('C34_export_not_recognised',STATEMENT,STATEMENT.replace('(export[ \\t]+)?','()?'))
 add('C35_anything_after_a_closing_quote',"ENV_QUOTED_TAIL=rb'[ \\t]*(?:#.*)?'","ENV_QUOTED_TAIL=rb'.*'")
 add('C36_spaces_but_no_comment_after_a_closing_quote',"ENV_QUOTED_TAIL=rb'[ \\t]*(?:#.*)?'","ENV_QUOTED_TAIL=rb'[ \\t]*'")
+add('C37_the_name_looked_for_in_capitals',"TOKEN_NAME_FOLDED=b'massive_api_token'","TOKEN_NAME_FOLDED=b'MASSIVE_API_TOKEN'")
+add('C38_the_name_looked_for_without_its_middle',"TOKEN_NAME_FOLDED=b'massive_api_token'","TOKEN_NAME_FOLDED=b'massive_api_tokenx'")
 
 # ---------------------------------------------------------------- the parser
 add('R01_carriage_return_accepted',"    need(b'\\r' not in raw and b'\\x00' not in raw,'ENV_FILE_SYNTAX_UNSUPPORTED')","    need(b'\\x00' not in raw,'ENV_FILE_SYNTAX_UNSUPPORTED')")
 add('R02_nul_accepted',"    need(b'\\r' not in raw and b'\\x00' not in raw,'ENV_FILE_SYNTAX_UNSUPPORTED')","    need(b'\\r' not in raw,'ENV_FILE_SYNTAX_UNSUPPORTED')")
-add('R03_line_outside_the_rules_ignored',"            need(match is not None,'ENV_FILE_SYNTAX_UNSUPPORTED')\n            lead,export,key,space,separator,gap,value=match.groups()\n",
-    "            if match is None:\n                position=end+1;continue\n            lead,export,key,space,separator,gap,value=match.groups()\n")
-add('R04_value_end_not_judged',"            if separator is not None:value_boundary(value)\n","")
-add('R05_a_quoted_value_may_hold_a_backslash',"        need(b'\\\\' not in value[1:closing] and re.fullmatch(","        need(re.fullmatch(")
+add('R03_line_outside_the_rules_ignored',"                need(match is not None,'ENV_FILE_SYNTAX_UNSUPPORTED')\n                lead,export,key,space,separator,gap=match.group(1,2,3,4,5,6)",
+    "                if match is None:\n                    position=end+1;continue\n                lead,export,key,space,separator,gap=match.group(1,2,3,4,5,6)")
+add('R04_value_end_not_judged',"                    value_boundary(other[match.start(7):])\n","")
+add('R05_a_quoted_value_may_hold_two_backslashes',"        need(b'\\\\\\\\' not in body and ","        need(")
+add('R05b_a_backslash_may_stand_before_the_closing_quote',"body[-1:]!=b'\\\\' and re.fullmatch(","re.fullmatch(")
 add('R06_quoted_tail_not_judged',"and re.fullmatch(ENV_QUOTED_TAIL,value[closing+1:]) is not None,'ENV_FILE_SYNTAX_UNSUPPORTED')","and True,'ENV_FILE_SYNTAX_UNSUPPORTED')")
 add('R07_value_may_begin_with_a_vertical_tab',"        need(value[:1] not in (b'\\x0b',b'\\x0c') and","        need(value[:1] not in (b'\\x0c',) and")
 add('R08_value_may_begin_with_a_form_feed',"        need(value[:1] not in (b'\\x0b',b'\\x0c') and","        need(value[:1] not in (b'\\x0b',) and")
 add('R09_value_may_begin_with_any_byte',"and (not value or value[0]<0x80),'ENV_FILE_SYNTAX_UNSUPPORTED')","and True,'ENV_FILE_SYNTAX_UNSUPPORTED')")
 add('R10_only_a_double_quote_opens_a_quoted_value',"    if value[:1] in (b'\"',b\"'\"):","    if value[:1] in (b'\"',):")
-add('R11_names_compared_with_their_case',"            if key.upper() in names:","            if key in names:")
-PLAIN="                need(not lead and export is None and key in names and not space and separator==b'=' and not gap,'ENV_TOKEN_DEFINITION_NOT_PLAIN')"
+add('R11_names_compared_with_their_case',"                if key.upper() in names:","                if key in names:")
+PLAIN="                    need(not lead and export is None and key in names and not space and separator==b'=' and not gap,'ENV_TOKEN_DEFINITION_NOT_PLAIN')"
 add('R12_definition_may_be_indented',PLAIN,PLAIN.replace('not lead and ',''))
 add('R13_definition_may_be_exported',PLAIN,PLAIN.replace('export is None and ',''))
 add('R14_definition_may_be_spaced_before_the_sign',PLAIN,PLAIN.replace('not space and ',''))
 add('R15_definition_may_use_a_colon',PLAIN,PLAIN.replace("separator==b'=' and ",''))
 add('R16_definition_may_be_spaced_after_the_sign',PLAIN,PLAIN.replace(' and not gap',''))
-add('R17_definition_may_be_taken_from_compose',PLAIN,PLAIN.replace("separator==b'='","separator!=b':'"))
-add('R18_value_offset_includes_the_sign',"                found.append((names[key],position+len(key)+1,end))","                found.append((names[key],position+len(key),end))")
-add('R19_only_the_last_definition_kept',"                found.append((names[key],position+len(key)+1,end))","                found[:]=[(names[key],position+len(key)+1,end)]")
-add('R20_last_line_loses_its_last_byte',"        if end<0:end=size\n","        if end<0:end=size-1\n")
+add('R18_value_offset_includes_the_sign',"                    found.append((names[key],position+match.start(7),end))","                    found.append((names[key],position+match.start(5),end))")
+add('R19_only_the_last_definition_kept',"                    found.append((names[key],position+match.start(7),end))","                    found[:]=[(names[key],position+match.start(7),end)]")
+add('R20_last_line_loses_its_last_byte',"            if end<0:end=size\n","            if end<0:end=size-1\n")
+add('R28_the_name_allowed_in_other_lines',"                    need(TOKEN_NAME_FOLDED not in folded(other),'ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION')\n","")
+add('R29_the_kelvin_sign_not_read_as_k',"    return line.replace(KELVIN_SIGN,b'k').lower()","    return line.lower()")
+add('R30_other_lines_compared_with_their_case',"    return line.replace(KELVIN_SIGN,b'k').lower()","    return line.replace(KELVIN_SIGN,b'k')")
+add('R31_only_the_name_of_another_line_searched',"                    need(TOKEN_NAME_FOLDED not in folded(other),","                    need(TOKEN_NAME_FOLDED not in folded(key),")
+add('R32_a_definition_judged_by_the_boundary_of_other_values',"                    found.append((names[key],position+match.start(7),end))",
+    "                    value_boundary(bytes(line)[match.start(7):]);found.append((names[key],position+match.start(7),end))")
+add('R33_a_definition_also_searched_for_the_name',"                    found.append((names[key],position+match.start(7),end))",
+    "                    need(folded(bytes(line)).count(TOKEN_NAME_FOLDED)==1,'ENV_TOKEN_NAME_OUTSIDE_A_PLAIN_DEFINITION');found.append((names[key],position+match.start(7),end))")
 add('R21_no_definition_is_an_empty_value',"    need(found,'ENV_TOKEN_ABSENT')\n","")
 add('R22_definitions_not_compared',"        need(all(view[start:end]==first for _,start,end in found),'ENV_TOKEN_DEFINITIONS_DISAGREE')\n","")
 add('R23_only_the_first_two_compared',"        need(all(view[start:end]==first for _,start,end in found),","        need(all(view[start:end]==first for _,start,end in found[:2]),")
@@ -147,7 +161,7 @@ add('K16_walk_fact_not_set',"        facts['walked_without_following_a_link']=Tr
 add('K17_symlink_code_lost',"DEPLOY_CODES={'SYMLINK_COMPONENT':'DEPLOY_CHAIN_SYMLINK',","DEPLOY_CODES={'SYMLINK_COMPONENT':'SYMLINK_COMPONENT',")
 add('K18_not_a_directory_code_lost',"'COMPONENT_NOT_DIRECTORY':'DEPLOY_CHAIN_NOT_A_DIRECTORY',","'COMPONENT_NOT_DIRECTORY':'COMPONENT_NOT_DIRECTORY',")
 add('K22_changed_during_the_walk_code_lost',"'PATH_CHANGED':'DEPLOY_CHAIN_CHANGED_DURING_WALK',","'PATH_CHANGED':'PATH_CHANGED',")
-add('K19_unsafe_row_code_lost',"'CHAIN_ROW_UNSAFE':'DEPLOY_CHAIN_NOT_ROOT_OWNED_ABOVE_THE_DEPLOY_DIRECTORY',","'CHAIN_ROW_UNSAFE':'CHAIN_ROW_UNSAFE',")
+add('K19_unsafe_row_code_lost',"'CHAIN_ROW_UNSAFE':'DEPLOY_CHAIN_UNSAFE_ABOVE_THE_DEPLOY_DIRECTORY',","'CHAIN_ROW_UNSAFE':'CHAIN_ROW_UNSAFE',")
 add('K20_world_writable_code_lost',"'CHAIN_ROW_WORLD_WRITABLE':'DEPLOY_CHAIN_WORLD_WRITABLE'}","'CHAIN_ROW_WORLD_WRITABLE':'CHAIN_ROW_WORLD_WRITABLE'}")
 ORDER="""            gate()
             try:host.lstat(TOKEN_NAME,config.fd)
@@ -185,6 +199,18 @@ add('N14_names_defined_reported_false',"    facts['names_defined']={key:any(name
 add('N15_syntax_fact_not_set',"    found=token_definitions(raw);facts['syntax_within_the_accepted_subset']=True;","    found=token_definitions(raw);")
 add('N16_agreement_fact_not_set',"    facts['definitions_agree']=True;facts['value_grammar_met']=True\n","    facts['value_grammar_met']=True\n")
 add('N17_read_fact_not_set',"    facts['unchanged_during_read']=True\n","")
+add('N18_a_second_link_read',"    need(named.st_nlink==1,'ENV_FILE_LINKED');","    ")
+add('N19_link_fact_not_set',"'ENV_FILE_LINKED');facts['single_link']=True","'ENV_FILE_LINKED')")
+add('N20_readable_fact_inverted',"    facts['not_readable_by_group_or_other']=not named.st_mode&0o044","    facts['not_readable_by_group_or_other']=bool(named.st_mode&0o044)")
+add('N21_readable_fact_of_other_only',"    facts['not_readable_by_group_or_other']=not named.st_mode&0o044","    facts['not_readable_by_group_or_other']=not named.st_mode&0o004")
+add('N22_readable_fact_after_the_refusals',"    facts['not_readable_by_group_or_other']=not named.st_mode&0o044          # the exposure as found: said, never a refusal\n","")
+
+# ---------------------------------------------------------------- the list of receipt codes
+add('L01_code_of_the_run_not_listed',"        return seal(envelope(status,outcome,listed(code),","        return seal(envelope(status,outcome,code,")
+add('L02_codes_of_the_token_file_not_listed',"        token[0].update(code=listed(token[0]['code']),withdrawal_code=listed(token[0]['withdrawal_code']))\n","")
+add('L03_withdrawal_code_not_listed',"withdrawal_code=listed(token[0]['withdrawal_code']))","withdrawal_code=token[0]['withdrawal_code'])")
+add('L04_a_code_missing_from_the_list',"    'TOKEN_FILE_PRESENT',\n","")
+add('L05_every_text_listed',"def listed(code):return code if code is None or code in RECEIPT_CODES else UNLISTED_CODE","def listed(code):return code")
 
 # ---------------------------------------------------------------- the creation, the readback, the withdrawal
 add('W01_existing_name_reported_as_a_filesystem_error',"code='TOKEN_FILE_APPEARED_AFTER_PRECHECK' if error.errno==errno.EEXIST else filesystem_code(error))","code=filesystem_code(error))")

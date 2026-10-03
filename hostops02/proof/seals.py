@@ -29,7 +29,7 @@ REPOSITORY=os.path.dirname(FAMILY)
 WORKFLOW=os.path.join(REPOSITORY,'.github','workflows','hostops02-linux-root.yml')
 ORDER=('core','catalog_init','install_release','epoch_readback','activate','tls_probe','token_from_env')
 # what the Linux job writes into the sealed directories while it runs
-OUTPUT=re.compile(r'linux_root/(TESTS\..*\.xml|SHAPES\..*\.json|CATALOG_SHAPE\..*\.json)')
+OUTPUT=re.compile(r'linux_root/(TESTS\.[^/]*\.xml|SHAPES\.[^/]*\.json|CATALOG_SHAPE\.[^/]*\.json)')
 SKIPPED_PARTS=('__pycache__','.pytest_cache','_tmp')
 ENV={'PATH':'/usr/bin:/bin','PYTHONDONTWRITEBYTECODE':'1'}
 UNLISTED='no file is present that the seal does not list'
