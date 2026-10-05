@@ -1,0 +1,4635 @@
+{
+ "by_target": {
+  "dispatcher": 15,
+  "launcher": 4,
+  "op": 312
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 331,
+  "redundant_survivors": 0,
+  "single": 331,
+  "survivors": 0
+ },
+ "errors": [],
+ "list": "own",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "build/ASSEMBLY.json": "69cb7acd1f02e4236abcb8e6c518543b69a0a63fd3bc675aa7fa625f71a15508",
+  "build/AUTHORITY.UNBOUND.json": "bc7cdc73c929fe498c71ccb7445f8cb58936a322cfb0eb8b41cbd740a19de941",
+  "build/DISPATCH.UNBOUND.json": "6a767886ef79dd2665fdb4c60ad81be44065d5cdf4939f7057dadecd305710a8",
+  "build/DISPATCH_SCOPE_DELTA.diff": "6123462eaed8ecf7071b33fb3acf5b7a7314416806f8ddedc947f3567e7b3e4d",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "d22699735247735c5ce34c5ee3f4aec0f82d0ac8fcf1c8f7b63aec6b51f0776a",
+  "build/GO.UNBOUND.json": "2bd209ebbe1bd873d0fd87e50b500d4a09e92093183d9e27231fdb469ac86bde",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "b3e041168189e8f61497d61b8369b4a6dcc44934056014edec78b7c70b2e3ce2",
+  "build/REQUEST.UNBOUND.json": "c53a881d384aad2ef58a1d847969ed1e38d74d9855673a3f60fa434437161d3b",
+  "build/dispatch_once.py": "8c007211a8bd51bf9e0571864de29c321ab1c16ba66eed3e9945427badd058f7",
+  "build/k8_eve.py": "6c51589bad1290df6f04f5ae58946abe54463c4bf573ae6bfd00df801bf6ea77",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "58e497b32ca86a22792a428eddecb428620fb068e4d25dd5cf4a26c115def850",
+  "op.py": "98c30dd19a05f75aeee936124333bf37483afd9d699eeb10fc0b088edd85f8b0",
+  "spec.py": "6a17a4ac4ce9b19753b1c1639d5ef793d78adef4189a8855c8904b974e632b02",
+  "tests/conftest.py": "ced3f17988725fc5cc87297759a2f2bbd562be24a78f8e748a41db7ad73460e9",
+  "tests/fixtures/DAY_SETS.json": "e7b1a87f426d6c3d8676bc044dd0088c1a7af09ac39283cab49ba388ba5d64b8",
+  "tests/k8.py": "ab48ec832394c8d34bd635cdb849849df5bcdb12540209ef59d88346e118ba4a",
+  "tests/k8copy.py": "b13f6ba11f85cab877cca20b1484424b91d8efeb9a400053e0024208dcb4e2c9",
+  "tests/native_child.py": "be3c37f4510c247176f5c55ef3dc9a9a93fa02bb719056c7b35bf1acd6304831",
+  "tests/test_conformance.py": "92a1f088c02ac8091f7c0f9788fed64241a4871faba4601ba8378bf04e5816ea",
+  "tests/test_k8_copy.py": "d534ba0bee9ba7ef8ddd9403d85d7012d21db4562fd76b82106262fe556d68aa",
+  "tests/test_k8_eve.py": "6130fb3b31bb6c59d948a904fd53eb5460441e8eca472e742e906e2753d02329",
+  "tests/test_native.py": "88b438a3c98508157221664c1ec8eadda4a608a89cdb63862da353a9f0d0902a"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "required_zero_survivors": true,
+ "results": [
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C01_another_epoch",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 7 deselected in 2.55s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['2026-10-05'... '2026-10-09'] == ['2026-10-06'... '2026-10-09']",
+   "killed": true,
+   "mutant": "C02_monday_has_an_eve",
+   "returncode": 1,
+   "seconds": 16.8,
+   "summary": "1 failed, 103 passed, 7 deselected in 14.00s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['2026-10-06'... '2026-10-08'] == ['2026-10-06'... '2026-10-09']",
+   "killed": true,
+   "mutant": "C03_thursday_has_no_eve",
+   "returncode": 1,
+   "seconds": 16.3,
+   "summary": "1 failed, 103 passed, 7 deselected in 13.01s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C04_the_eve_of_tuesday_is_tuesday",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 7 deselected in 2.58s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C05_eve_from_one_hour_earlier",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 7 deselected in 2.41s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C06_eve_until_the_first_window",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 7 deselected in 2.99s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C07_another_package",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 7 deselected in 3.13s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C08_another_revision",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 7 deselected in 2.67s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C09_another_var_lib",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 7 deselected in 2.73s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C10_capacity_tree_of_the_reader",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 7 deselected in 2.56s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C11_config_root_not_held",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 7 deselected in 2.22s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C12_go_root_not_compared",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 7 deselected in 2.82s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C13_container_path_of_the_host",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 7 deselected in 2.56s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C14_k9_root_of_another_epoch",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 7 deselected in 2.51s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C15_k9_days_under_another_name",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 7 deselected in 2.88s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C16_causal_directory_name",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 7 deselected in 2.77s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C17_receipts_directory_name",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 7 deselected in 2.77s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C18_commitment_file_name",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 7 deselected in 2.80s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C19_audit_file_name",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 7 deselected in 2.97s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C20_receipt_of_the_publish_step",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 7 deselected in 2.71s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C21_receipt_outputs_named_from_the_source_root",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 7 deselected in 2.13s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C22_receipt_member_set_without_aggregates",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 7 deselected in 2.36s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C23_commitment_schema",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 7 deselected in 2.28s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C24_audit_event_of_the_publication",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 7 deselected in 2.15s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C25_audit_member_set",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 7 deselected in 2.33s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 2026-10-07",
+   "killed": true,
+   "mutant": "C26_capacity_one_less",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 1 passed, 7 deselected in 2.80s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "C27_capacity_one_more",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 72 passed, 7 deselected in 8.76s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "C28_symbol_grammar_lowercase",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 69 passed, 7 deselected in 8.31s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C29_one_chain_role_not_read",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 7 deselected in 2.60s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C30_template_pin_of_the_publication",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 7 deselected in 2.65s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C31_go_files_phases_swapped",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 7 deselected in 2.29s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C32_contract_keys_without_the_policy",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 7 deselected in 2.52s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: WINDOWS_INVALID",
+   "killed": true,
+   "mutant": "C33_window_names_with_a_dot",
+   "returncode": 1,
+   "seconds": 19.1,
+   "summary": "1 failed, 123 passed, 7 deselected in 16.62s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('session=<day>.json' == 'session=<day>.json'",
+   "killed": true,
+   "mutant": "C34_four_windows",
+   "returncode": 1,
+   "seconds": 15.6,
+   "summary": "1 failed, 103 passed, 7 deselected in 13.18s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C35_two_windows",
+   "returncode": 1,
+   "seconds": 5.2,
+   "summary": "1 failed, 7 deselected in 2.14s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: session=2026-10-05.json",
+   "killed": true,
+   "mutant": "C36_file_names_of_monday",
+   "returncode": 1,
+   "seconds": 158.5,
+   "summary": "1 failed, 248 passed, 7 deselected in 156.19s (0:02:36)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: session=2026-10-05.json",
+   "killed": true,
+   "mutant": "C37_file_names_without_the_session_prefix",
+   "returncode": 1,
+   "seconds": 159.1,
+   "summary": "1 failed, 248 passed, 7 deselected in 156.57s (0:02:36)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[55]",
+   "killed": true,
+   "mutant": "C38_chain_names_with_an_equal_sign",
+   "returncode": 1,
+   "seconds": 24.3,
+   "summary": "1 failed, 166 passed, 7 deselected in 21.49s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[54]",
+   "killed": true,
+   "mutant": "C38b_chain_names_with_a_slash",
+   "returncode": 1,
+   "seconds": 22.7,
+   "summary": "1 failed, 165 passed, 7 deselected in 20.41s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'path': '/va...apacity', ...} == {'path': '/va...apacity', ...}",
+   "killed": true,
+   "mutant": "C39_identity_rule_with_a_third_value",
+   "returncode": 1,
+   "seconds": 15.0,
+   "summary": "1 failed, 103 passed, 7 deselected in 12.71s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'max_seconds...': 40959, ...} == {'max_seconds...': 40960, ...}",
+   "killed": true,
+   "mutant": "C40_delivery_limit_one_byte_less",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 103 passed, 7 deselected in 12.43s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'max_seconds...': 40961, ...} == {'max_seconds...': 40960, ...}",
+   "killed": true,
+   "mutant": "C41_delivery_limit_one_byte_more",
+   "returncode": 1,
+   "seconds": 15.1,
+   "summary": "1 failed, 103 passed, 7 deselected in 12.15s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C42_receipt_limit_small",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 7 deselected in 2.84s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 2026-10-07",
+   "killed": true,
+   "mutant": "C43_commitment_limit_small",
+   "returncode": 1,
+   "seconds": 5.3,
+   "summary": "1 failed, 1 passed, 7 deselected in 2.99s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C44_audit_limit_small",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 7 deselected in 2.54s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C45_chain_limit_small",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 7 deselected in 2.29s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'max_seconds...': 40960, ...} == {'max_seconds...': 40960, ...}",
+   "killed": true,
+   "mutant": "C46_free_floor_one_block_more",
+   "returncode": 1,
+   "seconds": 16.0,
+   "summary": "1 failed, 103 passed, 7 deselected in 13.78s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "C47_free_floor_one_block_less",
+   "returncode": 1,
+   "seconds": 14.9,
+   "summary": "1 failed, 95 passed, 7 deselected in 12.40s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'max_seconds...': 40960, ...} == {'max_seconds...': 40960, ...}",
+   "killed": true,
+   "mutant": "C48_allowance_one_second_less",
+   "returncode": 1,
+   "seconds": 16.2,
+   "summary": "1 failed, 103 passed, 7 deselected in 13.67s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'max_seconds...': 40960, ...} == {'max_seconds...': 40960, ...}",
+   "killed": true,
+   "mutant": "C49_allowance_one_second_more",
+   "returncode": 1,
+   "seconds": 15.5,
+   "summary": "1 failed, 103 passed, 7 deselected in 12.92s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "C50_files_readable_by_the_group",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 7 deselected in 2.47s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C51_directories_open_to_the_group",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 7 deselected in 2.48s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 2026-10-07",
+   "killed": true,
+   "mutant": "C52_date_class_of_the_first_session",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 1 passed, 7 deselected in 3.20s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (0 == 0 and True is True and False is False and 'WRITE_EPOCH' == 'WRITE_SESSIONS'",
+   "killed": true,
+   "mutant": "C53_date_class_of_the_whole_epoch",
+   "returncode": 1,
+   "seconds": 8.0,
+   "summary": "1 failed, 6 passed, 7 deselected in 5.03s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['GO_READONLY..._PRECHECK_01'] == ['GO_READONLY...HASE_READ_01']",
+   "killed": true,
+   "mutant": "C54_evidence_of_the_precheck",
+   "returncode": 1,
+   "seconds": 14.0,
+   "summary": "1 failed, 103 passed, 7 deselected in 11.70s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([] == ['GO_READONLY...HASE_READ_01']",
+   "killed": true,
+   "mutant": "C55_no_evidence_operation",
+   "returncode": 1,
+   "seconds": 15.0,
+   "summary": "1 failed, 103 passed, 7 deselected in 12.36s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'max_seconds...': 40960, ...} == {'max_seconds...': 40960, ...}",
+   "killed": true,
+   "mutant": "C56_gate_span_of_a_read",
+   "returncode": 1,
+   "seconds": 16.0,
+   "summary": "1 failed, 103 passed, 7 deselected in 12.81s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (0 == 0 and True is True and True is False)",
+   "killed": true,
+   "mutant": "C57_activation_allowed",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 6 passed, 7 deselected in 4.14s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_source_starts_no_process_and_carries_no_runner_or_lock_part",
+   "killed": true,
+   "mutant": "C58_scope_says_a_process_is_started",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 6 passed, 7 deselected in 4.20s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['a second at... the receipt'] == ['a symbol in... the receipt']",
+   "killed": true,
+   "mutant": "C59_scope_never_list_loses_the_payload_hash",
+   "returncode": 1,
+   "seconds": 16.7,
+   "summary": "1 failed, 103 passed, 7 deselected in 13.85s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'max_seconds...: 262144, ...} == {'max_seconds...': 40960, ...}",
+   "killed": true,
+   "mutant": "C60_scope_loses_the_delivery_limit",
+   "returncode": 1,
+   "seconds": 17.8,
+   "summary": "1 failed, 103 passed, 7 deselected in 15.04s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "C61_plan_has_one_more_member",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 7 deselected in 2.13s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_evidence_names_the_prior_receipts_and_the_operations_the_source_requires",
+   "killed": true,
+   "mutant": "C62_evidence_not_required",
+   "returncode": 1,
+   "seconds": 161.4,
+   "summary": "1 failed, 345 passed, 7 deselected in 158.61s (0:02:38)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L01_template_into_the_go_root",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 7 deselected in 3.75s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L02_admission_record_named_as_the_go_file",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 7 deselected in 3.77s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L03_bar_manifest_record_named_with_an_underscore",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 7 deselected in 2.95s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L04_publication_record_name",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 7 deselected in 2.57s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L05_views_into_the_emitter_root",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 7 deselected in 2.95s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L06_go_files_into_the_documents_root",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 7 deselected in 2.92s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L07_bar_manifest_go_name",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 7 deselected in 3.37s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L08_configs_into_the_documents_root",
+   "returncode": 1,
+   "seconds": 6.0,
+   "summary": "1 failed, 7 deselected in 2.96s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L09_config_name_without_the_window",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 7 deselected in 2.99s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L10_payload_name",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 7 deselected in 3.01s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L11_paths_outside_the_capacity_tree",
+   "returncode": 1,
+   "seconds": 5.5,
+   "summary": "1 failed, 7 deselected in 3.27s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L12_commit_key_of_the_publish_step",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 7 deselected in 2.73s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "L13_views_created_after_the_go_files",
+   "returncode": 1,
+   "seconds": 5.6,
+   "summary": "1 failed, 7 deselected in 2.34s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: the directory the parent was walked to",
+   "killed": true,
+   "mutant": "L14_name_rule_accepts_any_directory",
+   "returncode": 1,
+   "seconds": 150.8,
+   "summary": "1 failed, 248 passed, 7 deselected in 148.37s (0:02:28)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert not True",
+   "killed": true,
+   "mutant": "L16_name_rule_accepts_an_unclean_path",
+   "returncode": 1,
+   "seconds": 148.3,
+   "summary": "1 failed, 248 passed, 7 deselected in 145.23s (0:02:25)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[23]",
+   "killed": true,
+   "mutant": "B01_blob_with_an_extra_member",
+   "returncode": 1,
+   "seconds": 19.4,
+   "summary": "1 failed, 134 passed, 7 deselected in 17.01s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[24]",
+   "killed": true,
+   "mutant": "B02_blob_hash_unchecked",
+   "returncode": 1,
+   "seconds": 19.8,
+   "summary": "1 failed, 135 passed, 7 deselected in 17.15s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[25]",
+   "killed": true,
+   "mutant": "B03_blob_size_unchecked",
+   "returncode": 1,
+   "seconds": 19.5,
+   "summary": "1 failed, 136 passed, 7 deselected in 17.22s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[29]",
+   "killed": true,
+   "mutant": "B04_blob_not_strict_base64",
+   "returncode": 1,
+   "seconds": 19.8,
+   "summary": "1 failed, 140 passed, 7 deselected in 17.41s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_a_signed_file_larger_than_the_core_admits_is_refused_from_its_bytes",
+   "killed": true,
+   "mutant": "B05_blob_size_unbounded",
+   "returncode": 1,
+   "seconds": 14.1,
+   "summary": "1 failed, 102 passed, 7 deselected in 11.78s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "B07_json_not_canonical",
+   "returncode": 1,
+   "seconds": 10.5,
+   "summary": "1 failed, 65 passed, 7 deselected in 8.41s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AttributeError: 'list' object has no attribute 'get'",
+   "killed": true,
+   "mutant": "B08_json_of_any_type",
+   "returncode": 1,
+   "seconds": 18.7,
+   "summary": "1 failed, 158 passed, 7 deselected in 16.49s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CONFIG_INVALID",
+   "killed": true,
+   "mutant": "B09_json_refusal_with_the_parser_code",
+   "returncode": 1,
+   "seconds": 18.5,
+   "summary": "1 failed, 159 passed, 7 deselected in 16.42s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[56]",
+   "killed": true,
+   "mutant": "B10_pin_with_an_extra_member",
+   "returncode": 1,
+   "seconds": 18.9,
+   "summary": "1 failed, 167 passed, 7 deselected in 16.81s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[52]",
+   "killed": true,
+   "mutant": "B11_pin_hash_unchecked",
+   "returncode": 1,
+   "seconds": 18.6,
+   "summary": "1 failed, 163 passed, 7 deselected in 16.37s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DAY_INVALID",
+   "killed": true,
+   "mutant": "D01_day_of_the_epoch_accepted",
+   "returncode": 1,
+   "seconds": 13.2,
+   "summary": "1 failed, 111 passed, 7 deselected in 11.71s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: WINDOWS_INVALID",
+   "killed": true,
+   "mutant": "D02_no_window",
+   "returncode": 1,
+   "seconds": 15.9,
+   "summary": "1 failed, 116 passed, 7 deselected in 13.73s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: WINDOWS_INVALID",
+   "killed": true,
+   "mutant": "D03_window_names_unchecked",
+   "returncode": 1,
+   "seconds": 16.6,
+   "summary": "1 failed, 120 passed, 7 deselected in 14.34s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: WINDOWS_INVALID",
+   "killed": true,
+   "mutant": "D04_window_twice",
+   "returncode": 1,
+   "seconds": 15.3,
+   "summary": "1 failed, 119 passed, 7 deselected in 13.31s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: object of type 'NoneType' has no len()",
+   "killed": true,
+   "mutant": "D05_window_list_of_any_type",
+   "returncode": 1,
+   "seconds": 15.4,
+   "summary": "1 failed, 117 passed, 7 deselected in 13.59s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[10]",
+   "killed": true,
+   "mutant": "D06_files_beyond_the_layout",
+   "returncode": 1,
+   "seconds": 16.4,
+   "summary": "1 failed, 121 passed, 7 deselected in 14.00s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DELIVERY_TOO_LARGE",
+   "killed": true,
+   "mutant": "D07_delivery_size_without_the_contract",
+   "returncode": 1,
+   "seconds": 18.5,
+   "summary": "1 failed, 156 passed, 7 deselected in 16.61s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DELIVERY_TOO_LARGE",
+   "killed": true,
+   "mutant": "D08_delivery_size_unchecked",
+   "returncode": 1,
+   "seconds": 21.4,
+   "summary": "1 failed, 156 passed, 7 deselected in 18.91s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[34]",
+   "killed": true,
+   "mutant": "D09_contract_keys_unchecked",
+   "returncode": 1,
+   "seconds": 19.2,
+   "summary": "1 failed, 145 passed, 7 deselected in 16.79s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CONTRACT_NOT_OF_THIS_DAY",
+   "killed": true,
+   "mutant": "D10_scope_session_unchecked",
+   "returncode": 1,
+   "seconds": 16.9,
+   "summary": "1 failed, 114 passed, 7 deselected in 15.05s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[37]",
+   "killed": true,
+   "mutant": "D11_scope_epoch_unchecked",
+   "returncode": 1,
+   "seconds": 21.6,
+   "summary": "1 failed, 148 passed, 7 deselected in 19.13s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[41]",
+   "killed": true,
+   "mutant": "D12_scope_with_more_members",
+   "returncode": 1,
+   "seconds": 22.1,
+   "summary": "1 failed, 152 passed, 7 deselected in 19.90s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[39]",
+   "killed": true,
+   "mutant": "D13_scope_list_hash_unchecked",
+   "returncode": 1,
+   "seconds": 21.4,
+   "summary": "1 failed, 150 passed, 7 deselected in 18.89s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: list indices must be integers or slices, not str",
+   "killed": true,
+   "mutant": "D14_scope_of_any_type",
+   "returncode": 1,
+   "seconds": 21.7,
+   "summary": "1 failed, 153 passed, 7 deselected in 19.41s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CONFIG_INVALID",
+   "killed": true,
+   "mutant": "D15_config_refused_with_the_contract_code",
+   "returncode": 1,
+   "seconds": 23.1,
+   "summary": "1 failed, 157 passed, 7 deselected in 20.45s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[51]",
+   "killed": true,
+   "mutant": "D16_pins_beyond_the_eleven",
+   "returncode": 1,
+   "seconds": 21.0,
+   "summary": "1 failed, 162 passed, 7 deselected in 18.31s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[57]",
+   "killed": true,
+   "mutant": "D17_windows_may_pin_other_chains",
+   "returncode": 1,
+   "seconds": 20.1,
+   "summary": "1 failed, 168 passed, 7 deselected in 17.96s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[58]",
+   "killed": true,
+   "mutant": "D18_record_pins_not_compared",
+   "returncode": 1,
+   "seconds": 19.6,
+   "summary": "1 failed, 169 passed, 7 deselected in 17.27s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[59]",
+   "killed": true,
+   "mutant": "D19_record_names_not_compared",
+   "returncode": 1,
+   "seconds": 19.9,
+   "summary": "1 failed, 170 passed, 7 deselected in 17.65s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[63]",
+   "killed": true,
+   "mutant": "D20_view_not_compared",
+   "returncode": 1,
+   "seconds": 20.7,
+   "summary": "1 failed, 174 passed, 7 deselected in 18.66s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "D21_view_of_the_first_window_for_all",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 7 deselected in 1.77s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[71]",
+   "killed": true,
+   "mutant": "D22_root_path_unchecked",
+   "returncode": 1,
+   "seconds": 21.2,
+   "summary": "1 failed, 182 passed, 7 deselected in 18.61s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[72]",
+   "killed": true,
+   "mutant": "D23_root_identity_unchecked",
+   "returncode": 1,
+   "seconds": 21.1,
+   "summary": "1 failed, 183 passed, 7 deselected in 18.86s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[73]",
+   "killed": true,
+   "mutant": "D24_windows_may_pin_other_roots",
+   "returncode": 1,
+   "seconds": 20.2,
+   "summary": "1 failed, 184 passed, 7 deselected in 17.75s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[76]",
+   "killed": true,
+   "mutant": "D25_roots_with_more_members",
+   "returncode": 1,
+   "seconds": 21.9,
+   "summary": "1 failed, 187 passed, 7 deselected in 19.55s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[77]",
+   "killed": true,
+   "mutant": "D26_roots_beyond_the_three",
+   "returncode": 1,
+   "seconds": 21.6,
+   "summary": "1 failed, 188 passed, 7 deselected in 19.35s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[80]",
+   "killed": true,
+   "mutant": "D27_go_file_with_more_members",
+   "returncode": 1,
+   "seconds": 20.9,
+   "summary": "1 failed, 191 passed, 7 deselected in 18.32s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[81]",
+   "killed": true,
+   "mutant": "D28_go_file_day_unchecked",
+   "returncode": 1,
+   "seconds": 21.8,
+   "summary": "1 failed, 192 passed, 7 deselected in 19.73s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[82]",
+   "killed": true,
+   "mutant": "D29_go_file_phase_unchecked",
+   "returncode": 1,
+   "seconds": 21.1,
+   "summary": "1 failed, 193 passed, 7 deselected in 19.29s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[83]",
+   "killed": true,
+   "mutant": "D30_go_file_epoch_unchecked",
+   "returncode": 1,
+   "seconds": 22.0,
+   "summary": "1 failed, 194 passed, 7 deselected in 19.53s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[78]",
+   "killed": true,
+   "mutant": "D31_go_files_unchecked",
+   "returncode": 1,
+   "seconds": 19.4,
+   "summary": "1 failed, 189 passed, 7 deselected in 17.18s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[85]",
+   "killed": true,
+   "mutant": "V01_identity_rule_unchecked",
+   "returncode": 1,
+   "seconds": 21.9,
+   "summary": "1 failed, 196 passed, 7 deselected in 19.34s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[91]",
+   "killed": true,
+   "mutant": "V02_days_chain_with_an_open_root",
+   "returncode": 1,
+   "seconds": 24.0,
+   "summary": "1 failed, 202 passed, 7 deselected in 21.70s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   TypeError: 'NoneType' object is not iterable",
+   "killed": true,
+   "mutant": "V03_days_chain_unchecked",
+   "returncode": 1,
+   "seconds": 22.7,
+   "summary": "1 failed, 198 passed, 7 deselected in 20.23s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[94]",
+   "killed": true,
+   "mutant": "V04_k9_chain_group_unchecked",
+   "returncode": 1,
+   "seconds": 24.4,
+   "summary": "1 failed, 205 passed, 7 deselected in 21.76s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[95]",
+   "killed": true,
+   "mutant": "V05_k9_chain_setgid_unchecked",
+   "returncode": 1,
+   "seconds": 23.1,
+   "summary": "1 failed, 206 passed, 7 deselected in 21.14s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[94]",
+   "killed": true,
+   "mutant": "V06_k9_chain_root_control_judged_on_the_last_row_only",
+   "returncode": 1,
+   "seconds": 25.2,
+   "summary": "1 failed, 205 passed, 7 deselected in 23.02s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[97]",
+   "killed": true,
+   "mutant": "V07_boot_unbound",
+   "returncode": 1,
+   "seconds": 23.6,
+   "summary": "1 failed, 208 passed, 7 deselected in 20.91s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_validate_plan_judges_the_signed_bytes_itself",
+   "killed": true,
+   "mutant": "V08_delivery_not_judged_by_validate_plan",
+   "returncode": 1,
+   "seconds": 23.6,
+   "summary": "1 failed, 210 passed, 7 deselected in 20.74s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E01_effects_operation",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 7 deselected in 2.14s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E02_effects_day",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 7 deselected in 2.35s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E03_effects_windows",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 7 deselected in 2.07s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E04_effects_tree_roots",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 7 deselected in 1.91s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E05_effects_tree_required",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 7 deselected in 2.30s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E06_effects_file_hash_of_the_contract",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 7 deselected in 2.12s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E07_effects_file_size",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 deselected in 2.20s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E08_effects_file_mode",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 deselected in 1.95s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E09_effects_file_expectation",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 2.06s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E10_effects_contract_hash",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 7 deselected in 1.89s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E11_effects_contract_size",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 deselected in 1.85s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E12_effects_contract_written",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 7 deselected in 2.00s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E13_effects_payload_mode",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 7 deselected in 2.13s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E14_effects_payload_owner",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 7 deselected in 2.15s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E15_effects_payload_bytes",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 1.80s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E16_effects_payload_causal_members",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 7 deselected in 2.20s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E17_effects_payload_hash_reported",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 1.97s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E18_effects_causal_scope_commitment",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 7 deselected in 1.95s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E19_effects_causal_scope_list",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 1.78s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E20_effects_days_parent",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 2.11s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E21_effects_k9_required",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 1.91s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E22_effects_chain_path",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 deselected in 2.13s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E23_effects_chain_required",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 7 deselected in 2.04s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'REFUSE_ON_MISMATCH' == 'REPORT_ONLY'",
+   "killed": true,
+   "mutant": "E24_effects_identity_rule",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 3 passed, 7 deselected in 2.75s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E25_effects_pinned_identities",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 7 deselected in 1.76s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E26_effects_boot",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 1.90s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E27_effects_modified",
+   "returncode": 1,
+   "seconds": 3.8,
+   "summary": "1 failed, 7 deselected in 1.78s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E28_effects_symbols",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 deselected in 2.19s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E29_effects_eve",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 7 deselected in 1.73s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E30_effects_tree_parent_and_path",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 7 deselected in 1.99s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E31_effects_k9_paths_of_another_day",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 deselected in 2.01s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...'}, ...}, ...} == {'operation':...+00:00'}, ...}",
+   "killed": true,
+   "mutant": "E32_effects_payload_carried_into",
+   "returncode": 1,
+   "seconds": 5.9,
+   "summary": "1 failed, 7 deselected in 3.41s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (7 == 7 and 'PARTIAL_REQU...ECONCILIATION' == 'EVE_DAY_DOCU...RED_READ_BACK'",
+   "killed": true,
+   "mutant": "E33_success_criterion_is_the_partial_outcome",
+   "returncode": 1,
+   "seconds": 5.7,
+   "summary": "1 failed, 7 deselected in 3.49s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P01_identity_unchecked",
+   "returncode": 1,
+   "seconds": 13.7,
+   "summary": "1 failed, 98 passed, 7 deselected in 11.51s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None == 'WINDOW_NOT_IN_THE_EVE_OF_THE_DAY')",
+   "killed": true,
+   "mutant": "P02_eve_start_unchecked",
+   "returncode": 1,
+   "seconds": 13.8,
+   "summary": "1 failed, 106 passed, 7 deselected in 12.13s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P03_eve_end_unchecked",
+   "returncode": 1,
+   "seconds": 15.2,
+   "summary": "1 failed, 107 passed, 7 deselected in 13.20s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('WINDOW_NOT_I...VE_OF_THE_DAY' == 'WINDOW_NOT_I...VE_OF_THE_DAY'",
+   "killed": true,
+   "mutant": "P04_window_judged_after_the_boot",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 106 passed, 7 deselected in 12.56s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "P05_umask_not_set",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 7 deselected in 3.02s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P06_boot_unchecked",
+   "returncode": 1,
+   "seconds": 7.8,
+   "summary": "1 failed, 7 passed, 7 deselected in 4.46s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([] == [{'path': '/'...uid': 0, ...}]",
+   "killed": true,
+   "mutant": "P07_days_chain_not_walked",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 7 deselected in 2.59s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "P08_var_lib_reached_without_its_rows",
+   "returncode": 1,
+   "seconds": 5.1,
+   "summary": "1 failed, 7 deselected in 2.17s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CAPACITY_DIRECTORY_NOT_PRIVATE",
+   "killed": true,
+   "mutant": "P09_capacity_root_absence_reported_as_not_private",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 24 passed, 7 deselected in 4.40s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "P10_capacity_roots_not_held",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 1.94s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_FAILED",
+   "killed": true,
+   "mutant": "P11_hold_absent_not_refused",
+   "returncode": 1,
+   "seconds": 6.2,
+   "summary": "1 failed, 15 passed, 7 deselected in 4.19s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CAPACITY_DIRECTORY_CHANGED_DURING_PRECHECK",
+   "killed": true,
+   "mutant": "P12_hold_mode_unchecked",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 19 passed, 7 deselected in 4.52s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CAPACITY_DIRECTORY_CHANGED_DURING_PRECHECK",
+   "killed": true,
+   "mutant": "P13_hold_owner_unchecked",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 21 passed, 7 deselected in 4.66s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CAPACITY_DIRECTORY_CHANGED_DURING_PRECHECK",
+   "killed": true,
+   "mutant": "P14_hold_type_unchecked",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 25 passed, 7 deselected in 4.54s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "P15_hold_open_follows_a_link",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 7 deselected in 2.05s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('/var/lib/c3po-capacity/documents', 'CAPACITY_ROOT_IDENTITY_NOT_THE_CONFIG')",
+   "killed": true,
+   "mutant": "P16_hold_identity_not_compared",
+   "returncode": 1,
+   "seconds": 13.7,
+   "summary": "1 failed, 110 passed, 7 deselected in 11.63s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CAPACITY_DIRECTORY_ABSENT",
+   "killed": true,
+   "mutant": "P17_hold_open_failure_reported_as_absent",
+   "returncode": 1,
+   "seconds": 10.9,
+   "summary": "1 failed, 100 passed, 7 deselected in 8.44s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('open', '/var/lib/c3po-capacity')",
+   "killed": true,
+   "mutant": "P18_hold_no_gate_before_the_open",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 108 passed, 7 deselected in 10.89s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CAPACITY_DIRECTORY_ABSENT",
+   "killed": true,
+   "mutant": "P19_k9_codes_of_the_capacity_tree",
+   "returncode": 1,
+   "seconds": 6.5,
+   "summary": "1 failed, 28 passed, 7 deselected in 4.49s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "P20_day_directory_of_the_eve",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 7 deselected in 2.14s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "P21_receipts_from_the_causal_directory",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 2.00s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: both K9 directories are held before any K9 file is read",
+   "killed": true,
+   "mutant": "P22_causal_held_after_the_receipt_is_read",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 106 passed, 7 deselected in 9.51s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: K9_FILE_NOT_PRIVATE",
+   "killed": true,
+   "mutant": "P23_receipt_absence_reported_as_not_private",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 34 passed, 7 deselected in 5.14s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_FAILED",
+   "killed": true,
+   "mutant": "P24_read_absent_not_refused",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 34 passed, 7 deselected in 5.14s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P25_read_mode_unchecked",
+   "returncode": 1,
+   "seconds": 10.8,
+   "summary": "1 failed, 101 passed, 7 deselected in 8.81s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P26_read_links_unchecked",
+   "returncode": 1,
+   "seconds": 10.7,
+   "summary": "1 failed, 101 passed, 7 deselected in 8.95s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P27_read_owner_unchecked",
+   "returncode": 1,
+   "seconds": 10.1,
+   "summary": "1 failed, 101 passed, 7 deselected in 8.46s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_OS_ERROR",
+   "killed": true,
+   "mutant": "P28_read_type_unchecked",
+   "returncode": 1,
+   "seconds": 6.7,
+   "summary": "1 failed, 38 passed, 7 deselected in 4.99s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('/var/lib/c3po/r2d2-v2-k9-20261005/days/2026-10-06/receipts/commit_launch.RECEIPT.json', None)",
+   "killed": true,
+   "mutant": "P29_read_object_not_compared",
+   "returncode": 1,
+   "seconds": 12.7,
+   "summary": "1 failed, 110 passed, 7 deselected in 10.68s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('/var/lib/c3po/r2d2-v2-k9-20261005/days/2026-10-06/receipts/commit_launch.RECEIPT.json', None)",
+   "killed": true,
+   "mutant": "P30_read_mode_after_open_unchecked",
+   "returncode": 1,
+   "seconds": 13.5,
+   "summary": "1 failed, 110 passed, 7 deselected in 11.29s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: JSON_INVALID",
+   "killed": true,
+   "mutant": "P31_receipt_parser_code",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 40 passed, 7 deselected in 5.39s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P32_receipt_member_set_unchecked",
+   "returncode": 1,
+   "seconds": 7.2,
+   "summary": "1 failed, 43 passed, 7 deselected in 5.32s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P33_receipt_schema_unchecked",
+   "returncode": 1,
+   "seconds": 7.1,
+   "summary": "1 failed, 42 passed, 7 deselected in 5.28s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P34_receipt_status_unchecked",
+   "returncode": 1,
+   "seconds": 7.0,
+   "summary": "1 failed, 45 passed, 7 deselected in 5.30s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P35_receipt_code_unchecked",
+   "returncode": 1,
+   "seconds": 7.5,
+   "summary": "1 failed, 46 passed, 7 deselected in 5.74s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_COMMIT_RECEIPT_OUTPUT",
+   "killed": true,
+   "mutant": "P36_receipt_day_unchecked",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 48 passed, 7 deselected in 5.84s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P37_receipt_of_any_step",
+   "returncode": 1,
+   "seconds": 7.4,
+   "summary": "1 failed, 49 passed, 7 deselected in 5.44s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P38_receipt_package_unchecked",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 52 passed, 7 deselected in 5.58s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_FAILED",
+   "killed": true,
+   "mutant": "P39_receipt_outputs_one_file_enough",
+   "returncode": 1,
+   "seconds": 7.9,
+   "summary": "1 failed, 57 passed, 7 deselected in 6.16s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_FAILED",
+   "killed": true,
+   "mutant": "P40_receipt_outputs_of_any_type",
+   "returncode": 1,
+   "seconds": 7.3,
+   "summary": "1 failed, 56 passed, 7 deselected in 5.77s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: K9_FILE_NOT_PRIVATE",
+   "killed": true,
+   "mutant": "P41_commitment_absence_reported_as_not_private",
+   "returncode": 1,
+   "seconds": 8.6,
+   "summary": "1 failed, 59 passed, 7 deselected in 6.74s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('COMMITMENT_INVALID' == 'COMMITMENT_N...ECEIPT_OUTPUT'",
+   "killed": true,
+   "mutant": "P42_commitment_hash_not_the_receipts",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 4 passed, 7 deselected in 3.20s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P43_audit_hash_not_the_receipts",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 64 passed, 7 deselected in 7.09s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "P44_commitment_schema_unchecked",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 66 passed, 7 deselected in 7.56s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "P45_commitment_day_unchecked",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 67 passed, 7 deselected in 7.84s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "P46_commitment_epoch_unchecked",
+   "returncode": 1,
+   "seconds": 11.4,
+   "summary": "1 failed, 68 passed, 7 deselected in 9.08s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "P47_list_grammar_unchecked",
+   "returncode": 1,
+   "seconds": 11.0,
+   "summary": "1 failed, 69 passed, 7 deselected in 9.36s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "P48_list_duplicates_accepted",
+   "returncode": 1,
+   "seconds": 10.3,
+   "summary": "1 failed, 70 passed, 7 deselected in 8.31s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "P49_list_beyond_the_capacity",
+   "returncode": 1,
+   "seconds": 11.1,
+   "summary": "1 failed, 72 passed, 7 deselected in 8.83s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "P50_list_of_any_type",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 71 passed, 7 deselected in 8.70s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "P51_list_hash_field_unchecked",
+   "returncode": 1,
+   "seconds": 11.3,
+   "summary": "1 failed, 76 passed, 7 deselected in 8.90s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: AUDIT_RECEIPT_NOT_BOUND",
+   "killed": true,
+   "mutant": "P52_commitment_not_the_contract_scope",
+   "returncode": 1,
+   "seconds": 10.8,
+   "summary": "1 failed, 77 passed, 7 deselected in 9.22s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P53_list_not_the_contract_scope",
+   "returncode": 1,
+   "seconds": 11.8,
+   "summary": "1 failed, 99 passed, 7 deselected in 9.61s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: COMMITMENT_NOT_THE_CONTRACT_SCOPE",
+   "killed": true,
+   "mutant": "P54_list_hash_of_the_raw_list",
+   "returncode": 1,
+   "seconds": 10.0,
+   "summary": "1 failed, 76 passed, 7 deselected in 8.00s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P55_audit_event_unchecked",
+   "returncode": 1,
+   "seconds": 9.9,
+   "summary": "1 failed, 79 passed, 7 deselected in 8.10s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P56_audit_instant_unchecked",
+   "returncode": 1,
+   "seconds": 9.5,
+   "summary": "1 failed, 81 passed, 7 deselected in 7.64s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P57_audit_commitment_unchecked",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 82 passed, 7 deselected in 7.65s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P58_audit_list_unchecked",
+   "returncode": 1,
+   "seconds": 8.8,
+   "summary": "1 failed, 83 passed, 7 deselected in 6.82s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P59_audit_day_unchecked",
+   "returncode": 1,
+   "seconds": 8.3,
+   "summary": "1 failed, 84 passed, 7 deselected in 6.61s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P60_audit_epoch_unchecked",
+   "returncode": 1,
+   "seconds": 8.9,
+   "summary": "1 failed, 85 passed, 7 deselected in 7.23s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P61_audit_member_set_unchecked",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 80 passed, 7 deselected in 7.57s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: /var/lib/c3po-capacity/payload/session=2026-10-06.json",
+   "killed": true,
+   "mutant": "P62_causal_status",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 7 deselected in 1.88s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: /var/lib/c3po-capacity/payload/session=2026-10-06.json",
+   "killed": true,
+   "mutant": "P63_causal_without_the_commitment",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 7 deselected in 1.77s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: /var/lib/c3po-capacity/payload/session=2026-10-06.json",
+   "killed": true,
+   "mutant": "P64_payload_without_the_contract",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 1.96s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'epoch': 'R2....}, ...}, ...} == {'epoch': 'R2....}, ...}, ...}",
+   "killed": true,
+   "mutant": "P65_list_empty_inverted",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 7 deselected in 1.99s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CHAIN_DOCUMENT_NOT_PRIVATE",
+   "killed": true,
+   "mutant": "P66_chain_absence_reported_as_not_private",
+   "returncode": 1,
+   "seconds": 9.4,
+   "summary": "1 failed, 87 passed, 7 deselected in 7.57s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P67_chain_bytes_not_compared",
+   "returncode": 1,
+   "seconds": 10.0,
+   "summary": "1 failed, 90 passed, 7 deselected in 8.23s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "P68_chain_read_from_the_config_root",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 7 deselected in 1.91s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DESTINATION_APPEARED_AFTER_PRECHECK",
+   "killed": true,
+   "mutant": "P69_destination_payload_not_looked_at",
+   "returncode": 1,
+   "seconds": 9.8,
+   "summary": "1 failed, 94 passed, 7 deselected in 8.08s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DESTINATION_APPEARED_AFTER_PRECHECK",
+   "killed": true,
+   "mutant": "P70_destinations_present_not_refused",
+   "returncode": 1,
+   "seconds": 9.2,
+   "summary": "1 failed, 91 passed, 7 deselected in 7.26s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P71_identity_rule_ignored",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 3 passed, 7 deselected in 2.77s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P73_one_identity_enough",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 3 passed, 7 deselected in 2.59s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "P74_identity_without_the_capacity_root",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 7 deselected in 2.01s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "P75_identity_with_the_host_name",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 7 deselected in 1.68s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "P76_identity_without_the_device",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 deselected in 1.93s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P77_free_space_unchecked",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 95 passed, 7 deselected in 8.07s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'REFUSED' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "P78_free_space_exclusive",
+   "returncode": 1,
+   "seconds": 9.6,
+   "summary": "1 failed, 104 passed, 7 deselected in 8.08s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P79_budget_unchecked",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 109 passed, 7 deselected in 9.68s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "P80_budget_exclusive",
+   "returncode": 1,
+   "seconds": 11.2,
+   "summary": "1 failed, 109 passed, 7 deselected in 9.78s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: /var/lib/c3po-capacity",
+   "killed": true,
+   "mutant": "P81_no_gate_before_the_lookups",
+   "returncode": 1,
+   "seconds": 11.5,
+   "summary": "1 failed, 108 passed, 7 deselected in 9.67s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CAPACITY_DIRECTORY_ABSENT",
+   "killed": true,
+   "mutant": "P82_any_failed_lookup_is_an_absence",
+   "returncode": 1,
+   "seconds": 11.7,
+   "summary": "1 failed, 110 passed, 7 deselected in 10.08s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_dry_gate_stops_before_anything_is_observed",
+   "killed": true,
+   "mutant": "P83_no_gate_before_the_first_observation",
+   "returncode": 1,
+   "seconds": 138.2,
+   "summary": "1 failed, 361 passed, 7 deselected in 136.24s (0:02:16)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (149, 'write', 'F00_TEMPORARY')",
+   "killed": true,
+   "mutant": "P84_run_never_marked_started",
+   "returncode": 1,
+   "seconds": 41.9,
+   "summary": "1 failed, 230 passed, 7 deselected in 40.05s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: PRECHECK_OS_ERROR",
+   "killed": true,
+   "mutant": "P85_precheck_failure_has_one_code",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 110 passed, 7 deselected in 11.58s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CAPACITY_ROOT_IDENTITY_NOT_THE_CONFIG",
+   "killed": true,
+   "mutant": "P86_precheck_refusal_reported_as_effects_phase",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 3 passed, 7 deselected in 3.10s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "P87_precheck_failure_goes_on_to_the_effects",
+   "returncode": 1,
+   "seconds": 4.8,
+   "summary": "1 failed, 3 passed, 7 deselected in 3.19s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CAPACITY_ROOT_IDENTITY_NOT_THE_CONFIG",
+   "killed": true,
+   "mutant": "P88_precheck_refusal_reported_as_a_partial",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 3 passed, 7 deselected in 2.99s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'c3po-capaci...o', 'payload'} == {'c3po-capaci...o', 'payload'}",
+   "killed": true,
+   "mutant": "P90_chain_before_the_commitment",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 7 deselected in 2.52s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "P91_capacity_identity_recorded_from_the_go_root",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 7 deselected in 2.34s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "W01_files_created_in_the_documents_root",
+   "returncode": 1,
+   "seconds": 4.3,
+   "summary": "1 failed, 7 deselected in 2.26s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "W02_files_created_with_the_core_name_rule",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 7 deselected in 1.92s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [('create', '...artial'), ...] == [('create', '...artial'), ...]",
+   "killed": true,
+   "mutant": "W03_files_created_with_one_temporary_index",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 2.01s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'issued': 48...uncertain': 0} == {'issued': 52...uncertain': 0}",
+   "killed": true,
+   "mutant": "W04_payload_not_created",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 deselected in 2.14s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [('create', '...artial'), ...] == [('create', '...artial'), ...]",
+   "killed": true,
+   "mutant": "W05_payload_created_first",
+   "returncode": 1,
+   "seconds": 4.2,
+   "summary": "1 failed, 7 deselected in 1.97s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: READBACK_HASH_MISMATCH",
+   "killed": true,
+   "mutant": "W06_a_failed_file_does_not_stop_the_run",
+   "returncode": 1,
+   "seconds": 22.3,
+   "summary": "1 failed, 215 passed, 7 deselected in 20.39s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "W07_a_file_not_durable_is_success",
+   "returncode": 1,
+   "seconds": 25.1,
+   "summary": "1 failed, 226 passed, 7 deselected in 23.04s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['NOT_CREATED'] == ['NOT_CREATED...TEMPTED', ...]",
+   "killed": true,
+   "mutant": "W08_not_attempted_rows_dropped",
+   "returncode": 1,
+   "seconds": 22.0,
+   "summary": "1 failed, 215 passed, 7 deselected in 20.18s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'epoch': 'R2....}, ...}, ...} == {'epoch': 'R2....}, ...}, ...}",
+   "killed": true,
+   "mutant": "W09_readback_skipped",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 7 deselected in 1.94s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "W10_readback_against_the_wrong_mode",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 7 deselected in 1.46s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "W11_held_directories_not_verified",
+   "returncode": 1,
+   "seconds": 34.0,
+   "summary": "1 failed, 227 passed, 7 deselected in 32.01s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'epoch': 'R2....}, ...}, ...} == {'epoch': 'R2....}, ...}, ...}",
+   "killed": true,
+   "mutant": "W13_delivered_hash_of_the_signed_bytes_of_another_file",
+   "returncode": 1,
+   "seconds": 3.1,
+   "summary": "1 failed, 7 deselected in 1.84s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'epoch': 'R2....}, ...}, ...} == {'epoch': 'R2....}, ...}, ...}",
+   "killed": true,
+   "mutant": "W14_delivered_includes_the_payload_row",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 7 deselected in 1.71s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'epoch': 'R2....}, ...}, ...} == {'epoch': 'R2....}, ...}, ...}",
+   "killed": true,
+   "mutant": "W15_delivered_payload_of_the_first_row",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 7 deselected in 1.84s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'epoch': 'R2....}, ...}, ...} == {'epoch': 'R2....}, ...}, ...}",
+   "killed": true,
+   "mutant": "W16_delivered_says_the_list_is_empty",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 deselected in 1.93s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "W17_delivered_identities_of_the_rule",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 3 passed, 7 deselected in 3.52s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'ledger'",
+   "killed": true,
+   "mutant": "W18_delivered_summary_given_for_a_run_that_stopped",
+   "returncode": 1,
+   "seconds": 25.2,
+   "summary": "1 failed, 217 passed, 7 deselected in 22.19s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (0 == 0 and None is None and 'COMPLETE' is None)",
+   "killed": true,
+   "mutant": "W19_readback_reported_complete_when_it_stopped",
+   "returncode": 1,
+   "seconds": 25.5,
+   "summary": "1 failed, 215 passed, 7 deselected in 23.20s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DESTINATION_APPEARED_AFTER_PRECHECK",
+   "killed": true,
+   "mutant": "W20_a_run_that_changed_the_host_is_a_refusal",
+   "returncode": 1,
+   "seconds": 25.6,
+   "summary": "1 failed, 215 passed, 7 deselected in 23.89s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...Y', 'EFFECTS') == ('REFUSED', '...Y', 'EFFECTS')",
+   "killed": true,
+   "mutant": "W21_a_run_that_changed_nothing_is_a_partial",
+   "returncode": 1,
+   "seconds": 24.8,
+   "summary": "1 failed, 219 passed, 7 deselected in 23.14s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DESTINATION_APPEARED_AFTER_PRECHECK",
+   "killed": true,
+   "mutant": "W22_a_partial_reported_with_the_complete_status",
+   "returncode": 1,
+   "seconds": 27.0,
+   "summary": "1 failed, 215 passed, 7 deselected in 24.83s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ON...', 'COMPLETE') == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "W23_effects_phase_reported_as_the_precheck",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 7 deselected in 2.43s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'hash_and_size_withheld'",
+   "killed": true,
+   "mutant": "W24_payload_row_not_withheld",
+   "returncode": 1,
+   "seconds": 5.0,
+   "summary": "1 failed, 7 deselected in 3.09s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "W25_withheld_row_keeps_the_size",
+   "returncode": 1,
+   "seconds": 6.3,
+   "summary": "1 failed, 7 deselected in 3.58s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None, None, ...28c105', True) == (None, None, None, True)",
+   "killed": true,
+   "mutant": "W26_withheld_row_keeps_the_observed_hash",
+   "returncode": 1,
+   "seconds": 6.1,
+   "summary": "1 failed, 7 deselected in 3.27s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None, '9634f...', None, True) == (None, None, None, True)",
+   "killed": true,
+   "mutant": "W27_withheld_row_keeps_the_signed_hash",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 7 deselected in 3.31s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'issued': 52...uncertain': 0} == {'issued': 52...uncertain': 0}",
+   "killed": true,
+   "mutant": "W28_objects_left_not_counted",
+   "returncode": 1,
+   "seconds": 4.6,
+   "summary": "1 failed, 7 deselected in 2.09s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "W29_receipt_says_existing_objects_were_modified",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 7 deselected in 2.26s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([] == []",
+   "killed": true,
+   "mutant": "W30_held_directories_left_open",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 7 deselected in 2.30s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ([] == []",
+   "killed": true,
+   "mutant": "W31_parents_left_open",
+   "returncode": 1,
+   "seconds": 4.0,
+   "summary": "1 failed, 7 deselected in 2.21s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'precheck'",
+   "killed": true,
+   "mutant": "W32_receipt_reductions_lose_the_first_step",
+   "returncode": 1,
+   "seconds": 4.9,
+   "summary": "1 failed, 5 passed, 7 deselected in 2.91s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'parent'",
+   "killed": true,
+   "mutant": "W33_receipt_reductions_lose_the_second_step",
+   "returncode": 1,
+   "seconds": 4.7,
+   "summary": "1 failed, 5 passed, 7 deselected in 3.02s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'epoch': 'R2....}, ...}, ...} == {'epoch': 'R2....}, ...}, ...}",
+   "killed": true,
+   "mutant": "W34_delivered_contract_hash_of_the_payload",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 7 deselected in 1.68s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: /var/lib/c3po-capacity/payload/session=2026-10-06.json",
+   "killed": true,
+   "mutant": "W35_payload_assembled_from_the_scope_list",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 7 deselected in 1.61s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "KA_M01_create_without_excl",
+   "returncode": 1,
+   "seconds": 3.9,
+   "summary": "1 failed, 7 deselected in 1.78s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "KA_M04_create_without_nofollow",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 7 deselected in 2.02s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "KA_M05_create_without_excl_and_nofollow",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 7 deselected in 1.94s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: /var/lib/c3po-capacity/documents/session=2026-10-06.template.md",
+   "killed": true,
+   "mutant": "KA_M06_file_fsync_dropped",
+   "returncode": 1,
+   "seconds": 2.9,
+   "summary": "1 failed, 7 deselected in 1.42s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ['/var/lib/c3...cuments', ...] == ['/var/lib/c3...cuments', ...]",
+   "killed": true,
+   "mutant": "KA_M07c_directory_fsync_after_link_dropped",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 7 deselected in 1.99s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: /var/lib/c3po-capacity/documents",
+   "killed": true,
+   "mutant": "KA_M10b_directory_not_verified_before_temporary",
+   "returncode": 1,
+   "seconds": 22.7,
+   "summary": "1 failed, 223 passed, 7 deselected in 21.30s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('INSTALLED_DURABLE' == 'TEMPORARY_ONLY'",
+   "killed": true,
+   "mutant": "KA_M10c_directory_not_verified_before_link",
+   "returncode": 1,
+   "seconds": 29.3,
+   "summary": "1 failed, 228 passed, 7 deselected in 27.32s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "KA_M11_excl_replaced_by_trunc",
+   "returncode": 1,
+   "seconds": 3.7,
+   "summary": "1 failed, 7 deselected in 2.08s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "KA_M17b_fchmod_of_a_created_file",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 7 deselected in 1.86s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'readback'",
+   "killed": true,
+   "mutant": "KA_M17c_fchown_of_a_created_file",
+   "returncode": 1,
+   "seconds": 3.5,
+   "summary": "1 failed, 7 deselected in 1.66s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CREATED_METADATA_MISMATCH",
+   "killed": true,
+   "mutant": "KI19_short_write_accepted",
+   "returncode": 1,
+   "seconds": 23.9,
+   "summary": "1 failed, 225 passed, 7 deselected in 22.06s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "KI21_failed_file_fsync_ignored",
+   "returncode": 1,
+   "seconds": 24.7,
+   "summary": "1 failed, 225 passed, 7 deselected in 22.85s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "KI22_failed_directory_fsync_after_link_ignored",
+   "returncode": 1,
+   "seconds": 31.7,
+   "summary": "1 failed, 228 passed, 7 deselected in 29.92s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('DESTINATION_...FTER_PRECHECK' == 'DESTINATION_...FTER_PRECHECK'",
+   "killed": true,
+   "mutant": "KI40_own_temporary_left_after_a_lost_race",
+   "returncode": 1,
+   "seconds": 22.1,
+   "summary": "1 failed, 215 passed, 7 deselected in 20.35s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "KW15_created_file_device_not_compared_with_the_directory",
+   "returncode": 1,
+   "seconds": 23.3,
+   "summary": "1 failed, 224 passed, 7 deselected in 21.56s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: TEMPORARY_REPLACED",
+   "killed": true,
+   "mutant": "KI47_temporary_not_looked_at_again_before_the_link",
+   "returncode": 1,
+   "seconds": 30.9,
+   "summary": "1 failed, 228 passed, 7 deselected in 29.03s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CREATED_METADATA_MISMATCH",
+   "killed": true,
+   "mutant": "KI48_temporary_with_a_second_link_accepted_before_the_link",
+   "returncode": 1,
+   "seconds": 30.5,
+   "summary": "1 failed, 228 passed, 7 deselected in 28.66s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_k8_eve.py::test_created_file_that_is_not_what_was_signed_is_withdrawn_and_nothing_more_is_created",
+   "killed": true,
+   "mutant": "KI49_incomplete_temporary_left_behind",
+   "returncode": 1,
+   "seconds": 22.5,
+   "summary": "1 failed, 224 passed, 7 deselected in 21.01s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: TEMPORARY_REPLACED",
+   "killed": true,
+   "mutant": "KT03_created_file_link_count_not_checked",
+   "returncode": 1,
+   "seconds": 30.4,
+   "summary": "1 failed, 228 passed, 7 deselected in 28.68s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: READBACK_HASH_MISMATCH",
+   "killed": true,
+   "mutant": "KT06_link_count_after_the_removal_of_the_temporary_not_checked",
+   "returncode": 1,
+   "seconds": 30.9,
+   "summary": "1 failed, 228 passed, 7 deselected in 29.22s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARENT_REPLACED' == 'FILE_REQUEST_INVALID'",
+   "killed": true,
+   "mutant": "KF03_file_mode_unchecked_before_the_creation",
+   "returncode": 1,
+   "seconds": 119.5,
+   "summary": "1 failed, 250 passed, 7 deselected in 117.85s (0:01:57)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARENT_REPLACED' == 'FILE_REQUEST_INVALID'",
+   "killed": true,
+   "mutant": "KF04_file_size_unbounded",
+   "returncode": 1,
+   "seconds": 119.9,
+   "summary": "1 failed, 253 passed, 7 deselected in 118.49s (0:01:58)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARENT_REPLACED' == 'FILE_REQUEST_INVALID'",
+   "killed": true,
+   "mutant": "KF05_empty_file_accepted",
+   "returncode": 1,
+   "seconds": 121.4,
+   "summary": "1 failed, 249 passed, 7 deselected in 119.51s (0:01:59)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARENT_REPLACED' == 'FILE_REQUEST_INVALID'",
+   "killed": true,
+   "mutant": "KF06_file_name_unchecked",
+   "returncode": 1,
+   "seconds": 120.3,
+   "summary": "1 failed, 256 passed, 7 deselected in 117.94s (0:01:57)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARENT_REPLACED' == 'FILE_REQUEST_INVALID'",
+   "killed": true,
+   "mutant": "KF07_go_prefix_unchecked",
+   "returncode": 1,
+   "seconds": 121.9,
+   "summary": "1 failed, 252 passed, 7 deselected in 119.92s (0:01:59)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [('create', '...artial'), ...] == [('create', '...artial'), ...]",
+   "killed": true,
+   "mutant": "KF10_same_temporary_name_for_every_file",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 7 deselected in 1.72s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert [('create', '...artial'), ...] == [('create', '...artial'), ...]",
+   "killed": true,
+   "mutant": "KF11_temporary_name_not_keyed_by_the_go",
+   "returncode": 1,
+   "seconds": 3.3,
+   "summary": "1 failed, 7 deselected in 1.86s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: READBACK_HASH_MISMATCH",
+   "killed": true,
+   "mutant": "KF14_created_file_mode_not_compared",
+   "returncode": 1,
+   "seconds": 31.8,
+   "summary": "1 failed, 228 passed, 7 deselected in 29.89s",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARENT_REPLACED' == 'FILE_REQUEST_INVALID'",
+   "killed": true,
+   "mutant": "K_N01_copy_admits_any_name",
+   "returncode": 1,
+   "seconds": 121.1,
+   "summary": "1 failed, 256 passed, 7 deselected in 119.10s (0:01:59)",
+   "tests": [
+    "test_k8_eve.py",
+    "test_native.py",
+    "test_k8_copy.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D71k_dispatcher_date_set_dropped",
+   "returncode": 1,
+   "seconds": 13.4,
+   "summary": "1 failed, 102 passed, 5 deselected in 11.48s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D72k_dispatcher_accepts_the_sunday_before",
+   "returncode": 1,
+   "seconds": 14.0,
+   "summary": "1 failed, 102 passed, 5 deselected in 12.33s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D73k_dispatcher_accepts_the_day_after_the_epoch",
+   "returncode": 1,
+   "seconds": 14.8,
+   "summary": "1 failed, 102 passed, 5 deselected in 13.26s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D02_dispatcher_one_day_rule_dropped",
+   "returncode": 1,
+   "seconds": 66.4,
+   "summary": "1 failed, 109 passed, 5 deselected in 64.62s (0:01:04)",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D03_dispatcher_signed_date_not_tied_to_the_config_day",
+   "returncode": 1,
+   "seconds": 65.5,
+   "summary": "1 failed, 109 passed, 5 deselected in 63.98s (0:01:03)",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_shipped_unbound_dispatch_template_is_refused_by_its_dispatcher_and_a_null_path_is_no_path",
+   "killed": true,
+   "mutant": "D04_dispatcher_config_schema_dropped",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 5 deselected in 0.33s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D05_dispatcher_unsigned_go_accepted",
+   "returncode": 1,
+   "seconds": 69.9,
+   "summary": "1 failed, 108 passed, 5 deselected in 68.13s (0:01:08)",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D06_dispatcher_unsigned_authority_accepted",
+   "returncode": 1,
+   "seconds": 68.0,
+   "summary": "1 failed, 108 passed, 5 deselected in 65.70s (0:01:05)",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D07_dispatcher_claim_root_binding_dropped",
+   "returncode": 1,
+   "seconds": 70.0,
+   "summary": "1 failed, 108 passed, 5 deselected in 68.38s (0:01:08)",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D08_dispatcher_transport_binding_dropped",
+   "returncode": 1,
+   "seconds": 69.8,
+   "summary": "1 failed, 108 passed, 5 deselected in 67.74s (0:01:07)",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D09_dispatcher_host_binding_dropped",
+   "returncode": 1,
+   "seconds": 70.1,
+   "summary": "1 failed, 108 passed, 5 deselected in 68.28s (0:01:08)",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_names_of_every_earlier_operation_are_refused_at_both_layers[READONLY_POSTDEPLOY01_GO_V1-GO_READONLY_POSTDEPLOY_01-READONLY_POSTDEPLOY]",
+   "killed": true,
+   "mutant": "D10_dispatcher_local_authentication_dropped",
+   "returncode": 1,
+   "seconds": 9.8,
+   "summary": "1 failed, 91 passed, 5 deselected in 8.18s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_receipt_of_another_operation_is_filed_uncertain",
+   "killed": true,
+   "mutant": "D11_dispatcher_receipt_schema_not_checked",
+   "returncode": 1,
+   "seconds": 73.3,
+   "summary": "1 failed, 113 passed, 5 deselected in 71.40s (0:01:11)",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D12_dispatcher_late_start_accepted",
+   "returncode": 1,
+   "seconds": 74.3,
+   "summary": "1 failed, 109 passed, 5 deselected in 72.23s (0:01:12)",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_prepare_does_not_spawn_then_resume_once_and_the_go_is_single_use",
+   "killed": true,
+   "mutant": "D13_dispatcher_claim_not_exclusive",
+   "returncode": 1,
+   "seconds": 70.9,
+   "summary": "1 failed, 107 passed, 5 deselected in 69.31s (0:01:09)",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[raise_value-UNCERTAIN-3]",
+   "killed": true,
+   "mutant": "X01_launcher_enters_the_payload_with_the_refusal_exit_code",
+   "returncode": 1,
+   "seconds": 2.8,
+   "summary": "1 failed, 7 passed, 5 deselected in 1.27s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[refused-KNOWN_REFUSAL-1]",
+   "killed": true,
+   "mutant": "X02_launcher_maps_a_refusal_to_partial",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.07s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[partial-KNOWN_PARTIAL-2]",
+   "killed": true,
+   "mutant": "X03_launcher_maps_everything_to_complete",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 5 passed, 5 deselected in 1.23s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestK8::test_launcher_refuses_wrong_pins_at_build_and_on_stdin",
+   "killed": true,
+   "mutant": "X04_launcher_document_pins_not_checked",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 11 passed, 5 deselected in 2.43s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

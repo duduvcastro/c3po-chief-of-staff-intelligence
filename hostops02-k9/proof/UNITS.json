@@ -1,0 +1,330 @@
+{
+ "accepted_findings": [],
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "branch": "ops/hostops02-k9-proof-20261005",
+ "family": "hostops02-k9",
+ "links": [
+  {
+   "path": "fable-k9r-20261004/core",
+   "target": "../hostops02-sealed/core"
+  },
+  {
+   "path": "fable-k9r-20261004/catalog_init",
+   "target": "../hostops02-sealed/catalog_init"
+  },
+  {
+   "path": "fable-k9r-20261004/install_release",
+   "target": "../hostops02-sealed/install_release"
+  },
+  {
+   "path": "fable-k9r-20261004/epoch_readback",
+   "target": "../hostops02-sealed/epoch_readback"
+  },
+  {
+   "path": "fable-k9r-20261004/activate",
+   "target": "../hostops02-sealed/activate"
+  },
+  {
+   "path": "fable-k9w-20261004/core",
+   "target": "../hostops02-sealed/core"
+  },
+  {
+   "path": "fable-k9w-20261004/k9_phase_read",
+   "target": "../fable-k9r-20261004/k9_phase_read"
+  },
+  {
+   "path": "fable-k9w-20261004/catalog_init",
+   "target": "../hostops02-sealed/catalog_init"
+  },
+  {
+   "path": "fable-k9w-20261004/install_release",
+   "target": "../hostops02-sealed/install_release"
+  },
+  {
+   "path": "fable-k9w-20261004/epoch_readback",
+   "target": "../hostops02-sealed/epoch_readback"
+  },
+  {
+   "path": "fable-k9w-20261004/activate",
+   "target": "../hostops02-sealed/activate"
+  },
+  {
+   "path": "fable-k4e0-20261004/core",
+   "target": "../hostops02-sealed/core"
+  },
+  {
+   "path": "fable-k5-dbr-20261004/core",
+   "target": "../hostops02-sealed/core"
+  },
+  {
+   "path": "fable-k6b-probe-20261004/core",
+   "target": "../hostops02-sealed/core"
+  },
+  {
+   "path": "fable-k12-20261004/core",
+   "target": "../hostops02-sealed/core"
+  },
+  {
+   "path": "fable-k12-20261004/catalog_init",
+   "target": "../hostops02-sealed/catalog_init"
+  },
+  {
+   "path": "fable-k12-20261004/install_release",
+   "target": "../hostops02-sealed/install_release"
+  },
+  {
+   "path": "fable-k12-20261004/epoch_readback",
+   "target": "../hostops02-sealed/epoch_readback"
+  },
+  {
+   "path": "fable-k12-20261004/activate",
+   "target": "../hostops02-sealed/activate"
+  },
+  {
+   "path": "fable-k8-20261004/core",
+   "target": "../hostops02-sealed/core"
+  },
+  {
+   "path": "fable-k4k3k13-20261004/core",
+   "target": "../hostops02-sealed/core"
+  }
+ ],
+ "schema": "HOSTOPS02_K9_PROOF_UNITS_V1",
+ "units": [
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/core",
+   "files": 75,
+   "seal_file": "CORE_SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+   "source": "hostops02-sealed/core",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/catalog_init",
+   "files": 34,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "1ccaf83dbc3e901d476efe92d877cbee678caf29d2103008a694c155ea09b0f5",
+   "source": "hostops02-sealed/catalog_init",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/install_release",
+   "files": 55,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "2705134655d7e580f389a7b32178e18b22d8ca75f2d5b206de3c90483fb84b82",
+   "source": "hostops02-sealed/install_release",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/epoch_readback",
+   "files": 36,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "b1a810fea1e695ba3ef25f7dc839136bbb0c9995f89eef777bc2f93215703c1f",
+   "source": "hostops02-sealed/epoch_readback",
+   "withheld": {
+    "DESIGN.md": {
+     "reason": "workstation path in the abbreviations (withheld on every earlier proof branch too); no test, tool or run reads it",
+     "sha256": "9ac730edaf7357b54f9d4f0ba0e206408b2fde469bfd8d9d5650b81763b1664f"
+    }
+   }
+  },
+  {
+   "announced": true,
+   "dest": "hostops02-sealed/activate",
+   "files": 42,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "91366f446d977fac1e0d0fb6d88c2fa8d98c02ef084b0d4098ebb0467a352bad",
+   "source": "hostops02-sealed/activate",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k9r-20261004/k9_phase_read",
+   "files": 33,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "5a798791daf06c9dbf5e9ca28146b4c1c27bd9640d97dd928c550aa1abb5c217",
+   "source": "fable-k9r-20261004/k9_phase_read",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k9w-20261004/k9_phase_step",
+   "files": 35,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "922034314242dce519a716babe4ca03e5bba38463f09eb1f3f568c88e8d02344",
+   "source": "fable-k9w-20261004/k9_phase_step",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k4e0-20261004/k4_e0",
+   "files": 32,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "63c75348fae02e3f0aa17278b62f0ea67e67f847828e9e25fb026ad40750ad4b",
+   "source": "fable-k4e0-20261004/k4_e0",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k3k9-20261004/core",
+   "files": 76,
+   "seal_file": "CORE_SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "c252a5b6c5688c9db98ee14fb326cb06531aec60dc209e884feaf84f3a91125d",
+   "source": "fable-k3k9-20261004/core",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k3k9-20261004/k3k9_secrets",
+   "files": 28,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "dbbfc11eda3b3459a0f61feb7f88d718c7837ba2d1306abfc4705e65e07efbda",
+   "source": "fable-k3k9-20261004/k3k9_secrets",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k5-dbr-20261004/supervisor_activate",
+   "files": 26,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "e2b6e7bce2cb48109b682e80f8609fbe69a2912c00bcf7fe7e0a6aa3c98ec06e",
+   "source": "fable-k5-dbr-20261004/supervisor_activate",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k5-dbr-20261004/db_preflight",
+   "files": 30,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "38f34b05048960bdb7d898a23905c884501a8346718df0d749abc5a39a9523cc",
+   "source": "fable-k5-dbr-20261004/db_preflight",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k6b-probe-20261004/core-k6b",
+   "files": 76,
+   "seal_file": "CORE_SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "979e8c8389396ca0c09b014f9852f340ce0f1d6bdf8e05f8c6e4f1643b7d244c",
+   "source": "fable-k6b-probe-20261004/core-k6b",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k6b-probe-20261004/k6b",
+   "files": 31,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "f8c88581137562fd9504b03c29c715b01fc050cdf55beb87e30bc79b8594b93f",
+   "source": "fable-k6b-probe-20261004/k6b",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k6b-probe-20261004/probe",
+   "files": 32,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "0ab8a11beec4ca4c5e120600b5994cb22d168e30092ff0b61943292fac95135c",
+   "source": "fable-k6b-probe-20261004/probe",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k12-20261004/k12_collect",
+   "files": 31,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "81e177b79210ff5e90c1182b7fa7cfe80fbb406b1207de6e9f55aab04462ac9f",
+   "source": "fable-k12-20261004/k12_collect",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k12-20261004/k12_preflight",
+   "files": 31,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "6979213f11a07cc3dd57d6bff43d220f0b9f73bd4df20e0ce5e9dbf406ddf77c",
+   "source": "fable-k12-20261004/k12_preflight",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k12-20261004/k12_window",
+   "files": 31,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "e5e3bd4c4c1f5cf66bc595f9c55066ddc772fe75b62d0d0e39e43ac88e9a57c3",
+   "source": "fable-k12-20261004/k12_window",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k8-20261004/k8_eve",
+   "files": 34,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "1140de95d3cff253e541cb80d5b6148a920811254068b0a121d93767d7e52813",
+   "source": "fable-k8-20261004/k8_eve",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k4k3k13-20261004/k4_files",
+   "files": 30,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "765995f64f5318591e89b3b2011702f9c4bfe2092aa492c888ba2d7d904d6ef8",
+   "source": "fable-k4k3k13-20261004/k4_files",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k4k3k13-20261004/k13_reader_switch",
+   "files": 31,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "81f5ed128643ca3551a4f7eb55098e4522f2a3e32471b82b1aae18fe1fe340e0",
+   "source": "fable-k4k3k13-20261004/k13_reader_switch",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k4k3k13-20261004/k13r_reader_liveness",
+   "files": 27,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "68ca972cb792a950567c874a70a182bc3f168a475ac3b5f229f5fb396ae7dd9a",
+   "source": "fable-k4k3k13-20261004/k13r_reader_liveness",
+   "withheld": {}
+  },
+  {
+   "announced": false,
+   "dest": "fable-k9runner-20261004",
+   "files": 10,
+   "seal_file": "SHA256SUMS",
+   "seal_py": false,
+   "seal_sha256": "3216e229026cc91adabdbcffb655d0883f109fa8d40591934ece44459b5353c2",
+   "source": "fable-k9runner-20261004",
+   "withheld": {}
+  }
+ ]
+}

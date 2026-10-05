@@ -1,0 +1,1119 @@
+{
+ "by_target": {
+  "dispatcher": 16,
+  "launcher": 2,
+  "op": 42
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 58,
+  "redundant_survivors": 2,
+  "single": 60,
+  "survivors": 0
+ },
+ "errors": [],
+ "list": "review",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "c13ce685ba0b09de53cae3221e940c47c3e35cac8c4f65d15b90b93fa9bd2f9f",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "binding/linux_proof.py": "f24307db09f1744188e1574c5b4bf05798870f88c9ec2b8f0ed074288a7abdcf",
+  "binding/predispatch.py": "2945e9884e57738aade4e4a35acbde33d25e214bea4a74550684b819516959f5",
+  "binding/release_fields.py": "81c9a119ce127fe7a2e4e39d3968af5a7d0fdad47b5c4009d58c0449b100a95d",
+  "build/ASSEMBLY.json": "da2e3baba931af0b3a8bc9f7570e1f0014cbbd0daefd4846d47daf03d54a90f7",
+  "build/AUTHORITY.UNBOUND.json": "fa4d6ef5d9d6c467f8d62263b4845afaed2d75cfd1b883899dcbf43ab8b27b29",
+  "build/DISPATCH.UNBOUND.json": "0224cc3e9a7f2a83ae0bf6f09f185eb53e5fb8cfc9a6f918e2856963c07a9bd0",
+  "build/DISPATCH_SCOPE_DELTA.diff": "f21cd44db90349a78a858bca44f445d669f0537dbc87453d87d578fde384ec95",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "54450b106bbdc3c9b108304b6ade092164069b266d5705abc68f505e1b26ea8c",
+  "build/GO.UNBOUND.json": "f8046c1c8ca00c3f9457e964fcd2db84ae6b549d464b962cbcc348882d61db5b",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "9f6e558195e35d6bcb68c91b5c7141acd8553f3d4f9eaa37cb976844c70b537b",
+  "build/REQUEST.UNBOUND.json": "3d01270706f42d22962a570385093734ffdefda97a76ee479fc8bc5fcbe976e5",
+  "build/dispatch_once.py": "49233a0dcab1670a9166e525cb06b362bd9c512d624c7911d8c00452f6794be0",
+  "build/install_release.py": "e4cb46f947ca9bfbbfaf9419e56fb42665353ec27faaff8376c381a7d03b6fae",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "a319f2d3a7be361b7816ba92e6f184f418caadf69d20c745fadefcfcb9ef5b11",
+  "mutation/review.py": "e5be51e441994d6b29e555e711a731dc203790bb53fb08e3c8c728849a0344b8",
+  "mutation/sweep.py": "a99785c57345e49f10e52e2d27a3c8049b3618d6b5dc18dd7e8968b7e8644e2f",
+  "mutation/tools.py": "f5f1eb55a541c7f0067d7db72ea151d6cd80a3b7e3ce44eb199b5c9a74b2dbfc",
+  "op.py": "0317fde20c9083887588ae2bda3d58a8371b5fe5d4451c4addfa62a1422984e1",
+  "spec.py": "f0f2e58f0de24e54aa538c7891a0d6100ffc9533726ec99de52bca829e28fbff",
+  "tests/conftest.py": "38945e6e79e4a68bf0f39f89604f61de35721ef4742d1b82660308c3ec355636",
+  "tests/fixtures/M0_FIXTURE.W1_EMULATION.json": "0d2dd8700667862210e0c54f93f75116d3c94d7ba8333067f7dd388ea7b06d29",
+  "tests/fixtures/M0_RECEIPT.W1_EMULATION.json": "f514aecaff28a2cf5ce81f0c97bd920a6614d658260cb2a5ef693937353142ac",
+  "tests/fixtures/M0_REQUEST.W1_EMULATION.json": "399ed2190c657ca66a82d4f9b3735285ee852d7b5960f2dea1c2be548665bf5d",
+  "tests/fixtures/RELEASE_VERIFY.SYNTHETIC.json": "4e7fce26ae35058c61b8028eb7a8d8a053278332ad48fe3d727ce0f2e1531041",
+  "tests/fixtures/release.SYNTHETIC.json": "b110f364d7d7eeeb884a7038668a4fb7f158dbdd86200c772116eebad14c05f1",
+  "tests/k10.py": "4979395a65ec0d0fe098e6be5fd6fbf3ff43aa0416bd36e398441c4fa738699c",
+  "tests/make_m0_fixture.py": "8dc4abc70252e25247eb6200bd42d91fddc4ddc3929ccfcf9b11d192b856d35d",
+  "tests/make_synthetic_release.py": "1fc2a7ee6ac20e1fb3cbdc4a973fa90ea01d7765f30862d735ecea0834f2f1e8",
+  "tests/native_child.py": "fb5d1fcb67b0571fb7b7e34a2054d13dc55429c7f4d28f126c83961ff6b09d71",
+  "tests/native_support.py": "2f249ea3da9e20ae6444f32347f7e7e9ccda8df406470761c576f26be75d6691",
+  "tests/test_binding.py": "cedcfad5cad513d6ac8c9013a536c331b85f60044bebe2e3b31147e4cafef0d9",
+  "tests/test_conformance.py": "f0de361cd6223610a4850b3a13d17d363880a24dd32388e51235abbc2c385d73",
+  "tests/test_dispatch_guards.py": "1e8cf44ba450e9c457fdf3e4c0ff25635d93e068078760ee1b7114cf411eec30",
+  "tests/test_effects_guards.py": "0ad93414cf7f34fe3534b3169be9120dd731809cb799131ba8b2059da2533dcf",
+  "tests/test_install_release.py": "ebddf60cd6290991e6ed7bae001c6f5b6a9ccfbc161d0cef3f2bc0893015a4bc",
+  "tests/test_linux_proof.py": "c64a28f11d913315cd6c11404b6baa1629cee4dfe340d54f6ae17859ff395031",
+  "tests/test_native.py": "2af0db02103ff06d52bbb424efcbf74d3c36c1c971acc6e39ae3457832c9f1de",
+  "tests/test_predispatch.py": "79df45053d9873c3bcd336c6ad2f1b1c72e1272d7ba354973ba7e44c1f1bf7ab",
+  "tests/test_purity.py": "449eb77d6dafd2b18f64a73c1f4ca9a8e14841c5819518767ed79dbf424a1fdc"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {
+  "F08_no_gate_before_the_temporary_is_looked_at_again": {
+   "combined_mutants": [],
+   "why": "the gate that is removed stands between two other looks at the clock with nothing but one lstat between them: directory.verify() ends with a gate and mutate() begins with one before the link. An expiry at that instant is reported with the same code and the same ledger state by the next gate; the only difference is one read that is still made"
+  },
+  "O07_receipt_reports_the_signed_hash_as_observed": {
+   "combined_mutants": [],
+   "why": "installed is built only when the readback passed, and the readback requires the bytes read to equal the signed bytes: in a complete receipt sha256_observed and sha256_signed are the same value"
+  }
+ },
+ "redundant_killed_alone": [],
+ "redundant_survivors": [
+  "F08_no_gate_before_the_temporary_is_looked_at_again",
+  "O07_receipt_reports_the_signed_hash_as_observed"
+ ],
+ "required_zero_survivors": true,
+ "results": [
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[15]",
+   "killed": true,
+   "mutant": "A01_hexpin_accepts_the_zero_hash",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 29 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_gate_monotonic_deadline_and_clock_reversal",
+   "killed": true,
+   "mutant": "A02_gate_wall_end_inclusive",
+   "returncode": 1,
+   "seconds": 13.1,
+   "summary": "1 failed, 313 passed, 2 skipped, 5 deselected in 12.49s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_gate_monotonic_deadline_and_clock_reversal",
+   "killed": true,
+   "mutant": "A03_gate_deadline_inclusive",
+   "returncode": 1,
+   "seconds": 12.9,
+   "summary": "1 failed, 313 passed, 2 skipped, 5 deselected in 12.43s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'GO_EXPIRED' == 'OUTSIDE_GO_WINDOW'",
+   "killed": true,
+   "mutant": "A04_gate_opening_end_inclusive",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 175 passed, 2 skipped, 5 deselected in 6.21s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('ca47fac2a7f6d76d' != '60d6c50a49b59df3' and 'REFUSED' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "A05_span_cap_exclusive",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 104 passed, 5 deselected in 1.68s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_purity.py::test_other_executors_and_a_changed_payload_byte_are_refused",
+   "killed": true,
+   "mutant": "A06_payload_bytes_not_pinned",
+   "returncode": 1,
+   "seconds": 6.9,
+   "summary": "1 failed, 177 passed, 2 skipped, 5 deselected in 6.24s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('REFUSED', 'zzCANARYzz')",
+   "killed": true,
+   "mutant": "A07_raw_text_of_a_refusal_leaves",
+   "returncode": 1,
+   "seconds": 6.8,
+   "summary": "1 failed, 179 passed, 2 skipped, 5 deselected in 6.22s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'schema': 'WRITE_HOSTOPS02_INSTALL_RELEASE_RECEIPT_V1', 'operation': 'GO_WRITE_HOSTOPS02_INSTALL_RELEASE_01', 'status': 'REFUSED', 'outcome': 'REFUSED_NOTHING_CHANGED', ...}",
+   "killed": true,
+   "mutant": "A08_non_os_failure_of_a_mutating_call_counts_as_nothing_changed",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 105 passed, 5 deselected in 1.76s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_owner_is_bound_and_equal_in_authority_and_go",
+   "killed": true,
+   "mutant": "A10_owner_may_exceed_128_characters",
+   "returncode": 1,
+   "seconds": 12.8,
+   "summary": "1 failed, 291 passed, 2 skipped, 5 deselected in 12.15s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_evidence_names_the_prior_receipts_and_the_operations_the_source_requires",
+   "killed": true,
+   "mutant": "A11_evidence_role_free_text",
+   "returncode": 1,
+   "seconds": 12.6,
+   "summary": "1 failed, 298 passed, 2 skipped, 5 deselected in 12.07s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_claim_root_identity_transport_binding_and_plan_window_member_by_member",
+   "killed": true,
+   "mutant": "A12_plan_window_tied_to_the_gate_not_to_the_request",
+   "returncode": 1,
+   "seconds": 12.5,
+   "summary": "1 failed, 297 passed, 2 skipped, 5 deselected in 12.02s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "W01_row_of_the_root_not_compared",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.40s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_readback_inside_the_run_catches_what_changed_after_the_link",
+   "killed": true,
+   "mutant": "W02_child_verify_does_not_prove_its_parent_again",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 98 passed, 5 deselected in 1.17s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: CHAIN_ROW_INVALID",
+   "killed": true,
+   "mutant": "W03_chain_row_path_not_tied_to_the_constant_path",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 16 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...ACK_MISMATCH') == ('PARTIAL_MET...ENT_REPLACED')",
+   "killed": true,
+   "mutant": "W04_child_stamp_is_identity_only",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 122 passed, 5 deselected in 1.60s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "W05_only_the_last_row_is_compared",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.35s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_plan_refusals_are_authentication_refusals_nothing_is_touched_and_no_go_is_claimed[9]",
+   "killed": true,
+   "mutant": "W06_root_safe_ignores_group_write",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 23 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('CREATED_DURABLE' == 'CREATED_METADATA_MISMATCH'",
+   "killed": true,
+   "mutant": "F01_created_directory_group_not_checked",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 89 passed, 5 deselected in 1.00s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...ATA_MISMATCH') == ('PARTIAL_MET...ATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F02_created_directory_owner_not_checked",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 117 passed, 5 deselected in 1.76s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "F03_created_directory_device_not_checked",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 89 passed, 5 deselected in 1.11s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_META...QUIRES_REVIEW' == 'PARTIAL_META...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "F04_created_file_size_not_checked",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 118 passed, 5 deselected in 1.69s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: READBACK_HASH_MISMATCH",
+   "killed": true,
+   "mutant": "F05_created_file_group_not_checked",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 91 passed, 5 deselected in 1.21s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...ASH_MISMATCH') == ('PARTIAL_MET...ATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F06_created_file_owner_not_checked",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 117 passed, 5 deselected in 1.80s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET..._NOT_REGULAR') == ('PARTIAL_MET...ATA_MISMATCH')",
+   "killed": true,
+   "mutant": "F07_created_file_type_not_checked",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 126 passed, 5 deselected in 1.83s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "F08_no_gate_before_the_temporary_is_looked_at_again",
+   "returncode": 0,
+   "seconds": 13.1,
+   "summary": "326 passed, 2 skipped, 5 deselected in 12.56s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: None",
+   "killed": true,
+   "mutant": "F09_directory_readback_does_not_check_the_type",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 126 passed, 5 deselected in 1.84s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: [('open', '/mnt/day-d-data/r2d2-v2-release-20261005/release.CERTIFIED.json', 260)]",
+   "killed": true,
+   "mutant": "F10_file_readback_reads_without_noatime",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 119 passed, 5 deselected in 1.75s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('PARTIAL_MET...ASH_MISMATCH') == ('PARTIAL_MET..._DURING_READ')",
+   "killed": true,
+   "mutant": "F11_file_readback_size_not_compared_with_the_stat",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 125 passed, 5 deselected in 1.77s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'key': 'RELEASE', 'path': '/mnt/day-d-data/r2d2-v2-release-20261005/release.CERTIFIED.json', 'state': 'TEMPORARY_ONLY', 'code': 'GO_EXPIRED', ...}",
+   "killed": true,
+   "mutant": "F12_expiry_while_writing_withdraws_the_temporary",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 124 passed, 5 deselected in 1.81s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('REFUSED', '...R', 'EFFECTS') == ('REFUSED', '...K', 'EFFECTS')",
+   "killed": true,
+   "mutant": "F13_eexist_at_mkdir_is_a_plain_filesystem_error",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 81 passed, 5 deselected in 1.06s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('PARTIAL_MET...FFECTS', None) == ('METADATA_ON...', 'COMPLETE')",
+   "killed": true,
+   "mutant": "O01_umask_leaves_nothing_to_the_owner_write",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 5 deselected in 0.35s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (('REFUSED', '...', 'PRECHECK') == ('REFUSED', '...E_ANY_EFFECT')",
+   "killed": true,
+   "mutant": "O02_precheck_swallows_the_death_of_the_process",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 102 passed, 5 deselected in 1.76s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_install_release.py::test_complete_run_and_the_literal_effects_the_signers_see",
+   "killed": true,
+   "mutant": "O06_content_written_is_not_the_checked_bytes",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.36s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": null,
+   "killed": false,
+   "mutant": "O07_receipt_reports_the_signed_hash_as_observed",
+   "returncode": 0,
+   "seconds": 11.6,
+   "summary": "326 passed, 2 skipped, 5 deselected in 11.14s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: MAINTENANCE_PIN_ABSENT",
+   "killed": true,
+   "mutant": "O09_destination_symlink_counts_as_absent",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.53s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: {'schema': 'WRITE_HOSTOPS02_INSTALL_RELEASE_RECEIPT_V1', 'operation': 'GO_WRITE_HOSTOPS02_INSTALL_RELEASE_01', 'status': 'REFUSED', 'outcome': 'REFUSED_NOTHING_CHANGED', ...}",
+   "killed": true,
+   "mutant": "X01_carried_T08_clean_ignores_uncertain_calls",
+   "returncode": 1,
+   "seconds": 2.4,
+   "summary": "1 failed, 123 passed, 5 deselected in 1.77s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: 488",
+   "killed": true,
+   "mutant": "X02_carried_F13_created_directory_mode_not_compared",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 121 passed, 5 deselected in 1.63s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dispatch_guards.py::test_what_is_sent_is_the_bundle_of_the_authenticated_documents",
+   "killed": true,
+   "mutant": "D01_final_bundle_bytes_not_compared",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.13s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dispatch_guards.py::test_config_window_wider_than_a_signed_window_is_refused_before_the_claim",
+   "killed": true,
+   "mutant": "D02_inner_windows_not_compared_with_the_config",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.16s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_UNBOUND' == 'INNER_BINDINGS'",
+   "killed": true,
+   "mutant": "D03_inner_hash_chain_left_to_the_source",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 passed, 5 deselected in 0.18s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dispatch_guards.py::test_budget_pair_and_inner_hash_chain_and_command_pin_before_the_claim",
+   "killed": true,
+   "mutant": "D04_budget_pair_not_required",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 3 passed, 5 deselected in 0.20s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D05_latest_start_not_bound_to_the_watchdog",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 140 passed, 2 skipped, 5 deselected in 3.92s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dispatch_guards.py::test_resume_needs_the_claim_of_prepare_and_the_exact_intent",
+   "killed": true,
+   "mutant": "D06_resume_does_not_read_the_claim",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.24s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dispatch_guards.py::test_resume_needs_the_claim_of_prepare_and_the_exact_intent",
+   "killed": true,
+   "mutant": "D07_intent_not_compared_with_the_expected_one",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.20s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: the payload was offered to the transport twice",
+   "killed": true,
+   "mutant": "D08_no_spawn_marker_before_the_transport",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 deselected in 0.13s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_publication_and_receipt_bindings",
+   "killed": true,
+   "mutant": "D09_publication_not_bound_to_the_go",
+   "returncode": 1,
+   "seconds": 4.5,
+   "summary": "1 failed, 143 passed, 2 skipped, 5 deselected in 4.01s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('KNOWN_COMPLETE' == 'UNCERTAIN'",
+   "killed": true,
+   "mutant": "D10_receipt_not_bound_to_the_payload",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.25s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('KNOWN_PARTIAL' == 'UNCERTAIN'",
+   "killed": true,
+   "mutant": "D11_partial_receipts_not_bound",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.38s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dispatch_guards.py::test_budget_pair_and_inner_hash_chain_and_command_pin_before_the_claim",
+   "killed": true,
+   "mutant": "D12_command_pin_left_to_the_transport",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 3 passed, 5 deselected in 0.30s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dispatch_guards.py::test_key_and_known_hosts_are_pinned_before_the_claim",
+   "killed": true,
+   "mutant": "D13_key_and_known_hosts_not_read_before_the_claim",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.22s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_publication_and_receipt_bindings",
+   "killed": true,
+   "mutant": "D14_publication_owner_not_compared",
+   "returncode": 1,
+   "seconds": 4.4,
+   "summary": "1 failed, 143 passed, 2 skipped, 5 deselected in 3.86s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestInstallRelease::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D15_config_single_use_flag_not_required",
+   "returncode": 1,
+   "seconds": 4.1,
+   "summary": "1 failed, 140 passed, 2 skipped, 5 deselected in 3.65s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dispatch_guards.py::test_config_window_wider_than_the_request_alone_is_refused_before_the_claim",
+   "killed": true,
+   "mutant": "D16_request_window_may_be_narrower_than_the_config",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.31s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dispatch_guards.py::test_launcher_refuses_a_source_that_is_not_the_pinned_one_on_stdin",
+   "killed": true,
+   "mutant": "L01_source_pin_not_checked_on_stdin",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.29s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_dispatch_guards.py::test_launcher_refuses_a_source_that_is_not_the_pinned_one_on_stdin",
+   "killed": true,
+   "mutant": "L02_build_does_not_compare_the_pins",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.29s",
+   "tests": [
+    "test_dispatch_guards.py",
+    "test_purity.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_purity.py::test_window_edges_of_monday_m1_and_the_spare_and_exact_900_seconds",
+   "killed": true,
+   "mutant": "A09_gate_span_measured_on_the_request_only",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 175 passed, 2 skipped, 5 deselected in 4.92s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: MAINTENANCE_PIN_ABSENT",
+   "killed": true,
+   "mutant": "O03_pin_judged_after_the_directory_exists",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.47s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: EVIDENCE_FROM_EARLIER_BOOT",
+   "killed": true,
+   "mutant": "O04_boot_judged_after_the_directory_exists",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.41s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: DATA_VOLUME_FREE_SPACE_BELOW_FLOOR",
+   "killed": true,
+   "mutant": "O05_destination_judged_by_the_mkdir_alone_and_free_space_after",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 8 passed, 5 deselected in 0.44s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'activation'...2797c6a', ...} == {'operation':... 0, ...}, ...}",
+   "killed": true,
+   "mutant": "O08_release_must_only_parse_at_run_time",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.27s",
+   "tests": [
+    "test_install_release.py",
+    "test_effects_guards.py",
+    "test_dispatch_guards.py",
+    "test_binding.py",
+    "test_predispatch.py",
+    "test_linux_proof.py",
+    "test_purity.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

@@ -1,0 +1,49 @@
+# HOSTOPS02, the frozen core and the operations built on it: the suites on Linux as real root and as an ordinary user,
+# and the command shapes on a real engine under the containerd image store. CORE.md section 10, items U1 to U7.
+#
+# For a THROWAWAY branch that never merges and carries no other workflow. The job runs on a GitHub-hosted runner
+# that is discarded afterwards; nothing here contacts the production host. No secret is used; the token is read-only
+# and is not kept in the checkout. The core lies in hostops02/core with its seal (CORE_SHA256SUMS), which run.sh checks
+# before and after; each operation lies beside it (hostops02/<key>) and is named in OPERATIONS below.
+# This file is hostops02/core/linux_root/WORKFLOW.yml.txt, byte for byte. NOT RUN by the author of the core.
+#
+# The two actions are pinned by commit, the same two the HOSTOPS01 job used (checkout v6.1.0, upload-artifact v4.6.2).
+name: hostops02-linux-root-proof
+on:
+  push:
+    branches: [ops/hostops02-linux-root-proof]
+permissions:
+  contents: read
+concurrency:
+  group: hostops02-linux-root-proof
+  cancel-in-progress: false
+jobs:
+  linux-root:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      HOSTOPS_THROWAWAY_RUNNER: "yes"
+      OPERATIONS: ""            # operation directories relative to hostops02/core, separated by spaces: "../k2a ../k10 ../k11 ../k6a"
+    defaults:
+      run:
+        working-directory: hostops02/core
+    steps:
+      - name: checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: suites as root and as user, the command shapes (exit 0 only when everything holds)
+        run: sh linux_root/run.sh $OPERATIONS
+      - name: sha256 and content of the output files
+        if: always()
+        run: /usr/bin/python3 -I -B linux_root/report.py
+      - name: the output files as one artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hostops02-linux-root
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            hostops02/core/linux_root/TESTS.*.xml
+            hostops02/core/linux_root/SHAPES.linux-root.json

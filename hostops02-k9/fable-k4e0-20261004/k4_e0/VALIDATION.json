@@ -1,0 +1,219 @@
+{
+ "assembly": {
+  "activation_allowed": false,
+  "core_sha256": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "date_class": "WRITE_SESSIONS",
+  "dates": [
+   "2026-10-05",
+   "2026-10-06",
+   "2026-10-07",
+   "2026-10-08",
+   "2026-10-09",
+   "2026-10-10"
+  ],
+  "dispatcher_sha256": "72c9bb1622a3804956344531b616618b0bd2be461be5a209c4d52e386ff0ba91",
+  "final_payload_bytes": 106943,
+  "final_payload_sha256": "190845537533d06650cecee1b922791656781cdf3b46e5dcc1522cef9d0d0d9e",
+  "launcher_sha256": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "operation_part_sha256": "1c104dcd04bc7edaf99e0acbda9a2192b2891896b6bcdd2a6c7d4feed362ea49",
+  "parts": [
+   "core",
+   "parents",
+   "files"
+  ],
+  "scope_sha256": "d2f40a4fff1fe7d215c7df5fb70d906963e66b91a637ffc086c8d18bc8b226d3",
+  "source_bytes": 70863,
+  "source_sha256": "e775a3eab247dae4cc9a65a01e769a42163cbcad98082cbc38238edacaeb27f9",
+  "spec_sha256": "41bc4ac7aa37aa49b9d729c4b848acea8c44b3892a8ffcd5613d170d4dd7df9a",
+  "transport_sha256": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "unbound_request_bytes": 5199,
+  "writes_allowed": true
+ },
+ "bound": false,
+ "build_equals_assembly": true,
+ "core": {
+  "core_sha256sums": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "generation_sha256_of_assemble_py": "4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6",
+  "seal": "SEAL_OK"
+ },
+ "fixture": {
+  "module_sha256": "24e25a94065f85052c5b9588498518d49a5d11fb7afb12913b473957b45bd569",
+  "runner_bytes": "SYNTHETIC test bytes only (tests/k4e0.py RUNNER); the K9 runner does not exist yet"
+ },
+ "host": "NOTHING_OF_THIS_DIRECTORY_WAS_RUN_ON_THE_HOST",
+ "linux_root_job": {
+  "gate": "set 3: the core linux_root job run with this directory as its argument, suite passing as real root",
+  "required_before_any_binding": true,
+  "status": "NOT_RUN"
+ },
+ "mutation": {
+  "MUTATION_CARRIED.json": {
+   "by_target": {
+    "core": 157,
+    "files": 146,
+    "parents": 15
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 278,
+    "redundant_survivors": 0,
+    "single": 318,
+    "survivors": 40
+   },
+   "killed_by_the_time_limit": [],
+   "list": "carried",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": false,
+   "sha256": "1bafdf1bc42f0944da1c110181152b8e7ce26d4196501c8ce2b370389169e5a1",
+   "stale_pins": [],
+   "survivors": [
+    "E11_probe_follows_nothing_but_reports_a_symlink_component_absent",
+    "E12_descend_without_nofollow",
+    "E13_descend_enters_a_symlink_component",
+    "E19_mount_point_always_the_root",
+    "E19b_mount_point_one_component_too_high",
+    "T08_clean_ignores_uncertain_calls",
+    "T09_escape_with_a_pending_call_not_looked_at",
+    "T10_verify_does_not_compare_the_fresh_walk_with_the_descriptor_held",
+    "K03_request_activation_flag_must_be_false_as_in_hostops01",
+    "K09_authority_activation_flag_must_be_false",
+    "K12_go_activation_flag_must_be_false",
+    "K14_one_required_evidence_operation_is_enough",
+    "K18_weekend_writes_reach_the_first_session_day",
+    "K19_first_session_class_holds_two_days",
+    "K20_first_session_class_is_the_weekend",
+    "K22_epoch_writes_include_friday_the_second",
+    "K23_read_class_stops_before_the_last_day",
+    "K25_document_limit_argument_ignored",
+    "K27_escape_of_a_switching_source_says_false",
+    "P01_any_owner_accepted_outside_an_open_root",
+    "P02_world_writable_directory_accepted_inside_an_open_root",
+    "P03_sticky_bit_does_not_excuse",
+    "P04_group_writable_counted_as_world_writable",
+    "P06_setgid_refused_even_when_nothing_is_created_there",
+    "P07_open_root_unchecked",
+    "P08_open_root_may_be_the_whole_tree",
+    "P13_signature_without_the_content_change_instants",
+    "P14_signature_without_identity",
+    "P15_signature_without_owner_and_mode",
+    "F01_directory_mode_unchecked_before_the_mkdir",
+    "F02_directory_path_not_tied_to_the_pinned_parent",
+    "F03_file_mode_unchecked_before_the_creation",
+    "F04_file_size_unbounded",
+    "F05_empty_file_accepted",
+    "F06_file_name_unchecked",
+    "F07_go_prefix_unchecked",
+    "F08_name_grammar_unchecked",
+    "F09_path_need_not_lie_in_the_pinned_parent",
+    "F10_same_temporary_name_for_every_file",
+    "F26_file_request_accepts_any_mode"
+   ]
+  },
+  "MUTATION_RUN.json": {
+   "by_target": {
+    "dispatcher": 15,
+    "launcher": 4,
+    "op": 197
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 216,
+    "redundant_survivors": 0,
+    "single": 216,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.9.6",
+   "required_zero_survivors": true,
+   "sha256": "985d37ce84db47394ebc7a71def9617af9b8af198c1bbbe7991e425ebd5dc8dc",
+   "stale_pins": [],
+   "survivors": []
+  },
+  "MUTATION_RUN.py312.json": {
+   "by_target": {
+    "dispatcher": 15,
+    "launcher": 4,
+    "op": 197
+   },
+   "complete_run": true,
+   "counts": {
+    "combined": 0,
+    "errors": 0,
+    "killed": 216,
+    "redundant_survivors": 0,
+    "single": 216,
+    "survivors": 0
+   },
+   "killed_by_the_time_limit": [],
+   "list": "own",
+   "pins_equal_the_files": true,
+   "present": true,
+   "python": "Python 3.12.14",
+   "required_zero_survivors": true,
+   "sha256": "7e0cec6902dfcbd6a7e8735c2878ed6504d51124d0104d7d68711c1c16272bb8",
+   "stale_pins": [],
+   "survivors": []
+  }
+ },
+ "operation": "GO_WRITE_HOSTOPS02_K4_E0_01",
+ "placement": {
+  "decision_6": "#429 comment 5985748037: both roots under /var/lib/c3po, root-only chain, no data volume",
+  "decision_file": "W/codex-n8-placement-20261004.txt",
+  "decision_sha256": "d30f7f9048af4a39cf4fa7d9f49292ad387a2d41f33bad39816e83d3d1fc2c53",
+  "note": "location decisions, not a GO of these bytes or a host authorization",
+  "status": "DECIDED_BY_CODEX_2026_10_04"
+ },
+ "schema": "HOSTOPS02_K4_E0_VALIDATION_V1",
+ "suites": [
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 238,
+   "per_file": {
+    "test_conformance": 121,
+    "test_k4_e0": 99,
+    "test_native": 18
+   },
+   "python": "Python 3.9.6",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 238
+  },
+  {
+   "errors": 0,
+   "failures": 0,
+   "passed": 238,
+   "per_file": {
+    "test_conformance": 121,
+    "test_k4_e0": 99,
+    "test_native": 18
+   },
+   "python": "Python 3.12.14",
+   "release_repository_given": false,
+   "returncode": 0,
+   "skipped": 0,
+   "skipped_tests": [],
+   "tests": 238
+  }
+ ],
+ "suites_with_other_operations": null,
+ "unbound_documents": {
+  "AUTHORITY.UNBOUND.json": "19c1debff865ae2b7439a43d8c5e31b1aed5acae47daa1b56f43ba900ec9f77f",
+  "DISPATCH.UNBOUND.json": "cbc0b67b7204062f579d427df852d3773fa950b3a2e58244d52bd7f4f3578f26",
+  "FINAL_PAYLOAD.UNBOUND.py": "190845537533d06650cecee1b922791656781cdf3b46e5dcc1522cef9d0d0d9e",
+  "GO.UNBOUND.json": "4f127a423a4b508e3d60faf84f13f1beedb0930a457ea0d70fd4539ca7c40910",
+  "PUBLICATION_PROOF.UNBOUND.json": "0be773822a0f56ee8715f4c51c2fab5b0462d103797bac2d95b6f0b2d1e31b2c",
+  "REQUEST.UNBOUND.json": "71aeaea788aa3f3526cbd8927d3d97f728fc10b14ba0cd96dd659f3faee939ba"
+ }
+}

@@ -1,0 +1,1632 @@
+{
+ "by_target": {
+  "dispatcher": 15,
+  "launcher": 4,
+  "op": 105
+ },
+ "changes": null,
+ "complete_run": true,
+ "counts": {
+  "combined": 0,
+  "errors": 0,
+  "killed": 124,
+  "redundant_survivors": 0,
+  "single": 124,
+  "survivors": 0
+ },
+ "errors": [],
+ "list": "own",
+ "not_applicable_does_not_compile": [],
+ "pins": {
+  "<core>/CORE_SHA256SUMS": "73fb546b9758718924b73200b48b7c0582a156a60da200ff83f4ca66e9e5c9b1",
+  "<core>/mutation/mutants.py": "c89461acac561a29f37b8d72a3cf959a522184b8d51168aa00e666d940e6b562",
+  "<core>/mutation/mutants_ported.py": "f0ab302d187dafdb41a902939ebc5dbbc52622721de01dd2ec0fca9899e78dd0",
+  "build/ASSEMBLY.json": "752518808b71c5b3dbf4da5719bdf851e9bcf2515a2fb5f094600c3268518187",
+  "build/AUTHORITY.UNBOUND.json": "a01e3c4a1b55cd2f66bf351cdd86fb2acb3771c3278ab305409d4cee6bd1a89e",
+  "build/DISPATCH.UNBOUND.json": "58be5cad220727f58aca8266cfb699e6846bb067eb839f0f3e766ccad53e77b8",
+  "build/DISPATCH_SCOPE_DELTA.diff": "1b9387aa62ebf5a9f87f1fe397a816def03217404d44930577a4dad1c438c38a",
+  "build/FINAL_PAYLOAD.UNBOUND.py": "58f60a47c03bbc1271beb3c6b1bae1ea81f628219ff7ae60cc7a971a1625a54e",
+  "build/GO.UNBOUND.json": "e28f36f6119496bdd0ef129b0e8981e90a0576020260b8808de34420dde2a927",
+  "build/LAUNCHER_DELTA.diff": "1f8b266844d73b762cc119c6ab8800ebf6776f715a22441b8558bf75e04aa2b4",
+  "build/PUBLICATION_PROOF.UNBOUND.json": "5fd6838af1ebc1075842b28f9a8ce77ed7c63230305f5287988636ea5aa76024",
+  "build/REQUEST.UNBOUND.json": "e68aefad1d4ebdb2d8bda6466527d50decc27a5641366b07376fd22b8b2e0a23",
+  "build/dispatch_once.py": "95a876edc95c2629436bbae16b42b548841b82c436c158c71a230191a79cad56",
+  "build/k12_preflight.py": "fd8050096cb8d419a815a10e14cb09a187e60dc952ab4e3ba3c18d745cb970cf",
+  "build/launcher_stdin.py": "ac4085e49dd1a7fcc0e64e3eaa5cd75b1a5f7f961f587e9eaf76c17d96f73caa",
+  "build/transport_once.py": "5900efbf916d679a6ce176dd71413f304e21e0c9ab65b0ff8ee742cc212f2918",
+  "mutation/mutants.py": "5443acff041fa8e19f9cd47d72f45a9b41d23ecef379af9aacfc93a7bbd70036",
+  "op.py": "8094a19c6771c2b97c8a3f283aa42fb64650acfdc9d7205f54bceef89f25752d",
+  "spec.py": "df2853845faa47afc5e88623c3f2b44bfdb03cafee8f6272584397e086bc16f2",
+  "tests/conftest.py": "7a350560ff5a6b738cf1a5667be5928dd697e6156ae557c7a01130b3e20c8960",
+  "tests/k12emu.py": "dd0cc4becf853117452e0389c959f72a20df10f62983f8960490d0148134f130",
+  "tests/k12p.py": "41eaa135fa157de23318aaa4352c6b5bd7da4b40967d3b6d6284df6427d582af",
+  "tests/native_k12.py": "bf005fb881ec076a5172b7513e19ea9b7ab0e2d6c1095d4e3a055421c16cb907",
+  "tests/native_support.py": "2f249ea3da9e20ae6444f32347f7e7e9ccda8df406470761c576f26be75d6691",
+  "tests/request_document.py": "2342d5655c0da57790ea5701e802c946d11df6fc98c12ea47c394a33778c5616",
+  "tests/test_conformance.py": "b7386f11f124bed9e50071ac433336f29e3fe3b12c36f43fbc159d1da99fa285",
+  "tests/test_native.py": "92887815c212ae0faf22df07d1da69b951963c3f346366c58f7fed363bb4399e",
+  "tests/test_preflight.py": "380d0d26aca133c8e8845ac8765b35b468508905cdc2f663ab42b2dc60dd756c"
+ },
+ "python": "Python 3.12.14",
+ "redundant": {},
+ "redundant_killed_alone": [],
+ "redundant_survivors": [],
+ "required_zero_survivors": true,
+ "results": [
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_the_plan - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "G_p_derived_need_EVIDENCE_BOOT_UNBOUND_1",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 5 deselected in 0.30s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_the_plan - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "G_p_derived_need_NOT_THE_PRIMARY_WINDOW_1",
+   "returncode": 1,
+   "seconds": 0.6,
+   "summary": "1 failed, 5 deselected in 0.24s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'config'",
+   "killed": true,
+   "mutant": "G_p_derived_need_PARENT_ROWS_INVALID_1",
+   "returncode": 1,
+   "seconds": 0.7,
+   "summary": "1 failed, 5 deselected in 0.34s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_the_plan - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "G_p_derived_need_DIRECTORY_NOT_ROOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 5 deselected in 0.51s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_effective_uid_and_gid_must_be_root_before_anything_is_looked_at",
+   "killed": true,
+   "mutant": "G_perform_need_EXECUTOR_IDENTITY_1",
+   "returncode": 1,
+   "seconds": 6.6,
+   "summary": "1 failed, 151 passed, 5 deselected in 5.91s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_RUN_NOT_ON_THE_DAY_OF_THE_WINDOW_1",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 30 passed, 5 deselected in 1.29s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_PREFLIGHT_NOT_BEFORE_THE_PRIMARY_WINDOW_1",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 30 passed, 5 deselected in 1.33s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_EVIDENCE_FROM_EARLIER_BOOT_1",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 30 passed, 5 deselected in 1.23s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('WRITER_FILE_NOT_PRIVATE', {})",
+   "killed": true,
+   "mutant": "G_perform_need_WRITER_FILE_ABSENT_1",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 10 passed, 5 deselected in 1.02s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_WRITER_FILE_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 11 passed, 5 deselected in 1.17s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_WRITER_BYTES_NOT_THE_SIGNED_ONES_1",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 12 passed, 5 deselected in 1.30s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('CAPACITY_CONFIG_NOT_PRIVATE', {})",
+   "killed": true,
+   "mutant": "G_perform_need_CAPACITY_CONFIG_ABSENT_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 13 passed, 5 deselected in 1.14s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_CAPACITY_CONFIG_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 14 passed, 5 deselected in 1.05s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_CAPACITY_CONFIG_NOT_THE_SIGNED_BYTES_1",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 15 passed, 5 deselected in 1.08s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PINS_ENV_NOT_PRIVATE', {})",
+   "killed": true,
+   "mutant": "G_perform_need_PINS_ENV_ABSENT_1",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 16 passed, 5 deselected in 1.07s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_PINS_ENV_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 17 passed, 5 deselected in 1.11s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_PINS_ENV_NOT_THE_SIGNED_BYTES_1",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 18 passed, 5 deselected in 1.15s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('SECRET_ENV_NOT_PRIVATE', {})",
+   "killed": true,
+   "mutant": "G_perform_need_SECRET_ENV_ABSENT_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 19 passed, 5 deselected in 1.26s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_SECRET_ENV_NOT_PRIVATE_1",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 20 passed, 5 deselected in 1.24s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_DOCKER_CLI_DIRECTORY_NOT_EMPTY_1",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 21 passed, 5 deselected in 1.30s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_JOURNAL_CATALOG_NOT_AS_REQUIRED_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 22 passed, 5 deselected in 1.27s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('DESTINATION_APPEARED_AFTER_PRECHECK', {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60})",
+   "killed": true,
+   "mutant": "G_perform_need_PREFLIGHT_ALREADY_CLAIMED_1",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.74s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PREFLIGHT_ENGINE_FAILURE', {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 125, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_IMAGE_ID_MISMATCH_1",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 28 passed, 5 deselected in 1.34s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_IMAGE_REVISION_MISMATCH_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 24 passed, 5 deselected in 1.27s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('CAPACITY_CONTAINER_OF_THE_DAY_PRESENT', {'manifests_before': {'entries': 0, 'manifest_present': False}})",
+   "killed": true,
+   "mutant": "G_perform_need_PREFLIGHT_CONTAINER_PRESENT_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 25 passed, 5 deselected in 1.25s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_CAPACITY_CONTAINER_OF_THE_DAY_PRESENT_1",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 26 passed, 5 deselected in 1.22s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 51, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "G_perform_need_BUDGET_INSUFFICIENT_BEFORE_FIRST_EFFECT_1",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 30 passed, 5 deselected in 1.29s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READBACK_UNAVAILABLE_MUTANT', {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}})",
+   "killed": true,
+   "mutant": "G_perform_code_of_READBACK_UNAVAILABLE_1",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 48 passed, 5 deselected in 1.78s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: config",
+   "killed": true,
+   "mutant": "C01_chains_without_the_journal",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 5 deselected in 0.44s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: config",
+   "killed": true,
+   "mutant": "C01b_chains_without_the_data",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.36s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: config",
+   "killed": true,
+   "mutant": "C01c_chains_without_the_receipts",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.36s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 51, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "C02_allowance",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 30 passed, 5 deselected in 1.31s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'before': 'T...: '0600', ...} == {'path': '/va...'gid': 0, ...}",
+   "killed": true,
+   "mutant": "C13_claim_name",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.55s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'before': 'T...: '0600', ...} == {'path': '/va...'gid': 0, ...}",
+   "killed": true,
+   "mutant": "C14_claim_schema",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.61s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: data",
+   "killed": true,
+   "mutant": "C15_data_chain_as_root_chain",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 5 deselected in 0.44s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: journal",
+   "killed": true,
+   "mutant": "C16_chains_not_root_controlled",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.37s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['run', '--rm...'--user', ...] == ['run', '--rm...'--user', ...]",
+   "killed": true,
+   "mutant": "C03_run_may_pull",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['run', '--rm...', '0:0', ...] == ['run', '--rm...'--user', ...]",
+   "killed": true,
+   "mutant": "C04_run_without_init",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.55s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['run', '--rm...'--user', ...] == ['run', '--rm...'--user', ...]",
+   "killed": true,
+   "mutant": "C05_run_writable_root",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.57s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (1 == 1 and 20 == 40)",
+   "killed": true,
+   "mutant": "C06_run_class",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.64s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (44 == 44 and True is True and False is False and 'WRITE_EPOCH' == 'WRITE_SESSIONS'",
+   "killed": true,
+   "mutant": "C07_date_class",
+   "returncode": 1,
+   "seconds": 2.5,
+   "summary": "1 failed, 49 passed, 5 deselected in 1.90s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_the_evidence_must_name_the_k12_tree_read",
+   "killed": true,
+   "mutant": "C08_evidence_operation",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 3 passed, 5 deselected in 0.64s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['run', '--rm...'--user', ...] == ['run', '--rm...'--user', ...]",
+   "killed": true,
+   "mutant": "C09_preflight_name",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.56s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['run', '--rm...'--user', ...] == ['run', '--rm...'--user', ...]",
+   "killed": true,
+   "mutant": "C10_without_the_preflight_argument",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.67s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_effects_are_the_literal_run - assert (['...",
+   "killed": true,
+   "mutant": "C11_labels_swapped",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.48s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_the_plan - Failed: DID NOT RAISE ValueError",
+   "killed": true,
+   "mutant": "C12_primary_only",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.41s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('WRITE_K12_C...fecfb2797c6a') == ('GO_WRITE_HO...fecfb2797c6a')",
+   "killed": true,
+   "mutant": "E01_operation",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.66s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_WRITE_HO...fecfb2797c6a') == ('GO_WRITE_HO...fecfb2797c6a')",
+   "killed": true,
+   "mutant": "E02_epoch",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('GO_WRITE_HO...-10-05', None) == ('GO_WRITE_HO...fecfb2797c6a')",
+   "killed": true,
+   "mutant": "E03_boot",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-06'...ary', 1, None) == ('2026-10-06'...8f9d063199bc')",
+   "killed": true,
+   "mutant": "E04_capacity_sha",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.54s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (None, 'prima...8f9d063199bc') == ('2026-10-06'...8f9d063199bc')",
+   "killed": true,
+   "mutant": "E05_day",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.57s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-06'...8f9d063199bc') == ('2026-10-06'...8f9d063199bc')",
+   "killed": true,
+   "mutant": "E06_window",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.56s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('2026-10-06'...8f9d063199bc') == ('2026-10-06'...8f9d063199bc')",
+   "killed": true,
+   "mutant": "E07_window_slot",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'config', 'd..._config', ...} == {'config', 'd..._config', ...}",
+   "killed": true,
+   "mutant": "E08_docker_config",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.53s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (['run', '--rm...'--user', ...] == ['run', '--rm...'--user', ...]",
+   "killed": true,
+   "mutant": "E09_before",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.57s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'path': '/c3...583f0a2780ff'} == {'path': '/va...600_ONE_LINK'}",
+   "killed": true,
+   "mutant": "E10_writer",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('1de3d9df13b7...b583f0a2780ff' == '1de3d9df13b7...b583f0a2780ff'",
+   "killed": true,
+   "mutant": "E11_capacity_config",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.57s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('1de3d9df13b7...b583f0a2780ff' == '1de3d9df13b7...b583f0a2780ff'",
+   "killed": true,
+   "mutant": "E12_pins_env",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.73s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'path': '/et...600_ONE_LINK'} == {'path': '/et...ETADATA_ONLY'}",
+   "killed": true,
+   "mutant": "E13_secret_env",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'container': 'ABSENT'} == {'container':...: 'UNCHANGED'}",
+   "killed": true,
+   "mutant": "E14_after",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.53s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ({'container':...: 'UNCHANGED'} == {'container':...: 'UNCHANGED'}",
+   "killed": true,
+   "mutant": "E15_files_created",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_every_member_of_the_effects - assert (No...",
+   "killed": true,
+   "mutant": "E16_activation",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.54s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'path': '/va...c3po-journal'} == {'path': '/va...OG_ROOT_0600'}",
+   "killed": true,
+   "mutant": "E18_journal",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.53s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'exception':...f9dacc'}, ...} == {'path': '/mn...6698996', ...}",
+   "killed": true,
+   "mutant": "E19_data",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.59s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('RELEASE_CHANGED_DURING_PREFLIGHT', {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_bef..._effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "P_r1_release_not_checked_before",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.67s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "P_r2_release_not_checked_after",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.79s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'ROOT' == 'ROOT_CONTROL...ETGID_NO_LINK'",
+   "killed": true,
+   "mutant": "E20_chain_rule",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.52s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'before': 'A...: '0600', ...} == {'path': '/va...'gid': 0, ...}",
+   "killed": true,
+   "mutant": "E21_creates",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.53s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert {'bound': 'RE...RE_AND_AFTER'} == {'path': '/et...RE_AND_AFTER'}",
+   "killed": true,
+   "mutant": "E22_manifests",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 2 passed, 5 deselected in 0.46s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_effects_are_the_literal_run - assert (['...",
+   "killed": true,
+   "mutant": "E17_label_placeholder",
+   "returncode": 1,
+   "seconds": 0.8,
+   "summary": "1 failed, 1 passed, 5 deselected in 0.50s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': True, ...})",
+   "killed": true,
+   "mutant": "S01_clean_ignores_a_container_left",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 48 passed, 5 deselected in 1.65s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 1, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S02_clean_ignores_the_manifests",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 9 passed, 5 deselected in 0.71s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_the_run_that_does_not_end_or_leaves_something",
+   "killed": true,
+   "mutant": "S04_left_something_settled_as_nothing",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 48 passed, 5 deselected in 1.79s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_the_preflight_runs_once_in_the_dispatch_layout_and_leaves_nothing",
+   "killed": true,
+   "mutant": "S05_ran_settled_as_done",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.54s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('WRITER_LINE_NOT_ONE_LINE', {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 125, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S06_engine_failure_parsed",
+   "returncode": 1,
+   "seconds": 2.0,
+   "summary": "1 failed, 46 passed, 5 deselected in 1.56s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('PREFLIGHT_NOT_OK', {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 3, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S07_not_ok_complete",
+   "returncode": 1,
+   "seconds": 1.9,
+   "summary": "1 failed, 31 passed, 5 deselected in 1.32s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 3, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S08_ok_any_exit",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 32 passed, 5 deselected in 1.38s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S09_ok_any_status",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 44 passed, 5 deselected in 1.61s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S10_ok_any_mode",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 33 passed, 5 deselected in 1.25s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S11_ok_any_session",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 34 passed, 5 deselected in 1.20s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S12_ok_any_owner",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 35 passed, 5 deselected in 1.39s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S13_ok_any_config",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 36 passed, 5 deselected in 1.29s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S14_ok_any_release",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 37 passed, 5 deselected in 1.38s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S15_ok_any_package",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 38 passed, 5 deselected in 1.30s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S16_ok_any_build",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 39 passed, 5 deselected in 1.30s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S17_ok_bars_off",
+   "returncode": 1,
+   "seconds": 1.8,
+   "summary": "1 failed, 40 passed, 5 deselected in 1.38s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S18_ok_without_the_directory",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 41 passed, 5 deselected in 1.60s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('METADATA_ONL...QUIRES_REVIEW' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S19_checks_copy_everything",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 47 passed, 5 deselected in 1.71s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 1, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S21_manifest_state_without_entry_signatures",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 9 passed, 5 deselected in 0.81s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (False is False and {'entries': -...esent': False} == {'entries': 0...esent': False}",
+   "killed": true,
+   "mutant": "S21b_manifest_state_without_the_directory",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.62s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (False is False and {'entries': 1...esent': False} == {'entries': 0...esent': False}",
+   "killed": true,
+   "mutant": "S21c_manifest_entries_count_the_directory",
+   "returncode": 1,
+   "seconds": 1.1,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.58s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (False is False and {'entries': 1...resent': True} == {'entries': 1...esent': False}",
+   "killed": true,
+   "mutant": "S21d_manifest_present_any_name",
+   "returncode": 1,
+   "seconds": 1.5,
+   "summary": "1 failed, 9 passed, 5 deselected in 0.83s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_preflight.py::test_closed_effects_on_the_manifests_directory",
+   "killed": true,
+   "mutant": "S27_unchanged_flag_constant",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 9 passed, 5 deselected in 1.36s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert (False is False and {'entries': 0...2a8371af5dcf'} == {'entries': 0...esent': False}",
+   "killed": true,
+   "mutant": "S28_signature_leaks",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.10s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: ('READBACK_UNAVAILABLE', {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60})",
+   "killed": true,
+   "mutant": "S31_claim_failure_ignored",
+   "returncode": 1,
+   "seconds": 1.7,
+   "summary": "1 failed, 6 passed, 5 deselected in 0.82s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S32_claim_not_read_back",
+   "returncode": 1,
+   "seconds": 1.6,
+   "summary": "1 failed, 8 passed, 5 deselected in 1.09s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (<class 'OSError'>, 157)",
+   "killed": true,
+   "mutant": "S33_claim_failure_always_refused",
+   "returncode": 1,
+   "seconds": 16.4,
+   "summary": "1 failed, 159 passed, 5 deselected in 15.64s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ((0, 0, 384, 1) == (0, 0, 384, 1)",
+   "killed": true,
+   "mutant": "S34_claim_without_the_request",
+   "returncode": 1,
+   "seconds": 2.7,
+   "summary": "1 failed, 4 passed, 5 deselected in 1.14s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: umask 077 before anything is created",
+   "killed": true,
+   "mutant": "S35_umask_not_set",
+   "returncode": 1,
+   "seconds": 3.2,
+   "summary": "1 failed, 50 passed, 5 deselected in 2.29s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert ('dir', 0, 0,..., 801, 2, ...) == ('dir', 0, 0,..., 801, 2, ...)",
+   "killed": true,
+   "mutant": "S36_not_started_after_the_claim_refused",
+   "returncode": 1,
+   "seconds": 3.4,
+   "summary": "1 failed, 48 passed, 5 deselected in 2.56s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'status'",
+   "killed": true,
+   "mutant": "S22_line_public_lost",
+   "returncode": 1,
+   "seconds": 1.3,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.70s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S23_day_containers_ignored",
+   "returncode": 1,
+   "seconds": 2.1,
+   "summary": "1 failed, 26 passed, 5 deselected in 1.51s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: assert 'REFUSED' == 'METADATA_ONL...QUIRES_REVIEW'",
+   "killed": true,
+   "mutant": "S24_listing_of_every_day",
+   "returncode": 1,
+   "seconds": 2.2,
+   "summary": "1 failed, 29 passed, 5 deselected in 1.58s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   AssertionError: (None, {'manifests_before': {'entries': 0, 'manifest_present': False}, 'seconds_left_before_first_effect': 60, 'run': {'started': True, 'returned': True, 'returncode': 0, 'code': None}, 'container_left': False, ...})",
+   "killed": true,
+   "mutant": "S25_boot_after_the_walks",
+   "returncode": 1,
+   "seconds": 2.3,
+   "summary": "1 failed, 30 passed, 5 deselected in 1.51s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "E   KeyError: 'container_left'",
+   "killed": true,
+   "mutant": "S26_after_left_lost",
+   "returncode": 1,
+   "seconds": 1.4,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.68s",
+   "tests": [
+    "test_preflight.py",
+    "test_native.py",
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D71k_dispatcher_date_set_dropped",
+   "returncode": 1,
+   "seconds": 5.8,
+   "summary": "1 failed, 102 passed, 5 deselected in 5.03s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D72k_dispatcher_accepts_the_sunday_before",
+   "returncode": 1,
+   "seconds": 5.4,
+   "summary": "1 failed, 102 passed, 5 deselected in 4.55s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_date_scope_is_the_class_of_the_source_at_both_layers",
+   "killed": true,
+   "mutant": "D73k_dispatcher_accepts_the_day_after_the_epoch",
+   "returncode": 1,
+   "seconds": 6.4,
+   "summary": "1 failed, 102 passed, 5 deselected in 5.49s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D02_dispatcher_one_day_rule_dropped",
+   "returncode": 1,
+   "seconds": 19.7,
+   "summary": "1 failed, 109 passed, 5 deselected in 18.98s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D03_dispatcher_signed_date_not_tied_to_the_config_day",
+   "returncode": 1,
+   "seconds": 21.6,
+   "summary": "1 failed, 109 passed, 5 deselected in 20.83s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_shipped_unbound_dispatch_template_is_refused_by_its_dispatcher_and_a_null_path_is_no_path",
+   "killed": true,
+   "mutant": "D04_dispatcher_config_schema_dropped",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 deselected in 0.31s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D05_dispatcher_unsigned_go_accepted",
+   "returncode": 1,
+   "seconds": 20.4,
+   "summary": "1 failed, 108 passed, 5 deselected in 19.73s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D06_dispatcher_unsigned_authority_accepted",
+   "returncode": 1,
+   "seconds": 21.6,
+   "summary": "1 failed, 108 passed, 5 deselected in 20.71s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D07_dispatcher_claim_root_binding_dropped",
+   "returncode": 1,
+   "seconds": 20.7,
+   "summary": "1 failed, 108 passed, 5 deselected in 20.04s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D08_dispatcher_transport_binding_dropped",
+   "returncode": 1,
+   "seconds": 20.2,
+   "summary": "1 failed, 108 passed, 5 deselected in 19.68s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_dispatcher_refuses_unsigned_foreign_or_transplanted_documents_before_any_claim",
+   "killed": true,
+   "mutant": "D09_dispatcher_host_binding_dropped",
+   "returncode": 1,
+   "seconds": 20.6,
+   "summary": "1 failed, 108 passed, 5 deselected in 20.01s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_names_of_every_earlier_operation_are_refused_at_both_layers[READONLY_POSTDEPLOY01_GO_V1-GO_READONLY_POSTDEPLOY_01-READONLY_POSTDEPLOY]",
+   "killed": true,
+   "mutant": "D10_dispatcher_local_authentication_dropped",
+   "returncode": 1,
+   "seconds": 3.6,
+   "summary": "1 failed, 91 passed, 5 deselected in 3.05s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_receipt_of_another_operation_is_filed_uncertain",
+   "killed": true,
+   "mutant": "D11_dispatcher_receipt_schema_not_checked",
+   "returncode": 1,
+   "seconds": 21.2,
+   "summary": "1 failed, 113 passed, 5 deselected in 20.56s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_dispatcher_write_scope_date_scope_and_late_start",
+   "killed": true,
+   "mutant": "D12_dispatcher_late_start_accepted",
+   "returncode": 1,
+   "seconds": 21.3,
+   "summary": "1 failed, 109 passed, 5 deselected in 20.54s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_prepare_does_not_spawn_then_resume_once_and_the_go_is_single_use",
+   "killed": true,
+   "mutant": "D13_dispatcher_claim_not_exclusive",
+   "returncode": 1,
+   "seconds": 20.2,
+   "summary": "1 failed, 107 passed, 5 deselected in 19.48s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[raise_value-UNCERTAIN-3]",
+   "killed": true,
+   "mutant": "X01_launcher_enters_the_payload_with_the_refusal_exit_code",
+   "returncode": 1,
+   "seconds": 1.0,
+   "summary": "1 failed, 7 passed, 5 deselected in 0.57s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[refused-KNOWN_REFUSAL-1]",
+   "killed": true,
+   "mutant": "X02_launcher_maps_a_refusal_to_partial",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 4 passed, 5 deselected in 0.47s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_launcher_files_an_exception_that_escapes_run_as_uncertain_never_as_a_refusal[partial-KNOWN_PARTIAL-2]",
+   "killed": true,
+   "mutant": "X03_launcher_maps_everything_to_complete",
+   "returncode": 1,
+   "seconds": 0.9,
+   "summary": "1 failed, 5 passed, 5 deselected in 0.54s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  },
+  {
+   "first_failure": "FAILED tests/test_conformance.py::TestPreflight::test_launcher_refuses_wrong_pins_at_build_and_on_stdin",
+   "killed": true,
+   "mutant": "X04_launcher_document_pins_not_checked",
+   "returncode": 1,
+   "seconds": 1.2,
+   "summary": "1 failed, 11 passed, 5 deselected in 0.89s",
+   "tests": [
+    "test_conformance.py"
+   ]
+  }
+ ],
+ "survivors": []
+}

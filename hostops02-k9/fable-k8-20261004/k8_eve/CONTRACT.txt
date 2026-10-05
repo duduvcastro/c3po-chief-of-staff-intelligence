@@ -1,0 +1,86 @@
+HOSTOPS02 / K8 - k8_eve - GO_WRITE_HOSTOPS02_K8_EVE_DELIVERY_01 - REVISION 1
+Epoch R2D2-V2-SHADOW-2026-10-05. MASTER_PLAN row E6: "Eve delivery: thirteen signed files and the payload file assembled
+on the host", after the causal commitment of the day, one UTC day. Once per session day 2026-10-06 ... 2026-10-09, on its
+eve (A2 rev3 row E6: 17:38-20:55 BRT of the eve; after 21:00 BRT only with Codex's "yes" on A2-18).
+
+Offline work only. Nothing in this directory was run on the host, pushed, bound or reviewed by anyone but its author.
+Every hash and count is in VALIDATION.json and SHA256SUMS, written by seal.py. DESIGN.md is the design; this file is
+what a reviewer signs against and what a binder does.
+
+1. STATUS
+
+  Built and tested by its author (Fable). NOT REVIEWED. NOT BOUND: no real document of a day exists yet; the documents
+  are a bind-time input made each eve by capacity_day_documents.py (888a48e6...), never invented here (the tests use the
+  tool's output over SYNTHETIC inputs, tests/fixtures/DAY_SETS.json).
+  Core: generation 4c24c5cfe4d6c70ce8aa57c61b070255dd67850be6697b8a0f58f95f6663d0d6, read, never edited. Parts carried:
+  core, parents, files. One function of the core is carried a second time, as k8_create_file: the core's create_file with
+  the name rule k8_named_in instead of named_in (the loader's names hold an '=', which the core's FILE_NAME refuses),
+  derived mechanically and compared byte for byte by tests/test_k8_copy.py. This source starts no process.
+  THE LINUX-ROOT JOB HAS NOT RUN.
+  Before any GO: (a) the Linux-root job with this directory; (b) Codex's written review of these bytes and his answers to
+  DESIGN.md section 7; (c) the day's documents built by the tool with --chain-directory and verified (documentary_authority
+  VERIFIED), their SHA256SUMS hash published; (d) the day's commit_result read COMPLETE; (e) a K9R TREE read of the same
+  boot (rows / -> /var/lib/c3po/r2d2-v2-k9-20261005/days).
+
+2. SPECIFICATION
+
+  Reads, by fixed path, through the signed chain / -> /var/lib -> /var/lib/c3po -> .../r2d2-v2-k9-20261005 -> days (no
+  open root; every row uid 0, gid 0, not writable by group or other, not setgid), then days/<D>, receipts, causal (each a
+  directory root:root 0700, not a link, held):
+    days/<D>/receipts/commit_launch.RECEIPT.json   K9_STEP_RECEIPT_V1, COMPLETE, code null, this epoch/day/phase causal_list/
+                                                   operation commit_launch/Act B key, package b5ce527a..., build dd4ec4bb...,
+                                                   outputs naming day/causal/commitment.private.json and
+                                                   day/causal/build_audit_receipt.json by sha256
+    days/<D>/causal/commitment.private.json        canonical JSON of the emitter's build()['commitment'], those bytes
+    days/<D>/causal/build_audit_receipt.json       canonical JSON of build()['audit_receipt'], those bytes
+  each regular, root:root 0600, one link. The commitment must be of this epoch and day, its list at most 550 distinct
+  names of [A-Z0-9][A-Z0-9.-]{0,19} carrying its own digest, its digest and its list's digest equal to the signed
+  contract's causal_scope, and the audit receipt the build event of exactly this commitment.
+  Reads the seven chain documents every window config pins, in /var/lib/c3po-capacity/documents: present, root:root 0600,
+  one link, the pinned bytes.
+  Creates, in /var/lib/c3po-capacity (its four roots must exist as root:root 0700 directories, held unchanged):
+    documents/session=<D>.template.md, .go-admission.md, .go-bar_manifest.md, .publication-bar_manifest.md,
+              .view-<w>.md (one per window)
+    go/session=<D>.admission.json, .bar_manifest.json
+    config/session=<D>.<w>.capacity.json (one per window)
+    payload/session=<D>.json = canonical JSON {"contract": <the signed contract>, "causal": {"epoch","session","status":
+              "AVAILABLE","symbols","list_sha256","commitment_sha256"}}
+  every file root:root 0600, exclusive temporary + link (never replaces), fsync, readback by descriptor inside the run.
+  With three windows: twelve signed files written, the thirteenth (the contract) carried whole in the payload file.
+  Never: overwrite, chmod, chown, rename, truncate, removal of anything but its own temporary, a process, docker,
+  systemctl, a shell, a network connection, a secret, activation, a container, a second attempt, a symbol in the receipt,
+  the hash or size of the payload file in the receipt.
+  Refuses before any effect: executor not 0:0; window outside [D-1 20:00Z, D 09:00Z]; boot not the evidence's; any
+  signed row differs; a capacity or K9 directory absent, not root:root 0700, a link, or changed between lstat and open; a
+  K9 file absent, not private, changed during the read; any check of the receipt or the commitment; a chain document
+  absent, not private or not the pinned bytes; any of the 13 names present; under REFUSE_ON_MISMATCH a root whose
+  AnchoredRoot identity (host numbers) is not the configs'; less than 4 MiB free; less than 15 s left.
+  Date class WRITE_SESSIONS (2026-10-05 ... 2026-10-10 UTC); window at most 900 s on one UTC day.
+  Success: METADATA_ONLY_REQUIRES_REVIEW / EVE_DAY_DOCUMENTS_AND_PAYLOAD_DELIVERED_READ_BACK, exit 0.
+
+3. WHAT A RECEIPT MEANS
+
+  KNOWN_COMPLETE (exit 0): the 13 files exist as specified and were read back; receipt.delivered names the twelve signed
+    files with their hashes, the contract's hash, the payload file by path, mode and booleans only, list_empty, and
+    whether each root identity equals the configs'.
+  KNOWN_REFUSAL (exit 1): nothing was created. The same bytes may be signed again once the cause is gone.
+  KNOWN_PARTIAL (exit 2) or UNCERTAIN (exit 3): some files of the day may exist; there is no second attempt and no
+    removal in the family: that day has no capacity documents and the session runs without bars (ORD:16).
+
+4. WHERE EACH BOUND VALUE COMES FROM
+
+  day, windows            the session day and the D6 window names of the day's documents (A2: three windows)
+  files, contract         strict base64 of the files the tool wrote for that day (SUMMARY.json roles), sha256 and size by
+                          command; the documents built with --chain-directory and VERIFIED; the contract's sha256 must also
+                          equal documentary.contract_sha256 of each window's REQUEST (binder rule, not built: DESIGN Q-5)
+  days_parent             rows / -> .../days from the K9R TREE read of the same boot
+  evidence_boot_id_sha256 that read's boot hash
+  evidence                at least one GO_READONLY_HOSTOPS02_K9_PHASE_READ_01 receipt
+  identity_rule           REFUSE_ON_MISMATCH once the host and container identities are known to agree (DESIGN Q-3);
+                          REPORT_ONLY otherwise
+  window                  inside the A2 E6 band, after commit_result was read COMPLETE
+
+5. TESTS: per interpreter in VALIDATION.json (conformance 121; test_k8_eve; test_k8_copy; test_native).
+6. MUTATION: own list, zero survivors on both interpreters (MUTATION_RUN.json, MUTATION_RUN.py312.json); equivalent
+   mutants named with the reason in mutants.py. MUTATION_CARRIED.json is information only.
+7. REPRODUCE: DESIGN.md section 9.
