@@ -1,0 +1,54 @@
+--- hostops01/parts/op_install_units.py:install_unit
++++ hostops02/core/parts/files.py:create_file
+@@ -1,10 +1,11 @@
+-def install_unit(index,unit,content,directory,host,gate,state,go16):
+-    """One unit: exclusive temporary, unbuffered writes, fsync, exact metadata, link to the final name, fsync of the
+-    directory, removal of the temporary. Returns the ledger row. Nothing is repaired and nothing raises past here."""
+-    name=unit['destination_name'];temp=TEMPORARY%(go16,index)
+-    entry={'key':unit['key'],'path':UNIT_DIRECTORY+'/'+name,'state':'NOT_ATTEMPTED','code':None,'errno':None,'bytes':None,
+-           'sha256_signed':unit['rendered_sha256'],'sha256_observed':None,'mode_octal':None,'uid':None,'gid':None,'links':None,
+-           'device':None,'inode':None,'temporary_name':temp,'temporary_removed':False,'temporary_removal_code':None,
++def create_file(index,key,path,content,mode,directory,host,gate,state,go16):
++    """One file: exclusive temporary, unbuffered writes, fsync, exact metadata, link to the final name, fsync of the
++    directory, removal of the temporary. Returns the ledger row. Nothing is repaired and nothing raises past here.
++    The caller has set the umask so that mode survives it (0077 for 0600, 0022 for 0644) and has proved the final
++    name absent; a name that appears afterwards is left alone (a link never replaces anything)."""
++    entry={'key':key,'path':path,'state':'NOT_ATTEMPTED','code':None,'errno':None,'bytes':None,
++           'sha256_signed':sha(content) if type(content) is bytes else None,'sha256_observed':None,'mode_octal':None,'uid':None,'gid':None,'links':None,
++           'device':None,'inode':None,'temporary_name':None,'temporary_removed':False,'temporary_removal_code':None,
+            'temporary_removal_errno':None,'fsync_file':False,'fsync_directory_after_link':False,'fsync_directory_after_removal':False}
+     def failed(code,error=None,**more):
+         entry.update(code=code,**more)
+@@ -18,10 +19,13 @@
+         entry['temporary_removal_code']=remove_own_temporary(temp,fd,directory,host,gate,state,entry)
+         if entry['temporary_removed']:entry['state']='NOT_CREATED'
+         return entry
++    if not (type(content) is bytes and 0<len(content)<=MAX_FILE_BYTES and type(mode) is int and mode in FILE_MODES
++            and named_in(path,directory) and text(go16,'[0-9a-f]{16}') and integer(index,0,99)):return failed('FILE_REQUEST_INVALID')
++    name=PurePosixPath(path).name;temp=entry['temporary_name']=TEMPORARY%(go16,index)
+     try:directory.verify(gate)
+     except Refused as error:return failed(code_of(error,'PARENT_REPLACED'))
+     flags=os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC
+-    try:fd=mutate(state,gate,lambda:host.create(temp,flags,UNIT_MODE,directory.fd))
++    try:fd=mutate(state,gate,lambda:host.create(temp,flags,mode,directory.fd))
+     except Refused as error:return failed(code_of(error,'GO_EXPIRED'))
+     except OSError as error:
+         return failed('TEMPORARY_NAME_OCCUPIED' if error.errno==errno.EEXIST else filesystem_code(error),error,state='NOT_CREATED')
+@@ -43,7 +47,7 @@
+             entry.update(mode_octal='%04o'%stat.S_IMODE(info.st_mode),uid=info.st_uid,gid=info.st_gid,links=info.st_nlink,
+                          device=info.st_dev,inode=info.st_ino)
+             if not (stat.S_ISREG(info.st_mode) and info.st_nlink==1 and info.st_uid==0 and info.st_gid==0
+-                    and stat.S_IMODE(info.st_mode)==UNIT_MODE and info.st_size==len(content)
++                    and stat.S_IMODE(info.st_mode)==mode and info.st_size==len(content)
+                     and info.st_dev==directory.identity[0]):return withdrawn('CREATED_METADATA_MISMATCH')
+         except OSError as error:return withdrawn('CREATED_STAT_FAILED',error)
+         try:directory.verify(gate)
+@@ -55,7 +59,7 @@
+             if (named.st_dev,named.st_ino,named.st_nlink)!=(info.st_dev,info.st_ino,1):return failed('TEMPORARY_REPLACED')
+         except Refused as error:return failed(code_of(error,'GO_EXPIRED'))
+         except OSError as error:return failed('TEMPORARY_REPLACED',error)
+-        # Complete, fsynced bytes are the only thing that ever appears under a name systemd loads.
++        # Complete, fsynced bytes are the only thing that ever appears under the final name.
+         try:mutate(state,gate,lambda:host.link(temp,name,directory.fd))
+         except Refused as error:return failed(code_of(error,'GO_EXPIRED'))
+         except OSError as error:

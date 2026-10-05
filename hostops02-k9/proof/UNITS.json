@@ -1,0 +1,30 @@
+{
+ "accepted_findings": [],
+ "base": "dd4ec4bb8dab4d8b0372b0f9eabc90bf6443e858",
+ "branch": "ops/hostops02-k3k9-rev4-proof3-20261005",
+ "family": "hostops02-k9",
+ "links": [],
+ "schema": "HOSTOPS02_K9_PROOF_UNITS_V1",
+ "units": [
+  {
+   "announced": true,
+   "dest": "fable-k3k9-20261004/core",
+   "files": 76,
+   "seal_file": "CORE_SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "c252a5b6c5688c9db98ee14fb326cb06531aec60dc209e884feaf84f3a91125d",
+   "source": "codex-k3k9-rev4-proof3-20261005/core",
+   "withheld": {}
+  },
+  {
+   "announced": true,
+   "dest": "fable-k3k9-20261004/k3k9_secrets",
+   "files": 34,
+   "seal_file": "SHA256SUMS",
+   "seal_py": true,
+   "seal_sha256": "1eda0e5c483ee11b04f6babfe0de937296e56e6d3ba1f37714816b1bd784d7d7",
+   "source": "codex-k3k9-rev4-proof3-20261005/k3k9_secrets",
+   "withheld": {}
+  }
+ ]
+}
